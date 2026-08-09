@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# M0 cooperation probe. Appends one line per agent-reported decision.
+# Usage: whyline-probe "<decision>" ["<rejected alternative>"]
+set -u
+log="${WHYLINE_PROBE_LOG:-$HOME/.whyline-m0.log}"
+printf '%s\t%s\t%s\t%s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  "${WHYLINE_PROBE_AGENT:-unknown}" \
+  "${1:-}" \
+  "${2:-}" >> "$log"
+exit 0
