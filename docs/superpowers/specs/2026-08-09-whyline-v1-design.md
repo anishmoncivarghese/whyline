@@ -80,15 +80,14 @@ These are not negotiable by scope.
 
 The entire design rests on one unproven assumption: **that agents reliably obey an `AGENTS.md` instruction to record their decisions.** If they do, both payoffs work cheaply. If they do not, both are hollow. This replaces the blocked Phase 0.
 
-**Prerequisite — currently unmet.** As of 2026-08-09 the development machine has **only Claude Code installed** (2.1.226). Codex CLI has been uninstalled (`~/.codex` state remains, binary gone) and Gemini CLI was never installed. The switching payoff cannot be exercised or tested with one agent. Installing a second CLI — Codex via a ChatGPT subscription, or Gemini CLI via a Google account — is therefore step zero of M0.
+**Prerequisite — met 2026-08-09.** Claude Code 2.1.226 and Codex CLI 0.147.0 are installed, and `codex login status` reports "Logged in using ChatGPT", so subscription auth works without an API key. Gemini CLI 0.54.4 is installed but **unusable on a free personal account**: Google sign-in now fails with "This client is no longer supported for Gemini Code Assist for individuals", leaving only a paid API key or Vertex AI. Gemini is therefore excluded from v1; Claude Code and Codex are the two agents.
 
 **Method**
 
-1. Install a second agent CLI (see prerequisite above).
-2. Add the recording instruction to `AGENTS.md` in 2–3 active repositories (Mozhima, Duet, DocSift).
-3. Install a ~10-line probe script that appends a timestamped line to a local log. No whyline code required.
-4. Work normally for 2–3 days across Claude Code and the second CLI.
-5. Count non-trivial changes from `git log` by hand, and compare against probe firings.
+1. Add the recording instruction to `AGENTS.md` in 2–3 active repositories (Mozhima, Duet, DocSift).
+2. Install a ~10-line probe script that appends a timestamped line to a local log. No whyline code required.
+3. Work normally for 2–3 days across Claude Code and Codex.
+4. Count non-trivial changes from `git log` by hand, and compare against probe firings.
 
 **Recorded per firing:** whether it fired unprompted, whether the note matched what actually changed, and whether rejected alternatives were included or only the decision.
 
@@ -96,11 +95,9 @@ The entire design rests on one unproven assumption: **that agents reliably obey 
 
 | Result | Decision |
 |---|---|
-| ≥60% on Claude Code and at least one firing on the second CLI | Build as designed |
+| ≥60% on Claude Code and at least one firing on Codex | Build as designed |
 | 30–60% | Build, but treat self-report as best-effort: `explain` leans on the hook, and `brief` warns when thin |
-| <30% | Cooperation model fails. Fall back to hook-only mechanical provenance for Claude Code, drop `brief` and `run` |
-
-If no second CLI is installed in time, run the test on Claude Code alone and record the second-CLI criterion as untested. In that case `brief` and `run` ship unvalidated and must be treated as provisional.
+| <30% | Cooperation model fails. Fall back to hook-only mechanical provenance, drop `brief` and `run` |
 
 **Threat to validity:** the operator knows the instruction exists and may unconsciously prompt for it. Record any firing that followed a reminder separately, and judge the threshold on unprompted firings only.
 
@@ -134,7 +131,11 @@ Every `Note` also appends a Markdown entry to `decisions.md`. Dropped from PRD �
 
 **Git is the spine.** `explain` resolves a line through `git blame -L n,n` to a commit SHA, author and date. This works on any repository with history before whyline has recorded anything.
 
-**The Claude Code hook records mechanical facts.** Installed into project-level `.claude/settings.json` by `init`. Three hard constraints: it runs in the critical path of every tool call, so it must be fast; it must **never** fail the user's session — all errors swallowed, always exit 0; and it must be silent. Requires no discipline from the user. Claude Code only; that asymmetry is documented, not hidden.
+**Hooks record mechanical facts.** Installed by `init` into project-level `.claude/settings.json`. Three hard constraints: the hook runs in the critical path of every tool call, so it must be fast; it must **never** fail the user's session — all errors swallowed, always exit 0; and it must be silent. Requires no discipline from the user.
+
+Verified 2026-08-09: **all three target CLIs support hooks**, not just Claude Code. Gemini CLI ships `gemini hooks migrate`, which migrates hooks *from* Claude Code and so implies a compatible format; Codex exposes a hook trust system (`--dangerously-bypass-hook-trust`). The mechanical layer is therefore portable in principle, which reduces the design's dependence on the self-report cooperation assumption (§5). v1 implements and tests the Claude Code hook only; the others are follow-on work once the format differences are characterised.
+
+**`init` must merge, never overwrite.** The development machine already has global Claude Code hooks configured (`PostToolUse`, `SessionStart`) from another tool. Clobbering a user's existing hook configuration is unacceptable: `init` reads the current config, appends whyline's entries alongside whatever is present, and refuses with a clear message rather than guessing if the file is unparseable.
 
 **The agent records reasoning.** `init` offers to append an `AGENTS.md` instruction directing agents to call `whyline note` on non-obvious choices. This is the only layer that captures rejected alternatives, and the only one that depends on cooperation. It is also the manual fallback for the user.
 
@@ -216,8 +217,9 @@ Permanently out, per §1: hosted sync, team features, enterprise features, any p
 
 ## 12. Open questions
 
-- Which second CLI to install — Codex (ChatGPT subscription) or Gemini CLI (Google account)? Neither is currently present, and M0 cannot fully run without one.
-- Does the second CLI honour `AGENTS.md` as reliably as Claude Code? Answered by M0.
+- Does Codex honour `AGENTS.md` as reliably as Claude Code? Answered by M0.
+- Do the Codex and Gemini hook formats differ enough from Claude Code's to matter? Deferred until after v1; `gemini hooks migrate` suggests they are close.
+- Should `run` support Gemini at all, given its free tier is closed? Currently excluded.
 - Rename the working directory from `agentdock` to `whyline`? Cosmetic; deferred to the owner.
 - Trademark search on "whyline" not performed. Low exposure for a free non-commercial tool, non-zero. Note: "Whyline" was a 2008 CMU research debugger answering "why did this happen?" — same field, long dormant, no commercial conflict.
 - PyPI/npm availability was checked via registry 404s, which is a strong signal but not authoritative; PyPI also rejects names too similar to existing ones. Confirm by registering early.
