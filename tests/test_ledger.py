@@ -1,6 +1,10 @@
 import json
+import subprocess
+from pathlib import Path
 
-from whyline import events, ledger
+import pytest
+
+from whyline import events, ledger, paths
 
 
 def test_append_creates_parent_directory_and_writes_one_line(tmp_path):
@@ -51,3 +55,39 @@ def test_read_all_ignores_blank_lines(tmp_path):
     found, skipped = ledger.read_all(path)
     assert len(found) == 1
     assert skipped == 0
+
+
+def test_ledger_and_index_are_gitignored_but_decisions_is_not():
+    """Verify that ledger and index files are gitignored, but decisions.md is not."""
+    repo_root = paths.find_repo_root(Path(__file__))
+
+    # Skip if not in a git repo
+    if not (repo_root / ".git").exists():
+        pytest.skip("Not in a git repository")
+
+    # Check that ledger.jsonl is gitignored
+    result = subprocess.run(
+        ["git", "check-ignore", "-v", ".whyline/ledger.jsonl"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"ledger.jsonl should be gitignored: {result.stdout}"
+
+    # Check that index.db is gitignored
+    result = subprocess.run(
+        ["git", "check-ignore", "-v", ".whyline/index.db"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"index.db should be gitignored: {result.stdout}"
+
+    # Check that decisions.md is NOT gitignored
+    result = subprocess.run(
+        ["git", "check-ignore", "-v", ".whyline/decisions.md"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, f"decisions.md should NOT be gitignored but it is: {result.stdout}"
