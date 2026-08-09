@@ -195,7 +195,7 @@ Exit codes: `0` success · `1` runtime error · `2` usage error · `3` not initi
 - Cold start under 200 ms for `status`, `explain`, `timeline`, `brief` (PRD §12.2).
 - No network calls, no telemetry, all state local.
 - macOS and Linux; Windows via WSL.
-- Python 3.11+, standard library plus Rich; shipped via `uv`/`uvx`, never "pip install and hope".
+- Python 3.11+, standard library only — zero production dependencies (amended 2026-08-09: Rich was specified but no code used it). Shipped via `uv`/`uvx`, never "pip install and hope".
 - Test-driven. Phase 0's three synthetic fixtures (`cache_ttl`, `webhook_dedupe`, `config_reload`) are reused as `explain` test repositories, since they are already git repositories with known history.
 
 ## 10. Success metrics
