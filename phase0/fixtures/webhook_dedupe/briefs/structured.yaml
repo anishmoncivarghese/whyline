@@ -1,0 +1,18 @@
+goal: Ensure a webhook event ID is processed at most once while allowing retries after failure.
+status: partial
+files_touched: []
+decisions:
+  - decision: Atomically reserve the event ID before invoking the handler.
+    rationale: Concurrent deliveries otherwise both pass a contains check.
+  - decision: Remove the reservation if the handler raises.
+    rationale: Provider retries must remain possible after transient failure.
+alternatives:
+  - option: Mark the ID only after successful processing.
+    why_not: Concurrent calls can both execute the handler.
+  - option: Hold a global lock while the handler executes.
+    why_not: Serializes unrelated webhook IDs and risks blocking the processor.
+open_questions:
+  - In-memory deduplication resets on process restart; durable storage is outside this task.
+verification:
+  - python3 -m unittest discover -s tests -v
+

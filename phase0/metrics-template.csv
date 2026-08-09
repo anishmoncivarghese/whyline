@@ -1,0 +1,2 @@
+participant_alias,session_date,condition,sequence_position,task_id,receiving_provider,receiving_cli_version,time_to_productive_seconds,total_task_seconds,input_tokens,output_tokens,usage_available,copy_paste_count,clarification_count,task_success,verification_result,critical_context_miss,trust_1_to_5,confidence_1_to_5,brief_prep_seconds,brief_generation_cost_usd,protocol_deviation,notes
+PILOT,,,,,,,,,,,false,,,,false,,false,,,,,,,

@@ -1,0 +1,18 @@
+goal: Add safe whole-configuration reload from KEY=VALUE text.
+status: partial
+files_touched: []
+decisions:
+  - decision: Parse and validate into a temporary dictionary, then replace state once under the lock.
+    rationale: Failed parsing cannot corrupt the old state, and readers see only complete snapshots.
+  - decision: Split lines at the first equals sign only.
+    rationale: Values may legitimately contain equals signs.
+alternatives:
+  - option: Clear and mutate the live dictionary as lines are parsed.
+    why_not: Errors leave partial state and concurrent readers observe inconsistent configuration.
+  - option: Hold the lock throughout parsing.
+    why_not: Correct but blocks readers unnecessarily; only the final swap requires synchronization.
+open_questions:
+  - Empty values are permitted; empty or invalid keys are not.
+verification:
+  - python3 -m unittest discover -s tests -v
+

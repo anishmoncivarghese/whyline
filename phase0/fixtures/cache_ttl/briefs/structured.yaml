@@ -1,0 +1,16 @@
+goal: Add optional per-entry TTL support to MemoryCache.
+status: partial
+files_touched: []
+decisions:
+  - decision: Store an absolute monotonic expiry beside each value.
+    rationale: The constructor already injects a monotonic clock, making behavior deterministic.
+alternatives:
+  - option: Sleep in tests and compare wall-clock timestamps.
+    why_not: Slow and flaky; wall time can move backwards.
+  - option: Treat a missing or falsy value as absent.
+    why_not: Zero and other falsy values are valid cache contents.
+open_questions:
+  - Confirm whether expiry occurs at or strictly after the deadline; requirements expect at the deadline.
+verification:
+  - python3 -m unittest discover -s tests -v
+
