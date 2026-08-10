@@ -37,6 +37,24 @@ def _git(root: Path, *args: str) -> str:
     return completed.stdout
 
 
+def _require_usable_repo(root: Path) -> None:
+    """Raise GitUnavailable if git is missing or `root` is not a repository.
+
+    Called only on blame_line's failure path. A blame failure is ambiguous on
+    its own — it is the expected shape of "untracked file" and "line past
+    end of file" (benign, should become None), but it is also the shape of
+    "git binary missing" and "corrupted repository" (infrastructure failure,
+    must NOT become None). Task 5 treats blame_line's None as "no reasoning
+    recorded for this line"; if a broken git install silently produced None
+    for every line, explain would confidently report nothing everywhere it
+    looked, which is exactly the false negative spec S7 rules out. Probing
+    with `rev-parse --git-dir` distinguishes the two: it fails the same way
+    the blame call would for missing-git or not-a-repo, but succeeds for the
+    benign cases, so it re-raises only when the failure was real.
+    """
+    _git(root, "rev-parse", "--git-dir")
+
+
 def blame_line(root: Path, rel_path: str, line: int) -> Blame | None:
     """Blame exactly one line. Returns None when the line cannot be blamed."""
     try:
@@ -44,6 +62,7 @@ def blame_line(root: Path, rel_path: str, line: int) -> Blame | None:
             root, "blame", "-L", f"{line},{line}", "--porcelain", "--", rel_path
         )
     except GitUnavailable:
+        _require_usable_repo(root)
         return None
     if not output.strip():
         return None
@@ -68,7 +87,10 @@ def blame_line(root: Path, rel_path: str, line: int) -> Blame | None:
 
 def commits_touching(root: Path, rel_path: str) -> list[tuple[str, int]]:
     """Every commit that touched this path, newest first, as (sha, epoch)."""
-    output = _git(root, "log", "--format=%H %at", "--", rel_path)
+    # --follow requires exactly one pathspec, which `rel_path` always is here.
+    # Without it, history stops at the most recent rename, and
+    # previous_commit_epoch would then see a renamed file as brand new.
+    output = _git(root, "log", "--follow", "--format=%H %at", "--", rel_path)
     results: list[tuple[str, int]] = []
     for entry in output.splitlines():
         if not entry.strip():

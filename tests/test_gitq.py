@@ -66,3 +66,31 @@ def test_previous_commit_epoch_is_none_for_the_first_commit(repo):
 def test_git_queries_raise_outside_a_repository(tmp_path):
     with pytest.raises(gitq.GitUnavailable):
         gitq.commits_touching(tmp_path, "a.py")
+
+
+def test_blame_line_raises_when_git_binary_is_missing(repo, monkeypatch):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError("git not found")
+
+    monkeypatch.setattr(gitq.subprocess, "run", fake_run)
+    with pytest.raises(gitq.GitUnavailable):
+        gitq.blame_line(repo.path, "a.py", 1)
+
+
+def test_blame_line_raises_when_directory_is_not_a_repository(tmp_path):
+    (tmp_path / "a.py").write_text("one\n", encoding="utf-8")
+    with pytest.raises(gitq.GitUnavailable):
+        gitq.blame_line(tmp_path, "a.py", 1)
+
+
+def test_commits_touching_follows_renames(repo):
+    first = repo.commit({"a.py": "1\n"}, "first", epoch=1_000_000)
+    (repo.path / "a.py").unlink()
+    second = repo.commit({"b.py": "1\n"}, "rename a to b", epoch=2_000_000)
+    assert gitq.commits_touching(repo.path, "b.py") == [
+        (second, 2_000_000),
+        (first, 1_000_000),
+    ]
+    assert gitq.previous_commit_epoch(repo.path, "b.py", second) == 1_000_000
