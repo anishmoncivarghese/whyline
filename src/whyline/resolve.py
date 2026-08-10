@@ -149,12 +149,29 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             reason="an agent touched this file but recorded no reasoning",
         )
     if notes:
-        return Explanation(
-            path=rel_path, line=line, confidence=LOW, blame=blame, notes=[],
-            reason=(
+        # Notes exist for this path but none could be tied to this line.
+        # Saying "no reasoning recorded" would be false. Reaching here means
+        # every note is either unparseable (+inf) or postdates the blamed
+        # commit, since any note at or before it was handled above — so
+        # distinguish the two rather than blaming timestamps that are fine.
+        unreadable = [note for note in notes if _epoch_of(note) == float("inf")]
+        if unreadable:
+            reason = (
                 "reasoning exists for this file but its timestamps are "
                 "unreadable, so it cannot be tied to this line"
-            ),
+            )
+        else:
+            reason = (
+                "reasoning exists for this file but all of it postdates this "
+                "line's last change"
+            )
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=LOW,
+            blame=blame,
+            notes=[],
+            reason=reason,
         )
     return Explanation(
         path=rel_path,

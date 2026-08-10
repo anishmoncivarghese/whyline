@@ -174,3 +174,49 @@ def test_non_string_timestamp_does_not_crash_and_reports_unplaceable(repo):
     result = resolve.explain(repo.path, "a.py", 1)
     assert result.confidence == "low"
     assert "unreadable" in result.reason
+
+
+# --- Fix round 2: distinguish "unreadable timestamp" from "postdates the
+# blamed commit" in the unplaceable-notes reason (review finding on round 1) ---
+
+
+def test_postdating_note_reason_says_postdates_not_unreadable(repo):
+    """A note with a perfectly valid timestamp that merely postdates the
+    blamed commit is not an 'unreadable timestamp' case. Saying so would be
+    false, which is exactly what this module must never do."""
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    add_note(repo, "too late", ["a.py"], iso(2_000_000))
+    result = resolve.explain(repo.path, "a.py", 1)
+    assert result.confidence == "low"
+    assert "postdates" in result.reason
+    assert "unreadable" not in result.reason
+
+
+def test_unreadable_timestamp_reason_still_says_unreadable(repo):
+    """Regression: confirm the pre-existing non-string-ts case still reports
+    'unreadable', proving the two cases now diverge instead of collapsing
+    onto one message."""
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    event = events.new_event(
+        events.NOTE, decision="weird timestamp", files=["a.py"], because=""
+    )
+    event["ts"] = 123
+    ledger.append(paths.ledger_path(repo.path), event)
+    result = resolve.explain(repo.path, "a.py", 1)
+    assert result.confidence == "low"
+    assert "unreadable" in result.reason
+
+
+def test_mixed_unreadable_and_postdating_notes_prefers_unreadable_reason(repo):
+    """When a path has both an unparseable-timestamp note and a valid but
+    postdating note, the unreadable timestamp is the more serious signal and
+    must be surfaced rather than silently ignored."""
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    add_note(repo, "too late", ["a.py"], iso(2_000_000))
+    bad_event = events.new_event(
+        events.NOTE, decision="bad ts", files=["a.py"], because=""
+    )
+    bad_event["ts"] = 123
+    ledger.append(paths.ledger_path(repo.path), bad_event)
+    result = resolve.explain(repo.path, "a.py", 1)
+    assert "unreadable" in result.reason
