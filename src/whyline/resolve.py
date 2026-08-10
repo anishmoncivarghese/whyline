@@ -1,0 +1,150 @@
+"""Resolving a line to recorded reasoning, with honest confidence."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+from whyline import events, gitq, ledger, paths
+
+HIGH = "high"
+MEDIUM = "medium"
+LOW = "low"
+NONE = "none"
+
+MECHANICAL_TYPES = (events.FILE_TOUCHED, events.INSTRUCTION)
+
+
+@dataclass
+class Explanation:
+    path: str
+    line: int | None
+    confidence: str
+    blame: gitq.Blame | None
+    notes: list[dict] = field(default_factory=list)
+    moved_by: str | None = None
+    reason: str = ""
+
+
+def _epoch_of(event: dict) -> float:
+    """Parse an event timestamp into an epoch. Unparseable timestamps sort last."""
+    try:
+        return datetime.fromisoformat(event["ts"].replace("Z", "+00:00")).timestamp()
+    except (KeyError, ValueError):
+        return float("inf")
+
+
+def _mentions(event: dict, rel_path: str) -> bool:
+    if event.get("path") == rel_path:
+        return True
+    return rel_path in (event.get("files") or [])
+
+
+def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
+    all_events, _ = ledger.read_all(paths.ledger_path(root))
+    notes = [
+        event
+        for event in all_events
+        if event.get("type") == events.NOTE and _mentions(event, rel_path)
+    ]
+    mechanical = [
+        event
+        for event in all_events
+        if event.get("type") in MECHANICAL_TYPES and _mentions(event, rel_path)
+    ]
+
+    blame = gitq.blame_line(root, rel_path, line) if line is not None else None
+
+    if line is None:
+        confidence = HIGH if len(notes) == 1 else MEDIUM if notes else (
+            LOW if mechanical else NONE
+        )
+        return Explanation(
+            path=rel_path,
+            line=None,
+            confidence=confidence,
+            blame=None,
+            notes=notes,
+            reason="file-level explanation; no line requested",
+        )
+
+    if blame is None:
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=NONE,
+            blame=None,
+            notes=notes,
+            reason="line is not tracked by git; cannot attribute it",
+        )
+
+    if not blame.committed:
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=NONE,
+            blame=blame,
+            notes=notes,
+            reason="line is uncommitted, so it has no recorded provenance yet",
+        )
+
+    lower = gitq.previous_commit_epoch(root, rel_path, blame.sha)
+    in_window = [
+        note
+        for note in notes
+        if _epoch_of(note) <= blame.epoch
+        and (lower is None or _epoch_of(note) > lower)
+    ]
+
+    if len(in_window) == 1:
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=HIGH,
+            blame=blame,
+            notes=in_window,
+            reason="one recorded decision matches the commit that wrote this line",
+        )
+    if len(in_window) > 1:
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=MEDIUM,
+            blame=blame,
+            notes=in_window,
+            reason="several decisions match this commit; the link is ambiguous",
+        )
+
+    earlier = [note for note in notes if _epoch_of(note) <= blame.epoch]
+    if earlier:
+        latest = max(earlier, key=_epoch_of)
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=MEDIUM,
+            blame=blame,
+            notes=[latest],
+            moved_by=blame.sha,
+            reason=(
+                f"reasoning was recorded earlier; commit {blame.sha[:7]} last moved "
+                "this line, so verify it still applies"
+            ),
+        )
+    if mechanical:
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=LOW,
+            blame=blame,
+            notes=[],
+            reason="an agent touched this file but recorded no reasoning",
+        )
+    return Explanation(
+        path=rel_path,
+        line=line,
+        confidence=NONE,
+        blame=blame,
+        notes=[],
+        reason="no reasoning recorded for this line",
+    )
