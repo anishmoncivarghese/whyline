@@ -62,8 +62,8 @@ def test_ledger_and_index_are_gitignored_but_decisions_is_not():
     repo_root = paths.find_repo_root(Path(__file__))
 
     # Skip if not in a git repo
-    if not (repo_root / ".git").exists():
-        pytest.skip("Not in a git repository")
+    if repo_root is None:
+        pytest.skip("not inside a git repository")
 
     # Check that ledger.jsonl is gitignored
     result = subprocess.run(
@@ -91,3 +91,13 @@ def test_ledger_and_index_are_gitignored_but_decisions_is_not():
         text=True,
     )
     assert result.returncode == 1, f"decisions.md should NOT be gitignored but it is: {result.stdout}"
+
+
+def test_gitignore_test_skips_when_not_in_git_repo(monkeypatch):
+    """Verify that the gitignore test gracefully skips when find_repo_root returns None."""
+    # Monkeypatch find_repo_root to return None (simulating non-git environment like tarball)
+    monkeypatch.setattr(paths, 'find_repo_root', lambda x: None)
+
+    # This should raise pytest.skip.Exception, not TypeError
+    with pytest.raises(pytest.skip.Exception):
+        test_ledger_and_index_are_gitignored_but_decisions_is_not()
