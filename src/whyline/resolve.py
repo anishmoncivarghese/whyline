@@ -28,10 +28,16 @@ class Explanation:
 
 
 def _epoch_of(event: dict) -> float:
-    """Parse an event timestamp into an epoch. Unparseable timestamps sort last."""
+    """Parse an event timestamp into an epoch. Unparseable timestamps sort last.
+
+    Ruling 2026-08-10: sorting unparseable timestamps to +inf makes them lose
+    every window/earlier comparison, so a malformed ts can only ever
+    under-claim (fall through toward LOW/NONE), never over-claim by
+    accidentally winning a HIGH/MEDIUM match it didn't earn.
+    """
     try:
         return datetime.fromisoformat(event["ts"].replace("Z", "+00:00")).timestamp()
-    except (KeyError, ValueError):
+    except (KeyError, TypeError, ValueError, AttributeError):
         return float("inf")
 
 
@@ -57,9 +63,11 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
     blame = gitq.blame_line(root, rel_path, line) if line is not None else None
 
     if line is None:
-        confidence = HIGH if len(notes) == 1 else MEDIUM if notes else (
-            LOW if mechanical else NONE
-        )
+        # Ruling 2026-08-10: file-level resolution can never reach "high".
+        # HIGH is defined as one note inside a blamed commit's window, and with
+        # no line there is no blamed commit — git is not consulted at all here.
+        # Returning HIGH would claim a link that was never established.
+        confidence = MEDIUM if notes else (LOW if mechanical else NONE)
         return Explanation(
             path=rel_path,
             line=None,
@@ -139,6 +147,14 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=blame,
             notes=[],
             reason="an agent touched this file but recorded no reasoning",
+        )
+    if notes:
+        return Explanation(
+            path=rel_path, line=line, confidence=LOW, blame=blame, notes=[],
+            reason=(
+                "reasoning exists for this file but its timestamps are "
+                "unreadable, so it cannot be tied to this line"
+            ),
         )
     return Explanation(
         path=rel_path,
