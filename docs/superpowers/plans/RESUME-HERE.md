@@ -5,7 +5,7 @@
 
 ## One-line state
 
-Tasks 1–7 and 10 are complete and reviewed. Continue with **Task 11 — `timeline` + `status`** while Tasks 8, 9 and 12 remain gated on M0 collection.
+Tasks 1–7 and 10 are complete and reviewed. M0 collection began 2026-08-14. Continue with **Task 11 — `timeline` + `status`** while Tasks 8, 9 and 12 remain gated on the M0 result.
 
 ## How to resume
 
@@ -25,7 +25,7 @@ Execution follows `superpowers:subagent-driven-development`: fresh implementer p
 
 | Task | State |
 |---|---|
-| 1 — M0 cooperation probe | ✅ complete (artifacts only; collection not started) |
+| 1 — M0 cooperation probe | 🟡 collection in progress since 2026-08-14 |
 | 2 — Scaffold, CLI shell, paths | ✅ complete |
 | 3 — Events + ledger | ✅ complete (2 fix rounds) |
 | 4 — Git queries | ✅ complete (1 fix round) |
@@ -43,7 +43,7 @@ Execution order and the reason only 8/9/12 are gated: plan §"Execution order �
 
 ### Immediate next action
 
-Task 11 — implement `timeline` and `status`. Start M0 collection independently; it is still required before Tasks 8, 9 and 12.
+Task 11 — implement `timeline` and `status`. In parallel, work normally in the three M0 repositories through 2026-08-16 or 2026-08-17, then evaluate the recorded firings before Tasks 8, 9 and 12.
 
 ## The milestone is real
 
@@ -92,7 +92,7 @@ The suite was green before each of these. Green tests do not ask whether the ans
 
 ## Open items
 
-- **M0 collection has not started.** AgentDock now has the production `AGENTS.md`/`CLAUDE.md` shared-instruction setup, but the formal probe is not installed into Mozhima, Duet or DocSift. Install the probe, append the M0 snippet to each canonical `AGENTS.md`, add the Claude import shim, work normally 2–3 days, then fill in `m0/RESULTS.md`. Thresholds are fixed in spec §5. Tasks 8, 9, 12 wait on the outcome.
+- **M0 collection is in progress.** On 2026-08-14, Mozhima, Duet and DocSift were migrated to canonical `AGENTS.md` instructions with minimal Claude import shims, and `whyline-probe` was installed in `~/.local/bin`. Existing instruction bodies were verified byte-for-byte after excluding their headings and the appended probe block. Work normally for 2–3 days, then fill in `m0/RESULTS.md`; thresholds are fixed in spec §5. Tasks 8, 9 and 12 wait on the outcome.
 - **`uv.lock` is untracked** by design (the plan's `git add` lists omit it). Never use `git add -A` — it would sweep the lock into an unreviewed commit. Every task's commit step uses explicit paths.
 - **Deferred minors** are listed in the ledger with `minor (deferred)` prefixes. Point the final Opus whole-branch review at them for triage.
 - **Model policy:** Sonnet floor for all subagents, never Haiku, Opus for genuinely hard tasks and the final whole-branch review. Tasks 1, 3 and one re-review were dispatched on Haiku before this was known; that work was independently verified and is not being redone.

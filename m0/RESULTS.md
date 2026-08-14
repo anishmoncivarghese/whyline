@@ -1,7 +1,12 @@
 # M0 Cooperation Test Results
 
-**Window:** <start date> to <end date>
+**Window:** 2026-08-14 to <end date; evaluate after 2–3 normal work days>
 **Agents:** Claude Code 2.1.226, Codex 0.147.0
+
+**Collection status:** in progress. The probe and canonical instruction shim were
+installed in Mozhima, Duet and DocSift on 2026-08-14. Events accumulate in
+`~/.whyline-m0.log`; the installation smoke test used a separate temporary log
+and did not add a baseline event here.
 
 | Agent | Non-trivial changes (from git log) | Probe firings | Unprompted firings | Rate (unprompted) |
 |---|---:|---:|---:|---:|
