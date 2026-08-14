@@ -8,6 +8,7 @@ readonly -a repositories=(
   "/Users/anish/Mozhima"
   "/Users/anish/Duet"
   "/Users/anish/DocBridge/docsift"
+  "/Users/anish/CodeGraph"
 )
 
 probe_block='<!-- whyline:m0-probe-begin -->

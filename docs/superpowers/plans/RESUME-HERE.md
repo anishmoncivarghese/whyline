@@ -45,21 +45,18 @@ Execution order and the reason only 8/9/12 are gated: plan §"Execution order �
 
 Task 11 — implement `timeline` and `status`. In parallel, work normally in the three M0 repositories through 2026-08-16 or 2026-08-17, then evaluate the recorded firings before Tasks 8, 9 and 12.
 
-### Proposed clean-project M0 exercise
+### Active clean-project M0 exercise
 
-The next session may create a separate Manifest V3 Chromium extension tentatively
-called **Tab Intent**: classify open tabs as Now, Later or Reference, keep all
-data local, show counts in a popup, and optionally surface stale tabs. This is
-preferred over a first Power BI visual because it has a shorter local test loop
-and still creates real decisions around permissions, storage, service-worker
-lifecycle, privacy, UI and testing.
+`/Users/anish/CodeGraph` joined the M0 test on 2026-08-15 as a new, isolated Git
+repository. Its excluded root baseline is `bf0430e`; the shared measurement log
+was still absent immediately after setup, so the baseline contains no synthetic
+probe firing. The repository currently contains its PRD and Whyline bootstrap,
+ready for normal Claude and Codex implementation work.
 
-For the experiment: initialize a new Git repository, run `whyline init --yes`,
-append the M0 probe block to canonical `AGENTS.md`, commit that setup as an
-excluded baseline, then alternate normal Claude and Codex work without reminding
-either agent to record decisions. Do not conflate the two behaviours: `whyline
-init` creates the instruction files; merely launching an agent currently only
-reads existing files.
+Continue by alternating normal Claude and Codex work without reminding either
+agent to record decisions. Do not conflate the two behaviours: `whyline init`
+created the instruction files; merely launching an agent currently only reads
+existing files.
 
 ## The milestone is real
 
@@ -108,7 +105,7 @@ The suite was green before each of these. Green tests do not ask whether the ans
 
 ## Open items
 
-- **M0 collection is in progress.** On 2026-08-14, Mozhima, Duet and DocSift were migrated to canonical `AGENTS.md` instructions with minimal Claude import shims, and `whyline-probe` was installed in `~/.local/bin`. Existing instruction bodies were verified byte-for-byte after excluding their headings and the appended probe block. Work normally for 2–3 days, then fill in `m0/RESULTS.md`; thresholds are fixed in spec §5. Tasks 8, 9 and 12 wait on the outcome.
+- **M0 collection is in progress.** On 2026-08-14, Mozhima, Duet and DocSift were migrated to canonical `AGENTS.md` instructions with minimal Claude import shims, and `whyline-probe` was installed in `~/.local/bin`. CodeGraph joined as a clean-project subject on 2026-08-15 at excluded baseline `bf0430e`. Existing instruction bodies were verified after migration. Work normally for 2–3 days, then fill in `m0/RESULTS.md`; thresholds are fixed in spec §5. Tasks 8, 9 and 12 wait on the outcome.
 - **`uv.lock` is untracked** by design (the plan's `git add` lists omit it). Never use `git add -A` — it would sweep the lock into an unreviewed commit. Every task's commit step uses explicit paths.
 - **Deferred minors** are listed in the ledger with `minor (deferred)` prefixes. Point the final Opus whole-branch review at them for triage.
 - **Model policy:** Sonnet floor for all subagents, never Haiku, Opus for genuinely hard tasks and the final whole-branch review. Tasks 1, 3 and one re-review were dispatched on Haiku before this was known; that work was independently verified and is not being redone.
