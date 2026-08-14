@@ -1,11 +1,11 @@
 # Resume here — whyline v1
 
-**Paused:** 2026-08-10, at 98% of the weekly usage limit.
-**Branch:** `feature/whyline-v1` · **Head:** `1722adb` · **56 tests passing** · zero production dependencies
+**Updated:** 2026-08-14.
+**Branch:** `feature/whyline-v1` · **Code head:** `dbfed9d` · **66 tests passing** · zero production dependencies
 
 ## One-line state
 
-Tasks 1–5 are complete and reviewed. **Task 6 is implemented and green but has NOT been code-reviewed** — resume by reviewing it, then continue with Task 7.
+Tasks 1–7 are complete and reviewed. Continue with **Task 10 — hook + `init`** while Tasks 8, 9 and 12 remain gated on M0 collection.
 
 ## How to resume
 
@@ -30,9 +30,9 @@ Execution follows `superpowers:subagent-driven-development`: fresh implementer p
 | 3 — Events + ledger | ✅ complete (2 fix rounds) |
 | 4 — Git queries | ✅ complete (1 fix round) |
 | 5 — Resolution + confidence | ✅ complete (2 fix rounds) |
-| **6 — `explain` command** | **⚠️ implemented, green, NOT reviewed — start here** |
-| 7 — `note` + decisions.md | pending |
-| 10 — Hook + `init` | pending |
+| 6 — `explain` command | ✅ complete (1 fix round) |
+| 7 — `note` + decisions.md | ✅ complete |
+| **10 — Hook + `init`** | **pending — start here** |
 | 11 — `timeline` + `status` | pending |
 | **GATE** | **M0 results needed before 8, 9, 12** |
 | 8 — `brief` | gated on M0 |
@@ -43,13 +43,7 @@ Execution order and the reason only 8/9/12 are gated: plan §"Execution order �
 
 ### Immediate next action
 
-Task 6's review gate. Generate the package and dispatch a reviewer:
-
-```bash
-.claude/plugins/cache/claude-plugins-official/superpowers/6.2.0/skills/subagent-driven-development/scripts/review-package docs/superpowers/plans/2026-08-09-whyline-v1.md d27d2f6 HEAD
-```
-
-The one thing that review must check, because it is the likeliest defect in this task: **the renderer must decide what to print from the confidence level, never from whether `notes` is non-empty.** `resolve.explain` returns populated `notes` on branches where `confidence == "none"` (uncommitted line, untracked file). Printing those notes would display reasoning under a "Confidence: None" heading. Three over-claim bugs have already been fixed in this module; this would be the fourth.
+Task 10 — implement the Claude Code hook and merge-safe `init` flow. M0 collection can start independently and is still required before Tasks 8, 9 and 12.
 
 ## The milestone is real
 
@@ -90,6 +84,9 @@ Worth knowing, because it shapes how to run the rest: **every substantive defect
 4. File-level `explain <file>` returned **`high` confidence without consulting git at all** — even for a file not in git, even outside a repository.
 5. The fix for a false message introduced a different false message ("timestamps are unreadable" for timestamps that were perfectly readable and merely postdated the line).
 6. Plan test data was off by a factor of 1000 (epoch 1,000,000 vs 1,000,000,000).
+7. Low-confidence output said no reasoning existed while its detail line said reasoning did exist but could not be attributed.
+8. JSON exposed file-level notes for uncommitted and untracked lines even when confidence was `none`.
+9. `explain` silently skipped unreadable ledger lines instead of issuing the warning required by the specification.
 
 The suite was green before each of these. Green tests do not ask whether the answer is *true*. Keep pointing reviewers at the over-claim question explicitly.
 
@@ -102,4 +99,4 @@ The suite was green before each of these. Green tests do not ask whether the ans
 
 ## Not yet done at all
 
-No `note`, `brief`, `run`, `init`, `timeline` or `status` command exists yet. There is no README, no CI, and no packaging verification. `explain` is the only working command.
+No `brief`, `run`, `init`, `timeline` or `status` command exists yet. There is no README, no CI, and no packaging verification. `explain` and `note` are working commands.
