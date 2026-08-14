@@ -215,3 +215,58 @@ def test_note_writes_to_both_the_ledger_and_decisions_md(repo, capsys):
 def test_note_requires_initialisation(repo, capsys):
     code, _ = run_in(repo, ["note", "something"], capsys)
     assert code == cli.EXIT_UNINITIALISED
+
+
+def test_init_scaffolds_ledger_and_gitignore(repo, capsys):
+    code, _ = run_in(repo, ["init", "--yes"], capsys)
+    assert code == cli.EXIT_OK
+    assert paths.ledger_path(repo.path).exists()
+    ignore = (repo.path / ".whyline" / ".gitignore").read_text()
+    assert "ledger.jsonl" in ignore
+    assert "!decisions.md" in ignore
+
+
+def test_init_preserves_existing_whyline_gitignore_entries(repo, capsys):
+    directory = repo.path / ".whyline"
+    directory.mkdir()
+    (directory / ".gitignore").write_text("keep-me.tmp\n")
+    run_in(repo, ["init", "--yes"], capsys)
+    ignore = (directory / ".gitignore").read_text()
+    assert "keep-me.tmp" in ignore
+    assert "ledger.jsonl" in ignore
+
+
+def test_init_is_idempotent(repo, capsys):
+    run_in(repo, ["init", "--yes"], capsys)
+    agents_before = (repo.path / "AGENTS.md").read_text()
+    claude_before = (repo.path / "CLAUDE.md").read_text()
+    code, _ = run_in(repo, ["init", "--yes"], capsys)
+    assert code == cli.EXIT_OK
+    assert (repo.path / "AGENTS.md").read_text() == agents_before
+    assert (repo.path / "CLAUDE.md").read_text() == claude_before
+
+
+def test_init_writes_shared_agent_instructions_with_yes(repo, capsys):
+    run_in(repo, ["init", "--yes"], capsys)
+    assert "whyline note" in (repo.path / "AGENTS.md").read_text()
+    claude = (repo.path / "CLAUDE.md").read_text()
+    assert "@AGENTS.md" in claude
+    assert "canonical source" in claude
+
+
+def test_init_preserves_existing_instruction_files(repo, capsys):
+    (repo.path / "AGENTS.md").write_text("Existing agents rules.\n")
+    (repo.path / "CLAUDE.md").write_text("Existing Claude rules.\n")
+    run_in(repo, ["init", "--yes"], capsys)
+    assert (repo.path / "AGENTS.md").read_text().startswith("Existing agents rules.")
+    assert (repo.path / "CLAUDE.md").read_text().startswith("Existing Claude rules.")
+
+
+def test_init_without_confirmation_does_not_modify_instruction_files(
+    repo, capsys, monkeypatch
+):
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    code, _ = run_in(repo, ["init"], capsys)
+    assert code == cli.EXIT_OK
+    assert not (repo.path / "AGENTS.md").exists()
+    assert not (repo.path / "CLAUDE.md").exists()

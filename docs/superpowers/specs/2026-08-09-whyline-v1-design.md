@@ -57,7 +57,7 @@ The reasoning behind the cuts:
 
 **Adapters and PTY supervision existed to make handoff work without the agent's cooperation** — wrap the process, capture the stream, parse a summary out. That is the expensive half of the PRD build and a permanent maintenance liability (PRD §6.1: "every adapter is a standing maintenance liability"). This was confirmed in the field: between the PRD being written and this design, the Codex CLI was uninstalled from the development machine entirely and Claude Code drifted from 2.1.173 to 2.1.226.
 
-All three target CLIs already read `AGENTS.md`. Asking the agent to record its own decisions obtains the same artefact for a fraction of the cost, and it is the *only* way to capture rejected alternatives, which no amount of output parsing can recover.
+Codex reads `AGENTS.md` directly. Claude Code reads `CLAUDE.md`, so whyline creates a minimal `CLAUDE.md` shim that imports the canonical `AGENTS.md`. Asking the agent to record its own decisions obtains the same artefact for a fraction of the cost, and it is the *only* way to capture rejected alternatives, which no amount of output parsing can recover.
 
 **Supervision was never required to launch an agent.** The PRD's cost came from capturing output. Handing the terminal over with `exec` costs about twenty lines and cannot break when a vendor changes its output format.
 
@@ -84,7 +84,7 @@ The entire design rests on one unproven assumption: **that agents reliably obey 
 
 **Method**
 
-1. Add the recording instruction to `AGENTS.md` in 2–3 active repositories (Mozhima, Duet, DocSift).
+1. Add the recording instruction to `AGENTS.md` in 2–3 active repositories (Mozhima, Duet, DocSift), with a minimal `CLAUDE.md` importing `@AGENTS.md` so Claude receives the same instruction.
 2. Install a ~10-line probe script that appends a timestamped line to a local log. No whyline code required.
 3. Work normally for 2–3 days across Claude Code and Codex.
 4. Count non-trivial changes from `git log` by hand, and compare against probe firings.
@@ -137,7 +137,7 @@ Verified 2026-08-09: **all three target CLIs support hooks**, not just Claude Co
 
 **`init` must merge, never overwrite.** The development machine already has global Claude Code hooks configured (`PostToolUse`, `SessionStart`) from another tool. Clobbering a user's existing hook configuration is unacceptable: `init` reads the current config, appends whyline's entries alongside whatever is present, and refuses with a clear message rather than guessing if the file is unparseable.
 
-**The agent records reasoning.** `init` offers to append an `AGENTS.md` instruction directing agents to call `whyline note` on non-obvious choices. This is the only layer that captures rejected alternatives, and the only one that depends on cooperation. It is also the manual fallback for the user.
+**The agent records reasoning.** `init` offers to append an `AGENTS.md` instruction directing agents to call `whyline note` on non-obvious choices, and to create or merge a minimal `CLAUDE.md` import shim. `AGENTS.md` is the canonical shared instruction source. This is the only layer that captures rejected alternatives, and the only one that depends on cooperation. It is also the manual fallback for the user.
 
 ### 6.4 Linking notes to commits
 
@@ -149,7 +149,7 @@ This is deliberately SHA-free at record time, so rebases, squashes and amends th
 
 | Command | Purpose |
 |---|---|
-| `whyline init` | Scaffold `.whyline/`, write gitignore entries, offer to install the hook, offer to append the `AGENTS.md` instruction |
+| `whyline init` | Scaffold `.whyline/`, write gitignore entries, offer to install the hook, offer to append the canonical `AGENTS.md` instruction and `CLAUDE.md` import shim |
 | `whyline note "<decision>" --because "<rationale>" --rejected "<option>: <why not>"` | Record a decision. `--rejected` is repeatable, once per alternative; the text is split on the first colon into `option` and `why_not` |
 | `whyline brief` | Compose the handoff summary from recent notes; prints to stdout |
 | `whyline run <agent> "<task>"` | `exec` claude/codex/gemini with the brief attached |
@@ -157,7 +157,7 @@ This is deliberately SHA-free at record time, so rebases, squashes and amends th
 | `whyline timeline [--file] [--since]` | Event history. `--json` |
 | `whyline status` | Hook installed, event count, anything broken. `--json` |
 
-`AGENTS.md` never rewritten without explicit confirmation (PRD §9.1). `brief` prints rather than persisting, so there is no stale file to trust.
+`AGENTS.md` and `CLAUDE.md` are never rewritten without explicit confirmation (PRD §9.1). Existing content is preserved and whyline's additions are idempotent. `brief` prints rather than persisting, so there is no stale file to trust.
 
 ### 6.6 `run` — exec, not supervise
 

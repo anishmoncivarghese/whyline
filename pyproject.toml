@@ -8,6 +8,7 @@ dependencies = []
 
 [project.scripts]
 whyline = "whyline.cli:entry"
+whyline-hook = "whyline.hook_entry:entry"
 
 [build-system]
 requires = ["hatchling", "editables"]

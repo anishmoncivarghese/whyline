@@ -42,6 +42,15 @@ def _add_note(subparsers: "argparse._SubParsersAction") -> None:
     )
 
 
+def _add_init(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("init", help="Set whyline up in this repository")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Accept instruction-file and hook changes without prompting",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -51,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     _add_explain(subparsers)
     _add_note(subparsers)
+    _add_init(subparsers)
     return parser
 
 
@@ -118,7 +128,58 @@ def cmd_note(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-COMMANDS = {"explain": cmd_explain, "note": cmd_note}
+GITIGNORE_LINES = ("ledger.jsonl", "index.db", "!decisions.md")
+
+
+def _confirm(question: str, assume_yes: bool) -> bool:
+    if assume_yes:
+        return True
+    try:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
+def _merge_gitignore(path: Path) -> None:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    found = set(existing.splitlines())
+    missing = [line for line in GITIGNORE_LINES if line not in found]
+    if not missing:
+        return
+    separator = "" if not existing or existing.endswith("\n") else "\n"
+    path.write_text(
+        existing + separator + "\n".join(missing) + "\n",
+        encoding="utf-8",
+    )
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    from whyline import agentsmd, claudemd, hooks, paths
+
+    root = _require_repo()
+    directory = paths.whyline_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(root).touch()
+    _merge_gitignore(directory / ".gitignore")
+    print(f"Initialised {directory}")
+
+    if _confirm(
+        "Install shared instructions in AGENTS.md and CLAUDE.md?", args.yes
+    ):
+        print(f"AGENTS.md: {agentsmd.install(root / 'AGENTS.md')}")
+        print(f"CLAUDE.md: {claudemd.install(root / 'CLAUDE.md')}")
+
+    if _confirm("Install the Claude Code hook for this project?", args.yes):
+        try:
+            outcome = hooks.install(root / ".claude" / "settings.json")
+            print(f"Hook: {outcome}")
+        except hooks.SettingsUnreadable as error:
+            print(str(error), file=sys.stderr)
+            return EXIT_ERROR
+    return EXIT_OK
+
+
+COMMANDS = {"explain": cmd_explain, "note": cmd_note, "init": cmd_init}
 
 
 def main(argv: list[str] | None = None) -> int:
