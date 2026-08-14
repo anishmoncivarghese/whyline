@@ -90,7 +90,13 @@ def test_ledger_and_index_are_gitignored_but_decisions_is_not():
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 1, f"decisions.md should NOT be gitignored but it is: {result.stdout}"
+    # `git check-ignore -v` also returns 0 when the matching rule is a
+    # negation. In that case the leading `!` is the evidence that the path is
+    # explicitly trackable rather than ignored.
+    matched_rule = result.stdout.split("\t", 1)[0].rsplit(":", 1)[-1]
+    assert result.returncode == 1 or matched_rule.startswith("!"), (
+        f"decisions.md should NOT be gitignored but it is: {result.stdout}"
+    )
 
 
 def test_gitignore_test_skips_when_not_in_git_repo(monkeypatch):
