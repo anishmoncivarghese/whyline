@@ -45,6 +45,22 @@ Execution order and the reason only 8/9/12 are gated: plan §"Execution order �
 
 Task 11 — implement `timeline` and `status`. In parallel, work normally in the three M0 repositories through 2026-08-16 or 2026-08-17, then evaluate the recorded firings before Tasks 8, 9 and 12.
 
+### Proposed clean-project M0 exercise
+
+The next session may create a separate Manifest V3 Chromium extension tentatively
+called **Tab Intent**: classify open tabs as Now, Later or Reference, keep all
+data local, show counts in a popup, and optionally surface stale tabs. This is
+preferred over a first Power BI visual because it has a shorter local test loop
+and still creates real decisions around permissions, storage, service-worker
+lifecycle, privacy, UI and testing.
+
+For the experiment: initialize a new Git repository, run `whyline init --yes`,
+append the M0 probe block to canonical `AGENTS.md`, commit that setup as an
+excluded baseline, then alternate normal Claude and Codex work without reminding
+either agent to record decisions. Do not conflate the two behaviours: `whyline
+init` creates the instruction files; merely launching an agent currently only
+reads existing files.
+
 ## The milestone is real
 
 `explain` works end to end on this repository's own history:
