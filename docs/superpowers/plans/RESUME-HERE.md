@@ -1,11 +1,11 @@
 # Resume here — whyline v1
 
 **Updated:** 2026-08-14.
-**Branch:** `feature/whyline-v1` · **Code head:** `dbfed9d` · **66 tests passing** · zero production dependencies
+**Branch:** `feature/whyline-v1` · **Code head:** `1ca4a66` · **92 tests passing** · zero production dependencies
 
 ## One-line state
 
-Tasks 1–7 are complete and reviewed. Continue with **Task 10 — hook + `init`** while Tasks 8, 9 and 12 remain gated on M0 collection.
+Tasks 1–7 and 10 are complete and reviewed. Continue with **Task 11 — `timeline` + `status`** while Tasks 8, 9 and 12 remain gated on M0 collection.
 
 ## How to resume
 
@@ -32,8 +32,8 @@ Execution follows `superpowers:subagent-driven-development`: fresh implementer p
 | 5 — Resolution + confidence | ✅ complete (2 fix rounds) |
 | 6 — `explain` command | ✅ complete (1 fix round) |
 | 7 — `note` + decisions.md | ✅ complete |
-| **10 — Hook + `init`** | **pending — start here** |
-| 11 — `timeline` + `status` | pending |
+| 10 — Hook + `init` | ✅ complete (1 fix round) |
+| **11 — `timeline` + `status`** | **pending — start here** |
 | **GATE** | **M0 results needed before 8, 9, 12** |
 | 8 — `brief` | gated on M0 |
 | 9 — `run` | gated on M0 |
@@ -43,7 +43,7 @@ Execution order and the reason only 8/9/12 are gated: plan §"Execution order �
 
 ### Immediate next action
 
-Task 10 — implement the Claude Code hook and merge-safe `init` flow. M0 collection can start independently and is still required before Tasks 8, 9 and 12.
+Task 11 — implement `timeline` and `status`. Start M0 collection independently; it is still required before Tasks 8, 9 and 12.
 
 ## The milestone is real
 
@@ -92,11 +92,11 @@ The suite was green before each of these. Green tests do not ask whether the ans
 
 ## Open items
 
-- **M0 collection has not started.** `m0/whyline-probe` works and `m0/AGENTS-snippet.md` is ready, but neither is installed into Mozhima, Duet or DocSift — that edits other repositories, so it was left for the owner. Installing is: copy the probe to `~/.local/bin/`, append the snippet to each repo's `AGENTS.md`, work normally 2–3 days, fill in `m0/RESULTS.md`. Thresholds are fixed in spec §5. Tasks 8, 9, 12 wait on the outcome.
+- **M0 collection has not started.** AgentDock now has the production `AGENTS.md`/`CLAUDE.md` shared-instruction setup, but the formal probe is not installed into Mozhima, Duet or DocSift. Install the probe, append the M0 snippet to each canonical `AGENTS.md`, add the Claude import shim, work normally 2–3 days, then fill in `m0/RESULTS.md`. Thresholds are fixed in spec §5. Tasks 8, 9, 12 wait on the outcome.
 - **`uv.lock` is untracked** by design (the plan's `git add` lists omit it). Never use `git add -A` — it would sweep the lock into an unreviewed commit. Every task's commit step uses explicit paths.
 - **Deferred minors** are listed in the ledger with `minor (deferred)` prefixes. Point the final Opus whole-branch review at them for triage.
 - **Model policy:** Sonnet floor for all subagents, never Haiku, Opus for genuinely hard tasks and the final whole-branch review. Tasks 1, 3 and one re-review were dispatched on Haiku before this was known; that work was independently verified and is not being redone.
 
 ## Not yet done at all
 
-No `brief`, `run`, `init`, `timeline` or `status` command exists yet. There is no README, no CI, and no packaging verification. `explain` and `note` are working commands.
+No `brief`, `run`, `timeline` or `status` command exists yet. There is no README or CI. `explain`, `note`, and merge-safe `init` are working commands; Task 10's wheel and entrypoints have been verified.
