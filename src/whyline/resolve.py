@@ -25,6 +25,7 @@ class Explanation:
     notes: list[dict] = field(default_factory=list)
     moved_by: str | None = None
     reason: str = ""
+    skipped_ledger_lines: int = 0
 
 
 def _epoch_of(event: dict) -> float:
@@ -48,7 +49,7 @@ def _mentions(event: dict, rel_path: str) -> bool:
 
 
 def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
-    all_events, _ = ledger.read_all(paths.ledger_path(root))
+    all_events, skipped_lines = ledger.read_all(paths.ledger_path(root))
     notes = [
         event
         for event in all_events
@@ -75,6 +76,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=None,
             notes=notes,
             reason="file-level explanation; no line requested",
+            skipped_ledger_lines=skipped_lines,
         )
 
     if blame is None:
@@ -85,6 +87,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=None,
             notes=notes,
             reason="line is not tracked by git; cannot attribute it",
+            skipped_ledger_lines=skipped_lines,
         )
 
     if not blame.committed:
@@ -95,6 +98,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=blame,
             notes=notes,
             reason="line is uncommitted, so it has no recorded provenance yet",
+            skipped_ledger_lines=skipped_lines,
         )
 
     lower = gitq.previous_commit_epoch(root, rel_path, blame.sha)
@@ -113,6 +117,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=blame,
             notes=in_window,
             reason="one recorded decision matches the commit that wrote this line",
+            skipped_ledger_lines=skipped_lines,
         )
     if len(in_window) > 1:
         return Explanation(
@@ -122,6 +127,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=blame,
             notes=in_window,
             reason="several decisions match this commit; the link is ambiguous",
+            skipped_ledger_lines=skipped_lines,
         )
 
     earlier = [note for note in notes if _epoch_of(note) <= blame.epoch]
@@ -138,6 +144,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
                 f"reasoning was recorded earlier; commit {blame.sha[:7]} last moved "
                 "this line, so verify it still applies"
             ),
+            skipped_ledger_lines=skipped_lines,
         )
     if mechanical:
         return Explanation(
@@ -147,6 +154,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=blame,
             notes=[],
             reason="an agent touched this file but recorded no reasoning",
+            skipped_ledger_lines=skipped_lines,
         )
     if notes:
         # Notes exist for this path but none could be tied to this line.
@@ -172,6 +180,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             blame=blame,
             notes=[],
             reason=reason,
+            skipped_ledger_lines=skipped_lines,
         )
     return Explanation(
         path=rel_path,
@@ -180,4 +189,5 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
         blame=blame,
         notes=[],
         reason="no reasoning recorded for this line",
+        skipped_ledger_lines=skipped_lines,
     )

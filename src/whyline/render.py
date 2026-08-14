@@ -11,7 +11,7 @@ from whyline import resolve
 CONFIDENCE_NOTE = {
     resolve.HIGH: "High — a recorded decision matches the commit for this line.",
     resolve.MEDIUM: "Medium — see the reason below before relying on this.",
-    resolve.LOW: "Low — no reasoning was recorded, only that the file was touched.",
+    resolve.LOW: "Low — recorded evidence cannot be tied to this line.",
     resolve.NONE: "None — nothing is recorded for this line.",
 }
 
@@ -22,6 +22,13 @@ def emit(text: str) -> None:
 
 def _date(epoch: int) -> str:
     return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%d")
+
+
+def _attributed_notes(result: resolve.Explanation) -> list[dict]:
+    """Return only notes that the confidence level attributes to this target."""
+    if result.confidence == resolve.NONE:
+        return []
+    return result.notes
 
 
 def explanation_text(result: resolve.Explanation) -> str:
@@ -42,18 +49,17 @@ def explanation_text(result: resolve.Explanation) -> str:
     # heading — would tell the user whyline knows why the line exists while
     # simultaneously admitting it does not. So what gets printed is decided
     # by confidence, never by whether `notes` happens to be non-empty.
-    if result.confidence != resolve.NONE:
-        for note in result.notes:
-            lines.append("")
-            lines.append(f"Decision          {note.get('decision', '')}")
-            if note.get("because"):
-                lines.append(f"Because           {note['because']}")
-            for alternative in note.get("alternatives") or []:
-                option = alternative.get("option", "")
-                why_not = alternative.get("why_not", "")
-                lines.append(f"Rejected          {option}")
-                if why_not:
-                    lines.append(f"                  {why_not}")
+    for note in _attributed_notes(result):
+        lines.append("")
+        lines.append(f"Decision          {note.get('decision', '')}")
+        if note.get("because"):
+            lines.append(f"Because           {note['because']}")
+        for alternative in note.get("alternatives") or []:
+            option = alternative.get("option", "")
+            why_not = alternative.get("why_not", "")
+            lines.append(f"Rejected          {option}")
+            if why_not:
+                lines.append(f"                  {why_not}")
     if result.moved_by:
         lines.append("")
         lines.append(f"Line moved by     {result.moved_by[:7]}")
@@ -79,7 +85,7 @@ def explanation_json(result: resolve.Explanation) -> dict:
         "confidence": result.confidence,
         "reason": result.reason,
         "blame": blame,
-        "notes": result.notes,
+        "notes": _attributed_notes(result),
         "moved_by": result.moved_by,
     }
 

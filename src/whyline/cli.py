@@ -63,6 +63,13 @@ def cmd_explain(args: argparse.Namespace) -> int:
     except gitq.GitUnavailable as error:
         print(f"git is unavailable: {error}", file=sys.stderr)
         return EXIT_ERROR
+    if result.skipped_ledger_lines:
+        count = result.skipped_ledger_lines
+        noun = "line" if count == 1 else "lines"
+        print(
+            f"warning: skipped {count} unreadable ledger {noun}",
+            file=sys.stderr,
+        )
     if args.json:
         render.emit_json(render.explanation_json(result))
     else:
