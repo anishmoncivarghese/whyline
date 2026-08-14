@@ -182,3 +182,36 @@ def test_explain_warns_once_when_ledger_lines_are_unreadable(
     assert code == cli.EXIT_OK
     assert captured.err.count("warning:") == 1
     assert "skipped 2 unreadable ledger lines" in captured.err
+
+
+def test_note_writes_to_both_the_ledger_and_decisions_md(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True)
+    paths.ledger_path(repo.path).touch()
+    code, _ = run_in(
+        repo,
+        [
+            "note",
+            "Store absolute monotonic expiry",
+            "--because",
+            "clock is injected",
+            "--rejected",
+            "sleep in tests: slow and flaky",
+            "--file",
+            "cache.py",
+        ],
+        capsys,
+    )
+    assert code == cli.EXIT_OK
+    found, skipped = ledger.read_all(paths.ledger_path(repo.path))
+    assert skipped == 0
+    assert found[-1]["type"] == events.NOTE
+    assert found[-1]["alternatives"] == [
+        {"option": "sleep in tests", "why_not": "slow and flaky"}
+    ]
+    assert found[-1]["files"] == ["cache.py"]
+    assert "monotonic expiry" in paths.decisions_path(repo.path).read_text()
+
+
+def test_note_requires_initialisation(repo, capsys):
+    code, _ = run_in(repo, ["note", "something"], capsys)
+    assert code == cli.EXIT_UNINITIALISED

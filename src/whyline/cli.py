@@ -22,6 +22,26 @@ def _add_explain(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
 
 
+def _add_note(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("note", help="Record a decision")
+    parser.add_argument("decision")
+    parser.add_argument("--because", default="", help="Why this was chosen")
+    parser.add_argument(
+        "--rejected",
+        action="append",
+        default=[],
+        metavar='"option: why not"',
+        help="An alternative you rejected. Repeatable.",
+    )
+    parser.add_argument(
+        "--file",
+        action="append",
+        default=[],
+        dest="files",
+        help="Affected path. Repeatable.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -30,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     _add_explain(subparsers)
+    _add_note(subparsers)
     return parser
 
 
@@ -77,7 +98,27 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-COMMANDS = {"explain": cmd_explain}
+def cmd_note(args: argparse.Namespace) -> int:
+    from whyline import decisions, events, ledger, paths
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    event = events.new_event(
+        events.NOTE,
+        decision=args.decision,
+        because=args.because,
+        alternatives=events.parse_rejected(args.rejected),
+        files=args.files,
+    )
+    ledger.append(paths.ledger_path(root), event)
+    decisions.append_entry(paths.decisions_path(root), event)
+    print(f"Recorded: {args.decision}")
+    return EXIT_OK
+
+
+COMMANDS = {"explain": cmd_explain, "note": cmd_note}
 
 
 def main(argv: list[str] | None = None) -> int:
