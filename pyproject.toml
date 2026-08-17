@@ -4,7 +4,38 @@ version = "0.1.0"
 description = "Records why your code exists, and tells the next agent."
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [{ name = "Anish Varghese" }]
+keywords = [
+    "ai",
+    "agents",
+    "claude-code",
+    "codex",
+    "provenance",
+    "git",
+    "handoff",
+    "decision-log",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Software Development :: Documentation",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/anishmoncivarghese/whyline"
+Source = "https://github.com/anishmoncivarghese/whyline"
+Issues = "https://github.com/anishmoncivarghese/whyline/issues"
 
 [project.scripts]
 whyline = "whyline.cli:entry"

@@ -1,6 +1,6 @@
 # whyline
 
-Records why your code exists, and tells the next agent.
+Use Claude Code and Codex on the same project without either one starting blind.
 
 ```
 $ whyline explain src/tsconfig/resolve.ts:41
@@ -14,12 +14,27 @@ Confidence        High — a recorded decision matches the commit for this line.
 
 Free, Apache-2.0, local-only. No accounts, no telemetry, no paid tier, ever.
 
-## Why
+## The problem this solves
 
-Git made code history durable. AI-assisted development broke that: the code is
-versioned, but the reasoning that produced it — the instruction, the alternatives,
-the rejection — evaporates when the terminal closes. whyline makes that layer
-durable too, and hands it to whichever agent works next.
+Claude Code and Codex are good at different things. You might want Claude to plan
+a feature and write the tests, then Codex to review the diff — or the reverse.
+That combination is genuinely useful, and today it is genuinely painful: the
+second agent starts from nothing. It has no idea what the first one concluded,
+what it tried, or what it deliberately ruled out. So you re-explain, or paste, or
+just give up and use one agent for everything.
+
+whyline fixes that with a decision record both agents write to and read from. The
+one that finishes leaves behind what it decided and what it rejected; the one that
+starts picks it up. Neither has to be told twice.
+
+**On the subscriptions you already pay for.** whyline never touches a credential.
+It launches the vendor's own CLI with `exec`, so Claude Code authenticates as
+Claude Code and Codex authenticates as Codex. No API keys, no per-token billing,
+nothing metered on top of what you already have.
+
+And because the record is committed to your repository as plain Markdown, it
+outlives the session. Six months later, `whyline explain` still answers why a line
+of code exists — which is the same mechanism, read at a longer horizon.
 
 ## Install
 
@@ -35,10 +50,24 @@ Zero production dependencies — standard library only. Python 3.11+, plus `git`
 
 ```bash
 whyline init                     # scaffold, add instructions, install the hook
-whyline note "chose X" --because "Y" --rejected "Z: too slow" --file src/a.py
+```
+
+Then work normally. Your agents record their own decisions, because `init` adds an
+instruction to `AGENTS.md` asking them to. When you want to switch:
+
+```bash
+whyline run codex "review the caching change"
+```
+
+That composes what Claude decided and hands the terminal to Codex with it attached.
+The reverse works the same way: `whyline run claude "..."`.
+
+The rest of the surface:
+
+```bash
+whyline brief                    # print the handoff context without launching
 whyline explain src/a.py:14      # why does this line exist?
-whyline brief                    # hand context to the next agent
-whyline run codex "finish the refactor"
+whyline note "chose X" --because "Y" --rejected "Z: too slow" --file src/a.py
 whyline timeline --file src/a.py
 whyline status
 ```
