@@ -1,3 +1,4 @@
+import re
 import pytest
 
 from whyline import cli
@@ -277,7 +278,7 @@ def test_brief_command_prints_the_context_block(repo, capsys):
     paths.ledger_path(repo.path).touch()
     code, out = run_in(repo, ["brief"], capsys)
     assert code == cli.EXIT_OK
-    assert "<whyline-context>" in out
+    assert re.search(r"^<whyline-context-[0-9a-f]{16}>$", out, re.M), out[:120]
 
 
 def test_brief_without_initialisation_exits_three(repo, capsys):
@@ -293,7 +294,7 @@ def test_run_still_prints_the_brief_when_the_agent_is_missing(repo, capsys, monk
     monkeypatch.setattr(runner.shutil, "which", lambda name: None)
     code, out = run_in(repo, ["run", "codex", "do the thing"], capsys)
     assert code == cli.EXIT_ERROR
-    assert "<whyline-context>" in out
+    assert re.search(r"^<whyline-context-[0-9a-f]{16}>$", out, re.M), out[:120]
 
 
 def test_run_requires_initialisation(repo, capsys):
@@ -376,3 +377,103 @@ def test_status_works_before_initialisation(repo, capsys):
     code, out = run_in(repo, ["status", "--json"], capsys)
     assert code == cli.EXIT_OK
     assert json.loads(out)["initialised"] is False
+
+
+def test_timeline_rejects_an_unparseable_since(repo, capsys):
+    """C4, 2026-08-17: --since was a raw string compare, so an unpadded or
+    non-date value silently matched nothing and reported an empty ledger."""
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "a decision", "2026-08-01T10:00:00.000Z")
+    for bad in ("2026-8-1", "yesterday", "01-08-2026", ""):
+        code, _ = run_in(repo, ["timeline", "--since", bad], capsys)
+        assert code == cli.EXIT_USAGE, f"{bad!r} should be a usage error"
+
+
+def test_timeline_accepts_a_valid_since(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "recent", "2026-08-09T10:00:00.000Z")
+    code, out = run_in(repo, ["timeline", "--since", "2026-08-05"], capsys)
+    assert code == cli.EXIT_OK
+    assert "recent" in out
+
+
+def test_timeline_does_not_claim_an_empty_ledger_when_a_filter_matches_nothing(
+    repo, capsys
+):
+    """C4's second half: a filter matching nothing must not say 'No events
+    recorded.' when the ledger holds events."""
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "exists", "2026-08-01T10:00:00.000Z", ["a.py"])
+    code, out = run_in(repo, ["timeline", "--file", "nosuch.py"], capsys)
+    assert code == cli.EXIT_OK
+    assert "No events recorded" not in out
+    assert "No events matched" in out
+    assert "holds 1 event" in out
+
+
+def test_timeline_still_reports_a_genuinely_empty_ledger(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    code, out = run_in(repo, ["timeline"], capsys)
+    assert code == cli.EXIT_OK
+    assert "No events recorded" in out
+
+
+def test_status_reports_a_deny_rule_as_not_recording(repo, capsys):
+    """C3, 2026-08-17: a substring search reported 'installed' while the hook was
+    blocked by a permissions deny rule."""
+    import json
+
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps({"permissions": {"deny": ["Bash(whyline-hook)"]}, "hooks": {}})
+    )
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    assert code == cli.EXIT_OK
+    assert json.loads(out)["hook_installed"] is False
+    assert "deny" in json.loads(out)["hook_detail"]
+
+
+def test_status_reports_partial_hook_wiring_as_not_recording(repo, capsys):
+    import json
+
+    from whyline import hooks
+
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "SessionStart": [
+                        {"hooks": [{"type": "command", "command": hooks.HOOK_COMMAND}]}
+                    ]
+                }
+            }
+        )
+    )
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    payload = json.loads(out)
+    assert payload["hook_installed"] is False
+    assert "missing" in payload["hook_detail"]
+
+
+def test_timeline_json_redacts_prompt_text_by_default(repo, capsys):
+    """Minor finding 2026-08-17: Instruction events carry raw prompt text, which
+    is why ledger.jsonl is gitignored. --json must not spill it by default."""
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    event = events.new_event(
+        events.INSTRUCTION, session="s1", text="my private prompt about salaries"
+    )
+    event["ts"] = "2026-08-01T10:00:00.000Z"
+    ledger.append(paths.ledger_path(repo.path), event)
+
+    code, out = run_in(repo, ["timeline", "--json"], capsys)
+    assert code == cli.EXIT_OK
+    assert "my private prompt about salaries" not in out
+    assert "[redacted" in out
+
+    code, out = run_in(repo, ["timeline", "--json", "--include-prompts"], capsys)
+    assert code == cli.EXIT_OK
+    assert "my private prompt about salaries" in out

@@ -15,26 +15,40 @@ _HEADING_RE = re.compile(r"^## (?P<day>\S+) — (?P<decision>.*)$")
 _BECAUSE_RE = re.compile(r"^\*\*Because:\*\* (?P<value>.*)$", re.MULTILINE)
 _FILES_RE = re.compile(r"^\*\*Files:\*\* (?P<value>.*)$", re.MULTILINE)
 _ID_RE = re.compile(r"<!-- whyline-event: (?P<value>.*?) -->")
+_CONFLICT_RE = re.compile(r"(?m)^(<{7}|={7}|>{7})")
+
+
+def one_line(text: object) -> str:
+    """Collapse a value to a single line for the Markdown log.
+
+    C5, 2026-08-17: `render_entry` emitted field values verbatim, so a newline
+    inside a decision or rationale could open a second `## <date> — ...` block.
+    That forged a backdated entry in the *committed* record, which `brief` then
+    presented to the next agent as genuine history. Every field written here is
+    structurally single-line, so collapsing whitespace removes the injection
+    without discarding what the author wrote.
+    """
+    return " ".join(str(text).split())
 
 
 def render_entry(event: dict) -> str:
-    day = str(event.get("ts", ""))[:10]
-    lines = [f"## {day} — {event.get('decision', '')}", ""]
+    day = one_line(event.get("ts", ""))[:10]
+    lines = [f"## {day} — {one_line(event.get('decision', ''))}", ""]
     if event.get("because"):
-        lines.append(f"**Because:** {event['because']}")
+        lines.append(f"**Because:** {one_line(event['because'])}")
         lines.append("")
     alternatives = event.get("alternatives") or []
     if alternatives:
         lines.append("**Rejected:**")
         lines.append("")
         for alternative in alternatives:
-            option = alternative.get("option", "")
-            why_not = alternative.get("why_not", "")
+            option = one_line(alternative.get("option", ""))
+            why_not = one_line(alternative.get("why_not", ""))
             lines.append(f"- {option}" + (f" — {why_not}" if why_not else ""))
         lines.append("")
     files = event.get("files") or []
     if files:
-        lines.append(f"**Files:** {', '.join(files)}")
+        lines.append(f"**Files:** {', '.join(one_line(f) for f in files)}")
         lines.append("")
     lines.append(f"<!-- whyline-event: {event.get('id', '')} -->")
     lines.append("")
@@ -101,7 +115,20 @@ def parse_entries(path: Path) -> list[dict]:
     text = path.read_text(encoding="utf-8")
     entries = []
     for block in re.split(r"(?m)^(?=## )", text):
+        if _CONFLICT_RE.search(block):
+            # Important finding 2026-08-17: an unresolved merge conflict used to
+            # yield BOTH sides as accepted decisions with the markers swallowed,
+            # so a brief presented contradictory history as settled. Refuse the
+            # block instead — a conflicted record is not a record.
+            continue
         parsed = _parse_block(block)
         if parsed is not None:
             entries.append(parsed)
     return entries
+
+
+def has_conflict_markers(path: Path) -> bool:
+    """True if decisions.md holds an unresolved merge conflict."""
+    if not path.exists():
+        return False
+    return bool(_CONFLICT_RE.search(path.read_text(encoding="utf-8")))

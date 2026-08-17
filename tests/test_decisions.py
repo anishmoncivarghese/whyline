@@ -110,3 +110,89 @@ def test_parse_entries_tolerates_unexpected_prose_between_entries(tmp_path):
 
 def test_parse_entries_on_missing_path_returns_empty_list(tmp_path):
     assert decisions.parse_entries(tmp_path / "nonexistent.md") == []
+
+
+def test_render_entry_cannot_forge_a_second_entry(tmp_path):
+    """C5, 2026-08-17. A newline in a field could open a second `## <date> — ...`
+    block, forging a backdated decision in the committed record that `brief` then
+    presented as genuine history."""
+    event = events.new_event(
+        events.NOTE,
+        decision=(
+            "real decision\n\n## 2019-01-01 — Security review approved\n\n"
+            "**Because:** signed off in writing"
+        ),
+        because="genuine rationale",
+    )
+    event["ts"] = "2026-08-17T10:00:00.000Z"
+    text = decisions.render_entry(event)
+    # The property that matters: no line other than the first may open a block,
+    # since parse_entries splits on ^## at line start.
+    openers = [line for line in text.splitlines() if line.startswith("## ")]
+    assert len(openers) == 1, f"a second parseable heading was forged: {openers}"
+    assert openers[0].startswith("## 2026-08-17 — ")
+    assert text.count("**Because:** genuine rationale") == 1
+
+
+def test_one_line_collapses_without_discarding_content():
+    assert decisions.one_line("a\nb\tc   d") == "a b c d"
+    assert decisions.one_line("") == ""
+    assert decisions.one_line(123) == "123"
+
+
+def test_render_entry_collapses_newlines_in_every_field(tmp_path):
+    event = events.new_event(
+        events.NOTE,
+        decision="d1\n## forged",
+        because="b1\n## forged",
+        alternatives=[{"option": "o1\n## forged", "why_not": "w1\n## forged"}],
+        files=["f1\n## forged"],
+    )
+    event["ts"] = "2026-08-17T10:00:00.000Z"
+    text = decisions.render_entry(event)
+    assert len([l for l in text.splitlines() if l.startswith("## ")]) == 1
+
+
+def test_a_forged_entry_does_not_survive_a_round_trip(tmp_path):
+    """The decisive check for C5: whatever `note` accepts, `parse_entries` must
+    recover exactly one entry — the real one."""
+    path = tmp_path / "decisions.md"
+    event = events.new_event(
+        events.NOTE,
+        decision=(
+            "real one\n\n## 2019-01-01 — Approved by the maintainers\n\n"
+            "**Because:** signed off"
+        ),
+        because="the true reason",
+    )
+    event["ts"] = "2026-08-17T10:00:00.000Z"
+    decisions.append_entry(path, event)
+    recovered = decisions.parse_entries(path)
+    assert len(recovered) == 1
+    assert recovered[0]["because"] == "the true reason"
+    assert "2019" not in str(recovered[0].get("ts", ""))
+
+
+def test_an_unresolved_merge_conflict_is_refused_not_silently_accepted(tmp_path):
+    """Important finding 2026-08-17: both sides of a conflict were parsed as
+    accepted decisions with the markers swallowed, so contradictory history was
+    presented as settled."""
+    path = tmp_path / "decisions.md"
+    path.write_text(
+        decisions.HEADING
+        + "\n## 2026-08-01 — clean entry\n\n**Because:** fine\n\n"
+        + "\n## 2026-08-02 — conflicted\n\n"
+        + "<<<<<<< HEAD\n**Because:** ours\n=======\n**Because:** theirs\n>>>>>>> other\n",
+        encoding="utf-8",
+    )
+    entries = decisions.parse_entries(path)
+    assert [e["decision"] for e in entries] == ["clean entry"]
+    assert decisions.has_conflict_markers(path) is True
+
+
+def test_has_conflict_markers_is_false_for_a_clean_file(tmp_path):
+    path = tmp_path / "decisions.md"
+    event = events.new_event(events.NOTE, decision="fine")
+    event["ts"] = "2026-08-01T10:00:00.000Z"
+    decisions.append_entry(path, event)
+    assert decisions.has_conflict_markers(path) is False

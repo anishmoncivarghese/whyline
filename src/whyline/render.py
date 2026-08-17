@@ -114,10 +114,7 @@ def status_payload(root) -> dict:
     from whyline import hooks, ledger, paths
 
     found, skipped = ledger.read_all(paths.ledger_path(root))
-    settings = root / ".claude" / "settings.json"
-    hook_installed = False
-    if settings.exists():
-        hook_installed = hooks.HOOK_COMMAND in settings.read_text(encoding="utf-8")
+    hook_installed, hook_detail = _hook_state(root)
     return {
         "root": str(root),
         "initialised": paths.is_initialised(root),
@@ -125,18 +122,76 @@ def status_payload(root) -> dict:
         "notes": sum(1 for event in found if event.get("type") == events_module.NOTE),
         "skipped_lines": skipped,
         "hook_installed": hook_installed,
+        "hook_detail": hook_detail,
         "decisions_md": paths.decisions_path(root).exists(),
     }
 
 
+def _hook_state(root) -> tuple[bool, str]:
+    """Report the hook honestly, by parsing the config rather than grepping it.
+
+    C3, 2026-08-17: a raw substring search over settings.json produced false
+    positives in both directions. A `permissions.deny` entry naming the hook read
+    as "installed" while the hook was in fact blocked, and wiring only one of the
+    four event types also read as "installed" — so three quarters of recording
+    was silently dead while status said all was well.
+    """
+    import json
+
+    from whyline import hooks
+
+    settings = root / ".claude" / "settings.json"
+    if not settings.exists():
+        return False, "no .claude/settings.json in this repository"
+    try:
+        raw = settings.read_text(encoding="utf-8")
+    except OSError as error:
+        # hooks.install tolerates this; status must not traceback either.
+        return False, f"cannot read .claude/settings.json ({error.strerror})"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return False, ".claude/settings.json is not valid JSON"
+    if not isinstance(data, dict):
+        return False, ".claude/settings.json is not a JSON object"
+
+    configured = {
+        event
+        for event in hooks.EVENTS
+        if hooks.HOOK_COMMAND
+        in [
+            entry.get("command", "")
+            for group in ((data.get("hooks") or {}).get(event) or [])
+            if isinstance(group, dict)
+            for entry in (group.get("hooks") or [])
+            if isinstance(entry, dict)
+        ]
+    }
+    missing = [event for event in hooks.EVENTS if event not in configured]
+
+    # A deny rule naming the hook means it cannot run, whatever the hooks block says.
+    denied = [
+        rule
+        for rule in ((data.get("permissions") or {}).get("deny") or [])
+        if isinstance(rule, str) and hooks.HOOK_COMMAND in rule
+    ]
+    if denied:
+        return False, f"blocked by a permissions deny rule: {denied[0]}"
+    if missing:
+        if not configured:
+            return False, "not wired to any hook event"
+        return False, "wired to " + ", ".join(sorted(configured)) + "; missing " + ", ".join(missing)
+    return True, "wired to all " + str(len(hooks.EVENTS)) + " events"
+
+
 def status_text(payload: dict) -> str:
-    hook = "installed" if payload["hook_installed"] else "not installed"
+    hook = "installed" if payload["hook_installed"] else "NOT recording"
     lines = [
         f"Repository     {payload['root']}",
         f"Initialised    {'yes' if payload['initialised'] else 'no'}",
         f"Events         {payload['events']}",
         f"Decisions      {payload['notes']}",
-        f"Hook           {hook}",
+        f"Hook           {hook} — {payload['hook_detail']}",
     ]
     if payload["skipped_lines"]:
         count = payload["skipped_lines"]

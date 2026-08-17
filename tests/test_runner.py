@@ -50,9 +50,10 @@ def test_launch_execs_the_agent_binary():
         which=lambda name: f"/usr/bin/{name}",
         exec_fn=fake_exec,
     )
-    assert calls == [
-        ("claude", ["claude", runner.build_argv("claude", "task", "ctx")[-1]])
-    ]
+    # Assert on the literal expected argv, not on build_argv's own output —
+    # deriving the expectation from the function under test made half of this
+    # assertion tautological (flagged 2026-08-17).
+    assert calls == [("claude", ["claude", "ctx\n\ntask"])]
 
 
 def test_launch_raises_when_the_binary_is_absent():
@@ -116,3 +117,35 @@ def test_launch_never_execs_a_real_agent_when_which_is_patched(monkeypatch):
     with pytest.raises(runner.AgentMissing):
         runner.launch("codex", "task", "ctx")
     assert execs == []
+
+
+def test_the_indirection_resolves_at_call_time_not_at_import(monkeypatch):
+    """2026-08-18. A Minor cleanup cached `_which = shutil.which` at import,
+    which recreated the late-binding defect: the cached reference ignored the
+    patch, launch exec'd the real agent, and a pytest run hung because the
+    process had been replaced by Claude Code. Both patch points must work."""
+    monkeypatch.setattr(runner.shutil, "which", lambda name: None)
+    with pytest.raises(runner.AgentMissing):
+        runner.launch("claude", "task", "ctx")
+
+
+def test_patching_the_indirection_directly_also_works(monkeypatch):
+    monkeypatch.setattr(runner, "_which", lambda name: None)
+    with pytest.raises(runner.AgentMissing):
+        runner.launch("codex", "task", "ctx")
+
+
+def test_no_code_path_can_reach_the_real_execvp_during_tests(monkeypatch):
+    """Belt and braces: poison os.execvp and assert every launch path raises
+    before reaching it, with both agents genuinely on PATH."""
+
+    def poisoned(binary, argv):  # pragma: no cover - must never run
+        raise AssertionError(f"real execvp reached with {binary}")
+
+    monkeypatch.setattr(runner.os, "execvp", poisoned)
+    monkeypatch.setattr(runner.shutil, "which", lambda name: None)
+    for agent in ("claude", "codex"):
+        with pytest.raises(runner.AgentMissing):
+            runner.launch(agent, "task", "ctx")
+    with pytest.raises(runner.UnknownAgent):
+        runner.launch("gemini", "task", "ctx")

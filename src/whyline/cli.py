@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import sys
 from pathlib import Path
 
@@ -60,6 +61,11 @@ def _add_timeline(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--file", dest="file", default=None)
     parser.add_argument("--since", default=None, metavar="YYYY-MM-DD")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--include-prompts",
+        action="store_true",
+        help="Include raw prompt text from Instruction events in --json output",
+    )
 
 
 def _add_status(subparsers: "argparse._SubParsersAction") -> None:
@@ -144,12 +150,22 @@ def cmd_note(args: argparse.Namespace) -> int:
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
+    # C5, 2026-08-17: normalise at the boundary so the ledger and decisions.md
+    # hold the same value. Sanitising only at render time would leave the two
+    # stores silently disagreeing about what was recorded.
+    alternatives = [
+        {
+            "option": decisions.one_line(alt["option"]),
+            "why_not": decisions.one_line(alt["why_not"]),
+        }
+        for alt in events.parse_rejected(args.rejected)
+    ]
     event = events.new_event(
         events.NOTE,
-        decision=args.decision,
-        because=args.because,
-        alternatives=events.parse_rejected(args.rejected),
-        files=args.files,
+        decision=decisions.one_line(args.decision),
+        because=decisions.one_line(args.because),
+        alternatives=alternatives,
+        files=[decisions.one_line(f) for f in args.files],
     )
     ledger.append(paths.ledger_path(root), event)
     decisions.append_entry(paths.decisions_path(root), event)
@@ -237,6 +253,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _without_prompt_text(event: dict) -> dict:
+    """Redact the prompt body of an Instruction event, keeping its shape."""
+    from whyline import events as events_module
+
+    if event.get("type") != events_module.INSTRUCTION or "text" not in event:
+        return event
+    redacted = dict(event)
+    redacted["text"] = "[redacted: pass --include-prompts to show]"
+    return redacted
+
+
 def cmd_timeline(args: argparse.Namespace) -> int:
     from whyline import ledger, paths, render
 
@@ -248,17 +275,45 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     if skipped:
         noun = "line" if skipped == 1 else "lines"
         print(f"warning: skipped {skipped} unreadable ledger {noun}", file=sys.stderr)
-    if args.file:
+    total = len(found)
+    filtered = False
+    # `is not None`, not truthiness: `--file ""` (an unset shell variable, say)
+    # must not be silently ignored — that is the same silent no-op as C4.
+    if args.file is not None:
+        filtered = True
         found = [
             event
             for event in found
             if event.get("path") == args.file or args.file in (event.get("files") or [])
         ]
-    if args.since:
-        found = [event for event in found if str(event.get("ts", "")) >= args.since]
+    if args.since is not None:
+        # C4, 2026-08-17: --since was an unvalidated lexicographic compare, so
+        # `--since 2026-8-1` and `--since yesterday` silently matched nothing.
+        try:
+            since = datetime.date.fromisoformat(args.since).isoformat()
+        except ValueError:
+            print(
+                f"--since expects a date as YYYY-MM-DD, not {args.since!r}",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        filtered = True
+        found = [event for event in found if str(event.get("ts", "")) >= since]
     found.sort(key=lambda event: str(event.get("ts", "")), reverse=True)
     if args.json:
+        # Minor finding 2026-08-17: Instruction events carry raw prompt text —
+        # the reason ledger.jsonl is gitignored. Do not spill it into stdout,
+        # which is routinely redirected, unless explicitly asked.
+        if not args.include_prompts:
+            found = [_without_prompt_text(event) for event in found]
         render.emit_json({"events": found})
+    elif not found and filtered and total:
+        # Never claim the ledger is empty when a filter simply matched nothing.
+        noun = "event" if total == 1 else "events"
+        render.emit(
+            f"No events matched. The ledger holds {total} {noun}; "
+            "try widening --file or --since."
+        )
     else:
         render.emit(render.timeline_text(found))
     return EXIT_OK

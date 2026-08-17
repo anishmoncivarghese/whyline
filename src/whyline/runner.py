@@ -12,6 +12,19 @@ import shutil
 
 AGENTS = {"claude": "claude", "codex": "codex"}
 
+# Indirection so a test can neutralise these without mutating shutil or os
+# globally. These MUST be functions that look their target up at call time.
+# Caching the function objects here (`_which = shutil.which`) recreates the very
+# late-binding defect this module already suffered once: the cached reference
+# ignores any later patch, and `launch` then execs the real agent — which hung a
+# test run on 2026-08-18 by replacing pytest with Claude Code.
+def _which(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def _exec(binary: str, argv: list[str]) -> None:
+    os.execvp(binary, argv)
+
 
 class UnknownAgent(ValueError):
     """Agent is not one whyline knows how to launch."""
@@ -45,8 +58,8 @@ def launch(
     spending real vendor quota. That actually happened on 2026-08-17.
     """
     argv = build_argv(agent, task, brief_text)
-    which = which if which is not None else shutil.which
-    exec_fn = exec_fn if exec_fn is not None else os.execvp
+    which = which if which is not None else _which
+    exec_fn = exec_fn if exec_fn is not None else _exec
     if which(argv[0]) is None:
         raise AgentMissing(f"{argv[0]} is not installed or not on PATH")
     exec_fn(argv[0], argv)
