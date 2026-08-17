@@ -283,3 +283,19 @@ def test_brief_command_prints_the_context_block(repo, capsys):
 def test_brief_without_initialisation_exits_three(repo, capsys):
     code, _ = run_in(repo, ["brief"], capsys)
     assert code == cli.EXIT_UNINITIALISED
+
+
+def test_run_still_prints_the_brief_when_the_agent_is_missing(repo, capsys, monkeypatch):
+    from whyline import runner
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    monkeypatch.setattr(runner.shutil, "which", lambda name: None)
+    code, out = run_in(repo, ["run", "codex", "do the thing"], capsys)
+    assert code == cli.EXIT_ERROR
+    assert "<whyline-context>" in out
+
+
+def test_run_requires_initialisation(repo, capsys):
+    code, _ = run_in(repo, ["run", "codex", "task"], capsys)
+    assert code == cli.EXIT_UNINITIALISED

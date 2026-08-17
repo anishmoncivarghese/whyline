@@ -47,6 +47,14 @@ def _add_brief(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--limit", type=int, default=10)
 
 
+def _add_run(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "run", help="Launch an agent with the brief attached"
+    )
+    parser.add_argument("agent", choices=("claude", "codex"))
+    parser.add_argument("task")
+
+
 def _add_init(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("init", help="Set whyline up in this repository")
     parser.add_argument(
@@ -66,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_explain(subparsers)
     _add_note(subparsers)
     _add_brief(subparsers)
+    _add_run(subparsers)
     _add_init(subparsers)
     return parser
 
@@ -196,7 +205,31 @@ def cmd_init(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-COMMANDS = {"explain": cmd_explain, "note": cmd_note, "brief": cmd_brief, "init": cmd_init}
+def cmd_run(args: argparse.Namespace) -> int:
+    from whyline import brief, paths, runner
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    brief_text = brief.compose(root)
+    try:
+        runner.launch(args.agent, args.task, brief_text)
+    except (runner.UnknownAgent, runner.AgentMissing) as error:
+        # Spec §8: the brief is still printed, so the work is not lost.
+        print(str(error), file=sys.stderr)
+        print(brief_text)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
+COMMANDS = {
+    "explain": cmd_explain,
+    "note": cmd_note,
+    "brief": cmd_brief,
+    "run": cmd_run,
+    "init": cmd_init,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
