@@ -42,6 +42,11 @@ def _add_note(subparsers: "argparse._SubParsersAction") -> None:
     )
 
 
+def _add_brief(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("brief", help="Summary for the next agent")
+    parser.add_argument("--limit", type=int, default=10)
+
+
 def _add_init(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("init", help="Set whyline up in this repository")
     parser.add_argument(
@@ -60,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     _add_explain(subparsers)
     _add_note(subparsers)
+    _add_brief(subparsers)
     _add_init(subparsers)
     return parser
 
@@ -128,6 +134,17 @@ def cmd_note(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_brief(args: argparse.Namespace) -> int:
+    from whyline import brief, paths
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    print(brief.compose(root, limit=args.limit))
+    return EXIT_OK
+
+
 GITIGNORE_LINES = ("ledger.jsonl", "index.db", "!decisions.md")
 
 
@@ -179,7 +196,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-COMMANDS = {"explain": cmd_explain, "note": cmd_note, "init": cmd_init}
+COMMANDS = {"explain": cmd_explain, "note": cmd_note, "brief": cmd_brief, "init": cmd_init}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -270,3 +270,16 @@ def test_init_without_confirmation_does_not_modify_instruction_files(
     assert code == cli.EXIT_OK
     assert not (repo.path / "AGENTS.md").exists()
     assert not (repo.path / "CLAUDE.md").exists()
+
+
+def test_brief_command_prints_the_context_block(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True)
+    paths.ledger_path(repo.path).touch()
+    code, out = run_in(repo, ["brief"], capsys)
+    assert code == cli.EXIT_OK
+    assert "<whyline-context>" in out
+
+
+def test_brief_without_initialisation_exits_three(repo, capsys):
+    code, _ = run_in(repo, ["brief"], capsys)
+    assert code == cli.EXIT_UNINITIALISED
