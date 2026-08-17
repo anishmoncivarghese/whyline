@@ -25,7 +25,14 @@ from whyline import events, paths
 #     imported heavy module actually breaks. Real cost is ~22 ms.
 #   * COMMAND_CEILING is a generous absolute backstop per command, so a genuine
 #     blow-up still fails the build without CI variance causing false alarms.
-IMPORT_BUDGET_SECONDS = 0.06
+# Tightened 2026-08-18 (third revision). An absolute 0.06 was 7x the real cost of
+# 8.7 ms, so a single `import asyncio` (+34 ms) slipped through — it caught only
+# multi-module regressions. Rather than guess an absolute number that a slow CI
+# runner might trip, the budget is now relative to the machine: importing whyline
+# must cost less than starting Python at all. Real ratio is ~0.5; whyline plus one
+# asyncio would be ~2.4. That scales with hardware, so it is tight everywhere.
+IMPORT_RATIO_LIMIT = 1.0
+IMPORT_ABSOLUTE_CAP_SECONDS = 0.06
 COMMAND_CEILING_SECONDS = 0.5
 
 
@@ -41,16 +48,20 @@ def _median_run(args: list[str], runs: int = 5) -> float:
 def test_importing_whyline_stays_cheap():
     """The regression that matters: an eagerly imported heavy module.
 
-    Verified capable of failing — injecting fourteen heavy stdlib imports into
-    cli.py pushes this well past the budget.
+    Verified capable of failing — a single `import asyncio` at module scope in
+    cli.py trips this, as does any heavier addition.
     """
     baseline = _median_run([sys.executable, "-c", "pass"])
     with_import = _median_run([sys.executable, "-c", "import whyline.cli"])
     cost = with_import - baseline
-    assert cost < IMPORT_BUDGET_SECONDS, (
-        f"importing whyline.cli costs {cost * 1000:.0f} ms above a "
-        f"{baseline * 1000:.0f} ms interpreter baseline; something heavy is being "
-        "imported at module scope"
+    ratio = cost / baseline if baseline else float("inf")
+    assert ratio < IMPORT_RATIO_LIMIT, (
+        f"importing whyline.cli costs {cost * 1000:.0f} ms, which is "
+        f"{ratio:.1f}x the {baseline * 1000:.0f} ms cost of starting Python at "
+        "all; something heavy is being imported at module scope"
+    )
+    assert cost < IMPORT_ABSOLUTE_CAP_SECONDS, (
+        f"importing whyline.cli costs {cost * 1000:.0f} ms in absolute terms"
     )
 
 

@@ -199,12 +199,20 @@ def _hook_state(root) -> tuple[bool, str]:
     return True, detail
 
 
+_BASH_RULE = re.compile(
+    r"^\s*bash\s*(?:\(\s*(?P<target>.*)\s*\))?\s*$", re.IGNORECASE | re.DOTALL
+)
+
+
 def _as_dict(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
 def _as_list(value) -> list:
-    return value if isinstance(value, list) else []
+    if isinstance(value, list):
+        return value
+    # A single rule written as a bare string, not a list, is still a rule.
+    return [value] if isinstance(value, str) else []
 
 
 def _commands_for(groups) -> list[str]:
@@ -219,23 +227,40 @@ def _commands_for(groups) -> list[str]:
 
 
 def _rule_blocks(rule, command: str) -> bool:
-    """Whether a permissions deny rule actually blocks running `command`.
+    """Whether a permissions deny rule could stop `command` from running.
 
-    A rule like `Bash(whyline-hook)` blocks it. `Read(whyline-hook-notes)` merely
-    contains the string and blocks something else entirely — treating that as a
-    block was a false negative that reported a working hook as dead.
+    Rewritten 2026-08-18, conservatively. The first attempt matched Bash targets
+    "precisely" and thereby lost cases the crude substring check had caught:
+    `Bash(whyline-hook*)` — Claude Code's idiomatic prefix-glob form — plus
+    `Bash(**)` and a bare `Bash` all reported a fully wired hook as installed
+    while recording was in fact dead. That is the dangerous direction for a status
+    command, so the rule is now: assert "not blocked" only when the rule
+    demonstrably cannot reach this command.
+
+    Still excluded, deliberately: a Bash rule naming a *different* concrete
+    command, such as `Bash(whyline-hook-notes)`. Token comparison on the path
+    basename distinguishes that from `env whyline-hook` and
+    `/usr/local/bin/whyline-hook`, both of which do block.
     """
     if not isinstance(rule, str):
         return False
-    match = re.match(r"^\s*Bash\s*\(\s*(?P<target>[^)]*)\)\s*$", rule)
+    match = _BASH_RULE.match(rule)
     if match is None:
         return False
-    target = match.group("target").strip()
-    if target in ("*", command):
+    target = match.group("target")
+    if target is None:
+        return True  # a bare `Bash` denies every Bash invocation
+    target = target.strip().strip("\"'")
+    if not target:
         return True
-    # `Bash(whyline-hook:*)` and `Bash(whyline-hook --flag)` both match the
-    # command as its own leading token; `whyline-hook-notes` does not.
-    return bool(re.match(re.escape(command) + r"(?=$|[\s:])", target))
+    if any(character in target for character in "*?["):
+        # A glob could match this command; never claim otherwise.
+        return True
+    for token in target.split():
+        basename = token.rsplit("/", 1)[-1].strip("\"'")
+        if basename == command or basename.startswith(command + ":"):
+            return True
+    return False
 
 
 def status_text(payload: dict) -> str:

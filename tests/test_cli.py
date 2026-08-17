@@ -540,3 +540,84 @@ def test_status_survives_settings_json_of_any_shape(repo, capsys):
         code, out = run_in(repo, ["status", "--json"], capsys)
         assert code == cli.EXIT_OK, f"crashed on {shape!r}"
         assert json.loads(out)["hook_installed"] is False
+
+
+def test_status_treats_glob_and_blanket_deny_rules_as_blocking(repo, capsys):
+    """2026-08-18. A "precise" deny matcher regressed cases the crude substring
+    check had caught: Bash(whyline-hook*) is Claude Code's idiomatic prefix-glob
+    form, and Bash(**) and a bare Bash deny everything — all three reported a
+    fully wired hook as installed while recording was dead. For a status command
+    the safe direction is to withhold the claim."""
+    import json
+
+    from whyline import hooks
+
+    wired = {
+        event: [{"hooks": [{"type": "command", "command": hooks.HOOK_COMMAND}]}]
+        for event in hooks.EVENTS
+    }
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    for rule in (
+        "Bash(whyline-hook)",
+        "Bash(whyline-hook*)",
+        "Bash(whyline-hook:*)",
+        "Bash(*hook*)",
+        "Bash(**)",
+        "Bash(*)",
+        "Bash",
+        "bash(whyline-hook)",
+        "BASH(whyline-hook)",
+        'Bash("whyline-hook")',
+        "Bash(env whyline-hook)",
+        "Bash(/usr/local/bin/whyline-hook)",
+    ):
+        settings.write_text(
+            json.dumps({"hooks": wired, "permissions": {"deny": [rule]}})
+        )
+        code, out = run_in(repo, ["status", "--json"], capsys)
+        assert code == cli.EXIT_OK
+        assert json.loads(out)["hook_installed"] is False, f"{rule} must block"
+
+
+def test_status_does_not_treat_an_unrelated_deny_rule_as_blocking(repo, capsys):
+    """The other direction: a rule naming a different concrete command must not
+    report a working hook as dead."""
+    import json
+
+    from whyline import hooks
+
+    wired = {
+        event: [{"hooks": [{"type": "command", "command": hooks.HOOK_COMMAND}]}]
+        for event in hooks.EVENTS
+    }
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    for rule in (
+        "Bash(whyline-hook-notes)",
+        "Read(whyline-hook-notes)",
+        "Bash(npm run build)",
+    ):
+        settings.write_text(
+            json.dumps({"hooks": wired, "permissions": {"deny": [rule]}})
+        )
+        code, out = run_in(repo, ["status", "--json"], capsys)
+        assert json.loads(out)["hook_installed"] is True, f"{rule} must not block"
+
+
+def test_status_handles_a_deny_rule_written_as_a_bare_string(repo, capsys):
+    import json
+
+    from whyline import hooks
+
+    wired = {
+        event: [{"hooks": [{"type": "command", "command": hooks.HOOK_COMMAND}]}]
+        for event in hooks.EVENTS
+    }
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps({"hooks": wired, "permissions": {"deny": "Bash(whyline-hook)"}})
+    )
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    assert json.loads(out)["hook_installed"] is False
