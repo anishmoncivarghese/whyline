@@ -1,11 +1,11 @@
 # Resume here — whyline v1
 
-**Updated:** 2026-08-14.
+**Updated:** 2026-08-17.
 **Branch:** `feature/whyline-v1` · **Code head:** `1ca4a66` · **92 tests passing** · zero production dependencies
 
 ## One-line state
 
-Tasks 1–7 and 10 are complete and reviewed. M0 collection began 2026-08-14. Continue with **Task 11 — `timeline` + `status`** while Tasks 8, 9 and 12 remain gated on the M0 result.
+Tasks 1–7 and 10 are complete and reviewed. **The M0 gate is RESOLVED: build as designed** (see `m0/RESULTS.md`), so Tasks 8, 9 and 12 are unblocked. Nothing is gated any more. Remaining: **11, 8, 9, 12**, then the final Opus whole-branch review.
 
 ## How to resume
 
@@ -25,7 +25,7 @@ Execution follows `superpowers:subagent-driven-development`: fresh implementer p
 
 | Task | State |
 |---|---|
-| 1 — M0 cooperation probe | 🟡 collection in progress since 2026-08-14 |
+| 1 — M0 cooperation probe | ✅ complete — gate passed, `m0/RESULTS.md` |
 | 2 — Scaffold, CLI shell, paths | ✅ complete |
 | 3 — Events + ledger | ✅ complete (2 fix rounds) |
 | 4 — Git queries | ✅ complete (1 fix round) |
@@ -34,29 +34,36 @@ Execution follows `superpowers:subagent-driven-development`: fresh implementer p
 | 7 — `note` + decisions.md | ✅ complete |
 | 10 — Hook + `init` | ✅ complete (1 fix round) |
 | **11 — `timeline` + `status`** | **pending — start here** |
-| **GATE** | **M0 results needed before 8, 9, 12** |
-| 8 — `brief` | gated on M0 |
-| 9 — `run` | gated on M0 |
-| 12 — Perf, CI, README | gated on M0 |
+| 8 — `brief` | pending — unblocked; carries the decisions.md fallback ruling |
+| 9 — `run` | pending — unblocked |
+| 12 — Perf, CI, README | pending — unblocked |
 
 Execution order and the reason only 8/9/12 are gated: plan §"Execution order — ruling 2026-08-09".
 
 ### Immediate next action
 
-Task 11 — implement `timeline` and `status`. In parallel, work normally in the three M0 repositories through 2026-08-16 or 2026-08-17, then evaluate the recorded firings before Tasks 8, 9 and 12.
+Task 11 — implement `timeline` and `status`. Then 8, 9, 12 in that order, then the final Opus whole-branch review and `superpowers:finishing-a-development-branch`.
 
-### Active clean-project M0 exercise
+**Task 8 carries a ruling that must not be lost.** `brief.compose` originally read only `.whyline/ledger.jsonl`, which is gitignored, while `decisions.md` is what is committed. Verified in CodeGraph: a fresh clone sees 19 decisions in `decisions.md` and zero in the ledger, so `brief` would have reported "No decisions recorded yet" on every machine but the one that recorded them — silently breaking cross-machine handoff. Task 8 now specifies `decisions.parse_entries` as the inverse of `render_entry`, with a round-trip test pinning both halves together. The plan has the full spec and required tests.
 
-`/Users/anish/CodeGraph` joined the M0 test on 2026-08-15 as a new, isolated Git
-repository. Its excluded root baseline is `bf0430e`; the shared measurement log
-was still absent immediately after setup, so the baseline contains no synthetic
-probe firing. The repository currently contains its PRD and Whyline bootstrap,
-ready for normal Claude and Codex implementation work.
+### M0 result (resolved 2026-08-17)
 
-Continue by alternating normal Claude and Codex work without reminding either
-agent to record decisions. Do not conflate the two behaviours: `whyline init`
-created the instruction files; merely launching an agent currently only reads
-existing files.
+**Build as designed.** 19 decisions recorded across 14 post-baseline CodeGraph
+commits — Claude 6/4 (150%), Codex 13/10 (130%). Threshold was 60%. All 19 carry
+a rationale and a concrete rejected alternative. Codex firing timestamps map
+one-for-one onto commit times, and the operator confirmed Codex was **never
+reminded**, which also settles the handover observations' §4 assumption that a
+non-Claude agent reads and acts on `AGENTS.md`. The hook layer ran unattended
+throughout (47 `FileTouched`, 10 `Instruction`, 7 sessions).
+
+Limits worth carrying forward: only the **write** side was tested. Nothing yet
+shows a receiving agent *reads* what was recorded, which is the whole basis of
+`brief` and `run`. Observations §1 is a clean negative on the read side — a
+declarative instruction was ignored unprompted while the imperative,
+pre-authorized one fired. The `brief` instruction has since been strengthened to
+carry all four parts (trigger, exact command, pre-authorization, verification),
+but whether that makes it fire is unmeasured. Consider a short read-side check
+once `brief` exists.
 
 ## The milestone is real
 
