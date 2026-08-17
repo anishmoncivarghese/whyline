@@ -1,7 +1,24 @@
 # Resume here — whyline v1
 
-**Updated:** 2026-08-17.
+**Updated:** 2026-08-17 (blocked — see Blocker).
 **Branch:** `feature/whyline-v1` · **Code head:** `1ca4a66` · **92 tests passing** · zero production dependencies
+
+## BLOCKER — read first
+
+**Monthly spend limit reached 2026-08-17.** No subagents can be dispatched, so the
+subagent-driven loop is stalled. Raise the limit at
+`claude.ai/settings/usage` to resume it.
+
+**Task 8 is committed but carries a live Critical defect.** `brief.compose` uses an
+all-or-nothing fallback: it reads `decisions.md` only when the ledger has zero
+notes. On a fresh clone holding 19 committed decisions, recording one local note
+makes `brief` show that note alone, hide all 19, and print
+`Recent decisions (1 of 1)` — a false count asserted to the receiving agent.
+105 tests pass anyway.
+
+The fix is fully specified in the plan (merge both sources, deduplicate by event
+id with ledger winning, add a `Sources:` disclosure line, five named tests).
+Implement it; do not redesign. Reproducer is in the ledger.
 
 ## One-line state
 
