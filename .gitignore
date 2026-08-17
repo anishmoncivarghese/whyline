@@ -7,3 +7,6 @@ __pycache__/
 phase0/results/
 .whyline/ledger.jsonl
 .whyline/index.db
+dist/
+*.egg-info/
+.DS_Store
