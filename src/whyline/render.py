@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -155,33 +156,86 @@ def _hook_state(root) -> tuple[bool, str]:
     if not isinstance(data, dict):
         return False, ".claude/settings.json is not a JSON object"
 
+    # Fixed 2026-08-18: every traversal step is shape-checked. The first attempt
+    # wrote `(data.get("hooks") or {}).get(event)`, which raises AttributeError on
+    # valid JSON of the wrong shape — `{"hooks": [...]}`, `{"hooks": "yes"}`,
+    # `{"permissions": ["deny"]}` all crashed `whyline status` with a traceback.
+    # A settings file is user-editable input, so it must be parsed defensively.
+    hook_block = _as_dict(data.get("hooks"))
     configured = {
         event
         for event in hooks.EVENTS
-        if hooks.HOOK_COMMAND
-        in [
-            entry.get("command", "")
-            for group in ((data.get("hooks") or {}).get(event) or [])
-            if isinstance(group, dict)
-            for entry in (group.get("hooks") or [])
-            if isinstance(entry, dict)
-        ]
+        if hooks.HOOK_COMMAND in _commands_for(hook_block.get(event))
     }
     missing = [event for event in hooks.EVENTS if event not in configured]
 
-    # A deny rule naming the hook means it cannot run, whatever the hooks block says.
-    denied = [
+    blocking = [
         rule
-        for rule in ((data.get("permissions") or {}).get("deny") or [])
-        if isinstance(rule, str) and hooks.HOOK_COMMAND in rule
+        for rule in _as_list(_as_dict(data.get("permissions")).get("deny"))
+        if _rule_blocks(rule, hooks.HOOK_COMMAND)
     ]
-    if denied:
-        return False, f"blocked by a permissions deny rule: {denied[0]}"
+    if blocking:
+        return False, f"blocked by a permissions deny rule: {blocking[0]}"
     if missing:
         if not configured:
             return False, "not wired to any hook event"
-        return False, "wired to " + ", ".join(sorted(configured)) + "; missing " + ", ".join(missing)
-    return True, "wired to all " + str(len(hooks.EVENTS)) + " events"
+        return (
+            False,
+            "wired to "
+            + ", ".join(sorted(configured))
+            + "; missing "
+            + ", ".join(missing),
+        )
+    mentions = [
+        rule
+        for rule in _as_list(_as_dict(data.get("permissions")).get("deny"))
+        if isinstance(rule, str) and hooks.HOOK_COMMAND in rule
+    ]
+    detail = f"wired to all {len(hooks.EVENTS)} events"
+    if mentions:
+        # A rule that merely names the hook without matching it as a command is
+        # not a block. Say so rather than asserting either way.
+        detail += f" (note: a deny rule mentions it: {mentions[0]})"
+    return True, detail
+
+
+def _as_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _commands_for(groups) -> list[str]:
+    """Every hook command configured for one event, tolerating any junk shape."""
+    found = []
+    for group in _as_list(groups):
+        for entry in _as_list(_as_dict(group).get("hooks")):
+            command = _as_dict(entry).get("command")
+            if isinstance(command, str):
+                found.append(command)
+    return found
+
+
+def _rule_blocks(rule, command: str) -> bool:
+    """Whether a permissions deny rule actually blocks running `command`.
+
+    A rule like `Bash(whyline-hook)` blocks it. `Read(whyline-hook-notes)` merely
+    contains the string and blocks something else entirely — treating that as a
+    block was a false negative that reported a working hook as dead.
+    """
+    if not isinstance(rule, str):
+        return False
+    match = re.match(r"^\s*Bash\s*\(\s*(?P<target>[^)]*)\)\s*$", rule)
+    if match is None:
+        return False
+    target = match.group("target").strip()
+    if target in ("*", command):
+        return True
+    # `Bash(whyline-hook:*)` and `Bash(whyline-hook --flag)` both match the
+    # command as its own leading token; `whyline-hook-notes` does not.
+    return bool(re.match(re.escape(command) + r"(?=$|[\s:])", target))
 
 
 def status_text(payload: dict) -> str:

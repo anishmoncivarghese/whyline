@@ -280,3 +280,60 @@ def test_same_day_committed_entries_are_not_dropped_first_by_limit(repo):
     )
     text = brief.compose(repo.path, limit=1)
     assert "committed same day" in text, "day-precision entry was ranked below"
+
+
+def test_three_distinct_notes_with_identical_text_are_not_collapsed(repo):
+    """2026-08-18. The C2 fix keyed its second pass purely on content, so three
+    separate events with the same decision and rationale became one: brief said
+    "1 of 1" while status and timeline said three. Identity must beat
+    resemblance — two entries that both carry ids are distinct events."""
+    for index in range(3):
+        ledger.append(
+            paths.ledger_path(repo.path),
+            _note(
+                "Bump the CI timeout",
+                f"2026-08-0{index + 1}T10:00:00.000Z",
+                event_id=f"distinct{index}",
+                because="flaky",
+            ),
+        )
+    text = brief.compose(repo.path)
+    assert "3 of 3" in text, text
+    assert text.count("Bump the CI timeout") == 3
+
+
+def test_brief_count_agrees_with_the_ledger(repo):
+    """brief must never contradict status/timeline about how much exists."""
+    from whyline import render
+
+    for index in range(4):
+        ledger.append(
+            paths.ledger_path(repo.path),
+            _note("same words", f"2026-08-0{index + 1}T10:00:00.000Z", event_id=f"x{index}"),
+        )
+    payload = render.status_payload(repo.path)
+    text = brief.compose(repo.path, limit=100)
+    assert f"{payload['notes']} of {payload['notes']}" in text
+
+
+def test_the_newest_copy_is_kept_when_a_stripped_entry_collapses(repo):
+    """The legitimate collapse must keep the id-bearing ledger copy, which has a
+    full timestamp, not the day-precision Markdown one."""
+    event = _note(
+        "one decision",
+        "2026-08-01T15:42:07.123Z",
+        event_id="keep",
+        because="the rationale",
+    )
+    ledger.append(paths.ledger_path(repo.path), event)
+    path = paths.decisions_path(repo.path)
+    rendered = "\n".join(
+        line
+        for line in decisions.render_entry(event).splitlines()
+        if "whyline-event" not in line
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(decisions.HEADING + "\n" + rendered + "\n", encoding="utf-8")
+    text = brief.compose(repo.path)
+    assert "1 of 1" in text
+    assert "Sources: all from the local ledger." in text

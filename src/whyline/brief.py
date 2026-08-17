@@ -104,17 +104,22 @@ def compose(root: Path, limit: int = 10) -> str:
     for note in ledger_notes:
         merged[_key(note)] = (note, "ledger")
 
-    # Second pass. An entry can appear under two different keys — its ledger copy
-    # keyed by id, its Markdown copy keyed by content because the id comment was
-    # stripped. Collapse those, preferring the copy that carries an id, since
-    # that one has a full timestamp rather than day precision.
-    by_content: dict = {}
-    for note, source in merged.values():
-        content = _content_key(note)
-        existing = by_content.get(content)
-        if existing is None or (not existing[0].get("id") and note.get("id")):
-            by_content[content] = (note, source)
-    entries = list(by_content.values())
+    # Second pass, narrowly scoped. An entry can appear under two different keys:
+    # its ledger copy keyed by id, its Markdown copy keyed by content because the
+    # id comment was stripped. Only that pairing may collapse.
+    #
+    # Fixed 2026-08-18. The first attempt keyed this pass purely on content, which
+    # collapsed genuinely distinct events — three separate notes with the same
+    # decision and rationale became one, and `brief` reported "1 of 1" while
+    # `status` and `timeline` reported three. That reintroduced C1's exact symptom
+    # while fixing C2. Two entries that both carry ids are distinct events, however
+    # identical their text, so identity wins over resemblance.
+    id_bearing = [pair for pair in merged.values() if pair[0].get("id")]
+    id_less = [pair for pair in merged.values() if not pair[0].get("id")]
+    known = {_content_key(note) for note, _ in id_bearing}
+    entries = id_bearing + [
+        pair for pair in id_less if _content_key(pair[0]) not in known
+    ]
 
     entries.sort(key=lambda pair: _sort_key(pair[0]), reverse=True)
     selected = entries[:limit]

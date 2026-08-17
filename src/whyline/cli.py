@@ -169,7 +169,9 @@ def cmd_note(args: argparse.Namespace) -> int:
     )
     ledger.append(paths.ledger_path(root), event)
     decisions.append_entry(paths.decisions_path(root), event)
-    print(f"Recorded: {args.decision}")
+    # Echo what was stored, not what was typed — they differ when a multi-line
+    # value is normalised, and printing the raw form would misreport the record.
+    print(f"Recorded: {event['decision']}")
     return EXIT_OK
 
 

@@ -477,3 +477,66 @@ def test_timeline_json_redacts_prompt_text_by_default(repo, capsys):
     code, out = run_in(repo, ["timeline", "--json", "--include-prompts"], capsys)
     assert code == cli.EXIT_OK
     assert "my private prompt about salaries" in out
+
+
+def test_note_echoes_what_was_stored_not_what_was_typed(repo, capsys):
+    """Minor 2026-08-18: the echo printed the raw multi-line argument while the
+    record held the normalised one, misreporting what had been stored."""
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    code, out = run_in(repo, ["note", "line one\nline two"], capsys)
+    assert code == cli.EXIT_OK
+    assert "Recorded: line one line two" in out
+    assert "\nline two" not in out.split("Recorded:")[1]
+
+
+def test_status_reports_a_denied_but_fully_wired_hook_as_blocked(repo, capsys):
+    """The earlier deny test used an empty hooks block, so it never exercised the
+    case that matters: wired AND denied."""
+    import json
+
+    from whyline import hooks
+
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    event: [
+                        {"hooks": [{"type": "command", "command": hooks.HOOK_COMMAND}]}
+                    ]
+                    for event in hooks.EVENTS
+                },
+                "permissions": {"deny": [f"Bash({hooks.HOOK_COMMAND})"]},
+            }
+        )
+    )
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    payload = json.loads(out)
+    assert payload["hook_installed"] is False
+    assert "blocked" in payload["hook_detail"]
+
+
+def test_status_survives_settings_json_of_any_shape(repo, capsys):
+    """Critical 2026-08-18: valid JSON of the wrong shape crashed status with an
+    AttributeError traceback. A user-editable file must be parsed defensively."""
+    import json
+
+    settings = repo.path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    for shape in (
+        {"hooks": [{"SessionStart": []}]},
+        {"hooks": "yes"},
+        {"permissions": ["deny"]},
+        {"hooks": None, "permissions": None},
+        {"hooks": {"SessionStart": "x"}},
+        {"hooks": {"SessionStart": [{"hooks": "x"}]}},
+        {"hooks": {"SessionStart": [{"hooks": [{"command": None}]}]}},
+        [],
+        "a string",
+    ):
+        settings.write_text(json.dumps(shape))
+        code, out = run_in(repo, ["status", "--json"], capsys)
+        assert code == cli.EXIT_OK, f"crashed on {shape!r}"
+        assert json.loads(out)["hook_installed"] is False
