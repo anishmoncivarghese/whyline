@@ -47,16 +47,18 @@ These are specific, technically substantive, and would be genuinely costly to re
 
 Threshold from spec §5: ≥60% unprompted on Claude Code and ≥1 firing on Codex → build as designed. 30–60% → self-report is best-effort. <30% → drop `brief` and `run`, keep hook-only mechanical provenance.
 
-**Outcome: build as designed.** Both agents exceed the threshold by a wide margin, and recording quality is higher than the design assumed.
+**Outcome: build as designed.** Both agents exceed the threshold by a wide margin, recording quality is higher than the design assumed, and Codex's compliance was confirmed unprompted.
 
 ## Caveats that limit this result
 
 Recorded so the result is not read as broader than it is.
 
-1. **"Unprompted" was inferred, not recorded.** The probe log has no column for whether a firing followed a reminder, so unprompted-ness rests on the timestamp clustering above rather than on direct observation. `docs/superpowers/specs/2026-08-16-handover-observations.md` §1 does document two confirmed unprompted Claude firings, and notes that everything after the human's intervening prompt in that session is contaminated for this measurement.
+1. **Unprompted-ness: confirmed by the operator.** The probe log has no column for it, so this rested initially on timestamp clustering. The operator confirmed on 2026-08-17 that **Codex was never reminded** — all 13 of its decisions came from `AGENTS.md` alone. `docs/superpowers/specs/2026-08-16-handover-observations.md` §1 separately documents two confirmed unprompted Claude firings.
+
+   This also settles that document's §4, which listed "Codex reads `AGENTS.md` and acts on it" as an untested assumption. It is now tested: a non-Claude agent read the instruction and followed it twelve times without a nudge.
 
 2. **Only the write side was tested.** M0 proves agents *record* decisions. It says nothing about whether a receiving agent *reads* them, which is precisely what Tasks 8 (`brief`) and 9 (`run`) depend on. The handover observations §4 protocol for that experiment has not been run.
 
 3. **A single-project, single-operator sample.** All usable data comes from one repository over three days with one operator who knew the instruction existed.
 
-4. **Instruction form matters and was only partly validated.** Observations §1 records a clean negative: a *declarative* AGENTS.md instruction ("record decision history through whyline rather than appending here") was not followed unprompted, while the *imperative + exact command + pre-authorized* `whyline note` instruction was followed twice unprompted. The `whyline brief` line in `agentsmd.INSTRUCTION` is closer in form to the one that failed — it has a trigger and a command but no pre-authorization — and it governs the untested read side.
+4. **Instruction form matters and was only partly validated.** Observations §1 records a clean negative: a *declarative* AGENTS.md instruction ("record decision history through whyline rather than appending here") was not followed unprompted, while the *imperative + exact command + pre-authorized* `whyline note` instruction was followed twice unprompted. The `whyline brief` line in `agentsmd.INSTRUCTION` was closer in form to the one that failed — trigger and command, but no pre-authorization — and it governs the untested read side. It has since been amended to carry all four parts the observations identify: trigger, exact command, pre-authorization, and a verification the agent can act on ("if it reports that nothing is recorded, say so in your first message"). Whether that makes the read side fire remains unmeasured.
