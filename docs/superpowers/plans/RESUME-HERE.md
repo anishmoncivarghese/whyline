@@ -39,7 +39,7 @@ Seven commands: `init`, `note`, `explain`, `brief`, `run`, `timeline`, `status` 
 - `explain` resolves a line to recorded reasoning with honest confidence, and never claims `high` at file level.
 - `brief` merges the local ledger with the committed `decisions.md`, deduplicates by event id, and discloses which source each note came from.
 - `run` hands the terminal over via `exec` — verified for real with a harmless binary, not just a mock.
-- Cold start ~18 ms against a 200 ms budget. `explain` on a 50,000-event 6.5 MB ledger ~159 ms against 1 s, which is why there is no SQLite index.
+- Cold start 41-79 ms against a 200 ms budget (19 ms of that is bare interpreter startup; whyline's own cost is 23-60 ms). `explain` on a 50,000-event 6.5 MB ledger ~159 ms against 1 s, which is why there is no SQLite index. An earlier claim of ~18 ms was wrong — it was the interpreter baseline, not the tool.
 
 ## The best demonstration so far
 

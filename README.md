@@ -125,9 +125,21 @@ Permission-bypass flags are never added.
 
 ## Performance
 
-Cold start is ~18 ms for `status`, `explain`, `timeline` and `brief` against a
-200 ms budget. `explain` on a 50,000-event ledger takes ~159 ms against a 1 s
-budget — which is why there is no SQLite index.
+Measured on an M-series Mac, median of seven runs, against a 200 ms target:
+
+| Command | Total | whyline's own cost |
+|---|---:|---:|
+| `brief` | 41 ms | 23 ms |
+| `timeline` | 46 ms | 27 ms |
+| `status` | 47 ms | 28 ms |
+| `explain` | 79 ms | 60 ms |
+
+Bare Python interpreter startup is 19 ms of every figure above, so the right-hand
+column is what whyline actually costs. `explain` is dearer because it shells out
+to `git blame`.
+
+On a 50,000-event, 6.5 MB ledger `explain` takes ~159 ms against a 1 s target —
+which is why there is no SQLite index.
 
 ## Licence
 
