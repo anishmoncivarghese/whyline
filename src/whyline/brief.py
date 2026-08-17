@@ -12,18 +12,38 @@ PREAMBLE = (
 )
 
 
+def _key(note: dict) -> object:
+    """Dedup key. Entries without an id key on their decision text, so two
+    distinct hand-written entries are not collapsed into one."""
+    return note.get("id") or ("text", note.get("decision", ""))
+
+
 def compose(root: Path, limit: int = 10) -> str:
-    """Compose the brief. Ruling 2026-08-17 (M0): the ledger is gitignored and
-    decisions.md is what travels with the repository, so a fresh clone has a
-    full decisions.md and an empty ledger. Reading only the ledger would make
-    `brief` report "No decisions recorded yet" on every machine but the one
-    that recorded them, silently breaking cross-machine handoff. Prefer the
-    ledger for fidelity, fall back to the committed Markdown.
+    """Compose the brief from both recorded sources.
+
+    The ledger is gitignored because it holds raw prompt text; decisions.md is
+    what travels with the repository. So a clone has a full decisions.md and an
+    empty ledger.
+
+    Ruling 2026-08-17, superseding the same day's all-or-nothing fallback: MERGE
+    both sources, do not choose between them. Reading decisions.md only when the
+    ledger held no notes broke the instant anyone cloned the repo and recorded
+    one decision — brief then showed that single note, hid the whole committed
+    history, and announced "1 of 1" when there were twenty. Deduplicate by event
+    id; ledger entries win, since they carry full timestamps and structured
+    fields while the Markdown has only day precision.
     """
     all_events, _ = ledger.read_all(paths.ledger_path(root))
-    notes = [event for event in all_events if event.get("type") == events.NOTE]
-    if not notes:
-        notes = decisions.parse_entries(paths.decisions_path(root))
+    ledger_notes = [event for event in all_events if event.get("type") == events.NOTE]
+    committed_notes = decisions.parse_entries(paths.decisions_path(root))
+
+    merged: dict = {}
+    for note in committed_notes:
+        merged[_key(note)] = note
+    for note in ledger_notes:
+        merged[_key(note)] = note
+    notes = list(merged.values())
+
     notes.sort(key=lambda event: str(event.get("ts", "")), reverse=True)
     selected = notes[:limit]
 
@@ -32,6 +52,17 @@ def compose(root: Path, limit: int = 10) -> str:
         lines.append("No decisions recorded yet for this repository.")
     else:
         lines.append(f"Recent decisions ({len(selected)} of {len(notes)}):")
+        # Say where this came from. A consuming agent must be able to tell a
+        # full-fidelity local view from the day-precision committed digest,
+        # rather than being handed a degraded view presented as complete.
+        ledger_keys = {_key(note) for note in ledger_notes}
+        from_ledger = sum(1 for note in selected if _key(note) in ledger_keys)
+        from_committed = len(selected) - from_ledger
+        if from_committed:
+            lines.append(
+                f"Sources: {from_ledger} from the local ledger, "
+                f"{from_committed} from committed decisions.md (day precision)."
+            )
         lines.append("")
         for note in selected:
             day = str(note.get("ts", ""))[:10]
