@@ -112,9 +112,9 @@ Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
 - **`brief` degrades on a fresh clone.** The ledger is gitignored, so a clone has
   only the committed `decisions.md`, which carries day precision rather than full
   timestamps. `brief` merges both sources and tells you which is which.
-- **Only macOS is actually verified.** The CI workflow covers macOS and Linux on
-  Python 3.11 and 3.13, but the repository has no remote yet, so **CI has never
-  run**. Linux and Windows/WSL are untested claims, not observations.
+- **macOS and Linux are verified; Windows is not.** CI passes on `ubuntu-latest`
+  and `macos-latest` across Python 3.11 and 3.13. Windows via WSL is untested — a
+  plausible claim, not an observation.
 
 ## Credentials
 
