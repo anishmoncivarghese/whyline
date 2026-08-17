@@ -55,6 +55,18 @@ def _add_run(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("task")
 
 
+def _add_timeline(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("timeline", help="Project event history")
+    parser.add_argument("--file", dest="file", default=None)
+    parser.add_argument("--since", default=None, metavar="YYYY-MM-DD")
+    parser.add_argument("--json", action="store_true")
+
+
+def _add_status(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("status", help="Is whyline healthy here?")
+    parser.add_argument("--json", action="store_true")
+
+
 def _add_init(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("init", help="Set whyline up in this repository")
     parser.add_argument(
@@ -75,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_note(subparsers)
     _add_brief(subparsers)
     _add_run(subparsers)
+    _add_timeline(subparsers)
+    _add_status(subparsers)
     _add_init(subparsers)
     return parser
 
@@ -223,11 +237,54 @@ def cmd_run(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_timeline(args: argparse.Namespace) -> int:
+    from whyline import ledger, paths, render
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    found, skipped = ledger.read_all(paths.ledger_path(root))
+    if skipped:
+        noun = "line" if skipped == 1 else "lines"
+        print(f"warning: skipped {skipped} unreadable ledger {noun}", file=sys.stderr)
+    if args.file:
+        found = [
+            event
+            for event in found
+            if event.get("path") == args.file or args.file in (event.get("files") or [])
+        ]
+    if args.since:
+        found = [event for event in found if str(event.get("ts", "")) >= args.since]
+    found.sort(key=lambda event: str(event.get("ts", "")), reverse=True)
+    if args.json:
+        render.emit_json({"events": found})
+    else:
+        render.emit(render.timeline_text(found))
+    return EXIT_OK
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    from whyline import render
+
+    # status deliberately does NOT require initialisation — reporting
+    # "not initialised" is its job.
+    root = _require_repo()
+    payload = render.status_payload(root)
+    if args.json:
+        render.emit_json(payload)
+    else:
+        render.emit(render.status_text(payload))
+    return EXIT_OK
+
+
 COMMANDS = {
     "explain": cmd_explain,
     "note": cmd_note,
     "brief": cmd_brief,
     "run": cmd_run,
+    "timeline": cmd_timeline,
+    "status": cmd_status,
     "init": cmd_init,
 }
 

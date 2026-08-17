@@ -93,3 +93,56 @@ def explanation_json(result: resolve.Explanation) -> dict:
 def emit_json(payload: dict) -> None:
     json.dump(payload, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
+
+
+def timeline_text(events_: list[dict]) -> str:
+    if not events_:
+        return "No events recorded."
+    lines = []
+    for event in events_:
+        stamp = str(event.get("ts", ""))[:16].replace("T", " ")
+        kind = event.get("type", "?")
+        detail = (
+            event.get("decision") or event.get("path") or event.get("session") or ""
+        )
+        lines.append(f"{stamp}  {kind:<15} {detail}")
+    return "\n".join(lines)
+
+
+def status_payload(root) -> dict:
+    from whyline import events as events_module
+    from whyline import hooks, ledger, paths
+
+    found, skipped = ledger.read_all(paths.ledger_path(root))
+    settings = root / ".claude" / "settings.json"
+    hook_installed = False
+    if settings.exists():
+        hook_installed = hooks.HOOK_COMMAND in settings.read_text(encoding="utf-8")
+    return {
+        "root": str(root),
+        "initialised": paths.is_initialised(root),
+        "events": len(found),
+        "notes": sum(1 for event in found if event.get("type") == events_module.NOTE),
+        "skipped_lines": skipped,
+        "hook_installed": hook_installed,
+        "decisions_md": paths.decisions_path(root).exists(),
+    }
+
+
+def status_text(payload: dict) -> str:
+    hook = "installed" if payload["hook_installed"] else "not installed"
+    lines = [
+        f"Repository     {payload['root']}",
+        f"Initialised    {'yes' if payload['initialised'] else 'no'}",
+        f"Events         {payload['events']}",
+        f"Decisions      {payload['notes']}",
+        f"Hook           {hook}",
+    ]
+    if payload["skipped_lines"]:
+        count = payload["skipped_lines"]
+        noun = "line" if count == 1 else "lines"
+        lines.append(f"Warning        {count} unreadable ledger {noun} skipped")
+    if not payload["hook_installed"]:
+        lines.append("")
+        lines.append("Run `whyline init` to install the hook.")
+    return "\n".join(lines)

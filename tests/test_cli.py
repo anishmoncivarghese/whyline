@@ -299,3 +299,80 @@ def test_run_still_prints_the_brief_when_the_agent_is_missing(repo, capsys, monk
 def test_run_requires_initialisation(repo, capsys):
     code, _ = run_in(repo, ["run", "codex", "task"], capsys)
     assert code == cli.EXIT_UNINITIALISED
+
+
+def _ledger_note(repo, decision, ts, files=None):
+    event = events.new_event(events.NOTE, decision=decision, files=files or [])
+    event["ts"] = ts
+    ledger.append(paths.ledger_path(repo.path), event)
+
+
+def test_timeline_lists_events_newest_first(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "older", "2026-08-01T10:00:00.000Z", ["a.py"])
+    _ledger_note(repo, "newer", "2026-08-05T10:00:00.000Z", ["a.py"])
+    code, out = run_in(repo, ["timeline"], capsys)
+    assert code == cli.EXIT_OK
+    assert out.index("newer") < out.index("older")
+
+
+def test_timeline_filters_by_file(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "keep", "2026-08-01T10:00:00.000Z", ["a.py"])
+    _ledger_note(repo, "drop", "2026-08-01T10:00:00.000Z", ["b.py"])
+    code, out = run_in(repo, ["timeline", "--file", "a.py"], capsys)
+    assert code == cli.EXIT_OK
+    assert "keep" in out
+    assert "drop" not in out
+
+
+def test_timeline_filters_by_since(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "old", "2026-08-01T10:00:00.000Z")
+    _ledger_note(repo, "recent", "2026-08-09T10:00:00.000Z")
+    code, out = run_in(repo, ["timeline", "--since", "2026-08-05"], capsys)
+    assert code == cli.EXIT_OK
+    assert "recent" in out
+    assert "old" not in out
+
+
+def test_timeline_on_an_empty_ledger_says_so(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    code, out = run_in(repo, ["timeline"], capsys)
+    assert code == cli.EXIT_OK
+    assert "No events recorded" in out
+
+
+def test_timeline_requires_initialisation(repo, capsys):
+    code, _ = run_in(repo, ["timeline"], capsys)
+    assert code == cli.EXIT_UNINITIALISED
+
+
+def test_status_json_reports_counts_and_hook_state(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "a", "2026-08-01T10:00:00.000Z")
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    assert code == cli.EXIT_OK
+    payload = json.loads(out)
+    assert payload["events"] == 1
+    assert payload["notes"] == 1
+    assert payload["hook_installed"] is False
+    assert payload["initialised"] is True
+
+
+def test_status_reports_skipped_torn_lines(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    _ledger_note(repo, "a", "2026-08-01T10:00:00.000Z")
+    with paths.ledger_path(repo.path).open("a", encoding="utf-8") as handle:
+        handle.write('{"torn')
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    assert code == cli.EXIT_OK
+    assert json.loads(out)["skipped_lines"] == 1
+
+
+def test_status_works_before_initialisation(repo, capsys):
+    """status must not exit 3 — reporting "not initialised" is its whole job."""
+    code, out = run_in(repo, ["status", "--json"], capsys)
+    assert code == cli.EXIT_OK
+    assert json.loads(out)["initialised"] is False
