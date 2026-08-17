@@ -33,10 +33,20 @@ def launch(
     agent: str,
     task: str,
     brief_text: str,
-    which=shutil.which,
-    exec_fn=os.execvp,
+    which=None,
+    exec_fn=None,
 ) -> int:
+    """Replace this process with the agent's own CLI.
+
+    `which` and `exec_fn` are resolved here, not as default arguments. Binding
+    them in the signature would capture the function objects at import time, so
+    `monkeypatch.setattr(runner.shutil, "which", ...)` would silently have no
+    effect and a test would exec the real agent — replacing the test process and
+    spending real vendor quota. That actually happened on 2026-08-17.
+    """
     argv = build_argv(agent, task, brief_text)
+    which = which if which is not None else shutil.which
+    exec_fn = exec_fn if exec_fn is not None else os.execvp
     if which(argv[0]) is None:
         raise AgentMissing(f"{argv[0]} is not installed or not on PATH")
     exec_fn(argv[0], argv)

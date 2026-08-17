@@ -95,3 +95,24 @@ def test_environment_is_never_inspected_by_the_runner():
             raise AssertionError(f"runner touches os.{node.attr}")
         if isinstance(node, ast.Name) and node.id in ("environ", "getenv"):
             raise AssertionError(f"runner references {node.id}")
+
+
+def test_patching_the_module_attribute_actually_takes_effect(monkeypatch):
+    """Regression for 2026-08-17: `which=shutil.which` as a default argument
+    bound the function at import time, so patching runner.shutil.which had no
+    effect and launch exec'd the real agent — replacing the pytest process
+    mid-suite and spending real vendor quota. Resolution must happen at call
+    time."""
+    monkeypatch.setattr(runner.shutil, "which", lambda name: None)
+    with pytest.raises(runner.AgentMissing):
+        runner.launch("claude", "task", "ctx")
+
+
+def test_launch_never_execs_a_real_agent_when_which_is_patched(monkeypatch):
+    """The dangerous half of the same bug: prove no exec is attempted."""
+    execs = []
+    monkeypatch.setattr(runner.shutil, "which", lambda name: None)
+    monkeypatch.setattr(runner.os, "execvp", lambda b, a: execs.append(b))
+    with pytest.raises(runner.AgentMissing):
+        runner.launch("codex", "task", "ctx")
+    assert execs == []
