@@ -2,12 +2,12 @@
 
 **Date:** 2026-08-09
 **Status:** Approved for planning
-**Supersedes:** the v1 scope in `AgentDock PRD v4_0.md` §8.1 and Phase 0/Phase 1 in `IMPLEMENTATION_PLAN.md`
+**Supersedes:** the v1 scope in `docs/history/predecessor-prd-v4.0.md` §8.1 and Phase 0/Phase 1 in `docs/history/predecessor-implementation-plan.md`
 **Retains:** the PRD's product thesis, vendor constraints, security model, and failure discipline
 
 ## 1. Decisions fixed
 
-Six decisions were open in PRD §16 and `PRD_REVIEW.md`. All are now closed.
+Six decisions were open in PRD §16 and `docs/history/predecessor-prd-build-readiness-review.md`. All are now closed.
 
 | Decision | Resolution |
 |---|---|

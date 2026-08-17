@@ -1,5 +1,14 @@
 # AgentDock — Implementation Plan
 
+> **Superseded historical document.** This is the predecessor design for what
+> shipped as **whyline**. It was written under the working name "AgentDock",
+> which was **rejected**: an unrelated MIT-licensed AI-agent framework already
+> uses that name commercially. This project makes no claim to it. The name is
+> retained inside this document only so the reasoning stays readable; see
+> `docs/superpowers/specs/2026-08-09-whyline-v1-design.md` for what was actually
+> built and why the scope changed.
+
+
 **Plan date:** 2026-08-06  
 **Planning basis:** PRD v4.0 and `PRD_REVIEW.md`  
 **Delivery model:** Evidence-gated phases with a formal review after every milestone and a final release review.

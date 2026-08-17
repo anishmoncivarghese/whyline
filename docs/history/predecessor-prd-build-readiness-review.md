@@ -1,7 +1,16 @@
 # AgentDock PRD v4.0 — Build-Readiness Review
 
+> **Superseded historical document.** This is the predecessor design for what
+> shipped as **whyline**. It was written under the working name "AgentDock",
+> which was **rejected**: an unrelated MIT-licensed AI-agent framework already
+> uses that name commercially. This project makes no claim to it. The name is
+> retained inside this document only so the reasoning stays readable; see
+> `docs/superpowers/specs/2026-08-09-whyline-v1-design.md` for what was actually
+> built and why the scope changed.
+
+
 **Reviewed:** 2026-08-06  
-**Source:** `AgentDock PRD v4_0.md`  
+**Source:** `predecessor-prd-v4.0.md`  
 **Verdict:** **Conditionally buildable. Start Phase 0 now; do not start the full v1 implementation until the Phase 0 direction call and rename are complete.**
 
 ## Executive assessment

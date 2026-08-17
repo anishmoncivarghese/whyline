@@ -1,5 +1,14 @@
 # AgentDock — Product Requirements Document v4.0
 
+> **Superseded historical document.** This is the predecessor design for what
+> shipped as **whyline**. It was written under the working name "AgentDock",
+> which was **rejected**: an unrelated MIT-licensed AI-agent framework already
+> uses that name commercially. This project makes no claim to it. The name is
+> retained inside this document only so the reasoning stays readable; see
+> `docs/superpowers/specs/2026-08-09-whyline-v1-design.md` for what was actually
+> built and why the scope changed.
+
+
 *The collaboration layer for AI-assisted software engineering*
 
 | Field | Value |
