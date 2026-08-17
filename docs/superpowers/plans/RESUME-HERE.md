@@ -1,10 +1,10 @@
 # Resume here — whyline v1
 
-**Updated:** 2026-08-17 · **Branch:** `feature/whyline-v1` · **135 tests passing** · zero production dependencies · wheel builds and runs standalone
+**Updated:** 2026-08-18 · **Branch:** `feature/whyline-v1` · **157 tests passing** · CI green on macOS+Linux × py3.11/3.13 · zero production dependencies · wheel builds and runs standalone
 
 ## One-line state
 
-**All 12 tasks are complete. v1 is functionally done.** One gate remains: the final whole-branch review, which could not be run because the spend limit removed subagents.
+**All 12 tasks complete. The whole-branch review ran and found six Criticals — all now fixed.** Repo is live and PRIVATE at `github.com/anishmoncivarghese/whyline`; CI passes. One gate remains: the *fixes* are controller-written and unreviewed, so a scoped verification pass over `8a11ad8..HEAD` is owed before PyPI and before flipping the repo public.
 
 ## How to resume
 
@@ -16,21 +16,21 @@ Then read `.superpowers/sdd/2026-08-09-whyline-v1/progress.md` — the ledger, a
 
 ## THE ONE OUTSTANDING GATE
 
-Tasks 8, 9, 11 and 12 were **written inline by the controller with no independent reviewer** — the spend limit made subagents unavailable and the owner directed working within the subscription only. Every earlier task had a task review; these four did not.
+An Opus review of the previously unreviewed surface verdicted **NOT SAFE TO PUBLISH** and found **six Criticals, every one reproduced by execution, every one passing the then-green 135-test suite.** All six are fixed and verified on real data — but **the fixes are themselves controller-written and unreviewed.**
 
-That matters because of this project's record: **10 defects caught, 6 originating in the plan rather than an implementation**, and nearly every one was the tool claiming to know more than it did. Two of the four unreviewed tasks each carried a defect found only by accident:
+Owed: one scoped verification pass over `8a11ad8..HEAD` on the most capable model, pointed at `brief.py` (fence, merge, dedup, provenance), `decisions.py` (one-line collapsing, conflict refusal), `render.py` `_hook_state`, and `cli.py` `cmd_timeline`. Then `superpowers:finishing-a-development-branch`.
 
-- `brief` reported `Recent decisions (1 of 1)` while hiding nineteen.
-- `run` exec'd a real agent binary from inside the test suite, replacing the pytest process — visible only as an odd 43-dot run with no summary line.
+**Do not publish to PyPI or flip the repo public until that pass is clean.**
 
-When budget allows, run a whole-branch review on the most capable model, pointed first at:
+What the review found, for context on how careful to be:
 
-1. `src/whyline/brief.py` — the merge and dedup logic and its six tests.
-2. `src/whyline/runner.py` — call-time resolution of `which`/`exec_fn`, and that no test path can reach a real `os.execvp`.
-3. `src/whyline/render.py` — `timeline_text`, `status_payload`, `status_text`.
-4. The `minor (deferred)` lines in the ledger, for triage before any release.
-
-Then `superpowers:finishing-a-development-branch`.
+| | Finding |
+|---|---|
+| C6 | The untrusted fence was **escapable** — a note containing the closing tag pushed text into the next agent's prompt unlabelled. `decisions.md` is committed, so cloning a hostile repo was a delivery mechanism. |
+| C5 | A newline in `note` could **forge a backdated entry** in the committed record, which `brief` then presented as genuine. |
+| C3 | `status` said `Hook installed` when the hook was **blocked by a deny rule**, and when only one of four events was wired. |
+| C4 | `--since 2026-8-1` matched nothing and reported **"No events recorded."** |
+| C1/C2 | Distinct decisions sharing a first line were **silently collapsed**; a stripped id comment made one decision print twice and be attributed to two sources. |
 
 ## What works
 
@@ -77,12 +77,18 @@ Every substantive defect was the tool over-claiming, and the majority came from 
 8. JSON exposed notes for uncommitted lines at `none` confidence.
 9. `explain` silently skipped unreadable ledger lines instead of warning.
 10. `brief` announced "1 of 1" while hiding nineteen decisions.
+11. The untrusted fence was escapable, so a cloned repo could inject into the next agent's prompt.
+12. A newline in `note` forged a backdated entry in the committed record.
+13. `status` reported a blocked hook as installed.
+14. `--since` silently matched nothing and claimed the ledger was empty.
+15. The README stated an ~18 ms cold start that was the bare interpreter baseline, not the tool. Real figures are 41-79 ms.
+16. A Minor cleanup cached `shutil.which` at import, recreating the late-binding defect and hanging a test run by replacing pytest with Claude Code.
 
 The suite was green before each. **Green tests do not ask whether the answer is true** — point every reviewer explicitly at the over-claim question.
 
 ## Open items
 
-- **`uv.lock` is untracked** by design. Never `git add -A`; every commit uses explicit paths.
-- **Not published.** README says install from a clone; PyPI/npm names are free but unclaimed. Claim early if you want them.
+- **`uv.lock` is now tracked** (was a must-fix deferred minor). Still never `git add -A`; every commit uses explicit paths.
+- **GitHub repo is live and PRIVATE**: `github.com/anishmoncivarghese/whyline`. Flip to public after the verification pass. **PyPI deferred** until then; `whyline` was still free on PyPI and npm as of 2026-08-17. **npm deliberately skipped** (Python CLI; a placeholder would be squatting). **No domains** — the owner does not want a website.
 - **Read-side check.** Consider a short experiment on whether an agent runs `whyline brief` unprompted, now that both it and `run` exist. The instruction now carries all four parts (trigger, exact command, pre-authorization, verification); whether that makes it fire is unmeasured.
 - **Model policy** (`feedback_subagent_models`) says Sonnet floor with Opus for hard tasks and the final review; **budget policy** (`feedback_no_extra_credits`) says never spend beyond the subscription. When they conflict, use fewer subagents rather than cheaper ones.
