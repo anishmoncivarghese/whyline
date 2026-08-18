@@ -64,6 +64,29 @@ The original symlink is preserved at `~/.local/bin/whyline.real-symlink.bak`. **
 - **Single project, single operator.** Same limit as M0. Directional, not statistical.
 - **`brief` is also invoked by `run`.** A `run` invocation logs as `run`, not `brief`, so the two do not confound — but a `brief` immediately following a `run` in the log is the agent's own call, not `run`'s internal composition, because `run` calls `brief.compose` in-process rather than shelling out.
 
+## Observed limit — recorded 2026-08-18, mid-collection
+
+A full orchestrated cross-vendor task ran in CodeGraph: Claude planned and wrote a
+task brief, Codex implemented it under `codex exec`, a reviewer found a real
+correctness bug in the brief's own algorithm, Codex fixed it, Claude verified and
+committed. Three commits landed.
+
+**whyline recorded none of it.** `decisions.md` stayed at 19 entries. The decision
+that was made — loop the named re-export pass to a fixpoint, rejecting single-pass
+resolution because a 3+ level chain resolves wrongly depending on insertion order —
+is exactly what this tool exists to capture, and it went unrecorded.
+
+The reasoning was captured, richly, in `.superpowers/sdd/<plan>/progress.md`, which
+is **gitignored**. So it dies on a clone and whyline cannot see it.
+
+**What this bounds.** M0's write-side rate (19 decisions over 14 commits) was
+measured while agents worked *directly* with the human. Under an orchestrated flow
+that has its own ledger, the same repository recorded zero. The rate is therefore
+workflow-dependent, and must be stated that way rather than as a general property
+of the instruction.
+
+This does not affect the read-side measurement below, which concerns `brief` only.
+
 ## Results
 
 Fill in at the end of collection. Do not edit the thresholds above.

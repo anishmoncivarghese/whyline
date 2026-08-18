@@ -167,8 +167,31 @@ def cmd_note(args: argparse.Namespace) -> int:
         alternatives=alternatives,
         files=[decisions.one_line(f) for f in args.files],
     )
-    ledger.append(paths.ledger_path(root), event)
-    decisions.append_entry(paths.decisions_path(root), event)
+    # decisions.md FIRST, then the ledger. Order matters at the failure
+    # boundary, found 2026-08-18: with the ledger written first, a failure on
+    # decisions.md left the note in the local ledger only — `brief` and `status`
+    # both reported it, but decisions.md is what is committed, so a clone would
+    # never see it and the two stores diverged silently. Writing the durable,
+    # committed artefact first makes the surviving failure direction the safe
+    # one, since `brief` falls back to parsing decisions.md.
+    try:
+        decisions.append_entry(paths.decisions_path(root), event)
+    except OSError as error:
+        print(
+            f"could not write {paths.decisions_path(root)}: {error.strerror}.\n"
+            "Nothing was recorded.",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    try:
+        ledger.append(paths.ledger_path(root), event)
+    except OSError as error:
+        # decisions.md already holds it, which is the artefact that travels.
+        print(
+            f"warning: recorded in {paths.decisions_path(root)} but could not "
+            f"write the local ledger: {error.strerror}",
+            file=sys.stderr,
+        )
     # Echo what was stored, not what was typed — they differ when a multi-line
     # value is normalised, and printing the raw form would misreport the record.
     print(f"Recorded: {event['decision']}")

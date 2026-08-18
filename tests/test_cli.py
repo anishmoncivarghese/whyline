@@ -626,3 +626,64 @@ def test_status_handles_a_deny_rule_written_as_a_bare_string(repo, capsys):
     )
     code, out = run_in(repo, ["status", "--json"], capsys)
     assert json.loads(out)["hook_installed"] is False
+
+
+def run_in_both(repo, argv, capsys):
+    """Like run_in, but returns stderr too. run_in drains capsys, so a second
+    readouterr() in the same test sees an empty buffer."""
+    previous = os.getcwd()
+    os.chdir(repo.path)
+    try:
+        code = cli.main(argv)
+    finally:
+        os.chdir(previous)
+    captured = capsys.readouterr()
+    return code, captured.out, captured.err
+
+
+def test_note_reports_cleanly_when_decisions_md_cannot_be_written(repo, capsys):
+    """2026-08-18: note raised a raw traceback when storage was unwritable, and
+    because the ledger was written first, a failure on decisions.md left the note
+    in the local ledger only — brief and status showed it while a clone never
+    would. The stores diverged silently."""
+    import os
+
+    from whyline import ledger
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    directory = paths.whyline_dir(repo.path)
+    os.chmod(directory, 0o500)
+    try:
+        code, out, err = run_in_both(repo, ["note", "cannot store this"], capsys)
+    finally:
+        os.chmod(directory, 0o755)
+
+    assert code == cli.EXIT_ERROR
+    assert "Traceback" not in err
+    assert "Nothing was recorded" in out + err
+    # And crucially: the ledger must not hold what the committed record lacks.
+    found, _ = ledger.read_all(paths.ledger_path(repo.path))
+    assert [e for e in found if e.get("type") == events.NOTE] == []
+
+
+def test_note_still_records_when_only_the_local_ledger_fails(repo, capsys):
+    """The safe failure direction: decisions.md is the artefact that travels, so
+    if only the local ledger fails the note is still durably recorded."""
+    import os
+
+    from whyline import ledger
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).write_text("", encoding="utf-8")
+    os.chmod(paths.ledger_path(repo.path), 0o000)
+    try:
+        code, out, err = run_in_both(repo, ["note", "durable anyway"], capsys)
+    finally:
+        os.chmod(paths.ledger_path(repo.path), 0o644)
+
+    assert code == cli.EXIT_OK
+    assert "Recorded:" in out
+    assert "durable anyway" in paths.decisions_path(repo.path).read_text()
+    assert "Traceback" not in err
+    assert "could not write the local ledger" in err
