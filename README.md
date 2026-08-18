@@ -36,39 +36,87 @@ And because the record is committed to your repository as plain Markdown, it
 outlives the session. Six months later, `whyline explain` still answers why a line
 of code exists — which is the same mechanism, read at a longer horizon.
 
-## Install
+## Set up once, then forget it
+
+**Once per machine:**
 
 ```bash
 uv tool install whyline
 ```
 
-Zero production dependencies — standard library only. Python 3.11+, plus `git`.
-
-## Quickstart
+**Once per repository:**
 
 ```bash
-whyline init                     # scaffold, add instructions, install the hook
+cd your-project && whyline init
 ```
 
-Then work normally. Your agents record their own decisions, because `init` adds an
-instruction to `AGENTS.md` asking them to. When you want to switch:
+That is the whole setup. `init` creates `.whyline/`, adds a short instruction to
+`AGENTS.md` and `CLAUDE.md`, and installs a Claude Code hook. **After that you run
+no whyline commands to make it work** — recording happens on its own.
+
+Zero production dependencies — standard library only. Python 3.11+, plus `git`.
+
+Re-run `whyline init` any time; it upgrades an outdated instruction block in place
+and leaves everything you wrote around it untouched.
+
+## Then just work
+
+Open Claude Code or Codex and build as you normally would. Two things happen
+without you doing anything:
+
+- the **hook** records sessions, prompts and file edits;
+- your **agent** records its own decisions and rejected alternatives, because it
+  read the instruction `init` added.
+
+You only type a whyline command when you want something from it.
+
+## Switching agents — the thing this exists for
+
+Say you have been working with Claude and you want Codex to review. From **your
+own terminal**:
 
 ```bash
 whyline run codex "review the caching change"
 ```
 
-That composes what Claude decided and hands the terminal to Codex with it attached.
-The reverse works the same way: `whyline run claude "..."`.
-
-The rest of the surface:
+Codex starts with Claude's decisions already in its prompt — what was chosen, and
+what was ruled out. When it has finished and recorded its findings, go back the
+other way:
 
 ```bash
-whyline brief                    # print the handoff context without launching
+whyline run claude "address Codex's review findings"
+```
+
+Claude now sees what Codex concluded. Neither agent had to be re-briefed by you.
+
+> **Run `run` from your shell, not from inside an agent session.** It replaces the
+> current process with the agent (`exec`), so launching it from within another
+> agent's tool call gives the new agent no terminal and it will fail.
+
+Everything else is optional:
+
+```bash
+whyline brief                    # see what would be handed over, without launching
 whyline explain src/a.py:14      # why does this line exist?
 whyline note "chose X" --because "Y" --rejected "Z: too slow" --file src/a.py
 whyline timeline --file src/a.py
-whyline status
+whyline status                   # is recording actually live?
 ```
+
+## What whyline does not do
+
+Worth being explicit, because the name of the category invites the wrong guess.
+
+- **It does not orchestrate.** It never runs both agents, never runs them in
+  parallel, and never decides which one should act.
+- **It does not assign roles.** There is no "planner" or "reviewer" configuration.
+  If you want Claude to plan and Codex to review, that is your choice, expressed in
+  the task string you pass to `run`.
+- **It does not supervise.** `run` hands your terminal over and gets out of the
+  way. Nothing is captured, parsed or wrapped, so no vendor changing its output
+  format can break it.
+- **It does not touch your credentials.** Each vendor's own CLI authenticates
+  itself, which is why your existing subscriptions just work.
 
 ## How it works
 

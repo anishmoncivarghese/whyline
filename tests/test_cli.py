@@ -8,7 +8,12 @@ def test_version_flag_succeeds(capsys):
     with pytest.raises(SystemExit) as exit_info:
         cli.main(["--version"])
     assert exit_info.value.code == cli.EXIT_OK
-    assert "0.1.0" in capsys.readouterr().out
+    # Assert against the package's own version, not a literal. A hardcoded
+    # string here broke the suite on the 0.1.1 bump, which is a test failing for
+    # its own brittleness rather than for a defect in the code.
+    from whyline import __version__
+
+    assert __version__ in capsys.readouterr().out
 
 
 def test_unknown_command_is_a_usage_error():
