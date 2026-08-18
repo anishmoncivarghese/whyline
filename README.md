@@ -72,26 +72,62 @@ You only type a whyline command when you want something from it.
 
 ## Switching agents — the thing this exists for
 
-Say you have been working with Claude and you want Codex to review. From **your
-own terminal**:
+There are two ways to do it. Both work. They fail differently, so pick with your
+eyes open.
+
+### Pattern 1 — two terminals (recommended)
+
+Each agent gets its own session. You decide who does what by which tab you type in.
+
+```bash
+# tab 1 — implementation
+cd your-project && codex
+> start task 12
+
+# tab 2 — review and debugging
+cd your-project && claude
+> review task 12 and fix what's broken
+```
+
+Nothing is passed by hand. Each agent orients itself from `AGENTS.md`, reads the
+history with `whyline brief`, and records what it decided. You are the switch, and
+that is the whole mechanism.
+
+Or let whyline launch the agent with the context already attached:
 
 ```bash
 whyline run codex "review the caching change"
 ```
 
-Codex starts with Claude's decisions already in its prompt — what was chosen, and
-what was ruled out. When it has finished and recorded its findings, go back the
-other way:
-
-```bash
-whyline run claude "address Codex's review findings"
-```
-
-Claude now sees what Codex concluded. Neither agent had to be re-briefed by you.
-
-> **Run `run` from your shell, not from inside an agent session.** It replaces the
+> Run `run` from your shell, not from inside an agent session. It replaces the
 > current process with the agent (`exec`), so launching it from within another
 > agent's tool call gives the new agent no terminal and it will fail.
+
+### Pattern 2 — dispatch from inside a session
+
+Ask the agent you are already talking to to call the other one:
+
+> get codex to review the caching change
+
+Claude runs `codex exec …` and the result comes back into your current
+conversation. Convenient for a one-shot second opinion, with three limitations:
+
+- **A dispatched agent follows its dispatcher's prompt, not `AGENTS.md`.** In one
+  observed run, an orchestrated task recorded **no** decisions, while the same
+  agent leading its own session on the next task recorded two and read the history
+  unprompted. If provenance matters for a piece of work, let the agent own its
+  session.
+- **It is one shot.** The dispatched agent has no terminal, so it cannot ask you a
+  clarifying question or iterate — it answers once and exits.
+- **It does not work in reverse.** Codex cannot launch Claude, because Claude Code
+  writes session state outside the workspace and Codex's sandbox blocks that. Do
+  not disable the sandbox to force it; use a second terminal.
+
+### Either way
+
+**Codex cannot commit.** Its sandbox blocks writes to `.git`, so it will implement,
+test and report, then stop. You or Claude makes the commit. That is a fixed cost of
+the sandbox, not a whyline limitation.
 
 Everything else is optional:
 
