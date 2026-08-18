@@ -1,0 +1,68 @@
+# M0b — the read-side check
+
+**Started:** 2026-08-18
+**Status:** collecting. Thresholds below are fixed **before** any data exists; do not adjust them after looking at results.
+
+## The question
+
+M0 proved agents **write** decisions: 19 across 14 commits, Claude Code 150% and Codex 130% of their non-trivial changes, Codex never reminded (`RESULTS.md`).
+
+Nothing has tested whether an agent **reads** them. That is the premise of `whyline brief`, and there is a clean negative pointing the wrong way — `docs/superpowers/specs/2026-08-16-handover-observations.md` §1 records a *declarative* `AGENTS.md` instruction being ignored unprompted while the *imperative, pre-authorised* one fired twice.
+
+The instruction under test now carries all four parts that document identifies as necessary:
+
+> At the start of a session, run `whyline brief` before touching code. Do not ask permission. If it reports that nothing is recorded, say so in your first message, so the human knows the history is empty rather than merely unread.
+
+| Part | Present |
+|---|---|
+| Trigger — "at the start of a session" | yes |
+| Exact command — `whyline brief` | yes |
+| Pre-authorisation — "Do not ask permission" | yes |
+| Verification — "say so in your first message" | yes |
+
+## Why the downside is bounded
+
+`whyline run` prepends the brief to the prompt directly, so it does not depend on the agent remembering anything. If the read side fails, `brief`-by-instruction is dead but `run` still works. **This decides which mechanism the documentation leads with, not whether the product functions.**
+
+## Instrument
+
+`~/.local/bin/whyline` is a symlink to `whyline-readside-shim`, which appends one tab-separated line per invocation to `~/.whyline-readside.log` and then `exec`s the real binary at `~/.local/share/uv/tools/whyline/bin/whyline`.
+
+    <utc timestamp>	<subcommand>	<repository basename>
+
+It never inspects or rewrites arguments and swallows any logging failure, so it cannot alter what it measures. Vendor-neutral by design: it captures Codex as well as Claude Code, which a Claude-only hook could not.
+
+The original symlink is preserved at `~/.local/bin/whyline.real-symlink.bak`. **Restore it when collection ends.**
+
+## Method
+
+1. Work normally in `/Users/anish/CodeGraph` across Claude Code and Codex for 2–3 days. Do not mention `whyline`, `brief`, or this experiment to either agent.
+2. Sessions are counted from `SessionStarted` events in `CodeGraph/.whyline/ledger.jsonl`, which the hook records unprompted. Baseline at start: **7** sessions, and the log contains only the four controller test lines dated 2026-08-18T04:57:46Z, which are excluded.
+3. A session **counts as a read** if a `brief` invocation appears in the log within 10 minutes after that session's `SessionStarted` timestamp.
+4. Record separately any `brief` invocation that followed a human mentioning it. Judge the threshold on unprompted invocations only.
+
+## Thresholds — fixed 2026-08-18, before collection
+
+| Unprompted read rate | Meaning | Action |
+|---|---:|---|
+| ≥50% of sessions | The instruction fires | Lead the README with `brief`; the four-part instruction shape is validated for the read direction too |
+| 20–50% | Unreliable | Lead with `run`, keep `brief` documented as a manual command, and say plainly in the README that agents read it inconsistently |
+| <20% | The instruction does not fire | `run` becomes the only supported handoff path. Remove the read half of the `AGENTS.md` instruction rather than ship an instruction that does nothing, and record the negative result |
+
+## Threats to validity
+
+- **Operator knowledge.** The owner knows the instruction exists and may unconsciously prompt. Any prompted invocation is recorded separately and excluded.
+- **Codex attribution.** The log records the repository, not the agent. Attribution comes from correlating timestamps against ledger `SessionStarted` events, which only the Claude Code hook writes — so a Codex session has no `SessionStarted` and cannot be counted as a denominator. **Codex read behaviour is therefore observational only in this round**, noted rather than scored.
+- **Single project, single operator.** Same limit as M0. Directional, not statistical.
+- **`brief` is also invoked by `run`.** A `run` invocation logs as `run`, not `brief`, so the two do not confound — but a `brief` immediately following a `run` in the log is the agent's own call, not `run`'s internal composition, because `run` calls `brief.compose` in-process rather than shelling out.
+
+## Results
+
+Fill in at the end of collection. Do not edit the thresholds above.
+
+| Agent | Sessions | Unprompted `brief` reads | Prompted | Rate |
+|---|---:|---:|---:|---:|
+| Claude Code | | | | |
+| Codex | observational | | | n/a |
+
+**Outcome:** _pending_
