@@ -146,8 +146,8 @@ Worth being explicit, because the name of the category invites the wrong guess.
 - **It does not orchestrate.** It never runs both agents, never runs them in
   parallel, and never decides which one should act.
 - **It does not assign roles.** There is no "planner" or "reviewer" configuration.
-  If you want Claude to plan and Codex to review, that is your choice, expressed in
-  the task string you pass to `run`.
+  If you want Codex developing and Claude testing, that is expressed by which
+  terminal you type in — not by anything whyline stores.
 - **It does not supervise.** `run` hands your terminal over and gets out of the
   way. Nothing is captured, parsed or wrapped, so no vendor changing its output
   format can break it.
@@ -176,6 +176,15 @@ features depending on it were built. Over three days across two agents on a real
 project, 19 decisions were recorded across 14 commits — Claude Code 150% of its
 non-trivial changes, Codex 130%, against a 60% threshold. Every one carried a
 rationale and a concrete rejected alternative. Codex was never reminded.
+
+**That rate holds when an agent works directly, and not when it is dispatched.**
+A later orchestrated task in the same repository recorded nothing at all, because
+a dispatched agent follows its dispatcher's prompt rather than `AGENTS.md`. The
+figure above is therefore a property of direct work, not a general one — which is
+the reason Pattern 1 above is the recommended shape.
+
+Both agents were separately observed reading the history unprompted at the start
+of a session they owned.
 
 Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
 
