@@ -1,0 +1,99 @@
+name: release
+
+# Publishes to PyPI via Trusted Publishing (OIDC). No API token exists anywhere:
+# PyPI verifies this workflow's identity directly, so there is no long-lived
+# credential to leak, rotate, or accidentally scope too widely.
+#
+# Requires a Trusted Publisher registered on PyPI for this repository, with
+# workflow `release.yml` and environment `pypi`.
+#
+# To release: tag a commit on main and push the tag.
+#   git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    # Never publish something the suite has not passed on the exact tagged tree.
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install ${{ matrix.python }}
+      - run: uv sync
+      - run: uv run pytest -v
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # Mints the short-lived OIDC token PyPI checks. This is the whole mechanism.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Refuse to publish if the tag disagrees with pyproject
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(uv run python -c \
+            "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "tag=$TAG pyproject=$VERSION"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag v$TAG does not match pyproject version $VERSION"
+            exit 1
+          fi
+
+      - run: uv build
+
+      - name: Refuse to publish local paths or internal notes
+        # The sdist is built from the working tree, not from git, so a gitignored
+        # file can still be swept in. That nearly happened on 2026-08-18:
+        # .claude/settings.local.json (home-directory paths, locally approved shell
+        # commands) and 27 files of internal review workspace were in the default
+        # sdist. A PyPI upload cannot be withdrawn, so this gate is the last line.
+        run: |
+          set -u
+          # Strip the leading `whyline-<version>/` component so patterns can be
+          # anchored to the archive root. Testing a captured string for emptiness
+          # rather than chaining greps: `grep -qv` returns 0 on empty input under
+          # BSD grep, so the obvious pipeline fired on every archive, clean or
+          # not — a gate that always fails teaches people to bypass it.
+          ENTRIES=$(tar -tzf dist/*.tar.gz | sed 's|^[^/]*/||')
+          FOUND=0
+          for prefix in '.claude' '.superpowers' '.whyline' 'm0' 'docs'; do
+            HITS=$(printf '%s\n' "$ENTRIES" | grep "^${prefix}/" || true)
+            if [ -n "$HITS" ]; then
+              echo "::error::sdist contains ${prefix}/ — $(printf '%s' "$HITS" | wc -l) entries"
+              FOUND=1
+            fi
+          done
+          PATHS=$(tar -xzOf dist/*.tar.gz | grep -o '/Users/[A-Za-z0-9._-]*' || true)
+          if [ -n "$PATHS" ]; then
+            echo "::error::sdist contains absolute home paths"
+            FOUND=1
+          fi
+          if [ "$FOUND" != "0" ]; then
+            echo "::error::refusing to publish; a PyPI upload cannot be withdrawn"
+            exit 1
+          fi
+          echo "sdist is clean: $(printf '%s\n' "$ENTRIES" | grep -c . ) entries"
+
+      - name: Verify the wheel installs and runs standalone
+        run: |
+          uv venv /tmp/verify
+          uv pip install --python /tmp/verify/bin/python dist/*.whl
+          /tmp/verify/bin/whyline --version
+          test -x /tmp/verify/bin/whyline-hook
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always
