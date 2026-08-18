@@ -88,3 +88,31 @@ Append-only. Written by whyline; readable without it.
 **Files:** m0/RESULTS.md
 
 <!-- whyline-event: 0c921f3510014aaba79e6e7124118090 -->
+
+## 2026-08-18 — Widen the write trigger to name reviewers, not only implementers
+
+**Because:** "After completing any non-trivial change" describes someone who completed a change, so a reviewer following it exactly concludes it does not address them. Observed three times in CodeGraph (Tasks 10, 12, 13): the implementer recorded every time while the reviewer's rulings reached only a gitignored SDD ledger and died on clone. A trigger-coverage gap, not a compliance failure.
+
+**Rejected:**
+
+- Add a separate ## Reviewing section — doubles the injected block's length, and length is a real cost in a file agents skim every session
+- Add a verification clause to the write half to match the read half — the write half has never had one and fires anyway (M0 measured 150%/130% against a 60% threshold), so it would change a working instruction on theory rather than evidence
+- Wait for a measured before/after like the read-side check — the fix is a documentation clarification with little downside, so shipping now and noting it is unmeasured beats leaving a known gap open
+
+**Files:** src/whyline/agentsmd.py
+
+<!-- whyline-event: 6daf3fc3e54442e19bc8a3945b3a13f3 -->
+
+## 2026-08-18 — Copy the replaced instruction block out instead of warning about possible loss
+
+**Because:** 0.1.3 is the first release to change the block's content since init shipped, so it is the first to replace text inside the markers in existing repos. A human addition there vanishes silently, contradicting the project's degrade-with-a-warning invariant. Distinguishing whyline's own older wording from a human addition is impossible without retaining every prior version's text, so the replaced block is copied to AGENTS.md.whyline-bak and named in the return value rather than guessed about.
+
+**Rejected:**
+
+- Warn on every upgrade that content may have been lost — usually nothing was, and a warning that fires when nothing is wrong trains people to ignore it
+- Keep a tuple of every prior canonical INSTRUCTION to diff against — precise, but grows without bound and silently mislabels any block a user edited into a shape matching an old version
+- Preserve unrecognised lines by merging them into the new block — no rule says where they belong, and a wrong merge corrupts the instruction agents read every session
+
+**Files:** src/whyline/agentsmd.py
+
+<!-- whyline-event: fe102cd0ca54493194b987dc5220ceca -->

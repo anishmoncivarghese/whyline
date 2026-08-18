@@ -174,8 +174,9 @@ Three layers feed one ledger:
 It was the design's one unproven assumption, so it was measured before the
 features depending on it were built. Over three days across two agents on a real
 project, 19 decisions were recorded across 14 commits — Claude Code 150% of its
-non-trivial changes, Codex 130%, against a 60% threshold. Every one carried a
-rationale and a concrete rejected alternative. Codex was never reminded.
+non-trivial changes against a 60% gate, Codex 130% against a separate "at least
+one firing" gate. Every one carried a rationale and a concrete rejected
+alternative. Codex was never reminded.
 
 **That rate holds when an agent works directly, and not when it is dispatched.**
 A later orchestrated task in the same repository recorded nothing at all, because
@@ -183,8 +184,19 @@ a dispatched agent follows its dispatcher's prompt rather than `AGENTS.md`. The
 figure above is therefore a property of direct work, not a general one — which is
 the reason Pattern 1 above is the recommended shape.
 
-Both agents were separately observed reading the history unprompted at the start
-of a session they owned.
+The read side was measured separately, because writing a record nobody consults
+is worthless. Claude Code ran `whyline brief` unprompted at the start of 2 of 3
+sessions it owned (67%, against a 50% threshold fixed before collection), and
+Codex was twice observed doing the same. That is a small sample scored early —
+one session either way moves it by 33 points — so treat it as directional.
+
+**One gap is known and unfixed: reviewers record less than implementers.** Across
+five tasks on one project, the agent *implementing* recorded every time, while
+not one ruling by the agent *reviewing* reached the record — those went to a
+tracker that was not committed, and died on clone. 0.1.3 widened the instruction
+to name reviewers explicitly. Whether that works is not yet measured, and at
+least two other causes are plausible, including that a reviewer working from a
+different repository never loads the project's `AGENTS.md` at all.
 
 Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
 

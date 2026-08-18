@@ -26,7 +26,9 @@ The instruction under test now carries all four parts that document identifies a
 
 ## Instrument
 
-`~/.local/bin/whyline` is a symlink to `whyline-readside-shim`, which appends one tab-separated line per invocation to `~/.whyline-readside.log` and then `exec`s the real binary at `~/.local/share/uv/tools/whyline/bin/whyline`.
+`~/.local/bin/whyline` is a symlink to `whyline-readside-shim`, which appends one tab-separated line per invocation to a log and then `exec`s the real binary at `~/.local/share/uv/tools/whyline/bin/whyline`.
+
+**Two log locations, and which one matters was itself a finding** (`02e52de`). The shim writes to `<repo>/.whyline/readside.log` when invoked inside a repository, falling back to `~/.whyline-readside.log` otherwise; `analyse-readside.py` merges both. The in-workspace log is the authoritative one for sandboxed agents: the original `$HOME`-only design was silently unwritable from Codex's sandbox, and because the shim swallows logging failures by design, Codex's reads simply vanished. Merging is what makes the instrument see both vendors.
 
     <utc timestamp>	<subcommand>	<repository basename>	<invoker>	<session id>
 
@@ -37,7 +39,9 @@ without attribution the log cannot distinguish the owner running `whyline brief`
 from an agent doing so, and a human invocation inside the 10-minute window would
 have been scored as a read. **Only `claude` and `codex` invocations count.**
 
-It never inspects or rewrites arguments and swallows any logging failure, so it cannot alter what it measures. Vendor-neutral by design: it captures Codex as well as Claude Code, which a Claude-only hook could not.
+It never inspects or rewrites arguments and swallows any logging failure, so it cannot alter what it measures — at the cost that a failed write is indistinguishable from no invocation, which is exactly how Codex's reads went missing.
+
+It captures Codex as well as Claude Code, which a Claude-only hook could not. **It is not, however, "vendor-neutral by design"** — that claim was made and then retracted in `02e52de`: neutrality depended on a log location one vendor's sandbox forbids, so it was a property of the environment, not of the design.
 
 The original symlink is preserved at `~/.local/bin/whyline.real-symlink.bak`. **Restore it when collection ends.**
 
@@ -89,11 +93,60 @@ This does not affect the read-side measurement below, which concerns `brief` onl
 
 ## Results
 
-Fill in at the end of collection. Do not edit the thresholds above.
+Scored 2026-08-18 via `python3 m0/analyse-readside.py`.
 
 | Agent | Sessions | Unprompted `brief` reads | Prompted | Rate |
 |---|---:|---:|---:|---:|
-| Claude Code | | | | |
-| Codex | observational | | | n/a |
+| Claude Code | 3 | 2 | 0 (per the operator) | 67% |
+| Codex | no denominator | 1 logged (2026-08-18T21:03:15Z) + 1 transcript-confirmed but unlogged (Task 11, see `02e52de`) | 0 (per the operator) | n/a |
 
-**Outcome:** _pending_
+**Outcome: THE INSTRUCTION FIRES** — 67% clears the 50% threshold. Per the
+table above, this leads the README with `brief`, which it already does.
+
+**Caveat added at scoring time, not fixed before collection:** the Claude
+Code denominator is 3 sessions (09:25, 10:48, 15:48 on 2026-08-18), not the
+multi-day sample the protocol anticipated — collection was scored early. One
+of the three sessions had no `brief` call in its 10-minute window and pulls
+the rate down to 67% rather than 100%; a single additional session either way
+would move the rate by 33 points. Treat 67% as directional, not a stable
+estimate, and prefer re-running this script before making it a load-bearing
+claim in a future round.
+
+Codex had issued zero *logged* `brief` invocations as of this scoring (its
+only logged calls were `note`). That is not the same as no observation:
+commit `02e52de` records Codex running `whyline brief` unprompted as its
+first action on a bare "start task 11", calling it "the required history
+check" — confirmed from the transcript, but invisible to the log, because
+the shim then wrote only to `$HOME` and Codex's sandbox blocks that path.
+Distinguish **logged** from **observed** everywhere below; conflating them
+is what produced a false negative in the first place.
+
+**Re-scored 2026-08-18 after a Task 13 round: unchanged (3 sessions, 67%).**
+Task 13 added two more Codex `note` writes (16:04, 17:29) but no new
+`SessionStarted` event, because Codex ran via the `codex` CLI directly and
+the review/commit ran via Bash from an already-open session elsewhere,
+`cd`-ing into the repo rather than starting a `claude` process inside it.
+The instrument can only see a Claude Code session that starts *in* the
+target repo — a review done by shelling in from another session is
+invisible to the denominator. Note this as a methodology limit before
+trusting a "no change" reading: it can mean either "the instruction still
+doesn't fire more" or "no new session was ever counted," and this round is
+the latter.
+
+**Re-scored 2026-08-18 after a Task 14 round (Codex implements, Claude
+reviews and commits, same pattern as Task 13): Claude Code unchanged (3
+sessions, 67%) for the same reason — no new `claude` process started inside
+CodeGraph. Codex produced its first *logged* `brief` call**
+(2026-08-18T21:03:15Z, `.whyline/readside.log`). Not its first read — see the
+Task 11 transcript-confirmed one above; this is the first the instrument
+could actually capture, now that the log lives inside the workspace.
+
+The operator reports not mentioning `whyline` or `brief` to Codex for this
+task. Per "Threats to validity" above, prompting is the one thing the
+instrument cannot detect, so that is an operator report and not an instrument
+reading — the same standing as M0's own unpromptedness claim.
+
+Still no denominator-based rate for Codex: `SessionStarted` is written only by
+the Claude Code hook, so there is no way to know how many `codex` invocations
+this one `brief` is out of. Treat it as **Codex has been observed reading
+unprompted, twice, and logged once** — not as a rate.

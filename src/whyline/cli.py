@@ -209,7 +209,10 @@ def cmd_brief(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-GITIGNORE_LINES = ("ledger.jsonl", "index.db", "!decisions.md")
+# `*.bak` covers the copy `agentsmd.install` leaves when it replaces an outdated
+# instruction block. It lives here rather than in the repository's own .gitignore
+# because whyline only ever manages this file — the human owns the other one.
+GITIGNORE_LINES = ("ledger.jsonl", "index.db", "*.bak", "!decisions.md")
 
 
 def _confirm(question: str, assume_yes: bool) -> bool:

@@ -38,6 +38,9 @@ jobs:
     permissions:
       # Mints the short-lived OIDC token PyPI checks. This is the whole mechanism.
       id-token: write
+      # Lets the final step create the GitHub Release. Without it `gh release
+      # create` 403s, and the default GITHUB_TOKEN is read-only on contents.
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -97,3 +100,28 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish --trusted-publishing always
+
+      # Pushing a tag creates a tag, not a Release — they are different objects,
+      # which is why v0.1.0 through v0.1.2 shipped with their rationale recorded
+      # nowhere a user could read it. For a tool whose entire purpose is
+      # preserving *why*, that was the wrong default.
+      #
+      # Runs after publishing on purpose: a Release pointing at a version PyPI
+      # rejected would be a lie, and a failed publish is the more useful error.
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" --notes-file "$NOTES" \
+              dist/*.whl dist/*.tar.gz
+          else
+            # No hand-written notes: generate from commits rather than ship an
+            # empty Release, and say so, so the omission is visible not silent.
+            echo "::warning::no $NOTES; generating notes from commit history"
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" --generate-notes \
+              dist/*.whl dist/*.tar.gz
+          fi
