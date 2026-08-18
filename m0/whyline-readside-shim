@@ -6,7 +6,16 @@
 # Records WHO invoked it. Without this the log cannot tell the human running
 # `whyline brief` from an agent doing so, and a human invocation inside the
 # measurement window would be falsely scored as the agent reading.
-log="${WHYLINE_READSIDE_LOG:-$HOME/.whyline-readside.log}"
+# The log must live INSIDE the workspace. Found 2026-08-18: with it in $HOME,
+# Codex's sandbox blocked the write, the shim swallowed the failure by design, and
+# every Codex read went unrecorded — the analyser would have reported that Codex
+# never reads when in fact it read every time. A false negative manufactured by
+# the instrument itself. $HOME remains the fallback for invocations outside a repo.
+if [ -d "${PWD}/.whyline" ]; then
+  log="${WHYLINE_READSIDE_LOG:-${PWD}/.whyline/readside.log}"
+else
+  log="${WHYLINE_READSIDE_LOG:-$HOME/.whyline-readside.log}"
+fi
 if [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
   who="claude"
 elif [ -n "${CODEX_SANDBOX:-}" ] || [ -n "${CODEX_HOME:-}" ]; then

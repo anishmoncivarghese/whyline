@@ -88,7 +88,13 @@ def main() -> int:
     args = parser.parse_args()
 
     sessions = load_sessions(args.repo / ".whyline" / "ledger.jsonl")
-    invocations = load_invocations(args.log, args.repo.name)
+    # Two log locations. The in-workspace one is authoritative for sandboxed
+    # agents: Codex cannot write outside the workspace, so a $HOME-only log
+    # silently recorded none of its reads.
+    invocations = sorted(
+        load_invocations(args.log, args.repo.name)
+        + load_invocations(args.repo / ".whyline" / "readside.log", args.repo.name)
+    )
     window = timedelta(minutes=args.window_minutes)
 
     # Only an agent's own invocation counts as a read.
