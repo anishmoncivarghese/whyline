@@ -116,3 +116,16 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/agentsmd.py
 
 <!-- whyline-event: fe102cd0ca54493194b987dc5220ceca -->
+
+## 2026-08-18 — Write release notes as files in docs/releases/, read by the workflow at tag time
+
+**Because:** Pushing a tag creates a tag, not a Release, so three versions shipped with no rationale visible to users — the wrong default for a tool whose purpose is preserving why. Notes live in the repo so they are reviewable in the same diff as the change they describe, and the workflow reads docs/releases/<tag>.md after publishing succeeds, since a Release pointing at a version PyPI rejected would be a lie.
+
+**Rejected:**
+
+- gh release create --generate-notes only — produces a commit list, which is what the existing git log already gives; kept as a visible fallback with a workflow warning so a missing file is not silent
+- A single CHANGELOG.md — one file every release edits is a merge-conflict magnet, and GitHub cannot use it as per-release notes
+
+**Files:** .github/workflows/release.yml
+
+<!-- whyline-event: cf373ba27d7142588f3da380d4abc429 -->
