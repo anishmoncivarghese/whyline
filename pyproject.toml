@@ -48,6 +48,17 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/whyline"]
 
+# Whitelist what ships, rather than relying on exclusions. Caught 2026-08-18
+# while inspecting the artifacts before a first publish: the default sdist swept
+# in `.claude/settings.local.json` — which holds home-directory absolute paths and
+# a log of locally approved shell commands — plus 27 files of internal review
+# workspace under `.superpowers/`. Both are gitignored, so neither was ever in the
+# repository, but hatchling packages from the working tree. A PyPI upload cannot
+# be withdrawn, so this list is deliberately narrow: the package, its tests, and
+# the two files a reader needs.
+[tool.hatch.build.targets.sdist]
+only-include = ["src/whyline", "tests", "README.md", "LICENSE"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
