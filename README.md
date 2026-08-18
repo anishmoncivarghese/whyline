@@ -38,10 +38,8 @@ of code exists — which is the same mechanism, read at a longer horizon.
 
 ## Install
 
-Not yet published. From a clone:
-
 ```bash
-uv tool install --from . whyline
+uv tool install whyline
 ```
 
 Zero production dependencies — standard library only. Python 3.11+, plus `git`.
