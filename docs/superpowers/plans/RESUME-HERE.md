@@ -1,6 +1,6 @@
 # Resume here — whyline v1
 
-**Updated:** 2026-08-18 · **Branch:** `feature/whyline-v1` · **157 tests passing** · CI green on macOS+Linux × py3.11/3.13 · zero production dependencies · wheel builds and runs standalone
+**Updated:** 2026-08-18 · **SHIPPED: whyline 0.1.2 on PyPI** · repo public at `github.com/anishmoncivarghese/whyline` · branch `main` · 174 tests · CI green on macOS+Linux × py3.11/3.13 · zero production dependencies
 
 ## One-line state
 
@@ -14,15 +14,18 @@ cd /Users/anish/agentdock && git checkout feature/whyline-v1 && uv run pytest -q
 
 Then read `.superpowers/sdd/2026-08-09-whyline-v1/progress.md` — the ledger, authoritative over anyone's recollection. Plan: `docs/superpowers/plans/2026-08-09-whyline-v1.md`. Spec: `docs/superpowers/specs/2026-08-09-whyline-v1-design.md`.
 
-## THE ONE OUTSTANDING GATE
+## Review history — all three rounds are done
 
-An Opus review of the previously unreviewed surface verdicted **NOT SAFE TO PUBLISH** and found **six Criticals, every one reproduced by execution, every one passing the then-green 135-test suite.** All six are fixed and verified on real data — but **the fixes are themselves controller-written and unreviewed.**
+Three Opus passes ran. The first verdicted **NOT SAFE TO PUBLISH** with six
+Criticals; the second found two more *in the fixes for those six*; the third found
+one regression in the fix for those two. All resolved, all verified on real data,
+and 0.1.2 shipped after the third came back with no blockers.
 
-Owed: one scoped verification pass over `8a11ad8..HEAD` on the most capable model, pointed at `brief.py` (fence, merge, dedup, provenance), `decisions.py` (one-line collapsing, conflict refusal), `render.py` `_hook_state`, and `cli.py` `cmd_timeline`. Then `superpowers:finishing-a-development-branch`.
+The lesson, recorded because it cost three rounds to learn: **controller
+self-review passed work that an independent pass immediately found Criticals in,
+every single time.** Do not skip the review step on this codebase.
 
-**Do not publish to PyPI or flip the repo public until that pass is clean.**
-
-What the review found, for context on how careful to be:
+What the first round found, for context on how careful to be:
 
 | | Finding |
 |---|---|
@@ -89,6 +92,7 @@ The suite was green before each. **Green tests do not ask whether the answer is 
 ## Open items
 
 - **`uv.lock` is now tracked** (was a must-fix deferred minor). Still never `git add -A`; every commit uses explicit paths.
-- **GitHub repo is live and PRIVATE**: `github.com/anishmoncivarghese/whyline`. Flip to public after the verification pass. **PyPI deferred** until then; `whyline` was still free on PyPI and npm as of 2026-08-17. **npm deliberately skipped** (Python CLI; a placeholder would be squatting). **No domains** — the owner does not want a website.
-- **Read-side check.** Consider a short experiment on whether an agent runs `whyline brief` unprompted, now that both it and `run` exist. The instruction now carries all four parts (trigger, exact command, pre-authorization, verification); whether that makes it fire is unmeasured.
+- **Published.** Repo public, `whyline` 0.1.0/0.1.1/0.1.2 on PyPI. **npm deliberately skipped** (Python CLI; a placeholder would be squatting). **No domains** — the owner does not want a website.
+- **Read-side check IN PROGRESS.** `m0/READ-SIDE-PROTOCOL.md`, thresholds fixed before collection, scored by `m0/analyse-readside.py`. Both Claude and Codex have been observed reading unprompted in sessions they owned. The instrument is a shim at `~/.local/bin/whyline`; **restore the real symlink with `m0/end-readside-collection.sh` when done.**
+- **Nine deferred minors** still untriaged — test-coverage gaps, none blocking.
 - **Model policy** (`feedback_subagent_models`) says Sonnet floor with Opus for hard tasks and the final review; **budget policy** (`feedback_no_extra_credits`) says never spend beyond the subscription. When they conflict, use fewer subagents rather than cheaper ones.
