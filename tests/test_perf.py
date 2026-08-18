@@ -11,28 +11,22 @@ from whyline import events, paths
 # The spec's target is 200 ms of user-perceived latency on a developer machine,
 # where the real total is 41-79 ms (of which ~20 ms is bare interpreter startup).
 #
-# Rewritten 2026-08-18, twice. The first version asserted an absolute 200 ms and
-# failed CI, where one macOS job spent 215 ms on interpreter startup alone. The
-# second measured wall-clock overhead above that baseline, but lumped whyline's
-# import cost together with the `git blame` subprocess `explain` spawns — so a
-# budget tight enough to catch an eager import made `explain` flaky on CI (84 ms
-# there against 60 ms locally).
+# Rewritten 2026-08-18, third time, because the first two measured the wrong
+# thing. An absolute 200 ms failed CI, where one macOS job spent 215 ms on
+# interpreter startup alone. Wall-clock overhead above that baseline then made
+# `explain` flaky, since it spawns `git blame` and its time mixes import cost with
+# a subprocess. A ratio against interpreter startup was meant to be machine
+# independent and is not: a *faster* machine has a smaller baseline, so the same
+# import cost yields a LARGER ratio — locally 0.45, on CI 1.01, which failed a
+# limit of 1.0 while nothing was wrong.
 #
-# The two costs are now measured separately, because only the first is a
-# regression this project can commit:
-#
-#   * IMPORT_BUDGET guards the import path directly, which is what an eagerly
-#     imported heavy module actually breaks. Real cost is ~22 ms.
-#   * COMMAND_CEILING is a generous absolute backstop per command, so a genuine
-#     blow-up still fails the build without CI variance causing false alarms.
-# Tightened 2026-08-18 (third revision). An absolute 0.06 was 7x the real cost of
-# 8.7 ms, so a single `import asyncio` (+34 ms) slipped through — it caught only
-# multi-module regressions. Rather than guess an absolute number that a slow CI
-# runner might trip, the budget is now relative to the machine: importing whyline
-# must cost less than starting Python at all. Real ratio is ~0.5; whyline plus one
-# asyncio would be ~2.4. That scales with hardware, so it is tight everywhere.
-IMPORT_RATIO_LIMIT = 1.0
-IMPORT_ABSOLUTE_CAP_SECONDS = 0.06
+# Module count replaces timing for the regression that matters. It is exact,
+# identical on every machine and every run, and the signal is large: whyline.cli
+# pulls in 36 modules, a single `import asyncio` pulls in 102. A loose absolute
+# timing cap stays as a backstop, since a module that does heavy work at import
+# time would import few modules and slip past a count check.
+IMPORT_MODULE_BUDGET = 60
+IMPORT_TIME_CAP_SECONDS = 0.20
 COMMAND_CEILING_SECONDS = 0.5
 
 
@@ -45,23 +39,41 @@ def _median_run(args: list[str], runs: int = 5) -> float:
     return statistics.median(timings)
 
 
-def test_importing_whyline_stays_cheap():
+def _module_count(preamble: str) -> int:
+    """Modules resident after running `preamble`. Deterministic, unlike timing."""
+    completed = subprocess.run(
+        [sys.executable, "-c", f"{preamble}; import sys; print(len(sys.modules))"],
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return int(completed.stdout.strip())
+
+
+def test_importing_whyline_pulls_in_few_modules():
     """The regression that matters: an eagerly imported heavy module.
 
     Verified capable of failing — a single `import asyncio` at module scope in
-    cli.py trips this, as does any heavier addition.
+    cli.py takes this from 36 to 138.
     """
+    baseline = _module_count("pass")
+    with_import = _module_count("import whyline.cli")
+    added = with_import - baseline
+    assert added < IMPORT_MODULE_BUDGET, (
+        f"importing whyline.cli pulls in {added} modules above a {baseline}-module "
+        "baseline; something heavy is being imported at module scope"
+    )
+
+
+def test_importing_whyline_is_not_slow_even_if_it_imports_little():
+    """Backstop for a module that does work at import time rather than importing
+    many others — the count check above cannot see that."""
     baseline = _median_run([sys.executable, "-c", "pass"])
     with_import = _median_run([sys.executable, "-c", "import whyline.cli"])
     cost = with_import - baseline
-    ratio = cost / baseline if baseline else float("inf")
-    assert ratio < IMPORT_RATIO_LIMIT, (
-        f"importing whyline.cli costs {cost * 1000:.0f} ms, which is "
-        f"{ratio:.1f}x the {baseline * 1000:.0f} ms cost of starting Python at "
-        "all; something heavy is being imported at module scope"
-    )
-    assert cost < IMPORT_ABSOLUTE_CAP_SECONDS, (
-        f"importing whyline.cli costs {cost * 1000:.0f} ms in absolute terms"
+    assert cost < IMPORT_TIME_CAP_SECONDS, (
+        f"importing whyline.cli costs {cost * 1000:.0f} ms above a "
+        f"{baseline * 1000:.0f} ms interpreter baseline"
     )
 
 
