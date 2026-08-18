@@ -54,7 +54,13 @@ def load_sessions(ledger: Path) -> list[datetime]:
     return sorted(starts)
 
 
-def load_invocations(log: Path, repo_name: str) -> list[tuple[datetime, str]]:
+def load_invocations(log: Path, repo_name: str) -> list[tuple[datetime, str, str]]:
+    """Returns (timestamp, subcommand, invoker). Invoker is claude / codex / human.
+
+    Attribution matters: without it the log cannot distinguish the human running
+    `whyline brief` from an agent doing so, and a human invocation inside the
+    measurement window would be falsely scored as a read.
+    """
     found = []
     if not log.exists():
         return found
@@ -67,7 +73,8 @@ def load_invocations(log: Path, repo_name: str) -> list[tuple[datetime, str]]:
             continue
         if parts[2].strip() != repo_name:
             continue
-        found.append((stamp, parts[1].strip()))
+        invoker = parts[3].strip() if len(parts) > 3 and parts[3].strip() else "unknown"
+        found.append((stamp, parts[1].strip(), invoker))
     return sorted(found)
 
 
@@ -84,7 +91,18 @@ def main() -> int:
     invocations = load_invocations(args.log, args.repo.name)
     window = timedelta(minutes=args.window_minutes)
 
-    briefs = [stamp for stamp, sub in invocations if sub == "brief"]
+    # Only an agent's own invocation counts as a read.
+    briefs = [
+        stamp
+        for stamp, sub, who in invocations
+        if sub == "brief" and who in ("claude", "codex")
+    ]
+    human_briefs = [
+        stamp for stamp, sub, who in invocations if sub == "brief" and who == "human"
+    ]
+    unknown_briefs = [
+        stamp for stamp, sub, who in invocations if sub == "brief" and who == "unknown"
+    ]
     read_sessions = [
         start
         for start in sessions
@@ -95,9 +113,12 @@ def main() -> int:
     print(f"Window            {args.window_minutes} min after SessionStarted")
     print(f"Collection since  {EXCLUDED_BEFORE.isoformat()}")
     print()
-    print(f"Claude sessions   {len(sessions)}")
-    print(f"brief invocations {len(briefs)}")
-    print(f"Sessions with a read  {len(read_sessions)}")
+    print(f"Claude sessions        {len(sessions)}")
+    print(f"brief by an agent      {len(briefs)}")
+    print(f"brief by you (excluded) {len(human_briefs)}")
+    if unknown_briefs:
+        print(f"brief unattributed     {len(unknown_briefs)}  (logged before attribution existed)")
+    print(f"Sessions with a read   {len(read_sessions)}")
 
     if not sessions:
         print()
@@ -126,7 +147,7 @@ def main() -> int:
         )
     print(f"Verdict: {verdict}")
 
-    other = sorted({sub for _, sub in invocations if sub != "brief"})
+    other = sorted({sub for _, sub, _ in invocations if sub != "brief"})
     if other:
         print()
         print(f"Other subcommands seen (context only): {', '.join(other)}")
@@ -137,8 +158,9 @@ def main() -> int:
         "but have no denominator, so they are observational."
     )
     print(
-        "Any `brief` that followed a human mentioning it must be excluded by "
-        "hand — the log cannot see prompting."
+        "Your own `brief` invocations are attributed and excluded automatically. "
+        "What the log still cannot see is prompting — if you mentioned `brief` to "
+        "an agent, strike that invocation by hand."
     )
     return 0
 

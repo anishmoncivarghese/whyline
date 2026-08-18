@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
-# Read-side probe. Logs every whyline invocation, then delegates unchanged.
-# Deliberately incapable of altering behaviour: it never inspects or rewrites
+# Read-side probe. Logs each invocation, then delegates unchanged.
+# Deliberately incapable of altering behaviour: never inspects or rewrites
 # arguments, and any logging failure is ignored.
+#
+# Records WHO invoked it. Without this the log cannot tell the human running
+# `whyline brief` from an agent doing so, and a human invocation inside the
+# measurement window would be falsely scored as the agent reading.
 log="${WHYLINE_READSIDE_LOG:-$HOME/.whyline-readside.log}"
-{ printf '%s\t%s\t%s\n' \
+if [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+  who="claude"
+elif [ -n "${CODEX_SANDBOX:-}" ] || [ -n "${CODEX_HOME:-}" ]; then
+  who="codex"
+else
+  who="human"
+fi
+{ printf '%s\t%s\t%s\t%s\t%s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "${1:-none}" \
-    "$(basename "${PWD}")" >> "$log"; } 2>/dev/null || true
+    "$(basename "${PWD}")" \
+    "$who" \
+    "${CLAUDE_CODE_SESSION_ID:-}" >> "$log"; } 2>/dev/null || true
 exec /Users/anish/.local/share/uv/tools/whyline/bin/whyline "$@"

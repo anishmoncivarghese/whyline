@@ -28,7 +28,14 @@ The instruction under test now carries all four parts that document identifies a
 
 `~/.local/bin/whyline` is a symlink to `whyline-readside-shim`, which appends one tab-separated line per invocation to `~/.whyline-readside.log` and then `exec`s the real binary at `~/.local/share/uv/tools/whyline/bin/whyline`.
 
-    <utc timestamp>	<subcommand>	<repository basename>
+    <utc timestamp>	<subcommand>	<repository basename>	<invoker>	<session id>
+
+`<invoker>` is `claude`, `codex` or `human`, detected from `CLAUDECODE` /
+`CLAUDE_CODE_SESSION_ID` / `CODEX_*`, which are set inside an agent session and
+absent in a plain terminal. Added 2026-08-18 after noticing the hole it closes:
+without attribution the log cannot distinguish the owner running `whyline brief`
+from an agent doing so, and a human invocation inside the 10-minute window would
+have been scored as a read. **Only `claude` and `codex` invocations count.**
 
 It never inspects or rewrites arguments and swallows any logging failure, so it cannot alter what it measures. Vendor-neutral by design: it captures Codex as well as Claude Code, which a Claude-only hook could not.
 
@@ -39,7 +46,7 @@ The original symlink is preserved at `~/.local/bin/whyline.real-symlink.bak`. **
 1. Work normally in `/Users/anish/CodeGraph` across Claude Code and Codex for 2–3 days. Do not mention `whyline`, `brief`, or this experiment to either agent.
 2. Sessions are counted from `SessionStarted` events in `CodeGraph/.whyline/ledger.jsonl`, which the hook records unprompted. Baseline at start: **7** sessions, and the log contains only the four controller test lines dated 2026-08-18T04:57:46Z, which are excluded.
 3. A session **counts as a read** if a `brief` invocation appears in the log within 10 minutes after that session's `SessionStarted` timestamp.
-4. Record separately any `brief` invocation that followed a human mentioning it. Judge the threshold on unprompted invocations only.
+4. Your own `brief` invocations are attributed and excluded automatically, so use whyline freely. What the log still cannot see is *prompting* — if you mention `brief` to an agent, strike that invocation by hand.
 
 ## Thresholds — fixed 2026-08-18, before collection
 
@@ -51,7 +58,8 @@ The original symlink is preserved at `~/.local/bin/whyline.real-symlink.bak`. **
 
 ## Threats to validity
 
-- **Operator knowledge.** The owner knows the instruction exists and may unconsciously prompt. Any prompted invocation is recorded separately and excluded.
+- **Operator knowledge.** The owner knows the instruction exists and may unconsciously prompt. Prompting is the one thing the instrument cannot detect, so it must be struck by hand.
+- **Invoker attribution closed a real hole.** Before it existed, the owner's own `whyline brief` was indistinguishable from an agent's and would have inflated the rate. Verified: three human reads across three sessions now score 0%, not 100%.
 - **Codex attribution.** The log records the repository, not the agent. Attribution comes from correlating timestamps against ledger `SessionStarted` events, which only the Claude Code hook writes — so a Codex session has no `SessionStarted` and cannot be counted as a denominator. **Codex read behaviour is therefore observational only in this round**, noted rather than scored.
 - **Single project, single operator.** Same limit as M0. Directional, not statistical.
 - **`brief` is also invoked by `run`.** A `run` invocation logs as `run`, not `brief`, so the two do not confound — but a `brief` immediately following a `run` in the log is the agent's own call, not `run`'s internal composition, because `run` calls `brief.compose` in-process rather than shelling out.
