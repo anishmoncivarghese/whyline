@@ -164,6 +164,39 @@ the Claude Code hook, so there is no way to know how many `codex` invocations
 this one `brief` is out of. Treat it as **Codex has been observed reading
 unprompted, twice, and logged once** — not as a rate.
 
+## Codex session boundaries are invisible, so its counts are not a rate — 2026-08-19
+
+Codex ran no `brief` for Plan 2 Task 7, having last run one about six hours and
+three tasks earlier. That looks like the instruction failing to fire. It is not.
+The operator confirmed all of Phase 2 ran in **one continuous Codex session**, and
+the instruction's trigger is "at the start of a session" — so reading once and not
+re-reading per task is exactly what it asks for. **Codex is compliant.**
+
+The instrument could not settle this on its own, and that is the finding.
+`whyline-readside-shim` writes `${CLAUDE_CODE_SESSION_ID:-}` into its session-id
+field, so the field is empty for Codex *by construction*. Checked the live Codex
+process directly on 2026-08-19: its environment carries only
+`CODEX_MANAGED_BY_NPM` and `CODEX_MANAGED_PACKAGE_ROOT`, both constant across
+sessions. **Codex exposes no session identifier at all**, so this is not a shim
+bug that a better variable would fix.
+
+What that costs, stated plainly:
+
+- A gap between two Codex `brief` calls is **uninterpretable**. One long session
+  spanning ten tasks and ten separate sessions that never read produce the same
+  log.
+- So Codex's `brief` count is **not a numerator over tasks**. If Codex opened
+  three sessions and read at the start of each, that is 100% compliance, and the
+  log looks identical to three reads scattered across thirty tasks.
+- Every earlier statement here counting Codex reads inherits this. They remain
+  true as counts and were never rates; read them as "Codex was observed reading
+  unprompted at session start, N times", never as a frequency.
+
+Rejected as a fix: deriving a session key by walking the process tree to a Codex
+ancestor and using its start time. It would work, but it puts fragile logic in an
+instrument whose one safety property is being too simple to alter what it
+measures — and the collection it would serve is already concluding.
+
 ## The analyser was crediting one vendor's reads to the other — fixed 2026-08-19
 
 `analyse-readside.py` built its numerator from `who in ("claude", "codex")`

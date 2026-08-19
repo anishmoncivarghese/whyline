@@ -170,3 +170,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/releases/v0.1.4.md
 
 <!-- whyline-event: 0d91132daa454cab975dabb204e00373 -->
+
+## 2026-08-19 — Rule Codex compliant on the read side, and record that its session boundaries are unmeasurable
+
+**Because:** Codex ran no brief for Plan 2 Task 7, six hours after its previous one, which reads as the instruction failing. The operator confirmed Phase 2 ran in one continuous session, and the trigger is 'at the start of a session', so reading once and not re-reading per task is what the instruction asks for. The instrument could not settle it: the shim writes CLAUDE_CODE_SESSION_ID into its session field, so the field is empty for Codex by construction, and inspecting the live Codex process showed only CODEX_MANAGED_BY_NPM and CODEX_MANAGED_PACKAGE_ROOT — no session identifier exists to capture. Consequence recorded because it bounds every Codex figure already published: a gap between two Codex briefs cannot distinguish one long session from many unread ones, so the counts are counts at session start, never a rate over tasks.
+
+**Rejected:**
+
+- Score the missing brief as a read-side failure — would have recorded a false negative against an agent that followed the instruction exactly, and would have been the second time this instrument manufactured one — the first being the /Users/anish log location that hid every Codex read
+- Derive a session key by walking the process tree to a Codex ancestor and using its start time — technically workable, but puts fragile logic inside an instrument whose only safety property is being too simple to alter what it measures, for a collection that is already concluding
+- Ask Codex to run brief per task instead of per session — changes the instruction to fit the instrument rather than measuring the instruction as written, and per-task rereading is waste once the history is already in context
+
+**Files:** m0/READ-SIDE-PROTOCOL.md
+
+<!-- whyline-event: 094044d600734827a7944f94c2d365fd -->
