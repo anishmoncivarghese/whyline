@@ -143,3 +143,16 @@ Append-only. Written by whyline; readable without it.
 **Files:** m0/RESULTS.md
 
 <!-- whyline-event: 5c9f1f8a807c467f97ee107510218d3e -->
+
+## 2026-08-19 — Let the README's read-side correction ride along with the next release rather than cut 0.1.4 for it
+
+**Because:** PyPI's 0.1.3 page states the read-side rate as 67% when the measured figure is 50%. A README is baked into the published artifact and PyPI forbids re-uploading a version, so 0.1.3 cannot be amended in place. git and GitHub are already correct, 0.1.3's release notes never cite the figure, and the next substantive release carries the fix at no extra cost. Recorded in RESUME-HERE.md open items because the failure mode is not the delay, it is forgetting and shipping the overstatement again.
+
+**Rejected:**
+
+- Cut 0.1.4 immediately for the README alone — reaches PyPI sooner, but spends a version number on a prose edit and adds a release users must evaluate for no behaviour change
+- Leave it uncorrected and unrecorded — the overstatement is one sentence on a page few read, but this project audits itself specifically for published claims exceeding evidence, so tolerating one silently is the wrong precedent
+
+**Files:** README.md
+
+<!-- whyline-event: 17f0e6f85f3c4ec68b458176d1d9d09f -->
