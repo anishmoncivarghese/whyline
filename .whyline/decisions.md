@@ -156,3 +156,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** README.md
 
 <!-- whyline-event: 17f0e6f85f3c4ec68b458176d1d9d09f -->
+
+## 2026-08-19 — Reverse the hold and cut 0.1.4 as a documentation-only release
+
+**Because:** Supersedes the decision recorded minutes earlier to let the README correction wait for the next substantive release. PyPI's 0.1.3 page overstated a measured result in the direction that flatters the tool, on the front page of a project whose whole argument is recording what actually happened. That is a credibility cost, not a cosmetic one, and it outweighs spending a version number on prose. Nothing in src/whyline changed, so the release carries no behaviour risk: the only shipped difference is the README metadata PyPI renders.
+
+**Rejected:**
+
+- Keep the hold as recorded — consistent with the earlier decision, but it leaves the overstatement live for an unknown period with no scheduled next release, and consistency with a decision made an hour ago is not a reason to keep a worse outcome
+- Amend 0.1.3 in place — impossible — PyPI forbids re-uploading a version, and the README is baked into the built artifact rather than fetched
+- Bump to 0.2.0 to signal the read-side result changed — implies an interface or feature change to anyone reading semver, when nothing about the tool's behaviour moved
+
+**Files:** docs/releases/v0.1.4.md
+
+<!-- whyline-event: 0d91132daa454cab975dabb204e00373 -->
