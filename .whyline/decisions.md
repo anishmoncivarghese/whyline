@@ -129,3 +129,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** .github/workflows/release.yml
 
 <!-- whyline-event: cf373ba27d7142588f3da380d4abc429 -->
+
+## 2026-08-19 — State the read-side result as 50% at zero margin, not as a clearing of the threshold
+
+**Because:** The docs carried 67% in prose while the table already said 50%, and the README shipped 67% in 0.1.3. The corrected figure meets the >=50% gate with nothing to spare, and the band immediately below is 'unreliable', so one unread session reclassifies the result. Stating it as 'fires' without that margin would repeat the over-claiming pattern that produced every substantive defect in this project. Also separates 3 Claude brief calls from 2 scoring reads: a mid-session brief is a real read but not the behaviour under test, which is orienting before touching code.
+
+**Rejected:**
+
+- Report 50% as clearing the threshold and move on — technically true and the reason the documentation decision is unchanged, but it hides that the trend across rounds is downward and that the result is one session from the unreliable band
+- Delete the superseded 67% and 75% figures — leaves no trace that the number moved or that a measurement bug once inflated it, and the trend is the most informative part of the record
+- Withhold the correction until the sample is larger — leaves a published README overstating a measured result, which is the exact failure this project keeps auditing itself for
+
+**Files:** m0/RESULTS.md
+
+<!-- whyline-event: 5c9f1f8a807c467f97ee107510218d3e -->

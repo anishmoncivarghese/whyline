@@ -104,17 +104,26 @@ Superseded figures, kept so the trend is legible rather than silently restated:
 67% at 3 sessions (2026-08-18), and a briefly-reported 75% that was an artifact
 of the vendor-contamination bug described below.
 
-**Outcome: THE INSTRUCTION FIRES** — 67% clears the 50% threshold. Per the
-table above, this leads the README with `brief`, which it already does.
+**Outcome: THE INSTRUCTION FIRES, by the narrowest possible margin.** 50% meets
+the ≥50% threshold with nothing to spare — the band immediately below it is
+"unreliable", and one more unread session moves this result into it. That is a
+materially weaker finding than the 67% first reported, and the honest reading is
+"fires often enough to lead with, on evidence too thin to lean on." It does not
+change the documentation decision the threshold governs: the README already
+leads with `brief`.
 
-**Caveat added at scoring time, not fixed before collection:** the Claude
-Code denominator is 3 sessions (09:25, 10:48, 15:48 on 2026-08-18), not the
-multi-day sample the protocol anticipated — collection was scored early. One
-of the three sessions had no `brief` call in its 10-minute window and pulls
-the rate down to 67% rather than 100%; a single additional session either way
-would move the rate by 33 points. Treat 67% as directional, not a stable
-estimate, and prefer re-running this script before making it a load-bearing
-claim in a future round.
+**Caveat, added at scoring time rather than fixed before collection:** the
+denominator is 4 Claude Code sessions, not the multi-day sample the protocol
+anticipated. At this size each session is worth 25 percentage points, so the
+figure is directional and nothing more. Two of the four sessions had no `brief`
+in their window. Re-run the script before treating this as load-bearing.
+
+Worth separating from the rate itself: Claude Code issued 3 `brief` calls across
+4 sessions, but only 2 fell inside a session-start window. A mid-session `brief`
+is a real read and still not the behaviour under test, which is specifically
+whether an agent orients itself *before* touching code. The instrument is right
+to exclude it; the gap between "3 reads" and "2 scoring reads" is a property of
+the question, not a measurement error.
 
 Codex had issued zero *logged* `brief` invocations as of this scoring (its
 only logged calls were `note`). That is not the same as no observation:

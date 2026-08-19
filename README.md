@@ -185,10 +185,12 @@ figure above is therefore a property of direct work, not a general one — which
 the reason Pattern 1 above is the recommended shape.
 
 The read side was measured separately, because writing a record nobody consults
-is worthless. Claude Code ran `whyline brief` unprompted at the start of 2 of 3
-sessions it owned (67%, against a 50% threshold fixed before collection), and
-Codex was twice observed doing the same. That is a small sample scored early —
-one session either way moves it by 33 points — so treat it as directional.
+is worthless. Claude Code ran `whyline brief` unprompted at the start of 2 of 4
+sessions it owned — 50%, exactly meeting a 50% threshold fixed before collection,
+with no margin — and Codex was separately observed doing the same. Each session
+is worth 25 points at this sample size, so treat it as directional, and note the
+trend across rounds has been downward rather than up. The 0.1.3 README said 67%
+on a 3-session sample; that figure was superseded as the sample grew.
 
 **One gap is known and unfixed: reviewers record less than implementers.** Across
 five tasks on one project, the agent *implementing* recorded every time, while
