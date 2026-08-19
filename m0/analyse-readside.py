@@ -97,11 +97,20 @@ def main() -> int:
     )
     window = timedelta(minutes=args.window_minutes)
 
-    # Only an agent's own invocation counts as a read.
+    # Only Claude Code's own invocations can score a Claude Code session.
+    #
+    # This previously accepted `who in ("claude", "codex")` while the denominator
+    # stayed Claude-only, so any Codex read landing within the window of a Claude
+    # session start credited that session. It went unnoticed until 2026-08-19,
+    # when a Codex `brief` at 03:34:33 fell 30 seconds after a Claude session
+    # started at 03:34:03 and pushed the reported rate from a true 50% to 75%.
+    # The intent of the original filter was to exclude the *human*; excluding one
+    # vendor from the other's numerator is the same requirement, missed.
     briefs = [
-        stamp
-        for stamp, sub, who in invocations
-        if sub == "brief" and who in ("claude", "codex")
+        stamp for stamp, sub, who in invocations if sub == "brief" and who == "claude"
+    ]
+    codex_briefs = [
+        stamp for stamp, sub, who in invocations if sub == "brief" and who == "codex"
     ]
     human_briefs = [
         stamp for stamp, sub, who in invocations if sub == "brief" and who == "human"
@@ -120,7 +129,8 @@ def main() -> int:
     print(f"Collection since  {EXCLUDED_BEFORE.isoformat()}")
     print()
     print(f"Claude sessions        {len(sessions)}")
-    print(f"brief by an agent      {len(briefs)}")
+    print(f"brief by Claude Code   {len(briefs)}")
+    print(f"brief by Codex         {len(codex_briefs)}  (observational, no denominator)")
     print(f"brief by you (excluded) {len(human_briefs)}")
     if unknown_briefs:
         print(f"brief unattributed     {len(unknown_briefs)}  (logged before attribution existed)")
@@ -160,8 +170,9 @@ def main() -> int:
     print()
     print(
         "Caveat: this rate covers Claude Code only, because SessionStarted is "
-        "written by its hook alone. Codex reads appear in the invocation count "
-        "but have no denominator, so they are observational."
+        "written by its hook alone. Codex reads are counted separately above and "
+        "never score a Claude session — a Codex read that happens to fall inside "
+        "a Claude session's window is not evidence that Claude read anything."
     )
     print(
         "Your own `brief` invocations are attributed and excluded automatically. "

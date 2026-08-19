@@ -97,8 +97,12 @@ Scored 2026-08-18 via `python3 m0/analyse-readside.py`.
 
 | Agent | Sessions | Unprompted `brief` reads | Prompted | Rate |
 |---|---:|---:|---:|---:|
-| Claude Code | 3 | 2 | 0 (per the operator) | 67% |
-| Codex | no denominator | 1 logged (2026-08-18T21:03:15Z) + 1 transcript-confirmed but unlogged (Task 11, see `02e52de`) | 0 (per the operator) | n/a |
+| Claude Code | 4 | 2 | 0 (per the operator) | 50% |
+| Codex | no denominator | 3 logged, plus 1 transcript-confirmed but unlogged (Task 11, see `02e52de`) | 0 (per the operator) | n/a |
+
+Superseded figures, kept so the trend is legible rather than silently restated:
+67% at 3 sessions (2026-08-18), and a briefly-reported 75% that was an artifact
+of the vendor-contamination bug described below.
 
 **Outcome: THE INSTRUCTION FIRES** — 67% clears the 50% threshold. Per the
 table above, this leads the README with `brief`, which it already does.
@@ -150,3 +154,27 @@ Still no denominator-based rate for Codex: `SessionStarted` is written only by
 the Claude Code hook, so there is no way to know how many `codex` invocations
 this one `brief` is out of. Treat it as **Codex has been observed reading
 unprompted, twice, and logged once** — not as a rate.
+
+## The analyser was crediting one vendor's reads to the other — fixed 2026-08-19
+
+`analyse-readside.py` built its numerator from `who in ("claude", "codex")`
+while its denominator stayed Claude-only `SessionStarted` events. Any Codex
+`brief` landing inside a Claude session's 10-minute window therefore scored
+that Claude session as having read.
+
+Latent from the start; it surfaced only when a Codex `brief` at
+2026-08-19T03:34:33Z fell 30 seconds after a Claude session started at
+03:34:03Z. The reported rate went to **75% when the true figure was 50%** —
+the metric moved in the opposite direction from reality, since that session
+had in fact not read. The original filter was written to exclude the *human*;
+excluding one vendor from the other's numerator is the same requirement,
+missed.
+
+Now scored separately: Claude briefs score Claude sessions, Codex briefs are
+reported as an observational count that can never move the rate.
+
+**Standing at 2026-08-19: 4 Claude sessions, 2 with a read, 50%** — exactly on
+the 50% threshold rather than comfortably above it. Codex: 3 logged reads,
+observational. Read this as *weaker* than the earlier 67%, not stronger: the
+sample grew and the newer sessions did not read. Two of the four Claude
+sessions ran no `brief` at all.
