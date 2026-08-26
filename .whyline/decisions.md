@@ -184,3 +184,125 @@ Append-only. Written by whyline; readable without it.
 **Files:** m0/READ-SIDE-PROTOCOL.md
 
 <!-- whyline-event: 094044d600734827a7944f94c2d365fd -->
+
+## 2026-08-22 — Reclassify automatic brief reading as unreliable at 43 percent
+
+**Because:** The extended fixed-protocol sample now shows 3 reads across 7 Claude sessions, below the 50 percent threshold; the installed shim continued collecting after the 0.1.4 documentation snapshot
+
+**Rejected:**
+
+- Keep publishing 50 percent — that uses a superseded 4-session snapshot and overstates current evidence
+- Infer reliability from nine Codex invocations — Codex has no measurable session denominator and the count is observational
+
+**Files:** m0/RESULTS.md, README.md
+
+<!-- whyline-event: 3f23fe3a005a48ba8e15a1d8e80e6f8b -->
+
+## 2026-08-22 — Treat fresh-clone explain as a correctness gap before calling the workflow complete
+
+**Because:** resolve.explain and status_payload read only ledger.jsonl, which is gitignored, while the committed decisions.md is the promised durable context and is already merged by brief
+
+**Rejected:**
+
+- Call decisions.md merely human-readable fallback — the design explicitly says explain works from git and decisions.md when the hook is absent
+- Accept green tests as sufficient — no test exercises explain against committed-only history
+
+**Files:** src/whyline/resolve.py, src/whyline/render.py, tests/test_resolve.py, README.md
+
+<!-- whyline-event: 27a41cb755ac41e28cd287e7f4eb6e99 -->
+
+## 2026-08-22 — Use one merged history model for explain, status, and brief
+
+**Because:** Fresh clones retain decisions.md but not the local ledger, so every read command must share the same deduplication and provenance rules; day-only timestamps cannot justify high confidence
+
+**Rejected:**
+
+- Keep merge logic inside brief — explain and status would continue to disagree after cloning
+- Treat committed dates as exact timestamps — that would overstate temporal attribution
+
+**Files:** src/whyline/history.py, src/whyline/brief.py, src/whyline/resolve.py, src/whyline/render.py
+
+<!-- whyline-event: 2bd346615e0e4fc9a8bd545ee9f37f82 -->
+
+## 2026-08-22 — Close the read-side experiment at 43 percent and lead handoffs with run
+
+**Because:** The final fixed-threshold sample has 3 qualifying reads across 7 Claude Code sessions, which falls below the precommitted 50 percent threshold
+
+**Rejected:**
+
+- Keep the earlier 50 percent claim — it was an intermediate 4-session result superseded by the larger sample
+- Report Codex reads as a rate — the instrument has no Codex session denominator
+
+**Files:** README.md, m0/READ-SIDE-PROTOCOL.md, m0/RESULTS.md
+
+<!-- whyline-event: ef602074d5664b2b8d7a253c8479391f -->
+
+## 2026-08-22 — Keep active handoffs local while committing actor role and task on decisions
+
+**Because:** Operational ownership and dirty-tree state belong to one checkout, while attribution on durable reasoning must survive cloning
+
+**Rejected:**
+
+- Commit active-handoff.json — stale owners and working-tree state would leak into other clones
+- Restrict actor and role to vendor enums — custom human and workflow roles are legitimate
+
+**Files:** src/whyline/handoff.py, src/whyline/decisions.py, src/whyline/cli.py, src/whyline/gitq.py
+
+<!-- whyline-event: 8e310a8dab75477594bb140f3b1992df -->
+
+## 2026-08-22 — Use token-bounded sync packets with advisory ownership warnings
+
+**Because:** Agents need one compact relay containing task state Git state and relevant reasoning, while overlapping writes require visibility without turning Whyline into a locking orchestrator
+
+**Rejected:**
+
+- Include the newest ten decisions regardless of task — the measured 10.8 KB brief wastes context on unrelated history
+- Enforce ownership as a lock — stale claims could block legitimate work and Git remains authoritative
+
+**Files:** src/whyline/sync.py, src/whyline/brief.py, src/whyline/ownership.py, src/whyline/cli.py
+
+<!-- whyline-event: 5ba393c157d944119090130b3bb230fd -->
+
+## 2026-08-22 — Install Codex hooks separately and report configured executable and observed states
+
+**Because:** Project-local Codex hooks require explicit trust and configuration alone cannot prove events are arriving; the official lifecycle payload exposes stable stdin fields and apply_patch command headers
+
+**Rejected:**
+
+- Infer writes from arbitrary shell commands — parsing shell effects is incomplete and would create false provenance
+- Call an old last event broken — an idle repository can be healthy, so status reports the timestamp and age factually
+
+**Files:** src/whyline/hooks.py, src/whyline/hook_entry.py, src/whyline/render.py, src/whyline/cli.py
+
+<!-- whyline-event: 237cbeff831f49cb8887cc5e7f9dca20 -->
+
+## 2026-08-22 — Complete Whyline 0.2.0 as a compact active-task relay without orchestration
+
+**Actor:** codex
+**Role:** implementer
+**Task:** WL-0.2.0
+
+**Because:** Explicit handoffs, task/file-bounded sync, attributed durable decisions, serialized advisory ownership, dual-vendor hooks, and observed health directly support two-terminal Claude and Codex work while preserving Git and the human as authorities
+
+**Rejected:**
+
+- Build a scheduler or shared conversation proxy — it would add credential, supervision, and vendor-output coupling outside Whyline's purpose
+- Rely on automatic brief reading — the closed experiment measured only 43 percent
+
+**Files:** src/whyline/sync.py, src/whyline/handoff.py, src/whyline/ownership.py, src/whyline/hooks.py, src/whyline/render.py
+
+<!-- whyline-event: 176a9fe27d4b4a6e898a7ec9e936cd4b -->
+
+## 2026-08-26 — Score distinct sessions within a fixed collection boundary, so the analyser reproduces its published result
+
+**Because:** Two days after collection closed the script reported 12% and 'THE INSTRUCTION DOES NOT FIRE' against a published 43% and 'unreliable', so the repository contradicted itself for anyone who ran it. It counted SessionStarted events rather than sessions, and Claude Code's hook fires on resume, so 26 events represented 10 sessions with 17 from one long-lived session — the denominator tracked how often a session was reopened. It also had no closing bound, so every later session dragged the rate down. Now keyed on the session field at its earliest event and bounded at the shim's restoration mtime, it reproduces 7 sessions, 3 reads, 43% exactly.
+
+**Rejected:**
+
+- Pick a round close date such as Aug 23 12 — 00 UTC: yields 9 sessions and 33%, and a boundary chosen after seeing the data in the direction that flatters the result is indistinguishable from moving the goalposts — the symlink mtime is an observable event instead
+- Leave the script unbounded and treat the drifting figure as more data — collection ended when the instrument was uninstalled, so later sessions were never measured under it, and counting them silently redefines the experiment after its threshold was precommitted
+- Deduplicate by timestamp proximity instead of session id — guesses at boundaries the hook already records explicitly, and would merge genuinely distinct sessions that start together, as two did at 06:33:33
+
+**Files:** m0/analyse-readside.py
+
+<!-- whyline-event: cb01743a1ea74a83a716b7239f9d52be -->

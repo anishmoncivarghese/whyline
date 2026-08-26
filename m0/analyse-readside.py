@@ -25,6 +25,17 @@ THRESHOLD_UNRELIABLE = 0.20
 # The controller's own smoke tests while installing the instrument.
 EXCLUDED_BEFORE = datetime(2026, 8, 18, 5, 0, tzinfo=timezone.utc)
 
+# Collection closed when `end-readside-collection.sh` restored the real
+# executable over the shim, which stopped the instrument recording. Taken from
+# the restored symlink's mtime (Aug 23 00:15 +05:30), not from a round number,
+# so the boundary is the observable event rather than a choice made later.
+#
+# Bounding this is not optional. The ledger's hook keeps writing SessionStarted
+# forever, so an unbounded script grows its own denominator every time anyone
+# opens the repo and drifts away from the published result — moving the
+# goalposts after the fact, in whichever direction later data happens to fall.
+COLLECTION_CLOSED = datetime(2026, 8, 22, 18, 45, tzinfo=timezone.utc)
+
 
 def parse_ts(raw: str) -> datetime | None:
     try:
@@ -34,10 +45,23 @@ def parse_ts(raw: str) -> datetime | None:
 
 
 def load_sessions(ledger: Path) -> list[datetime]:
-    """SessionStarted timestamps. Only the Claude Code hook writes these."""
-    starts = []
+    """Start time of each DISTINCT Claude Code session, earliest event per id.
+
+    Counting SessionStarted *events* was wrong, and wrong in the direction that
+    understated the result. Claude Code's SessionStart hook fires on resume as
+    well as on launch, so one long-lived session emits many events: on
+    2026-08-25 the ledger held 26 events for 10 distinct sessions, 17 of them
+    from a single session resumed over several days. Scored per event that gave
+    3/26 = 12% and printed "THE INSTRUCTION DOES NOT FIRE", contradicting the
+    published 3/7 = 43% and crossing a threshold band on nothing but how often
+    one session happened to be resumed.
+
+    A session is therefore counted once, at its earliest event, keyed by the
+    `session` field the hook records.
+    """
+    first_seen: dict[str, datetime] = {}
     if not ledger.exists():
-        return starts
+        return []
     for line in ledger.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
@@ -49,9 +73,14 @@ def load_sessions(ledger: Path) -> list[datetime]:
         if event.get("type") != "SessionStarted":
             continue
         stamp = parse_ts(str(event.get("ts", "")))
-        if stamp and stamp >= EXCLUDED_BEFORE:
-            starts.append(stamp)
-    return sorted(starts)
+        if stamp is None or not EXCLUDED_BEFORE <= stamp <= COLLECTION_CLOSED:
+            continue
+        # Fall back to the event id when no session field exists: an older event
+        # without one is its own session rather than silently merged with others.
+        key = str(event.get("session") or event.get("id") or stamp.isoformat())
+        if key not in first_seen or stamp < first_seen[key]:
+            first_seen[key] = stamp
+    return sorted(first_seen.values())
 
 
 def load_invocations(log: Path, repo_name: str) -> list[tuple[datetime, str, str]]:
@@ -69,7 +98,10 @@ def load_invocations(log: Path, repo_name: str) -> list[tuple[datetime, str, str
         if len(parts) < 3:
             continue
         stamp = parse_ts(parts[0])
-        if stamp is None or stamp < EXCLUDED_BEFORE:
+        # Bounded at both ends for the same reason as sessions: an invocation
+        # after collection closed is not part of the experiment, and counting it
+        # would make the reported read counts disagree with the scored result.
+        if stamp is None or not EXCLUDED_BEFORE <= stamp <= COLLECTION_CLOSED:
             continue
         if parts[2].strip() != repo_name:
             continue
@@ -127,6 +159,7 @@ def main() -> int:
     print(f"Repository        {args.repo}")
     print(f"Window            {args.window_minutes} min after SessionStarted")
     print(f"Collection since  {EXCLUDED_BEFORE.isoformat()}")
+    print(f"Collection closed {COLLECTION_CLOSED.isoformat()} (final; later sessions not scored)")
     print()
     print(f"Claude sessions        {len(sessions)}")
     print(f"brief by Claude Code   {len(briefs)}")

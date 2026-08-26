@@ -1,7 +1,9 @@
 # M0b — the read-side check
 
 **Started:** 2026-08-18
-**Status:** collecting. Thresholds below are fixed **before** any data exists; do not adjust them after looking at results.
+**Completed:** 2026-08-23. Thresholds below were fixed **before** collection and
+were not adjusted after looking at results. Final result: 3 of 7 Claude Code
+sessions, **43% — unreliable**.
 
 ## The question
 
@@ -26,7 +28,11 @@ The instruction under test now carries all four parts that document identifies a
 
 ## Instrument
 
-`~/.local/bin/whyline` is a symlink to `whyline-readside-shim`, which appends one tab-separated line per invocation to a log and then `exec`s the real binary at `~/.local/share/uv/tools/whyline/bin/whyline`.
+During collection, `~/.local/bin/whyline` was a symlink to
+`whyline-readside-shim`, which appended one tab-separated line per invocation to
+a log and then `exec`ed the real binary at
+`~/.local/share/uv/tools/whyline/bin/whyline`. The real executable symlink was
+restored on 2026-08-23 by `m0/end-readside-collection.sh`.
 
 **Two log locations, and which one matters was itself a finding** (`02e52de`). The shim writes to `<repo>/.whyline/readside.log` when invoked inside a repository, falling back to `~/.whyline-readside.log` otherwise; `analyse-readside.py` merges both. The in-workspace log is the authoritative one for sandboxed agents: the original `$HOME`-only design was silently unwritable from Codex's sandbox, and because the shim swallows logging failures by design, Codex's reads simply vanished. Merging is what makes the instrument see both vendors.
 
@@ -43,7 +49,7 @@ It never inspects or rewrites arguments and swallows any logging failure, so it 
 
 It captures Codex as well as Claude Code, which a Claude-only hook could not. **It is not, however, "vendor-neutral by design"** — that claim was made and then retracted in `02e52de`: neutrality depended on a log location one vendor's sandbox forbids, so it was a property of the environment, not of the design.
 
-The original symlink is preserved at `~/.local/bin/whyline.real-symlink.bak`. **Restore it when collection ends.**
+**Collection is closed.** The shim is no longer the active global executable.
 
 ## Method
 
@@ -93,33 +99,28 @@ This does not affect the read-side measurement below, which concerns `brief` onl
 
 ## Results
 
-Scored 2026-08-18 via `python3 m0/analyse-readside.py`.
+Final score produced 2026-08-23 via `m0/end-readside-collection.sh`, which first
+restored the real executable and then ran `python3 m0/analyse-readside.py`.
 
 | Agent | Sessions | Unprompted `brief` reads | Prompted | Rate |
 |---|---:|---:|---:|---:|
-| Claude Code | 4 | 2 | 0 (per the operator) | 50% |
-| Codex | no denominator | 3 logged, plus 1 transcript-confirmed but unlogged (Task 11, see `02e52de`) | 0 (per the operator) | n/a |
+| Claude Code | 7 | 3 | 0 (per the operator) | **43%** |
+| Codex | no denominator | 9 logged, plus 1 transcript-confirmed but unlogged (Task 11, see `02e52de`) | 0 (per the operator) | n/a |
 
 Superseded figures, kept so the trend is legible rather than silently restated:
 67% at 3 sessions (2026-08-18), and a briefly-reported 75% that was an artifact
 of the vendor-contamination bug described below.
 
-**Outcome: THE INSTRUCTION FIRES, by the narrowest possible margin.** 50% meets
-the ≥50% threshold with nothing to spare — the band immediately below it is
-"unreliable", and one more unread session moves this result into it. That is a
-materially weaker finding than the 67% first reported, and the honest reading is
-"fires often enough to lead with, on evidence too thin to lean on." It does not
-change the documentation decision the threshold governs: the README already
-leads with `brief`.
+**Outcome: UNRELIABLE.** 43% falls below the precommitted 50% threshold and in
+the 20–50% band. The README therefore leads with `run`, keeps `brief` as a manual
+command, and states plainly that instruction-driven reads are inconsistent.
 
-**Caveat, added at scoring time rather than fixed before collection:** the
-denominator is 4 Claude Code sessions, not the multi-day sample the protocol
-anticipated. At this size each session is worth 25 percentage points, so the
-figure is directional and nothing more. Two of the four sessions had no `brief`
-in their window. Re-run the script before treating this as load-bearing.
+The denominator is still small: each of seven sessions is worth about 14
+percentage points. The result is directional rather than statistical, but the
+precommitted action is unambiguous because 43% is below the threshold.
 
-Worth separating from the rate itself: Claude Code issued 3 `brief` calls across
-4 sessions, but only 2 fell inside a session-start window. A mid-session `brief`
+Worth separating from the rate itself: Claude Code issued 4 `brief` calls across
+7 sessions, but only 3 fell inside a session-start window. A mid-session `brief`
 is a real read and still not the behaviour under test, which is specifically
 whether an agent orients itself *before* touching code. The instrument is right
 to exclude it; the gap between "3 reads" and "2 scoring reads" is a property of
@@ -220,3 +221,46 @@ the 50% threshold rather than comfortably above it. Codex: 3 logged reads,
 observational. Read this as *weaker* than the earlier 67%, not stronger: the
 sample grew and the newer sessions did not read. Two of the four Claude
 sessions ran no `brief` at all.
+
+## The analyser stopped reproducing its own published result — fixed 2026-08-25
+
+Two days after close, `analyse-readside.py` reported **12%** and printed "THE
+INSTRUCTION DOES NOT FIRE", against a published **43%** and "unreliable". A
+reader running the script would have caught the repository contradicting itself.
+
+Two causes, both in the script, neither in the data:
+
+1. **It counted `SessionStarted` events, not sessions.** Claude Code's
+   SessionStart hook fires on resume as well as launch, so a long-lived session
+   emits many events. The ledger held 26 events for 10 distinct sessions — 17 of
+   them from one session resumed over several days. The denominator therefore
+   grew with how often a session was reopened, which is not a measure of
+   anything. Now keyed on the `session` field, earliest event per id.
+2. **It had no closing boundary.** The hook keeps writing forever, so every
+   later session enlarged the denominator and dragged the rate down. Now bounded
+   at the moment `end-readside-collection.sh` restored the real executable,
+   taken from that symlink's mtime rather than a round number chosen afterwards.
+
+Both fixes move the number *up*, which is exactly why the boundary is derived
+from an observable event: a bound chosen after seeing the data, in the direction
+that flatters the result, would be indistinguishable from moving the goalposts.
+With them the script reproduces the published figures exactly — 7 sessions, 4
+Claude `brief` invocations, 3 qualifying reads, 43%, `UNRELIABLE`.
+
+**This is the third defect found in this instrument, and the third that pointed
+the wrong way about an agent's behaviour.** The `$HOME` log location hid every
+Codex read and would have concluded Codex never reads. Cross-vendor scoring
+credited a Codex read to a Claude session and inflated 50% to 75%. Now
+event-counting understated 43% as 12%. Every examination of this instrument has
+found it wrong; the measured *conclusion* has survived each time, which is the
+only reason the audit trail is worth more than the number.
+
+## Final collection close — 2026-08-23
+
+The final analyser output was 7 Claude Code sessions, 4 Claude `brief`
+invocations, 3 sessions with a qualifying read, and a **43%** unprompted read
+rate. Codex produced 9 logged reads, reported only as observations because the
+instrument has no Codex session denominator. The global shim was removed and
+the real whyline 0.1.4 executable restored. This final result supersedes every
+intermediate 67%, 75%, and 50% figure above without erasing the audit trail that
+explains how those figures arose.
