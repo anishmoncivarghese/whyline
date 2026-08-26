@@ -241,11 +241,25 @@ Two causes, both in the script, neither in the data:
    at the moment `end-readside-collection.sh` restored the real executable,
    taken from that symlink's mtime rather than a round number chosen afterwards.
 
-Both fixes move the number *up*, which is exactly why the boundary is derived
-from an observable event: a bound chosen after seeing the data, in the direction
-that flatters the result, would be indistinguishable from moving the goalposts.
-With them the script reproduces the published figures exactly — 7 sessions, 4
-Claude `brief` invocations, 3 qualifying reads, 43%, `UNRELIABLE`.
+Both fixes move the number *up*, so both deserve suspicion. Two facts settle it,
+and they are separate:
+
+- **The boundary is structural, not a choice.** The shim that produced the
+  *numerator* wrote its last line at `2026-08-22T18:12:48Z`. After that no read
+  could be logged at all, so a later session cannot score one — including such
+  sessions in the denominator would guarantee a false negative rather than
+  merely add noise. And it is **not verdict-critical**: without the bound the
+  rate is 3/9 = **33%**, still inside the 20–50% `UNRELIABLE` band, so the
+  published verdict and every precommitted action are unchanged either way.
+- **The dedup is verdict-critical, which is why it had to be right.** Scored per
+  event the figure is 12%, in the "does not fire" band; scored per session it is
+  43%, in "unreliable". The justification cannot be that one number is nicer: it
+  is that a denominator which grows when you press resume is not measuring
+  sessions, and the hook records the session id explicitly so no inference is
+  involved.
+
+With both fixes the script reproduces the published figures exactly — 7
+sessions, 4 Claude `brief` invocations, 3 qualifying reads, 43%, `UNRELIABLE`.
 
 **This is the third defect found in this instrument, and the third that pointed
 the wrong way about an agent's behaviour.** The `$HOME` log location hid every

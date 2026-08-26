@@ -149,3 +149,48 @@ def test_large_mandatory_state_uses_compact_fallback_within_minimum_budget(repo)
     assert "Git:" in text
     assert "Ownership:" in text
     assert "Relevant decisions:" in text
+
+
+def test_a_dirty_tree_does_not_hide_the_decision_history(repo):
+    """The default path, and the one that was broken.
+
+    `sync` seeds relevance from the working tree's changed paths. Those were
+    passed as a *filter*, so any dirty file the caller never mentioned discarded
+    every decision recorded against some other path: a repository with a full
+    history reported "Relevant decisions (0 of 0 for task (any))" and printed
+    none, while `brief` on identical data showed them all. The installed
+    instruction then tells the next agent to state that the context is empty,
+    turning a selection bug into a confident false claim — the round-one
+    Critical where `brief` announced "1 of 1" over a hidden history, recurring.
+    """
+    repo.commit({"a.py": "one\n", "untouched.py": "two\n"}, "first", epoch=1_000_000)
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    _note(repo, "decision about a.py", task=None, files=["a.py"])
+    _note(repo, "decision about docs", task=None, files=["docs/guide.md"])
+
+    # Dirty a file that no decision mentions.
+    (repo.path / "unrelated.py").write_text("three\n", encoding="utf-8")
+
+    packet = sync.compose(repo.path)
+
+    assert "decision about a.py" in packet
+    assert "decision about docs" in packet, (
+        "a decision unrelated to the changed file must still be carried; "
+        "changed paths rank the history, they do not filter it"
+    )
+    assert "(0 of 0" not in packet
+
+
+def test_an_explicit_file_filter_still_narrows_but_discloses_the_total(repo):
+    """The counterpart: an explicit --file means what it says. It may legitimately
+    match nothing, but must never let "0 of 0" imply an empty history."""
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    _note(repo, "decision about a.py", task=None, files=["a.py"])
+
+    packet = sync.compose(repo.path, files=["nothing-matches-this.py"])
+
+    assert "decision about a.py" not in packet
+    assert "1 recorded in total" in packet

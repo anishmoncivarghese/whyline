@@ -306,3 +306,42 @@ Append-only. Written by whyline; readable without it.
 **Files:** m0/analyse-readside.py
 
 <!-- whyline-event: cb01743a1ea74a83a716b7239f9d52be -->
+
+## 2026-08-26 — Let inferred relevance rank the history instead of filtering it
+
+**Because:** sync seeded relevance from the working tree's changed paths and passed them as a filter, so any dirty file the caller never mentioned discarded every decision recorded against another path: a repository with a full history printed 'Relevant decisions (0 of 0 for task (any))' and none of them, while brief on identical data showed them all. The installed instruction then tells the next agent to announce the context is empty, so a selection bug laundered itself into a confident false statement — the round-one Critical where brief announced '1 of 1' over a hidden history, recurring in the flagship command. select_entries now takes rank_files as a hint that orders without excluding; an explicit --task or --file still narrows, and the header names the recorded total whenever anything narrowed so 0 of 0 can never imply an empty history.
+
+**Rejected:**
+
+- Stop passing changed paths to selection at all — fixes the disclosure but throws away the relevance ordering that makes a budgeted packet useful mid-task
+- Keep the filter and add an 'omitted' line — the count was already 0 of 0, so there was nothing to report an omission against, and it would still bury the history behind a budget the caller never set
+
+**Files:** src/whyline/brief.py, src/whyline/sync.py
+
+<!-- whyline-event: 1642ee865e4f450886197bae5188ca83 -->
+
+## 2026-08-26 — State Codex mechanical capture as untested rather than working
+
+**Because:** The release notes and README asserted that the Codex hook records sessions and file edits. No Codex hook event exists in any ledger (170 claude-code, zero codex), hook_entry dispatches on Claude Code's payload schema, and the three tests covering the path feed Claude-Code-shaped payloads with the --agent flag set, so they demonstrate labelling and apply_patch parsing rather than that Codex invokes the hook or sends that shape. Because the hook swallows every exception by design a schema mismatch would fail silently forever, so the honest surface is status, which already reports 'configured but never observed' per vendor. Code unchanged; only the prose overstated.
+
+**Rejected:**
+
+- Leave the claim and rely on status to correct it — the README is what a reader believes, and requiring them to run a command to discover the headline two-vendor feature is unverified is the over-claim pattern this project audits itself for
+- Remove Codex hook support until confirmed — init writing .codex/hooks.json is harmless and is the prerequisite for ever observing an event, so deleting it would guarantee the gap never closes
+
+**Files:** README.md, docs/releases/v0.2.0.md
+
+<!-- whyline-event: fc941ba78fc5492a971e5f142b60c80e -->
+
+## 2026-08-26 — Defer the committed-Markdown separator fix to the next release
+
+**Because:** A comma inside a recorded path round-trips through decisions.md as two fabricated paths, and an alternative whose option contains ' — ' re-splits at the wrong point. On a fresh clone with no ledger those fabricated paths drive explain and sync relevance. Checked the real record: zero mismatches across every entry with a ledger twin, so nothing is currently corrupted. The fix changes the format of the durable artefact and needs a backward-compatible parser for entries already committed in the wild, which deserves its own pass rather than being rushed into a release being published now.
+
+**Rejected:**
+
+- Fix it in this release — the format change is the durable artefact's on-disk contract and a rushed parser that misreads existing 0.1.x entries would corrupt data that is currently intact
+- Leave it unrecorded because it affects no current data — latent and silent is exactly the failure class this project keeps finding late, and an unrecorded known defect is one nobody will fix
+
+**Files:** src/whyline/decisions.py
+
+<!-- whyline-event: 88a796763d3e4a0a8259e9c409583404 -->

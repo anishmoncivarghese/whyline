@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 from whyline import resolve
+from whyline.sync import _clipped as clipped
 
 CONFIDENCE_NOTE = {
     resolve.HIGH: "High — a recorded decision matches the commit for this line.",
@@ -383,9 +384,17 @@ def status_text(payload: dict) -> str:
             )
     active = payload.get("active_handoff")
     if active:
+        # Clipped and fence-sanitised like every other display path. A handoff is
+        # written by the *other* agent, and `status` is an agent-facing surface,
+        # so these values are untrusted input: unclipped they let a 20,000-character
+        # task id flood the output, and unsanitised they carry fence tokens into a
+        # packet another agent reads. Imported rather than reimplemented so the
+        # fence pattern has one definition.
         lines.append(
-            f"Active handoff {active.get('task', '')}: {active.get('status', '')} "
-            f"({active.get('from_actor', '')} -> {active.get('to_actor', '')})"
+            f"Active handoff {clipped(active.get('task', ''), 60)}: "
+            f"{clipped(active.get('status', ''), 40)} "
+            f"({clipped(active.get('from_actor', ''), 40)} -> "
+            f"{clipped(active.get('to_actor', ''), 40)})"
         )
     else:
         lines.append("Active handoff none")

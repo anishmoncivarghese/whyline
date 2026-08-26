@@ -26,14 +26,18 @@ THRESHOLD_UNRELIABLE = 0.20
 EXCLUDED_BEFORE = datetime(2026, 8, 18, 5, 0, tzinfo=timezone.utc)
 
 # Collection closed when `end-readside-collection.sh` restored the real
-# executable over the shim, which stopped the instrument recording. Taken from
-# the restored symlink's mtime (Aug 23 00:15 +05:30), not from a round number,
-# so the boundary is the observable event rather than a choice made later.
+# executable over the shim. Taken from the restored symlink's mtime
+# (Aug 23 00:15:34 +05:30, truncated to the minute), so the boundary is an
+# observable event rather than a date chosen afterwards.
 #
-# Bounding this is not optional. The ledger's hook keeps writing SessionStarted
-# forever, so an unbounded script grows its own denominator every time anyone
-# opens the repo and drifts away from the published result — moving the
-# goalposts after the fact, in whichever direction later data happens to fall.
+# The load-bearing fact, stronger than the mtime: the shim that produced the
+# *numerator* wrote its last line at 2026-08-22T18:12:48Z. After that no read
+# could be logged at all, so a later session cannot score one by construction —
+# counting such sessions in the denominator would be structurally invalid, not
+# merely inconvenient. Without this bound the rate is 3/9 = 33%, still inside
+# the 20-50% UNRELIABLE band, so the boundary does not change the published
+# verdict or any precommitted action. The session dedup above does: scored per
+# event it reads 12%, which crosses into a different band.
 COLLECTION_CLOSED = datetime(2026, 8, 22, 18, 45, tzinfo=timezone.utc)
 
 
@@ -73,14 +77,22 @@ def load_sessions(ledger: Path) -> list[datetime]:
         if event.get("type") != "SessionStarted":
             continue
         stamp = parse_ts(str(event.get("ts", "")))
-        if stamp is None or not EXCLUDED_BEFORE <= stamp <= COLLECTION_CLOSED:
+        if stamp is None:
             continue
         # Fall back to the event id when no session field exists: an older event
         # without one is its own session rather than silently merged with others.
         key = str(event.get("session") or event.get("id") or stamp.isoformat())
         if key not in first_seen or stamp < first_seen[key]:
             first_seen[key] = stamp
-    return sorted(first_seen.values())
+    # Window applied AFTER the dedup, deliberately. Filtering events first would
+    # let a session that began before the window but was resumed inside it enter
+    # as a new session whose "start" is really a resume — reintroducing at the
+    # boundary the exact artefact this function exists to remove.
+    return sorted(
+        start
+        for start in first_seen.values()
+        if EXCLUDED_BEFORE <= start <= COLLECTION_CLOSED
+    )
 
 
 def load_invocations(log: Path, repo_name: str) -> list[tuple[datetime, str, str]]:

@@ -46,24 +46,57 @@ def select_entries(
     *,
     task: str | None = None,
     files: list[str] | None = None,
+    rank_files: list[str] | None = None,
 ) -> tuple[history.History, list[history.HistoryEntry]]:
-    """Return newest entries ranked by explicit task and file relevance."""
+    """Return entries ranked by relevance. Only `task`/`files` ever exclude.
+
+    `rank_files` is a *hint*, not a filter: matching entries sort first and the
+    rest follow newest-first. `sync` passes the working tree's changed paths
+    there, and the distinction is load-bearing. When those paths were passed as
+    `files`, any dirty tree silently activated a filter the caller never asked
+    for: a repository with 23 decisions and one unrelated edited file reported
+    "Relevant decisions (0 of 0 for task (any))" and printed none of them, while
+    `brief` on the same data correctly showed all 23. The installed instruction
+    then tells the next agent to announce that the project has no history, so
+    the failure laundered itself into a confident false statement. It is also
+    the round-one Critical recurring, where `brief` announced "1 of 1" over a
+    hidden committed history.
+
+    An explicit `task` or `files` from the caller still narrows, which is what
+    someone asking for one file means.
+    """
     loaded = history.load(root)
     requested_files = set(files or [])
-    if task is None and not requested_files:
+    hint_files = set(rank_files or [])
+    if task is None and not requested_files and not hint_files:
         return loaded, list(loaded.notes)
+
+    def matches_files(entry: history.HistoryEntry, wanted: set[str]) -> bool:
+        return bool(wanted.intersection(entry.event.get("files") or []))
 
     task_matches = [
         entry for entry in loaded.notes if task is not None and entry.event.get("task") == task
     ]
-    task_ids = {id(entry) for entry in task_matches}
+    chosen = {id(entry) for entry in task_matches}
     file_matches = [
         entry
         for entry in loaded.notes
-        if id(entry) not in task_ids
-        and requested_files.intersection(entry.event.get("files") or [])
+        if id(entry) not in chosen and matches_files(entry, requested_files)
     ]
-    return loaded, task_matches + file_matches
+    chosen.update(id(entry) for entry in file_matches)
+    hint_matches = [
+        entry
+        for entry in loaded.notes
+        if id(entry) not in chosen and matches_files(entry, hint_files)
+    ]
+    chosen.update(id(entry) for entry in hint_matches)
+
+    ranked = task_matches + file_matches + hint_matches
+    if task is None and not requested_files:
+        # Nothing was excluded on the caller's behalf, so the remainder follows
+        # rather than disappearing. The token budget decides what actually fits.
+        ranked += [entry for entry in loaded.notes if id(entry) not in chosen]
+    return loaded, ranked
 
 
 def entry_lines(entry: history.HistoryEntry) -> list[str]:

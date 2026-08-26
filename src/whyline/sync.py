@@ -43,14 +43,17 @@ def _state(root: Path, task: str | None, files: list[str] | None):
     active = handoff.load(root)
     changed = gitq.changed_paths(root)
     effective_task = task or (str(active.get("task", "")) if active else "") or None
-    effective_files = set(files or [])
-    effective_files.update(changed)
+    # The caller's own --file narrows. The working tree's changed paths and the
+    # handoff's files only *rank* — they are inferred, so letting them exclude
+    # meant a single unrelated dirty file hid the entire committed history.
+    hint_files = set(changed)
     if active:
-        effective_files.update(active.get("files") or [])
+        hint_files.update(active.get("files") or [])
     loaded, relevant = brief.select_entries(
         root,
         task=effective_task,
-        files=sorted(effective_files),
+        files=sorted(files or []),
+        rank_files=sorted(hint_files),
     )
     git = {
         "branch": gitq.branch_name(root),
@@ -67,7 +70,9 @@ def _state(root: Path, task: str | None, files: list[str] | None):
         loaded,
         relevant,
         effective_task,
-        sorted(effective_files),
+        # Everything that informed selection, for reporting. Deliberately the
+        # union: it says which paths were considered, not which ones narrowed.
+        sorted(set(files or []) | hint_files),
     )
 
 
@@ -186,11 +191,12 @@ def compose(
         active,
         git,
         ownership_state,
-        _loaded,
+        loaded,
         relevant,
         effective_task,
         effective_files,
     ) = _state(root, task, files)
+    recorded = len(loaded.notes)
     nonce = secrets.token_hex(8)
     open_tag = f"<{TAG}-{nonce}>"
     close_tag = f"</{TAG}-{nonce}>"
@@ -219,9 +225,14 @@ def compose(
             "",
             *_ownership_lines(ownership_state, compact=compact),
             "",
+            # Naming the recorded total whenever a filter narrowed the set: a
+            # bare "0 of 0" reads as "this project has no history", and the
+            # installed instruction tells the agent to say exactly that.
             "Relevant decisions "
             f"({len(selected)} of {len(relevant)} for task "
-            f"{_clipped(effective_task) if effective_task else '(any)'}):",
+            f"{_clipped(effective_task) if effective_task else '(any)'}"
+            + (f"; {recorded} recorded in total" if len(relevant) != recorded else "")
+            + "):",
         ]
         omitted = len(relevant) - len(selected)
         if omitted:

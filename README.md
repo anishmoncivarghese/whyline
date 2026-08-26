@@ -195,8 +195,12 @@ Three layers feed one ledger:
 
 1. **git** resolves a line to a commit via `git blame`. Works before whyline has
    recorded anything.
-2. **Claude and Codex hooks** silently record sessions, instructions and explicit
-   file edits. They can never fail your session — every path exits 0.
+2. **A hook** silently records sessions, instructions and explicit file edits. It
+   can never fail your session — every path exits 0. **Verified against Claude
+   Code only.** `init` also writes a project-local `.codex/hooks.json`, but no
+   Codex hook event has been observed yet, so treat Codex mechanical capture as
+   untested rather than working: run `whyline status`, which reports each vendor
+   separately and will say `configured but never observed` until one arrives.
 3. **Your agent** records the reasoning. `whyline init` adds an `AGENTS.md`
    instruction asking agents to log decisions and rejected alternatives. This is
    the only layer that captures *why*.
