@@ -15,6 +15,20 @@ EXIT_USAGE = 2
 EXIT_UNINITIALISED = 3
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _token_budget(value: str) -> int:
+    parsed = int(value)
+    if parsed < 200:
+        raise argparse.ArgumentTypeError("must be at least 200")
+    return parsed
+
+
 def _add_explain(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "explain", help="Why does this code exist?"
@@ -41,19 +55,68 @@ def _add_note(subparsers: "argparse._SubParsersAction") -> None:
         dest="files",
         help="Affected path. Repeatable.",
     )
+    parser.add_argument("--actor", default="", help="Agent or person deciding")
+    parser.add_argument("--role", default="", help="Role for this decision")
+    parser.add_argument("--task", default="", help="Task identifier")
+
+
+def _add_handoff(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("handoff", help="Record an active-task handoff")
+    parser.add_argument("task", help="Task identifier")
+    parser.add_argument("--from", required=True, dest="from_actor", metavar="ACTOR")
+    parser.add_argument("--to", required=True, dest="to_actor", metavar="ACTOR")
+    parser.add_argument("--status", required=True)
+    parser.add_argument("--summary", default="")
+    parser.add_argument("--file", action="append", default=[], dest="files")
+    parser.add_argument("--test", action="append", default=[], dest="tests")
+    parser.add_argument("--risk", action="append", default=[], dest="risks")
+    parser.add_argument("--question", action="append", default=[], dest="questions")
+    parser.add_argument("--base", default=None, dest="base_commit")
+    parser.add_argument("--current", default=None, dest="current_commit")
+    parser.add_argument("--json", action="store_true")
+
+
+def _add_claim(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("claim", help="Claim advisory task/file ownership")
+    parser.add_argument("task")
+    parser.add_argument("--actor", required=True)
+    parser.add_argument("--role", default="")
+    parser.add_argument("--file", action="append", default=[], dest="files")
+    parser.add_argument("--json", action="store_true")
+
+
+def _add_release(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("release", help="Release advisory ownership")
+    parser.add_argument("task")
+    parser.add_argument("--actor", required=True)
+    parser.add_argument("--json", action="store_true")
 
 
 def _add_brief(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("brief", help="Summary for the next agent")
-    parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--limit", type=_positive_int, default=10)
+    parser.add_argument("--task", default=None)
+    parser.add_argument("--file", action="append", default=[], dest="files")
+    parser.add_argument("--token-budget", type=_token_budget, default=1200)
+
+
+def _add_sync(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("sync", help="Compact active-task handoff")
+    parser.add_argument("--task", default=None)
+    parser.add_argument("--file", action="append", default=[], dest="files")
+    parser.add_argument("--token-budget", type=_token_budget, default=1200)
+    parser.add_argument("--json", action="store_true")
 
 
 def _add_run(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
-        "run", help="Launch an agent with the brief attached"
+        "run", help="Launch an agent with active context attached"
     )
     parser.add_argument("agent", choices=("claude", "codex"))
     parser.add_argument("task")
+    parser.add_argument("--task-id", default=None)
+    parser.add_argument("--file", action="append", default=[], dest="files")
+    parser.add_argument("--token-budget", type=_token_budget, default=1200)
 
 
 def _add_timeline(subparsers: "argparse._SubParsersAction") -> None:
@@ -91,7 +154,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     _add_explain(subparsers)
     _add_note(subparsers)
+    _add_handoff(subparsers)
+    _add_claim(subparsers)
+    _add_release(subparsers)
     _add_brief(subparsers)
+    _add_sync(subparsers)
     _add_run(subparsers)
     _add_timeline(subparsers)
     _add_status(subparsers)
@@ -166,6 +233,9 @@ def cmd_note(args: argparse.Namespace) -> int:
         because=decisions.one_line(args.because),
         alternatives=alternatives,
         files=[decisions.one_line(f) for f in args.files],
+        actor=decisions.one_line(args.actor),
+        role=decisions.one_line(args.role),
+        task=decisions.one_line(args.task),
     )
     # decisions.md FIRST, then the ledger. Order matters at the failure
     # boundary, found 2026-08-18: with the ledger written first, a failure on
@@ -198,6 +268,89 @@ def cmd_note(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_handoff(args: argparse.Namespace) -> int:
+    from whyline import gitq, handoff, paths, render
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    try:
+        record = handoff.create(
+            root,
+            task=args.task,
+            from_actor=args.from_actor,
+            to_actor=args.to_actor,
+            status=args.status,
+            summary=args.summary,
+            files=args.files or None,
+            tests=[handoff.parse_test(value) for value in args.tests],
+            risks=args.risks,
+            questions=args.questions,
+            base_commit=args.base_commit,
+            current_commit=args.current_commit,
+        )
+    except (gitq.GitUnavailable, OSError) as error:
+        print(f"could not record handoff: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    if args.json:
+        render.emit_json(record)
+    else:
+        render.emit(handoff.format_text(record))
+    return EXIT_OK
+
+
+def cmd_claim(args: argparse.Namespace) -> int:
+    from whyline import ownership, paths, render
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    try:
+        state, found_conflicts = ownership.claim(
+            root,
+            task=args.task,
+            actor=args.actor,
+            role=args.role,
+            files=args.files,
+        )
+    except OSError as error:
+        print(f"could not record ownership: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    payload = {**state, "conflicts": found_conflicts}
+    if args.json:
+        render.emit_json(payload)
+    else:
+        print(f"Claimed {args.task} for {args.actor}.")
+        if found_conflicts:
+            print(
+                f"WARNING: {len(found_conflicts)} overlapping claim"
+                + ("s" if len(found_conflicts) != 1 else "")
+                + "; coordinate before writing."
+            )
+    return EXIT_OK
+
+
+def cmd_release(args: argparse.Namespace) -> int:
+    from whyline import ownership, paths, render
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    try:
+        state = ownership.release(root, task=args.task, actor=args.actor)
+    except OSError as error:
+        print(f"could not release ownership: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    if args.json:
+        render.emit_json(state)
+    else:
+        print(f"Released {args.task} for {args.actor}.")
+    return EXIT_OK
+
+
 def cmd_brief(args: argparse.Namespace) -> int:
     from whyline import brief, paths
 
@@ -205,14 +358,56 @@ def cmd_brief(args: argparse.Namespace) -> int:
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
-    print(brief.compose(root, limit=args.limit))
+    print(
+        brief.compose(
+            root,
+            limit=args.limit,
+            task=args.task,
+            files=args.files,
+            token_budget=args.token_budget,
+        )
+    )
+    return EXIT_OK
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    from whyline import gitq, paths, render, sync
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    try:
+        if args.json:
+            render.emit_json(sync.payload(root, task=args.task, files=args.files))
+        else:
+            render.emit(
+                sync.compose(
+                    root,
+                    task=args.task,
+                    files=args.files,
+                    token_budget=args.token_budget,
+                )
+            )
+    except gitq.GitUnavailable as error:
+        print(f"git is unavailable: {error}", file=sys.stderr)
+        return EXIT_ERROR
     return EXIT_OK
 
 
 # `*.bak` covers the copy `agentsmd.install` leaves when it replaces an outdated
 # instruction block. It lives here rather than in the repository's own .gitignore
 # because whyline only ever manages this file — the human owns the other one.
-GITIGNORE_LINES = ("ledger.jsonl", "index.db", "*.bak", "!decisions.md")
+GITIGNORE_LINES = (
+    "ledger.jsonl",
+    "index.db",
+    "active-handoff.json",
+    "ownership.json",
+    "readside.log",
+    "*.lock",
+    "*.bak",
+    "!decisions.md",
+)
 
 
 def _confirm(question: str, assume_yes: bool) -> bool:
@@ -253,10 +448,15 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"AGENTS.md: {agentsmd.install(root / 'AGENTS.md')}")
         print(f"CLAUDE.md: {claudemd.install(root / 'CLAUDE.md')}")
 
-    if _confirm("Install the Claude Code hook for this project?", args.yes):
+    if _confirm("Install the Claude Code and Codex hooks for this project?", args.yes):
         try:
-            outcome = hooks.install(root / ".claude" / "settings.json")
-            print(f"Hook: {outcome}")
+            claude_outcome = hooks.install_claude(
+                root / ".claude" / "settings.json"
+            )
+            codex_outcome = hooks.install_codex(root / ".codex" / "hooks.json")
+            print(f"Claude hook: {claude_outcome}")
+            print(f"Codex hook: {codex_outcome}")
+            print("Codex trust: open /hooks in Codex and approve this project hook.")
         except hooks.SettingsUnreadable as error:
             print(str(error), file=sys.stderr)
             return EXIT_ERROR
@@ -264,17 +464,26 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from whyline import brief, paths, runner
+    from whyline import gitq, paths, runner, sync
 
     root = _require_repo()
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
-    brief_text = brief.compose(root)
+    try:
+        brief_text = sync.compose(
+            root,
+            task=args.task_id,
+            files=args.files,
+            token_budget=args.token_budget,
+        )
+    except gitq.GitUnavailable as error:
+        print(f"git is unavailable: {error}", file=sys.stderr)
+        return EXIT_ERROR
     try:
         runner.launch(args.agent, args.task, brief_text)
     except (runner.UnknownAgent, runner.AgentMissing) as error:
-        # Spec §8: the brief is still printed, so the work is not lost.
+        # The sync packet is still printed, so the handoff is not lost.
         print(str(error), file=sys.stderr)
         print(brief_text)
         return EXIT_ERROR
@@ -364,7 +573,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 COMMANDS = {
     "explain": cmd_explain,
     "note": cmd_note,
+    "handoff": cmd_handoff,
+    "claim": cmd_claim,
+    "release": cmd_release,
     "brief": cmd_brief,
+    "sync": cmd_sync,
     "run": cmd_run,
     "timeline": cmd_timeline,
     "status": cmd_status,

@@ -108,3 +108,53 @@ def previous_commit_epoch(root: Path, rel_path: str, sha: str) -> int | None:
             following = history[index + 1 :]
             return following[0][1] if following else None
     return None
+
+
+def head_commit(root: Path) -> str:
+    """Current full commit id, or an empty string for an unborn repository."""
+    try:
+        return _git(root, "rev-parse", "HEAD").strip()
+    except GitUnavailable:
+        _require_usable_repo(root)
+        return ""
+
+
+def branch_name(root: Path) -> str:
+    """Current branch, or an empty string for detached/unborn HEAD."""
+    try:
+        return _git(root, "branch", "--show-current").strip()
+    except GitUnavailable:
+        _require_usable_repo(root)
+        return ""
+
+
+def changed_paths(root: Path) -> list[str]:
+    """Tracked and untracked changed paths, excluding local Whyline state."""
+    output = _git(
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all"
+    )
+    local_state = {
+        ".whyline/active-handoff.json",
+        ".whyline/index.db",
+        ".whyline/ledger.jsonl",
+        ".whyline/ownership.json",
+        ".whyline/ownership.json.lock",
+        ".whyline/readside.log",
+    }
+    parts = output.split("\0")
+    found: set[str] = set()
+    index = 0
+    while index < len(parts):
+        raw = parts[index]
+        index += 1
+        if not raw:
+            continue
+        status = raw[:2]
+        path = raw[3:]
+        if "R" in status or "C" in status:
+            # In porcelain v1 -z, the destination is first and the original
+            # path follows as a second NUL-delimited field.
+            index += 1
+        if path and path not in local_state and not path.endswith(".bak"):
+            found.add(path)
+    return sorted(found)

@@ -230,6 +230,9 @@ def test_init_scaffolds_ledger_and_gitignore(repo, capsys):
     ignore = (repo.path / ".whyline" / ".gitignore").read_text()
     assert "ledger.jsonl" in ignore
     assert "!decisions.md" in ignore
+    assert (repo.path / ".claude" / "settings.json").exists()
+    codex_hooks = json.loads((repo.path / ".codex" / "hooks.json").read_text())
+    assert "whyline-hook --agent codex" in str(codex_hooks)
 
 
 def test_init_preserves_existing_whyline_gitignore_entries(repo, capsys):
@@ -286,12 +289,82 @@ def test_brief_command_prints_the_context_block(repo, capsys):
     assert re.search(r"^<whyline-context-[0-9a-f]{16}>$", out, re.M), out[:120]
 
 
+def test_brief_accepts_relevance_and_budget_flags(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    event = events.new_event(
+        events.NOTE,
+        decision="keep this",
+        task="WL-42",
+        files=["a.py"],
+    )
+    ledger.append(paths.ledger_path(repo.path), event)
+
+    code, out = run_in(
+        repo,
+        ["brief", "--task", "WL-42", "--file", "a.py", "--token-budget", "300"],
+        capsys,
+    )
+
+    assert code == cli.EXIT_OK
+    assert "keep this" in out
+
+
+def test_sync_command_json_contains_git_and_handoff(repo, capsys):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+
+    code, out = run_in(repo, ["sync", "--json"], capsys)
+
+    payload = json.loads(out)
+    assert code == cli.EXIT_OK
+    assert "git" in payload
+    assert "active_handoff" in payload
+
+
+def test_claim_warns_but_succeeds_on_overlap(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    code, _ = run_in(
+        repo,
+        ["claim", "WL-42", "--actor", "codex", "--file", "a.py"],
+        capsys,
+    )
+    assert code == cli.EXIT_OK
+
+    code, out = run_in(
+        repo,
+        ["claim", "WL-43", "--actor", "claude", "--file", "a.py", "--json"],
+        capsys,
+    )
+    payload = json.loads(out)
+    assert code == cli.EXIT_OK
+    assert len(payload["conflicts"]) == 1
+
+
+def test_release_is_idempotent_through_cli(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+
+    for _ in range(2):
+        code, out = run_in(
+            repo,
+            ["release", "WL-42", "--actor", "codex", "--json"],
+            capsys,
+        )
+        assert code == cli.EXIT_OK
+        assert json.loads(out)["claims"] == []
+
+
 def test_brief_without_initialisation_exits_three(repo, capsys):
     code, _ = run_in(repo, ["brief"], capsys)
     assert code == cli.EXIT_UNINITIALISED
 
 
-def test_run_still_prints_the_brief_when_the_agent_is_missing(repo, capsys, monkeypatch):
+def test_run_still_prints_the_sync_packet_when_the_agent_is_missing(
+    repo, capsys, monkeypatch
+):
     from whyline import runner
 
     paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
@@ -299,12 +372,31 @@ def test_run_still_prints_the_brief_when_the_agent_is_missing(repo, capsys, monk
     monkeypatch.setattr(runner.shutil, "which", lambda name: None)
     code, out = run_in(repo, ["run", "codex", "do the thing"], capsys)
     assert code == cli.EXIT_ERROR
-    assert re.search(r"^<whyline-context-[0-9a-f]{16}>$", out, re.M), out[:120]
+    assert re.search(r"^<whyline-sync-[0-9a-f]{16}>$", out, re.M), out[:120]
 
 
 def test_run_requires_initialisation(repo, capsys):
     code, _ = run_in(repo, ["run", "codex", "task"], capsys)
     assert code == cli.EXIT_UNINITIALISED
+
+
+def test_run_reports_git_failure_without_a_traceback(repo, capsys, monkeypatch):
+    from whyline import gitq, sync
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+
+    def fail(*_args, **_kwargs):
+        raise gitq.GitUnavailable("broken repository")
+
+    monkeypatch.setattr(sync, "compose", fail)
+    code, _out, err = run_in_both(
+        repo, ["run", "codex", "do the thing"], capsys
+    )
+
+    assert code == cli.EXIT_ERROR
+    assert "git is unavailable" in err
+    assert "Traceback" not in err
 
 
 def _ledger_note(repo, decision, ts, files=None):
@@ -365,6 +457,94 @@ def test_status_json_reports_counts_and_hook_state(repo, capsys):
     assert payload["notes"] == 1
     assert payload["hook_installed"] is False
     assert payload["initialised"] is True
+
+
+def test_status_counts_committed_history_on_a_fresh_clone(repo, capsys):
+    event = events.new_event(
+        events.NOTE,
+        decision="durable decision",
+        because="available after cloning",
+        files=["a.py"],
+    )
+    event["ts"] = "2026-08-01T10:00:00.000Z"
+    from whyline import decisions
+
+    decisions.append_entry(paths.decisions_path(repo.path), event)
+
+    code, out = run_in(repo, ["status", "--json"], capsys)
+
+    payload = json.loads(out)
+    assert code == cli.EXIT_OK
+    assert payload["notes"] == 1
+    assert payload["committed_decisions"] == 1
+    assert payload["local_events"] == 0
+
+
+def test_status_reports_each_agent_config_binary_and_observation(repo, capsys):
+    from whyline import hooks, render
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    hooks.install_claude(repo.path / ".claude" / "settings.json")
+    hooks.install_codex(repo.path / ".codex" / "hooks.json")
+    event = events.new_event(
+        events.SESSION_STARTED, session="codex-1", agent="codex"
+    )
+    ledger.append(paths.ledger_path(repo.path), event)
+    monkeypatch_target = lambda _name: "/usr/local/bin/whyline-hook"
+    original = render.shutil.which
+    render.shutil.which = monkeypatch_target
+    try:
+        code, out = run_in(repo, ["status", "--json"], capsys)
+    finally:
+        render.shutil.which = original
+
+    payload = json.loads(out)
+    assert code == cli.EXIT_OK
+    assert payload["hooks"]["claude"]["configured"] is True
+    assert payload["hooks"]["claude"]["observed"] is False
+    assert payload["hooks"]["codex"]["configured"] is True
+    assert payload["hooks"]["codex"]["binary_available"] is True
+    assert payload["hooks"]["codex"]["observed"] is True
+    assert payload["hooks"]["codex"]["last_event"] == event["ts"]
+
+
+def test_status_configured_but_unobserved_codex_points_to_hook_trust(
+    repo, capsys, monkeypatch
+):
+    from whyline import hooks, render
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    hooks.install_codex(repo.path / ".codex" / "hooks.json")
+    monkeypatch.setattr(render.shutil, "which", lambda _name: "/bin/whyline-hook")
+
+    _code, out = run_in(repo, ["status", "--json"], capsys)
+
+    codex = json.loads(out)["hooks"]["codex"]
+    assert codex["configured"] is True
+    assert codex["observed"] is False
+    assert codex["healthy"] is False
+    assert "/hooks" in codex["detail"]
+
+
+def test_status_does_not_call_configured_hook_healthy_when_binary_is_missing(
+    repo, capsys, monkeypatch
+):
+    from whyline import hooks, render
+
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+    hooks.install_claude(repo.path / ".claude" / "settings.json")
+    monkeypatch.setattr(render.shutil, "which", lambda _name: None)
+
+    _code, out = run_in(repo, ["status", "--json"], capsys)
+
+    claude = json.loads(out)["hooks"]["claude"]
+    assert claude["configured"] is True
+    assert claude["binary_available"] is False
+    assert claude["healthy"] is False
+    assert "not found" in claude["detail"]
 
 
 def test_status_reports_skipped_torn_lines(repo, capsys):
@@ -493,6 +673,66 @@ def test_note_echoes_what_was_stored_not_what_was_typed(repo, capsys):
     assert code == cli.EXIT_OK
     assert "Recorded: line one line two" in out
     assert "\nline two" not in out.split("Recorded:")[1]
+
+
+def test_note_records_actor_role_and_task(repo, capsys):
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+
+    code, _ = run_in(
+        repo,
+        [
+            "note",
+            "bounded the cache",
+            "--actor",
+            "codex",
+            "--role",
+            "implementer",
+            "--task",
+            "WL-42",
+        ],
+        capsys,
+    )
+
+    found, _ = ledger.read_all(paths.ledger_path(repo.path))
+    assert code == cli.EXIT_OK
+    assert found[-1]["actor"] == "codex"
+    assert found[-1]["role"] == "implementer"
+    assert found[-1]["task"] == "WL-42"
+
+
+def test_handoff_command_writes_active_record_and_json(repo, capsys):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+    paths.ledger_path(repo.path).touch()
+
+    code, out = run_in(
+        repo,
+        [
+            "handoff",
+            "WL-42",
+            "--from",
+            "codex",
+            "--to",
+            "claude",
+            "--status",
+            "ready-for-review",
+            "--summary",
+            "implementation complete",
+            "--test",
+            "pytest -q: passed",
+            "--json",
+        ],
+        capsys,
+    )
+
+    payload = json.loads(out)
+    assert code == cli.EXIT_OK
+    assert payload["task"] == "WL-42"
+    assert payload["from_actor"] == "codex"
+    assert payload["to_actor"] == "claude"
+    assert payload["tests"] == [{"command": "pytest -q", "result": "passed"}]
+    assert paths.active_handoff_path(repo.path).exists()
 
 
 def test_status_reports_a_denied_but_fully_wired_hook_as_blocked(repo, capsys):

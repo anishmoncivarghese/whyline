@@ -11,10 +11,11 @@ SESSION_STARTED = "SessionStarted"
 INSTRUCTION = "Instruction"
 FILE_TOUCHED = "FileTouched"
 NOTE = "Note"
+HANDOFF = "Handoff"
 SESSION_ENDED = "SessionEnded"
 
 
-def _now_iso() -> str:
+def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
@@ -22,7 +23,7 @@ def new_event(type_: str, **fields: object) -> dict:
     return {
         "v": SCHEMA_VERSION,
         "id": uuid.uuid4().hex,
-        "ts": _now_iso(),
+        "ts": now_iso(),
         "type": type_,
         **fields,
     }

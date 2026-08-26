@@ -45,7 +45,7 @@ def test_instruction_references_only_commands_that_exist():
 def test_the_instruction_tells_agents_to_read_not_only_to_write():
     """0.1.0 shipped with only the write half, so nothing ever asked an agent to
     consult the history — half the product had no instruction behind it."""
-    assert "whyline brief" in agentsmd.INSTRUCTION
+    assert "whyline sync" in agentsmd.INSTRUCTION
     assert "whyline note" in agentsmd.INSTRUCTION
 
 
@@ -70,12 +70,13 @@ def test_the_read_directive_carries_four_parts_and_the_write_directive_three():
     assert "At the start of a session" in flat
     assert "After completing any non-trivial change" in flat
     # exact commands, each indented on its own line in the real text
-    assert "    whyline brief" in text
+    assert "    whyline sync" in text
     assert '    whyline note "<one-line decision>"' in text
     # pre-authorisation, once per directive
     assert flat.count("Do not ask permission") == 2
     # verification for the read half
     assert "say so in your first message" in flat
+    assert "whyline handoff" in flat
 
 
 def test_the_write_trigger_covers_review_not_only_authorship():
@@ -112,7 +113,7 @@ More human-written notes below.
     path.write_text(stale, encoding="utf-8")
     assert agentsmd.install(path).startswith("upgraded")
     updated = path.read_text(encoding="utf-8")
-    assert "whyline brief" in updated
+    assert "whyline sync" in updated
     assert "Old wording that predates" not in updated
     # everything the human wrote is preserved
     assert "Human-written conventions above." in updated

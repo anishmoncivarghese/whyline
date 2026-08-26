@@ -1,9 +1,10 @@
 """The canonical shared instruction that asks agents to read and record reasoning.
 
-Both halves matter. Recording alone produces a decision log nobody consults; the
-read instruction is what turns it into a handoff. 0.1.0 shipped with only the
-write half — an omission found when the project's own author could not tell from
-the docs how switching agents worked.
+Reading and recording both matter. The read instruction is best-effort: the
+closed experiment measured only 43% unprompted compliance, so `whyline run`
+remains the reliable way to inject context. The instruction still improves
+directly opened sessions and now uses `sync` so one read includes the active
+handoff, Git state, ownership, and relevant decisions.
 
 The wording is not arbitrary. `docs/superpowers/specs/2026-08-16-handover-observations.md`
 records a controlled observation: a *declarative* instruction ("history lives in
@@ -54,11 +55,11 @@ INSTRUCTION = f"""{BEGIN}
 
 At the start of a session, before touching code, run:
 
-    whyline brief
+    whyline sync
 
-That prints what previous agents decided and rejected on this project.
-Do not ask permission. If it reports nothing recorded, say so in your first
-message, so the human knows the history is empty rather than merely unread.
+That prints the active handoff, Git state, ownership warnings, and relevant
+decisions. Do not ask permission. If it reports no handoff or history, say so in
+your first message, so the human knows the context is empty rather than unread.
 
 ## Recording decisions
 
@@ -68,7 +69,8 @@ record the reasoning:
     whyline note "<one-line decision>" \\
       --because "<why this choice>" \\
       --rejected "<option>: <why not>" \\
-      --file <path>
+      --file <path> \\
+      --actor <agent> --role <role> --task <task-id>
 
 Reviewing counts as deciding. Ruling a defect worth fixing now, accepting a
 deviation from the plan, or judging a risk acceptable are all decisions.
@@ -77,6 +79,12 @@ logged them in a tracker of your own.
 
 Record only genuine choices a future reader would wonder about. Skip typos,
 formatting and renames. `--rejected` is repeatable. Do not ask permission.
+
+## Handing off active work
+
+Before another agent takes over, record an explicit handoff with `whyline
+handoff <task-id> --from <agent> --to <agent> --status <status>`. Include the
+changed files, tests and results, open risks or questions, and a short summary.
 {END}
 """
 

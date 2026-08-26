@@ -28,5 +28,13 @@ def decisions_path(root: Path) -> Path:
     return whyline_dir(root) / "decisions.md"
 
 
+def active_handoff_path(root: Path) -> Path:
+    return whyline_dir(root) / "active-handoff.json"
+
+
+def ownership_path(root: Path) -> Path:
+    return whyline_dir(root) / "ownership.json"
+
+
 def is_initialised(root: Path) -> bool:
     return ledger_path(root).exists()

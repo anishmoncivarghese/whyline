@@ -66,6 +66,44 @@ def test_no_confidence_when_nothing_is_recorded(repo):
     assert result.blame is not None
 
 
+def test_file_level_explain_reads_committed_history_on_a_fresh_clone(repo):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    event = events.new_event(
+        events.NOTE,
+        decision="committed reasoning",
+        files=["a.py"],
+        because="it travels with the repository",
+    )
+    event["ts"] = "2026-08-01T10:00:00.000Z"
+    from whyline import decisions
+
+    decisions.append_entry(paths.decisions_path(repo.path), event)
+
+    result = resolve.explain(repo.path, "a.py", None)
+
+    assert result.confidence == "medium"
+    assert [note["decision"] for note in result.notes] == ["committed reasoning"]
+
+
+def test_day_precision_committed_note_cannot_claim_high_confidence(repo):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_786_000_000)
+    event = events.new_event(
+        events.NOTE,
+        decision="day precision only",
+        files=["a.py"],
+        because="the exact time was not committed",
+    )
+    event["ts"] = iso(1_785_950_000)
+    from whyline import decisions
+
+    decisions.append_entry(paths.decisions_path(repo.path), event)
+
+    result = resolve.explain(repo.path, "a.py", 1)
+
+    assert result.confidence != "high"
+    assert [note["decision"] for note in result.notes] == ["day precision only"]
+
+
 def test_no_confidence_for_uncommitted_lines(repo):
     repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
     (repo.path / "a.py").write_text("one\nbrand new\n", encoding="utf-8")

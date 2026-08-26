@@ -1,4 +1,4 @@
-"""Merge-safe Claude Code hook installation."""
+"""Merge-safe Claude Code and Codex hook installation."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 
 HOOK_COMMAND = "whyline-hook"
+CLAUDE_HOOK_COMMAND = HOOK_COMMAND
+CODEX_HOOK_COMMAND = "whyline-hook --agent codex"
 EVENTS = ("SessionStart", "SessionEnd", "UserPromptSubmit", "PostToolUse")
 
 
@@ -72,3 +74,11 @@ def install(settings_path: Path, command: str = HOOK_COMMAND) -> str:
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return "installed"
+
+
+def install_claude(settings_path: Path) -> str:
+    return install(settings_path, CLAUDE_HOOK_COMMAND)
+
+
+def install_codex(settings_path: Path) -> str:
+    return install(settings_path, CODEX_HOOK_COMMAND)

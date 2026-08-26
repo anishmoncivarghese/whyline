@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 
@@ -111,24 +112,49 @@ def timeline_text(events_: list[dict]) -> str:
 
 
 def status_payload(root) -> dict:
-    from whyline import events as events_module
-    from whyline import hooks, ledger, paths
+    from whyline import handoff, history, ownership, paths
 
-    found, skipped = ledger.read_all(paths.ledger_path(root))
+    loaded = history.load(root)
     hook_installed, hook_detail = _hook_state(root)
+    hook_reports = {
+        "claude": _agent_hook_report(root, loaded.ledger_events, "claude"),
+        "codex": _agent_hook_report(root, loaded.ledger_events, "codex"),
+    }
+    active = handoff.load(root)
+    ownership_state = ownership.load(root)
+    ownership_conflicts = ownership.conflicts(ownership_state["claims"])
     return {
         "root": str(root),
         "initialised": paths.is_initialised(root),
-        "events": len(found),
-        "notes": sum(1 for event in found if event.get("type") == events_module.NOTE),
-        "skipped_lines": skipped,
+        "events": loaded.event_count,
+        "notes": loaded.decision_count,
+        "local_events": len(loaded.ledger_events),
+        "committed_decisions": loaded.committed_count,
+        "skipped_lines": loaded.skipped_lines,
         "hook_installed": hook_installed,
         "hook_detail": hook_detail,
+        "hooks": hook_reports,
+        "active_handoff": active,
+        "ownership_claims": len(ownership_state["claims"]),
+        "ownership_conflicts": len(ownership_conflicts),
         "decisions_md": paths.decisions_path(root).exists(),
     }
 
 
 def _hook_state(root) -> tuple[bool, str]:
+    """Legacy Claude configuration fields retained for one release."""
+    from whyline import hooks
+
+    return _config_state(
+        root / ".claude" / "settings.json",
+        hooks.CLAUDE_HOOK_COMMAND,
+        check_claude_denies=True,
+    )
+
+
+def _config_state(
+    settings, command: str, *, check_claude_denies: bool = False
+) -> tuple[bool, str]:
     """Report the hook honestly, by parsing the config rather than grepping it.
 
     C3, 2026-08-17: a raw substring search over settings.json produced false
@@ -141,20 +167,19 @@ def _hook_state(root) -> tuple[bool, str]:
 
     from whyline import hooks
 
-    settings = root / ".claude" / "settings.json"
     if not settings.exists():
-        return False, "no .claude/settings.json in this repository"
+        return False, f"no {settings} in this repository"
     try:
         raw = settings.read_text(encoding="utf-8")
     except OSError as error:
         # hooks.install tolerates this; status must not traceback either.
-        return False, f"cannot read .claude/settings.json ({error.strerror})"
+        return False, f"cannot read {settings} ({error.strerror})"
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        return False, ".claude/settings.json is not valid JSON"
+        return False, f"{settings} is not valid JSON"
     if not isinstance(data, dict):
-        return False, ".claude/settings.json is not a JSON object"
+        return False, f"{settings} is not a JSON object"
 
     # Fixed 2026-08-18: every traversal step is shape-checked. The first attempt
     # wrote `(data.get("hooks") or {}).get(event)`, which raises AttributeError on
@@ -165,15 +190,17 @@ def _hook_state(root) -> tuple[bool, str]:
     configured = {
         event
         for event in hooks.EVENTS
-        if hooks.HOOK_COMMAND in _commands_for(hook_block.get(event))
+        if command in _commands_for(hook_block.get(event))
     }
     missing = [event for event in hooks.EVENTS if event not in configured]
 
-    blocking = [
-        rule
-        for rule in _as_list(_as_dict(data.get("permissions")).get("deny"))
-        if _rule_blocks(rule, hooks.HOOK_COMMAND)
-    ]
+    blocking = []
+    if check_claude_denies:
+        blocking = [
+            rule
+            for rule in _as_list(_as_dict(data.get("permissions")).get("deny"))
+            if _rule_blocks(rule, command)
+        ]
     if blocking:
         return False, f"blocked by a permissions deny rule: {blocking[0]}"
     if missing:
@@ -189,7 +216,7 @@ def _hook_state(root) -> tuple[bool, str]:
     mentions = [
         rule
         for rule in _as_list(_as_dict(data.get("permissions")).get("deny"))
-        if isinstance(rule, str) and hooks.HOOK_COMMAND in rule
+        if isinstance(rule, str) and command in rule
     ]
     detail = f"wired to all {len(hooks.EVENTS)} events"
     if mentions:
@@ -197,6 +224,80 @@ def _hook_state(root) -> tuple[bool, str]:
         # not a block. Say so rather than asserting either way.
         detail += f" (note: a deny rule mentions it: {mentions[0]})"
     return True, detail
+
+
+def _last_agent_event(found: list[dict], aliases: set[str]) -> dict | None:
+    from whyline import events
+
+    mechanical = {
+        events.SESSION_STARTED,
+        events.SESSION_ENDED,
+        events.INSTRUCTION,
+        events.FILE_TOUCHED,
+    }
+    matching = [
+        event
+        for event in found
+        if event.get("type") in mechanical and event.get("agent") in aliases
+    ]
+    if not matching:
+        return None
+    return max(matching, key=lambda event: str(event.get("ts", "")))
+
+
+def _event_age_seconds(event: dict | None) -> int | None:
+    if event is None:
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(event["ts"]).replace("Z", "+00:00"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return max(0, int((datetime.now(timezone.utc) - stamp).total_seconds()))
+
+
+def _agent_hook_report(root, found: list[dict], agent: str) -> dict:
+    from whyline import hooks
+
+    if agent == "claude":
+        configured, config_detail = _config_state(
+            root / ".claude" / "settings.json",
+            hooks.CLAUDE_HOOK_COMMAND,
+            check_claude_denies=True,
+        )
+        aliases = {"claude", "claude-code"}
+    else:
+        configured, config_detail = _config_state(
+            root / ".codex" / "hooks.json", hooks.CODEX_HOOK_COMMAND
+        )
+        aliases = {"codex"}
+    binary_path = shutil.which(hooks.HOOK_COMMAND)
+    binary_available = binary_path is not None
+    last = _last_agent_event(found, aliases)
+    observed = last is not None
+    age = _event_age_seconds(last)
+    healthy = configured and binary_available and observed
+    if not configured:
+        detail = config_detail
+    elif not binary_available:
+        detail = "configured, but whyline-hook was not found as an executable on PATH"
+    elif not observed and agent == "codex":
+        detail = "configured but never observed; open /hooks in Codex and review trust"
+    elif not observed:
+        detail = "configured but never observed; start a new Claude Code session"
+    else:
+        detail = "configured, executable, and observed"
+    return {
+        "configured": configured,
+        "config_detail": config_detail,
+        "binary_available": binary_available,
+        "binary_path": binary_path,
+        "observed": observed,
+        "last_event": last.get("ts") if last else None,
+        "last_event_type": last.get("type") if last else None,
+        "last_event_age_seconds": age,
+        "healthy": healthy,
+        "detail": detail,
+    }
 
 
 _BASH_RULE = re.compile(
@@ -264,19 +365,40 @@ def _rule_blocks(rule, command: str) -> bool:
 
 
 def status_text(payload: dict) -> str:
-    hook = "installed" if payload["hook_installed"] else "NOT recording"
     lines = [
         f"Repository     {payload['root']}",
         f"Initialised    {'yes' if payload['initialised'] else 'no'}",
         f"Events         {payload['events']}",
         f"Decisions      {payload['notes']}",
-        f"Hook           {hook} — {payload['hook_detail']}",
     ]
+    for label, key in (("Claude hook", "claude"), ("Codex hook", "codex")):
+        report = payload["hooks"][key]
+        lines.append(f"{label:<14} {report['detail']}")
+        if report["last_event"]:
+            age = report["last_event_age_seconds"]
+            age_text = f"{age}s ago" if age is not None else "age unknown"
+            lines.append(
+                f"{'Last observed':<14} {report['last_event_type']} at "
+                f"{report['last_event']} ({age_text})"
+            )
+    active = payload.get("active_handoff")
+    if active:
+        lines.append(
+            f"Active handoff {active.get('task', '')}: {active.get('status', '')} "
+            f"({active.get('from_actor', '')} -> {active.get('to_actor', '')})"
+        )
+    else:
+        lines.append("Active handoff none")
+    lines.append(f"Ownership      {payload.get('ownership_claims', 0)} active claims")
+    if payload.get("ownership_conflicts"):
+        lines.append(
+            f"WARNING        {payload['ownership_conflicts']} ownership conflicts"
+        )
     if payload["skipped_lines"]:
         count = payload["skipped_lines"]
         noun = "line" if count == 1 else "lines"
         lines.append(f"Warning        {count} unreadable ledger {noun} skipped")
-    if not payload["hook_installed"]:
+    if not all(report["configured"] for report in payload["hooks"].values()):
         lines.append("")
-        lines.append("Run `whyline init` to install the hook.")
+        lines.append("Run `whyline init` to install missing hook configuration.")
     return "\n".join(lines)

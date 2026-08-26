@@ -1,6 +1,6 @@
 [project]
 name = "whyline"
-version = "0.1.4"
+version = "0.2.0"
 description = "Records why your code exists, and tells the next agent."
 requires-python = ">=3.11"
 license = "Apache-2.0"

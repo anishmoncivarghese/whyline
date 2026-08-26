@@ -85,3 +85,28 @@ def test_install_refuses_null_event_groups_without_modifying_them(tmp_path):
     with pytest.raises(hooks.SettingsUnreadable):
         hooks.install(path, "whyline-hook")
     assert path.read_text() == original
+
+
+def test_codex_install_uses_an_explicit_agent_and_all_lifecycle_events(tmp_path):
+    path = tmp_path / ".codex" / "hooks.json"
+
+    assert hooks.install_codex(path) == "installed"
+
+    data = json.loads(path.read_text())
+    for event in hooks.EVENTS:
+        commands = [
+            entry["command"]
+            for group in data["hooks"][event]
+            for entry in group["hooks"]
+        ]
+        assert hooks.CODEX_HOOK_COMMAND in commands
+
+
+def test_claude_and_codex_installers_are_idempotent_independently(tmp_path):
+    claude = tmp_path / ".claude" / "settings.json"
+    codex = tmp_path / ".codex" / "hooks.json"
+    hooks.install_claude(claude)
+    hooks.install_codex(codex)
+
+    assert hooks.install_claude(claude) == "already-present"
+    assert hooks.install_codex(codex) == "already-present"

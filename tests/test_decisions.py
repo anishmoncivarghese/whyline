@@ -196,3 +196,30 @@ def test_has_conflict_markers_is_false_for_a_clean_file(tmp_path):
     event["ts"] = "2026-08-01T10:00:00.000Z"
     decisions.append_entry(path, event)
     assert decisions.has_conflict_markers(path) is False
+
+
+def test_actor_role_and_task_round_trip_through_committed_markdown(tmp_path):
+    path = tmp_path / "decisions.md"
+    event = make_note()
+    event.update(actor="codex", role="implementer", task="WL-42")
+
+    decisions.append_entry(path, event)
+    parsed = decisions.parse_entries(path)
+
+    assert "**Actor:** codex" in path.read_text(encoding="utf-8")
+    assert "**Role:** implementer" in path.read_text(encoding="utf-8")
+    assert "**Task:** WL-42" in path.read_text(encoding="utf-8")
+    assert parsed[0]["actor"] == "codex"
+    assert parsed[0]["role"] == "implementer"
+    assert parsed[0]["task"] == "WL-42"
+
+
+def test_old_entries_parse_with_empty_attribution_fields(tmp_path):
+    path = tmp_path / "decisions.md"
+    path.write_text("## 2026-08-09 — old entry\n", encoding="utf-8")
+
+    parsed = decisions.parse_entries(path)
+
+    assert parsed[0]["actor"] == ""
+    assert parsed[0]["role"] == ""
+    assert parsed[0]["task"] == ""

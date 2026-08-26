@@ -14,6 +14,9 @@ HEADING = "# Decisions\n\nAppend-only. Written by whyline; readable without it.\
 _HEADING_RE = re.compile(r"^## (?P<day>\S+) — (?P<decision>.*)$")
 _BECAUSE_RE = re.compile(r"^\*\*Because:\*\* (?P<value>.*)$", re.MULTILINE)
 _FILES_RE = re.compile(r"^\*\*Files:\*\* (?P<value>.*)$", re.MULTILINE)
+_ACTOR_RE = re.compile(r"^\*\*Actor:\*\* (?P<value>.*)$", re.MULTILINE)
+_ROLE_RE = re.compile(r"^\*\*Role:\*\* (?P<value>.*)$", re.MULTILINE)
+_TASK_RE = re.compile(r"^\*\*Task:\*\* (?P<value>.*)$", re.MULTILINE)
 _ID_RE = re.compile(r"<!-- whyline-event: (?P<value>.*?) -->")
 _CONFLICT_RE = re.compile(r"(?m)^(<{7}|={7}|>{7})")
 
@@ -34,6 +37,11 @@ def one_line(text: object) -> str:
 def render_entry(event: dict) -> str:
     day = one_line(event.get("ts", ""))[:10]
     lines = [f"## {day} — {one_line(event.get('decision', ''))}", ""]
+    for label, field in (("Actor", "actor"), ("Role", "role"), ("Task", "task")):
+        if event.get(field):
+            lines.append(f"**{label}:** {one_line(event[field])}")
+    if any(event.get(field) for field in ("actor", "role", "task")):
+        lines.append("")
     if event.get("because"):
         lines.append(f"**Because:** {one_line(event['because'])}")
         lines.append("")
@@ -87,6 +95,9 @@ def _parse_block(block: str) -> dict | None:
         return None
     because_match = _BECAUSE_RE.search(block)
     files_match = _FILES_RE.search(block)
+    actor_match = _ACTOR_RE.search(block)
+    role_match = _ROLE_RE.search(block)
+    task_match = _TASK_RE.search(block)
     id_match = _ID_RE.search(block)
     return {
         "ts": heading_match.group("day").strip(),
@@ -98,6 +109,9 @@ def _parse_block(block: str) -> dict | None:
             if files_match
             else []
         ),
+        "actor": actor_match.group("value").strip() if actor_match else "",
+        "role": role_match.group("value").strip() if role_match else "",
+        "task": task_match.group("value").strip() if task_match else "",
         "id": id_match.group("value").strip() if id_match else "",
     }
 

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from whyline import events, gitq, ledger, paths
+from whyline import events, gitq, history
 
 HIGH = "high"
 MEDIUM = "medium"
@@ -37,9 +37,28 @@ def _epoch_of(event: dict) -> float:
     accidentally winning a HIGH/MEDIUM match it didn't earn.
     """
     try:
-        return datetime.fromisoformat(event["ts"].replace("Z", "+00:00")).timestamp()
+        value = event["ts"]
+        if len(value) == 10:
+            return datetime.fromisoformat(value).replace(tzinfo=timezone.utc).timestamp()
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
     except (KeyError, TypeError, ValueError, AttributeError):
         return float("inf")
+
+
+def _epoch_end(event: dict) -> float:
+    """Latest possible epoch for a timestamp, accounting for day precision."""
+    start = _epoch_of(event)
+    if start == float("inf"):
+        return start
+    value = event.get("ts")
+    if isinstance(value, str) and len(value) == 10:
+        return start + timedelta(days=1).total_seconds() - 0.001
+    return start
+
+
+def _has_day_precision(event: dict) -> bool:
+    value = event.get("ts")
+    return isinstance(value, str) and len(value) == 10
 
 
 def _mentions(event: dict, rel_path: str) -> bool:
@@ -49,11 +68,11 @@ def _mentions(event: dict, rel_path: str) -> bool:
 
 
 def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
-    all_events, skipped_lines = ledger.read_all(paths.ledger_path(root))
+    loaded = history.load(root)
+    all_events = loaded.ledger_events
+    skipped_lines = loaded.skipped_lines
     notes = [
-        event
-        for event in all_events
-        if event.get("type") == events.NOTE and _mentions(event, rel_path)
+        entry.event for entry in loaded.notes if _mentions(entry.event, rel_path)
     ]
     mechanical = [
         event
@@ -106,10 +125,23 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
         note
         for note in notes
         if _epoch_of(note) <= blame.epoch
-        and (lower is None or _epoch_of(note) > lower)
+        and (lower is None or _epoch_end(note) > lower)
     ]
 
     if len(in_window) == 1:
+        if _has_day_precision(in_window[0]):
+            return Explanation(
+                path=rel_path,
+                line=line,
+                confidence=MEDIUM,
+                blame=blame,
+                notes=in_window,
+                reason=(
+                    "one committed decision overlaps this commit window, but "
+                    "its timestamp has only day precision"
+                ),
+                skipped_ledger_lines=skipped_lines,
+            )
         return Explanation(
             path=rel_path,
             line=line,

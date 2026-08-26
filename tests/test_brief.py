@@ -337,3 +337,76 @@ def test_the_newest_copy_is_kept_when_a_stripped_entry_collapses(repo):
     text = brief.compose(repo.path)
     assert "1 of 1" in text
     assert "Sources: all from the local ledger." in text
+
+
+def test_compose_filters_and_ranks_by_task(repo):
+    matching = _note(
+        "task decision", "2026-08-01T10:00:00.000Z", event_id="task"
+    )
+    matching["task"] = "WL-42"
+    unrelated = _note(
+        "other decision", "2026-08-02T10:00:00.000Z", event_id="other"
+    )
+    unrelated["task"] = "WL-99"
+    ledger.append(paths.ledger_path(repo.path), matching)
+    ledger.append(paths.ledger_path(repo.path), unrelated)
+
+    text = brief.compose(repo.path, task="WL-42")
+
+    assert "task decision" in text
+    assert "other decision" not in text
+
+
+def test_compose_matches_legacy_taskless_notes_by_file(repo):
+    ledger.append(
+        paths.ledger_path(repo.path),
+        _note(
+            "relevant old decision",
+            "2026-08-01T10:00:00.000Z",
+            event_id="legacy",
+            files=["src/a.py"],
+        ),
+    )
+    ledger.append(
+        paths.ledger_path(repo.path),
+        _note(
+            "unrelated old decision",
+            "2026-08-02T10:00:00.000Z",
+            event_id="unrelated",
+            files=["src/b.py"],
+        ),
+    )
+
+    text = brief.compose(repo.path, files=["src/a.py"])
+
+    assert "relevant old decision" in text
+    assert "unrelated old decision" not in text
+
+
+def test_compose_is_token_bounded_and_reports_omissions(repo):
+    for index in range(12):
+        ledger.append(
+            paths.ledger_path(repo.path),
+            _note(
+                f"decision {index} " + "x" * 180,
+                f"2026-08-{index + 1:02d}T10:00:00.000Z",
+                event_id=f"budget-{index}",
+                because="y" * 180,
+            ),
+        )
+
+    text = brief.compose(repo.path, token_budget=260)
+
+    assert brief.approximate_tokens(text) <= 260
+    assert "omitted" in text.lower()
+
+
+def test_compose_shows_decision_attribution(repo):
+    event = _note("attributed", "2026-08-01T10:00:00.000Z", event_id="meta")
+    event.update(actor="codex", role="reviewer", task="WL-42")
+    ledger.append(paths.ledger_path(repo.path), event)
+
+    text = brief.compose(repo.path)
+
+    assert "codex / reviewer" in text
+    assert "task: WL-42" in text

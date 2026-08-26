@@ -94,3 +94,21 @@ def test_commits_touching_follows_renames(repo):
         (first, 1_000_000),
     ]
     assert gitq.previous_commit_epoch(repo.path, "b.py", second) == 1_000_000
+
+
+def test_changed_paths_reports_rename_destination_once(repo):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    repo._git("mv", "a.py", "b.py")
+
+    assert gitq.changed_paths(repo.path) == ["b.py"]
+
+
+def test_changed_paths_excludes_checkout_local_whyline_state(repo):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+    directory = repo.path / ".whyline"
+    directory.mkdir()
+    (directory / "ledger.jsonl").write_text("event\n")
+    (directory / "active-handoff.json").write_text("{}\n")
+    (directory / "decisions.md").write_text("# Decisions\n")
+
+    assert gitq.changed_paths(repo.path) == [".whyline/decisions.md"]
