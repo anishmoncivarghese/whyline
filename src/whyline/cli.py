@@ -143,6 +143,16 @@ def _add_init(subparsers: "argparse._SubParsersAction") -> None:
         action="store_true",
         help="Accept instruction-file and hook changes without prompting",
     )
+    parser.add_argument(
+        "--no-instructions",
+        action="store_true",
+        help="Skip the AGENTS.md and CLAUDE.md instruction block",
+    )
+    parser.add_argument(
+        "--no-hooks",
+        action="store_true",
+        help="Skip the Claude Code and Codex hook configuration",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -411,12 +421,31 @@ GITIGNORE_LINES = (
 
 
 def _confirm(question: str, assume_yes: bool) -> bool:
+    """Ask, defaulting to yes. Running the command is the consent.
+
+    This defaulted to no until 0.2.1, which made the likeliest first run produce
+    a dead install: `whyline init` then Enter twice left `.whyline/` and nothing
+    else — no instruction block, so no agent ever recorded or read anything, and
+    no hooks, so nothing mechanical was captured either. It printed "Initialised"
+    and exited 0, and `status` then advised running the command just run. The
+    tool did nothing and looked like it had worked.
+
+    A closed stdin means the same thing rather than the opposite. `EOFError` here
+    is a Makefile, devcontainer or CI step, where declining silently and exiting
+    0 hands back a broken setup in the one context with nobody watching a prompt.
+
+    Declining is still possible, by answering `n` or passing the explicit skip
+    flags — it is just no longer what happens by accident. The safety net for the
+    files this touches is the backup `agentsmd.install` writes, not a default
+    that quietly produces an inert install.
+    """
     if assume_yes:
         return True
     try:
-        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+        answer = input(f"{question} [Y/n] ").strip().lower()
     except EOFError:
-        return False
+        return True
+    return answer not in ("n", "no")
 
 
 def _merge_gitignore(path: Path) -> None:
@@ -442,13 +471,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     _merge_gitignore(directory / ".gitignore")
     print(f"Initialised {directory}")
 
-    if _confirm(
+    if not args.no_instructions and _confirm(
         "Install shared instructions in AGENTS.md and CLAUDE.md?", args.yes
     ):
         print(f"AGENTS.md: {agentsmd.install(root / 'AGENTS.md')}")
         print(f"CLAUDE.md: {claudemd.install(root / 'CLAUDE.md')}")
 
-    if _confirm("Install the Claude Code and Codex hooks for this project?", args.yes):
+    if not args.no_hooks and _confirm(
+        "Install the Claude Code and Codex hooks for this project?", args.yes
+    ):
         try:
             claude_outcome = hooks.install_claude(
                 root / ".claude" / "settings.json"

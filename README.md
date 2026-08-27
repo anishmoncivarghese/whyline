@@ -61,6 +61,12 @@ Codex requires explicit trust for non-managed project hooks. After `init`, open
 will say “configured but never observed” until a real event arrives; it does not
 mistake a JSON file for a working hook.
 
+`init` asks before touching `AGENTS.md`, `CLAUDE.md` and the hook files, and
+pressing Enter accepts — running the command is the consent. Answer `n`, or pass
+`--no-instructions` / `--no-hooks`, to skip either part; `--yes` accepts both
+without asking, for scripts. Whatever block `init` replaces is copied to
+`.whyline/AGENTS.md.bak` first.
+
 Zero production dependencies — standard library only. Python 3.11+, plus `git`.
 
 Re-run `whyline init` any time; it upgrades an outdated instruction block in place

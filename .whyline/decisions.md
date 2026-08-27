@@ -359,3 +359,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/textbudget.py, src/whyline/render.py
 
 <!-- whyline-event: 8d3b8e8dc17648228413c1421bf18995 -->
+
+## 2026-08-27 — Default the init prompts to yes, and treat a closed stdin as consent
+
+**Because:** The prompts read [y/N], so the likeliest first run — whyline init then Enter twice — created .whyline/ and nothing else: no instruction block, so no agent recorded or read anything, and no hooks, so nothing mechanical was captured. It printed Initialised and exited 0, then status advised running the command just run. A closed stdin was worse: EOFError counted as no, so init in a Makefile, devcontainer or CI step installed nothing and reported success where nobody watches a prompt. Running init is the consent; the prompts exist to allow opting out. Found by testing the published package from a clean uninstall rather than the editable dev tree, which had never exercised a fresh first run.
+
+**Rejected:**
+
+- Keep no as the default because these commands modify files the user owns — the conservatism is misplaced — init is already an explicit opt-in, and since 0.2.0 the replaced block is copied to .whyline/AGENTS.md.bak, so the safety is in the backup rather than in a default that yields an inert tool
+- Warn loudly and exit non-zero when nothing was installed — honest, but it still leaves the common path failing and asks the user to diagnose an outcome they never intended
+- Remove the prompts and always install — removes a legitimate opt-out for anyone who wants the state directory without whyline editing their instruction files, which --no-instructions and --no-hooks now serve
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: b77e6dc79c5b461bbc0a178d6e9f3d6c -->

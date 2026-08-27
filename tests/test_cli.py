@@ -927,3 +927,71 @@ def test_note_still_records_when_only_the_local_ledger_fails(repo, capsys):
     assert "durable anyway" in paths.decisions_path(repo.path).read_text()
     assert "Traceback" not in err
     assert "could not write the local ledger" in err
+
+
+def test_pressing_enter_at_the_init_prompts_installs_everything(repo, capsys, monkeypatch):
+    """The most likely first run, and it used to produce a dead install.
+
+    `[y/N]` meant Enter declined, so a user who typed `whyline init` and pressed
+    Enter twice got `.whyline/` and nothing else: no instruction block, so no
+    agent ever recorded or read anything, and no hooks, so nothing mechanical was
+    captured either. It printed "Initialised" and exited 0, and `status` then told
+    them to run the command they had just run. Running `init` is the consent; the
+    sub-prompts exist to allow opting out, not to make declining the default.
+    """
+    monkeypatch.setattr("builtins.input", lambda prompt: "")
+    code, _ = run_in(repo, ["init"], capsys)
+    assert code == cli.EXIT_OK
+    assert "whyline note" in (repo.path / "AGENTS.md").read_text()
+    assert (repo.path / ".claude" / "settings.json").exists()
+    assert (repo.path / ".codex" / "hooks.json").exists()
+
+
+def test_init_prompts_default_to_yes(repo, capsys, monkeypatch):
+    """The prompt itself must show `[Y/n]`, or the default is a trap."""
+    asked = []
+    monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or "")
+    run_in(repo, ["init"], capsys)
+    assert asked, "init should still ask"
+    assert all("[Y/n]" in prompt for prompt in asked), asked
+
+
+def test_non_interactive_init_sets_up_rather_than_silently_doing_nothing(
+    repo, capsys, monkeypatch
+):
+    """`whyline init` from a Makefile, devcontainer or CI step.
+
+    stdin is closed there, so `input` raises EOFError. That returned False, so
+    the setup silently no-opped and still exited 0 — a broken install reporting
+    success, in the one context where nobody is watching a prompt.
+    """
+    def closed_stdin(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed_stdin)
+    code, _ = run_in(repo, ["init"], capsys)
+    assert code == cli.EXIT_OK
+    assert "whyline note" in (repo.path / "AGENTS.md").read_text()
+    assert (repo.path / ".codex" / "hooks.json").exists()
+
+
+def test_init_still_allows_declining(repo, capsys, monkeypatch):
+    """Opting out must remain possible — just not by accident."""
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    code, _ = run_in(repo, ["init"], capsys)
+    assert code == cli.EXIT_OK
+    assert not (repo.path / "AGENTS.md").exists()
+    assert not (repo.path / ".claude" / "settings.json").exists()
+
+
+def test_init_flags_skip_prompts_without_installing(repo, capsys, monkeypatch):
+    """Explicit opt-out for scripts that want state but not file changes."""
+    def unexpected(prompt):
+        raise AssertionError(f"should not have prompted: {prompt}")
+
+    monkeypatch.setattr("builtins.input", unexpected)
+    code, _ = run_in(repo, ["init", "--no-instructions", "--no-hooks"], capsys)
+    assert code == cli.EXIT_OK
+    assert not (repo.path / "AGENTS.md").exists()
+    assert not (repo.path / ".claude" / "settings.json").exists()
+    assert paths.ledger_path(repo.path).exists()
