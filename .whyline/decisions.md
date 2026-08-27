@@ -373,3 +373,16 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py
 
 <!-- whyline-event: b77e6dc79c5b461bbc0a178d6e9f3d6c -->
+
+## 2026-08-27 — Document that Codex hook trust applies only to future events
+
+**Because:** The natural setup order — init, open codex, /hooks, trust, work — means the approving session has already passed its SessionStart, so that event is never recorded for the first session. Nothing is broken, since UserPromptSubmit fires on the next prompt and status flips to observed, but a user who trusts the hooks and immediately checks status sees 'configured but never observed' and concludes the hook is broken. The README now states the ordering and also that Codex lists the entries as Installed 1, Active 0 until approved, which is the same state status describes — so the two surfaces explain each other instead of each looking like a fault. Found by clean-uninstall testing against the published package, the same run that surfaced 0.2.1's init defect.
+
+**Rejected:**
+
+- Fire a synthetic SessionStart when trust is granted — whyline cannot detect trust being granted, and inventing an event that did not happen would put a false record in the ledger
+- Fold it into the next feature release — the sentence costs nothing and the confusion lands at first run, which is where a new user decides whether the tool works
+
+**Files:** README.md
+
+<!-- whyline-event: 3ee3d5934d6744c29dfb130795757031 -->

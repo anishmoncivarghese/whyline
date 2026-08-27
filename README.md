@@ -57,9 +57,16 @@ Claude Code and Codex project hooks. This separation is intentional — decision
 and active work from one project must never bleed into another.
 
 Codex requires explicit trust for non-managed project hooks. After `init`, open
-`/hooks` once in Codex and approve the Whyline definitions. `whyline status`
-will say “configured but never observed” until a real event arrives; it does not
-mistake a JSON file for a working hook.
+`/hooks` once in Codex and approve the Whyline definitions — they list as
+`Installed 1, Active 0` until you do, and an untrusted hook cannot run. `whyline
+status` will say “configured but never observed” until a real event arrives; it
+does not mistake a JSON file for a working hook.
+
+**Trust applies to events that have not happened yet.** The session you approve
+from has already passed its `SessionStart`, so restart Codex once afterwards if
+you want that event recorded. Everything else — prompts, tool calls, session end
+— starts recording immediately, so `status` flips to “observed” on your next
+prompt either way.
 
 `init` asks before touching `AGENTS.md`, `CLAUDE.md` and the hook files, and
 pressing Enter accepts — running the command is the consent. Answer `n`, or pass
