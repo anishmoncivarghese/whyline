@@ -345,3 +345,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/decisions.py
 
 <!-- whyline-event: 88a796763d3e4a0a8259e9c409583404 -->
+
+## 2026-08-27 — Give the fence sanitiser and token estimate one home in whyline.textbudget
+
+**Because:** render needed clipped for a single line of status output and reached into sync for it, which dragged brief, handoff, ownership, state and sync itself into every explain, timeline and status invocation — 14 modules where the baseline was 9 — against cli.py's documented 200ms cold-start budget and against render.py's own docstring claiming no import cost. Fixing it also removed a real duplication: the fence regex, which exists because of the C6 Critical where a note containing the closing tag escaped the fence, had been copied into brief and sync, so a security control had two definitions free to drift. textbudget imports only re and math, so render is back to baseline plus one dependency-free module.
+
+**Rejected:**
+
+- Inline a local trim helper in render — drops the import and restores the docstring, but leaves the fence pattern defined in two places, which is the condition that lets a security fix rot in one copy
+- Keep importing sync._clipped and just fix the docstring — makes the claim true by lowering it, leaves the cold-start cost on three commands that never touch handoffs, and keeps a private cross-module dependency nothing in sync announces
+- Leave it as a nit and ship — the cost is small, but the docstring was asserting something false, which is the exact class of defect this project has found sixteen times
+
+**Files:** src/whyline/textbudget.py, src/whyline/render.py
+
+<!-- whyline-event: 8d3b8e8dc17648228413c1421bf18995 -->

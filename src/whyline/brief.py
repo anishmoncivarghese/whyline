@@ -8,37 +8,21 @@ The fencing below is a security boundary, not formatting.
 
 from __future__ import annotations
 
-import re
 import secrets
-from math import ceil
 from pathlib import Path
 
-from whyline import decisions, history, paths
+from whyline import decisions, history, paths, textbudget
 
 TAG = "whyline-context"
 DEFAULT_TOKEN_BUDGET = 1200
 MIN_TOKEN_BUDGET = 200
 
-# Any literal fence token appearing in content, in any casing or with stray
-# whitespace, is neutralised before it can be emitted.
-_FENCE_TOKEN = re.compile(
-    r"<\s*/?\s*whyline-(?:context|sync)[^>]*>?", re.IGNORECASE
-)
-
-
-def _sanitise(text: object) -> str:
-    """Strip anything that could close, reopen or forge the fence.
-
-    C6, 2026-08-17: a note containing the closing tag ended the fence early, so
-    everything after it reached the next agent's prompt *unlabelled*. A reviewer
-    demonstrated a fabricated "SYSTEM:" directive escaping this way.
-    """
-    return _FENCE_TOKEN.sub("[redacted-fence-token]", str(text))
-
-
-def approximate_tokens(text: str) -> int:
-    """Conservative, dependency-free token estimate used for hard budgets."""
-    return ceil(len(text.encode("utf-8")) / 3)
+# One definition, in textbudget — the fence pattern is a security control and
+# had been copied into two modules. These aliases keep the call sites below and
+# the `brief.approximate_tokens` name the tests use.
+_FENCE_TOKEN = textbudget.FENCE_TOKEN
+_sanitise = textbudget.safe
+approximate_tokens = textbudget.approximate_tokens
 
 
 def select_entries(

@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 from whyline import resolve
-from whyline.sync import _clipped as clipped
+from whyline.textbudget import clipped
 
 CONFIDENCE_NOTE = {
     resolve.HIGH: "High — a recorded decision matches the commit for this line.",

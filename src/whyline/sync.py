@@ -2,32 +2,20 @@
 
 from __future__ import annotations
 
-import re
 import secrets
-from math import ceil
 from pathlib import Path
 
-from whyline import brief, gitq, handoff, ownership
+from whyline import brief, gitq, handoff, ownership, textbudget
 
 DEFAULT_TOKEN_BUDGET = 1200
 MIN_TOKEN_BUDGET = 200
 TAG = "whyline-sync"
-_FENCE_TOKEN = re.compile(r"<\s*/?\s*whyline-(?:sync|context)[^>]*>?", re.I)
 
-
-def approximate_tokens(text: str) -> int:
-    return ceil(len(text.encode("utf-8")) / 3)
-
-
-def _safe(value: object) -> str:
-    return _FENCE_TOKEN.sub("[redacted-fence-token]", str(value))
-
-
-def _clipped(value: object, limit: int = 120) -> str:
-    clean = _safe(value)
-    if len(clean) <= limit:
-        return clean
-    return clean[: limit - 1] + "…"
+# One definition, in textbudget. These aliases keep the call sites below and the
+# `sync.approximate_tokens` name the tests use.
+_safe = textbudget.safe
+_clipped = textbudget.clipped
+approximate_tokens = textbudget.approximate_tokens
 
 
 def _summarised_paths(values: list[str], limit: int = 6) -> str:
