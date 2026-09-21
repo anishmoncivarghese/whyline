@@ -672,3 +672,37 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md, docs/superpowers/specs/2026-09-20-whyline-relay-design.md
 
 <!-- whyline-event: fd7ac3c3c7484c568597dd5a45856d68 -->
+
+## 2026-09-21 — Publish whyline-relay 0.1.0 as a public repository and on PyPI through Trusted Publishing, before adding remove or any whyline init integration
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** WL-RELAY-0.1.0
+
+**Because:** The owner approved the order: ship what is verified, add remove next, integrate with whyline init after real use. The relay is self-contained under .whyline/relay/ and touches none of whyline's files, so a later combined install needs no migration. Published with whyline's own pattern: a tag push runs the suite on Linux and macOS (Python 3.11 and 3.13) and publishes via OIDC with no API token, after a gate that refuses an sdist containing home paths or internal notes; I ran that gate and twine check on the exact tree before tagging. Verified from outside after release: PyPI lists the wheel and sdist (Apache-2.0, Python >=3.11), a clean venv installs and runs whyline-relay, no home paths in the installed package, and the GitHub Release has both assets. The CI and release workflows, project URLs and release notes were written by the reviewer, not Codex, and the commit says so
+
+**Rejected:**
+
+- Wait for Task 14 (remove) before publishing — departs from the approved order and delays a verified release
+- Bundle the relay into whyline's install now — couples release cycles with a published package that has users, and the relay has only run toy plans on one OS
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: d760628d3860471a8ec91d6182e2c0a4 -->
+
+## 2026-09-21 — Release whyline-relay 0.2.0, built by running the relay on its own plan, after the first real-world test of the automation
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** WL-RELAY-0.2.0
+
+**Because:** The owner ran the relay for real on nine tasks (RELAY-14 to 22), each implemented by Codex and reviewed and committed by Claude, one round each, with independent acceptance tests (69) written before each run and run against the result. Real use surfaced what tests had not: the terminal was silent between turns and status said 'not running' during a run (progress lines, running marker); a review approved without running the tests because it copied the implementer's env-prefixed command and the allowlist denied it (fail-closed review prompt, wider permissions); a blocked handoff's question was hidden (shown in the pause); and re-running init silently overwrote edited files, found while writing the README (init keeps edited files, --overwrite replaces). Two of my own checks were wrong and I traced both to the test, not the code. Published through Trusted Publishing after a pre-flight (twine check, release gate, wheel install) on the exact tag tree; verified from outside: PyPI lists 0.2.0 with both files, a clean install reports 0.2.0, Apache-2.0, no home paths, and the GitHub Release has both assets. PyPI's JSON API lagged the release by about a minute, so a check made too early looked like a failure
+
+**Rejected:**
+
+- Release before the init fix — the upgrade path from 0.1 told users to re-run a command that silently discarded their edits
+- Bundle the relay into whyline's install or whyline init now — agreed to wait for more real use and a whyline release
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 47b04de9398d4fbaa84dcb5e709fad3d -->
