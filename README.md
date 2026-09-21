@@ -81,20 +81,20 @@ and leaves everything you wrote around it untouched.
 
 ## Automated mode (optional)
 
-The optional relay runs a plan through Codex and Claude unattended, passing each
-agent the active Whyline context and routing work from recorded handoffs.
+Everything above is manual: you switch between an agent's terminal and the next. There is also an optional, separate program, [whyline-relay](https://github.com/anishmoncivarghese/whyline-relay), that does the switching for you. Give it a Markdown plan and it runs each task through Codex (implements) and Claude (reviews and commits), routing on whyline's own handoff record, and stops when something needs a human. It launches agents unattended and spends your subscription quota, so it is opt-in and never installed or set up unless you ask.
 
 ```bash
-uv tool install 'whyline[relay]'
-
-whyline init --relay
-whyline relay start
-whyline relay status
+uv tool install 'whyline[relay]'      # whyline plus the relay
+whyline init --relay                  # normal setup, then the relay's own setup
+whyline relay plan-format             # how to write a plan (and a prompt for an AI that drafts one)
+whyline relay doctor                  # checks whyline, both agent logins, the plan and the tree
+whyline relay start                   # run the plan
+whyline relay status                  # is it running, or where did it pause
 ```
 
-`whyline init --relay` performs the normal Whyline setup and then starts the
-relay's own setup. You can also run `whyline relay init` separately in an
-already-initialised repository.
+`whyline init` asks whether to set the relay up, and the default is no: `--yes` alone does not opt in, `--relay` does, and `--no-relay` skips the question. You can add it to a repository later with `whyline relay init` and take it out again with `whyline relay remove`. Without the extra, `whyline relay` prints how to install it.
+
+Installed this way the command is `whyline relay <command>`; there is no separate `whyline-relay` command on your PATH. To have both, install the relay on its own too: `uv tool install whyline-relay`. The relay's README covers plans, phases, permissions, what it costs and how to read a pause.
 
 ## Then just work
 
