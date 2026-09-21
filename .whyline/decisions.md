@@ -837,3 +837,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/plans/2026-09-22-relay-agent-adapters.md
 
 <!-- whyline-event: 47c289a48ac84b799f1450b4dd4c6b06 -->
+
+## 2026-09-21 — Released whyline 0.3.0: the relay is an optional extra reached through 'whyline relay', and init offers it with default No
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** WL-RELEASE-030
+
+**Because:** The extra keeps whyline dependency-free for everyone else, the in-process subcommand is the only way to expose the relay since a dependency's command is not put on PATH, and --yes must not opt in because the relay launches agents unattended and spends quota
+
+**Rejected:**
+
+- Hard dependency on whyline-relay — every whyline user would install an agent runner they did not ask for
+- uv tool install whyline --with whyline-relay — exposes no whyline-relay command, measured
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: d2b98eda30f546e29c0f1d4999e4ef16 -->
