@@ -1,6 +1,6 @@
 # whyline-relay agent adapters (relay 0.2.2) Implementation Plan
 
-> **For agentic workers:** this plan is run by whyline-relay itself, on its own repository: Codex implements each task, Claude reviews and commits it. The tasks in "The tasks" are the run's `plan.md`, copied verbatim into a sandbox clone. Each task is handed to a fresh agent with no memory of the others, so each one stands alone. Steps use `- [ ]` checkboxes only where the relay reads them (one per task).
+> **For agentic workers:** this plan is run by whyline-relay itself, on its own repository: Codex implements each task, Claude reviews and commits it. The tasks in "The tasks" are the run's `plan.md`, copied verbatim into a sandbox clone. Each task is handed to a fresh agent with no memory of the others, so each one stands alone: the "Rules for every task" line under each title repeats the Global Constraints for that reason. Steps use `- [ ]` checkboxes only where the relay reads them (one per task).
 
 **Goal:** Let any built-in agent (`codex`, `claude`) or an explicitly configured generic agent fill either role, the implementer or the reviewer, chosen in `config.toml`, with no change for existing configurations.
 
@@ -79,6 +79,7 @@ Relay **0.2.2**. whyline 0.3.0 pins `whyline-relay>=0.2.1,<0.3`, which already a
 Run order matters: each task builds on the commits before it. Golden files in tasks 3 and 8 are captured from the **unmodified** code before any edit to it.
 
 - [ ] ADPT-1: adapter registry and role-aware configuration
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   Add the `adapters` package and make `config.py` understand `[roles]` and generic agents. Change nothing else except moving the allowlist code out of `init.py` as described.
 
   **Create** `src/whyline_relay/adapters/base.py`:
@@ -161,6 +162,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   Run `uv run --frozen pytest -q`: all 237 existing tests still pass, unedited. Change nothing else.
 
 - [ ] ADPT-2: routing and the handoff record know the roles
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   Make `routing.decide` take the role names, and make `handoff.Handoff` carry who sent the record. Change nothing else.
 
   **`routing.py`:** keep the constants `IMPLEMENTER = "codex"` and `REVIEWER = "claude"` as the defaults. New signature:
@@ -195,6 +197,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   and for `read`: `from_actor` is returned when present, `""` when the key is missing, `""` when it is not a string. Existing tests unchanged. Change nothing else.
 
 - [ ] ADPT-3: prompt templates use the role names
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   Replace the literal agent names in the two built-in templates with placeholders, and prove the default output did not change. Change nothing else.
 
   **Step 1, before editing `prompts.py`:** capture golden files from the unmodified code. Run exactly:
@@ -244,6 +247,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   **The only permitted edits to existing tests** are `tests/test_prompts.py` line 39 (`"whyline handoff {task_id} --from {implementer} --to {reviewer}" in prompts.IMPLEMENT`) and line 46 (`"--to {implementer} --status changes-requested" in prompts.REVIEW`). Everything else in the suite passes unedited. Change nothing else.
 
 - [ ] ADPT-4: the running marker, `status` and `--dry-run` follow the roles
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   Fix the one-relay guard for agents other than `codex` and `claude`, and stop `status` and `--dry-run` naming `codex`. Change nothing else. This is a safety fix: today a marker written for any other agent reads as "no relay running", so a second relay would start.
 
   **`running.py`:**
@@ -268,6 +272,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   Also test: an empty agent name is still rejected; a marker with no `role` key loads with `role == ""`; `start_turn(..., role="reviewer")` writes `"role": "reviewer"`; `status` prints `Running: gemini reviewing T-1` for a live marker `{agent: gemini, role: reviewer}`, `implementing` for role `implementer`, and for an old marker `{agent: claude}` without role still prints `reviewing` (the acceptance suite writes such markers); `start --dry-run` with a config whose `[roles]` has `implementer = "claude"` prints the claude command after `Would run:`. Existing tests unchanged. Change nothing else.
 
 - [ ] ADPT-5: the loop runs the configured roles
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   Make `loop.py` take the implementer and reviewer from `settings.roles` and their tools from the adapters. Default behaviour, output and log names must not change. Change nothing else.
 
   **Create the test helper** `tests/fake_role_agent.py`, used by the new tests here and in ADPT-6 and ADPT-9:
@@ -316,6 +321,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   Existing tests unchanged (they build `Config` without roles). Change nothing else.
 
 - [ ] ADPT-6: the handoff must come from the agent that just ran
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   A handoff recorded under a different name than the agent that ran pauses the run, so provenance in the record is trustworthy (D2). Change nothing else.
 
   **`loop.py`:** in `_run_task`, right after the existing check that `record.task == task.task_id`, and before the `BLOCKED` and `UNKNOWN` handling:
@@ -345,6 +351,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   Run the whole suite; it passes with only the one fixture line edited. Change nothing else.
 
 - [ ] ADPT-7: preflight checks the agents that fill the roles
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   `doctor`, `start` and `resume` must check only the agents in use, use the adapters for logins, and warn about weak setups. Default output must be byte-identical. Change nothing else.
 
   **`preflight.py`:**
@@ -369,6 +376,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   Existing tests unchanged. Change nothing else.
 
 - [ ] ADPT-8: `init --implementer` and `--reviewer`
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   Let `init` set the roles and write only what the agents in use need. Without the new options, everything it writes is byte-identical to 0.2.1. Change nothing else.
 
   **Step 1, before editing `init.py`:** capture goldens from the unmodified code. In a temporary git repository with a `pyproject.toml` (stack `python`), run `init --yes` and copy `.whyline/relay/config.toml`, `.whyline/relay/claude-settings.json` and the command's stdout into `tests/golden/init_default_0.2.1.config.toml`, `init_default_0.2.1.claude-settings.json` and `init_default_0.2.1.stdout` (the temp repo path in the stdout replaced by `{ROOT}`). These are part of the task.
@@ -393,6 +401,7 @@ Run order matters: each task builds on the commits before it. Golden files in ta
   Existing tests unchanged. Change nothing else.
 
 - [ ] ADPT-9: bypass flags are refused, in one place
+  Rules for every task: run the tests with `uv run --frozen pytest -q` (there is no network). Add no dependencies and do not touch `pyproject.toml`, `uv.lock` or the version. With the default roles (implementer `codex`, reviewer `claude`) everything the relay prints, writes, launches or names must stay exactly what relay 0.2.1 did; the existing tests, unedited except where this task names an edit, prove it. Never pass or write a permission-bypass flag, never run `git push`, and never write a handoff on an agent's behalf. Handoffs and notes use the agent's own name as the actor.
   The relay must refuse to run an agent whose command carries a permission-bypass flag, in `doctor`, `start` and `resume`, and also when the preflight is skipped. Change nothing else.
 
   **Create** `src/whyline_relay/adapters/bypass.py`: the **only** file that may contain the refused strings.
