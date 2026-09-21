@@ -787,3 +787,53 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_init_relay.py
 
 <!-- whyline-event: c1ff44ee844c4823b400cbb7062210fd -->
+
+## 2026-09-21 — Adapter spec corrected before planning: bypass flags live in one exempt module, the loop refuses them too, and the running marker accepts any agent
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ADAPTERS-SPEC
+
+**Because:** The spec contradicted tests/test_no_bypass.py (flag strings in adapters), let --skip-checks run a bypass flag, and running.py:42 rejects any marker but codex/claude so the one-relay guard fails open for other agents
+
+**Rejected:**
+
+- Flag strings inside each adapter — the guard test forbids them anywhere in src/
+- Refusal in preflight only — --skip-checks would still run an agent with a bypass flag
+
+**Files:** docs/superpowers/specs/2026-09-22-relay-agent-adapters-design.md
+
+<!-- whyline-event: ee48ac926a80464093abeae5180e7be1 -->
+
+## 2026-09-21 — Default doctor/start output and default init files stay byte-identical; role summary rows appear only for non-default roles or a generic agent
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ADAPTERS-SPEC
+
+**Because:** The 97 acceptance tests and 237 unit tests are the regression net for a refactor, and extra lines in default output would force edits to them and hide real regressions
+
+**Rejected:**
+
+- Always print the per-role summary (spec 5.5) — changes every default run for no information gain when both agents are fully managed
+
+**Files:** docs/superpowers/plans/2026-09-22-relay-agent-adapters.md
+
+<!-- whyline-event: 26c6861796404ea884e6cfe0c2f1e43a -->
+
+## 2026-09-21 — Adapters ship as relay 0.2.2; the Gemini adapter waits for its own plan after the spike
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ADAPTERS-SPEC
+
+**Because:** whyline's pin whyline-relay>=0.2.1,<0.3 already admits 0.2.2 so no whyline release is needed, and Gemini's policy, login and denial behaviour is unmeasured, so a plan now would be guesses
+
+**Rejected:**
+
+- Widen whyline's pin and release both — extra release with no user-visible gain
+- Include a Gemini adapter task now — the spike is unrun, so it would contain placeholders
+
+**Files:** docs/superpowers/plans/2026-09-22-relay-agent-adapters.md
+
+<!-- whyline-event: 47c289a48ac84b799f1450b4dd4c6b06 -->

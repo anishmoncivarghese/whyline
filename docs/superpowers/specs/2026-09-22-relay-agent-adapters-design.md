@@ -1,6 +1,6 @@
 # whyline-relay: pluggable agent adapters
 
-Status: design, awaiting the owner's review. Written 2026-09-22.
+Status: design, reviewed against the relay source on 2026-09-22; section 9 corrects it and wins where they differ. Written 2026-09-22.
 Relates to: `2026-09-20-whyline-relay-design.md` (the relay's original design) and
 `plans/2026-09-21-relay-0.2.1-and-combined-install.md` (the release this follows).
 
@@ -253,3 +253,30 @@ can be logged in or out (the technique used for the `doctor` tests).
 | Same agent in both roles? | Allowed with a visible warning |
 | Approach? | A: code adapters with one interface |
 | Sections 1 to 4 of the design | Each approved as presented |
+
+## 9. Corrections found when the design was checked against the source (2026-09-22)
+
+The design was re-read line by line against relay 0.2.1 before the implementation plan was
+written. These points were wrong or missing; where they differ from sections 1 to 7, this
+section wins. The plan (`plans/2026-09-22-relay-agent-adapters.md`) implements them.
+
+| # | Finding | Correction |
+|---|---|---|
+| C1 | `running.py:42` rejects any marker whose agent is not `codex` or `claude`, so a marker written for any other agent reads as "no relay running". The one-relay-per-repository guard would fail open for every non-default agent. Section 2 listed `running.py` only as "names in messages". | The marker accepts any non-empty agent name and gains a `role` field (default empty, so old markers stay valid). This is a safety fix, not naming. |
+| C2 | 5.2 and 5.4 put bypass flags in each adapter, and add the Gemini flags to the guard test. `tests/test_no_bypass.py` fails the build if any file under `src/` contains one of those strings, so the design contradicts its own guard. | One module, `adapters/bypass.py`, holds the refused flags and is the only file the guard exempts. A test pins the exempt set to that one file. Adapters carry no flag strings. |
+| C3 | The refusal was described for `doctor` and `start`. `--skip-checks` skips the preflight, so a bypass flag would still run. | The loop refuses too, before launching an agent. Also refused: Claude's `--permission-mode bypassPermissions`, which the old guard never named. |
+| C4 | The from-actor check (5.4 item 2) breaks two existing fixtures: `tests/fake_agent.py` writes `from_actor: "fake"`. | The check ships in its own task, with a one-line fixture change (`FAKE_ACTOR`, default empty). An empty `from_actor` is not checked. Comparison is case-insensitive. `resume` does not check, because no agent has just run. |
+| C5 | Placeholders in the built-in templates break two assertions in `tests/test_prompts.py` that look for the literal `--from codex --to claude`. So "all existing tests pass unchanged" is not achievable for step 1. | Those two assertions change to the placeholder form. A golden test, captured from 0.2.1 before any edit, proves the default roles still render byte-identical prompts. |
+| C6 | `preflight.py` walks every configured agent. Defaults always include both `codex` and `claude`, so a Gemini-plus-Claude setup would fail with "codex is not on PATH". | Preflight checks only the agents that fill a role. |
+| C7 | Login checks today key on the program name in the command, not the agent name, so a stand-in command is not login-checked. | Keep that: the adapter's login check runs only when the command's program is the adapter's binary. |
+| C8 | Two agents in one role pair with the same name (D4) would write the same log file `<task>-<round>-<agent>.log`, so the review overwrites the implementation log. | When implementer and reviewer are the same agent the log name gains `-implementer` or `-reviewer`. Distinct agents keep today's names. |
+| C9 | `cli.py` derives the `status` verb from `agent == "codex"` and the dry-run prints `settings.agents["codex"]`. The design missed both. | The verb comes from the marker's `role`, with today's rule as the fallback for old markers. Dry-run uses the configured implementer. |
+| C10 | Tests build `config.Config(...)` by hand without `roles`. | New `Config` fields have defaults, and `Config.agents` stays a name-to-command mapping. |
+| C11 | 5.5 prints role summary lines always. That changes the output of every default `doctor` and `start`. | Summary rows appear only when roles are not the defaults or a generic agent is in use. `init` without role options writes a `config.toml` byte-identical to 0.2.1, with no `[roles]` block. |
+| C12 | 5.2's interface has a `login_check` callable, `quota_markers` and `bypass_flags`. Phase 1 needs none of the last two in the adapters. | Login is data: `binary`, `login_argv`, `login_fix`. `quota_markers` arrives with Gemini. Bypass flags live in `bypass.py` (C2). |
+| C13 | "Release coordination" was left open. | Relay 0.2.2. whyline's pin `whyline-relay>=0.2.1,<0.3` already admits it, so no whyline release is needed. |
+| C14 | A generic agent's command is run with the prompt appended as its last argument, as for the built-ins. A tool that reads the prompt from stdin or a file cannot be a generic agent. | Stated as a limit in the README; not a defect. |
+
+Scope of the plan: build steps 1 and 3 of section 6 with `codex`, `claude` and `generic`. Step 0
+(the Gemini spike) and step 2 (the Gemini adapter) get their own plan once the spike has produced
+facts, so the plan contains no guesses about Gemini.
