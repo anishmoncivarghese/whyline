@@ -65,8 +65,13 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.2.2"
+version = "0.3.0"
 source = { editable = "." }
+
+[package.optional-dependencies]
+relay = [
+    { name = "whyline-relay" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -74,6 +79,17 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "whyline-relay", marker = "extra == 'relay'", specifier = ">=0.2.1,<0.3" }]
+provides-extras = ["relay"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]
+
+[[package]]
+name = "whyline-relay"
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/4b/e775e5dca5c43d0c9175c2adf98ee6c7017901498eb49cfbc70a2acce8e5/whyline_relay-0.2.1.tar.gz", hash = "sha256:7ae0b35b269462fbf1bc24af4e1b6d6c3e2a5dba6e61ce84a64d00a6ead03a91", size = 61427, upload-time = "2026-09-21T19:46:44.857Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/af/31f230e92a9e173289ccdfcf33779d63b6d21816734faaa3cc9b1e3b6ac5/whyline_relay-0.2.1-py3-none-any.whl", hash = "sha256:3f8f41b4b3149b1dd866609deda561a372e80376b6ef8fb8b1d2a491cf2ac793", size = 47339, upload-time = "2026-09-21T19:46:43.903Z" },
+]

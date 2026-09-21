@@ -1,6 +1,6 @@
 [project]
 name = "whyline"
-version = "0.2.2"
+version = "0.3.0"
 description = "Records why your code exists, and tells the next agent."
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -31,6 +31,9 @@ classifiers = [
     "Topic :: Software Development :: Documentation",
 ]
 dependencies = []
+
+[project.optional-dependencies]
+relay = ["whyline-relay>=0.2.1,<0.3"]
 
 [project.urls]
 Homepage = "https://github.com/anishmoncivarghese/whyline"
