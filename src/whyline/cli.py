@@ -119,6 +119,21 @@ def _add_run(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--token-budget", type=_token_budget, default=1200)
 
 
+def _add_relay(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "relay",
+        help=(
+            "Run a plan through Codex and Claude unattended "
+            "(needs the whyline-relay package)."
+        ),
+        add_help=False,
+        # Treat every possible command-line token as positional. Without this,
+        # argparse rejects an option such as --help before REMAINDER sees it.
+        prefix_chars="\0",
+    )
+    parser.add_argument("args", nargs=argparse.REMAINDER)
+
+
 def _add_timeline(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("timeline", help="Project event history")
     parser.add_argument("--file", dest="file", default=None)
@@ -170,6 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_brief(subparsers)
     _add_sync(subparsers)
     _add_run(subparsers)
+    _add_relay(subparsers)
     _add_timeline(subparsers)
     _add_status(subparsers)
     _add_init(subparsers)
@@ -601,6 +617,26 @@ def cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def relay_install_hint() -> str:
+    return (
+        "The automated relay is not installed.\n"
+        "  uv tool install 'whyline[relay]'   (adds it to whyline)\n"
+        "  uv tool install whyline-relay      "
+        "(a standalone whyline-relay command)"
+    )
+
+
+def cmd_relay(args: argparse.Namespace) -> int:
+    try:
+        from whyline_relay import cli as relay_cli
+    except ModuleNotFoundError as error:
+        if error.name != "whyline_relay":
+            raise
+        print(relay_install_hint(), file=sys.stderr)
+        return EXIT_ERROR
+    return relay_cli.main(args.args or [], prog="whyline relay")
+
+
 COMMANDS = {
     "explain": cmd_explain,
     "note": cmd_note,
@@ -610,6 +646,7 @@ COMMANDS = {
     "brief": cmd_brief,
     "sync": cmd_sync,
     "run": cmd_run,
+    "relay": cmd_relay,
     "timeline": cmd_timeline,
     "status": cmd_status,
     "init": cmd_init,

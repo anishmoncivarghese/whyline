@@ -724,3 +724,34 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/specs/2026-09-22-relay-agent-adapters-design.md
 
 <!-- whyline-event: 1f67f17c3c8544d58832e879b29af320 -->
+## 2026-09-21 — Make relay subparser treat every token as positional
+
+**Actor:** codex
+**Role:** implementer
+**Task:** WL-1
+
+**Because:** argparse rejects a leading option such as --help before REMAINDER can capture it unless the relay subparser has no usable option prefix
+
+**Rejected:**
+
+- Use parse_known_args and append unknown tokens — it can reorder options that precede positional relay arguments
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: b0c7b0122a344283bbcd21472ba0d434 -->
+
+## 2026-09-21 — Approve WL-1: whyline relay passes through to whyline_relay lazily, including the prefix_chars hack
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** WL-1
+
+**Because:** Reviewed the diff and ran uv run pytest -q (244 passed). Probed -h, --help, --, --opt=value and empty args: all reach relay_cli.main verbatim with prog 'whyline relay'. The import is lazy, only a ModuleNotFoundError named whyline_relay gets the install hint, other import errors propagate, and pyproject.toml and uv.lock are untouched. The prefix_chars='\0' trick is unusual but is the smallest way to make argparse hand leading options to REMAINDER, and it is covered by the --help test.
+
+**Rejected:**
+
+- Request a parse_known_args rewrite — it can reorder options relative to positionals, which is worse than the current hack
+
+**Files:** src/whyline/cli.py, tests/test_relay_cli.py
+
+<!-- whyline-event: d9d849041ce04b4ab7f8ddc000326295 -->

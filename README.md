@@ -79,6 +79,19 @@ Zero production dependencies — standard library only. Python 3.11+, plus `git`
 Re-run `whyline init` any time; it upgrades an outdated instruction block in place
 and leaves everything you wrote around it untouched.
 
+## Automated mode (optional)
+
+The optional relay runs a plan through Codex and Claude unattended, passing each
+agent the active Whyline context and routing work from recorded handoffs.
+
+```bash
+uv tool install 'whyline[relay]'
+
+whyline relay init
+whyline relay start
+whyline relay status
+```
+
 ## Then just work
 
 Open Claude Code or Codex and build as you normally would. Two things can happen
