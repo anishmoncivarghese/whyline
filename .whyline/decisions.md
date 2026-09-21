@@ -386,3 +386,289 @@ Append-only. Written by whyline; readable without it.
 **Files:** README.md
 
 <!-- whyline-event: 3ee3d5934d6744c29dfb130795757031 -->
+
+## 2026-08-31 — Closed stale WL-0.2.0 handoff instead of leaving it dangling
+
+**Actor:** claude
+**Role:** assistant
+**Task:** WL-0.2.0
+
+**Because:** Handoff pointed at commit a1e63b1, several commits behind HEAD (ea9d1ac); the reviewed work it described already shipped across v0.2.0, v0.2.1, and v0.2.2
+
+**Rejected:**
+
+- Leave it as ready-for-review — would mislead future sessions into re-reviewing already-shipped work
+
+<!-- whyline-event: 89d35311eae94f4e8420c9472c70de2c -->
+
+## 2026-09-20 — Relay routes only on agent-written whyline handoffs, and pauses when one is missing
+
+**Actor:** claude
+**Role:** architect
+**Task:** WL-RELAY-0.1.0
+
+**Because:** The open question the relay exists to answer is whether agents still record handoffs and decisions under automation; a relay that writes the records itself cannot measure that
+
+**Rejected:**
+
+- Agent writes verdict.json and the relay translates it into whyline handoff — routes more reliably but destroys the measurement
+- Accept either protocol, prefer a real handoff — two protocols to document and test, muddier metric, for a case a clear pause already handles
+
+**Files:** docs/superpowers/specs/2026-09-20-whyline-relay-design.md
+
+<!-- whyline-event: b50c273677684a628c64a325d5342dfa -->
+
+## 2026-09-20 — whyline-relay ships as a separate repository and distribution, not inside whyline
+
+**Actor:** claude
+**Role:** architect
+**Task:** WL-RELAY-0.1.0
+
+**Because:** whyline's published position, recorded in the v0.2.0 decision, is that it does not orchestrate; shipping the scheduler separately keeps that literally true and leaves whyline-only users unaffected
+
+**Rejected:**
+
+- Same repo, second package — one release process, but the repo then contains the orchestrator it disclaims
+- uv tool install whyline[relay] — simplest install, but whyline itself would ship an orchestrator
+
+**Files:** docs/superpowers/specs/2026-09-20-whyline-relay-design.md
+
+<!-- whyline-event: 0c868e24a13c4022bc72d5d30f69747b -->
+
+## 2026-09-20 — Relay treats vendor agent commands as configuration and needs no change to whyline
+
+**Actor:** claude
+**Role:** architect
+**Task:** WL-RELAY-0.1.0
+
+**Because:** handoff --status is free-form so approved/assigned/blocked already work against 0.2.2; and codex-cli 0.155.1 has already dropped --full-auto in favour of -s workspace-write, so hardcoding vendor flags would break the tool on the next CLI release
+
+**Rejected:**
+
+- Add a status enum to whyline core — couples two release cycles for no gain
+- Hardcode the PRD's codex --full-auto command — the flag no longer exists in the installed CLI
+
+**Files:** docs/superpowers/specs/2026-09-20-whyline-relay-design.md
+
+<!-- whyline-event: 27f56ac705f94ac183939aead956a085 -->
+
+## 2026-09-20 — Relay plan splits routing, state, whylinecmd and init out of the spec's loop.py and cli.py
+
+**Actor:** claude
+**Role:** architect
+**Task:** WL-RELAY-0.1.0
+
+**Because:** The routing table is the only place the relay decides anything, and as a pure function it is exhaustively testable without launching a subprocess; the other three are contact surfaces with git, disk and whyline that each test better alone
+
+**Rejected:**
+
+- Follow the spec's nine-module table literally — loop.py would carry the routing table, the stop file, the resume record and the plan walk, which is the file a reviewer can least afford to misread
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 5b85411dfb3c49c294cf8806e5bffd14 -->
+
+## 2026-09-20 — Build whyline-relay with Codex as developer and Claude as sole reviewer and committer, not subagent-driven implementation
+
+**Actor:** claude
+**Role:** planner
+**Task:** RELAY-PLAN
+
+**Because:** The tool being built automates exactly this Codex-implements / Claude-reviews-and-commits split, so building it that way exercises the workflow and its handoff record on real work; Codex's workspace-write sandbox makes .git read-only, so 'Codex never commits' holds by construction and Claude verifies HEAD is unmoved before reviewing
+
+**Rejected:**
+
+- Keep subagent-driven-development with Claude implementing — no independent reviewer, and it never exercises the Codex path the tool depends on
+- Let Codex commit its own work — the reviewer would judge a diff already in history and could not cleanly reject it
+- Re-run Tasks 1-4 through Codex — they are committed and tested; redoing them spends quota for no defect found
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: d3e830accd6b4877809630cca702cc7d -->
+
+## 2026-09-20 — Amend whyline-relay plan Task 5 after review: strict UTF-8 decoding and SIGTERM-only timeout replaced
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-5
+
+**Because:** Both failed when probed with real processes (UnicodeDecodeError leaving an orphan; SIGTERM-ignoring agent outliving a 1s timeout by 6s). Fixed code and two tests were verified in a scratch copy against the old code before being written into the plan
+
+**Rejected:**
+
+- Leave the plan and patch agents.py in whyline-relay only — Codex must follow the plan verbatim, so the plan and the code would disagree
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 1f6e3845f3c8490fb2eb1597762fdb17 -->
+
+## 2026-09-20 — Amend whyline-relay plan Task 6 after review: commit_verified substring match replaced by whole-id match
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-6
+
+**Because:** Real-repo probe showed RELAY-10 verifying RELAY-1; fix and 7 tests verified in a scratch copy (3 fail on old, 14 pass on new) before being written into the plan
+
+**Rejected:**
+
+- Patch gitcheck.py in whyline-relay only — Codex follows the plan verbatim, so plan and code would disagree
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: cdd223aab160430d9355801bf0ac2dc3 -->
+
+## 2026-09-20 — Amend whyline-relay plan Task 7 after review: decide() now routes on (to_actor, status) as the spec's table requires
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-7
+
+**Because:** Real probe showed three mis-addressed handoffs routing to an agent where spec 5.2 says pause; fix and 3 tests verified in a scratch copy (3 fail on old, 15 pass on new, 66 total) before being written into the plan; step counts updated to 12 and 66
+
+**Rejected:**
+
+- Patch routing.py in whyline-relay only — Codex follows the plan verbatim, so plan and code would disagree
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 94e99a49c5174c88a8acef0a2a3e336b -->
+
+## 2026-09-20 — Endorse whyline-relay's deterministic scheduler architecture, but treat autonomy as supervised until recovery and bookkeeping gaps are closed
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RELAY-DESIGN-REVIEW
+
+**Because:** the handoff-driven Codex-to-Claude loop directly removes manual prompt copying and terminal switching, while branch guards, commit verification, timeouts and explicit pauses bound risk; however the plan does not preserve the spec's exact resume decision point, does not validate handoff task ids, and leaves plan checkbox persistence ambiguous
+
+**Rejected:**
+
+- Give agents unrestricted control — permission, branch and no-push boundaries are essential even in unattended operation
+- Call the design production-ready before M2 — real vendor CLI behavior is the central unproven assumption and the plan correctly requires a watched checkpoint
+
+**Files:** docs/superpowers/specs/2026-09-20-whyline-relay-design.md, docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: bb343b5bd3464e47a92c1195b7e4f4ed -->
+
+## 2026-09-20 — Pre-review whyline-relay plan Tasks 8-13 by building them in a scratch copy and probing with real processes, then fold 10 fixes into the plan before dispatching to Codex
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-PLAN
+
+**Because:** Tasks 5-7 each shipped a plan defect that cost a Codex round. Transcribing Tasks 8-13 exactly as written passed every plan test, so the defects were all in behaviour the tests did not cover: rate-limit words in ordinary output discarded successful handoffs; the reviewer's git add -A committed the relay's logs; run_plan ticked a stale copy of the plan; an unknown --only id succeeded silently; guard refused the default start from main and --branch did not lift it; resume ignored the saved base commit and branch; Ctrl+C left the agent running and saved no state; init checked a .codex/trust.json nothing creates and crashed without a terminal; and Task 13's push guard failed on Task 12's own deny list, which would have had Codex delete the deny rule. 17 new or changed tests fail on the original code and pass on the fixed code (126 pass); the round-cap test passes on both by design (it fills the coverage gap)
+
+**Rejected:**
+
+- Hand Tasks 8-13 to Codex as written and review each — the previous three tasks each needed a second round, and the Ctrl+C and F3 defects would have reached a real run or inverted a safety rule
+- Fix the plan by reading it only — every defect above passed the plan's own tests and was found only by running real processes and repositories
+- Also patch the review prompt so the reviewer reads untracked files (git diff omits new files) — noted for the M2 watched run instead, since it is outside Tasks 8-13 and changes committed Task 4 text
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 321176aa28d344ab8c2e83dcdc90924b -->
+
+## 2026-09-20 — Fold Codex's review of the whyline-relay plan into Tasks 8-10 and 12: resume at the decision point, task-id check on handoffs, relay commits the plan tick, clean-tree check after approval, allowlist is not a security boundary
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-PLAN
+
+**Because:** Codex's three points were probed before acting: resume after Codex had already handed off re-ran Codex first (spec 5.6 says same decision point), and the tick left plan.md modified so it rode into the next task's commit with the last tick uncommitted; the task-id point was valid but smaller (a mislabelled handoff cannot route wrong work or tick a box, it only goes unnoticed). Resume now derives the next move from the handoff record, the single source of truth, and saves the real round and last_handoff_id. The owner chose the relay committing only plan.md after verifying Claude's commit. The dirty check runs before the tick so a pause leaves the task unticked and resume simply re-verifies. 11 new tests fail on the previous code and pass on the new (137 pass)
+
+**Rejected:**
+
+- Persist next actor and feedback in state as Codex suggested — derivable from the handoff record, which cannot go stale, and consistent with routing solely on that record
+- Claude's commit includes the tick — ticks before the relay verifies, weakening ticked-means-committed
+- Keep checkboxes only in relay state — plan.md would no longer show progress
+- Widen commit_verified to search every commit since base — modifies approved Task 6 and is not needed; the pause message tells the user to stash rather than commit leftovers
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 44fe0d13188b48d4afea81bae94a33ec -->
+
+## 2026-09-20 — M2 real-CLI run of whyline-relay against codex-cli 0.155.1 and claude 2.1.278 found three plan assumptions wrong or incomplete
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-8
+
+**Because:** Ran the real relay in a throwaway repo. (1) Codex worked headless under exec -s workspace-write, handed off from inside the sandbox and did not commit, but only because its prompt said so: when asked to git commit it did (probe commit 99411a5), so the sandbox does NOT make .git read-only and the spec's 'Codex never commits by construction' is false. (2) claude -p --permission-mode acceptEdits denied every Bash command (git add, git commit, whyline note, whyline handoff), and the project .claude/settings.json allowlist that init would write is ignored ('this workspace has not been trusted') until a trust dialog is accepted interactively; passing the same file with --settings is honored (a discriminating test: whyline sync allowed with the flag, denied without). With --settings, Claude reviewed, committed with the task id and Co-Authored-By trailer, and handed off approved. (3) The pause reason 'exited without handing off' hid the cause, which the claude JSON output names in permission_denials. Also confirmed live: resume derives the next move from the handoff record (only Claude ran on resume), the relay's logs stayed out of the commit, nested claude -p works, and Claude read the untracked hello.py without a git diff. Cost was about 7k Codex tokens and under 0.10 USD per Claude review turn
+
+**Rejected:**
+
+- Treat the sandbox as the guard and drop the runtime check — measured false
+- Rely on init writing .claude/settings.json — ignored in any workspace never trusted interactively, so a fresh checkout silently gets no permissions
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 005c2dbb0f454371876f68d12ee6e6d7 -->
+
+## 2026-09-20 — Fold the M2 real-CLI findings into the whyline-relay plan and spec as Task 8b
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-8b
+
+**Because:** Ran the real relay against codex-cli 0.155.1 and claude 2.1.278. Measured: Codex commits when asked, so the sandbox is not the guard and the relay now checks HEAD after every Codex turn; claude -p with acceptEdits denies all Bash, and a project .claude/settings.json allowlist is ignored in an untrusted workspace, so init now writes a relay-owned .whyline/relay/claude-settings.json passed with --settings (missing file fails loudly, no API call); pause reasons now quote the denied commands or the agent's last output line. Task 8b is a separate task because Task 8 is already committed. Verified by applying the plan's literal Task 8b instructions to the committed Task 8 tree (22 and 86 tests pass) and by a full end-to-end run of the assembled tool against the real CLIs: start from main, Codex implemented without committing, Claude reviewed and committed via the default command, the relay ticked and committed only plan.md, tree clean, exit 0. Spec corrected in five places
+
+**Rejected:**
+
+- Keep writing .claude/settings.json and require a one-time interactive trust dialog — a fresh checkout silently gets no permissions and the failure looks like the agent misbehaving
+- Pass permissions as --allowedTools — also works, but a variadic option would swallow the prompt appended as the final argument, and it duplicates a reviewable file into a command line
+- Enforce no-commit with a git hook keyed on an environment variable — an agent can pass --no-verify, and the post-turn HEAD check is simpler and detects it regardless
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md, docs/superpowers/specs/2026-09-20-whyline-relay-design.md
+
+<!-- whyline-event: d710db58eaad46caa0b6d01db65c403d -->
+
+## 2026-09-20 — Stub the CLI notifier in tests so the suite never pops real desktop notifications (whyline-relay plan Task 11)
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-PLAN
+
+**Because:** An osascript tripwire showed the pre-reviewed suite made 3 real osascript calls, because tests that run cli.main start reach notify.send; it broke the plan's own rule that tests launch no real external process, and would have popped notifications on the owner's Mac on every Codex test run. An autouse fixture in tests/conftest.py replaces cli.notify with a no-op namespace: 0 calls afterwards, 140 tests pass, and test_notify.py still exercises the real notifier code because it imports the module directly
+
+**Rejected:**
+
+- Patch notify.send globally in conftest — it would neuter test_notify's own send tests
+- Skip notifications when a CI or test env var is set — production code should not know it is under test
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: 4d487002dd214b908f252e9b56aab17f -->
+
+## 2026-09-20 — Pre-run probes of Codex's sandbox changed whyline-relay Tasks 11 and 13 before the continuous Task 9-13 run
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RELAY-PLAN
+
+**Because:** Probed the real Codex sandbox (codex-cli 0.155.1, -s workspace-write): pgrep and pkill fail with 'sysmond service not found', so Task 11's pgrep-based interrupt test would pass vacuously under Codex; it now records the agent pid in a file and checks os.kill(pid, 0), which the sandbox permits (killpg, kill(pid,0) and self-SIGINT all match the unsandboxed control), and it fails without the kill-on-interrupt fix. An osascript tripwire showed the suite popped 3 real desktop notifications, now stubbed by tests/conftest.py. Task 13 Step 7 writes outside the workspace so it is Claude's, and Step 4's uv build may lack network in the sandbox so it may be skipped and run by Claude
+
+**Rejected:**
+
+- Leave the pgrep test — green under Codex but proves nothing there
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
+
+<!-- whyline-event: fb2f18772b3e4298a8edbfadfb4646ca -->
+
+## 2026-09-20 — whyline-relay 0.1.0 complete: Tasks 1-13 built by Codex and reviewed and committed by Claude; deviations from the plan and what real runs changed
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** WL-RELAY-0.1.0
+
+**Because:** Tasks 9-13 were built by Codex in one continuous uncommitted run, so the per-task commits were reconstructed from the plan's stage trees and checked against Codex's tree: all 33 source and test files, LICENSE and pyproject are byte-identical to Codex's; per-task test counts (104, 118, 125, 138, 140) matched its reports. Deviations: RELAY_IGNORE sits at the top of gitcheck.py (Task 8, accepted); cli.py orders two helpers differently from the plan's prose assembly (Task 12 takes Codex's file); the README was corrected by the reviewer for four verified defects (whyline not listed as a requirement, a worked example that fails on a fresh project, an undisclosed tick commit, the Codex commit caveat), a deliberate departure from the developer-only split, disclosed in the commit. My own process error, found by checking history: the staging script overwrote decisions.md and dropped earlier review notes; the five local commits were redone. Beyond the plan, real runs changed: Codex's sandbox does not stop it committing so the relay checks HEAD (Task 8b); Claude ignores project allowlists in untrusted workspaces so init writes .whyline/relay/claude-settings.json passed with --settings (Task 8b, 12); the suite popped real desktop notifications (stubbed in Task 11); pgrep and pkill fail in Codex's sandbox so the interrupt test uses a pid file (Task 11). Final proof: the committed tool run against the real codex 0.155.1 and claude 2.1.278 following the README, two tasks, 2m23s: relay/demo created, Codex never committed, Claude committed each task with the trailer and no relay logs, the relay ticked and committed only plan.md each time, tree clean, state cleared, exit 0. Open: the README spec link 404s until agentdock is pushed; agentdock's plan, spec and decisions.md changes are uncommitted; Codex turn time varied from under 1 to about 5 minutes
+
+**Rejected:**
+
+- One combined commit for Tasks 9-13 — loses the per-task history the protocol and commit_verified rely on
+- Send the README back to Codex — the defects came from a thin plan instruction, which is now fixed, and a further round costs a Codex run for a factual edit
+
+**Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md, docs/superpowers/specs/2026-09-20-whyline-relay-design.md
+
+<!-- whyline-event: fd7ac3c3c7484c568597dd5a45856d68 -->

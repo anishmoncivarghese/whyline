@@ -87,7 +87,7 @@ Defaults as of this design:
 | Agent | Command |
 |---|---|
 | Codex | `codex exec -s workspace-write --color never <prompt>` |
-| Claude | `claude -p --permission-mode acceptEdits --output-format json <prompt>` |
+| Claude | `claude -p --permission-mode acceptEdits --output-format json --settings .whyline/relay/claude-settings.json <prompt>` |
 
 Both are overridable in `config.toml`. The prompt is appended as the final
 argument. Verified present on `codex-cli 0.155.1` and `claude 2.1.277`.
@@ -214,9 +214,17 @@ killed and the relay pauses. The relay never pushes to a remote.
 
 ## 6. Permissions
 
-`whyline-relay init` prints the proposed `.claude/settings.json` allowlist and
-asks before writing it, following `whyline init`'s confirmation style. It is
-stored in the repository so it is reviewable and diffable:
+`whyline-relay init` prints the proposed allowlist and asks before writing it,
+following `whyline init`'s confirmation style. It is written to
+`.whyline/relay/claude-settings.json`, stored in the repository so it is
+reviewable and diffable, and passed to Claude with `--settings`. It is
+deliberately **not** `.claude/settings.json`: measured on claude 2.1.278, Claude
+Code ignores a project's `permissions.allow` under `claude -p` until the
+workspace has been trusted interactively (`Ignoring 7 permissions.allow entries
+… this workspace has not been trusted`), so a fresh checkout would silently get
+no permissions and every Bash command, including `git commit` and
+`whyline handoff`, would be denied. Flag-supplied settings are honored
+regardless.
 
 ```json
 {
@@ -240,16 +248,15 @@ stored in the repository so it is reviewable and diffable:
 Two presets, chosen by sniffing for `pyproject.toml` or `package.json`: Python/uv
 and Node/npm. They differ only in the test-runner entries.
 
-Codex runs under `-s workspace-write` with network disabled. Its sandbox blocks
-writes to `.git`, so "Codex never commits" holds by construction rather than by
-instruction.
+Codex runs under `-s workspace-write` with network disabled. That sandbox does
+**not** stop it running `git commit`: measured on codex-cli 0.155.1, asked to
+commit, it did. "Codex never commits" is therefore enforced by the relay, not
+the sandbox: after every Codex turn `loop.py` checks that HEAD did not move and
+pauses, with the undo command, if it did.
 
-`init` also checks whether whyline's Codex hooks have persisted trust. whyline
-0.2.2 documented that Codex establishes hook trust only for events after the
-trust prompt is answered, so a repository driven exclusively by `codex exec`
-never earns it. When trust is absent, `init` tells the user to run `codex` once
-interactively and accept the prompt. It does not reach for
-`--dangerously-bypass-hook-trust`.
+Codex hooks are not needed: every prompt embeds the `whyline sync` output
+itself, and in the measured run the hooks fired under `codex exec` regardless.
+`init` therefore does not check hook trust.
 
 ## 7. CLI and configuration
 
@@ -276,7 +283,7 @@ branch_prefix = "relay/"
 command = ["codex", "exec", "-s", "workspace-write", "--color", "never"]
 
 [agents.claude]
-command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json"]
+command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "--settings", ".whyline/relay/claude-settings.json"]
 
 [status_map]
 review = "ready-for-review"
@@ -333,7 +340,7 @@ assumed.
 | Agent exits without handing off | Handoff `id` comparison; pause |
 | Agents loop on disagreement | Round cap |
 | Allowlist too narrow, runs keep pausing | Presets per stack; the denied action is printed; user edits and resumes |
-| Allowlist too broad | Explicit deny list; no push; branch isolation; Codex sandboxed away from `.git` |
+| Allowlist too broad | Explicit deny list; no push; branch isolation; the relay pauses if Codex moves HEAD (its sandbox does not block commits) |
 | Decision recording drops under automation | Measured in §9; instruction restated per prompt |
 | Subscription rate limits | Known limit phrases produce a clear pause reason |
 
@@ -344,7 +351,7 @@ assumed.
 2. **M2 — single task.** One task through implement, review, and commit against
    the real CLIs. **Owner watches this before M3 begins.**
 3. **M3 — full loop.** Multi-task plans, rounds, pause, resume, stop, logs.
-4. **M4 — init and presets.** Allowlist writer, templates, hook-trust check,
+4. **M4 — init and presets.** Allowlist writer, templates,
    notifications.
 5. **M5 — measurement.** A real project run reported against §9, failures
    included. Out of scope for 0.1.0.
