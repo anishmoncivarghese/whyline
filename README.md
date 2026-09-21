@@ -87,10 +87,14 @@ agent the active Whyline context and routing work from recorded handoffs.
 ```bash
 uv tool install 'whyline[relay]'
 
-whyline relay init
+whyline init --relay
 whyline relay start
 whyline relay status
 ```
+
+`whyline init --relay` performs the normal Whyline setup and then starts the
+relay's own setup. You can also run `whyline relay init` separately in an
+already-initialised repository.
 
 ## Then just work
 

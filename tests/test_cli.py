@@ -948,12 +948,13 @@ def test_pressing_enter_at_the_init_prompts_installs_everything(repo, capsys, mo
 
 
 def test_init_prompts_default_to_yes(repo, capsys, monkeypatch):
-    """The prompt itself must show `[Y/n]`, or the default is a trap."""
+    """The core prompts still default yes; the optional relay defaults no."""
     asked = []
     monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or "")
     run_in(repo, ["init"], capsys)
-    assert asked, "init should still ask"
-    assert all("[Y/n]" in prompt for prompt in asked), asked
+    assert len(asked) == 3
+    assert all("[Y/n]" in prompt for prompt in asked[:2]), asked
+    assert "[y/N]" in asked[2]
 
 
 def test_non_interactive_init_sets_up_rather_than_silently_doing_nothing(
@@ -990,7 +991,11 @@ def test_init_flags_skip_prompts_without_installing(repo, capsys, monkeypatch):
         raise AssertionError(f"should not have prompted: {prompt}")
 
     monkeypatch.setattr("builtins.input", unexpected)
-    code, _ = run_in(repo, ["init", "--no-instructions", "--no-hooks"], capsys)
+    code, _ = run_in(
+        repo,
+        ["init", "--no-instructions", "--no-hooks", "--no-relay"],
+        capsys,
+    )
     assert code == cli.EXIT_OK
     assert not (repo.path / "AGENTS.md").exists()
     assert not (repo.path / ".claude" / "settings.json").exists()

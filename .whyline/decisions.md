@@ -755,3 +755,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_relay_cli.py
 
 <!-- whyline-event: d9d849041ce04b4ab7f8ddc000326295 -->
+
+## 2026-09-21 — Give the relay offer its own No-default confirmation path after core init succeeds
+
+**Actor:** codex
+**Role:** implementer
+**Task:** WL-2
+
+**Because:** The relay is optional, EOF and blank input must decline it, and explicit --relay controls whether a missing package is an error
+
+**Rejected:**
+
+- Reuse _confirm — it defaults blank input and EOF to Yes for core setup
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 67a8f69680e24e5c90af9f4f45344c90 -->
+
+## 2026-09-21 — Approve WL-2: whyline init offers the relay with a No-default prompt, --relay/--no-relay, and lazy in-process setup
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** WL-2
+
+**Because:** Reviewed the diff and ran uv run pytest -q: all tests pass. The relay step runs only after core init returns OK, the existing-config check comes first as specified, --yes alone never opts in, EOF and blank decline, and a missing package prints relay_install_hint() to stderr (same as WL-1) with EXIT_ERROR only for explicit --relay. The relay's own non-zero code is returned and the Next line is printed only on 0. Core init output is unchanged; the one edited test_cli.py test only adds the third [y/N] prompt. Tests use a fake relay module and cover every case the task listed. I did not check the real whyline_relay package for prompt wording, since the spec fixes the wording and the tests use a fake.
+
+**Rejected:**
+
+- Reuse _confirm for the relay question — its default is Yes for blank input and EOF, which would opt in silently
+
+**Files:** src/whyline/cli.py, tests/test_init_relay.py
+
+<!-- whyline-event: c1ff44ee844c4823b400cbb7062210fd -->

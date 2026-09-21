@@ -168,6 +168,17 @@ def _add_init(subparsers: "argparse._SubParsersAction") -> None:
         action="store_true",
         help="Skip the Claude Code and Codex hook configuration",
     )
+    relay = parser.add_mutually_exclusive_group()
+    relay.add_argument(
+        "--relay",
+        action="store_true",
+        help="Also set up the automated relay.",
+    )
+    relay.add_argument(
+        "--no-relay",
+        action="store_true",
+        help="Do not offer the automated relay.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -477,6 +488,51 @@ def _merge_gitignore(path: Path) -> None:
     )
 
 
+def _confirm_relay() -> bool:
+    """Offer the optional relay, defaulting to no even without a terminal."""
+    try:
+        answer = input(
+            "Also set up the automated relay (Codex implements, Claude reviews "
+            "and commits, unattended)? [y/N] "
+        ).strip().lower()
+    except EOFError:
+        return False
+    return answer in ("y", "yes")
+
+
+def _setup_relay(root: Path, args: argparse.Namespace) -> int:
+    config = root / ".whyline" / "relay" / "config.toml"
+    if config.exists():
+        print("The automated relay is already set up.")
+        return EXIT_OK
+
+    explicitly_requested = args.relay
+    if args.no_relay or (args.yes and not explicitly_requested):
+        return EXIT_OK
+    if not explicitly_requested and not _confirm_relay():
+        return EXIT_OK
+
+    try:
+        from whyline_relay import cli as relay_cli
+    except ModuleNotFoundError as error:
+        if error.name != "whyline_relay":
+            raise
+        print(relay_install_hint(), file=sys.stderr)
+        return EXIT_ERROR if explicitly_requested else EXIT_OK
+
+    relay_args = ["init", "--repo", str(root)]
+    if args.yes:
+        relay_args.append("--yes")
+    result = relay_cli.main(relay_args, prog="whyline relay")
+    if result != EXIT_OK:
+        return result
+    print(
+        "Next: write a plan (whyline relay plan-format shows the format), "
+        "commit, then run: whyline relay start"
+    )
+    return EXIT_OK
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     from whyline import agentsmd, claudemd, hooks, paths
 
@@ -507,7 +563,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         except hooks.SettingsUnreadable as error:
             print(str(error), file=sys.stderr)
             return EXIT_ERROR
-    return EXIT_OK
+    return _setup_relay(root, args)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
