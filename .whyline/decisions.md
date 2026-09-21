@@ -706,3 +706,21 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/plans/2026-09-20-whyline-relay.md
 
 <!-- whyline-event: 47b04de9398d4fbaa84dcb5e709fad3d -->
+
+## 2026-09-21 — Design pluggable agent adapters for whyline-relay before pipeline stages, planner and quota fallback
+
+**Actor:** claude
+**Role:** planner
+**Task:** RELAY-ADAPTERS
+
+**Because:** The owner has Claude, Codex and Gemini subscriptions and wants to assign agents to roles and later run multi-stage pipelines. That is four independent pieces; adapters are the foundation the rest depend on and deliver a concrete win alone. Decisions by the owner: actors are recorded by the agent's name (whyline's purpose is provenance); built-in adapters plus an opt-in generic adapter, whose limits the relay states plainly; the same agent may fill both roles with a visible warning. Approach chosen: code adapters with one interface. A probe of Gemini CLI 0.60.0 (isolated install with its own HOME, help text only, then deleted; the existing ~/.gemini was untouched and its credentials never read) showed a counterpart for each mechanism the relay relies on: -p with json output, a --policy file instead of a bypass, --skip-trust for the workspace-trust trap, and a read-only plan mode. It has no auth-status command, and whether headless Gemini can run git and whyline handoff under a policy is only knowable from a real signed-in run, so that spike precedes the Gemini adapter
+
+**Rejected:**
+
+- Swap only the command under the fixed codex and claude names — no login check or permission file for the substitute, confusing labels, no path to pipelines
+- TOML adapter profiles — denial parsing and permission enforcement do not fit data, and a misconfigured profile would weaken the safe-by-default promise
+- Record the role (implementer, reviewer) as the actor — whyline could no longer tell which model wrote the code
+
+**Files:** docs/superpowers/specs/2026-09-22-relay-agent-adapters-design.md
+
+<!-- whyline-event: 1f67f17c3c8544d58832e879b29af320 -->
