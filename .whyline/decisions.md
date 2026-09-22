@@ -854,3 +854,36 @@ Append-only. Written by whyline; readable without it.
 **Files:** pyproject.toml
 
 <!-- whyline-event: d2b98eda30f546e29c0f1d4999e4ef16 -->
+
+## 2026-09-22 — Gemini adapter spike: use the Antigravity CLI (agy), not gemini-cli; gemini-cli's individual-account product is discontinued
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** GEMINI-SPIKE
+
+**Because:** gemini-cli 0.60.0 rejects oauth-personal for every account (reasonCode UNSUPPORTED_CLIENT), paid or free, redirecting to Antigravity; agy 1.2.8 is already OAuth'd to the same Google AI subscription and runs headlessly with -p/--output-format json/--mode accept-edits, no bypass flag
+
+**Rejected:**
+
+- gemini-cli with a Gemini API key — works, but abandons the subscription-based auth model the relay uses for Codex and Claude, and the user has a paid Google AI subscription already
+- gemini-cli with --dangerously-skip-permissions or --yolo — never done, per the relay's own no-bypass rule
+
+**Files:** docs/superpowers/specs/2026-09-22-relay-agent-adapters-design.md
+
+<!-- whyline-event: 9bb819293e2f4edcbe89c82ed1e2553e -->
+
+## 2026-09-22 — agy is fail-closed by default and needs explicit workspace pinning per invocation
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** GEMINI-SPIKE
+
+**Because:** Every tool call (even read_file) is auto-denied headlessly unless permissions.allow lists it, in a GLOBAL settings.json (~/.gemini/antigravity-cli/settings.json), not a per-repo file; and without --add-dir <root> --new-project, agy silently operated on a stale prior project instead of the invocation's cwd, reading the wrong AGENTS.md
+
+**Rejected:**
+
+- Rely on cwd alone to select the repo, as codex/claude/gemini-cli do — measured to silently read/act on the wrong directory
+
+**Files:** docs/superpowers/specs/2026-09-22-relay-agent-adapters-design.md
+
+<!-- whyline-event: c2ce417a719e493baadc4f7384597eeb -->
