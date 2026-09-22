@@ -231,11 +231,20 @@ Run order matters: each task builds on the commits before it.
       return result.returncode == 0
 
 
-  def failover_reason(adapter: Adapter, text: str, runner: Runner = subprocess.run) -> str | None:
-      """'rate-limit', 'auth', or None. Checked only when a turn produced no handoff."""
+  def failover_reason(
+      adapter: Adapter, text: str, command: list[str], runner: Runner = subprocess.run
+  ) -> str | None:
+      """'rate-limit', 'auth', or None. Checked only when a turn produced no handoff.
+
+      The auth check runs only when `command` is actually the adapter's own binary —
+      the same restriction preflight._logins already applies, and for the same reason:
+      a stand-in command (a test fixture, or a deliberately different wrapper) must never
+      have someone else's login checked against it.
+      """
       if agents.rate_limited(text):
           return "rate-limit"
-      if not still_logged_in(adapter, runner):
+      checkable = adapter.login_argv is not None and Path(command[0]).name == adapter.binary
+      if checkable and not still_logged_in(adapter, runner):
           return "auth"
       return None
 
@@ -305,15 +314,21 @@ Run order matters: each task builds on the commits before it.
 
   def test_failover_reason_prefers_rate_limit_over_auth():
       bad = lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "")
-      assert failover.failover_reason(codex_adapter.ADAPTER, "you hit your usage limit", runner=bad) == "rate-limit"
+      assert failover.failover_reason(codex_adapter.ADAPTER, "you hit your usage limit", ["codex"], runner=bad) == "rate-limit"
 
   def test_failover_reason_is_none_when_all_clear():
       ok = lambda *a, **k: subprocess.CompletedProcess(a, 0, "", "")
-      assert failover.failover_reason(codex_adapter.ADAPTER, "ordinary output", runner=ok) is None
+      assert failover.failover_reason(codex_adapter.ADAPTER, "ordinary output", ["codex"], runner=ok) is None
 
   def test_failover_reason_generic_agent_never_reports_auth():
       from whyline_relay.adapters.generic import ADAPTER
-      assert failover.failover_reason(ADAPTER, "totally ordinary text") is None
+      assert failover.failover_reason(ADAPTER, "totally ordinary text", ["aider"]) is None
+
+  def test_failover_reason_never_login_checks_a_stand_in_command():
+      # command[0] is not literally "codex", so the auth check must never run, matching
+      # preflight._logins's own rule for the same situation.
+      def explode(*a, **k): raise AssertionError("must not run a login check on a stand-in")
+      assert failover.failover_reason(codex_adapter.ADAPTER, "ordinary output", ["python3", "fake.py"], runner=explode) is None
 
   def test_pause_message_matches_0_2_3_exactly_with_no_override():
       assert failover.pause_message("codex", "implementer", "rate-limit", None) == (
@@ -358,7 +373,7 @@ Run order matters: each task builds on the commits before it.
         except OSError:
             text = ""
         adapter = config.adapter_for(settings, agent)
-        reason = failover.failover_reason(adapter, text, runner=runner)
+        reason = failover.failover_reason(adapter, text, settings.agents[agent], runner=runner)
         if reason is not None:
             backup = settings.backups.get(role)
             if backup is not None and backup != agent:
@@ -435,17 +450,22 @@ Run order matters: each task builds on the commits before it.
       assert failover.read_overrides(repo)["implementer"].agent == "aider"
       assert failover.read_overrides(repo)["implementer"].reason == "rate-limit"
 
-  def test_an_unauthenticated_implementer_switches_to_its_backup(repo, tmp_path):
-      import whyline_relay.adapters as adapters_module
-      # a codex-named command whose login check (re-run by failover) fails: patch codex's adapter
-      # command to point at a script that produces no handoff, and monkeypatch codex's login_argv
-      # check via an injected runner instead of a real "codex" binary.
-      silent = tmp_path / "silent.py"; silent.write_text("import sys\nsys.exit(0)\n")
+  def test_an_unauthenticated_implementer_switches_to_its_backup(repo, tmp_path, monkeypatch):
+      # Exercising a real "codex login status" failure would need a binary literally named
+      # "codex" on PATH (failover_reason's guard, FBO-2, refuses to check anything else) —
+      # so this tests loop.py's handling of an "auth" verdict directly, the same way FBO-2's own
+      # tests exercise failover_reason's detection logic directly. The real detection is FBO-2's job.
+      silent = tmp_path / "silent.py"; silent.write_text("import sys
+sys.exit(0)
+")
       settings = settings_with_backup(repo, [sys.executable, str(silent)], "aider",
           [sys.executable, FAKE, str(repo), "aider", "claude", "ready-for-review", "no"], {"implementer": "aider"})
+      monkeypatch.setattr(
+          loop.failover, "failover_reason",
+          lambda adapter, text, command, runner=None: "auth",
+      )
       base = loop.gitcheck.head_commit(repo)
-      bad_login = lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "")
-      outcome = loop.run_task(repo, settings, TASK, base_commit=base, echo=False, runner=bad_login)
+      outcome = loop.run_task(repo, settings, TASK, base_commit=base, echo=False)
       assert outcome.committed
       assert failover.read_overrides(repo)["implementer"].reason == "auth"
 
