@@ -72,9 +72,10 @@ Non-goals
 | `state.py` | `RelayState` + `path`/`save`/`load`/`clear`, one file (`state.json`) shaped around a running task | Gains a second, independent dataclass `PlanState` (`description`, `stage`, `round`, `agent`, `feedback`, `draft_path`, `paused_reason`, `log_path`) and its own `plan_path`/`save_plan`/`load_plan`/`clear_plan`, at `.whyline/relay/plan-state.json`, using the identical atomic-write technique (write `.tmp`, `os.replace`) |
 | `prompts.py` | `TEMPLATES = {"implement", "review", "test", "security"}`; `stage_footer()` generic over any `Stage`/`Pipeline` | Gains two new built-in templates, `"plan-draft"` and `"plan-review"`, added to `TEMPLATES`. `stage_footer()` itself needs **no change** — it already only depends on `Stage`/`Pipeline`/`profile_name`/`effective_agents`/`actor`/`task_id`, all of which the planner's compiled `Pipeline` and `"__plan__"` task id supply directly |
 | `preflight.py` | `_plan_checks(plan_path, pipeline=None) -> list[Check]`, called against a hand-written `plan.md` before `start`/`resume` | **Unchanged as the planner's gate** — the planner's review stage prompt instructs the reviewing agent to apply the same criteria this function already checks (parses, has an id, has detail, no placeholder text); the relay does not call `_plan_checks` itself as a gate — see 5.2 for why the check stays agent-driven, not code-driven. Gains one small, unrelated addition of its own (5.6): a `warn` if a real plan task's id collides with the reserved `__plan__` id (P10) |
-| `loop.py` | `_run_configured_task`, `_commit_and_approve`, `_run_agent` — all task/git-shaped | **Unchanged.** New, separate `planner.py` module owns the draft/review loop; it calls into `pipeline.decide()` and reuses `_run_agent`'s underlying agent-launch mechanics conceptually, but as its own small function, since it launches agents without any of `_run_agent`'s git/commit assumptions |
+| `loop.py` | `_run_configured_task` (task/git-shaped orchestration loop), `_run_agent` (render prompt, run agent, return log path — confirmed by inspection to contain no git logic of its own; the surrounding HEAD-equality check lives in `_run_configured_task`'s own loop, not inside `_run_agent`) | **Unchanged.** New, separate `planner.py` owns the draft/review loop, calling `_run_agent` **directly** with a synthetic `plan.Task(task_id="__plan__", text=description, checked=False, line_index=0)` — confirmed viable since `_run_agent` takes exactly that type and does not itself assume anything about commits. `planner.py`'s own loop simply omits the HEAD-check block `_run_configured_task` wraps around its call (P4) |
 | `cli.py` | `start`, `resume`, `roles {status,set,reset}`, `plan-format` | Gains `plan "<description>"` and `plan --discard`; `cmd_resume` gains a branch at its top: if `state.load_plan(root)` finds a `PlanState`, dispatch to `planner.resume()` before falling through to the existing task-resume path |
 | `config.py` | `[roles]`, `[roles.backup]`, `[pipeline]` (+ `.profiles`, `.stages.*`) | Gains an optional `[planner]` table (`draft`, `review`, `max_visits`); omitted entirely, `draft`/`review` default to `settings.roles.implementer`/`settings.roles.reviewer` (or, for a configured `[pipeline]`, to `current_roles(settings)`'s first and last entries — see 5.1) |
+| `gitcheck.py` | `RELAY_IGNORE`, a **specific-filename** tuple (`state.json*`, `logs/`, `STOP`, `running.json`, `active-roles.json`) written to `.git/info/exclude` by `ensure_relay_ignored` — not a directory wildcard | Gains two more literal entries, `.whyline/relay/plan-state.json*` and `.whyline/relay/draft-plan.md`, confirmed necessary by inspection: `state.json*` does not match a differently-named file, so without this, `git add -A` (run by the terminal stage or the relay's own commit) would sweep the draft and its checkpoint into a real commit |
 
 ## 5. Design
 
@@ -134,6 +135,11 @@ doesn't encode as rules (a task description that doesn't parse as a coherent uni
 it technically has an id and detail lines) — the same reason a human reviewer adds value beyond a
 linter. Two outcomes: `approved` → `@complete`; `revise` → back to `draft` with the reviewer's
 concrete feedback, bounded by `max_visits` (P5).
+
+Both stages are launched via `loop._run_agent` directly (4, `loop.py` row), each turn claimed first
+via `whylinecmd.claim(root, "__plan__", agent, stage.role)` — the same advisory-ownership call
+`_run_configured_task` makes at the start of a task, reused here unmodified since it only takes a
+task id, actor, and role.
 
 Both stages get the existing `stage_footer()` unchanged (4, `prompts.py` row) — its "never commit"
 line is simply true here too (P4), and its "the task is finished" `@complete` framing reads
