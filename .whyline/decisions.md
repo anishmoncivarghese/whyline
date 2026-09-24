@@ -887,3 +887,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/specs/2026-09-22-relay-agent-adapters-design.md
 
 <!-- whyline-event: c2ce417a719e493baadc4f7384597eeb -->
+
+## 2026-09-24 — Added Antigravity (agy) as a real whyline run target; corrected the Gemini-CLI limitation note
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RUNNER-ANTIGRAVITY
+
+**Because:** Antigravity was only ever documented in whyline-relay's generic-adapter docs, not implemented in whyline's own runner.AGENTS registry; run's argparse choices were also hardcoded separately and had silently drifted from the registry. agy needs -i/--prompt-interactive (verified against agy --help and a live invocation) to seed a session and hand over the terminal, the same shape a bare claude/codex prompt already gets
+
+**Rejected:**
+
+- leave the README claim as-is and only add Antigravity support in code — would still misrepresent Gemini CLI as merely unsupported rather than dead/superseded
+- hardcode a second agent list in cli.py's argparse choices — derives it from runner.AGENTS instead, so the two can no longer drift apart the way they just had
+
+**Files:** src/whyline/runner.py, src/whyline/cli.py, README.md
+
+<!-- whyline-event: 88a68e93b4a24c919643f14f3cd82870 -->

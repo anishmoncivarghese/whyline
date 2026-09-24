@@ -16,21 +16,35 @@ def test_build_argv_supports_codex():
     assert runner.build_argv("codex", "task", "ctx")[0] == "codex"
 
 
+def test_build_argv_supports_antigravity():
+    # "agy" is the real binary; Gemini CLI itself is dead (its free personal
+    # tier was withdrawn), and Antigravity is the account's actual working path.
+    assert runner.build_argv("antigravity", "task", "ctx")[0] == "agy"
+
+
+def test_build_argv_gives_antigravity_the_interactive_prompt_flag():
+    # `agy` needs -i/--prompt-interactive to seed a session with a prompt and
+    # then hand over the terminal -- the same shape a bare `claude "<prompt>"`
+    # or `codex "<prompt>"` already gets for free. Verified against `agy --help`.
+    assert runner.build_argv("antigravity", "task", "ctx") == ["agy", "-i", "ctx\n\ntask"]
+
+
 def test_build_argv_rejects_an_unknown_agent():
     with pytest.raises(runner.UnknownAgent):
         runner.build_argv("gemini", "task", "ctx")
 
 
 def test_build_argv_never_adds_permission_bypass_flags():
-    argv = runner.build_argv("claude", "task", "ctx")
-    joined = " ".join(argv)
-    for forbidden in (
-        "--dangerously-skip-permissions",
-        "--yolo",
-        "--dangerously-bypass-hook-trust",
-        "--approval-mode",
-    ):
-        assert forbidden not in joined
+    for agent in ("claude", "codex", "antigravity"):
+        argv = runner.build_argv(agent, "task", "ctx")
+        joined = " ".join(argv)
+        for forbidden in (
+            "--dangerously-skip-permissions",
+            "--yolo",
+            "--dangerously-bypass-hook-trust",
+            "--approval-mode",
+        ):
+            assert forbidden not in joined, f"{agent}: {joined}"
 
 
 def test_build_argv_without_a_brief_passes_the_task_alone():
@@ -54,6 +68,22 @@ def test_launch_execs_the_agent_binary():
     # deriving the expectation from the function under test made half of this
     # assertion tautological (flagged 2026-08-17).
     assert calls == [("claude", ["claude", "ctx\n\ntask"])]
+
+
+def test_launch_execs_antigravity_with_the_interactive_flag():
+    calls = []
+
+    def fake_exec(binary, argv):
+        calls.append((binary, argv))
+
+    runner.launch(
+        "antigravity",
+        "task",
+        "ctx",
+        which=lambda name: f"/usr/bin/{name}",
+        exec_fn=fake_exec,
+    )
+    assert calls == [("agy", ["agy", "-i", "ctx\n\ntask"])]
 
 
 def test_launch_raises_when_the_binary_is_absent():
@@ -144,7 +174,7 @@ def test_no_code_path_can_reach_the_real_execvp_during_tests(monkeypatch):
 
     monkeypatch.setattr(runner.os, "execvp", poisoned)
     monkeypatch.setattr(runner.shutil, "which", lambda name: None)
-    for agent in ("claude", "codex"):
+    for agent in ("claude", "codex", "antigravity"):
         with pytest.raises(runner.AgentMissing):
             runner.launch(agent, "task", "ctx")
     with pytest.raises(runner.UnknownAgent):

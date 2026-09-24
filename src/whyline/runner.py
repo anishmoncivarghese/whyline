@@ -10,7 +10,16 @@ from __future__ import annotations
 import os
 import shutil
 
-AGENTS = {"claude": "claude", "codex": "codex"}
+AGENTS = {
+    "claude": ["claude"],
+    "codex": ["codex"],
+    # "agy" is the real binary. -i (--prompt-interactive) seeds a session with
+    # the prompt and then hands over the terminal -- the same shape a bare
+    # `claude "<prompt>"`/`codex "<prompt>"` already gets for free. Gemini CLI
+    # itself is dead (its free personal tier was withdrawn); Antigravity is
+    # the account's actual working path and is not the same binary.
+    "antigravity": ["agy", "-i"],
+}
 
 # Indirection so a test can neutralise these without mutating shutil or os
 # globally. These MUST be functions that look their target up at call time.
@@ -39,7 +48,7 @@ def build_argv(agent: str, task: str, brief_text: str) -> list[str]:
         known = ", ".join(sorted(AGENTS))
         raise UnknownAgent(f"Unknown agent {agent!r}. Known agents: {known}")
     prompt = f"{brief_text}\n\n{task}" if brief_text else task
-    return [AGENTS[agent], prompt]
+    return [*AGENTS[agent], prompt]
 
 
 def launch(

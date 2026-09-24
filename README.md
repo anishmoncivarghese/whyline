@@ -280,7 +280,7 @@ Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
 - **`explain` reports confidence and will say when it does not know.** An empty
   ledger produces an honest empty answer, not a guess. File-level `explain` never
   claims high confidence, because without a line there is no blamed commit.
-- **Gemini is not supported by `run`** — its free personal tier was withdrawn.
+- **`run` supports Claude Code, Codex, and Antigravity (`agy`)** — Gemini CLI itself is dead (its free personal tier was withdrawn); Antigravity is Google's actual working successor and is not the same binary or invocation.
 - **Ownership is advisory.** Whyline warns about overlapping writes but provides
   no lock, scheduler, merge engine, or worktree isolation.
 - **A fresh clone loses operational state, deliberately.** It retains committed

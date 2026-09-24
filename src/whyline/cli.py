@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from whyline import __version__
+from whyline import runner
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -112,7 +113,7 @@ def _add_run(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "run", help="Launch an agent with active context attached"
     )
-    parser.add_argument("agent", choices=("claude", "codex"))
+    parser.add_argument("agent", choices=tuple(runner.AGENTS))
     parser.add_argument("task")
     parser.add_argument("--task-id", default=None)
     parser.add_argument("--file", action="append", default=[], dest="files")
@@ -567,7 +568,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from whyline import gitq, paths, runner, sync
+    from whyline import gitq, paths, sync
 
     root = _require_repo()
     if not paths.is_initialised(root):
