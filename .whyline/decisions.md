@@ -1220,3 +1220,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/runner.py, tests/test_runner.py
 
 <!-- whyline-event: 03840808cfef4544822d713c379aa2b5 -->
+
+## 2026-09-25 — Document Grok in supported run agents under Honest limitations
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** GWA-2
+
+**Because:** Align documentation with Grok runner and model support added in GWA-1
+
+**Rejected:**
+
+- add a standalone Grok section — unnecessary as Grok fits directly into the existing supported agents list
+
+**Files:** README.md
+
+<!-- whyline-event: 27a83001e5ee4f82849204d1d629389a -->
+
+## 2026-09-25 — Approve GWA-2 README documentation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GWA-2
+
+**Because:** The supported-agent line matches the requested Grok wording exactly, remains scoped to README documentation, and the full pytest suite passes
+
+**Rejected:**
+
+- request changes — no defects or scope deviations were found
+
+**Files:** README.md
+
+<!-- whyline-event: c560e55e079d46a4abbe5d3b75aab22e -->
