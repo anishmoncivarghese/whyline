@@ -6,3 +6,5 @@ active-handoff.json
 ownership.json
 readside.log
 *.lock
+account.json
+model.json

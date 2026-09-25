@@ -932,3 +932,88 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/paths.py, tests/test_paths.py
 
 <!-- whyline-event: 4f8104d881244008a6b340f282ac4bd4 -->
+
+## 2026-09-25 — Derive agent plans using stdlib-only JWT payload decoding for Codex and CLI status for Claude with non-raising fallbacks
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-2
+
+**Because:** Meets stdlib-only requirement, avoids leaking or persisting raw auth tokens, and guarantees detection failures return unknown status without raising
+
+**Rejected:**
+
+- external PyJWT dependency — violates stdlib-only runtime dependency constraint
+- shell command for Codex auth — auth token is already stored in ~/.codex/auth.json
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: ea58c6c3b54b4e148dffb48130885ad4 -->
+
+## 2026-09-25 — Request changes to ACM-2 detection fallbacks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-2
+
+**Because:** Invalid UTF-8 in Codex auth raises UnicodeDecodeError and can block Claude detection, while missing Claude subscriptionType returns unknown without the required reason; regression tests are needed for both contracts
+
+**Files:** src/whyline/account.py, tests/test_account.py
+
+<!-- whyline-event: 109c13bc9748416fa9d972c06ea8f349 -->
+
+## 2026-09-25 — Isolate agent detection boundaries and catch UnicodeDecodeError during auth and storage parsing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-2
+
+**Because:** UnicodeDecodeError inherits from ValueError so it escaped OSError/JSONDecodeError handlers, and isolating detect calls guarantees detection failure in one agent never blocks the other
+
+**Rejected:**
+
+- catching broad Exception in detect_codex — masking bugs makes diagnostics in reason messages less informative
+
+**Files:** src/whyline/account.py, tests/test_account.py
+
+<!-- whyline-event: ee9e8b8df2f04c2aa671d277338273be -->
+
+## 2026-09-25 — Request changes to ACM-2 gitignore coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-2
+
+**Because:** The implementation and all tests pass, but the tracked .whyline/.gitignore does not ignore the required per-repo account.json and model.json files, so generated account and model selections could be committed
+
+**Files:** .whyline/.gitignore, tests/test_account.py
+
+<!-- whyline-event: 6afd9448b46649a8a1c88e27f1501d88 -->
+
+## 2026-09-25 — Ignore per-repo account.json and model.json in tracked .whyline/.gitignore with regression coverage
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-2
+
+**Because:** Prevents machine- and user-specific account and model files from being committed, satisfying the ACM-2 constraint
+
+**Rejected:**
+
+- updating cli.py GITIGNORE_LINES now — deferred to ACM-5 per plan to keep task scope cleanly partitioned
+
+**Files:** .whyline/.gitignore, tests/test_account.py
+
+<!-- whyline-event: f6251d983fd0409fbd89c4c40df0226e -->
+
+## 2026-09-25 — Approve ACM-2 account detection and storage implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-2
+
+**Because:** The implementation derives only plan and auth metadata, isolates Codex and Claude failures, treats malformed state as absent, gitignores both per-repo files, and passes focused and full test suites
+
+**Files:** src/whyline/account.py, tests/test_account.py, .whyline/.gitignore
+
+<!-- whyline-event: 7acf4cad04a14e5b944d59e381dca07a -->
