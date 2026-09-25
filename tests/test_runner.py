@@ -179,3 +179,30 @@ def test_no_code_path_can_reach_the_real_execvp_during_tests(monkeypatch):
             runner.launch(agent, "task", "ctx")
     with pytest.raises(runner.UnknownAgent):
         runner.launch("gemini", "task", "ctx")
+
+
+def test_build_argv_appends_the_model_flag_when_given():
+    argv = runner.build_argv("codex", "task", "ctx", model="gpt-5-codex")
+    assert argv == ["codex", "--model", "gpt-5-codex", "ctx\n\ntask"]
+
+
+def test_build_argv_with_no_model_is_unchanged():
+    assert runner.build_argv("codex", "task", "ctx") == ["codex", "ctx\n\ntask"]
+
+
+def test_build_argv_appends_the_model_flag_for_antigravity():
+    argv = runner.build_argv("antigravity", "task", "ctx", model="gemini-3-pro")
+    assert argv == ["agy", "-i", "--model", "gemini-3-pro", "ctx\n\ntask"]
+
+
+def test_launch_passes_the_model_through_to_build_argv():
+    calls = []
+    runner.launch(
+        "codex",
+        "task",
+        "ctx",
+        which=lambda name: f"/usr/bin/{name}",
+        exec_fn=lambda binary, argv: calls.append((binary, argv)),
+        model="gpt-5-codex",
+    )
+    assert calls == [("codex", ["codex", "--model", "gpt-5-codex", "ctx\n\ntask"])]

@@ -21,6 +21,8 @@ AGENTS = {
     "antigravity": ["agy", "-i"],
 }
 
+MODEL_FLAG = {"claude": "--model", "codex": "--model", "antigravity": "--model"}
+
 # Indirection so a test can neutralise these without mutating shutil or os
 # globally. These MUST be functions that look their target up at call time.
 # Caching the function objects here (`_which = shutil.which`) recreates the very
@@ -43,12 +45,17 @@ class AgentMissing(RuntimeError):
     """The agent's binary is not installed."""
 
 
-def build_argv(agent: str, task: str, brief_text: str) -> list[str]:
+def build_argv(
+    agent: str, task: str, brief_text: str, model: str | None = None
+) -> list[str]:
     if agent not in AGENTS:
         known = ", ".join(sorted(AGENTS))
         raise UnknownAgent(f"Unknown agent {agent!r}. Known agents: {known}")
+    command = list(AGENTS[agent])
+    if model:
+        command += [MODEL_FLAG[agent], model]
     prompt = f"{brief_text}\n\n{task}" if brief_text else task
-    return [*AGENTS[agent], prompt]
+    return [*command, prompt]
 
 
 def launch(
@@ -57,6 +64,7 @@ def launch(
     brief_text: str,
     which=None,
     exec_fn=None,
+    model: str | None = None,
 ) -> int:
     """Replace this process with the agent's own CLI.
 
@@ -66,7 +74,7 @@ def launch(
     effect and a test would exec the real agent — replacing the test process and
     spending real vendor quota. That actually happened on 2026-08-17.
     """
-    argv = build_argv(agent, task, brief_text)
+    argv = build_argv(agent, task, brief_text, model=model)
     which = which if which is not None else _which
     exec_fn = exec_fn if exec_fn is not None else _exec
     if which(argv[0]) is None:

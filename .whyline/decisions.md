@@ -1079,3 +1079,36 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/model.py, tests/test_model.py
 
 <!-- whyline-event: 8957faef382f4651b42e53112cbd5ab9 -->
+
+## 2026-09-25 — Pass per-repo agent model flag without validation and gitignore local account and model config
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-5
+
+**Because:** The agent CLI validates model names at execution time without Whyline needing hardcoded model catalogs, and account.json/model.json are local per-repo configuration files that must not be tracked in git
+
+**Rejected:**
+
+- validating model names against hardcoded list — would break as soon as vendors release new models
+- committing account.json or model.json — leaks user plan data and forces developer-specific model choices into git
+
+**Files:** src/whyline/runner.py, src/whyline/cli.py
+
+<!-- whyline-event: ce70782429a447538013c3c9e8a50dbf -->
+
+## 2026-09-25 — Approve per-repository model selection and runner propagation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-5
+
+**Because:** The CLI supports interactive, set, and status workflows; cmd_run passes the configured model to each agent without filtering; local configuration is ignored; focused and full tests pass
+
+**Rejected:**
+
+- requesting changes — implementation and coverage satisfy ACM-5, including EOF handling by inspection and explicit run wiring tests
+
+**Files:** src/whyline/runner.py, src/whyline/cli.py, tests/test_runner.py, tests/test_model_cli.py
+
+<!-- whyline-event: 6940488b6723431dbc09cc8c3fd1afd6 -->

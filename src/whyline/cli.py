@@ -191,6 +191,17 @@ def _add_account(subparsers: "argparse._SubParsersAction") -> None:
     account_sub.add_parser("detect", help="Re-run detection and refresh the global cache")
 
 
+def _add_model(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "model", help="Choose which model each agent uses in this repo"
+    )
+    model_sub = parser.add_subparsers(dest="model_command")
+    set_parser = model_sub.add_parser("set", help="Set one agent's model non-interactively")
+    set_parser.add_argument("agent", choices=tuple(runner.AGENTS))
+    set_parser.add_argument("model")
+    model_sub.add_parser("status", help="Show current selections")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -211,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_status(subparsers)
     _add_init(subparsers)
     _add_account(subparsers)
+    _add_model(subparsers)
     return parser
 
 
@@ -454,6 +466,8 @@ GITIGNORE_LINES = (
     "readside.log",
     "*.lock",
     "*.bak",
+    "account.json",
+    "model.json",
     "!decisions.md",
 )
 
@@ -622,8 +636,46 @@ def cmd_account(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_model(args: argparse.Namespace) -> int:
+    from whyline import account, model
+
+    root = _require_repo()
+    if args.model_command == "set":
+        model.set_one(root, args.agent, args.model)
+        return EXIT_OK
+    if args.model_command == "status":
+        current = model.load(root)
+        if not current:
+            print("Nothing set.")
+        else:
+            for agent, chosen in current.items():
+                print(f"{agent}: {chosen}")
+        return EXIT_OK
+
+    repo_account = account.load_repo(root)
+    for agent in ("codex", "claude", "antigravity"):
+        if repo_account is not None and agent in repo_account:
+            plan = repo_account[agent].get("plan")
+            if plan:
+                print(f"{agent} -- {plan}")
+        if agent == "antigravity":
+            print(
+                "Note: Antigravity is safe here for `whyline run`, but not "
+                "currently safe for any unattended whyline-relay role -- see README."
+            )
+        current_value = model.load(root).get(agent, "(default)")
+        print(f"Current: {current_value}")
+        try:
+            answer = input(f"Model for {agent} (blank to keep default): ").strip()
+        except EOFError:
+            answer = ""
+        if answer:
+            model.set_one(root, agent, answer)
+    return EXIT_OK
+
+
 def cmd_run(args: argparse.Namespace) -> int:
-    from whyline import gitq, paths, sync
+    from whyline import gitq, model as model_module, paths, sync
 
     root = _require_repo()
     if not paths.is_initialised(root):
@@ -639,8 +691,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     except gitq.GitUnavailable as error:
         print(f"git is unavailable: {error}", file=sys.stderr)
         return EXIT_ERROR
+    chosen_model = model_module.load(root).get(args.agent)
     try:
-        runner.launch(args.agent, args.task, brief_text)
+        runner.launch(args.agent, args.task, brief_text, model=chosen_model)
     except (runner.UnknownAgent, runner.AgentMissing) as error:
         # The sync packet is still printed, so the handoff is not lost.
         print(str(error), file=sys.stderr)
@@ -763,6 +816,7 @@ COMMANDS = {
     "status": cmd_status,
     "init": cmd_init,
     "account": cmd_account,
+    "model": cmd_model,
 }
 
 
