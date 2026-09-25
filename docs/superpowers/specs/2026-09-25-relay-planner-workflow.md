@@ -69,10 +69,10 @@ Non-goals
 | File | Today | What changes |
 |---|---|---|
 | `pipeline.py` | `Role`, `Stage`, `Profile`, `Pipeline`, `Decision` dataclasses; `compile_legacy()`; not yet wired into anything but `routing.py` | **Unchanged.** The planner compiles its own `Pipeline` value from `[planner]` config using these same dataclasses; no new fields needed — `draft`/`review`'s `transitions` and `max_visits` already say everything required |
-| `state.py` | `RelayState` + `path`/`save`/`load`/`clear`, one file (`state.json`) shaped around a running task | Gains a second, independent dataclass `PlanState` (`description`, `stage`, `round`, `agent`, `feedback`, `draft_path`, `paused_reason`, `log_path`) and its own `plan_path`/`save_plan`/`load_plan`/`clear_plan`, at `.whyline/relay/plan-state.json`, using the identical atomic-write technique (write `.tmp`, `os.replace`) |
+| `state.py` | `RelayState` + `path`/`save`/`load`/`clear`, one file (`state.json`) shaped around a running task | Gains a second, independent dataclass `PlanState` (`description`, `stage`, `round`, `stage_visits`, `agent`, `feedback`, `draft_path`, `paused_reason`, `log_path`) and its own `plan_path`/`save_plan`/`load_plan`/`clear_plan`, at `.whyline/relay/plan-state.json`, using the identical atomic-write technique (write `.tmp`, `os.replace`) |
 | `prompts.py` | `TEMPLATES = {"implement", "review", "test", "security"}`; `stage_footer()` generic over any `Stage`/`Pipeline` | Gains two new built-in templates, `"plan-draft"` and `"plan-review"`, added to `TEMPLATES`. `stage_footer()` itself needs **no change** — it already only depends on `Stage`/`Pipeline`/`profile_name`/`effective_agents`/`actor`/`task_id`, all of which the planner's compiled `Pipeline` and `"__plan__"` task id supply directly |
 | `preflight.py` | `_plan_checks(plan_path, pipeline=None) -> list[Check]`, called against a hand-written `plan.md` before `start`/`resume` | **Unchanged as the planner's gate** — the planner's review stage prompt instructs the reviewing agent to apply the same criteria this function already checks (parses, has an id, has detail, no placeholder text); the relay does not call `_plan_checks` itself as a gate — see 5.2 for why the check stays agent-driven, not code-driven. Gains one small, unrelated addition of its own (5.6): a `warn` if a real plan task's id collides with the reserved `__plan__` id (P10) |
-| `loop.py` | `_run_configured_task` (task/git-shaped orchestration loop), `_run_agent` (render prompt, run agent, return log path — confirmed by inspection to contain no git logic of its own; the surrounding HEAD-equality check lives in `_run_configured_task`'s own loop, not inside `_run_agent`) | **Unchanged.** New, separate `planner.py` owns the draft/review loop, calling `_run_agent` **directly** with a synthetic `plan.Task(task_id="__plan__", text=description, checked=False, line_index=0)` — confirmed viable since `_run_agent` takes exactly that type and does not itself assume anything about commits. `planner.py`'s own loop simply omits the HEAD-check block `_run_configured_task` wraps around its call (P4) |
+| `loop.py` | `_run_configured_task` (task/git-shaped orchestration loop) calls two private helpers already shared across it and legacy `_run_task`: `_run_agent` (render prompt, run agent, return log path — confirmed by inspection to contain no git logic of its own; the surrounding HEAD-equality check lives in `_run_configured_task`'s own loop, not inside `_run_agent`) and `_check_visit_cap` (raises `Paused` once a stage's `max_visits` is exceeded) | Both helpers are already shared by two call sites in the same file; this design adds a third, in a different file, which is the same kind of generalization, not a new one. Renamed to `run_agent`/`check_visit_cap` (public, behavior unchanged) so `planner.py` can call them directly with a synthetic `plan.Task(task_id="__plan__", text=description, checked=False, line_index=0)`. `planner.py`'s own loop omits the HEAD-check block `_run_configured_task` wraps around its `run_agent` call (P4) |
 | `cli.py` | `start`, `resume`, `roles {status,set,reset}`, `plan-format` | Gains `plan "<description>"` and `plan --discard`; `cmd_resume` gains a branch at its top: if `state.load_plan(root)` finds a `PlanState`, dispatch to `planner.resume()` before falling through to the existing task-resume path |
 | `config.py` | `[roles]`, `[roles.backup]`, `[pipeline]` (+ `.profiles`, `.stages.*`) | Gains an optional `[planner]` table (`draft`, `review`, `max_visits`); omitted entirely, `draft`/`review` default to `settings.roles.implementer`/`settings.roles.reviewer` (or, for a configured `[pipeline]`, to `current_roles(settings)`'s first and last entries — see 5.1) |
 | `gitcheck.py` | `RELAY_IGNORE`, a **specific-filename** tuple (`state.json*`, `logs/`, `STOP`, `running.json`, `active-roles.json`) written to `.git/info/exclude` by `ensure_relay_ignored` — not a directory wildcard | Gains two more literal entries, `.whyline/relay/plan-state.json*` and `.whyline/relay/draft-plan.md`, confirmed necessary by inspection: `state.json*` does not match a differently-named file, so without this, `git add -A` (run by the terminal stage or the relay's own commit) would sweep the draft and its checkpoint into a real commit |
@@ -99,11 +99,11 @@ Pipeline(
     stages={
         "draft": Stage(
             id="draft", role="draft", prompt="plan-draft",
-            transitions={"ready": "@next"}, max_visits=max_visits,
+            transitions={"ready": "@next", "blocked": "@blocked"}, max_visits=max_visits,
         ),
         "review": Stage(
             id="review", role="review", prompt="plan-review",
-            transitions={"approved": "@complete", "revise": "draft"},
+            transitions={"approved": "@complete", "revise": "draft", "blocked": "@blocked"},
             max_visits=max_visits,
         ),
     },
@@ -133,8 +133,10 @@ judge whether the plan is the right plan for the goal. This stays an agent turn 
 direct call to `_plan_checks` (P3) so the reviewing agent can also catch shape problems `_plan_checks`
 doesn't encode as rules (a task description that doesn't parse as a coherent unit of work, though
 it technically has an id and detail lines) — the same reason a human reviewer adds value beyond a
-linter. Two outcomes: `approved` → `@complete`; `revise` → back to `draft` with the reviewer's
-concrete feedback, bounded by `max_visits` (P5).
+linter. Three outcomes: `approved` → `@complete`; `revise` → back to `draft` with the reviewer's
+concrete feedback, bounded by `max_visits` (P5); `blocked` → a human is needed (5.6) — both stages
+get this same escape hatch, matching every other built-in stage (`implement`/`review`/`test`/
+`security` all have one), for when a description genuinely cannot be turned into a plan at all.
 
 Both stages are launched via `loop._run_agent` directly (4, `loop.py` row), each turn claimed first
 via `whylinecmd.claim(root, "__plan__", agent, stage.role)` — the same advisory-ownership call
@@ -153,12 +155,17 @@ class PlanState:
     description: str
     stage: str            # "draft" | "review" | "@complete"
     round: int
+    stage_visits: dict[str, int]   # per-stage visit counts, for check_visit_cap on resume
     agent: str
     feedback: str          # accumulated reviewer/human feedback for the next draft, if any
     draft_path: str
     paused_reason: str
     log_path: str
 ```
+
+`stage_visits` mirrors `RelayState`'s own field of the same name and for the same reason: `round`
+alone cannot enforce a *per-stage* cap (draft might legitimately run more rounds than review), so a
+genuine crash-resume needs the full per-stage tally restored, not just a total count.
 
 Stored at `.whyline/relay/plan-state.json`, via `state.save_plan`/`load_plan`/`clear_plan`, using
 the same write-`.tmp`-then-`os.replace` atomic technique `state.py` already uses for `RelayState`
@@ -172,8 +179,9 @@ asked anything (P9). If the process dies at "Use this plan?", `whyline-relay res
 `PlanState` with `stage == "@complete"`, re-prints the same draft, and re-asks the same question,
 without re-running any agent. Once the human answers (approve or discard), `clear_plan` removes
 the checkpoint; "request changes" instead writes a fresh `PlanState` back at `stage: "draft"` with
-the human's feedback folded in and `round` reset to 0, since a human-initiated redraft is a new
-top-level attempt, not a continuation of the bounded auto-loop (P5).
+the human's feedback folded in, `round` reset to 1, and `stage_visits` reset to `{"draft": 1}`,
+since a human-initiated redraft is a new top-level attempt, not a continuation of the bounded
+auto-loop (P5) — it must not inherit that loop's spent visit budget.
 
 `cmd_resume` gains a check at its top, before its existing `state.load(root)` task-resume path:
 
@@ -216,11 +224,15 @@ decision):
 
 ### 5.6 Error handling and edge cases
 
-- **`max_visits` exhausted without structural approval** → the loop ends in `@blocked`, the same
-  terminal shape `pipeline.py` already defines. The relay shows the human the last draft and the
-  reviewer's final structural complaint at the same gate described in 5.4, with "approve" there
-  meaning "accept it despite the flagged structural issue" — a human's informed override, not a
-  silent failure.
+- **`max_visits` exhausted, or either stage explicitly hands off `blocked`** → `loop.Paused`,
+  exactly like every other pipeline in this project (`_run_configured_task`'s own `decision.kind
+  == "blocked"` branch, and its visit-cap check, both already raise `Paused`, not a graceful
+  in-process fallback). This is a deliberate simplification from an earlier draft of this section,
+  which proposed a distinct "show the flawed draft and let the human override" path for this case
+  — rejected once grounded against the real code: every other stage's `blocked` already means "stop
+  entirely, a human must intervene before `resume`," and inventing a second, softer meaning of
+  `blocked` specifically for the planner would be its own new concept, not a reuse of one that
+  already exists. Recovery is the same `resume`-or-`plan --discard` choice 5.5 already describes.
 - **Malformed or missing draft output** (the staging file was never written, or doesn't parse) is
   treated as an automatic `revise` outcome carrying "no valid plan file was produced" as feedback;
   it counts against `max_visits` exactly like any other structural rejection.
@@ -274,3 +286,4 @@ beyond what that design's 5.10 covers) stay separate, harder, and unscoped.
 | Is a human's "request changes" round bounded like the auto-loop is? | No — `max_visits` only bounds unattended agent-to-agent looping |
 | Does the planner's crash-safety reuse `RelayState` directly, or a new shape? | A new, separate `PlanState`/`plan-state.json`, sharing the same atomic-checkpoint technique but not the same fields, since none of `RelayState`'s task/git fields apply before a plan is approved |
 | Does the planner ever touch git before human approval? | No — no commit, no HEAD check, no plan.md tick, until the relay writes the real `plan.md` itself at approval |
+| Does hitting `max_visits`, or an agent-declared `blocked`, get a special graceful path for the planner? | No — reuses the exact same `loop.Paused` shape every other stage's `blocked` and visit-cap already use, discovered to be the simpler, more consistent choice once checked against the real code during plan-writing |
