@@ -1252,3 +1252,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** README.md
 
 <!-- whyline-event: c560e55e079d46a4abbe5d3b75aab22e -->
+
+## 2026-09-25 — Ship Grok as a plain interactive runner.py agent in whyline, and only as a documented generic-adapter recipe (not a managed adapter) in whyline-relay
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** GWA
+
+**Because:** 3-way independent consultation (Grok proposing its own design, Codex and Antigravity each reviewing separately) converged: Grok has no non-interactive login-status check and only generic denial detail, and its own command must end in a trailing -p, so a managed adapter with model_flag support would need an architectural fix to config.py first
+
+**Rejected:**
+
+- a managed adapters/grok.py now — blocked on the model_flag-appended-after-command-end bug and missing login/denial signals
+
+**Files:** src/whyline/runner.py, docs/releases/v0.3.3.md
+
+<!-- whyline-event: 5aa503953b964824acd17523cb3271a4 -->
