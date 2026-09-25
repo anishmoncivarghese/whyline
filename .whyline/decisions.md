@@ -1144,3 +1144,31 @@ Append-only. Written by whyline; readable without it.
 **Files:** README.md
 
 <!-- whyline-event: 060f7df0a6ef47eaa22e28a65207dfea -->
+
+## 2026-09-25 — Merged the account/model-selector feature (ACM-1..6) into main, built with Antigravity as implementer and Codex as reviewer
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ACM-MERGE
+
+**Because:** First real, production-scale use of Antigravity as a whyline-relay implementer, using the accepted-risk machine-global permissions.allow wildcard (command(*)/read_file(*)/write_file(*)/edit_file(*)) documented in whyline-relay's README. All 6 tasks completed with zero pauses; real, verified usage (over 1M tokens across the antigravity turns, per-turn duration/token counts read directly from the relay's own logs, not estimated). Codex's review caught nothing requiring a bounce-back across any of the 6 tasks. Cherry-picked tree diff-verified byte-for-byte against the sandbox; full suite green (336 tests); a real end-to-end CLI smoke test (whyline account detect, whyline model set/status, gitignore behavior) verified against the actual merged code, not just the sandbox.
+
+**Rejected:**
+
+- Antigravity as reviewer instead of implementer — same underlying permission requirement either way (both need to write files and run commands), so no safety difference -- chose implementer per explicit request to gather comparative data across roles
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: e8636b35e6374bb389f04df39ca7426c -->
+
+## 2026-09-25 — Discovered and reported: Antigravity CLI's headless (--print) permission enforcement is confirmed unreliable for narrow scopes; only a machine-global wildcard was verified to work in this project
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ACM-ANTIGRAVITY
+
+**Because:** Confirmed empirically twice (a prior consultation and this session's own spike), and independently corroborated by upstream issue google-antigravity/antigravity-cli#548, which this session commented on with the narrow-vs-wildcard distinction as additional data
+
+**Files:** docs/superpowers/specs/2026-09-25-account-and-model-selector-design.md
+
+<!-- whyline-event: 392c1eb5b49e449ba8e677a6ee03b42c -->
