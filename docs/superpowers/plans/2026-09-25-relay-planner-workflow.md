@@ -419,14 +419,14 @@ Expected: FAIL — `AttributeError: module 'whyline_relay.prompts' has no attrib
 
 - [ ] **Step 3: Implement**
 
-In `src/whyline_relay/prompts.py`, add two new template strings immediately above the existing `TEMPLATES = {...}` line:
+In `src/whyline_relay/prompts.py`, add two new template strings immediately above the existing `TEMPLATES = {...}` line. Both use `## Task {task_id}` as their heading, exactly like `IMPLEMENT`/`REVIEW`/`TEST`/`SECURITY` all already do — not `## Description`/`## Original description`, which a first draft of these templates used and which broke two things at once, caught empirically: it's inconsistent with every other built-in template's shape, and `tests/fake_pipeline_agent.py` (reused unmodified for Task 5's tests, below) extracts the task id it hands off by regex-matching exactly `^## Task (\S+)`, so a differently-headed template silently made every scripted test hand off the fallback id `"T-1"` instead of `"__plan__"`. Each also ends with a `whyline note` decision-recording line using `{actor}`/`{role}`, matching `TEST`/`SECURITY`'s own shape — the review stage's approve/revise call is exactly the kind of decision this project's `whyline note` convention exists for, and without it neither template would use `{actor}`/`{role}` at all (a second empirical catch: a render-time test asserting the actor's name appears in the rendered text failed on the first draft, which never referenced the placeholder anywhere in its body):
 
 ```python
 PLAN_DRAFT = """{sync_packet}
 
 You are drafting an implementation plan from a feature description. Round {round}.
 
-## Description
+## Task {task_id}
 
 {task_text}
 
@@ -444,6 +444,11 @@ to do and how to verify it. Do not write placeholder text like "TBD" or "fill in
 details" anywhere -- every task must be something an engineer could start on
 immediately, with no further clarification needed.
 
+Record any genuine decision a future reader would wonder about:
+
+    whyline note "<one-line decision>" --because "<why>" \\
+      --file .whyline/relay/draft-plan.md --actor {actor} --role {role} --task {task_id}
+
 ## How to finish
 
 Exactly one of the outcomes listed below.
@@ -453,7 +458,7 @@ PLAN_REVIEW = """{sync_packet}
 
 You are checking a drafted plan's structure only. Round {round}.
 
-## Original description
+## Task {task_id}
 
 {task_text}
 
@@ -469,6 +474,11 @@ etc.).
 If everything checks out, approve it. If something is genuinely missing or broken,
 send it back with concrete, specific feedback about exactly what to fix -- not a
 vague "make it better."
+
+Record your judgment -- this is a decision a future reader would wonder about:
+
+    whyline note "<one-line judgment>" --because "<why>" \\
+      --file .whyline/relay/draft-plan.md --actor {actor} --role {role} --task {task_id}
 
 ## How to finish
 
@@ -952,11 +962,18 @@ def test_start_refuses_when_a_session_is_already_checkpointed(repo, monkeypatch)
 
 def test_approving_writes_and_commits_plan_md_without_starting(repo, monkeypatch):
     settings = settings_with_planner(repo)
+    # Built once, outside the wrapper: _scripted_run's list is consumed with
+    # .pop(0), so it must be the *same* object across both turns. Building a
+    # fresh two-element list inside `run` on every call (a first draft of this
+    # test did exactly that) makes every turn pop "claude:ready" again, so the
+    # second (review) turn wrongly receives "ready" instead of "approved" --
+    # caught empirically as "unrecognised outcome 'ready' for stage 'review'".
+    scripted = _scripted_run(["claude:ready", "claude:approved"])
 
     def run(command, prompt, *, cwd, log_path, timeout_seconds, which=None, echo=True, agent_name=None):
         if agent_name == "codex":
             planner.draft_path(repo).write_text("- [ ] T-1: build it\n  Do the thing.\n")
-        return _scripted_run(["claude:ready", "claude:approved"])(
+        return scripted(
             command, prompt, cwd=cwd, log_path=log_path, timeout_seconds=timeout_seconds,
             which=which, echo=echo, agent_name=agent_name,
         )
@@ -974,11 +991,12 @@ def test_approving_writes_and_commits_plan_md_without_starting(repo, monkeypatch
 
 def test_discarding_clears_the_checkpoint_and_keeps_the_draft_file(repo, monkeypatch):
     settings = settings_with_planner(repo)
+    scripted = _scripted_run(["claude:ready", "claude:approved"])
 
     def run(command, prompt, *, cwd, log_path, timeout_seconds, which=None, echo=True, agent_name=None):
         if agent_name == "codex":
             planner.draft_path(repo).write_text("- [ ] T-1: x\n  y.\n")
-        return _scripted_run(["claude:ready", "claude:approved"])(
+        return scripted(
             command, prompt, cwd=cwd, log_path=log_path, timeout_seconds=timeout_seconds,
             which=which, echo=echo, agent_name=agent_name,
         )
