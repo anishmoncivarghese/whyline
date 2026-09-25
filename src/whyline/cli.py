@@ -182,6 +182,15 @@ def _add_init(subparsers: "argparse._SubParsersAction") -> None:
     )
 
 
+def _add_account(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "account", help="Detect which plan/tier codex and claude are authenticated under"
+    )
+    account_sub = parser.add_subparsers(dest="account_command", required=True)
+    account_sub.add_parser("status", help="Show the detected/confirmed account")
+    account_sub.add_parser("detect", help="Re-run detection and refresh the global cache")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -201,6 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_timeline(subparsers)
     _add_status(subparsers)
     _add_init(subparsers)
+    _add_account(subparsers)
     return parser
 
 
@@ -567,6 +577,51 @@ def cmd_init(args: argparse.Namespace) -> int:
     return _setup_relay(root, args)
 
 
+def _print_account(data: dict) -> None:
+    for agent in ("codex", "claude"):
+        info = data.get(agent) if isinstance(data.get(agent), dict) else {}
+        plan = info.get("plan")
+        if plan is None:
+            print(f"{agent}: no subscription tier (using an API key)")
+        elif plan == "unknown":
+            print(f"{agent}: unknown ({info.get('reason', 'no reason given')})")
+        else:
+            print(f"{agent}: {plan}")
+
+
+def cmd_account(args: argparse.Namespace) -> int:
+    from whyline import account
+
+    root = _require_repo()
+    if args.account_command == "detect":
+        detected = account.detect()
+        now = datetime.datetime.now().astimezone().isoformat()
+        for info in detected.values():
+            info["detected_at"] = now
+        account.save_global(detected)
+        _print_account(detected)
+        return EXIT_OK
+
+    repo_data = account.load_repo(root)
+    if repo_data is not None:
+        _print_account(repo_data)
+        return EXIT_OK
+    global_data = account.load_global()
+    if global_data is None:
+        print("No detection yet. Run: whyline account detect", file=sys.stderr)
+        return EXIT_ERROR
+    _print_account(global_data)
+    try:
+        answer = input("Use this for this repo? [Y/n] ").strip().lower()
+    except EOFError:
+        answer = "y"
+    confirmed = answer not in ("n", "no")
+    to_save = dict(global_data)
+    to_save["confirmed"] = confirmed
+    account.save_repo(root, to_save)
+    return EXIT_OK
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from whyline import gitq, paths, sync
 
@@ -707,6 +762,7 @@ COMMANDS = {
     "timeline": cmd_timeline,
     "status": cmd_status,
     "init": cmd_init,
+    "account": cmd_account,
 }
 
 

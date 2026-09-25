@@ -1017,3 +1017,32 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/account.py, tests/test_account.py, .whyline/.gitignore
 
 <!-- whyline-event: 7acf4cad04a14e5b944d59e381dca07a -->
+
+## 2026-09-25 — Isolate test home path from repo root and combine captured streams in test helper
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-3
+
+**Because:** repo fixture initializes git in tmp_path, so pointing Path.home directly to tmp_path collides global account.json with repo account.json, and cmd_account prints error diagnostics to sys.stderr
+
+**Rejected:**
+
+- pointing Path.home directly to tmp_path — collides ~/.whyline with repo root and bypasses repo confirmation
+- printing cmd_account error to stdout — violates CLI convention of writing diagnostic errors to stderr
+
+**Files:** src/whyline/cli.py, tests/test_account_cli.py
+
+<!-- whyline-event: 72b1fe5bea384ed0bba38c71289a8af0 -->
+
+## 2026-09-25 — Approve account status and detect CLI workflow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-3
+
+**Because:** The commands persist only derived account metadata, correctly default confirmation to yes while recording explicit decline, handle missing detection cleanly, and all focused and full tests pass
+
+**Files:** src/whyline/cli.py, tests/test_account_cli.py
+
+<!-- whyline-event: d79e08c5e2064b4cbdbaf9d4e12e3890 -->
