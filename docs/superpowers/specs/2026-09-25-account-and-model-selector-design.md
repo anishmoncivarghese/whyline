@@ -65,6 +65,7 @@ Non-goals
 | M7 | Detection failure for one agent (not installed, not logged in, unparseable output) records `"plan": "unknown"` with a reason and continues with the other agent — never a hard failure | Matches this project's established "degrade gracefully, never block on a partial signal" convention (e.g. `preflight.py`'s own checks each report independently) |
 | M8 | Corrupt or malformed `account.json`/`model.json` is treated as absent, exactly like `whyline-relay`'s `state.py` already treats a corrupt `state.json` | Consistency with an established, already-proven convention, not a new one |
 | M9 | Both per-repo files (`.whyline/account.json`, `.whyline/model.json`) are gitignored, added to the existing `.whyline/.gitignore` (which already gitignores `ledger.jsonl` for the same reason: it holds information that shouldn't leave the machine via git) | `account.json` holds someone's personal plan/billing tier — committing it would expose that to every repo collaborator. `model.json` follows for consistency, and because different teammates may have access to different models; each person keeps their own choice, the same way `~/.whyline/account.json` (global) is never committed at all |
+| M10 | `whyline model` continues to offer Antigravity (it governs `whyline run antigravity`'s model too, which is fully safe — interactive, human-approved in real time) but prints a one-line caveat when Antigravity is selected: it is not currently safe for any *unattended* role (a whyline-relay implementer/reviewer/tester/security stage, or a future planner draft/review stage), because headless (`-p`/`--print`) invocations don't reliably enforce Antigravity's own tool permissions — confirmed two ways: this project's own prior research (documented in whyline-relay's README) found narrow `permissions.allow` patterns silently fail to match in headless mode (only a machine-global wildcard was verified to work, at the cost of loosening every `agy` session on the machine); and [google-antigravity/antigravity-cli#548](https://github.com/google-antigravity/antigravity-cli/issues/548) reports headless mode ignoring `permissions.allow` in at least some configurations | Owner's explicit ask: never let Antigravity look like a casually-safe pick for an automated role through a *guided* selector, while still fully supporting its one genuinely safe use (`whyline run`, interactive). whyline-relay's own guided wizards (`init`, `roles set` with no `--agent`) already never offer Antigravity at all — `adapters.BUILTIN` there is only `{codex, claude}` — so this gap is narrower than it first looked; the only guided surface that needed a caveat is `whyline model` itself |
 
 ## 4. Where this sits relative to today's code (measured, whyline 0.3.1 / whyline-relay 0.2.13)
 
@@ -79,6 +80,9 @@ Non-goals
 | `whyline/src/whyline/cli.py` (`cmd_run`) | Resolves `root = _require_repo()`, then calls `runner.launch(args.agent, args.task, brief_text)` — `root` is never passed to `launch` today | Reads `model_module.load(root).get(args.agent)` right after resolving `root`, and passes it as `runner.launch(args.agent, args.task, brief_text, model=model)` |
 | `whyline-relay/src/whyline_relay/init.py` | `_ask_model(confirm, agent)` always prompts blind, defaulting to blank | Reads whyline's `.whyline/model.json` (if present) first and offers it as the bracketed default, the same `[default]` convention `_ask_agent` already uses |
 | `whyline-relay/src/whyline_relay/roles.py` | `set_role`'s interactive model prompt (`confirm(f"Model for {agent} (blank for default): ")`) always blank | Same pre-fill treatment as `init.py`'s `_ask_model` |
+| `whyline-relay/src/whyline_relay/preflight.py` (generic-agent warning, ~line 250) | `if adapter.name == "generic": ... "{agent} is a generic agent: the relay does not manage its permissions, login or denials"` — generic text regardless of which tool | Gains an `elif agent == "antigravity":` branch with the specific, actionable warning (headless permission enforcement is unreliable; link to the README section and issue #548) instead of the generic message — for anyone who *does* take the deliberate, hand-written `adapter = "generic"` step (M10) |
+| `whyline-relay/README.md` ("Using Antigravity today, via the generic adapter") | Already documents the generic-adapter recipe, the `-p`-must-be-last fix, and the machine-global-wildcard finding — this section already exists and is accurate | Gains a link to issue #548 as corroborating evidence, and a note that `whyline model`/`whyline account` (once released) never offer Antigravity through any guided flow — this section remains the one and only documented way to opt in |
+| `whyline/README.md` | No mention of whyline-relay at all in the model/run sections | Gains a one-line pointer, next to `whyline model`'s own documentation, to whyline-relay's README section for anyone wondering whether a model choice here also makes Antigravity safe for relay use (it doesn't, on its own) |
 
 ## 5. Design
 
@@ -136,6 +140,12 @@ existing `.whyline/model.json` if any, and asks `Model for {agent} (blank to kee
 blank answer leaves that key absent/`null` — matching `roles set`'s own blank-means-default
 convention exactly. `whyline model set <agent> <model>` does the same for one agent, non-interactively.
 `whyline model status` just prints the current file's contents (or "nothing set" if absent).
+
+**Antigravity's prompt carries one extra line first** (M10): "Note: Antigravity is safe here for
+`whyline run`, but not currently safe for any unattended whyline-relay role — see README." This is
+informational only, never a block: `whyline run antigravity` is a fully safe, interactive use of
+whatever model is chosen here, and the caveat exists purely so picking a model doesn't read as "and
+now this is also a safe relay choice."
 
 No value is validated against any list of real model names (M4) — whatever string is given is
 written as-is.
@@ -228,14 +238,17 @@ order forces the split: each repo needs its own `whyline-relay` sandbox and its 
 the same way whyline's own Antigravity support (0.3.1) and whyline-relay's pieces have always shipped
 as fully separate runs throughout this project's history.
 
-1. **whyline: `whyline account` + `whyline model` + `whyline run`'s model support (5.1-5.3).** Fully
-   self-contained; ships as its own whyline release. Regression net: `runner.py`'s existing
-   `build_argv` tests, run with no `.whyline/model.json` present, must keep passing unedited.
-2. **whyline-relay: the read-only integration (5.4).** Depends on 1 being released first, since it
-   reads the exact `.whyline/model.json` shape phase 1 defines. Regression net: `init`/`roles set`'s
-   existing interactive-prompt tests, run with no `.whyline/model.json` present in their test repos,
-   must keep passing unedited — proving the new behavior is additive, never a change to today's
-   default (blank) prompt.
+1. **whyline: `whyline account` + `whyline model` (with its Antigravity caveat, M10) + `whyline run`'s
+   model support (5.1-5.3), plus the README pointer.** Fully self-contained; ships as its own whyline
+   release. Regression net: `runner.py`'s existing `build_argv` tests, run with no
+   `.whyline/model.json` present, must keep passing unedited.
+2. **whyline-relay: the read-only integration (5.4) plus the antigravity-specific preflight warning
+   and README update.** Depends on 1 being released first, since it reads the exact
+   `.whyline/model.json` shape phase 1 defines. Regression net: `init`/`roles set`'s existing
+   interactive-prompt tests, run with no `.whyline/model.json` present in their test repos, must keep
+   passing unedited — proving the new behavior is additive, never a change to today's default (blank)
+   prompt; and the existing generic-agent preflight test for a *non*-antigravity generic agent must
+   still get the original, generic warning text, unchanged.
 
 ## 7. Risks and open questions
 
@@ -251,6 +264,13 @@ as fully separate runs throughout this project's history.
 - **Antigravity's own subscription/tier model is entirely unmeasured** — explicitly out of scope
   (non-goals), but worth a future spike if Antigravity ever exposes an equivalent to Claude's `auth
   status` or Codex's JWT claim.
+- **Antigravity's headless-permission reliability is only partially measured.** This project's own
+  prior research (whyline-relay's README) found a machine-global `permissions.allow` wildcard works
+  but narrower patterns silently don't; [issue #548](https://github.com/google-antigravity/antigravity-cli/issues/548)
+  reports headless mode ignoring `permissions.allow` in at least some configuration (its own repro is
+  Windows/PowerShell-specific, so it may not be identical to what was measured here). M10's caveat
+  text is deliberately conservative given this isn't fully reconciled — treating "unattended use needs
+  a human's explicit, informed opt-in" as the safe default rather than asserting a precise root cause.
 
 ## 8. Roadmap update
 
@@ -271,3 +291,4 @@ narrow read-only touchpoint on whyline-relay's side.
 | Does the model selector affect `whyline run`, whyline-relay, or both? | Both (owner's choice) |
 | Command structure? | Two focused commands (`whyline account`, `whyline model`), not one combined wizard, not folded into `init` (owner's choice) |
 | Are the new per-repo files committed to git or gitignored? | Both gitignored (owner's choice) — `account.json` is personal plan/billing info, `model.json` follows for consistency and because access varies per teammate |
+| Should Antigravity be preventable from being incorrectly picked for an unattended role? | Yes (owner's explicit ask) — resolved as M10: whyline-relay's guided wizards already exclude it (`adapters.BUILTIN` is only codex/claude); `whyline model` keeps offering it (since `whyline run` is safe) but with an explicit caveat; `preflight.py`'s generic-agent warning gets Antigravity-specific text |
