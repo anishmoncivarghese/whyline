@@ -1172,3 +1172,51 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/specs/2026-09-25-account-and-model-selector-design.md
 
 <!-- whyline-event: 392c1eb5b49e449ba8e677a6ee03b42c -->
+
+## 2026-09-25 — Add grok to AGENTS with bare binary and no interactive flag
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** GWA-1
+
+**Because:** grok takes prompt directly as a trailing positional argument for interactive sessions without special flags
+
+**Rejected:**
+
+- special interactive flag like -i — grok --help specifies bare prompt begins interactive session directly
+
+**Files:** src/whyline/runner.py
+
+<!-- whyline-event: 049fee95440a42e581eba9fdd70bf282 -->
+
+## 2026-09-25 — Request whitespace cleanup before approving Grok runner support
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GWA-1
+
+**Because:** The implementation and coverage satisfy GWA-1 and all 322 tests pass, but git diff --check reports eight trailing-whitespace lines and a new blank line at EOF in tests/test_runner.py
+
+**Rejected:**
+
+- approve as-is — committing a diff that fails the repository hygiene check would preserve avoidable formatting defects
+
+**Files:** tests/test_runner.py
+
+<!-- whyline-event: 4a11fafeb8d0453e91a9875a1c8a9079 -->
+
+## 2026-09-25 — Approve Grok runner support after round-two review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GWA-1
+
+**Because:** The runner registers grok with direct positional prompting and --model propagation, the safety guards cover grok and --permission-mode, git diff --check passes, and both focused and full test suites pass
+
+**Rejected:**
+
+- request further changes — the prior whitespace defects are resolved and no functional or safety issue remains
+
+**Files:** src/whyline/runner.py, tests/test_runner.py
+
+<!-- whyline-event: 03840808cfef4544822d713c379aa2b5 -->

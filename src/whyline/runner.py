@@ -19,9 +19,19 @@ AGENTS = {
     # itself is dead (its free personal tier was withdrawn); Antigravity is
     # the account's actual working path and is not the same binary.
     "antigravity": ["agy", "-i"],
+    # "grok" (xAI's official CLI, "Grok Build") takes the prompt as a plain
+    # trailing positional argument for its interactive mode -- confirmed via
+    # `grok --help`: "[PROMPT] Initial prompt for the interactive session" --
+    # no special flag needed, unlike Antigravity's -i.
+    "grok": ["grok"],
 }
 
-MODEL_FLAG = {"claude": "--model", "codex": "--model", "antigravity": "--model"}
+MODEL_FLAG = {
+    "claude": "--model",
+    "codex": "--model",
+    "antigravity": "--model",
+    "grok": "--model",
+}
 
 # Indirection so a test can neutralise these without mutating shutil or os
 # globally. These MUST be functions that look their target up at call time.

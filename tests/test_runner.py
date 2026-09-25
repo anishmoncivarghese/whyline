@@ -35,7 +35,7 @@ def test_build_argv_rejects_an_unknown_agent():
 
 
 def test_build_argv_never_adds_permission_bypass_flags():
-    for agent in ("claude", "codex", "antigravity"):
+    for agent in ("claude", "codex", "antigravity", "grok"):
         argv = runner.build_argv(agent, "task", "ctx")
         joined = " ".join(argv)
         for forbidden in (
@@ -43,6 +43,7 @@ def test_build_argv_never_adds_permission_bypass_flags():
             "--yolo",
             "--dangerously-bypass-hook-trust",
             "--approval-mode",
+            "--permission-mode",
         ):
             assert forbidden not in joined, f"{agent}: {joined}"
 
@@ -174,7 +175,7 @@ def test_no_code_path_can_reach_the_real_execvp_during_tests(monkeypatch):
 
     monkeypatch.setattr(runner.os, "execvp", poisoned)
     monkeypatch.setattr(runner.shutil, "which", lambda name: None)
-    for agent in ("claude", "codex", "antigravity"):
+    for agent in ("claude", "codex", "antigravity", "grok"):
         with pytest.raises(runner.AgentMissing):
             runner.launch(agent, "task", "ctx")
     with pytest.raises(runner.UnknownAgent):
@@ -206,3 +207,30 @@ def test_launch_passes_the_model_through_to_build_argv():
         model="gpt-5-codex",
     )
     assert calls == [("codex", ["codex", "--model", "gpt-5-codex", "ctx\n\ntask"])]
+
+
+def test_build_argv_supports_grok():
+    assert runner.build_argv("grok", "task", "ctx")[0] == "grok"
+
+
+def test_build_argv_gives_grok_the_prompt_directly_no_special_flag():
+    # Unlike Antigravity's -i, grok's own --help documents that a bare
+    # `grok "<prompt>"` already starts an interactive session with it.
+    assert runner.build_argv("grok", "task", "ctx") == ["grok", "ctx\n\ntask"]
+
+
+def test_build_argv_appends_the_model_flag_for_grok():
+    argv = runner.build_argv("grok", "task", "ctx", model="grok-4.6")
+    assert argv == ["grok", "--model", "grok-4.6", "ctx\n\ntask"]
+
+
+def test_launch_execs_grok_directly():
+    calls = []
+    runner.launch(
+        "grok",
+        "task",
+        "ctx",
+        which=lambda name: f"/usr/bin/{name}",
+        exec_fn=lambda binary, argv: calls.append((binary, argv)),
+    )
+    assert calls == [("grok", ["grok", "ctx\n\ntask"])]
