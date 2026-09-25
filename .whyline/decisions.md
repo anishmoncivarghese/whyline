@@ -1046,3 +1046,36 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_account_cli.py
 
 <!-- whyline-event: d79e08c5e2064b4cbdbaf9d4e12e3890 -->
+
+## 2026-09-25 — Clear agent key on blank value and coerce malformed JSON to empty dict in model storage
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-4
+
+**Because:** Blank model selection semantically clears the per-repo override, and malformed or non-dict model.json should read as absent without crashing
+
+**Rejected:**
+
+- storing empty string for blank value — would diverge from absent key and require caller null checks
+- raising JSONDecodeError or TypeError on malformed JSON — violates spec requirement that corrupt model.json reads as absent
+
+**Files:** src/whyline/model.py
+
+<!-- whyline-event: 49fe042d1c764469b5d92d280695813e -->
+
+## 2026-09-25 — Approve per-repo model choice persistence
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-4
+
+**Because:** The implementation satisfies the load, save, and set_one contracts; corrupt, non-dict, and invalid-UTF-8 files degrade to empty configuration; focused and full test suites pass
+
+**Rejected:**
+
+- requesting changes — no functional, safety, or coverage defect was found
+
+**Files:** src/whyline/model.py, tests/test_model.py
+
+<!-- whyline-event: 8957faef382f4651b42e53112cbd5ab9 -->
