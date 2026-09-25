@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DIR_NAME = ".whyline"
+GLOBAL_DIR_NAME = ".whyline"
 
 
 def find_repo_root(start: Path | None = None) -> Path | None:
@@ -38,3 +39,19 @@ def ownership_path(root: Path) -> Path:
 
 def is_initialised(root: Path) -> bool:
     return ledger_path(root).exists()
+
+
+def global_whyline_dir() -> Path:
+    return Path.home() / GLOBAL_DIR_NAME
+
+
+def global_account_path() -> Path:
+    return global_whyline_dir() / "account.json"
+
+
+def account_path(root: Path) -> Path:
+    return whyline_dir(root) / "account.json"
+
+
+def model_path(root: Path) -> Path:
+    return whyline_dir(root) / "model.json"

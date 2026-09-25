@@ -19,3 +19,21 @@ def test_is_initialised_is_true_once_ledger_exists(repo):
     paths.ledger_path(repo.path).parent.mkdir(parents=True)
     paths.ledger_path(repo.path).touch()
     assert paths.is_initialised(repo.path) is True
+
+
+def test_global_whyline_dir_is_under_home(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths.Path, "home", lambda: tmp_path)
+    assert paths.global_whyline_dir() == tmp_path / ".whyline"
+
+
+def test_global_account_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths.Path, "home", lambda: tmp_path)
+    assert paths.global_account_path() == tmp_path / ".whyline" / "account.json"
+
+
+def test_account_path_is_repo_scoped(repo):
+    assert paths.account_path(repo.path) == repo.path / ".whyline" / "account.json"
+
+
+def test_model_path_is_repo_scoped(repo):
+    assert paths.model_path(repo.path) == repo.path / ".whyline" / "model.json"

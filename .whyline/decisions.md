@@ -904,3 +904,31 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/runner.py, src/whyline/cli.py, README.md
 
 <!-- whyline-event: 88a68e93b4a24c919643f14f3cd82870 -->
+
+## 2026-09-25 — Place global whyline state in ~/.whyline
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-1
+
+**Because:** Matches the repo-scoped directory name and keeps global path resolution stdlib-only without platform-dependent XDG branching
+
+**Rejected:**
+
+- XDG config dir ~/.config/whyline — adds platform branching for Windows/macOS and diverges from existing .whyline naming convention
+
+**Files:** src/whyline/paths.py
+
+<!-- whyline-event: f1cb4481895345ab82278c4cd67d6152 -->
+
+## 2026-09-25 — Approve ACM-1 global and repo-scoped path helpers
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-1
+
+**Because:** The implementation matches all four specified interfaces, tests cover each path resolution behavior, and both focused and full test suites pass
+
+**Files:** src/whyline/paths.py, tests/test_paths.py
+
+<!-- whyline-event: 4f8104d881244008a6b340f282ac4bd4 -->
