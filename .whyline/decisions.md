@@ -1112,3 +1112,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/runner.py, src/whyline/cli.py, tests/test_runner.py, tests/test_model_cli.py
 
 <!-- whyline-event: 6940488b6723431dbc09cc8c3fd1afd6 -->
+
+## 2026-09-25 — Document whyline account and whyline model after Honest Limitations
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACM-6
+
+**Because:** Explains plan detection and model selection alongside agent support caveats without modifying existing section structure
+
+**Rejected:**
+
+- adding to automated mode section — model selection applies to both interactive whyline run and the relay
+
+**Files:** README.md
+
+<!-- whyline-event: b15d64a222c9482d966462a6fc1e8caa -->
+
+## 2026-09-25 — Approve ACM-6 README documentation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACM-6
+
+**Because:** The new section is immediately after Honest Limitations, accurately documents account detection, per-repo model selection, gitignored state, non-validation, and the Antigravity unattended-use caveat; the full suite passes
+
+**Rejected:**
+
+- request changes — the content and placement match the task exactly and no defects were found
+
+**Files:** README.md
+
+<!-- whyline-event: 060f7df0a6ef47eaa22e28a65207dfea -->

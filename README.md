@@ -290,6 +290,14 @@ Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
   and `macos-latest` across Python 3.11 and 3.13. Windows via WSL is untested — a
   plausible claim, not an observation.
 
+### Choosing a model: `whyline account` and `whyline model`
+
+`whyline account detect` checks which plan/tier `codex` and `claude` are actually authenticated under (Claude Pro/Max/Team, ChatGPT Plus/Pro/Team) — not just whether they're logged in. It runs once per machine (cached in `~/.whyline/account.json`) and asks you to confirm it once per repo (`.whyline/account.json`, gitignored — this is personal plan/billing info, never committed). `whyline account status` shows what's on file.
+
+`whyline model` lets you pick a model per agent for this repo (`.whyline/model.json`, also gitignored), showing the detected plan as context. `whyline model set <agent> <model>` sets one non-interactively; `whyline model status` shows the current choices. `whyline run` uses whatever's set automatically — no flag needed. Nothing is validated against a list of real model names; a wrong choice just fails at the agent's own invocation time.
+
+**Antigravity's model can be set here too, and `whyline run antigravity` is fully safe with it** — that command hands the terminal to a human, so nothing here is affected by Antigravity's own headless-mode limitations. Those limitations *do* apply if you separately, deliberately configure Antigravity as a whyline-relay role via its documented [generic-adapter recipe](https://github.com/anishmoncivarghese/whyline-relay#using-antigravity-agy-today-via-the-generic-adapter) — `whyline model` will remind you of this when you set Antigravity's model, but never blocks it, since the interactive `whyline run` use is completely unaffected.
+
 ## Credentials
 
 whyline never reads, stores, forwards or proxies a vendor token. `run` replaces
