@@ -86,9 +86,18 @@ commands, commits), not just Q&A.
     writing just the agent's final message to a file) — cleaner than parsing
     codex's plain-text stream or adding a JSONL `--json` mode. `chat.py`
     creates the temp file per turn and reads it after the process exits.
-  - **generic (agy/grok):** reuses whatever `--output-format json`-shaped
-    result field each agent's own existing, empirically-verified README
-    recipe already established.
+  - **generic (agy/grok):** the two don't share a field name — verified
+    directly: `grok --output-format json --permission-mode dontAsk -p "reply
+    with exactly the word: pong"` returns `..."text":"pong"...`; `agy
+    --output-format json --mode accept-edits --add-dir . --new-project -p
+    "reply with exactly the word: pong"` returns
+    `..."response":"pong\n"...`. Neither matches claude's `"result"`. Since
+    "generic" is one shared `Adapter` object covering any binary a user
+    configures, its `extract_response` tries a priority-ordered list of known
+    field names against the parsed last JSON line —
+    `("result", "response", "text", "message")` — and returns the first one
+    present as a string. Covers both verified agents today and leaves room
+    for a future generic tool using a common convention.
   - **Fallback, all adapters:** if extraction fails (malformed/unexpected
     output, or codex's temp file missing/empty), fall back to the existing
     `last_line_detail` heuristic every adapter's `diagnose` already uses,
