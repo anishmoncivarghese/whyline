@@ -147,15 +147,43 @@ def main(argv: list[str] | None = None) -> int:
 Run: `uv run pytest tests/test_cli_chat_delegation.py -v`
 Expected: PASS, all of them.
 
-- [ ] **Step 5: Run the full suite**
+- [ ] **Step 5: Fix a pre-existing test this change makes unsafe**
+
+`tests/test_cli.py` already has `test_no_command_is_a_usage_error`, which
+calls `cli.main([])` completely unmocked. In a real environment with
+whyline-relay actually installed on PATH (common — it's the companion tool
+this whole feature depends on), that call would now reach the real
+`exec_into_chat()`, find the real `whyline-relay` binary, and really
+`os.execvp` into it, replacing the test process itself — the exact
+"hung a test run" failure mode `runner.py`'s own comments already warn about
+elsewhere in this codebase. Find it in `tests/test_cli.py` (search for
+`test_no_command_is_a_usage_error`) and change:
+
+```python
+def test_no_command_is_a_usage_error():
+    assert cli.main([]) == cli.EXIT_USAGE
+```
+
+to:
+
+```python
+def test_no_command_is_a_usage_error(monkeypatch):
+    # Real environments often have whyline-relay on PATH, which would make an
+    # unmocked cli.main([]) actually exec into it (replacing this test
+    # process) rather than reach the usage-error path this test checks.
+    monkeypatch.setattr(cli, "exec_into_chat", lambda which=None, exec_fn=None: False)
+    assert cli.main([]) == cli.EXIT_USAGE
+```
+
+- [ ] **Step 6: Run the full suite**
 
 Run: `uv run pytest -q`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/whyline/cli.py tests/test_cli_chat_delegation.py
+git add src/whyline/cli.py tests/test_cli.py tests/test_cli_chat_delegation.py
 git commit -m "feat: bare whyline execs into whyline-relay chat"
 ```
 
