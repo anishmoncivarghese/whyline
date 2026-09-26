@@ -653,7 +653,7 @@ def cmd_model(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     repo_account = account.load_repo(root)
-    for agent in ("codex", "claude", "antigravity"):
+    for agent in ("codex", "claude", "antigravity", "grok"):
         if repo_account is not None and agent in repo_account:
             plan = repo_account[agent].get("plan")
             if plan:

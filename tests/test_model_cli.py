@@ -33,20 +33,40 @@ def test_model_status_prints_current_selections(repo, capsys):
     assert "gpt-5-codex" in out
 
 
-def test_interactive_model_selection_writes_all_three_answers(repo, capsys, monkeypatch):
+def test_interactive_model_selection_writes_all_four_answers(repo, capsys, monkeypatch):
     code, out = run_in(
         repo,
         ["model"],
         capsys,
         monkeypatch,
-        input_answers=["gpt-5-codex", "opus", ""],
+        input_answers=["gpt-5-codex", "opus", "", "grok-4.6"],
     )
     assert code == cli.EXIT_OK
-    assert model.load(repo.path) == {"codex": "gpt-5-codex", "claude": "opus"}
+    assert model.load(repo.path) == {
+        "codex": "gpt-5-codex",
+        "claude": "opus",
+        "grok": "grok-4.6",
+    }
+
+
+def test_interactive_model_selection_offers_grok(repo, capsys, monkeypatch):
+    # Regression proof: grok was added to runner.AGENTS/MODEL_FLAG in 0.3.3
+    # but this loop's own agent tuple was hardcoded and missed it -- fixed
+    # in 0.3.4. `whyline run grok`/`model set grok` worked the whole time;
+    # only the interactive `whyline model` prompt never asked about it.
+    code, out = run_in(
+        repo,
+        ["model"],
+        capsys,
+        monkeypatch,
+        input_answers=["", "", "", "grok-4.6"],
+    )
+    assert code == cli.EXIT_OK
+    assert model.load(repo.path) == {"grok": "grok-4.6"}
 
 
 def test_interactive_model_selection_prints_the_antigravity_caveat(repo, monkeypatch, capsys):
-    answers = iter(["", "", ""])
+    answers = iter(["", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     previous = os.getcwd()
     os.chdir(repo.path)
@@ -98,7 +118,7 @@ def test_interactive_model_selection_prints_plan_from_account(repo, monkeypatch,
         ["model"],
         capsys,
         monkeypatch,
-        input_answers=["", "", ""],
+        input_answers=["", "", "", ""],
     )
     assert code == cli.EXIT_OK
     assert "codex -- plus" in out
