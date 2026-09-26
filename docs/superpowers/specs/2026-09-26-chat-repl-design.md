@@ -73,19 +73,27 @@ commands, commits), not just Q&A.
   anything — routing comes from `whyline handoff` records, and output is only
   teed to a log for a human watching a relay run. Chat's entire purpose is
   different: the captured response *is* the payload. `agents.run()` gains a
-  `capture: bool` option to also buffer stdout; each `Adapter` gains a new
-  `extract_response: Callable[[str], str]` field, parallel to the existing
-  `diagnose` field.
-  - **claude:** its existing `--output-format json` default command already
-    produces a JSON object whose `result` field is the exact final text
-    (verified directly: `claude -p "reply with exactly the word: pong"
-    --output-format json` returns `..."result":"pong"...`). No command change
-    needed, only the new parsing.
-  - **codex:** its `default_command` gains `-o <tempfile>`
+  `capture: bool` option to also buffer stdout; each `Adapter` gains two new
+  fields: `extract_response: Callable[[str], str]`, parallel to the existing
+  `diagnose` field, and `uses_output_file: bool` (true only for codex).
+  - **claude:** `uses_output_file = False`. Its existing `--output-format
+    json` default command already produces a JSON object whose `result`
+    field is the exact final text (verified directly: `claude -p "reply with
+    exactly the word: pong" --output-format json` returns
+    `..."result":"pong"...`). No command change needed; `extract_response`
+    parses captured stdout directly.
+  - **codex:** `uses_output_file = True`. `-o <tempfile>`
     (`--output-last-message`, a real `codex exec` flag whose whole purpose is
-    writing just the agent's final message to a file) — cleaner than parsing
-    codex's plain-text stream or adding a JSONL `--json` mode. `chat.py`
-    creates the temp file per turn and reads it after the process exits.
+    writing just the agent's final message to a file) needs a fresh path
+    every turn, so it cannot live in the static `default_command` tuple the
+    way claude's flags do. Instead, `chat.py`'s turn pipeline checks
+    `adapter.uses_output_file` before running: if true, it creates a
+    `tempfile.NamedTemporaryFile` path, appends `"-o"`, `str(path)` to the
+    resolved command for this turn only, runs it, then reads that file's
+    text (`""` if missing/empty) and passes that — not the captured stdout —
+    to `extract_response`. Codex's own `extract_response` is then trivial:
+    strip whitespace from what it's given; the file already contains only
+    the final message, no envelope to parse.
   - **generic (agy/grok):** the two don't share a field name — verified
     directly: `grok --output-format json --permission-mode dontAsk -p "reply
     with exactly the word: pong"` returns `..."text":"pong"...`; `agy
@@ -219,14 +227,17 @@ Unknown command: /notacommand. Try /claude, /codex, /agy, /grok, /default,
    turn (the empirical Grok/Antigravity turns this session ran well under
    that), short enough that a stuck turn doesn't strand the human. Not
    user-configurable in v1 — YAGNI until someone hits it.
-5. **Extract the response** — `adapter.extract_response(captured_output)`
-   (see Decision D8).
+5. **Extract the response** — `adapter.extract_response(text)`, where `text`
+   is the codex temp-file's contents if `adapter.uses_output_file`, else the
+   run's captured stdout (see Decision D8).
 6. **Show it, log it, commit it** — print the response. Append the turn
-   record to `chat-history.jsonl`. If `git status --short` is non-empty:
-   `git add -A && git commit -m "chat: <agent> turn"` (through the same
-   forbidden-path and bypass-flag guards the rest of the relay already
-   enforces), then print the diff-stat. Prefix the diff-stat line with `⚠` if
-   the turn's `ok` is `false`.
+   record to `chat-history.jsonl`. Capture `git diff --stat` *before*
+   committing (so there's something to show), then call
+   `gitcheck.commit_all(root, "chat: <agent> turn")` — already exists, used
+   by the relay's own task loop: stages everything, commits, returns
+   `False`/no-op when nothing was staged. Print the captured diff-stat only
+   when `commit_all` returned `True`. Prefix that line with `⚠` if the turn's
+   `ok` is `false`.
 
 ## Error handling
 
