@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -14,6 +16,33 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_UNINITIALISED = 3
+
+
+def _which(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def _exec(binary: str, argv: list[str]) -> None:
+    os.execvp(binary, argv)
+
+
+def exec_into_chat(which=None, exec_fn=None) -> bool:
+    """Replace this process with `whyline-relay chat`, if it's installed.
+
+    `which`/`exec_fn` are resolved here, not as default arguments -- binding
+    them in the signature would capture the function objects at import time,
+    so a test's monkeypatch would silently have no effect and this would exec
+    the real whyline-relay during a test run. `runner.py` documents this
+    exact defect happening twice already; the same shape is used here on
+    purpose.
+    """
+    which = which if which is not None else _which
+    exec_fn = exec_fn if exec_fn is not None else _exec
+    binary = which("whyline-relay")
+    if binary is None:
+        return False
+    exec_fn("whyline-relay", ["whyline-relay", "chat"])
+    return True  # unreachable when exec_fn is the real os.execvp
 
 
 def _positive_int(value: str) -> int:
@@ -824,6 +853,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.command:
+        if exec_into_chat():
+            return EXIT_OK
         parser.print_usage(sys.stderr)
         return EXIT_USAGE
     return COMMANDS[args.command](args)

@@ -22,7 +22,11 @@ def test_unknown_command_is_a_usage_error():
     assert exit_info.value.code == cli.EXIT_USAGE
 
 
-def test_no_command_is_a_usage_error():
+def test_no_command_is_a_usage_error(monkeypatch):
+    # Real environments often have whyline-relay on PATH, which would make an
+    # unmocked cli.main([]) actually exec into it (replacing this test
+    # process) rather than reach the usage-error path this test checks.
+    monkeypatch.setattr(cli, "exec_into_chat", lambda which=None, exec_fn=None: False)
     assert cli.main([]) == cli.EXIT_USAGE
 
 
