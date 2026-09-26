@@ -281,6 +281,7 @@ Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
   ledger produces an honest empty answer, not a guess. File-level `explain` never
   claims high confidence, because without a line there is no blamed commit.
 - **`run` supports Claude Code, Codex, Antigravity (`agy`), and Grok (`grok`, "Grok Build")** — Gemini CLI itself is dead (its free personal tier was withdrawn); Antigravity is Google's actual working successor and is not the same binary or invocation.
+- **Typing `whyline` with no arguments starts an interactive chat REPL** (`whyline-relay chat`, if whyline-relay is installed) — free text goes to a default agent, `/claude`/`/codex`/`/agy`/`/grok` targets one directly, and every agent shares one conversation history for the repo. See whyline-relay's own README, "Chat: talk to any configured agent from one terminal," for the full picture (permissions, auto-commit, meta-commands). If whyline-relay isn't installed, `whyline` with no arguments prints its usual usage instead.
 - **Ownership is advisory.** Whyline warns about overlapping writes but provides
   no lock, scheduler, merge engine, or worktree isolation.
 - **A fresh clone loses operational state, deliberately.** It retains committed
