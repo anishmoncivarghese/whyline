@@ -1268,3 +1268,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/runner.py, docs/releases/v0.3.3.md
 
 <!-- whyline-event: 5aa503953b964824acd17523cb3271a4 -->
+
+## 2026-09-26 — Add grok to cmd_model's interactive agent tuple, which the 0.3.3 Grok plan missed
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** GWA-followup
+
+**Because:** cli.py's interactive whyline model loop hardcodes its own agent tuple instead of deriving from runner.AGENTS like run/model-set do; found during a post-release review, confirmed by the existing locked-in 3-answer test
+
+**Rejected:**
+
+- leave it as a known gap — it silently breaks the just-shipped 'grok is a first-class agent' story for the more discoverable interactive path
+
+**Files:** src/whyline/cli.py, tests/test_model_cli.py
+
+<!-- whyline-event: bf9f4285b9ef4c3b871bf9d3efb32a7f -->
