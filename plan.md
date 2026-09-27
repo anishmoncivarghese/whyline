@@ -382,7 +382,7 @@
   ---
 
 
-- [ ] ACG-2: `cli.py` -- `enable`/`disable`, extended `status`, gated `whyline model`, first-run detection
+- [x] ACG-2: `cli.py` -- `enable`/`disable`, extended `status`, gated `whyline model`, first-run detection
 
 
   **Files:**
