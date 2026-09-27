@@ -1487,3 +1487,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** pyproject.toml
 
 <!-- whyline-event: 30ca27f46f3e41918fec8b963f61a4dd -->
+
+## 2026-09-27 — Keep the two plans separate by repository and convert only at launch
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PLAN-READINESS
+
+**Because:** Account capability gating targets agentdock, while unified backup chain targets whyline-relay; both documents are committed and complete, but neither has replaced the target repository's active plan.md yet
+
+**Rejected:**
+
+- copy both into one relay plan — would run tasks against the wrong repository and violate their file scopes
+
+**Files:** docs/superpowers/plans/2026-09-27-account-capability-gating-whyline.md, docs/superpowers/plans/2026-09-27-backup-chain.md
+
+<!-- whyline-event: 834177e257124996834753838d26bdb9 -->
