@@ -1607,3 +1607,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** pyproject.toml
 
 <!-- whyline-event: d33e6b46c4984a66ab734bf6f7daf192 -->
+
+## 2026-09-27 — Define a shared session engine with a Textual TUI and keyboard fallback
+
+**Actor:** codex
+**Role:** architect
+**Task:** UI-PLAN
+
+**Because:** The user needs one cross-platform interface for both whyline and whyline-relay, with attachments and mouse controls without duplicating either workflow engine
+
+**Rejected:**
+
+- replace the existing CLIs with a new monolithic agent app — would break scripting, state ownership, and plain-terminal fallback
+
+**Files:** docs/superpowers/specs/2026-09-28-whyline-unified-console-design.md, docs/superpowers/plans/2026-09-28-whyline-unified-console.md
+
+<!-- whyline-event: cd75078e42b547888790b041856ffecd -->
