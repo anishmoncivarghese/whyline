@@ -1471,3 +1471,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** README.md
 
 <!-- whyline-event: 0573b728575e417cb005293e9cec751c -->
+
+## 2026-09-27 — Release the completed entry menu as whyline 0.3.6
+
+**Actor:** codex
+**Role:** releaser
+**Task:** WEM-RELEASE
+
+**Because:** It is a backward-compatible user-visible CLI enhancement following published 0.3.5, and the 329-test suite passes
+
+**Rejected:**
+
+- 0.4.0 — the change adds a prompt but does not break the command or package API
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: 30ca27f46f3e41918fec8b963f61a4dd -->
