@@ -1459,3 +1459,15 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py
 
 <!-- whyline-event: 2a7397493ca94ae8968b8f261bbdb0a9 -->
+
+## 2026-09-27 — Approve WEM-2 README entry-menu documentation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WEM-2
+
+**Because:** The replacement bullet exactly documents the Chat or relay prompt, chat model-selection option, relay setup and doctor checks, and missing-relay fallback; the full 329-test suite passes
+
+**Files:** README.md
+
+<!-- whyline-event: 0573b728575e417cb005293e9cec751c -->
