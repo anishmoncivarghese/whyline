@@ -1575,3 +1575,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py
 
 <!-- whyline-event: f3b19cfa3f3743d4851331829299cfab -->
+
+## 2026-09-27 — Verify ACG plan completion before moving to backup chain
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACG-REVIEW
+
+**Because:** Both ACG tasks are checked, ACG-2 is approved, the branch is clean, and the full suite passed 355 tests twice
+
+**Rejected:**
+
+- start backup chain immediately on this branch — backup chain targets whyline-relay and must use its own repository and branch
+
+**Files:** plan.md
+
+<!-- whyline-event: 6a9db339c0a645998c7b45e74b875976 -->
