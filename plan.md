@@ -1,6 +1,6 @@
 # Account Capability Gating — active relay plan
 
-- [ ] ACG-1: `account.py` -- detection, availability, manual override
+- [x] ACG-1: `account.py` -- detection, availability, manual override
 
 
   **Files:**
