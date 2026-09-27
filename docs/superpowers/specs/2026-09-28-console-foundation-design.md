@@ -146,9 +146,13 @@ UCF2'/UCF3' below.
   interactive wizard's own `input()` loop), `/route <chat|relay|command>`
   (switches mode -- no persistent process to start/stop now that chat is a
   direct per-turn function call, not a piped subprocess), `/status`,
-  `/stop` (only meaningful while a `start`/`resume` call is in flight;
-  raises the same `KeyboardInterrupt`-based cancellation as Ctrl+C, see
-  UCF7), `/history` (this session's own transcript), `/help`, `/exit`.
+  `/stop` (a reserved no-op for this sub-project: since every call is
+  synchronous (UCF7), nothing can ever be "in flight" when the REPL is free
+  to read a new command, so it always reports there is nothing to stop --
+  only Ctrl+C, caught around the call site itself, can actually interrupt
+  one; `/stop` becomes meaningful once a later sub-project makes execution
+  concurrent), `/history` (this session's own transcript), `/help`,
+  `/exit`.
   `/attach`/`/attachments` are explicitly excluded (deferred, per
   attachments being out of scope).
 - **UCF7 -- Ctrl+C cancels the in-flight call via a plain
