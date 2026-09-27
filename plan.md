@@ -230,7 +230,7 @@
 
   ---
 
-- [ ] WEM-2: README — document the new entry menu
+- [x] WEM-2: README — document the new entry menu
 
   Global constraints:
   - No new runtime dependency.
