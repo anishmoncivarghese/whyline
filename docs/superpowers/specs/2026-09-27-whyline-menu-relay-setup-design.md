@@ -61,7 +61,16 @@ guided path from "I have a plan" to "it's safely running unattended."
   The generated template matches `IMPLEMENT`/`REVIEW`'s own structure and
   style (`{sync_packet}`/`{task_id}`/`{task_text}` placeholders), instructing
   the tester to run the suite and hand off with `passed`/`failed` outcomes,
-  matching the stage's own `[pipeline.stages.test.on]` transitions.
+  matching the stage's own `[pipeline.stages.test.on]` transitions. It uses
+  `{actor}` for the tester's own agent name, not `{implementer}`/`{reviewer}`
+  -- confirmed by reading `loop.py`: those two placeholders always resolve to
+  whichever agents fill the pipeline's specific `implementer`/`reviewer`
+  roles, never to whoever is running the *current* stage. There is no
+  generic per-role placeholder; `{actor}` (the stage's actual runner) is the
+  only one that means "whoever is testing right now." `{reviewer}`/
+  `{implementer}` are still correct for the handoff *destination* fields
+  (passed → the reviewer, failed → the implementer), since those genuinely
+  do mean the pipeline's fixed reviewer/implementer roles.
 - **M6 — The wizard auto-commits its own generated files** (`config.toml`,
   `prompts/test.md`) before running `doctor` or asking to start. Directly
   motivated by a real failure the user hit in this exact session: a paused
@@ -225,7 +234,7 @@ job next.
 Record your ruling -- testing is deciding:
 
     whyline note "<one-line ruling>" --because "<why>" \
-      --file <path> --actor {tester} --role tester --task {task_id}
+      --file <path> --actor {actor} --role tester --task {task_id}
 
 ## How to finish
 
@@ -233,12 +242,12 @@ Exactly one of these outcomes.
 
 Passed: hand off to the reviewer.
 
-    whyline handoff {task_id} --from {tester} --to {reviewer} --status passed \
+    whyline handoff {task_id} --from {actor} --to {reviewer} --status passed \
       --summary "<what you verified>" --test "<command>: <result>"
 
 Failed: hand back to the implementer with concrete, actionable detail.
 
-    whyline handoff {task_id} --from {tester} --to {implementer} --status failed \
+    whyline handoff {task_id} --from {actor} --to {implementer} --status failed \
       --summary "<what failed>" --test "<command>: <result>"
 
 Do not commit either way -- the reviewer commits once this task is fully
