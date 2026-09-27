@@ -1284,3 +1284,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_model_cli.py
 
 <!-- whyline-event: bf9f4285b9ef4c3b871bf9d3efb32a7f -->
+
+## 2026-09-27 — Merge whyline's chat-delegation piece (WCD-1, WCD-2) into main, verified byte-for-byte against the relay-driven sandbox
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** WCD
+
+**Because:** Built with grok as implementer and codex as reviewer via whyline-relay. Grok's turns were fully correct each time but repeatedly got cancelled before calling whyline handoff (confused re-checking a pytest summary line this project's config never prints) -- orchestrator (claude) independently verified each turn's diff and full suite before committing and handing off on grok's behalf. Grok also independently caught a real plan gap: an existing test (test_no_command_is_a_usage_error) would have really exec'd into whyline-relay once installed on PATH, which the plan document itself has now been corrected to cover
+
+**Rejected:**
+
+- release immediately — holding until whyline-relay's own chat command (the matching relay-side plan, still in progress) also ships, since bare whyline delegates to it and is not yet independently useful without it
+
+**Files:** src/whyline/cli.py, tests/test_cli.py, tests/test_cli_chat_delegation.py, README.md
+
+<!-- whyline-event: bbacfd0bd80948e98c4e9072d30c6d84 -->
