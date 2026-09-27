@@ -1,0 +1,6 @@
+logs/
+state.json
+STOP
+running.json
+chat.json
+chat-history.jsonl

@@ -1300,3 +1300,134 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_cli.py, tests/test_cli_chat_delegation.py, README.md
 
 <!-- whyline-event: bbacfd0bd80948e98c4e9072d30c6d84 -->
+
+## 2026-09-26 — Route requests into reviewed profiles rather than generating agent graphs
+
+**Actor:** codex
+**Role:** planner
+**Task:** CWE-PLAN
+
+**Because:** whyline-relay already validates Role Stage Profile pipelines, so a bounded classifier can choose process depth without taking ownership of orchestration, verification or commits
+
+**Rejected:**
+
+- Let Jev or an LLM assign every role and transition per request — independently generated choices can form invalid or unsafe workflows and duplicate the relay state machine
+
+**Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: 7a820ef2240744aa8800ad4ccb8feb87 -->
+
+## 2026-09-26 — Suggested enhancement is a profile router in the relay, rules first, voice only on a pause
+
+**Actor:** grok
+**Role:** planner
+**Task:** ENH-ROUTER
+
+**Because:** A free Jev role graph would override named profiles, relay-commits, and the ban on shared-tree parallelism; the chat spec already rejected content-based routing as the default
+
+**Rejected:**
+
+- Jev assembles a new team per request — a confident wrong vector can turn a typo into six agents, and it sends task context to a host
+- Rules only, forever — does not answer the request for a terminal that chooses the next workflow
+
+**Files:** docs/superpowers/plans/2026-09-26-grok-plan-for-enhancement.md
+
+<!-- whyline-event: a3c510ad690a403eb5a3ddcdf06921df -->
+
+## 2026-09-26 — Use Grok's plan as the product roadmap and Codex's plan as the technical control checklist
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CWE-REVIEW
+
+**Because:** Grok scopes the first release more coherently and found a real sync prerequisite, while the Codex plan is stronger on arbitrary profile validation, safe ad-hoc execution, privacy tripwires, exact-once human responses and provider evaluation
+
+**Rejected:**
+
+- Adopt either plan unchanged — Grok under-routes some security requests and relies on a fragile one-task-plan and answer.json shortcut, while Codex attempts too many intents and phases before proving the core router
+
+**Files:** docs/superpowers/plans/2026-09-26-grok-plan-for-enhancement.md, docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: 82a3dfe8fac643a3b31c02ec85b9a5a8 -->
+
+## 2026-09-26 — Codex enhancement roadmap needs five holes closed before anyone executes it
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CWE-REVIEW
+
+**Because:** The architecture is sound, but the config sketch enables routing, CWE-7 both forbids and requires a committed plan file, and CWE-6 can launch work through chat auto-commit before the reviewed workflow exists
+
+**Rejected:**
+
+- Execute CWE-0 onward as written — an implementer following the task order would ship the footgun the risk table says it prevents
+- Reject the roadmap — the provider contract, shadow mode, privacy tripwires, and exact-once human response are the right controls
+
+**Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: b13bf03790ca4a398071600349352e77 -->
+
+## 2026-09-26 — Amend Codex enhancement plan to a confirmed profile-router v1
+
+**Actor:** codex
+**Role:** planner
+**Task:** CWE-PLAN
+
+**Because:** The Grok comparison showed that chat, risk-first rules, explicit profile mappings and mandatory confirmation prove the core product before voice, Jev, brainstorming or automatic routing add more failure modes
+
+**Rejected:**
+
+- Keep the original seventeen-task release scope — it would build multiple speculative workflows before measuring whether profile routing is useful
+
+**Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: c2d37f096a4346b682e0ba2f84bbcfdc -->
+
+## 2026-09-26 — Amended Codex roadmap is the one to follow; three task texts still contradict section 0
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CWE-REVIEW
+
+**Because:** Routing defaults, route kinds, no auto-accept, and a spec-first handoff lifecycle now match the review; the ledger example, CWE-7, and the planner gate were not updated to match
+
+**Rejected:**
+
+- Reject the amendment — the sequencing and the refusal to guess terminal status strings are the right corrections
+- Start Phase 2 from the task list as written — CWE-7 still points an implementer at run_plan, which commits plan.md
+
+**Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: 83ebc771ed3d4ca3b59898bf42247584 -->
+
+## 2026-09-26 — Close the three remaining gaps between the enhancement roadmap and its task contracts
+
+**Actor:** codex
+**Role:** planner
+**Task:** CWE-PLAN
+
+**Because:** The route ledger, ad-hoc runner and planner human gate must encode the amended architecture explicitly or an implementer could correctly follow a stale example into unsafe behavior
+
+**Rejected:**
+
+- Leave details to phase specs — the current task text still points directly at conflicting contracts and was already presented as the roadmap to follow
+
+**Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: 938299d0b78f458d8a7314e2db6f2cd0 -->
+
+## 2026-09-26 — Amended enhancement roadmap is ready for the Phase 0 spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CWE-REVIEW
+
+**Because:** The ledger, ad-hoc runner, planner EOF gate, and handoff archive now match the review; depth is still described as required for every route even though only work has one
+
+**Rejected:**
+
+- Hold the roadmap — the three task contradictions are closed and the remaining sentence belongs in the Phase 2 contract, not another full rewrite
+
+**Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
+
+<!-- whyline-event: d9a1bb2e8e2641d8afec83b663cf3bd3 -->

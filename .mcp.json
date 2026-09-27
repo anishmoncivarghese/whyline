@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sonde": {
+      "command": "sonde",
+      "args": [
+        "mcp",
+        "serve",
+        "."
+      ]
+    }
+  }
+}
