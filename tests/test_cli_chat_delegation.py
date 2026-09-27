@@ -73,3 +73,42 @@ def test_main_with_no_args_prints_usage_when_whyline_relay_is_absent(monkeypatch
     code = cli.main([])
     assert code == cli.EXIT_USAGE
     assert capsys.readouterr().err  # existing usage text, unchanged
+
+
+def test_entry_menu_runs_detection_on_the_very_first_call(monkeypatch, tmp_path, capsys):
+    from whyline import account, cli
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
+    monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
+    monkeypatch.setattr(
+        account, "detect_antigravity", lambda: {"plan": None, "available": False, "reason": "not found"}
+    )
+    monkeypatch.setattr(
+        account, "detect_grok", lambda: {"plan": None, "available": False, "reason": "not found"}
+    )
+    answers = iter(["chat", "chat"])
+    cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda *a: None,
+        input_fn=lambda prompt="": next(answers),
+        print_fn=lambda *a, **k: None,
+    )
+    assert account.load_global() is not None
+    assert account.load_global()["codex"]["plan"] == "plus"
+
+
+def test_entry_menu_does_not_redetect_on_a_later_call(monkeypatch, tmp_path):
+    from whyline import account, cli
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({"codex": {"plan": "plus", "available": True}})
+    calls = []
+    monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
+    answers = iter(["chat", "chat"])
+    cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda *a: None,
+        input_fn=lambda prompt="": next(answers),
+        print_fn=lambda *a, **k: None,
+    )
+    assert calls == []
+

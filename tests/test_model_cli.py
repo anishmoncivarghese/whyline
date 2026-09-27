@@ -1,5 +1,5 @@
 import os
-from whyline import cli, model
+from whyline import account, cli, model
 
 
 def run_in(repo, argv, capsys, monkeypatch=None, input_answers=None):
@@ -12,7 +12,17 @@ def run_in(repo, argv, capsys, monkeypatch=None, input_answers=None):
         code = cli.main(argv)
     finally:
         os.chdir(previous)
-    return code, capsys.readouterr().out
+    captured = capsys.readouterr()
+    return code, captured.out + captured.err
+
+
+
+def _mark_all_available(monkeypatch, tmp_path, home):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    account.save_global({
+        agent: {"plan": None, "available": True}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
 
 
 def test_model_set_writes_one_agent(repo, capsys):
@@ -33,7 +43,11 @@ def test_model_status_prints_current_selections(repo, capsys):
     assert "gpt-5-codex" in out
 
 
-def test_interactive_model_selection_writes_all_four_answers(repo, capsys, monkeypatch):
+def test_interactive_model_selection_writes_all_four_answers(
+    repo, capsys, monkeypatch, tmp_path
+):
+    home = tmp_path / "home"
+    _mark_all_available(monkeypatch, tmp_path, home)
     code, out = run_in(
         repo,
         ["model"],
@@ -49,7 +63,11 @@ def test_interactive_model_selection_writes_all_four_answers(repo, capsys, monke
     }
 
 
-def test_interactive_model_selection_offers_grok(repo, capsys, monkeypatch):
+def test_interactive_model_selection_offers_grok(
+    repo, capsys, monkeypatch, tmp_path
+):
+    home = tmp_path / "home"
+    _mark_all_available(monkeypatch, tmp_path, home)
     # Regression proof: grok was added to runner.AGENTS/MODEL_FLAG in 0.3.3
     # but this loop's own agent tuple was hardcoded and missed it -- fixed
     # in 0.3.4. `whyline run grok`/`model set grok` worked the whole time;
@@ -65,7 +83,46 @@ def test_interactive_model_selection_offers_grok(repo, capsys, monkeypatch):
     assert model.load(repo.path) == {"grok": "grok-4.6"}
 
 
-def test_interactive_model_selection_prints_the_antigravity_caveat(repo, monkeypatch, capsys):
+def test_interactive_model_selection_only_offers_available_agents(
+    repo, capsys, monkeypatch, tmp_path
+):
+    from whyline import account
+    home = tmp_path / "home"
+    monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    account.save_global({
+        "codex": {"plan": "plus", "available": True},
+        "claude": {"plan": "unknown", "available": False},
+        "antigravity": {"plan": None, "available": False},
+        "grok": {"plan": None, "available": False},
+    })
+    code, out = run_in(
+        repo, ["model"], capsys, monkeypatch, input_answers=["gpt-5-codex"]
+    )
+    assert code == cli.EXIT_OK
+    assert model.load(repo.path) == {"codex": "gpt-5-codex"}
+    assert "claude" not in out.lower() or "Model for claude" not in out
+
+
+def test_interactive_model_selection_with_nothing_available_says_so(
+    repo, capsys, monkeypatch, tmp_path
+):
+    from whyline import account
+    home = tmp_path / "home"
+    monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    account.save_global({
+        agent: {"plan": None, "available": False}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
+    code, out = run_in(repo, ["model"], capsys)
+    assert code == cli.EXIT_ERROR
+    assert "whyline account detect" in out or "whyline account enable" in out
+
+
+def test_interactive_model_selection_prints_the_antigravity_caveat(
+    repo, monkeypatch, capsys, tmp_path
+):
+    home = tmp_path / "home"
+    _mark_all_available(monkeypatch, tmp_path, home)
     answers = iter(["", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     previous = os.getcwd()
@@ -112,7 +169,7 @@ def test_gitignore_lines_contain_account_and_model():
 def test_interactive_model_selection_prints_plan_from_account(repo, monkeypatch, capsys):
     from whyline import account
 
-    account.save_repo(repo.path, {"codex": {"plan": "plus"}, "confirmed": True})
+    account.save_repo(repo.path, {"codex": {"plan": "plus", "available": True}, "confirmed": True})
     code, out = run_in(
         repo,
         ["model"],
@@ -122,3 +179,4 @@ def test_interactive_model_selection_prints_plan_from_account(repo, monkeypatch,
     )
     assert code == cli.EXIT_OK
     assert "codex -- plus" in out
+

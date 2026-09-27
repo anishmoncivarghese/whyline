@@ -1531,3 +1531,47 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/account.py, tests/test_account.py
 
 <!-- whyline-event: 543ebfccf15d47a39875e0aee28bfdd0 -->
+
+## 2026-09-27 — Allow whyline account detect, enable, and disable outside a git repository
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACG-2
+
+**Because:** detect, enable, and disable operate on global account configuration (~/.whyline/account.json) and do not need repo context
+
+**Rejected:**
+
+- Requiring repo context for all account commands — prevents setting global account defaults before initializing or outside repositories
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: c4856cf32f684fcea9614ea3832245cb -->
+
+## 2026-09-27 — Delegate account detection persistence and timestamping to account.refresh() in cmd_account
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACG-2
+
+**Because:** account.refresh() encapsulates detect(), timestamping, global persistence, and manual override preservation in a single reusable interface
+
+**Rejected:**
+
+- Inline detected_at timestamping in cmd_account — duplicates logic and bypasses manual override merging
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 1c6a54c60d104c22a91fd528155c8266 -->
+
+## 2026-09-27 — Approve account availability CLI gating and first-run detection
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACG-2
+
+**Because:** The parser and command flows match ACG-2, manual overrides and repo precedence are respected, the isolated scratch flow behaved correctly, and the plain full suite passed all 355 tests
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: f3b19cfa3f3743d4851331829299cfab -->

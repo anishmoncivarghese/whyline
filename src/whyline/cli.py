@@ -50,6 +50,16 @@ def run_entry_menu(
     if which("whyline-relay") is None:
         return False
 
+    from whyline import account
+
+    freshly_detected = account.ensure_detected()
+    if freshly_detected is not None:
+        print_fn("First run: checking which agents you have access to...")
+        for agent in ("codex", "claude", "antigravity", "grok"):
+            info = freshly_detected.get(agent, {})
+            state = "available" if info.get("available") else "not available"
+            print_fn(f"  {agent}: {state}")
+
     choice = input_fn("Chat or relay? [chat]: ").strip().lower()
     if choice == "relay":
         exec_fn("whyline-relay", ["whyline-relay", "setup"])
@@ -238,6 +248,15 @@ def _add_account(subparsers: "argparse._SubParsersAction") -> None:
     account_sub = parser.add_subparsers(dest="account_command", required=True)
     account_sub.add_parser("status", help="Show the detected/confirmed account")
     account_sub.add_parser("detect", help="Re-run detection and refresh the global cache")
+    enable_parser = account_sub.add_parser(
+        "enable", help="Manually mark an agent as available"
+    )
+    enable_parser.add_argument("agent", choices=tuple(runner.AGENTS))
+    disable_parser = account_sub.add_parser(
+        "disable", help="Manually mark an agent as unavailable"
+    )
+    disable_parser.add_argument("agent", choices=tuple(runner.AGENTS))
+
 
 
 def _add_model(subparsers: "argparse._SubParsersAction") -> None:
@@ -641,30 +660,40 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def _print_account(data: dict) -> None:
-    for agent in ("codex", "claude"):
+    for agent in ("codex", "claude", "antigravity", "grok"):
         info = data.get(agent) if isinstance(data.get(agent), dict) else {}
         plan = info.get("plan")
-        if plan is None:
-            print(f"{agent}: no subscription tier (using an API key)")
+        available = info.get("available", False)
+        if plan is None and agent in ("codex", "claude"):
+            base = "no subscription tier (using an API key)"
         elif plan == "unknown":
-            print(f"{agent}: unknown ({info.get('reason', 'no reason given')})")
+            base = f"unknown ({info.get('reason', 'no reason given')})"
+        elif plan:
+            base = plan
         else:
-            print(f"{agent}: {plan}")
+            base = "installed" if available else "not installed"
+        status = "available" if available else "not available"
+        note = " (manually set)" if info.get("manual") else ""
+        print(f"{agent}: {base} -- {status}{note}")
 
 
 def cmd_account(args: argparse.Namespace) -> int:
     from whyline import account
 
-    root = _require_repo()
     if args.account_command == "detect":
-        detected = account.detect()
-        now = datetime.datetime.now().astimezone().isoformat()
-        for info in detected.values():
-            info["detected_at"] = now
-        account.save_global(detected)
+        detected = account.refresh()
         _print_account(detected)
         return EXIT_OK
+    if args.account_command == "enable":
+        account.set_manual(args.agent, True)
+        print(f"{args.agent}: manually marked available.")
+        return EXIT_OK
+    if args.account_command == "disable":
+        account.set_manual(args.agent, False)
+        print(f"{args.agent}: manually marked unavailable.")
+        return EXIT_OK
 
+    root = _require_repo()
     repo_data = account.load_repo(root)
     if repo_data is not None:
         _print_account(repo_data)
@@ -701,8 +730,20 @@ def cmd_model(args: argparse.Namespace) -> int:
                 print(f"{agent}: {chosen}")
         return EXIT_OK
 
+    account.ensure_detected()
+    available = account.available_agents(root)
+    if not available:
+        print(
+            "No agents detected as available. Run: whyline account detect "
+            "(or whyline account enable <agent> to add one manually).",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
     repo_account = account.load_repo(root)
     for agent in ("codex", "claude", "antigravity", "grok"):
+        if agent not in available:
+            continue
         if repo_account is not None and agent in repo_account:
             plan = repo_account[agent].get("plan")
             if plan:

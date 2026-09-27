@@ -88,3 +88,56 @@ def test_print_account_formats_api_key_and_unknown_reasons(repo, capsys):
     assert code == cli.EXIT_OK
     assert "codex: no subscription tier (using an API key)" in out
     assert "claude: unknown (claude not found)" in out
+
+
+def test_enable_sets_manual_availability(repo, capsys, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    code, out = run_in(repo, ["account", "enable", "grok"], capsys)
+    assert code == cli.EXIT_OK
+    assert account.load_global()["grok"] == {"available": True, "manual": True}
+
+
+def test_disable_sets_manual_unavailability(repo, capsys, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    account.save_global({"codex": {"plan": "plus", "available": True}})
+    code, out = run_in(repo, ["account", "disable", "codex"], capsys)
+    assert code == cli.EXIT_OK
+    assert account.load_global()["codex"] == {"available": False, "manual": True}
+
+
+def test_enable_and_disable_do_not_require_being_in_a_repo(
+    capsys, monkeypatch, tmp_path
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    previous = os.getcwd()
+    os.chdir(outside)
+    try:
+        code = cli.main(["account", "enable", "grok"])
+    finally:
+        os.chdir(previous)
+    assert code == cli.EXIT_OK
+
+
+def test_status_shows_all_four_agents_with_availability(repo, capsys):
+    account.save_repo(
+        repo.path,
+        {
+            "codex": {"plan": "plus", "available": True},
+            "claude": {"plan": "unknown", "available": False, "reason": "not logged in"},
+            "antigravity": {"plan": None, "available": True},
+            "grok": {"plan": None, "available": False, "manual": True},
+            "confirmed": True,
+        },
+    )
+    code, out = run_in(repo, ["account", "status"], capsys)
+    assert code == cli.EXIT_OK
+    assert "codex" in out and "available" in out
+    assert "antigravity" in out
+    assert "grok" in out
+    assert "manually set" in out  # grok's manual override is called out
+
