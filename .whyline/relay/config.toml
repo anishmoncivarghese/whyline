@@ -1,0 +1,19 @@
+# whyline-relay configuration. Every key is optional.
+plan = "plan.md"
+max_rounds = 3
+timeout_minutes = 30
+branch_prefix = "relay/"
+
+[roles]
+implementer = "antigravity"
+reviewer = "codex"
+
+[agents.codex]
+command = ["codex", "exec", "-s", "workspace-write", "--color", "never"]
+
+[agents.claude]
+command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "--settings", ".whyline/relay/claude-settings.json"]
+
+[agents.antigravity]
+adapter = "generic"
+command = ["agy", "--output-format", "json", "--mode", "accept-edits", "--add-dir", ".", "--new-project", "-p"]
