@@ -75,14 +75,20 @@ these four do I even have" confusion this wizard invites today.
   later invocation, anywhere, skips straight past it since global account
   data now exists. Explicit user choice: "both first ever run and I can
   call it anytime."
-- **AC4 -- `whyline account status`, `enable`, `disable` are the callable-
-  anytime surface.** `status` prints every agent's current availability,
-  plan (if known), and whether it's manually overridden -- a read-only view,
-  distinct from `detect` (which re-runs detection) or the existing bare
-  `whyline account` (which does the repo-confirmation flow). `enable
-  <agent>`/`disable <agent>` set `manual=True` with the given value,
-  persisting across future `detect` runs until explicitly changed again.
-  This is the "add or remove models" surface the user asked for.
+- **AC4 -- `whyline account status` (already exists) extends to show
+  availability; new `enable`/`disable` are the "add or remove" surface.**
+  `account status` already exists and already does exactly the read/confirm
+  job this needed -- it's `_print_account` that needs extending, to iterate
+  all four agents (today: codex/claude only) and show each one's
+  `available`/manual-override state, not a new subcommand. Its existing
+  confirm-flow behavior (first use in a repo asks to confirm the global
+  detection for that repo, written once to `.whyline/account.json`) is
+  unchanged. New `enable <agent>`/`disable <agent>` subcommands operate on
+  the global data directly (no repo required), setting `manual=True` with
+  the given value; a later `detect` re-run must merge fresh results into
+  the existing global data rather than overwrite it wholesale, so it never
+  clobbers a manual override. This is the "add or remove models" surface
+  the user asked for.
 - **AC5 -- `account.available_agents(root) -> set[str]`** is the one new
   helper every filtering call site uses, instead of each one hardcoding
   `("codex", "claude", "antigravity", "grok")` or re-deriving availability
