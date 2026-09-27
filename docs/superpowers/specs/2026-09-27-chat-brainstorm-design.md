@@ -126,9 +126,11 @@ RESEARCH_PROMPT = (
 
 REVIEW_PROMPT = (
     'Combined review pass {pass_number} of a brainstorm on "{topic}". Read '
-    '{shared_path} in full. Revise only your own section ("## {agent_label}") '
-    'based on what you now see from the others -- add, refine, or correct. '
-    'Do not touch any other model\'s section.'
+    '{shared_path} in full. Update your own section ("## {agent_label}") in '
+    'place based on what you now see from the others -- replace it with '
+    'your revised thinking, rather than appending a new dated block; the '
+    'file should only ever show your current view, not a history of past '
+    'passes. Do not touch any other model\'s section.'
 )
 
 SYNTHESIS_PROMPT = (
