@@ -9,8 +9,10 @@ problem never blocks the other's (spec M7).
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 from pathlib import Path
+import shutil
 import subprocess
 
 from whyline import paths
@@ -89,16 +91,119 @@ def detect_claude(runner=subprocess.run) -> dict:
     return {"auth_method": data.get("authMethod"), "plan": subscription_type}
 
 
+def detect_antigravity(which=None) -> dict:
+    """PATH-only: Antigravity has no reliable non-interactive login check
+    (see preflight.py's own note in whyline-relay). "available" means
+    "installed", not "subscribed" -- the user confirmed this bar."""
+    which = which if which is not None else shutil.which
+    found = which("agy") is not None
+    return {
+        "plan": None,
+        "available": found,
+        "reason": None if found else "agy not found on PATH",
+    }
+
+
+def detect_grok(which=None) -> dict:
+    """PATH-only, for the same reason as detect_antigravity."""
+    which = which if which is not None else shutil.which
+    found = which("grok") is not None
+    return {
+        "plan": None,
+        "available": found,
+        "reason": None if found else "grok not found on PATH",
+    }
+
+
 def detect() -> dict:
     try:
         codex = detect_codex()
     except Exception as error:
         codex = {"plan": "unknown", "reason": f"could not detect codex: {error}"}
+    codex["available"] = codex.get("plan") != "unknown"
     try:
         claude = detect_claude()
     except Exception as error:
         claude = {"plan": "unknown", "reason": f"could not detect claude: {error}"}
-    return {"codex": codex, "claude": claude}
+    claude["available"] = claude.get("plan") != "unknown"
+    try:
+        antigravity = detect_antigravity()
+    except Exception as error:
+        antigravity = {
+            "plan": None, "available": False,
+            "reason": f"could not detect antigravity: {error}",
+        }
+    try:
+        grok = detect_grok()
+    except Exception as error:
+        grok = {
+            "plan": None, "available": False,
+            "reason": f"could not detect grok: {error}",
+        }
+    return {"codex": codex, "claude": claude, "antigravity": antigravity, "grok": grok}
+
+
+def refresh() -> dict:
+    """Re-runs detect(), stamps detected_at, saves it globally, and
+    returns the merged result. An agent whose existing global record
+    has manual=True keeps that record's own available/manual instead of
+    the fresh value -- an explicit whyline account enable/disable must
+    survive a later `whyline account detect`."""
+    existing = load_global() or {}
+    detected = detect()
+    now = datetime.datetime.now().astimezone().isoformat()
+    for agent, info in detected.items():
+        info["detected_at"] = now
+        prior = existing.get(agent)
+        if isinstance(prior, dict) and prior.get("manual"):
+            info["available"] = prior["available"]
+            info["manual"] = True
+    save_global(detected)
+    return detected
+
+
+def ensure_detected() -> dict | None:
+    """Runs refresh() only if no global account data exists yet -- the
+    very first time anything needs it, anywhere. Returns the freshly
+    detected data if it just ran, None if data already existed, or None
+    if refresh() itself fails for any reason (this module's own
+    docstring already promises detection never blocks anything else;
+    a total refresh() failure -- e.g. a disk error saving the global
+    file -- must not crash whichever caller just wanted to know what's
+    available, matching detect()'s existing per-agent guarantee one
+    level up)."""
+    if load_global() is not None:
+        return None
+    try:
+        return refresh()
+    except Exception:
+        return None
+
+
+def set_manual(agent: str, available: bool) -> None:
+    """Explicitly overrides `agent`'s availability -- the "add or
+    remove" surface -- surviving future refresh() calls until changed
+    again. Every other agent's record is left untouched."""
+    data = load_global() or {}
+    data[agent] = {"available": available, "manual": True}
+    save_global(data)
+
+
+def available_agents(root: Path) -> set[str]:
+    """Every agent currently considered available: repo-confirmed data
+    if present, else global data, else nothing. Always ensures
+    detection has run at least once first (see ensure_detected)."""
+    ensure_detected()
+    data = load_repo(root)
+    if data is None:
+        data = load_global()
+    if data is None:
+        return set()
+    return {
+        agent
+        for agent in ("codex", "claude", "antigravity", "grok")
+        if isinstance(data.get(agent), dict) and data[agent].get("available") is True
+    }
 
 
 def save_global(data: dict) -> None:

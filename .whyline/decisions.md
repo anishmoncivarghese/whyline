@@ -1503,3 +1503,31 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/plans/2026-09-27-account-capability-gating-whyline.md, docs/superpowers/plans/2026-09-27-backup-chain.md
 
 <!-- whyline-event: 834177e257124996834753838d26bdb9 -->
+
+## 2026-09-27 — PATH-only presence check for antigravity and grok availability with manual override precedence
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ACG-1
+
+**Because:** Antigravity and Grok lack non-interactive auth status checks so PATH presence defines baseline availability while manual overrides take precedence
+
+**Rejected:**
+
+- Requiring interactive login check — would hang or fail non-interactively
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 74300d2f11d644c29deb8e0efbe6248c -->
+
+## 2026-09-27 — Approve ACG-1 account availability detection and manual override behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ACG-1
+
+**Because:** The implementation matches the four-agent detection, refresh, manual override, and availability-selection contracts; focused and full test suites pass
+
+**Files:** src/whyline/account.py, tests/test_account.py
+
+<!-- whyline-event: 543ebfccf15d47a39875e0aee28bfdd0 -->

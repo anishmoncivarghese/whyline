@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -109,12 +110,23 @@ def test_detect_claude_unparseable_output_is_unknown_not_a_crash():
     assert result["plan"] == "unknown"
 
 
-def test_detect_combines_both_agents(monkeypatch, tmp_path):
-    auth_path = tmp_path / "auth.json"
-    auth_path.write_text(json.dumps({"auth_mode": "apikey"}))
+def test_detect_combines_all_four_agents(monkeypatch, tmp_path):
     monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
     monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
-    assert account.detect() == {"codex": {"plan": "plus"}, "claude": {"plan": "pro"}}
+    monkeypatch.setattr(
+        account, "detect_antigravity",
+        lambda: {"plan": None, "available": True, "reason": None},
+    )
+    monkeypatch.setattr(
+        account, "detect_grok",
+        lambda: {"plan": None, "available": False, "reason": "grok not found on PATH"},
+    )
+    assert account.detect() == {
+        "codex": {"plan": "plus", "available": True},
+        "claude": {"plan": "pro", "available": True},
+        "antigravity": {"plan": None, "available": True, "reason": None},
+        "grok": {"plan": None, "available": False, "reason": "grok not found on PATH"},
+    }
 
 
 def test_detect_cross_agent_isolation_codex_failure_does_not_block_claude(monkeypatch, tmp_path):
@@ -130,7 +142,7 @@ def test_detect_cross_agent_isolation_codex_failure_does_not_block_claude(monkey
     result = account.detect()
     assert result["codex"]["plan"] == "unknown"
     assert "reason" in result["codex"]
-    assert result["claude"] == {"auth_method": "claude.ai", "plan": "pro"}
+    assert result["claude"] == {"auth_method": "claude.ai", "plan": "pro", "available": True}
 
 
 def test_detect_cross_agent_isolation_codex_exception_does_not_block_claude(monkeypatch):
@@ -146,7 +158,7 @@ def test_detect_cross_agent_isolation_codex_exception_does_not_block_claude(monk
     result = account.detect()
     assert result["codex"]["plan"] == "unknown"
     assert "unexpected codex failure" in result["codex"]["reason"]
-    assert result["claude"] == {"auth_method": "claude.ai", "plan": "pro"}
+    assert result["claude"] == {"auth_method": "claude.ai", "plan": "pro", "available": True}
 
 
 def test_save_and_load_global_round_trip(monkeypatch, tmp_path):
@@ -218,3 +230,158 @@ def test_repo_account_and_model_gitignored_skips_when_not_in_git_repo(monkeypatc
     monkeypatch.setattr(account.paths, "find_repo_root", lambda x: None)
     with pytest.raises(pytest.skip.Exception):
         test_repo_account_and_model_files_are_gitignored()
+
+
+def test_detect_antigravity_available_when_on_path():
+    result = account.detect_antigravity(which=lambda name: "/usr/bin/agy")
+    assert result == {"plan": None, "available": True, "reason": None}
+
+
+def test_detect_antigravity_unavailable_when_not_on_path():
+    result = account.detect_antigravity(which=lambda name: None)
+    assert result["available"] is False
+    assert "reason" in result and result["reason"]
+
+
+def test_detect_grok_available_when_on_path():
+    result = account.detect_grok(which=lambda name: "/usr/bin/grok")
+    assert result == {"plan": None, "available": True, "reason": None}
+
+
+def test_detect_grok_unavailable_when_not_on_path():
+    result = account.detect_grok(which=lambda name: None)
+    assert result["available"] is False
+
+
+def test_detect_uses_real_shutil_which_by_default(monkeypatch):
+    # Regression proof for the "resolve inside the function body" rule:
+    # monkeypatching shutil.which itself (not passing `which=`) must still
+    # be observed, which only holds if `which` is not captured as a bound
+    # default argument at definition time.
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert account.detect_antigravity()["available"] is False
+    assert account.detect_grok()["available"] is False
+
+
+def test_detect_now_includes_all_four_agents_with_availability(monkeypatch):
+    monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
+    monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
+    monkeypatch.setattr(
+        account, "detect_antigravity", lambda: {"plan": None, "available": True, "reason": None}
+    )
+    monkeypatch.setattr(
+        account, "detect_grok", lambda: {"plan": None, "available": False, "reason": "grok not found on PATH"}
+    )
+    result = account.detect()
+    assert result["codex"] == {"plan": "plus", "available": True}
+    assert result["claude"] == {"plan": "pro", "available": True}
+    assert result["antigravity"] == {"plan": None, "available": True, "reason": None}
+    assert result["grok"]["available"] is False
+
+
+def test_detect_marks_unknown_plan_as_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        account, "detect_codex", lambda: {"plan": "unknown", "reason": "no auth file"}
+    )
+    monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
+    monkeypatch.setattr(account, "detect_antigravity", lambda: {"plan": None, "available": False, "reason": "not found"})
+    monkeypatch.setattr(account, "detect_grok", lambda: {"plan": None, "available": False, "reason": "not found"})
+    result = account.detect()
+    assert result["codex"]["available"] is False
+
+
+def test_refresh_saves_globally_and_stamps_detected_at(monkeypatch, tmp_path):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
+    monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
+    monkeypatch.setattr(account, "detect_antigravity", lambda: {"plan": None, "available": True, "reason": None})
+    monkeypatch.setattr(account, "detect_grok", lambda: {"plan": None, "available": False, "reason": "not found"})
+    result = account.refresh()
+    assert result["codex"]["available"] is True
+    assert "detected_at" in result["codex"]
+    assert account.load_global() == result
+
+
+def test_refresh_preserves_a_manual_override(monkeypatch, tmp_path):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global(
+        {"grok": {"plan": None, "available": True, "manual": True, "reason": None}}
+    )
+    monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
+    monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
+    monkeypatch.setattr(account, "detect_antigravity", lambda: {"plan": None, "available": False, "reason": "not found"})
+    monkeypatch.setattr(
+        account, "detect_grok", lambda: {"plan": None, "available": False, "reason": "not found on PATH"}
+    )
+    result = account.refresh()
+    # Fresh detection says grok is unavailable, but the prior manual
+    # override said otherwise -- the override wins.
+    assert result["grok"]["available"] is True
+    assert result["grok"]["manual"] is True
+
+
+def test_ensure_detected_runs_only_once(monkeypatch, tmp_path):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    calls = []
+    monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {"codex": {"available": True}})
+    first = account.ensure_detected()
+    assert first is not None
+    assert calls == [1]
+    account.save_global({"codex": {"available": True}})
+    second = account.ensure_detected()
+    assert second is None
+    assert calls == [1]  # refresh() was not called again
+
+
+def test_set_manual_creates_and_overrides(tmp_path, monkeypatch):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.set_manual("antigravity", True)
+    data = account.load_global()
+    assert data["antigravity"] == {"available": True, "manual": True}
+    account.set_manual("antigravity", False)
+    assert account.load_global()["antigravity"] == {"available": False, "manual": True}
+
+
+def test_set_manual_does_not_disturb_other_agents(tmp_path, monkeypatch):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({"codex": {"plan": "plus", "available": True}})
+    account.set_manual("grok", True)
+    data = account.load_global()
+    assert data["codex"] == {"plan": "plus", "available": True}
+    assert data["grok"] == {"available": True, "manual": True}
+
+
+def test_available_agents_from_global_data(tmp_path, monkeypatch):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({
+        "codex": {"plan": "plus", "available": True},
+        "claude": {"plan": "unknown", "available": False},
+        "antigravity": {"plan": None, "available": True},
+        "grok": {"plan": None, "available": False},
+    })
+    assert account.available_agents(tmp_path) == {"codex", "antigravity"}
+
+
+def test_available_agents_prefers_repo_confirmation_over_global(tmp_path, monkeypatch):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({"codex": {"available": True}, "claude": {"available": True}})
+    account.save_repo(tmp_path, {"codex": {"available": True}, "claude": {"available": False}})
+    assert account.available_agents(tmp_path) == {"codex"}
+
+
+def test_available_agents_empty_when_detection_itself_raises(tmp_path, monkeypatch):
+    # account.py's own module docstring already promises "never raises: ...
+    # so one agent's detection problem never blocks the other's" -- that
+    # guarantee must extend to a total failure of refresh() itself (e.g. a
+    # disk error writing the global file), not just to one agent's own
+    # detect_x() call. No caller of available_agents() (cmd_model,
+    # run_entry_menu) catches anything, so this has to hold here.
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(account, "refresh", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert account.available_agents(tmp_path) == set()
+
+
+def test_ensure_detected_returns_none_when_refresh_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(account, "refresh", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert account.ensure_detected() is None
