@@ -1,4 +1,4 @@
-- [ ] WEM-1: `cli.py` — `run_entry_menu` replaces `exec_into_chat`
+- [x] WEM-1: `cli.py` — `run_entry_menu` replaces `exec_into_chat`
 
   Global constraints:
   - No new runtime dependency.
