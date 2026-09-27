@@ -1431,3 +1431,31 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/plans/2026-09-26-codex-whyline-eahnancment.md
 
 <!-- whyline-event: d9a1bb2e8e2641d8afec83b663cf3bd3 -->
+
+## 2026-09-27 — Replace exec_into_chat with run_entry_menu interactive prompt
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** WEM-1
+
+**Because:** Bare whyline should prompt user whether to enter chat or relay setup instead of execing directly into chat
+
+**Rejected:**
+
+- Keep exec_into_chat as parallel path — would leave redundant dead code when entry contract changes
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: f8135822b13a40f7a4e653c34cb2948e -->
+
+## 2026-09-27 — Approve run_entry_menu replacement for bare whyline invocation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WEM-1
+
+**Because:** The implementation follows the specified chat/relay/model dispatch contract, resolves executable functions at call time, removes the obsolete path, and all 329 tests pass
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 2a7397493ca94ae8968b8f261bbdb0a9 -->

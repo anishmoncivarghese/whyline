@@ -6,6 +6,7 @@ import argparse
 import datetime
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -26,21 +27,40 @@ def _exec(binary: str, argv: list[str]) -> None:
     os.execvp(binary, argv)
 
 
-def exec_into_chat(which=None, exec_fn=None) -> bool:
-    """Replace this process with `whyline-relay chat`, if it's installed.
+def run_entry_menu(
+    which=None, exec_fn=None, input_fn=None, print_fn=None, subprocess_fn=None,
+) -> bool:
+    """Ask "Chat or relay?" and act on it. Returns False only when
+    whyline-relay isn't installed, so main()'s existing fallback-to-usage
+    behavior is unchanged for anyone not using the relay side.
 
-    `which`/`exec_fn` are resolved here, not as default arguments -- binding
-    them in the signature would capture the function objects at import time,
-    so a test's monkeypatch would silently have no effect and this would exec
-    the real whyline-relay during a test run. `runner.py` documents this
-    exact defect happening twice already; the same shape is used here on
-    purpose.
+    `which`/`exec_fn`/`subprocess_fn` are resolved here, not as default
+    arguments -- binding them in the signature would capture the function
+    objects at import time, so a test's monkeypatch would silently have no
+    effect and this would exec/spawn something real during a test run.
+    `runner.py` documents this exact defect happening twice already; the
+    same shape is used here on purpose.
     """
     which = which if which is not None else _which
     exec_fn = exec_fn if exec_fn is not None else _exec
-    binary = which("whyline-relay")
-    if binary is None:
+    input_fn = input_fn if input_fn is not None else input
+    print_fn = print_fn if print_fn is not None else print
+    subprocess_fn = subprocess_fn if subprocess_fn is not None else subprocess.run
+
+    if which("whyline-relay") is None:
         return False
+
+    choice = input_fn("Chat or relay? [chat]: ").strip().lower()
+    if choice == "relay":
+        exec_fn("whyline-relay", ["whyline-relay", "setup"])
+        return True  # unreachable when exec_fn is the real os.execvp
+
+    model_choice = input_fn(
+        "Start chatting, or set a model first? [chat]: "
+    ).strip().lower()
+    if model_choice == "model":
+        subprocess_fn(["whyline", "model"])
+
     exec_fn("whyline-relay", ["whyline-relay", "chat"])
     return True  # unreachable when exec_fn is the real os.execvp
 
@@ -853,7 +873,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.command:
-        if exec_into_chat():
+        if run_entry_menu():
             return EXIT_OK
         parser.print_usage(sys.stderr)
         return EXIT_USAGE
