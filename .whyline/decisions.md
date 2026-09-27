@@ -1591,3 +1591,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** plan.md
 
 <!-- whyline-event: 6a9db339c0a645998c7b45e74b875976 -->
+
+## 2026-09-27 — Publish whyline 0.3.7 with account capability gating
+
+**Actor:** codex
+**Role:** releaser
+**Task:** ACG-RELEASE
+
+**Because:** The approved ACG implementation is merged, the full suite passed, and the release workflow verified both artifacts before publishing
+
+**Rejected:**
+
+- publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.6
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: d33e6b46c4984a66ab734bf6f7daf192 -->
