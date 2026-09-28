@@ -102,3 +102,49 @@ def test_run_relay_oneshot_reraises_missing_relay_internal_module(monkeypatch):
         with pytest.raises(ModuleNotFoundError) as exc_info:
             adapters.run_relay_oneshot("/some/repo", ["start"])
         assert exc_info.value is error
+
+
+def test_run_relay_oneshot_pause_uses_structured_state_not_raw_text(
+    monkeypatch, tmp_path
+):
+    from whyline_relay import cli as relay_cli, state
+
+    state.save(
+        tmp_path,
+        state.RelayState(
+            plan="plan.md",
+            branch="relay/plan",
+            task_id="T-1",
+            round=2,
+            base_commit="abc123",
+            paused_reason="codex hit a usage or rate limit; try again when it resets",
+            log_path="/tmp/T-1-2-codex.log",
+        ),
+    )
+
+    def fake_main(argv, prog="whyline-relay"):
+        print("Paused: codex hit a usage or rate limit; try again when it resets")
+        return 1
+
+    monkeypatch.setattr(relay_cli, "main", fake_main)
+    event = adapters.run_relay_oneshot(tmp_path, ["resume"])
+    assert event.kind == "pause"
+    assert "[rate-limit]" in event.text
+    assert "T-1" in event.text
+    assert "/tmp/T-1-2-codex.log" in event.text
+    assert "whyline-relay resume" in event.text
+
+
+def test_run_relay_oneshot_pause_falls_back_to_raw_text_with_no_saved_state(
+    monkeypatch, tmp_path
+):
+    from whyline_relay import cli as relay_cli
+
+    def fake_main(argv, prog="whyline-relay"):
+        print("Paused: something odd, no state file exists for this")
+        return 1
+
+    monkeypatch.setattr(relay_cli, "main", fake_main)
+    event = adapters.run_relay_oneshot(tmp_path, ["resume"])
+    assert event.kind == "pause"
+    assert "something odd, no state file exists for this" in event.text

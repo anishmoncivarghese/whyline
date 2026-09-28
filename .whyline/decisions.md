@@ -2052,3 +2052,35 @@ Append-only. Written by whyline; readable without it.
 - keep proceeding but print a warning — still lands the user in an AI conversation they didn't intend to start, when the actual fix (fixing model setup) requires leaving anyway
 
 <!-- whyline-event: 3ef573c4158b46ac8221217936bf7ebd -->
+
+## 2026-09-28 — Render structured pause output via relay state with raw text fallback
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RLV-1
+
+**Because:** Provides structured pause details and failure category when state.json exists while preserving raw CLI output if state is unavailable
+
+**Rejected:**
+
+- Strictly requiring state.json — drops or fails on unpersisted pause messages
+
+**Files:** src/whyline/console/adapters.py
+
+<!-- whyline-event: 8051b1f2ae77442abe8524a060ee012c -->
+
+## 2026-09-28 — Approve structured pause rendering and failure classification
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RLV-1
+
+**Because:** The adapter uses the persisted relay state for structured pause output, preserves raw output when state is absent, classifies only the specified stable phrases, and both focused and full suites pass
+
+**Rejected:**
+
+- request changes — no correctness, safety, or coverage defect remains
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py, tests/console/test_adapters_relay_structured.py
+
+<!-- whyline-event: 646ce216212d4324bc6e56450a938b6f -->

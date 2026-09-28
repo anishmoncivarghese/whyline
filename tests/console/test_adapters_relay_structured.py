@@ -114,3 +114,51 @@ def test_run_status_reports_a_paused_run(repo):
     assert event.kind == "pause"
     assert "T-1" in event.text
     assert "stuck" in event.text
+
+
+def test_failure_kind_classifies_rate_limit():
+    assert (
+        adapters.failure_kind(
+            "codex hit a usage or rate limit; try again when it resets"
+        )
+        == "rate-limit"
+    )
+
+
+def test_failure_kind_classifies_auth():
+    assert (
+        adapters.failure_kind(
+            "codex is no longer logged in; try again once you've signed back in"
+        )
+        == "auth"
+    )
+
+
+def test_failure_kind_classifies_no_handoff():
+    assert (
+        adapters.failure_kind(
+            "grok exited without handing off; nothing was routed"
+        )
+        == "no-handoff"
+    )
+
+
+def test_failure_kind_classifies_round_cap():
+    assert (
+        adapters.failure_kind("T-1 hit the 3-round cap without an approval")
+        == "round-cap"
+    )
+
+
+def test_failure_kind_classifies_blocked():
+    assert (
+        adapters.failure_kind("codex reported blocked: needs clarification")
+        == "blocked"
+    )
+
+
+def test_failure_kind_falls_back_to_other():
+    assert (
+        adapters.failure_kind("something entirely unrecognized happened")
+        == "other"
+    )

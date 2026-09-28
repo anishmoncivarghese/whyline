@@ -13,6 +13,24 @@ from whyline.console.session import SessionEvent
 
 _INTERACTIVE_ONLY = {"account", "model"}
 
+_FAILURE_PHRASES = (
+    ("rate-limit", "hit a usage or rate limit"),
+    ("auth", "is no longer logged in"),
+    ("no-handoff", "exited without handing off"),
+    ("round-cap", "round cap"),
+    ("blocked", "reported blocked:"),
+)
+
+
+def failure_kind(reason: str) -> str:
+    """Classifies a pause's reason text into a coarse kind, using this
+    project's own stable, existing pause-message phrasing -- never a new
+    invented pattern."""
+    for kind, phrase in _FAILURE_PHRASES:
+        if phrase in reason:
+            return kind
+    return "other"
+
 
 def run_whyline_command(argv: list[str]) -> SessionEvent:
     """Runs a non-interactive whyline command in-process, capturing its
@@ -172,8 +190,20 @@ def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:
         code = error.code if isinstance(error.code, int) else 1
     text = buf.getvalue()
     if _PAUSE_PATTERN.search(text):
-        kind = "pause"
-    elif _COMPLETE_PATTERN.search(text) or code == 0:
+        from whyline_relay import state as relay_state
+
+        saved = relay_state.load(Path(root))
+        if saved is not None:
+            kind_label = failure_kind(saved.paused_reason)
+            structured = (
+                f"[{kind_label}] Task {saved.task_id}\n"
+                f"Reason {saved.paused_reason}\n"
+                f"Log {saved.log_path}\n"
+                "Resume: whyline-relay resume"
+            )
+            return SessionEvent(kind="pause", text=structured)
+        return SessionEvent(kind="pause", text=text)
+    if _COMPLETE_PATTERN.search(text) or code == 0:
         kind = "output"
     else:
         kind = "error"
