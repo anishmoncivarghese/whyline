@@ -1,4 +1,4 @@
-- [ ] WFX-1: Portable file lock (WFX1)
+- [x] WFX-1: Portable file lock (WFX1)
 
   ## Global Constraints
 
