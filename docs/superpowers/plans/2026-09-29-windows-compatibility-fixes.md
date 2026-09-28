@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
-- Every fix in this plan must be verified against the actual Windows CI job, not just macOS/Linux locally -- push after each task and confirm the real result, per this sub-project's own standard.
+- Each task's own job stops at implementing, testing locally, committing, and handing off -- never attempt `git push`/checking GitHub Actions results yourselves. Your own sandboxed environment may not have outbound network access to github.com at all (confirmed on WFX-3: a DNS resolution failure inside the sandbox, not a real outage -- pushing the identical branch succeeded immediately from outside it). Real Windows CI verification against every fix in this plan is the orchestrator's own job, done once the whole plan completes, not each agent's.
 - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
 - Every existing test in this repo must still pass after every task.
 
