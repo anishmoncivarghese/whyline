@@ -2116,3 +2116,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/adapters.py, src/whyline/console/repl.py, tests/console/test_adapters_relay_structured.py, tests/console/test_repl.py
 
 <!-- whyline-event: 19cd4b52b506466ab70d16f98801697a -->
+
+## 2026-09-28 — Released whyline 0.3.10 (console relay lifecycle views)
+
+**Actor:** claude
+**Role:** releaser
+**Task:** RLV-RELEASE
+
+**Because:** RLV-1 and RLV-2 are both checked and approved, the full suite passed on main, and the release workflow verifies built artifacts before publishing
+
+**Rejected:**
+
+- publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.9
+
+<!-- whyline-event: caf701d2c7034bf8a243b114a32d5082 -->
