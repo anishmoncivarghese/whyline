@@ -1831,3 +1831,52 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/adapters.py, tests/console/test_adapters_whyline.py
 
 <!-- whyline-event: 412d9d890b594adab126848cd303df30 -->
+
+## 2026-09-28 — Direct in-process structured calls for relay chat, doctor, and status adapters
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-3
+
+**Because:** Calling chat.run_turn, preflight.run, running.live, and state.load directly provides structured records and check objects without CLI text parsing overhead, with lazy imports preserving optionality of whyline-relay
+
+**Rejected:**
+
+- dispatch through whyline-relay CLI main — requires brittle text scraping of output rather than structured data access
+- eager module-level imports — would break whyline console import when optional relay extra is not installed
+
+**Files:** src/whyline/console/adapters.py
+
+<!-- whyline-event: e10632859091492ba6a35e30bb863b60 -->
+
+## 2026-09-28 — Update uv.lock to whyline-relay 0.2.21
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-3
+
+**Because:** whyline-relay 0.2.21 includes the chat module and structured status/preflight APIs required by console adapters while satisfying existing >=0.2.1,<0.3 constraint
+
+**Rejected:**
+
+- mocking whyline-relay in tests without locking — leaves the locked environment unable to import whyline_relay.chat during real runs
+
+**Files:** uv.lock
+
+<!-- whyline-event: f72c48fe6453495fb2f74dcf9d143af7 -->
+
+## 2026-09-28 — Approve direct structured relay adapters
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-3
+
+**Because:** run_chat_turn, run_doctor, and run_status call the released whyline-relay structured APIs in-process with lazy imports, map the specified outcomes to SessionEvent values, and both the focused 7-test file and full suite pass
+
+**Rejected:**
+
+- request changes — implementation matches UCF-3 and no functional or safety defect was found
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_structured.py, uv.lock
+
+<!-- whyline-event: 9c01a61eb2bb49aea34012ad78898844 -->
