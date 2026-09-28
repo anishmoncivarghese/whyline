@@ -5,7 +5,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
@@ -13,4 +13,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install ${{ matrix.python }}
       - run: uv sync
+      - run: uv run pytest -v
+
+  # The base "test" job above never installs [console]/[relay]/[ui], so
+  # every test gated on those extras being present (prompt_toolkit's real
+  # editor smoke test, Textual's Pilot tests) has been silently skipped in
+  # every CI run since they were written -- this job is what actually runs
+  # them. ubuntu-latest only: the extras' own code doesn't vary by OS in a
+  # way the base job's Windows/macOS coverage wouldn't already catch.
+  test-with-extras:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install "3.13"
+      - run: uv sync --all-extras
       - run: uv run pytest -v

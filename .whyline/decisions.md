@@ -2355,3 +2355,20 @@ Append-only. Written by whyline; readable without it.
 - publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.10
 
 <!-- whyline-event: 8df07796a7f14d8dbf7d39776c318d0f -->
+
+## 2026-09-28 — Add Windows to CI/release, and a CI job that actually installs the console/relay/ui extras
+
+**Actor:** claude
+**Role:** fixer
+**Task:** PKG-5
+
+**Because:** ci.yml and release.yml only ever tested ubuntu-latest/macos-latest, so Windows compatibility (a stated goal since the original unified-console vision) had never actually been verified once; separately, every job ran bare 'uv sync' with no extras, so every test gated on prompt_toolkit or textual being installed (the real editor/Pilot smoke tests) has been silently skipped in every CI run since they were written, never once actually executed. Verified locally before pushing: uv sync --all-extras runs the suite at 427 passed, 1 skipped (the one remaining skip is itself correct -- a test that only applies when textual is NOT installed); and each of console/relay/ui installs and imports correctly from a freshly-built wheel
+
+**Rejected:**
+
+- leave Windows untested and hope os.execvp/console code happens to work there — this sub-project's whole point is verified cross-platform readiness, not assumed
+- only test extras via 'uv sync' from source — can't catch a file accidentally left out of the packaged wheel, which installing straight from the built wheel does catch
+
+**Files:** .github/workflows/ci.yml, .github/workflows/release.yml
+
+<!-- whyline-event: 89630f6776cb484e8f0fadb5cc395159 -->

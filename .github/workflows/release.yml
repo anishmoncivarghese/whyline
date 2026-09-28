@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
@@ -97,6 +97,26 @@ jobs:
           uv pip install --python /tmp/verify/bin/python dist/*.whl
           /tmp/verify/bin/whyline --version
           test -x /tmp/verify/bin/whyline-hook
+
+      - name: Verify each extra installs from the built wheel
+        # Installing from source (uv sync) can't catch a file left out of
+        # the packaged wheel by mistake -- this installs straight from
+        # dist/*.whl with each extra, into its own clean venv, and imports
+        # the module that extra is supposed to make available, proving the
+        # extra's own code -- not just its dependency declaration -- is
+        # actually inside the built package.
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          verify_extra() {
+            extra="$1"; check="$2"
+            uv venv "/tmp/verify-$extra"
+            uv pip install --python "/tmp/verify-$extra/bin/python" "${WHEEL}[$extra]"
+            "/tmp/verify-$extra/bin/python" -c "$check"
+            echo "$extra: ok"
+          }
+          verify_extra console "from whyline.console import editor; assert editor.AVAILABLE"
+          verify_extra ui "from whyline.console import tui; assert tui.TUI_AVAILABLE"
+          verify_extra relay "import whyline_relay"
 
       - name: Publish to PyPI
         run: uv publish --trusted-publishing always
