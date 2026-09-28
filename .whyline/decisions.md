@@ -2010,3 +2010,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/repl.py, src/whyline/cli.py, tests/console/test_repl.py, tests/test_cli_console.py
 
 <!-- whyline-event: 784c9260a220415495340fcf8c3d86f2 -->
+
+## 2026-09-28 — Released whyline 0.3.8 (console foundation)
+
+**Actor:** claude
+**Role:** releaser
+**Task:** UCF-RELEASE
+
+**Because:** UCF-1 through UCF-6 are all checked and approved, the full suite passes on main, and the release workflow verifies the built artifacts before publishing
+
+**Rejected:**
+
+- publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.7
+
+<!-- whyline-event: be461e56d3a048568781cee05c7aef94 -->
