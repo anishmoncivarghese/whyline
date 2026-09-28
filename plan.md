@@ -188,7 +188,7 @@
 
   ---
 
-- [ ] WFX-2: Add missing `encoding="utf-8"` everywhere (WFX2)
+- [x] WFX-2: Add missing `encoding="utf-8"` everywhere (WFX2)
 
   ## Global Constraints
 
