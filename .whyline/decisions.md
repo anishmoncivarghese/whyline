@@ -1752,3 +1752,35 @@ Append-only. Written by whyline; readable without it.
 - keep retrying grok — no new information after 5 identical failures, continuing costs real money with no signal it would eventually succeed
 
 <!-- whyline-event: 3ad2772c3abd4c2686710b2141605bd7 -->
+
+## 2026-09-28 — Use frozen SessionEvent and default_factory list for ConsoleSession transcript
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-1
+
+**Because:** Frozen dataclass guarantees immutability of recorded events across the console render loop and default_factory prevents transcript sharing across session instances
+
+**Rejected:**
+
+- mutable SessionEvent — would allow adapters or render loops to mutate past events in-place
+
+**Files:** src/whyline/console/session.py
+
+<!-- whyline-event: 3e05b8aa21d64b67adbf39531ad745e7 -->
+
+## 2026-09-28 — Approve UCF-1 session/event model and dependency setup
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-1
+
+**Because:** The implementation matches the requested frozen event and mutable session interfaces, tests cover field storage, immutability, independent transcript defaults, append identity, and ordering, the locked project environment imports whyline_relay, and the full test suite passes
+
+**Rejected:**
+
+- request changes for system python import failure — the project-managed .venv imports whyline_relay successfully and the bare system interpreter is outside the synced project environment
+
+**Files:** src/whyline/console/session.py
+
+<!-- whyline-event: a3c5296a370541b691da210c9ed9391a -->
