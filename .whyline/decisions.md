@@ -1798,3 +1798,36 @@ Append-only. Written by whyline; readable without it.
 - add --add-dir .git to codex's command — untested and changes the reviewer's permission surface for every future task, not just this one-off; a manual completion is safer until this is confirmed to recur
 
 <!-- whyline-event: 973ace7be5a44441aec5604ed32851ca -->
+
+## 2026-09-28 — Refuse bare interactive account and model commands in run_whyline_command adapter
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-2
+
+**Because:** Bare account and model use interactive input() prompts that cannot be answered safely when capturing output in console mode; running in-process via cli.main with stdout/stderr redirected handles non-interactive commands cleanly
+
+**Rejected:**
+
+- redirect sys.stdin — masking input() with EOF or empty stream would silently bypass interactive wizards rather than directing users to /model or subcommands
+- spawn subprocess — in-process execution avoids subprocess overhead and keeps console execution direct
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 69d1f301293748628115ff8a9710ae8e -->
+
+## 2026-09-28 — Approve in-process whyline command adapter
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-2
+
+**Because:** The adapter matches UCF-2: it refuses the two explicitly interactive bare commands, captures stdout and stderr from cli.main, maps nonzero and SystemExit outcomes to error events, and the full 365-test suite passes
+
+**Rejected:**
+
+- request changes for account status confirmation — UCF-2 explicitly requires account status to remain allowed and limits refusal to bare account and model commands
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 412d9d890b594adab126848cd303df30 -->
