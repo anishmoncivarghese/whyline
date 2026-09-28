@@ -32,6 +32,24 @@ all of those existed, since there was nothing to cut over to before now.
 - **Attachments.** Still deferred indefinitely, unrelated to this
   sub-project.
 
+## Discovered mid-design
+
+While working out FC2's exact mechanics, a real pre-existing bug surfaced:
+the mouse TUI's Model/Route/History/Help buttons (shipped in 0.3.11) call
+`dispatch(session, "/model")` etc. directly, but `dispatch()` has no
+concept of slash commands at all -- that handling has only ever existed
+inline inside the keyboard REPL's own loop. Today, clicking these buttons
+does not do what their label says: "command" mode would try to run
+`whyline /model` as a literal subcommand, "chat" mode would send "/model"
+as a literal prompt to an agent, "relay" mode hits "unknown relay
+command." The shipped tests never caught this because they mocked
+`dispatch` itself, proving only that the button *calls* it, never that
+the result is meaningful. Typing a slash command into the TUI's own
+prompt bar and clicking Send has the identical problem -- it is not
+limited to the dedicated buttons. FC4 below fixes this as part of this
+sub-project, since FC2's own route-button setup-handoff cannot work
+correctly without it -- not scope creep, a genuine prerequisite.
+
 ## Decisions
 
 - **FC1 -- `run_entry_menu` gains a priority check before its existing
@@ -59,6 +77,35 @@ all of those existed, since there was nothing to cut over to before now.
 - **FC3 -- The old entry menu is untouched and permanent.** No removal,
   no deprecation warning printed, no behavior change to it at all -- FC1
   simply routes around it when something better is available.
+- **FC4 -- Slash-command handling is extracted into one shared function
+  both consoles call, fixing the bug above.** A new `handle_slash_command(
+  session, text) -> SessionEvent | None` in `repl.py` covers `/help`,
+  `/status`, `/handoff`, `/history`, `/route`, `/model` -- returning the
+  event to render, or `None` if `text` isn't a recognized slash command at
+  all (signaling "fall through to ordinary `dispatch()`"). `/exit` and
+  `/stop` stay outside it, unchanged, since each means something
+  genuinely different per console (`/exit` ends the keyboard loop, meaning
+  nothing to the TUI, which has no such command; `/stop` is a real
+  cancellation in the TUI but a fixed "nothing in flight" reply in the
+  synchronous keyboard REPL -- see the console foundation's own UCF7). The
+  keyboard REPL calls this function inline, before falling through to
+  `dispatch()`, exactly reproducing its own current behavior (this must
+  not change any existing keyboard-console test's outcome). The TUI's
+  `_send()` calls it *synchronously on the main thread, before spawning
+  any worker* (these are fast, local operations -- no background dispatch
+  needed), and its Model/Route/History/Help buttons call it directly with
+  their own fixed text, rather than routing through `dispatch()` at all.
+  The relay-setup handoff (FC2) is signaled by a new `SessionEvent` kind,
+  `"needs_setup"`, which `handle_slash_command` returns instead of
+  performing the `exec` itself -- each caller decides how to actually hand
+  off (inline for keyboard, deferred for the TUI), keeping the "differs by
+  console flavor" mechanics exactly where FC2 already puts them.
+  `adapters.relay_is_configured(root) -> bool` (checking for
+  `.whyline/relay/config.toml`'s existence directly -- no need to import
+  `whyline_relay` just to check a path) is what `/route relay` consults to
+  decide whether to switch modes normally or return the `needs_setup`
+  event. Matching today's entry menu exactly, no confirmation prompt is
+  asked first -- the handoff is immediate.
 
 ## Architecture
 
@@ -74,11 +121,26 @@ run_entry_menu()
   (unchanged from today, exactly as-is)
   choice = "Chat or relay?" ...
 
-repl.py / tui.py, /route relay with no config.toml present:
-  keyboard: exec_fn("whyline-relay", ["whyline-relay", "setup"])   -- inline (FC2)
-  TUI:      self._exec_after = ["whyline-relay", "setup"]; self.exit()
-            launch()'s own code, after app.run() returns:
-              if app._exec_after: exec_fn(*app._exec_after)         (FC2)
+repl.py:
+  handle_slash_command(session, text) -> SessionEvent | None       (FC4)
+    /help, /status, /handoff, /history  -> event to render
+    /route <mode>
+      "relay" and not adapters.relay_is_configured(root)
+        -> SessionEvent(kind="needs_setup", text=...)
+      else -> switches session.mode, event to render
+    /model ... -> event to render (today's _handle_model logic, adapted)
+    anything else -> None (caller falls through to dispatch())
+
+  keyboard run() loop: handle_slash_command(...) first; if its event has
+    kind == "needs_setup": exec_fn("whyline-relay", ["whyline-relay", "setup"])
+    else: render the event (or fall through to dispatch() on None)     (FC2, inline)
+
+  tui.py _send(): handle_slash_command(...) first, on the main thread,
+    no worker; if kind == "needs_setup": self._exec_after = (...); self.exit()
+    else: render directly (or spawn a worker for dispatch() on None)   (FC2, deferred)
+
+  tui.py Model/Route/History/Help buttons call handle_slash_command directly
+    with their own fixed text, never through dispatch()                (FC4)
 ```
 
 ## Error handling
@@ -99,12 +161,24 @@ repl.py / tui.py, /route relay with no config.toml present:
   toggled in every combination, confirm exactly the right one launches;
   every existing `test_cli_chat_delegation.py` test must keep passing
   unmodified (proving the fallback path is untouched).
-- FC2 (keyboard): a fake `exec_fn` captures the call when `/route relay`
-  is chosen with no config.toml present.
+- FC4: `handle_slash_command` unit-tested directly -- each of `/help`,
+  `/status`, `/handoff`, `/history`, `/model` returns the right event;
+  `/route <mode>` with config present switches modes; `/route relay` with
+  no config present returns `kind == "needs_setup"` instead of switching;
+  ordinary non-slash text returns `None`. Every existing keyboard-console
+  test in `test_repl.py` must keep passing unmodified after `run()` is
+  rewired to call this function (proving the extraction didn't change
+  behavior, only its shape).
+- FC2 (keyboard): a fake `exec_fn` captures the call when
+  `handle_slash_command` returns `needs_setup` for `/route relay` with no
+  config.toml present.
 - FC2 (TUI): via Textual's `Pilot`, confirm choosing relay-with-no-config
+  (via the Route button, and via typing `/route relay` into the prompt)
   sets the deferred-exec flag and calls `self.exit()`, and that the actual
   exec only happens in `launch()` after `app.run()` has returned -- never
-  before.
+  before. Also confirm the previously-broken case is now fixed: clicking
+  Model (or History/Help) with a real config present renders the actual
+  expected content, not just proof that some function got called.
 - End-to-end (once built): a real scratch repo with neither extra
   installed still gets today's exact menu; installing `[console]` alone
   switches it to the keyboard REPL; installing `[ui]` switches it to the
