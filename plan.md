@@ -215,7 +215,7 @@
 
   ---
 
-- [ ] FC-2: Shared slash-command handling, fixing the TUI button bug (FC4, keyboard side of FC2)
+- [x] FC-2: Shared slash-command handling, fixing the TUI button bug (FC4, keyboard side of FC2)
 
   ## Global Constraints
 
