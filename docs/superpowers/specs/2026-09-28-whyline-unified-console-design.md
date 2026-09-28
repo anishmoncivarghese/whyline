@@ -153,7 +153,45 @@ The implementation must be tested on macOS, Linux, and Windows-compatible
 terminal behavior, with graceful degradation for terminals without mouse
 support or image protocols.
 
-## 11. Acceptance criteria
+## 11. Roadmap and sub-projects
+
+This document is the overarching vision; it is deliberately too broad for
+one spec or plan (see the brainstorming session that produced
+`docs/superpowers/specs/2026-09-28-console-foundation-design.md`). It is
+built as a sequence of independently-shippable sub-projects, each with its
+own spec and plan:
+
+1. **Console foundation** -- session/event model, command adapters
+   (in-process for whyline's own commands; direct calls into whyline-
+   relay's already-structured functions for chat/doctor/status, `cli.main`
+   in-process for start/resume), the keyboard-only multiline console.
+   **Shipped** (whyline 0.3.8, `docs/superpowers/specs/2026-09-28-console-foundation-design.md`).
+2. **Model/route palette** -- wires in `available_agents()` (already
+   shipped via account-capability gating). Not yet designed.
+3. **Relay lifecycle & recovery views** -- pauses, handoffs, resume
+   instructions rendered well, on top of the foundation's event model. Not
+   yet designed.
+4. **Full-screen mouse-enabled TUI** -- a pure rendering layer over the
+   foundation's `SessionEvent` stream, layered on an already-working
+   keyboard core. Not yet designed.
+5. **Cross-platform packaging & release readiness** -- wraps up once 2-4
+   are stable. Not yet designed.
+6. **Final cutover** -- once the console reaches parity with today's plain
+   entry menu (both chat *and* relay setup, not chat alone), bare `whyline`
+   launches the console directly instead of the current Chat/Relay text
+   menu. The old menu is deprecated at that point, not kept indefinitely as
+   a second interface -- this document's own goal is one unified console,
+   not two interfaces maintained in parallel forever. Not yet designed;
+   explicitly out of scope until sub-projects 2-5 are done, since there is
+   nothing to cut over to before then.
+7. **Attachments** (files, images, directories) -- its own future
+   sub-project, deferred indefinitely, no sequencing commitment yet.
+
+Each numbered item gets its own spec and plan when its turn comes, per this
+project's established brainstorming/writing-plans process -- this document
+is never itself turned directly into an implementation plan.
+
+## 12. Acceptance criteria
 
 - A user can launch one interface and invoke both Whyline and Whyline Relay.
 - A multiline prompt supports selection, word deletion, history, and paste.
