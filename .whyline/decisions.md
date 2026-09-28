@@ -1623,3 +1623,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/superpowers/specs/2026-09-28-whyline-unified-console-design.md, docs/superpowers/plans/2026-09-28-whyline-unified-console.md
 
 <!-- whyline-event: cd75078e42b547888790b041856ffecd -->
+
+## 2026-09-28 — Auto-resume script recovered UCF-1: grok exited without handing off but its work passed the full suite
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** UCF-1
+
+**Because:** the same handoff-stall pattern seen throughout this project's use of grok -- its code is reliably correct, it just doesn't always call whyline handoff itself
+
+**Rejected:**
+
+- reset and redo — wastes correct, test-verified work
+
+<!-- whyline-event: 50ae2da486564f2e9d40d6ec8943ed57 -->
