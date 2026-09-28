@@ -589,7 +589,7 @@
 
   ---
 
-- [ ] UCF-4: `adapters.py` -- `run_relay_oneshot` (`start`/`resume`)
+- [x] UCF-4: `adapters.py` -- `run_relay_oneshot` (`start`/`resume`)
 
   ## Global Constraints
 
