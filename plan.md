@@ -763,7 +763,7 @@
 
   ---
 
-- [ ] UCF-5: `editor.py` -- the guarded `prompt_toolkit` wrapper
+- [x] UCF-5: `editor.py` -- the guarded `prompt_toolkit` wrapper
 
   ## Global Constraints
 
