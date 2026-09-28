@@ -1,4 +1,4 @@
-- [ ] RLV-1: Structured pause rendering + failure classification
+- [x] RLV-1: Structured pause rendering + failure classification
 
   ## Global Constraints
 
