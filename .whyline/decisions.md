@@ -2277,3 +2277,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py
 
 <!-- whyline-event: 291eba32059846618a038d6faca6d9ad -->
+
+## 2026-09-28 — Route Model/Route/History/Help to _dispatch_text and invalidate token on Stop
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** MTU-4
+
+**Because:** Reuses the existing thread worker and token-invalidation mechanism without duplicate dispatch logic or forcible thread interruption
+
+**Rejected:**
+
+- separate UI-specific handlers for buttons — violates MTU5 requirement that all buttons dispatch via standard slash commands
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 2e0716fe3ac34357aeee67c28704667f -->
+
+## 2026-09-28 — Approve shared slash-command button routing and token-based Stop cancellation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** MTU-4
+
+**Because:** Model, Route, History, and Help use the existing dispatch worker with exact command text; Stop invalidates the active token before cancelling workers, the deterministic late-result test is sound, and both focused and full suites pass
+
+**Rejected:**
+
+- request changes — implementation matches the planned Textual worker semantics and no correctness or safety defect was found
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 68ae8f7dbbc84b25a89430f83233d1a2 -->

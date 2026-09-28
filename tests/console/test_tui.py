@@ -154,9 +154,11 @@ async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
     import threading
     from whyline.console.session import SessionEvent
 
+    started = threading.Event()
     release = threading.Event()
 
     def slow_dispatch(session, text):
+        started.set()
         release.wait(timeout=2)  # held open until the test itself lets go
         return SessionEvent(kind="output", text="too late")
 
@@ -166,7 +168,7 @@ async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
         prompt = app.query_one("#prompt", tui.TextArea)
         prompt.text = "long running"
         await pilot.click("#send")
-        await pilot.pause()  # let the worker actually start and block on release
+        assert started.wait(timeout=2.0)  # let the worker actually start and block on release
         await pilot.click("#stop")  # invalidates the token while still blocked
         release.set()  # now let the blocked dispatch finish, "too late"
         await pilot.pause()

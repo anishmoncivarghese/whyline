@@ -75,8 +75,28 @@ class WhylineConsoleApp(App):
         transcript.write(f"{_PREFIX.get(event.kind, '')}{event.text}")
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
-        if event.button.id == "send":
+        button_id = event.button.id
+        if button_id == "send":
             self._send()
+        elif button_id == "stop":
+            self._stop()
+        elif button_id in ("model", "route", "history", "help"):
+            self._dispatch_text(f"/{button_id}")
+
+    def _stop(self) -> None:
+        """Invalidates the current dispatch token (MTU6): whatever
+        _dispatch_in_thread is running right now will still run to
+        completion -- Python cannot forcibly interrupt it -- but its result
+        will no longer match self._dispatch_token when it finally returns,
+        so render_event is never called for it. This guarantee holds
+        regardless of what worker.cancel() itself does or doesn't stop.
+        worker.cancel() is still called below as a best-effort signal to
+        Textual's own scheduler; verify its exact call shape (iterating
+        self.workers vs. a single self.workers.cancel_all()) against your
+        installed version."""
+        self._dispatch_token = object()
+        for worker in self.workers:
+            worker.cancel()
 
     def _send(self) -> None:
         prompt = self.query_one("#prompt", TextArea)
