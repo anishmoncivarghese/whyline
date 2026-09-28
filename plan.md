@@ -145,7 +145,7 @@
 
   ---
 
-- [ ] UCF-2: `adapters.py` -- `run_whyline_command` (in-process whyline commands)
+- [x] UCF-2: `adapters.py` -- `run_whyline_command` (in-process whyline commands)
 
   ## Global Constraints
 
