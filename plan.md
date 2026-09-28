@@ -1,413 +1,436 @@
-- [x] MTU-1: `dispatch()` becomes public; add the `[ui]` extra
+- [ ] WFX-1: Portable file lock (WFX1)
 
   ## Global Constraints
 
-  - No new *required* dependency in the base `whyline` install. `textual` is only pulled in via the new `[ui]` extra (MTU1); base `whyline`/`whyline-relay` stay fully dependency-free.
-  - No attachments panel -- attachments (sub-project #7) remain deferred indefinitely.
-  - Every button dispatches the exact same text command the keyboard console already accepts (`/model`, `/route ...`, `/history`, `/help`) through the same `dispatch()` function -- never a separate, mouse-only implementation (MTU5).
-  - `/stop` marks the active worker cancelled; it cannot forcibly interrupt Python code already running inside a thread. State this plainly in the UI text, never imply true interruption (MTU6).
-  - This is the project's first use of Textual. **Before writing any TUI code, install it for real (`uv pip install textual` or add the `[ui]` extra locally and `uv sync`) and verify every API this plan assumes (`App`, `run_worker(..., thread=True)`, `call_from_thread`, `RichLog`, `TextArea`, `Header`, `Button`, `Horizontal`, `Pilot`/`App.run_test()`) against whatever version actually installs. If a name or signature differs from what this plan shows, use the real one and note the discrepancy in your `whyline note` -- the same "verify against reality" standard this project applies to every other external dependency (Grok's CLI flags, codex's sandbox modes, prompt_toolkit's own API).
+  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
+  - Every fix in this plan must be verified against the actual Windows CI job, not just macOS/Linux locally -- push after each task and confirm the real result, per this sub-project's own standard.
+  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
   - Every existing test in this repo must still pass after every task.
 
   **Note on this pairing:** Antigravity implements, Codex reviews.
 
   **Files:**
-  - Modify: `src/whyline/console/repl.py`, `pyproject.toml`
-  - Test: `tests/console/test_repl.py`
+  - Modify: `src/whyline/state.py`
+  - Test: `tests/test_state_lock.py` (new file)
 
   **Interfaces:**
-  - Produces: `dispatch(session: ConsoleSession, text: str) -> SessionEvent` (renamed from `_dispatch`, otherwise identical). `pyproject.toml` gains `[project.optional-dependencies] ui = ["textual"]`.
+  - Produces: `file_lock(path)` (unchanged public signature and context-manager behavior) now implemented via two new private helpers, `_acquire_lock(lock_path: Path, timeout: float = 10.0) -> None` and `_release_lock(lock_path: Path) -> None`, both stdlib-only and portable across POSIX and Windows.
 
-  Step 1: Read the current files fresh
+  Step 1: Read `state.py` fresh
 
-  Read `src/whyline/console/repl.py` and the `[project.optional-dependencies]`
-  block in `pyproject.toml` in full before making any change -- confirm
-  `_dispatch`'s exact current body matches what's described here (it should,
-  but this project's own convention is to verify, not assume).
-
-  Step 2: Write the failing test
-
-  `tests/console/test_repl.py` already tests dispatch behavior indirectly
-  through `repl.run(...)`. Add a direct test of the renamed public function:
+  Read the whole file (it's short) before changing anything -- confirm
+  `file_lock`'s current body matches what's shown below.
 
   ```python
-  def test_dispatch_is_public_and_routes_by_mode(tmp_path):
-      from whyline.console.repl import dispatch
-      from whyline.console.session import ConsoleSession
-      from whyline.console import adapters
-
-      session = ConsoleSession(root=tmp_path, mode="command")
-      called = []
-      original = adapters.run_whyline_command
-      adapters.run_whyline_command = lambda argv: called.append(argv) or original(argv)
+  @contextmanager
+  def file_lock(path: Path):
+      """Serialize a checkout-local read/modify/write cycle on macOS and Linux."""
       try:
-          dispatch(session, "model status")
-      finally:
-          adapters.run_whyline_command = original
-      assert called == [["model", "status"]]
-  ```
+          import fcntl
+      except ImportError:  # pragma: no cover - Windows remains unverified
+          yield
+          return
 
-  Step 3: Run the test to verify it fails
-
-  Run: `uv run pytest tests/console/test_repl.py -k is_public -v`
-  Expected: FAIL (`ImportError: cannot import name 'dispatch'`)
-
-  Step 4: Rename `_dispatch` to `dispatch`
-
-  In `src/whyline/console/repl.py`, rename the function definition:
-
-  ```python
-  def dispatch(session: ConsoleSession, text: str) -> SessionEvent:
-  ```
-
-  and update its one call site inside `run()`:
-
-  ```python
+      path.parent.mkdir(parents=True, exist_ok=True)
+      lock_path = path.with_name(path.name + ".lock")
+      with lock_path.open("a+", encoding="utf-8") as handle:
+          fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
           try:
-              event = dispatch(session, text)
-          except KeyboardInterrupt:
+              yield
+          finally:
+              fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
   ```
 
-  Leave the function's body completely unchanged -- this is a rename only.
+  Step 2: Write the failing tests
 
-  Step 5: Add the `[ui]` extra
-
-  In `pyproject.toml`, add a new line to `[project.optional-dependencies]`,
-  right after the existing `console` entry:
-
-  ```toml
-  [project.optional-dependencies]
-  relay = ["whyline-relay>=0.2.1,<0.3"]
-  console = ["prompt_toolkit>=3.0,<4.0"]
-  ui = ["textual>=0.60,<1.0"]
-  ```
-
-  Run `uv lock` afterward so the lockfile picks up the new optional group
-  (it will not install `textual` into the base environment -- only
-  `[project.optional-dependencies]` entries someone explicitly asks for get
-  installed).
-
-  Step 6: Run the tests to verify they pass
-
-  Run: `uv run pytest tests/console/test_repl.py -v`
-  Expected: PASS (every test in the file, including the new one)
-
-  Step 7: Run the whole suite
-
-  Run: `uv run pytest -q`
-  Expected: PASS
-
-  Step 8: Commit
-
-  ```bash
-  git add src/whyline/console/repl.py pyproject.toml uv.lock
-  git commit -m "feat: dispatch() becomes public; add the [ui] extra for textual"
-  ```
-
-  ---
-
-- [x] MTU-2: `tui.py` skeleton -- guarded import, layout, and a Pilot smoke test
-
-  ## Global Constraints
-
-  - No new *required* dependency in the base `whyline` install. `textual` is only pulled in via the new `[ui]` extra (MTU1); base `whyline`/`whyline-relay` stay fully dependency-free.
-  - No attachments panel -- attachments (sub-project #7) remain deferred indefinitely.
-  - Every button dispatches the exact same text command the keyboard console already accepts (`/model`, `/route ...`, `/history`, `/help`) through the same `dispatch()` function -- never a separate, mouse-only implementation (MTU5).
-  - `/stop` marks the active worker cancelled; it cannot forcibly interrupt Python code already running inside a thread. State this plainly in the UI text, never imply true interruption (MTU6).
-  - This is the project's first use of Textual. **Before writing any TUI code, install it for real (`uv pip install textual` or add the `[ui]` extra locally and `uv sync`) and verify every API this plan assumes (`App`, `run_worker(..., thread=True)`, `call_from_thread`, `RichLog`, `TextArea`, `Header`, `Button`, `Horizontal`, `Pilot`/`App.run_test()`) against whatever version actually installs. If a name or signature differs from what this plan shows, use the real one and note the discrepancy in your `whyline note` -- the same "verify against reality" standard this project applies to every other external dependency (Grok's CLI flags, codex's sandbox modes, prompt_toolkit's own API).
-  - Every existing test in this repo must still pass after every task.
-
-  **Note on this pairing:** Antigravity implements, Codex reviews.
-
-  **Files:**
-  - Create: `src/whyline/console/tui.py`
-  - Test: `tests/console/test_tui.py` (new file)
-
-  **Interfaces:**
-  - Consumes: `ConsoleSession`, `SessionEvent` (unchanged, from `session.py`); `dispatch` (Task 1).
-  - Produces: `TUI_AVAILABLE: bool`. `WhylineConsoleApp(App)` -- a Textual app taking `root: Path` at construction, composing a header, a transcript log, a prompt editor, and a row of buttons (Send, Model, Route, History, Stop, Help -- no Attach). `launch(root: Path) -> None` -- runs the app, or raises `TuiUnavailable` if `textual` isn't installed.
-
-  Step 1: Install and verify Textual's real API
-
-  Before writing any code: install `textual` in your environment (`uv sync
-  --extra ui`, or `uv pip install textual` directly) and confirm these
-  imports and calls actually work against the installed version:
+  Create `tests/test_state_lock.py`:
 
   ```python
-  from textual.app import App, ComposeResult
-  from textual.containers import Horizontal
-  from textual.widgets import Header, Footer, Button, TextArea, RichLog
-  ```
+  import os
+  import time
+  from pathlib import Path
 
-  If any name differs (Textual's API has moved things between major
-  versions in the past), use the real name and record the discrepancy via
-  `whyline note` -- do not silently paper over a mismatch.
-
-  Step 2: Write the failing test
-
-  Create `tests/console/test_tui.py`:
-
-  ```python
   import pytest
 
-  from whyline.console import tui
+  from whyline import state
 
 
-  def test_tui_available_flag_exists():
-      assert isinstance(tui.TUI_AVAILABLE, bool)
+  def test_acquire_then_release_allows_a_second_acquire(tmp_path: Path):
+      lock_path = tmp_path / "x.lock"
+      state._acquire_lock(lock_path)
+      state._release_lock(lock_path)
+      # Must not raise or block -- the lock file is gone after release.
+      state._acquire_lock(lock_path)
+      state._release_lock(lock_path)
 
 
-  def test_launch_raises_a_clear_error_without_textual(monkeypatch, tmp_path):
-      monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
-      with pytest.raises(tui.TuiUnavailable, match=r"whyline\[ui\]"):
-          tui.launch(tmp_path)
+  def test_a_held_lock_blocks_a_second_acquire_until_timeout(tmp_path: Path):
+      lock_path = tmp_path / "x.lock"
+      state._acquire_lock(lock_path)
+      try:
+          with pytest.raises(TimeoutError, match=str(lock_path)):
+              state._acquire_lock(lock_path, timeout=0.3)
+      finally:
+          state._release_lock(lock_path)
 
 
-  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
-  @pytest.mark.asyncio
-  async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
-      app = tui.WhylineConsoleApp(root=tmp_path)
-      async with app.run_test() as pilot:
-          assert app.query_one("#transcript") is not None
-          assert app.query_one("#prompt") is not None
-          for button_id in ("send", "model", "route", "history", "stop", "help"):
-              assert app.query_one(f"#{button_id}") is not None
+  def test_a_stale_lock_is_cleared_and_reacquired(tmp_path: Path):
+      lock_path = tmp_path / "x.lock"
+      lock_path.write_text("", encoding="utf-8")
+      # Force the lock file's mtime far enough into the past to look abandoned.
+      old = time.time() - 3600
+      os.utime(lock_path, (old, old))
+      # Must succeed quickly -- the stale lock is cleared, not waited out.
+      started = time.monotonic()
+      state._acquire_lock(lock_path, timeout=5.0)
+      elapsed = time.monotonic() - started
+      state._release_lock(lock_path)
+      assert elapsed < 2.0
+
+
+  def test_release_of_an_already_missing_lock_does_not_raise(tmp_path: Path):
+      lock_path = tmp_path / "never-created.lock"
+      state._release_lock(lock_path)  # must not raise
+
+
+  def test_file_lock_context_manager_still_works(tmp_path: Path):
+      target = tmp_path / "some-state.json"
+      with state.file_lock(target):
+          target.write_text("{}", encoding="utf-8")
+      assert target.read_text(encoding="utf-8") == "{}"
+      # The lock file itself must not be left behind after a clean exit.
+      assert not target.with_name(target.name + ".lock").exists()
   ```
-
-  `pytest-asyncio` may need adding as a dev dependency for the async test
-  above (`uv add --group dev pytest-asyncio`, or confirm it is already
-  present) -- check `pyproject.toml`'s `[dependency-groups]` first.
 
   Step 3: Run the tests to verify they fail
 
-  Run: `uv run pytest tests/console/test_tui.py -v`
-  Expected: FAIL (`ModuleNotFoundError: No module named 'whyline.console.tui'`)
+  Run: `uv run pytest tests/test_state_lock.py -v`
+  Expected: FAIL (`AttributeError: module 'state' has no attribute '_acquire_lock'`)
 
-  Step 4: Implement the skeleton
+  Step 4: Implement
 
-  Create `src/whyline/console/tui.py`:
+  Replace `file_lock` in `src/whyline/state.py` with:
 
   ```python
-  """whyline console's mouse-enabled TUI, built on Textual.
-
-  Import-guarded exactly like editor.py guards prompt_toolkit, so the rest
-  of the console package stays importable and testable without the [ui]
-  extra installed. Reuses ConsoleSession/SessionEvent/adapters.py and
-  repl.py's dispatch() completely unchanged -- this module is a rendering
-  layer, not a second implementation of the console's logic.
-  """
-
-  from __future__ import annotations
-
-  from pathlib import Path
-
-  try:
-      from textual.app import App, ComposeResult
-      from textual.containers import Horizontal
-      from textual.widgets import Button, Footer, Header, RichLog, TextArea
-
-      TUI_AVAILABLE = True
-  except ImportError:
-      App = object  # placeholder base so WhylineConsoleApp can still be defined
-      ComposeResult = None
-      Horizontal = None
-      Button = Footer = Header = RichLog = TextArea = None
-      TUI_AVAILABLE = False
-
-  from whyline.console.session import ConsoleSession, SessionEvent
-
-  _PREFIX = {"error": "⚠ ", "pause": "⏸ "}
+  _STALE_LOCK_SECONDS = 10.0
+  _POLL_INTERVAL_SECONDS = 0.05
 
 
-  class TuiUnavailable(RuntimeError):
-      """textual is not installed."""
+  def _acquire_lock(lock_path: Path, timeout: float = 10.0) -> None:
+      """Blocks until `lock_path` can be exclusively created, or raises
+      TimeoutError. os.O_CREAT | os.O_EXCL is honored identically on POSIX
+      and Windows -- no platform branch, no new dependency. A lock file
+      older than _STALE_LOCK_SECONDS is treated as abandoned by a crashed
+      process (this primitive, unlike fcntl.flock, does not auto-release on
+      crash) and cleared before retrying."""
+      lock_path.parent.mkdir(parents=True, exist_ok=True)
+      deadline = time.monotonic() + timeout
+      while True:
+          try:
+              fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+              os.close(fd)
+              return
+          except FileExistsError:
+              try:
+                  age = time.time() - lock_path.stat().st_mtime
+              except FileNotFoundError:
+                  continue  # another process just released it -- retry immediately
+              if age > _STALE_LOCK_SECONDS:
+                  try:
+                      lock_path.unlink()
+                  except FileNotFoundError:
+                      pass  # another process already cleared it -- fine either way
+                  continue
+              if time.monotonic() > deadline:
+                  raise TimeoutError(
+                      f"could not acquire lock {lock_path} within {timeout}s"
+                  )
+              time.sleep(_POLL_INTERVAL_SECONDS)
 
 
-  class WhylineConsoleApp(App):
-      """The mouse-enabled console. Every widget dispatches through the same
-      ConsoleSession/dispatch() path the keyboard REPL already uses."""
-
-      def __init__(self, *, root: Path) -> None:
-          super().__init__()
-          self.session = ConsoleSession(root=root)
-
-      def compose(self) -> ComposeResult:
-          yield Header()
-          yield RichLog(id="transcript")
-          yield TextArea(id="prompt")
-          yield Horizontal(
-              Button("Send", id="send"),
-              Button("Model", id="model"),
-              Button("Route", id="route"),
-              Button("History", id="history"),
-              Button("Stop", id="stop"),
-              Button("Help", id="help"),
-          )
-          yield Footer()
-
-      def render_event(self, event: SessionEvent) -> None:
-          self.session.record(event)
-          transcript = self.query_one("#transcript", RichLog)
-          transcript.write(f"{_PREFIX.get(event.kind, '')}{event.text}")
+  def _release_lock(lock_path: Path) -> None:
+      lock_path.unlink(missing_ok=True)
 
 
-  def launch(root: Path) -> None:
-      if not TUI_AVAILABLE:
-          raise TuiUnavailable(
-              "The mouse TUI needs textual. Run: pip install 'whyline[ui]'"
-          )
-      WhylineConsoleApp(root=root).run()
+  @contextmanager
+  def file_lock(path: Path):
+      """Serialize a checkout-local read/modify/write cycle, portably."""
+      lock_path = path.with_name(path.name + ".lock")
+      _acquire_lock(lock_path)
+      try:
+          yield
+      finally:
+          _release_lock(lock_path)
   ```
 
-  Note: `App = object` in the `except ImportError` branch exists only so
-  `class WhylineConsoleApp(App):` doesn't itself raise `NameError` at import
-  time when `textual` is absent -- the class is still defined (satisfying
-  `TUI_AVAILABLE` checks and imports elsewhere), it just can't be
-  instantiated meaningfully without `textual` really installed, which
-  `launch()`'s own check catches first anyway.
+  Add `import time` to the existing imports at the top of `state.py` (it
+  currently imports `json`, `os`, `tempfile`, `contextmanager`, `Path` --
+  `os` is already there, `time` is new).
 
   Step 5: Run the tests to verify they pass
 
-  Run: `uv run pytest tests/console/test_tui.py -v`
-  Expected: PASS (the `TuiUnavailable` test always; the Pilot smoke test only
-  if `textual` is actually installed in this environment, otherwise skipped)
+  Run: `uv run pytest tests/test_state_lock.py -v`
+  Expected: PASS
 
   Step 6: Run the whole suite
 
   Run: `uv run pytest -q`
-  Expected: PASS
+  Expected: PASS (including the pre-existing
+  `tests/test_ownership.py::test_concurrent_claims_do_not_overwrite_each_other`,
+  unmodified -- the fix is underneath it)
 
   Step 7: Commit
 
   ```bash
-  git add src/whyline/console/tui.py tests/console/test_tui.py pyproject.toml uv.lock
-  git commit -m "feat: tui.py skeleton -- guarded import, header/transcript/prompt/controls layout"
+  git add src/whyline/state.py tests/test_state_lock.py
+  git commit -m "fix: portable file lock using exclusive creation instead of fcntl"
   ```
 
   ---
 
-- [x] MTU-3: Send dispatches through a background worker
+- [ ] WFX-2: Add missing `encoding="utf-8"` everywhere (WFX2)
 
   ## Global Constraints
 
-  - No new *required* dependency in the base `whyline` install. `textual` is only pulled in via the new `[ui]` extra (MTU1); base `whyline`/`whyline-relay` stay fully dependency-free.
-  - No attachments panel -- attachments (sub-project #7) remain deferred indefinitely.
-  - Every button dispatches the exact same text command the keyboard console already accepts (`/model`, `/route ...`, `/history`, `/help`) through the same `dispatch()` function -- never a separate, mouse-only implementation (MTU5).
-  - `/stop` marks the active worker cancelled; it cannot forcibly interrupt Python code already running inside a thread. State this plainly in the UI text, never imply true interruption (MTU6).
-  - This is the project's first use of Textual. **Before writing any TUI code, install it for real (`uv pip install textual` or add the `[ui]` extra locally and `uv sync`) and verify every API this plan assumes (`App`, `run_worker(..., thread=True)`, `call_from_thread`, `RichLog`, `TextArea`, `Header`, `Button`, `Horizontal`, `Pilot`/`App.run_test()`) against whatever version actually installs. If a name or signature differs from what this plan shows, use the real one and note the discrepancy in your `whyline note` -- the same "verify against reality" standard this project applies to every other external dependency (Grok's CLI flags, codex's sandbox modes, prompt_toolkit's own API).
+  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
+  - Every fix in this plan must be verified against the actual Windows CI job, not just macOS/Linux locally -- push after each task and confirm the real result, per this sub-project's own standard.
+  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
   - Every existing test in this repo must still pass after every task.
 
   **Note on this pairing:** Antigravity implements, Codex reviews.
 
   **Files:**
-  - Modify: `src/whyline/console/tui.py`
-  - Test: `tests/console/test_tui.py`
+  - Modify: `tests/test_model.py`, `tests/test_sync.py`, `tests/test_claudemd.py`, `tests/test_init_relay.py`, `tests/test_handoff.py`, `tests/test_hooks.py`, `tests/test_gitq.py`, `tests/test_agentsmd.py`, `tests/test_account_cli.py`, `tests/test_cli.py`, `tests/test_account.py`, `tests/test_decisions.py`, `tests/test_ledger.py`, `tests/console/test_adapters_relay_structured.py`
 
   **Interfaces:**
-  - Consumes: `dispatch` (Task 1), `render_event` (Task 2).
-  - Produces: clicking Send (or the button with id `"send"`) reads the prompt's text, runs `dispatch(self.session, text)` in a background thread via `run_worker(..., thread=True)`, and renders the resulting `SessionEvent` back on the main thread once it completes.
+  - Produces: no interface changes -- every listed call site gains an explicit `encoding="utf-8"` keyword argument, with no other behavior change.
+
+  Step 1: Fix every occurrence in this exact list
+
+  This is the complete, verified list of every `.write_text(...)`/
+  `.read_text(...)` call in `src/` and `tests/` missing an explicit
+  `encoding=` keyword (confirmed by scanning each call's full span, not
+  just its opening line, so a multi-line call already specifying encoding
+  on a later line is correctly excluded). `src/` has none -- every
+  occurrence is in a test file. For each, add `encoding="utf-8"` as a
+  keyword argument: a bare `.read_text()` becomes
+  `.read_text(encoding="utf-8")`; a `.write_text(some_value)` becomes
+  `.write_text(some_value, encoding="utf-8")` (or, for an already
+  multi-line call, add `encoding="utf-8"` as one more argument on its own
+  line before the closing parenthesis, matching that call's existing
+  style).
+
+  ```
+  tests/test_model.py:15
+  tests/test_model.py:21
+  tests/test_sync.py:39
+  tests/test_sync.py:143
+  tests/test_claudemd.py:7
+  tests/test_claudemd.py:14
+  tests/test_claudemd.py:16
+  tests/test_claudemd.py:26
+  tests/test_claudemd.py:32
+  tests/test_claudemd.py:34
+  tests/test_init_relay.py:143
+  tests/test_handoff.py:24
+  tests/test_hooks.py:11
+  tests/test_hooks.py:17
+  tests/test_hooks.py:33
+  tests/test_hooks.py:54
+  tests/test_hooks.py:66
+  tests/test_hooks.py:69
+  tests/test_hooks.py:75
+  tests/test_hooks.py:78
+  tests/test_hooks.py:84
+  tests/test_hooks.py:87
+  tests/test_hooks.py:95
+  tests/test_gitq.py:110
+  tests/test_gitq.py:111
+  tests/test_gitq.py:112
+  tests/test_agentsmd.py:7
+  tests/test_agentsmd.py:15
+  tests/test_agentsmd.py:17
+  tests/test_agentsmd.py:26
+  tests/test_account_cli.py:30
+  tests/test_cli.py:222
+  tests/test_cli.py:234
+  tests/test_cli.py:238
+  tests/test_cli.py:245
+  tests/test_cli.py:247
+  tests/test_cli.py:254
+  tests/test_cli.py:255
+  tests/test_cli.py:258
+  tests/test_cli.py:259
+  tests/test_cli.py:264
+  tests/test_cli.py:265
+  tests/test_cli.py:271
+  tests/test_cli.py:272
+  tests/test_cli.py:274
+  tests/test_cli.py:275
+  tests/test_cli.py:618
+  tests/test_cli.py:634
+  tests/test_cli.py:751
+  tests/test_cli.py:788
+  tests/test_cli.py:824
+  tests/test_cli.py:850
+  tests/test_cli.py:868
+  tests/test_cli.py:931
+  tests/test_cli.py:949
+  tests/test_cli.py:979
+  tests/test_account.py:23
+  tests/test_account.py:31
+  tests/test_account.py:38
+  tests/test_account.py:50
+  tests/test_account.py:66
+  tests/test_account.py:179
+  tests/test_account.py:202
+  tests/test_decisions.py:37
+  tests/test_decisions.py:48
+  tests/test_decisions.py:80
+  tests/test_decisions.py:94
+  tests/test_ledger.py:13
+  tests/test_ledger.py:19
+  tests/console/test_adapters_relay_structured.py:13
+  tests/console/test_adapters_relay_structured.py:183
+  ```
+
+  Line numbers are accurate as of this plan's writing on `main` -- if a
+  file has drifted since (another task landed first), find each call by
+  the pattern (`.write_text(` or `.read_text(` with no `encoding=` anywhere
+  in that call's own parentheses) rather than trusting the line number
+  blindly once it's off by more than a line or two.
+
+  Step 2: Verify nothing was missed or double-handled
+
+  Run this check -- it must print nothing (no output means no remaining
+  occurrences):
+
+  ```bash
+  python3 -c "
+  import re
+  from pathlib import Path
+
+  pattern = re.compile(r'\.(write_text|read_text)\(')
+  for path in list(Path('src').rglob('*.py')) + list(Path('tests').rglob('*.py')):
+      text = path.read_text(encoding='utf-8')
+      lines = text.splitlines()
+      for i, line in enumerate(lines):
+          for m in pattern.finditer(line):
+              depth = 0
+              buf = []
+              k = i
+              rem = line[m.end()-1:]
+              while True:
+                  for ch in rem:
+                      if ch == '(':
+                          depth += 1
+                      elif ch == ')':
+                          depth -= 1
+                      buf.append(ch)
+                      if depth == 0:
+                          break
+                  if depth == 0:
+                      break
+                  k += 1
+                  if k >= len(lines):
+                      break
+                  rem = lines[k]
+                  buf.append('\n')
+              if 'encoding=' not in ''.join(buf):
+                  print(f'{path}:{i+1}')
+  "
+  ```
+
+  Step 3: Run the whole suite
+
+  Run: `uv run pytest -q`
+  Expected: PASS
+
+  Step 4: Commit
+
+  ```bash
+  git add tests/
+  git commit -m "fix: add explicit encoding=\"utf-8\" to every text read/write missing it"
+  ```
+
+  ---
+
+- [ ] WFX-3: Forward-slash-consistent paths in `hook_entry.py` (WFX3)
+
+  ## Global Constraints
+
+  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
+  - Every fix in this plan must be verified against the actual Windows CI job, not just macOS/Linux locally -- push after each task and confirm the real result, per this sub-project's own standard.
+  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
+  - Every existing test in this repo must still pass after every task.
+
+  **Note on this pairing:** Antigravity implements, Codex reviews.
+
+  **Files:**
+  - Modify: `src/whyline/hook_entry.py`
+  - Test: `tests/test_hook_entry.py`
+
+  **Interfaces:**
+  - Produces: `_relative(root, raw)` returns a forward-slash path string on every platform (unchanged return type, `str | None`).
 
   Step 1: Write the failing test
 
-  Add to `tests/console/test_tui.py`:
+  Add to `tests/test_hook_entry.py`:
 
   ```python
-  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
-  @pytest.mark.asyncio
-  async def test_send_dispatches_in_a_worker_and_renders_the_result(tmp_path, monkeypatch):
-      from whyline.console.session import SessionEvent
+  def test_relative_returns_forward_slashes_for_a_nested_path(tmp_path):
+      from whyline.hook_entry import _relative
 
-      monkeypatch.setattr(
-          tui, "dispatch",
-          lambda session, text: SessionEvent(kind="output", text=f"ran {text!r}"),
-      )
-      app = tui.WhylineConsoleApp(root=tmp_path)
-      async with app.run_test() as pilot:
-          prompt = app.query_one("#prompt", tui.TextArea)
-          prompt.text = "hello"
-          await pilot.click("#send")
-          await pilot.pause()  # let the worker's result land
-          transcript = app.query_one("#transcript", tui.RichLog)
-          assert any("ran 'hello'" in str(line) for line in transcript.lines)
+      nested = tmp_path / "src" / "pkg" / "mod.py"
+      nested.parent.mkdir(parents=True)
+      nested.write_text("x", encoding="utf-8")
+      result = _relative(tmp_path, str(nested))
+      assert result == "src/pkg/mod.py"
+      assert "\\" not in result
   ```
-
-  Check `RichLog`'s actual API for reading back written content in your
-  installed Textual version (`transcript.lines`, or whatever the real
-  attribute/method is) before trusting the assertion above verbatim --
-  adjust it to however `RichLog` actually exposes its rendered content for
-  testing.
 
   Step 2: Run the test to verify it fails
 
-  Run: `uv run pytest tests/console/test_tui.py -k send_dispatches -v`
-  Expected: FAIL (Send does nothing yet)
+  Run: `uv run pytest tests/test_hook_entry.py -k forward_slashes -v`
+  Expected: PASS on macOS/Linux (native separator is already `/`), but this
+  specific defect only reproduces on Windows -- this test's real value is
+  being part of the suite the Windows CI job runs. If you're implementing
+  on macOS/Linux, this step won't show a local failure; proceed to Step 3
+  anyway, since the existing `test_codex_apply_patch_records_each_in_repo_path`
+  is the test that actually caught this bug on Windows CI and is the one
+  that matters here.
 
   Step 3: Implement
 
-  In `src/whyline/console/tui.py`, add the import at the top (alongside the
-  existing guarded Textual imports):
+  In `src/whyline/hook_entry.py`, find `_relative`:
 
   ```python
-  from whyline.console.repl import dispatch
+  def _relative(root: Path, raw: str) -> str | None:
+      try:
+          candidate = Path(raw)
+          if not candidate.is_absolute():
+              candidate = root / candidate
+          return str(candidate.resolve().relative_to(root.resolve()))
+      except (ValueError, OSError):
+          return None
   ```
 
-  Also add one line to `__init__` (needed by Task 4's Stop, added now so this
-  task's own dispatch path already uses it -- avoids a second pass over this
-  same method later):
+  Change the return line:
 
   ```python
-      def __init__(self, *, root: Path) -> None:
-          super().__init__()
-          self.session = ConsoleSession(root=root)
-          self._dispatch_token: object | None = None
+  def _relative(root: Path, raw: str) -> str | None:
+      try:
+          candidate = Path(raw)
+          if not candidate.is_absolute():
+              candidate = root / candidate
+          return candidate.resolve().relative_to(root.resolve()).as_posix()
+      except (ValueError, OSError):
+          return None
   ```
-
-  Add a button-press handler to `WhylineConsoleApp`:
-
-  ```python
-      def on_button_pressed(self, event: "Button.Pressed") -> None:
-          if event.button.id == "send":
-              self._send()
-
-      def _send(self) -> None:
-          prompt = self.query_one("#prompt", TextArea)
-          text = prompt.text.strip()
-          if not text:
-              return
-          prompt.text = ""
-          self._dispatch_text(text)
-
-      def _dispatch_text(self, text: str) -> None:
-          """Launches one dispatch in a background thread. `token` is a
-          unique, unguessable object identifying *this specific* dispatch --
-          _stop() (Task 4) replaces self._dispatch_token with a new one,
-          which is how a cancelled dispatch's late-arriving result is
-          recognized and discarded (via `is`, not equality) once it finally
-          returns, regardless of whatever Textual's own worker.cancel() does
-          or doesn't guarantee about a thread already running Python code."""
-          token = object()
-          self._dispatch_token = token
-          self.run_worker(lambda: self._dispatch_in_thread(text, token), thread=True)
-
-      def _dispatch_in_thread(self, text: str, token: object) -> None:
-          try:
-              result = dispatch(self.session, text)
-          except Exception as error:  # a safety net beyond adapters.py's own handling
-              result = SessionEvent(kind="error", text=str(error))
-          if token is self._dispatch_token:
-              self.call_from_thread(self.render_event, result)
-  ```
-
-  Verify `on_button_pressed`'s exact signature and `Button.Pressed`'s import
-  path against your installed Textual version in Step 1 of this task if it
-  differs from what's shown here -- Textual has used both a
-  `on_button_pressed` convention and an `@on(Button.Pressed, "#id")`
-  decorator convention across versions; use whichever your installed version
-  actually supports.
 
   Step 4: Run the tests to verify they pass
 
-  Run: `uv run pytest tests/console/test_tui.py -v`
+  Run: `uv run pytest tests/test_hook_entry.py -v`
   Expected: PASS
 
   Step 5: Run the whole suite
@@ -418,305 +441,113 @@
   Step 6: Commit
 
   ```bash
-  git add src/whyline/console/tui.py tests/console/test_tui.py
-  git commit -m "feat: Send dispatches through a background worker"
+  git add src/whyline/hook_entry.py tests/test_hook_entry.py
+  git commit -m "fix: hook_entry._relative returns forward-slash paths on every platform"
   ```
 
   ---
 
-- [x] MTU-4: Model/Route/History/Help buttons and Stop
+- [ ] WFX-4: Cross-platform permission-simulation test (WFX4)
 
   ## Global Constraints
 
-  - No new *required* dependency in the base `whyline` install. `textual` is only pulled in via the new `[ui]` extra (MTU1); base `whyline`/`whyline-relay` stay fully dependency-free.
-  - No attachments panel -- attachments (sub-project #7) remain deferred indefinitely.
-  - Every button dispatches the exact same text command the keyboard console already accepts (`/model`, `/route ...`, `/history`, `/help`) through the same `dispatch()` function -- never a separate, mouse-only implementation (MTU5).
-  - `/stop` marks the active worker cancelled; it cannot forcibly interrupt Python code already running inside a thread. State this plainly in the UI text, never imply true interruption (MTU6).
-  - This is the project's first use of Textual. **Before writing any TUI code, install it for real (`uv pip install textual` or add the `[ui]` extra locally and `uv sync`) and verify every API this plan assumes (`App`, `run_worker(..., thread=True)`, `call_from_thread`, `RichLog`, `TextArea`, `Header`, `Button`, `Horizontal`, `Pilot`/`App.run_test()`) against whatever version actually installs. If a name or signature differs from what this plan shows, use the real one and note the discrepancy in your `whyline note` -- the same "verify against reality" standard this project applies to every other external dependency (Grok's CLI flags, codex's sandbox modes, prompt_toolkit's own API).
+  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
+  - Every fix in this plan must be verified against the actual Windows CI job, not just macOS/Linux locally -- push after each task and confirm the real result, per this sub-project's own standard.
+  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
   - Every existing test in this repo must still pass after every task.
 
   **Note on this pairing:** Antigravity implements, Codex reviews.
 
   **Files:**
-  - Modify: `src/whyline/console/tui.py`
-  - Test: `tests/console/test_tui.py`
+  - Modify: `tests/test_cli.py`
 
   **Interfaces:**
-  - Produces: clicking Model/Route/History/Help dispatches the identical
-    `/model`, `/route`, `/history`, `/help` text through `dispatch()` (MTU5).
-    Stop cancels the currently active worker, if any (MTU6).
+  - Produces: no interface changes -- one existing test's *setup* changes; its assertions and intent are unchanged.
 
-  Step 1: Write the failing tests
+  Step 1: Read the current test fresh
 
-  Add to `tests/console/test_tui.py`:
-
-  ```python
-  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
-  @pytest.mark.asyncio
-  async def test_model_button_dispatches_the_same_text_as_typing_it(tmp_path, monkeypatch):
-      from whyline.console.session import SessionEvent
-
-      seen = []
-      monkeypatch.setattr(
-          tui, "dispatch",
-          lambda session, text: seen.append(text) or SessionEvent(kind="output", text="ok"),
-      )
-      app = tui.WhylineConsoleApp(root=tmp_path)
-      async with app.run_test() as pilot:
-          await pilot.click("#model")
-          await pilot.pause()
-      assert seen == ["/model"]
-
-
-  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
-  @pytest.mark.asyncio
-  async def test_route_history_help_buttons_dispatch_their_slash_commands(tmp_path, monkeypatch):
-      from whyline.console.session import SessionEvent
-
-      seen = []
-      monkeypatch.setattr(
-          tui, "dispatch",
-          lambda session, text: seen.append(text) or SessionEvent(kind="output", text="ok"),
-      )
-      app = tui.WhylineConsoleApp(root=tmp_path)
-      async with app.run_test() as pilot:
-          await pilot.click("#route")
-          await pilot.click("#history")
-          await pilot.click("#help")
-          await pilot.pause()
-      assert seen == ["/route", "/history", "/help"]
-
-
-  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
-  @pytest.mark.asyncio
-  async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
-      import threading
-      from whyline.console.session import SessionEvent
-
-      release = threading.Event()
-
-      def slow_dispatch(session, text):
-          release.wait(timeout=2)  # held open until the test itself lets go
-          return SessionEvent(kind="output", text="too late")
-
-      monkeypatch.setattr(tui, "dispatch", slow_dispatch)
-      app = tui.WhylineConsoleApp(root=tmp_path)
-      async with app.run_test() as pilot:
-          prompt = app.query_one("#prompt", tui.TextArea)
-          prompt.text = "long running"
-          await pilot.click("#send")
-          await pilot.pause()  # let the worker actually start and block on release
-          await pilot.click("#stop")  # invalidates the token while still blocked
-          release.set()  # now let the blocked dispatch finish, "too late"
-          await pilot.pause()
-          await pilot.pause()  # give call_from_thread a beat to have run, if it were going to
-          transcript = app.query_one("#transcript", tui.RichLog)
-          assert not any("too late" in str(line) for line in transcript.lines)
-  ```
-
-  This is deterministic rather than timing-dependent: the dispatch is held
-  open with a `threading.Event` until the test explicitly releases it *after*
-  Stop has already invalidated the token, so there's no race about whether
-  Stop happened before or after the dispatch would have finished on its own.
-
-  Step 2: Run the tests to verify they fail
-
-  Run: `uv run pytest tests/console/test_tui.py -k "model_button or route_history_help or stop_cancels" -v`
-  Expected: FAIL (none of these buttons do anything yet, Stop doesn't exist)
-
-  Step 3: Implement
-
-  `_dispatch_text`, `_dispatch_in_thread`, and `_send` already exist from
-  Task 3, using the `_dispatch_token` mechanism. Replace `on_button_pressed`
-  to route the four new buttons through the exact same `_dispatch_text`, and
-  add `_stop`:
+  Read `test_note_reports_cleanly_when_decisions_md_cannot_be_written` in
+  `tests/test_cli.py` (starts at line 888) -- its exact current body, in
+  full, is:
 
   ```python
-      def on_button_pressed(self, event: "Button.Pressed") -> None:
-          button_id = event.button.id
-          if button_id == "send":
-              self._send()
-          elif button_id == "stop":
-              self._stop()
-          elif button_id in ("model", "route", "history", "help"):
-              self._dispatch_text(f"/{button_id}")
+  def test_note_reports_cleanly_when_decisions_md_cannot_be_written(repo, capsys):
+      """2026-08-18: note raised a raw traceback when storage was unwritable, and
+      because the ledger was written first, a failure on decisions.md left the note
+      in the local ledger only — brief and status showed it while a clone never
+      would. The stores diverged silently."""
+      import os
 
-      def _stop(self) -> None:
-          """Invalidates the current dispatch token (MTU6): whatever
-          _dispatch_in_thread is running right now will still run to
-          completion -- Python cannot forcibly interrupt it -- but its result
-          will no longer match self._dispatch_token when it finally returns,
-          so render_event is never called for it. This guarantee holds
-          regardless of what worker.cancel() itself does or doesn't stop.
-          worker.cancel() is still called below as a best-effort signal to
-          Textual's own scheduler; verify its exact call shape (iterating
-          self.workers vs. a single self.workers.cancel_all()) against your
-          installed version."""
-          self._dispatch_token = object()
-          for worker in self.workers:
-              worker.cancel()
-  ```
+      from whyline import ledger
 
-  No change is needed to `_send`/`_dispatch_text`/`_dispatch_in_thread`
-  themselves -- they were already written with this token in Task 3.
-
-  Step 4: Run the tests to verify they pass
-
-  Run: `uv run pytest tests/console/test_tui.py -v`
-  Expected: PASS
-
-  Step 5: Run the whole suite
-
-  Run: `uv run pytest -q`
-  Expected: PASS
-
-  Step 6: Commit
-
-  ```bash
-  git add src/whyline/console/tui.py tests/console/test_tui.py
-  git commit -m "feat: Model/Route/History/Help buttons and Stop"
-  ```
-
-  ---
-
-- [x] MTU-5: `whyline console --ui` wiring and end-to-end test
-
-  ## Global Constraints
-
-  - No new *required* dependency in the base `whyline` install. `textual` is only pulled in via the new `[ui]` extra (MTU1); base `whyline`/`whyline-relay` stay fully dependency-free.
-  - No attachments panel -- attachments (sub-project #7) remain deferred indefinitely.
-  - Every button dispatches the exact same text command the keyboard console already accepts (`/model`, `/route ...`, `/history`, `/help`) through the same `dispatch()` function -- never a separate, mouse-only implementation (MTU5).
-  - `/stop` marks the active worker cancelled; it cannot forcibly interrupt Python code already running inside a thread. State this plainly in the UI text, never imply true interruption (MTU6).
-  - This is the project's first use of Textual. **Before writing any TUI code, install it for real (`uv pip install textual` or add the `[ui]` extra locally and `uv sync`) and verify every API this plan assumes (`App`, `run_worker(..., thread=True)`, `call_from_thread`, `RichLog`, `TextArea`, `Header`, `Button`, `Horizontal`, `Pilot`/`App.run_test()`) against whatever version actually installs. If a name or signature differs from what this plan shows, use the real one and note the discrepancy in your `whyline note` -- the same "verify against reality" standard this project applies to every other external dependency (Grok's CLI flags, codex's sandbox modes, prompt_toolkit's own API).
-  - Every existing test in this repo must still pass after every task.
-
-  **Note on this pairing:** Antigravity implements, Codex reviews.
-
-  **Files:**
-  - Modify: `src/whyline/cli.py`
-  - Test: `tests/test_cli_console.py`
-
-  **Interfaces:**
-  - Consumes: `tui.launch`, `tui.TuiUnavailable` (Tasks 2-4).
-  - Produces: `whyline console --ui` launches the TUI; bare `whyline console` keeps launching today's keyboard REPL, unchanged.
-
-  Step 1: Write the failing tests
-
-  Read `_add_console` and `cmd_console` in `src/whyline/cli.py` fresh first
-  (shown below as they existed when this plan was written -- confirm before
-  trusting this verbatim):
-
-  ```python
-  def _add_console(subparsers: "argparse._SubParsersAction") -> None:
-      subparsers.add_parser(
-          "console", help="An editable multiline console for whyline and whyline-relay"
-      )
-  ```
-
-  ```python
-  def cmd_console(args: argparse.Namespace) -> int:
-      from whyline.console import repl
-
-      root = _require_repo()
-      repl.run(root)
-      return EXIT_OK
-  ```
-
-  Add to `tests/test_cli_console.py`:
-
-  ```python
-  def test_console_ui_flag_launches_the_tui(repo, monkeypatch):
-      from whyline import cli
-      from whyline.console import tui
-
-      calls = []
-      monkeypatch.setattr(tui, "launch", lambda root: calls.append(root))
-      previous = os.getcwd()
-      os.chdir(repo.path)
+      paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+      paths.ledger_path(repo.path).touch()
+      directory = paths.whyline_dir(repo.path)
+      os.chmod(directory, 0o500)
       try:
-          code = cli.main(["console", "--ui"])
+          code, out, err = run_in_both(repo, ["note", "cannot store this"], capsys)
       finally:
-          os.chdir(previous)
-      assert code == cli.EXIT_OK
-      assert calls == [repo.path.resolve()] or calls == [repo.path]
+          os.chmod(directory, 0o755)
 
-
-  def test_console_ui_flag_reports_a_clear_error_when_textual_is_missing(repo, capsys):
-      from whyline import cli
-      from whyline.console import tui
-
-      if tui.TUI_AVAILABLE:
-          pytest.skip("textual is installed in this environment -- nothing to test here")
-      previous = os.getcwd()
-      os.chdir(repo.path)
-      try:
-          code = cli.main(["console", "--ui"])
-      finally:
-          os.chdir(previous)
       assert code == cli.EXIT_ERROR
-      assert "whyline[ui]" in capsys.readouterr().out
+      assert "Traceback" not in err
+      assert "Nothing was recorded" in out + err
+      # And crucially: the ledger must not hold what the committed record lacks.
+      found, _ = ledger.read_all(paths.ledger_path(repo.path))
+      assert [e for e in found if e.get("type") == events.NOTE] == []
   ```
 
-  Check `_require_repo()`'s exact return value (a resolved `Path` or not) to
-  fix the first test's slightly defensive `or` assertion into a single exact
-  equality once you've confirmed which it is.
+  Step 2: Replace the permission simulation
 
-  Step 2: Run the tests to verify they fail
-
-  Run: `uv run pytest tests/test_cli_console.py -v`
-  Expected: FAIL (`--ui` isn't a recognized argument yet)
-
-  Step 3: Implement
-
-  Replace `_add_console`:
+  Replace the whole function body with:
 
   ```python
-  def _add_console(subparsers: "argparse._SubParsersAction") -> None:
-      parser = subparsers.add_parser(
-          "console", help="An editable multiline console for whyline and whyline-relay"
-      )
-      parser.add_argument(
-          "--ui", action="store_true",
-          help="Launch the full-screen, mouse-enabled console instead of the keyboard-only one",
-      )
+  def test_note_reports_cleanly_when_decisions_md_cannot_be_written(repo, capsys):
+      """2026-08-18: note raised a raw traceback when storage was unwritable, and
+      because the ledger was written first, a failure on decisions.md left the note
+      in the local ledger only — brief and status showed it while a clone never
+      would. The stores diverged silently."""
+      from whyline import ledger
+
+      paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
+      paths.ledger_path(repo.path).touch()
+      # Writing text to a path that is actually a directory fails consistently
+      # on every platform, with no OS-specific permission semantics involved --
+      # os.chmod's effect on Windows doesn't restrict writes the way it does
+      # on POSIX, so this simulates "cannot write" portably instead.
+      paths.decisions_path(repo.path).mkdir(parents=True, exist_ok=True)
+      try:
+          code, out, err = run_in_both(repo, ["note", "cannot store this"], capsys)
+      finally:
+          paths.decisions_path(repo.path).rmdir()
+
+      assert code == cli.EXIT_ERROR
+      assert "Traceback" not in err
+      assert "Nothing was recorded" in out + err
+      # And crucially: the ledger must not hold what the committed record lacks.
+      found, _ = ledger.read_all(paths.ledger_path(repo.path))
+      assert [e for e in found if e.get("type") == events.NOTE] == []
   ```
 
-  Replace `cmd_console`:
+  Note `import os` is removed -- it was only ever used for the two
+  `os.chmod` calls this replaces, and nothing else in this function needs
+  it.
 
-  ```python
-  def cmd_console(args: argparse.Namespace) -> int:
-      root = _require_repo()
-      if getattr(args, "ui", False):
-          from whyline.console import tui
+  Step 3: Run the test to verify it still passes with the new setup
 
-          try:
-              tui.launch(root)
-          except tui.TuiUnavailable as error:
-              print(str(error))
-              return EXIT_ERROR
-          return EXIT_OK
-
-      from whyline.console import repl
-
-      repl.run(root)
-      return EXIT_OK
-  ```
-
-  Step 4: Run the tests to verify they pass
-
-  Run: `uv run pytest tests/test_cli_console.py -v`
+  Run: `uv run pytest tests/test_cli.py -k test_note_reports_cleanly_when_decisions_md_cannot_be_written -v`
   Expected: PASS
 
-  Step 5: Run the whole suite
+  Step 4: Run the whole suite
 
   Run: `uv run pytest -q`
   Expected: PASS
 
-  Step 6: Commit
+  Step 5: Commit
 
   ```bash
-  git add src/whyline/cli.py tests/test_cli_console.py
-  git commit -m "feat: whyline console --ui launches the mouse-enabled TUI"
+  git add tests/test_cli.py
+  git commit -m "fix: simulate an unwritable decisions.md portably, not via POSIX chmod"
   ```
 
   ---
