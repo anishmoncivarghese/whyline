@@ -184,7 +184,7 @@
 
   ---
 
-- [ ] RLV-2: `/handoff` command showing the last handoff record
+- [x] RLV-2: `/handoff` command showing the last handoff record
 
   ## Global Constraints
 
