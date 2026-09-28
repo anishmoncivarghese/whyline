@@ -1,4 +1,4 @@
-- [ ] FC-1: `run_entry_menu` launches the richest available console (FC1)
+- [x] FC-1: `run_entry_menu` launches the richest available console (FC1)
 
   ## Global Constraints
 
