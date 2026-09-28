@@ -1946,3 +1946,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py
 
 <!-- whyline-event: 25aed36d13f441b08873ed53fb42d693 -->
+
+## 2026-09-28 — Guard prompt_toolkit import and raise EditorUnavailable on build_session when missing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-5
+
+**Because:** keeps whyline and console package importable without optional console extra while providing actionable install hint on use
+
+**Rejected:**
+
+- unconditional import — breaks importing whyline.console in environments without prompt_toolkit
+
+**Files:** src/whyline/console/editor.py, tests/console/test_editor.py
+
+<!-- whyline-event: a5be6a9bccaf4c64a21d4cc5736d5510 -->
+
+## 2026-09-28 — Approve guarded prompt_toolkit editor wrapper
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-5
+
+**Because:** the module remains importable without the optional console extra, build_session gives an actionable error when unavailable, per-repository history is configured when available, and the focused and full test suites pass
+
+**Rejected:**
+
+- request changes — implementation and prescribed coverage satisfy the UCF-5 contract
+
+**Files:** src/whyline/console/editor.py, tests/console/test_editor.py
+
+<!-- whyline-event: 163faf61bc56464a8bf4fc1d47dd1a29 -->
