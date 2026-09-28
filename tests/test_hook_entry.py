@@ -119,3 +119,15 @@ def test_codex_does_not_guess_writes_from_shell_commands(repo):
     hook_entry.main(json.dumps(payload), repo.path, agent="codex")
 
     assert ledger.read_all(paths.ledger_path(repo.path)) == ([], 0)
+
+
+def test_relative_returns_forward_slashes_for_a_nested_path(tmp_path):
+    from whyline.hook_entry import _relative
+
+    nested = tmp_path / "src" / "pkg" / "mod.py"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("x", encoding="utf-8")
+    result = _relative(tmp_path, str(nested))
+    assert result == "src/pkg/mod.py"
+    assert "\\" not in result
+

@@ -2434,3 +2434,32 @@ Append-only. Written by whyline; readable without it.
 **Files:** tests/test_model.py
 
 <!-- whyline-event: c5f3028a06824963b8ab948a48f881c1 -->
+
+## 2026-09-28 — Use Path.as_posix() in _relative to ensure forward-slash path strings
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** WFX-3
+
+**Because:** Ensures consistent forward-slash path separators in ledger events across all platforms, including Windows
+
+**Rejected:**
+
+- manual string replacement of backslashes — pathlib.as_posix() is the standard Python mechanism for POSIX-style relative paths
+- relying on str(Path) — produces platform-native backslashes on Windows breaking cross-platform expectations
+
+**Files:** src/whyline/hook_entry.py
+
+<!-- whyline-event: bbe49f7a646e45abb61719edcd6dc839 -->
+
+## 2026-09-28 — Approve forward-slash normalization in hook_entry._relative
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WFX-3
+
+**Because:** The implementation uses pathlib's platform-independent POSIX serialization, the regression test covers a nested native path, and the full test suite passes
+
+**Files:** src/whyline/hook_entry.py, tests/test_hook_entry.py
+
+<!-- whyline-event: a7ae3d92b7384a1cba8b7ba8ce77d1ed -->

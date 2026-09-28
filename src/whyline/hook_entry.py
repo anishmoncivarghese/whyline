@@ -19,7 +19,7 @@ def _relative(root: Path, raw: str) -> str | None:
         candidate = Path(raw)
         if not candidate.is_absolute():
             candidate = root / candidate
-        return str(candidate.resolve().relative_to(root.resolve()))
+        return candidate.resolve().relative_to(root.resolve()).as_posix()
     except (ValueError, OSError):
         return None
 
