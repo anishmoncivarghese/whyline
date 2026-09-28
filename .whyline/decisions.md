@@ -2477,3 +2477,19 @@ Append-only. Written by whyline; readable without it.
 - wait and retry the same push from codex's own sandbox — the sandbox's network restriction is not transient, retrying from inside it would not help
 
 <!-- whyline-event: 1acb2c6e1a2f4fb6a38641c41264a1c3 -->
+
+## 2026-09-28 — Fixed a regex-vs-literal bug in test_state_lock.py that only reproduces on Windows
+
+**Actor:** claude
+**Role:** fixer
+**Task:** WFX-1
+
+**Because:** pytest.raises(..., match=...) treats its argument as a regex pattern, not a literal string; a real Windows path contains backslashes, and \U specifically is an incomplete Unicode escape sequence in Python's re module -- the pattern failed to even compile, confirmed live on Windows CI (windows-latest, both 3.11 and 3.13). Fixed with re.escape() around the path
+
+**Rejected:**
+
+- assert on the exception message with 'in str(error)' instead of pytest.raises' match= — works, but match= is idiomatic here and the fix is one function call, not a redesign
+
+**Files:** tests/test_state_lock.py
+
+<!-- whyline-event: 6dd8cb7019f0464e9f1e70e031148b96 -->

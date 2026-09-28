@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from pathlib import Path
 
@@ -20,7 +21,11 @@ def test_a_held_lock_blocks_a_second_acquire_until_timeout(tmp_path: Path):
     lock_path = tmp_path / "x.lock"
     state._acquire_lock(lock_path)
     try:
-        with pytest.raises(TimeoutError, match=str(lock_path)):
+        # match= is a regex, not a literal string -- a real path can contain
+        # regex metacharacters (backslashes on Windows in particular, which
+        # pytest.raises would otherwise try to interpret as escape
+        # sequences, e.g. \U, and fail to even compile the pattern).
+        with pytest.raises(TimeoutError, match=re.escape(str(lock_path))):
             state._acquire_lock(lock_path, timeout=0.3)
     finally:
         state._release_lock(lock_path)
