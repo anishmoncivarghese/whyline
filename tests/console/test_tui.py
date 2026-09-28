@@ -108,3 +108,69 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
         await pilot.pause()
         transcript = app.query_one("#transcript", tui.RichLog)
         assert transcript.lines == []
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_model_button_dispatches_the_same_text_as_typing_it(tmp_path, monkeypatch):
+    from whyline.console.session import SessionEvent
+
+    seen = []
+    monkeypatch.setattr(
+        tui, "dispatch",
+        lambda session, text: seen.append(text) or SessionEvent(kind="output", text="ok"),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#model")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+    assert seen == ["/model"]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_route_history_help_buttons_dispatch_their_slash_commands(tmp_path, monkeypatch):
+    from whyline.console.session import SessionEvent
+
+    seen = []
+    monkeypatch.setattr(
+        tui, "dispatch",
+        lambda session, text: seen.append(text) or SessionEvent(kind="output", text="ok"),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#route")
+        await pilot.click("#history")
+        await pilot.click("#help")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+    assert seen == ["/route", "/history", "/help"]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
+    import threading
+    from whyline.console.session import SessionEvent
+
+    release = threading.Event()
+
+    def slow_dispatch(session, text):
+        release.wait(timeout=2)  # held open until the test itself lets go
+        return SessionEvent(kind="output", text="too late")
+
+    monkeypatch.setattr(tui, "dispatch", slow_dispatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt", tui.TextArea)
+        prompt.text = "long running"
+        await pilot.click("#send")
+        await pilot.pause()  # let the worker actually start and block on release
+        await pilot.click("#stop")  # invalidates the token while still blocked
+        release.set()  # now let the blocked dispatch finish, "too late"
+        await pilot.pause()
+        await pilot.pause()  # give call_from_thread a beat to have run, if it were going to
+        transcript = app.query_one("#transcript", tui.RichLog)
+        assert not any("too late" in str(line) for line in transcript.lines)
+

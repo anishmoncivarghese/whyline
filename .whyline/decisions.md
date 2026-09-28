@@ -2261,3 +2261,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py, tests/console/test_tui.py
 
 <!-- whyline-event: de9902a15ccf4fdf939ea4a40f30d529 -->
+
+## 2026-09-28 — Fixed a real layout bug in the mouse TUI: buttons overflowed 80 columns
+
+**Actor:** claude
+**Role:** fixer
+**Task:** MTU-4
+
+**Because:** Textual's default Button width is 16 columns; six buttons (Send/Model/Route/History/Stop/Help) at that width total 96 columns, wider than the 80-column default terminal Textual's own test Pilot uses (and many real terminals default to) -- Stop and Help were genuinely off-screen, not just cramped, causing Pilot.click to raise OutOfBounds. Measured directly: with 'width: auto; min-width: 6' on buttons inside the Horizontal row, all six fit within ~41 columns
+
+**Rejected:**
+
+- widen the test's virtual terminal size instead — papers over a real bug that would also affect actual narrow terminals, not just the test
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 291eba32059846618a038d6faca6d9ad -->

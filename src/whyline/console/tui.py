@@ -38,6 +38,18 @@ class WhylineConsoleApp(App):
     """The mouse-enabled console. Every widget dispatches through the same
     ConsoleSession/dispatch() path the keyboard REPL already uses."""
 
+    # Textual's default Button width is 16 columns; six of them (Send,
+    # Model, Route, History, Stop, Help) at that width total 96 columns,
+    # wider than an 80-column terminal -- the standard default, and what
+    # Textual's own test harness uses. Without this, "Stop" and "Help" are
+    # genuinely off-screen, not just visually cramped: real mouse clicks
+    # (and Pilot.click in tests) can't reach them at all. Sizing buttons to
+    # their label instead of a fixed width keeps the whole row within 80
+    # columns comfortably (measured: ~41 columns total for these six).
+    DEFAULT_CSS = """
+    Horizontal > Button { min-width: 6; width: auto; }
+    """
+
     def __init__(self, *, root: Path) -> None:
         super().__init__()
         self.session = ConsoleSession(root=root)
