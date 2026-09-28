@@ -117,13 +117,12 @@ async def test_model_button_dispatches_the_same_text_as_typing_it(tmp_path, monk
 
     seen = []
     monkeypatch.setattr(
-        tui, "dispatch",
+        tui, "handle_slash_command",
         lambda session, text: seen.append(text) or SessionEvent(kind="output", text="ok"),
     )
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.click("#model")
-        await app.workers.wait_for_complete()
         await pilot.pause()
     assert seen == ["/model"]
 
@@ -135,7 +134,7 @@ async def test_route_history_help_buttons_dispatch_their_slash_commands(tmp_path
 
     seen = []
     monkeypatch.setattr(
-        tui, "dispatch",
+        tui, "handle_slash_command",
         lambda session, text: seen.append(text) or SessionEvent(kind="output", text="ok"),
     )
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -143,9 +142,8 @@ async def test_route_history_help_buttons_dispatch_their_slash_commands(tmp_path
         await pilot.click("#route")
         await pilot.click("#history")
         await pilot.click("#help")
-        await app.workers.wait_for_complete()
         await pilot.pause()
-    assert seen == ["/route", "/history", "/help"]
+    assert seen == ["/route relay", "/history", "/help"]
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -176,3 +174,78 @@ async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
         transcript = app.query_one("#transcript", tui.RichLog)
         assert not any("too late" in str(line) for line in transcript.lines)
 
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_model_button_actually_lists_available_agents(tmp_path, monkeypatch):
+    from whyline import account
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#model")
+        await pilot.pause()
+        transcript = app.query_one("#transcript", tui.RichLog)
+        assert any(
+            "claude" in str(line) and "codex" in str(line) for line in transcript.lines
+        )
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_route_relay_with_no_config_defers_exec_until_after_exit(
+    tmp_path, monkeypatch
+):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#route")
+        await pilot.pause()
+        assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
+    # app.run_test()'s own context manager has now exited (app.run() returned)
+    # -- confirm launch() is what actually performs the exec, not the app itself.
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_typing_route_relay_with_no_config_defers_exec_until_after_exit(
+    tmp_path, monkeypatch
+):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt", tui.TextArea)
+        prompt.text = "/route relay"
+        await pilot.click("#send")
+        await pilot.pause()
+        assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+def test_launch_performs_the_deferred_exec_after_app_run_returns(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeApp:
+        def __init__(self, *, root):
+            self._exec_after = None
+
+        def run(self):
+            self._exec_after = ("whyline-relay", ["whyline-relay", "setup"])
+
+    monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
+    tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
+    assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+def test_launch_does_not_exec_when_nothing_was_requested(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeApp:
+        def __init__(self, *, root):
+            self._exec_after = None
+
+        def run(self):
+            pass  # ordinary exit, no setup requested
+
+    monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
+    tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
+    assert calls == []

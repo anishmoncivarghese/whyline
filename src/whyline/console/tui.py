@@ -9,6 +9,7 @@ layer, not a second implementation of the console's logic.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 try:
@@ -24,7 +25,7 @@ except ImportError:
     Button = Footer = Header = RichLog = TextArea = None
     TUI_AVAILABLE = False
 
-from whyline.console.repl import dispatch
+from whyline.console.repl import dispatch, handle_slash_command
 from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ "}
@@ -54,6 +55,7 @@ class WhylineConsoleApp(App):
         super().__init__()
         self.session = ConsoleSession(root=root)
         self._dispatch_token: object | None = None
+        self._exec_after: tuple[str, list[str]] | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -80,8 +82,10 @@ class WhylineConsoleApp(App):
             self._send()
         elif button_id == "stop":
             self._stop()
-        elif button_id in ("model", "route", "history", "help"):
-            self._dispatch_text(f"/{button_id}")
+        elif button_id == "route":
+            self._handle_slash("/route relay")
+        elif button_id in ("model", "history", "help"):
+            self._handle_slash(f"/{button_id}")
 
     def _stop(self) -> None:
         """Invalidates the current dispatch token (MTU6): whatever
@@ -104,7 +108,25 @@ class WhylineConsoleApp(App):
         if not text:
             return
         prompt.text = ""
-        self._dispatch_text(text)
+        if not self._handle_slash(text):
+            self._dispatch_text(text)
+
+    def _handle_slash(self, text: str) -> bool:
+        """Handles a slash command synchronously on the main thread -- no
+        worker needed, these are fast, local operations. Returns True if
+        `text` was a recognized slash command (whether or not it also
+        triggered a setup handoff), False otherwise, so _send() knows
+        whether to fall through to an ordinary (possibly slow) dispatch()
+        call in a worker."""
+        event = handle_slash_command(self.session, text)
+        if event is None:
+            return False
+        if event.kind == "needs_setup":
+            self._exec_after = ("whyline-relay", ["whyline-relay", "setup"])
+            self.exit()
+            return True
+        self.render_event(event)
+        return True
 
     def _dispatch_text(self, text: str) -> None:
         """Launches one dispatch in a background thread. `token` is a
@@ -127,9 +149,19 @@ class WhylineConsoleApp(App):
             self.call_from_thread(self.render_event, result)
 
 
-def launch(root: Path) -> None:
+def _exec(binary: str, argv: list[str]) -> None:
+    os.execvp(binary, argv)
+
+
+def launch(root: Path, *, exec_fn=None) -> None:
     if not TUI_AVAILABLE:
         raise TuiUnavailable(
             "The mouse TUI needs textual. Run: pip install 'whyline[ui]'"
         )
-    WhylineConsoleApp(root=root).run()
+    if exec_fn is None:
+        exec_fn = _exec
+    app = WhylineConsoleApp(root=root)
+    app.run()
+    if app._exec_after is not None:
+        binary, argv = app._exec_after
+        exec_fn(binary, argv)

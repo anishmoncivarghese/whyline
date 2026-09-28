@@ -2629,3 +2629,51 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/repl.py, src/whyline/console/adapters.py, tests/console/test_repl.py, tests/console/test_adapters_whyline.py
 
 <!-- whyline-event: c7d67f1c143643c58d1f012e4bc1f95e -->
+
+## 2026-09-28 — Route button dispatches /route relay directly to handle_slash_command
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FC-3
+
+**Because:** The button represents choosing relay mode matching the entry menu, whereas bare /route has no mode argument and emits a usage error
+
+**Rejected:**
+
+- bare /route — emits Usage error and fails setup handoff
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 32a7afd605b64ece99772e35ca0acdb3 -->
+
+## 2026-09-28 — Update legacy TUI button mock tests to assert handle_slash_command instead of dispatch
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FC-3
+
+**Because:** The FC cutover routes button clicks directly to handle_slash_command synchronously on the main thread rather than dispatch in a worker
+
+**Rejected:**
+
+- asserting on tui.dispatch — asserts obsolete mock behavior that was the exact bug FC-3 was designed to eliminate
+
+**Files:** tests/console/test_tui.py
+
+<!-- whyline-event: 1a75937921b241d691a7a19b9d5d8e29 -->
+
+## 2026-09-28 — Approve the TUI shared-handler cutover and deferred relay setup handoff
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FC-3
+
+**Because:** The implementation preserves worker dispatch for ordinary input, handles button and typed slash commands synchronously, defers relay setup exec until app.run returns, and both focused and full test suites pass
+
+**Rejected:**
+
+- Request changes for the Route button using /route relay — bare /route only produces a usage error, while the button represents the relay choice and must match the entry menu's immediate setup behavior
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: a484b5eb1a654b70a693a616af88a2fa -->
