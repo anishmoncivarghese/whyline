@@ -2493,3 +2493,32 @@ Append-only. Written by whyline; readable without it.
 **Files:** tests/test_state_lock.py
 
 <!-- whyline-event: 6dd8cb7019f0464e9f1e70e031148b96 -->
+
+## 2026-09-28 — Simulate unwritable decisions.md by creating a directory at decisions_path instead of POSIX chmod
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** WFX-4
+
+**Because:** Writing to a directory fails consistently across all OSes, whereas os.chmod 0o500 does not restrict file writes on Windows
+
+**Rejected:**
+
+- os.chmod — platform-dependent behavior that fails to restrict writes on Windows
+- mocking file writes — does not exercise the real filesystem failure paths or rollback logic
+
+**Files:** tests/test_cli.py
+
+<!-- whyline-event: 13607476fe0744fabf77f3b7c51bb49b -->
+
+## 2026-09-28 — Approve portable decisions.md write-failure simulation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WFX-4
+
+**Because:** The test now exercises the real filesystem error and ledger rollback path without relying on POSIX permission semantics, and both the focused test and full suite pass
+
+**Files:** tests/test_cli.py
+
+<!-- whyline-event: 012ab962df7840a286c53ba14bbb00bd -->

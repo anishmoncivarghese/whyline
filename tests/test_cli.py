@@ -896,18 +896,19 @@ def test_note_reports_cleanly_when_decisions_md_cannot_be_written(repo, capsys):
     because the ledger was written first, a failure on decisions.md left the note
     in the local ledger only — brief and status showed it while a clone never
     would. The stores diverged silently."""
-    import os
-
     from whyline import ledger
 
     paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
     paths.ledger_path(repo.path).touch()
-    directory = paths.whyline_dir(repo.path)
-    os.chmod(directory, 0o500)
+    # Writing text to a path that is actually a directory fails consistently
+    # on every platform, with no OS-specific permission semantics involved --
+    # os.chmod's effect on Windows doesn't restrict writes the way it does
+    # on POSIX, so this simulates "cannot write" portably instead.
+    paths.decisions_path(repo.path).mkdir(parents=True, exist_ok=True)
     try:
         code, out, err = run_in_both(repo, ["note", "cannot store this"], capsys)
     finally:
-        os.chmod(directory, 0o755)
+        paths.decisions_path(repo.path).rmdir()
 
     assert code == cli.EXIT_ERROR
     assert "Traceback" not in err
