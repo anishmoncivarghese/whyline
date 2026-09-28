@@ -24,6 +24,7 @@ except ImportError:
     Button = Footer = Header = RichLog = TextArea = None
     TUI_AVAILABLE = False
 
+from whyline.console.repl import dispatch
 from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ "}
@@ -40,6 +41,7 @@ class WhylineConsoleApp(App):
     def __init__(self, *, root: Path) -> None:
         super().__init__()
         self.session = ConsoleSession(root=root)
+        self._dispatch_token: object | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -59,6 +61,38 @@ class WhylineConsoleApp(App):
         self.session.record(event)
         transcript = self.query_one("#transcript", RichLog)
         transcript.write(f"{_PREFIX.get(event.kind, '')}{event.text}")
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        if event.button.id == "send":
+            self._send()
+
+    def _send(self) -> None:
+        prompt = self.query_one("#prompt", TextArea)
+        text = prompt.text.strip()
+        if not text:
+            return
+        prompt.text = ""
+        self._dispatch_text(text)
+
+    def _dispatch_text(self, text: str) -> None:
+        """Launches one dispatch in a background thread. `token` is a
+        unique, unguessable object identifying *this specific* dispatch --
+        _stop() (Task 4) replaces self._dispatch_token with a new one,
+        which is how a cancelled dispatch's late-arriving result is
+        recognized and discarded (via `is`, not equality) once it finally
+        returns, regardless of whatever Textual's own worker.cancel() does
+        or doesn't guarantee about a thread already running Python code."""
+        token = object()
+        self._dispatch_token = token
+        self.run_worker(lambda: self._dispatch_in_thread(text, token), thread=True)
+
+    def _dispatch_in_thread(self, text: str, token: object) -> None:
+        try:
+            result = dispatch(self.session, text)
+        except Exception as error:  # a safety net beyond adapters.py's own handling
+            result = SessionEvent(kind="error", text=str(error))
+        if token is self._dispatch_token:
+            self.call_from_thread(self.render_event, result)
 
 
 def launch(root: Path) -> None:

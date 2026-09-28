@@ -2196,3 +2196,68 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py, tests/console/test_tui.py, pyproject.toml, uv.lock
 
 <!-- whyline-event: ed89def5692d48aaa1c141da5923d72e -->
+
+## 2026-09-28 — Use identity dispatch token and thread safety net to handle background worker results
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** MTU-3
+
+**Because:** Worker threads running dispatch cannot be forcibly killed by Textual cancellation so an unguessable object token identity check safely discards superseded results while an outer try/except ensures any thread error is captured and rendered to transcript
+
+**Rejected:**
+
+- rely solely on worker.cancel — does not stop Python code running in a thread and would still render obsolete events
+- integer counter — identity comparison via object() is unforgeable and cannot suffer from wrap-around or race condition mutations
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d5773872d1f045b78bfe7b5f46add95b -->
+
+## 2026-09-28 — Request robust worker synchronization before approving MTU-3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** MTU-3
+
+**Because:** The dispatch implementation follows the required background-worker path and all tests pass, but the superseded-token test can assert before its sleeping worker returns because Pilot.pause waits for CPU idle rather than Worker completion, making the cancellation assertion vacuous and timing-dependent
+
+**Rejected:**
+
+- approve as-is — the handoff explicitly flags timing robustness and the added test does not prove the late-result discard behavior it claims
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 7512781063f14c9bb9da3553686bb3ef -->
+
+## 2026-09-28 — Synchronize on app.workers.wait_for_complete in TUI dispatch tests
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** MTU-3
+
+**Because:** Awaiting app.workers.wait_for_complete() deterministically awaits Textual background worker thread termination before assertions, eliminating time.sleep race conditions in token supersession tests
+
+**Rejected:**
+
+- rely on pilot.pause() loops — pause only waits for asyncio CPU idle and can advance while the worker thread is still sleeping
+
+**Files:** tests/console/test_tui.py
+
+<!-- whyline-event: d7e011201e9d49c18f877244da119fcf -->
+
+## 2026-09-28 — Approve synchronized background dispatch worker implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** MTU-3
+
+**Because:** Send routes through dispatch in a Textual thread worker, returns results on the main thread, handles errors and stale tokens, and the revised tests deterministically await worker completion; the focused and full suites pass
+
+**Rejected:**
+
+- request further changes — the prior race is removed and the tests now genuinely cover late-result suppression
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: de9902a15ccf4fdf939ea4a40f30d529 -->
