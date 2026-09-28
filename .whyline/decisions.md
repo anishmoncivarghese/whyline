@@ -2585,3 +2585,47 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_cli_chat_delegation.py
 
 <!-- whyline-event: 6082be1b01a3453ca98b29bd10abaece -->
+
+## 2026-09-28 — Extract shared slash-command handling to repl.handle_slash_command and add relay_is_configured
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FC-2
+
+**Because:** Allows both keyboard REPL and mouse TUI to share /help, /status, /handoff, /history, /route, and /model logic uniformly without duplication
+
+**Rejected:**
+
+- Keep slash commands inline in repl.run — prevents TUI buttons and inputs from reusing the same command parsing and validation
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: f0596be4029847f1b3923b50d7f5b7a2 -->
+
+## 2026-09-28 — Preserve existing keyboard console tests with an autouse fixture in test_repl.py
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FC-2
+
+**Because:** Legacy tests expecting /route relay to switch modes without setup handoff would otherwise fail on a clean tmp_path
+
+**Rejected:**
+
+- Modify pre-existing tests directly — violates the constraint to keep existing tests unmodified
+
+**Files:** tests/console/test_repl.py
+
+<!-- whyline-event: 2e0e8411333d410a9103de2ad7371096 -->
+
+## 2026-09-28 — Approve shared slash-command extraction and relay setup handoff
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FC-2
+
+**Because:** The implementation matches FC-2, preserves legacy keyboard behavior, covers configured and unconfigured relay routing, and passes focused and full test suites
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/adapters.py, tests/console/test_repl.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: c7d67f1c143643c58d1f012e4bc1f95e -->

@@ -72,3 +72,16 @@ def test_run_whyline_command_allows_model_status(repo):
         os.chdir(previous)
     assert event.kind == "output"
     assert "nothing set" in event.text.lower()
+
+
+def test_relay_is_configured_true_when_config_toml_exists(tmp_path):
+    from whyline.console import adapters
+    config_dir = tmp_path / ".whyline" / "relay"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text("", encoding="utf-8")
+    assert adapters.relay_is_configured(tmp_path) is True
+
+
+def test_relay_is_configured_false_when_absent(tmp_path):
+    from whyline.console import adapters
+    assert adapters.relay_is_configured(tmp_path) is False

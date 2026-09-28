@@ -226,3 +226,9 @@ def run_last_handoff(root: Path) -> SessionEvent:
     for question in record.questions:
         lines.append(f"Question: {question}")
     return SessionEvent(kind="output", text="\n".join(lines))
+
+
+def relay_is_configured(root: Path) -> bool:
+    """No import of whyline_relay needed just to check this -- the path is
+    stable and simple enough to check directly."""
+    return (root / ".whyline" / "relay" / "config.toml").exists()

@@ -1,5 +1,25 @@
+import pytest
+
 from whyline.console import editor, repl
 from whyline.console.session import SessionEvent
+
+
+@pytest.fixture(autouse=True)
+def _default_relay_configured(request):
+    """Legacy keyboard console tests assume /route relay switches mode
+    without handoff unless explicitly testing unconfigured behavior."""
+    if "tmp_path" not in request.fixturenames:
+        return
+    if (
+        "no_config" in request.node.name
+        or "needs_setup" in request.node.name
+        or "configured" in request.node.name
+    ):
+        return
+    tmp_path = request.getfixturevalue("tmp_path")
+    config_dir = tmp_path / ".whyline" / "relay"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.toml").write_text("", encoding="utf-8")
 
 
 class FakePromptSession:
@@ -303,4 +323,70 @@ def test_dispatch_is_public_and_routes_by_mode(tmp_path):
     finally:
         adapters.run_whyline_command = original
     assert called == [["model", "status"]]
+
+
+def test_handle_slash_command_help(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    session = ConsoleSession(root=tmp_path)
+    event = handle_slash_command(session, "/help")
+    assert event is not None
+    assert "Commands:" in event.text
+
+
+def test_handle_slash_command_returns_none_for_ordinary_text(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    session = ConsoleSession(root=tmp_path)
+    assert handle_slash_command(session, "hello there") is None
+
+
+def test_handle_slash_command_route_relay_needs_setup(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    session = ConsoleSession(root=tmp_path, mode="command")
+    event = handle_slash_command(session, "/route relay")
+    assert event is not None
+    assert event.kind == "needs_setup"
+    assert session.mode == "command"  # unchanged -- the handoff hasn't happened yet
+
+
+def test_handle_slash_command_route_relay_switches_when_configured(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    config_dir = tmp_path / ".whyline" / "relay"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text("", encoding="utf-8")
+    session = ConsoleSession(root=tmp_path, mode="command")
+    event = handle_slash_command(session, "/route relay")
+    assert event is not None
+    assert event.kind != "needs_setup"
+    assert session.mode == "relay"
+
+
+def test_handle_slash_command_route_invalid_mode(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    session = ConsoleSession(root=tmp_path)
+    event = handle_slash_command(session, "/route nonsense")
+    assert event is not None
+    assert "Usage: /route" in event.text
+
+
+def test_route_relay_with_no_config_execs_into_setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        editor, "build_session",
+        lambda root: FakePromptSession(["/route relay", "/exit"]),
+    )
+    calls = []
+    lines = []
+    repl.run(
+        tmp_path, print_fn=lines.append,
+        exec_fn=lambda binary, argv: calls.append((binary, argv)),
+    )
+    assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+    # The user sees why they're being handed off, before it happens --
+    # unlike today's plain entry menu (which execs silently), this is a
+    # deliberate small improvement, not a parity requirement.
+    assert any("No relay setup found" in line for line in lines)
 
