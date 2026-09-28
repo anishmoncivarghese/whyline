@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from whyline import __version__
+from whyline import paths
 from whyline import runner
 
 EXIT_OK = 0
@@ -59,6 +60,17 @@ def run_entry_menu(
             info = freshly_detected.get(agent, {})
             state = "available" if info.get("available") else "not available"
             print_fn(f"  {agent}: {state}")
+
+    from whyline.console import editor, repl, tui
+
+    root = paths.find_repo_root()
+    if root is not None:
+        if tui.TUI_AVAILABLE:
+            tui.launch(root)
+            return True
+        if editor.AVAILABLE:
+            repl.run(root)
+            return True
 
     choice = input_fn("Chat or relay? [chat]: ").strip().lower()
     if choice == "relay":

@@ -1,4 +1,17 @@
+import pytest
+
 from whyline import cli
+
+
+@pytest.fixture(autouse=True)
+def _default_no_console_extras(monkeypatch):
+    """The legacy entry menu tests exercise the zero-extras plain-text
+    fallback. Ensure console extras are treated as unavailable unless a test
+    explicitly enables them."""
+    from whyline.console import editor, tui
+
+    monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
+    monkeypatch.setattr(editor, "AVAILABLE", False)
 
 
 def test_entry_menu_default_choice_execs_into_chat():
@@ -185,3 +198,83 @@ def test_entry_menu_execs_into_chat_when_model_setup_succeeds(monkeypatch):
     assert result is True
     assert calls == [("exec", "whyline-relay", ["whyline-relay", "chat"])]
 
+
+def test_entry_menu_launches_the_mouse_tui_when_available(monkeypatch, tmp_path):
+    from whyline import cli
+    from whyline.console import tui
+
+    monkeypatch.setattr(cli.paths, "find_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(tui, "TUI_AVAILABLE", True)
+    calls = []
+    monkeypatch.setattr(tui, "launch", lambda root: calls.append(root))
+
+    def _unexpected_prompt(prompt=""):
+        raise AssertionError("must not reach the plain text menu")
+
+    result = cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        input_fn=_unexpected_prompt,
+    )
+    assert result is True
+    assert calls == [tmp_path]
+
+
+def test_entry_menu_launches_the_keyboard_console_when_tui_unavailable(
+    monkeypatch, tmp_path
+):
+    from whyline import cli
+    from whyline.console import editor, repl, tui
+
+    monkeypatch.setattr(cli.paths, "find_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
+    monkeypatch.setattr(editor, "AVAILABLE", True)
+    calls = []
+    monkeypatch.setattr(repl, "run", lambda root, **kwargs: calls.append(root))
+
+    def _unexpected_prompt(prompt=""):
+        raise AssertionError("must not reach the plain text menu")
+
+    result = cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        input_fn=_unexpected_prompt,
+    )
+    assert result is True
+    assert calls == [tmp_path]
+
+
+def test_entry_menu_falls_through_to_plain_menu_when_neither_extra_is_available(
+    monkeypatch, tmp_path
+):
+    from whyline import cli
+    from whyline.console import editor, tui
+
+    monkeypatch.setattr(cli.paths, "find_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
+    monkeypatch.setattr(editor, "AVAILABLE", False)
+    answers = iter(["", ""])
+    calls = []
+    result = cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda binary, argv: calls.append((binary, argv)),
+        input_fn=lambda prompt="": next(answers),
+    )
+    assert result is True
+    assert calls == [("whyline-relay", ["whyline-relay", "chat"])]
+
+
+def test_entry_menu_falls_through_when_no_repo_root_found(monkeypatch):
+    from whyline import cli
+    from whyline.console import tui
+
+    monkeypatch.setattr(cli.paths, "find_repo_root", lambda: None)
+    monkeypatch.setattr(tui, "TUI_AVAILABLE", True)
+    calls = []
+    monkeypatch.setattr(tui, "launch", lambda root: calls.append(root))
+    answers = iter(["", ""])
+    result = cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda binary, argv: None,
+        input_fn=lambda prompt="": next(answers),
+    )
+    assert result is True
+    assert calls == []  # the TUI is never launched without a repo root

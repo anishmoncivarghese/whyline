@@ -2536,3 +2536,52 @@ Append-only. Written by whyline; readable without it.
 - publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.11
 
 <!-- whyline-event: 064a985b69a848dabba240bc4712853b -->
+
+## 2026-09-28 — Isolate zero-extras plain-text menu tests with an autouse fixture in test_cli_chat_delegation.py
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FC-1
+
+**Because:** When [ui] or [console] extras are installed in the venv and tests run in the repo, the legacy fallback tests would otherwise launch the interactive TUI/REPL and hang
+
+**Rejected:**
+
+- Modifying each pre-existing test — violates the constraint to keep existing tests unmodified
+- Uninstalling extras from venv — would break console tests like test_tui.py
+
+**Files:** tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: ce97d54c4f8b4c1abc0034c4d1245887 -->
+
+## 2026-09-28 — Request FC-1 cleanup before approval
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FC-1
+
+**Because:** The behavior and tests pass, but cli.py redundantly imports paths both at module scope and inside run_entry_menu, and git diff --check reports a new blank line at EOF in the test file
+
+**Rejected:**
+
+- Approve as-is — would commit avoidable duplication and a known diff-check warning
+
+**Files:** src/whyline/cli.py, tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: 2a658776b0e940db8eae63c87c2b0062 -->
+
+## 2026-09-28 — Approve richest-console entry menu routing
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FC-1
+
+**Because:** run_entry_menu preserves relay discovery and first-run detection, launches mouse TUI before keyboard REPL only when a repository root exists, retains the zero-extras plain menu fallback, and both focused and full test suites pass
+
+**Rejected:**
+
+- Request further changes — round-two cleanup removed the redundant import and diff warning, and no remaining defect was found
+
+**Files:** src/whyline/cli.py, tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: 6082be1b01a3453ca98b29bd10abaece -->
