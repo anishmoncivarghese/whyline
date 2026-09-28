@@ -106,7 +106,7 @@
 
   ---
 
-- [ ] MTU-2: `tui.py` skeleton -- guarded import, layout, and a Pilot smoke test
+- [x] MTU-2: `tui.py` skeleton -- guarded import, layout, and a Pilot smoke test
 
   ## Global Constraints
 
