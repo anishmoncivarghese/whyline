@@ -141,3 +141,40 @@ def run_status(root: Path) -> SessionEvent:
     if saved.log_path:
         lines.append(f"Log       {saved.log_path}")
     return SessionEvent(kind="pause", text="\n".join(lines))
+
+
+_PAUSE_PATTERN = re.compile(r"^Paused:", re.M)
+_COMPLETE_PATTERN = re.compile(r"^Plan complete", re.M)
+
+
+def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:
+    """Calls whyline-relay's cli.main in-process (the same shallow level
+    cmd_relay already uses) for start/resume, whose real orchestration
+    (branch setup, guards) is not factored into a reusable function --
+    reimplementing it here would itself be duplication. Output is captured
+    and lightly classified with the same text patterns relay-auto-resume.sh
+    already parses; an unrecognized line is still shown verbatim, never
+    dropped."""
+    try:
+        from whyline_relay import cli as relay_cli
+    except ModuleNotFoundError as error:
+        name = error.name or str(error)
+        if name != "whyline_relay":
+            raise
+        from whyline.cli import relay_install_hint
+        return SessionEvent(kind="error", text=relay_install_hint())
+    full_argv = [*argv, "--repo", str(root)]
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = relay_cli.main(full_argv, prog="whyline-relay")
+    except SystemExit as error:
+        code = error.code if isinstance(error.code, int) else 1
+    text = buf.getvalue()
+    if _PAUSE_PATTERN.search(text):
+        kind = "pause"
+    elif _COMPLETE_PATTERN.search(text) or code == 0:
+        kind = "output"
+    else:
+        kind = "error"
+    return SessionEvent(kind=kind, text=text)

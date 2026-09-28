@@ -1880,3 +1880,69 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_structured.py, uv.lock
 
 <!-- whyline-event: 9c01a61eb2bb49aea34012ad78898844 -->
+
+## 2026-09-28 — In-process whyline-relay CLI main adapter for start and resume with text output classification
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-4
+
+**Because:** start/resume orchestration is internal to whyline-relay CLI, so calling relay_cli.main in-process with stdout/stderr redirection and pattern classification enables embedding without subprocesses
+
+**Rejected:**
+
+- direct reimplementation of start/resume workflow — duplicates relay branch setup and lifecycle guards
+- running via subprocess — violates the in-process architecture constraint and complicates signal/stdio handling
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py
+
+<!-- whyline-event: 49e73a4049cd45a29e6d32c2d06dbeaa -->
+
+## 2026-09-28 — Request narrower missing-module handling before approving run_relay_oneshot
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-4
+
+**Because:** the implementation currently converts ModuleNotFoundError for whyline_relay submodules into the optional-package install hint, masking a broken relay installation; only a missing top-level whyline_relay package should be classified as not installed
+
+**Rejected:**
+
+- approve as-is — focused and full tests pass, but they do not cover the overly broad exception classification
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py
+
+<!-- whyline-event: 66b20356e83c4ff1931789cce7bcc278 -->
+
+## 2026-09-28 — Narrow run_relay_oneshot missing-module classification to exact whyline_relay package
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-4
+
+**Because:** only a missing top-level whyline_relay indicates an uninstalled package requiring an install hint; missing submodules or internal dependencies indicate broken installations or bugs and must be re-raised
+
+**Rejected:**
+
+- matching prefix whyline_relay — masks broken installations by treating missing internal submodules as uninstalled package
+- checking only error.name == 'whyline_relay' — breaks synthetic test exceptions where error.name is unset but str(error) is 'whyline_relay'
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py
+
+<!-- whyline-event: fc39a0dc7bd241d89ec100965ec95655 -->
+
+## 2026-09-28 — Approve narrowed run_relay_oneshot adapter for start and resume
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-4
+
+**Because:** The adapter meets the in-process integration and output-classification requirements, preserves unknown error text, appends the repo flag, reuses the install hint, and now re-raises missing relay internals; focused and full suites pass
+
+**Rejected:**
+
+- request further changes — no correctness, coverage, or safety defect remains after the narrowed ModuleNotFoundError handling
+
+**Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py
+
+<!-- whyline-event: 25aed36d13f441b08873ed53fb42d693 -->
