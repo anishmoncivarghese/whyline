@@ -208,3 +208,21 @@ def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:
     else:
         kind = "error"
     return SessionEvent(kind=kind, text=text)
+
+
+def run_last_handoff(root: Path) -> SessionEvent:
+    """Renders whyline-relay's current handoff record directly -- already
+    exactly the structured function needed, no new parsing."""
+    from whyline_relay import handoff as relay_handoff
+
+    record = relay_handoff.read(root)
+    if record is None:
+        return SessionEvent(kind="output", text="No handoff recorded yet.")
+    lines = [
+        f"{record.task}: {record.from_actor} -> {record.to_actor} "
+        f"({record.status})",
+        record.summary,
+    ]
+    for question in record.questions:
+        lines.append(f"Question: {question}")
+    return SessionEvent(kind="output", text="\n".join(lines))

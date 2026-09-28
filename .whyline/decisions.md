@@ -2084,3 +2084,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/adapters.py, tests/console/test_adapters_relay_oneshot.py, tests/console/test_adapters_relay_structured.py
 
 <!-- whyline-event: 646ce216212d4324bc6e56450a938b6f -->
+
+## 2026-09-28 — Consume whyline_relay.handoff.read directly for /handoff adapter
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RLV-2
+
+**Because:** Reuses the existing structured active handoff reader without re-parsing JSON or duplicating status formatting
+
+**Rejected:**
+
+- manual JSON parsing in adapters — violates single source of truth and duplicates relay logic
+
+**Files:** src/whyline/console/adapters.py
+
+<!-- whyline-event: 86ea795d15154096bf36edc2037daa9e -->
+
+## 2026-09-28 — Approve /handoff record display and REPL dispatch
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RLV-2
+
+**Because:** The adapter consumes whyline_relay.handoff.read without duplicate parsing, renders the required record fields and questions, the REPL exposes and dispatches /handoff, and both focused and full test suites pass
+
+**Rejected:**
+
+- request changes — no correctness, safety, dependency, or coverage defect remains
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/repl.py, tests/console/test_adapters_relay_structured.py, tests/console/test_repl.py
+
+<!-- whyline-event: 19cd4b52b506466ab70d16f98801697a -->

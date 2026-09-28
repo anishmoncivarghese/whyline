@@ -162,3 +162,47 @@ def test_failure_kind_falls_back_to_other():
         adapters.failure_kind("something entirely unrecognized happened")
         == "other"
     )
+
+
+def _write_handoff(root, **fields):
+    import json
+
+    target = root / ".whyline"
+    target.mkdir(parents=True, exist_ok=True)
+    record = {
+        "v": 1,
+        "id": "abc123",
+        "type": "Handoff",
+        "task": "T-1",
+        "from_actor": "codex",
+        "to_actor": "claude",
+        "status": "ready-for-review",
+        "summary": "Implemented the cache",
+        **fields,
+    }
+    (target / "active-handoff.json").write_text(json.dumps(record))
+
+
+def test_run_last_handoff_renders_the_current_record(tmp_path):
+    _write_handoff(tmp_path)
+    event = adapters.run_last_handoff(tmp_path)
+    assert event.kind == "output"
+    assert "T-1" in event.text
+    assert "codex" in event.text and "claude" in event.text
+    assert "ready-for-review" in event.text
+    assert "Implemented the cache" in event.text
+
+
+def test_run_last_handoff_shows_questions_when_blocked(tmp_path):
+    _write_handoff(
+        tmp_path, status="blocked", questions=["Which cache?", "Run tests?"]
+    )
+    event = adapters.run_last_handoff(tmp_path)
+    assert "Which cache?" in event.text
+    assert "Run tests?" in event.text
+
+
+def test_run_last_handoff_with_nothing_recorded_says_so(tmp_path):
+    event = adapters.run_last_handoff(tmp_path)
+    assert event.kind == "output"
+    assert "No handoff recorded yet" in event.text

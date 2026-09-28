@@ -10,7 +10,16 @@ from pathlib import Path
 from whyline.console import adapters, editor
 from whyline.console.session import ConsoleSession, SessionEvent
 
-SLASH_COMMANDS = ("/model", "/route", "/status", "/stop", "/history", "/help", "/exit")
+SLASH_COMMANDS = (
+    "/model",
+    "/route",
+    "/status",
+    "/handoff",
+    "/stop",
+    "/history",
+    "/help",
+    "/exit",
+)
 _PREFIX = {"error": "⚠ ", "pause": "⏸ "}
 
 
@@ -42,6 +51,11 @@ def run(root: Path, *, print_fn=print, prompt_session=None) -> None:
             continue
         if text == "/status":
             _print_event(session.record(adapters.run_status(session.root)), print_fn)
+            continue
+        if text == "/handoff":
+            _print_event(
+                session.record(adapters.run_last_handoff(session.root)), print_fn
+            )
             continue
         if text == "/history":
             for event in session.transcript:

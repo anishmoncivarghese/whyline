@@ -271,3 +271,21 @@ def test_run_with_direct_prompt_session_argument(tmp_path):
     repl.run(tmp_path, print_fn=lines.append, prompt_session=FakePromptSession(["/exit"]))
     assert any("whyline console" in line for line in lines)
 
+
+def test_handoff_slash_command_dispatches_to_run_last_handoff(tmp_path, monkeypatch):
+    from whyline.console import adapters
+
+    monkeypatch.setattr(
+        editor,
+        "build_session",
+        lambda root: FakePromptSession(["/handoff", "/exit"]),
+    )
+    monkeypatch.setattr(
+        adapters,
+        "run_last_handoff",
+        lambda root: SessionEvent(kind="output", text="the last handoff"),
+    )
+    lines = []
+    repl.run(tmp_path, print_fn=lines.append)
+    assert any("the last handoff" in line for line in lines)
+
