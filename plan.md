@@ -1,4 +1,4 @@
-- [ ] UCF-1: Dependencies and the session/event model
+- [x] UCF-1: Dependencies and the session/event model
 
   ## Global Constraints
 
