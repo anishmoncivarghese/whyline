@@ -5,7 +5,7 @@ timeout_minutes = 30
 branch_prefix = "relay/"
 
 [roles]
-implementer = "grok"
+implementer = "antigravity"
 reviewer = "codex"
 
 [agents.codex]

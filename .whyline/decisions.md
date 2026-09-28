@@ -1724,3 +1724,31 @@ Append-only. Written by whyline; readable without it.
 - switch implementer to antigravity — the actual root cause (missing mkdir permission) is config-specific and cheap to fix directly, not a reason to abandon the grok/codex pairing
 
 <!-- whyline-event: da110657f236435e9002a2ebdd0e3d6e -->
+
+## 2026-09-28 — Grok's UCF-1 stall is NOT a permission-list gap; that earlier diagnosis was wrong
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** UCF-1
+
+**Because:** Reproduced directly outside the relay with the exact same allow/deny list: a simple file-creation probe succeeded (end_turn), a standalone 'whyline sync' succeeded (end_turn), but the real, full UCF-1 task prompt got cancelled twice in a row (once at normal reasoning effort, once at low) with zero files created either time -- rules out permissions, rate limits, and reasoning-token budget as the cause; root cause remains unidentified, consistent with this project's long-documented, never-fully-explained grok handoff-stall pattern, just manifesting earlier (before any handoff) than usual
+
+**Rejected:**
+
+- keep retrying grok as-is — already failed 5+ times on this exact task at real API cost with no successful attempt
+
+<!-- whyline-event: d4738bd676f74e0e9b1b06026b91a2d6 -->
+
+## 2026-09-28 — Switch UCF-1 (and the rest of this plan) from grok/codex to antigravity/codex
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** UCF-1
+
+**Because:** grok failed 5+ real attempts on this exact task at real API cost, reproducibly cancelled before writing any file, with permissions/rate-limit/reasoning-budget all ruled out by direct testing; antigravity has completed every other agentdock-based plan this session (WEM, RSW, ACG) cleanly
+
+**Rejected:**
+
+- keep retrying grok — no new information after 5 identical failures, continuing costs real money with no signal it would eventually succeed
+
+<!-- whyline-event: 3ad2772c3abd4c2686710b2141605bd7 -->
