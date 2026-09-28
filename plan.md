@@ -313,7 +313,7 @@
 
   ---
 
-- [ ] UCF-3: `adapters.py` -- `run_chat_turn`, `run_doctor`, `run_status`
+- [x] UCF-3: `adapters.py` -- `run_chat_turn`, `run_doctor`, `run_status`
 
   ## Global Constraints
 
