@@ -2522,3 +2522,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** tests/test_cli.py
 
 <!-- whyline-event: 012ab962df7840a286c53ba14bbb00bd -->
+
+## 2026-09-28 — Released whyline 0.3.12 (Windows compatibility fixes)
+
+**Actor:** claude
+**Role:** releaser
+**Task:** WFX-RELEASE
+
+**Because:** all four Windows-specific root causes are fixed and verified against the real windows-latest CI job (not just local macOS/Linux) for both Python 3.11 and 3.13, and the full suite passes on main
+
+**Rejected:**
+
+- publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.11
+
+<!-- whyline-event: 064a985b69a848dabba240bc4712853b -->
