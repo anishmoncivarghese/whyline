@@ -579,7 +579,7 @@
 
   ---
 
-- [ ] MTU-5: `whyline console --ui` wiring and end-to-end test
+- [x] MTU-5: `whyline console --ui` wiring and end-to-end test
 
   ## Global Constraints
 
