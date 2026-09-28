@@ -5,7 +5,7 @@ timeout_minutes = 30
 branch_prefix = "relay/"
 
 [roles]
-implementer = "antigravity"
+implementer = "grok"
 reviewer = "codex"
 
 [agents.codex]
@@ -17,3 +17,15 @@ command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format"
 [agents.antigravity]
 adapter = "generic"
 command = ["agy", "--output-format", "json", "--mode", "accept-edits", "--add-dir", ".", "--new-project", "-p"]
+
+[agents.grok]
+adapter = "generic"
+command = [
+  "grok", "--output-format", "json", "--permission-mode", "dontAsk",
+  "--deny", "Bash(git push:*)", "--deny", "Bash(rm -rf:*)",
+  "--allow", "Edit", "--allow", "Bash(git add:*)", "--allow", "Bash(git commit:*)",
+  "--allow", "Bash(git diff:*)", "--allow", "Bash(git status:*)", "--allow", "Bash(git log:*)",
+  "--allow", "Bash(whyline:*)", "--allow", "Bash(python3:*)",
+  "--allow", "Bash(uv run:*)", "--allow", "Bash(uv:*)",
+  "-p"
+]
