@@ -499,7 +499,7 @@
 
   ---
 
-- [ ] FC-3: Wire the TUI to the shared handler, fixing its buttons (FC2 TUI side, FC4 completion)
+- [x] FC-3: Wire the TUI to the shared handler, fixing its buttons (FC2 TUI side, FC4 completion)
 
   ## Global Constraints
 
