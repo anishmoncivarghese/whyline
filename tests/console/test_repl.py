@@ -289,3 +289,18 @@ def test_handoff_slash_command_dispatches_to_run_last_handoff(tmp_path, monkeypa
     repl.run(tmp_path, print_fn=lines.append)
     assert any("the last handoff" in line for line in lines)
 
+
+def test_dispatch_is_public_and_routes_by_mode(tmp_path):
+    from whyline.console.repl import dispatch
+    from whyline.console.session import ConsoleSession
+    from whyline.console import adapters
+    session = ConsoleSession(root=tmp_path, mode="command")
+    called = []
+    original = adapters.run_whyline_command
+    adapters.run_whyline_command = lambda argv: called.append(argv) or original(argv)
+    try:
+        dispatch(session, "model status")
+    finally:
+        adapters.run_whyline_command = original
+    assert called == [["model", "status"]]
+

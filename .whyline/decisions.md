@@ -2130,3 +2130,36 @@ Append-only. Written by whyline; readable without it.
 - publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.9
 
 <!-- whyline-event: caf701d2c7034bf8a243b114a32d5082 -->
+
+## 2026-09-28 — Make dispatch() public and add [ui] extra with textual>=0.60,<1.0
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** MTU-1
+
+**Because:** Allows alternative UI drivers like Textual to reuse identical console dispatch logic without duplicating routing, keeping textual an optional dependency
+
+**Rejected:**
+
+- private _dispatch call from UI — breaks encapsulation and risks private API drift
+- required dependency on textual — violates zero-required-dependency constraint for base whyline
+
+**Files:** src/whyline/console/repl.py, pyproject.toml
+
+<!-- whyline-event: 51fb07486f6d4344aaa559ccdf71494c -->
+
+## 2026-09-28 — Approve public dispatch API and optional Textual UI extra
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** MTU-1
+
+**Because:** The rename preserves dispatch behavior exactly, run() uses the public function, the direct test proves command-mode routing, Textual remains opt-in under the requested bounds, and both focused and full suites pass
+
+**Rejected:**
+
+- request changes — no correctness, safety, dependency, or coverage defect remains
+
+**Files:** src/whyline/console/repl.py, pyproject.toml, tests/console/test_repl.py, uv.lock
+
+<!-- whyline-event: ca02995bed54437f815c411f4f09aa9c -->

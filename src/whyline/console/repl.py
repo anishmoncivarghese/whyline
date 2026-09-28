@@ -80,14 +80,14 @@ def run(root: Path, *, print_fn=print, prompt_session=None) -> None:
             print_fn(f"Unknown command: {text}. Try {', '.join(SLASH_COMMANDS)}.")
             continue
         try:
-            event = _dispatch(session, text)
+            event = dispatch(session, text)
         except KeyboardInterrupt:
             print_fn("Cancelled.")
             continue
         _print_event(session.record(event), print_fn)
 
 
-def _dispatch(session: ConsoleSession, text: str) -> SessionEvent:
+def dispatch(session: ConsoleSession, text: str) -> SessionEvent:
     if session.mode == "command":
         return adapters.run_whyline_command(text.split())
     if session.mode == "chat":
