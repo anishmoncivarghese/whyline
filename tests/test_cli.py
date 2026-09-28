@@ -219,7 +219,7 @@ def test_note_writes_to_both_the_ledger_and_decisions_md(repo, capsys):
         {"option": "sleep in tests", "why_not": "slow and flaky"}
     ]
     assert found[-1]["files"] == ["cache.py"]
-    assert "monotonic expiry" in paths.decisions_path(repo.path).read_text()
+    assert "monotonic expiry" in paths.decisions_path(repo.path).read_text(encoding="utf-8")
 
 
 def test_note_requires_initialisation(repo, capsys):
@@ -231,48 +231,48 @@ def test_init_scaffolds_ledger_and_gitignore(repo, capsys):
     code, _ = run_in(repo, ["init", "--yes"], capsys)
     assert code == cli.EXIT_OK
     assert paths.ledger_path(repo.path).exists()
-    ignore = (repo.path / ".whyline" / ".gitignore").read_text()
+    ignore = (repo.path / ".whyline" / ".gitignore").read_text(encoding="utf-8")
     assert "ledger.jsonl" in ignore
     assert "!decisions.md" in ignore
     assert (repo.path / ".claude" / "settings.json").exists()
-    codex_hooks = json.loads((repo.path / ".codex" / "hooks.json").read_text())
+    codex_hooks = json.loads((repo.path / ".codex" / "hooks.json").read_text(encoding="utf-8"))
     assert "whyline-hook --agent codex" in str(codex_hooks)
 
 
 def test_init_preserves_existing_whyline_gitignore_entries(repo, capsys):
     directory = repo.path / ".whyline"
     directory.mkdir()
-    (directory / ".gitignore").write_text("keep-me.tmp\n")
+    (directory / ".gitignore").write_text("keep-me.tmp\n", encoding="utf-8")
     run_in(repo, ["init", "--yes"], capsys)
-    ignore = (directory / ".gitignore").read_text()
+    ignore = (directory / ".gitignore").read_text(encoding="utf-8")
     assert "keep-me.tmp" in ignore
     assert "ledger.jsonl" in ignore
 
 
 def test_init_is_idempotent(repo, capsys):
     run_in(repo, ["init", "--yes"], capsys)
-    agents_before = (repo.path / "AGENTS.md").read_text()
-    claude_before = (repo.path / "CLAUDE.md").read_text()
+    agents_before = (repo.path / "AGENTS.md").read_text(encoding="utf-8")
+    claude_before = (repo.path / "CLAUDE.md").read_text(encoding="utf-8")
     code, _ = run_in(repo, ["init", "--yes"], capsys)
     assert code == cli.EXIT_OK
-    assert (repo.path / "AGENTS.md").read_text() == agents_before
-    assert (repo.path / "CLAUDE.md").read_text() == claude_before
+    assert (repo.path / "AGENTS.md").read_text(encoding="utf-8") == agents_before
+    assert (repo.path / "CLAUDE.md").read_text(encoding="utf-8") == claude_before
 
 
 def test_init_writes_shared_agent_instructions_with_yes(repo, capsys):
     run_in(repo, ["init", "--yes"], capsys)
-    assert "whyline note" in (repo.path / "AGENTS.md").read_text()
-    claude = (repo.path / "CLAUDE.md").read_text()
+    assert "whyline note" in (repo.path / "AGENTS.md").read_text(encoding="utf-8")
+    claude = (repo.path / "CLAUDE.md").read_text(encoding="utf-8")
     assert "@AGENTS.md" in claude
     assert "canonical source" in claude
 
 
 def test_init_preserves_existing_instruction_files(repo, capsys):
-    (repo.path / "AGENTS.md").write_text("Existing agents rules.\n")
-    (repo.path / "CLAUDE.md").write_text("Existing Claude rules.\n")
+    (repo.path / "AGENTS.md").write_text("Existing agents rules.\n", encoding="utf-8")
+    (repo.path / "CLAUDE.md").write_text("Existing Claude rules.\n", encoding="utf-8")
     run_in(repo, ["init", "--yes"], capsys)
-    assert (repo.path / "AGENTS.md").read_text().startswith("Existing agents rules.")
-    assert (repo.path / "CLAUDE.md").read_text().startswith("Existing Claude rules.")
+    assert (repo.path / "AGENTS.md").read_text(encoding="utf-8").startswith("Existing agents rules.")
+    assert (repo.path / "CLAUDE.md").read_text(encoding="utf-8").startswith("Existing Claude rules.")
 
 
 def test_init_without_confirmation_does_not_modify_instruction_files(
@@ -616,7 +616,8 @@ def test_status_reports_a_deny_rule_as_not_recording(repo, capsys):
     settings = repo.path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(
-        json.dumps({"permissions": {"deny": ["Bash(whyline-hook)"]}, "hooks": {}})
+        json.dumps({"permissions": {"deny": ["Bash(whyline-hook)"]}, "hooks": {}}),
+        encoding="utf-8",
     )
     code, out = run_in(repo, ["status", "--json"], capsys)
     assert code == cli.EXIT_OK
@@ -640,7 +641,8 @@ def test_status_reports_partial_hook_wiring_as_not_recording(repo, capsys):
                     ]
                 }
             }
-        )
+        ),
+        encoding="utf-8",
     )
     code, out = run_in(repo, ["status", "--json"], capsys)
     payload = json.loads(out)
@@ -759,7 +761,8 @@ def test_status_reports_a_denied_but_fully_wired_hook_as_blocked(repo, capsys):
                 },
                 "permissions": {"deny": [f"Bash({hooks.HOOK_COMMAND})"]},
             }
-        )
+        ),
+        encoding="utf-8",
     )
     code, out = run_in(repo, ["status", "--json"], capsys)
     payload = json.loads(out)
@@ -785,7 +788,7 @@ def test_status_survives_settings_json_of_any_shape(repo, capsys):
         [],
         "a string",
     ):
-        settings.write_text(json.dumps(shape))
+        settings.write_text(json.dumps(shape), encoding="utf-8")
         code, out = run_in(repo, ["status", "--json"], capsys)
         assert code == cli.EXIT_OK, f"crashed on {shape!r}"
         assert json.loads(out)["hook_installed"] is False
@@ -822,7 +825,8 @@ def test_status_treats_glob_and_blanket_deny_rules_as_blocking(repo, capsys):
         "Bash(/usr/local/bin/whyline-hook)",
     ):
         settings.write_text(
-            json.dumps({"hooks": wired, "permissions": {"deny": [rule]}})
+            json.dumps({"hooks": wired, "permissions": {"deny": [rule]}}),
+            encoding="utf-8",
         )
         code, out = run_in(repo, ["status", "--json"], capsys)
         assert code == cli.EXIT_OK
@@ -848,7 +852,8 @@ def test_status_does_not_treat_an_unrelated_deny_rule_as_blocking(repo, capsys):
         "Bash(npm run build)",
     ):
         settings.write_text(
-            json.dumps({"hooks": wired, "permissions": {"deny": [rule]}})
+            json.dumps({"hooks": wired, "permissions": {"deny": [rule]}}),
+            encoding="utf-8",
         )
         code, out = run_in(repo, ["status", "--json"], capsys)
         assert json.loads(out)["hook_installed"] is True, f"{rule} must not block"
@@ -866,7 +871,8 @@ def test_status_handles_a_deny_rule_written_as_a_bare_string(repo, capsys):
     settings = repo.path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(
-        json.dumps({"hooks": wired, "permissions": {"deny": "Bash(whyline-hook)"}})
+        json.dumps({"hooks": wired, "permissions": {"deny": "Bash(whyline-hook)"}}),
+        encoding="utf-8",
     )
     code, out = run_in(repo, ["status", "--json"], capsys)
     assert json.loads(out)["hook_installed"] is False
@@ -928,7 +934,7 @@ def test_note_still_records_when_only_the_local_ledger_fails(repo, capsys):
 
     assert code == cli.EXIT_OK
     assert "Recorded:" in out
-    assert "durable anyway" in paths.decisions_path(repo.path).read_text()
+    assert "durable anyway" in paths.decisions_path(repo.path).read_text(encoding="utf-8")
     assert "Traceback" not in err
     assert "could not write the local ledger" in err
 
@@ -946,7 +952,7 @@ def test_pressing_enter_at_the_init_prompts_installs_everything(repo, capsys, mo
     monkeypatch.setattr("builtins.input", lambda prompt: "")
     code, _ = run_in(repo, ["init"], capsys)
     assert code == cli.EXIT_OK
-    assert "whyline note" in (repo.path / "AGENTS.md").read_text()
+    assert "whyline note" in (repo.path / "AGENTS.md").read_text(encoding="utf-8")
     assert (repo.path / ".claude" / "settings.json").exists()
     assert (repo.path / ".codex" / "hooks.json").exists()
 
@@ -976,7 +982,7 @@ def test_non_interactive_init_sets_up_rather_than_silently_doing_nothing(
     monkeypatch.setattr("builtins.input", closed_stdin)
     code, _ = run_in(repo, ["init"], capsys)
     assert code == cli.EXIT_OK
-    assert "whyline note" in (repo.path / "AGENTS.md").read_text()
+    assert "whyline note" in (repo.path / "AGENTS.md").read_text(encoding="utf-8")
     assert (repo.path / ".codex" / "hooks.json").exists()
 
 

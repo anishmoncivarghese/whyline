@@ -36,7 +36,9 @@ def test_compose_combines_handoff_git_state_and_relevant_decisions(repo):
         current_commit=head,
         dirty=True,
     )
-    paths.active_handoff_path(repo.path).write_text(json.dumps(active))
+    paths.active_handoff_path(repo.path).write_text(
+        json.dumps(active), encoding="utf-8"
+    )
     _note(repo, "relevant decision", task="WL-42", files=["a.py"])
     _note(repo, "unrelated decision", task="WL-99", files=["b.py"])
     (repo.path / "a.py").write_text("two\n", encoding="utf-8")
@@ -140,7 +142,9 @@ def test_large_mandatory_state_uses_compact_fallback_within_minimum_budget(repo)
         current_commit="",
         dirty=True,
     )
-    paths.active_handoff_path(repo.path).write_text(json.dumps(active))
+    paths.active_handoff_path(repo.path).write_text(
+        json.dumps(active), encoding="utf-8"
+    )
 
     text = sync.compose(repo.path, token_budget=200)
 

@@ -107,8 +107,8 @@ def test_changed_paths_excludes_checkout_local_whyline_state(repo):
     repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
     directory = repo.path / ".whyline"
     directory.mkdir()
-    (directory / "ledger.jsonl").write_text("event\n")
-    (directory / "active-handoff.json").write_text("{}\n")
-    (directory / "decisions.md").write_text("# Decisions\n")
+    (directory / "ledger.jsonl").write_text("event\n", encoding="utf-8")
+    (directory / "active-handoff.json").write_text("{}\n", encoding="utf-8")
+    (directory / "decisions.md").write_text("# Decisions\n", encoding="utf-8")
 
     assert gitq.changed_paths(repo.path) == [".whyline/decisions.md"]

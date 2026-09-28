@@ -8,7 +8,7 @@ from whyline import hooks
 def test_install_creates_settings_when_absent(tmp_path):
     path = tmp_path / "settings.json"
     assert hooks.install(path, "whyline-hook") == "installed"
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     assert "PostToolUse" in data["hooks"]
 
 
@@ -27,10 +27,11 @@ def test_install_preserves_unrelated_keys_and_existing_hooks(tmp_path):
                     ],
                 },
             }
-        )
+        ),
+        encoding="utf-8",
     )
     assert hooks.install(path, "whyline-hook") == "installed"
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     assert data["model"] == "opus"
     commands = [
         entry["command"]
@@ -51,7 +52,7 @@ def test_install_is_idempotent(tmp_path):
     path = tmp_path / "settings.json"
     hooks.install(path, "whyline-hook")
     assert hooks.install(path, "whyline-hook") == "already-present"
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     commands = [
         entry["command"]
         for group in data["hooks"]["PostToolUse"]
@@ -63,28 +64,28 @@ def test_install_is_idempotent(tmp_path):
 def test_install_refuses_unparseable_settings_without_modifying_them(tmp_path):
     path = tmp_path / "settings.json"
     original = "{ this is not json"
-    path.write_text(original)
+    path.write_text(original, encoding="utf-8")
     with pytest.raises(hooks.SettingsUnreadable):
         hooks.install(path, "whyline-hook")
-    assert path.read_text() == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_install_refuses_non_object_settings_without_modifying_them(tmp_path):
     path = tmp_path / "settings.json"
     original = "[]\n"
-    path.write_text(original)
+    path.write_text(original, encoding="utf-8")
     with pytest.raises(hooks.SettingsUnreadable):
         hooks.install(path, "whyline-hook")
-    assert path.read_text() == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_install_refuses_null_event_groups_without_modifying_them(tmp_path):
     path = tmp_path / "settings.json"
     original = '{"hooks":{"PostToolUse":null}}\n'
-    path.write_text(original)
+    path.write_text(original, encoding="utf-8")
     with pytest.raises(hooks.SettingsUnreadable):
         hooks.install(path, "whyline-hook")
-    assert path.read_text() == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_codex_install_uses_an_explicit_agent_and_all_lifecycle_events(tmp_path):
@@ -92,7 +93,7 @@ def test_codex_install_uses_an_explicit_agent_and_all_lifecycle_events(tmp_path)
 
     assert hooks.install_codex(path) == "installed"
 
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     for event in hooks.EVENTS:
         commands = [
             entry["command"]

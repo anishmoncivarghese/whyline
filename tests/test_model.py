@@ -12,13 +12,13 @@ def test_save_then_load_round_trips(tmp_path):
 
 def test_load_corrupt_file_reads_as_empty(tmp_path):
     model.paths.model_path(tmp_path).parent.mkdir(parents=True)
-    model.paths.model_path(tmp_path).write_text("{broken")
+    model.paths.model_path(tmp_path).write_text("{broken", encoding="utf-8")
     assert model.load(tmp_path) == {}
 
 
 def test_load_non_dict_json_reads_as_empty(tmp_path):
     model.paths.model_path(tmp_path).parent.mkdir(parents=True)
-    model.paths.model_path(tmp_path).write_text('["not", "a", "dict"]')
+    model.paths.model_path(tmp_path).write_text('["not", "a", "dict"]', encoding="utf-8")
     assert model.load(tmp_path) == {}
 
 

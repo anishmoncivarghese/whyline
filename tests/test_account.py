@@ -20,7 +20,10 @@ def _fake_jwt(claims: dict) -> str:
 def test_detect_codex_reads_the_plan_from_the_decoded_jwt(tmp_path):
     auth_path = tmp_path / "auth.json"
     token = _fake_jwt({"https://api.openai.com/auth": {"chatgpt_plan_type": "plus"}})
-    auth_path.write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {"id_token": token}}))
+    auth_path.write_text(
+        json.dumps({"auth_mode": "chatgpt", "tokens": {"id_token": token}}),
+        encoding="utf-8",
+    )
     result = account.detect_codex(auth_path)
     assert result == {"auth_mode": "chatgpt", "plan": "plus"}
 
@@ -28,14 +31,17 @@ def test_detect_codex_reads_the_plan_from_the_decoded_jwt(tmp_path):
 def test_detect_codex_never_returns_the_raw_token(tmp_path):
     auth_path = tmp_path / "auth.json"
     token = _fake_jwt({"https://api.openai.com/auth": {"chatgpt_plan_type": "plus"}})
-    auth_path.write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {"id_token": token}}))
+    auth_path.write_text(
+        json.dumps({"auth_mode": "chatgpt", "tokens": {"id_token": token}}),
+        encoding="utf-8",
+    )
     result = account.detect_codex(auth_path)
     assert token not in json.dumps(result)
 
 
 def test_detect_codex_with_an_api_key_reports_no_plan(tmp_path):
     auth_path = tmp_path / "auth.json"
-    auth_path.write_text(json.dumps({"auth_mode": "apikey"}))
+    auth_path.write_text(json.dumps({"auth_mode": "apikey"}), encoding="utf-8")
     assert account.detect_codex(auth_path) == {"auth_mode": "apikey", "plan": None}
 
 
@@ -47,7 +53,7 @@ def test_detect_codex_missing_file_is_unknown_not_a_crash(tmp_path):
 
 def test_detect_codex_malformed_json_is_unknown_not_a_crash(tmp_path):
     auth_path = tmp_path / "auth.json"
-    auth_path.write_text("{not json")
+    auth_path.write_text("{not json", encoding="utf-8")
     result = account.detect_codex(auth_path)
     assert result["plan"] == "unknown"
 
@@ -63,7 +69,10 @@ def test_detect_codex_invalid_utf8_is_unknown_not_a_crash(tmp_path):
 def test_detect_codex_chatgpt_mode_missing_the_claim_is_unknown(tmp_path):
     auth_path = tmp_path / "auth.json"
     token = _fake_jwt({"https://api.openai.com/auth": {}})  # no chatgpt_plan_type
-    auth_path.write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {"id_token": token}}))
+    auth_path.write_text(
+        json.dumps({"auth_mode": "chatgpt", "tokens": {"id_token": token}}),
+        encoding="utf-8",
+    )
     result = account.detect_codex(auth_path)
     assert result["plan"] == "unknown"
     assert result["auth_mode"] == "chatgpt"
@@ -176,7 +185,7 @@ def test_load_global_returns_none_when_absent(monkeypatch, tmp_path):
 def test_load_global_corrupt_file_reads_as_absent(monkeypatch, tmp_path):
     monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
     account.paths.global_account_path().parent.mkdir(parents=True)
-    account.paths.global_account_path().write_text("{broken")
+    account.paths.global_account_path().write_text("{broken", encoding="utf-8")
     assert account.load_global() is None
 
 
@@ -199,7 +208,7 @@ def test_load_repo_returns_none_when_absent(tmp_path):
 
 def test_load_repo_corrupt_file_reads_as_absent(tmp_path):
     account.paths.account_path(tmp_path).parent.mkdir(parents=True)
-    account.paths.account_path(tmp_path).write_text("{broken")
+    account.paths.account_path(tmp_path).write_text("{broken", encoding="utf-8")
     assert account.load_repo(tmp_path) is None
 
 

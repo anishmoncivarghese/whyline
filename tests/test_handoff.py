@@ -21,7 +21,7 @@ def test_create_records_explicit_handoff_and_replaces_active_state(repo):
         current_commit=head,
     )
 
-    active = json.loads(paths.active_handoff_path(repo.path).read_text())
+    active = json.loads(paths.active_handoff_path(repo.path).read_text(encoding="utf-8"))
     found, skipped = ledger.read_all(paths.ledger_path(repo.path))
     assert skipped == 0
     assert active == record

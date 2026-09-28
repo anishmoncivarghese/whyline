@@ -2405,3 +2405,32 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/state.py, tests/test_state_lock.py
 
 <!-- whyline-event: b2916b638d8d49b3aa4830a1d7b41f79 -->
+
+## 2026-09-28 — Add explicit encoding="utf-8" across all text read and write calls in tests
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** WFX-2
+
+**Because:** Prevents platform-specific default encoding differences (notably Windows cp1252) from causing test failures or file corruption
+
+**Rejected:**
+
+- relying on Python default encoding — fails on Windows where the system locale encoding is commonly cp1252
+- custom wrapper helper around Path — unnecessary indirection when Path.read_text and Path.write_text natively support the encoding keyword argument
+
+**Files:** tests/test_model.py, tests/test_sync.py, tests/test_claudemd.py, tests/test_init_relay.py, tests/test_handoff.py, tests/test_hooks.py, tests/test_gitq.py, tests/test_agentsmd.py, tests/test_account_cli.py, tests/test_cli.py, tests/test_account.py, tests/test_decisions.py, tests/test_ledger.py, tests/console/test_adapters_relay_structured.py
+
+<!-- whyline-event: f0152ccbd2ed44b79b5a8cbdcbf88661 -->
+
+## 2026-09-28 — Approve explicit UTF-8 encoding additions across all identified text I/O calls
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WFX-2
+
+**Because:** The exact repository scan found no remaining unencoded Path.read_text or Path.write_text calls, AST comparison found no unrelated semantic changes, and the full pytest suite passed
+
+**Files:** tests/test_model.py
+
+<!-- whyline-event: c5f3028a06824963b8ab948a48f881c1 -->

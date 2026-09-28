@@ -27,7 +27,9 @@ def test_detect_writes_the_global_file_and_prints_it(repo, capsys, monkeypatch, 
 
     assert code == cli.EXIT_OK
     assert "plus" in out and "pro" in out
-    saved = json.loads(account.paths.global_account_path().read_text())
+    saved = json.loads(
+        account.paths.global_account_path().read_text(encoding="utf-8")
+    )
     assert saved["codex"]["plan"] == "plus"
     assert "detected_at" in saved["codex"]
 

@@ -10,7 +10,7 @@ def _init_relay_repo(repo):
         ["git", "config", "user.email", "t@t"], cwd=repo.path, check=True
     )
     subprocess.run(["git", "config", "user.name", "t"], cwd=repo.path, check=True)
-    (repo.path / "README.md").write_text("x\n")
+    (repo.path / "README.md").write_text("x\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=repo.path, check=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=repo.path, check=True)
 
@@ -180,7 +180,9 @@ def _write_handoff(root, **fields):
         "summary": "Implemented the cache",
         **fields,
     }
-    (target / "active-handoff.json").write_text(json.dumps(record))
+    (target / "active-handoff.json").write_text(
+        json.dumps(record), encoding="utf-8"
+    )
 
 
 def test_run_last_handoff_renders_the_current_record(tmp_path):

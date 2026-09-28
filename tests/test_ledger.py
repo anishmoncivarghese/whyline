@@ -10,13 +10,13 @@ from whyline import events, ledger, paths
 def test_append_creates_parent_directory_and_writes_one_line(tmp_path):
     path = tmp_path / ".whyline" / "ledger.jsonl"
     ledger.append(path, events.new_event(events.NOTE, decision="a"))
-    assert path.read_text().count("\n") == 1
+    assert path.read_text(encoding="utf-8").count("\n") == 1
 
 
 def test_append_is_deterministic_and_key_sorted(tmp_path):
     path = tmp_path / "ledger.jsonl"
     ledger.append(path, {"v": 1, "type": "Note", "id": "x", "ts": "t", "a": 1})
-    line = path.read_text().strip()
+    line = path.read_text(encoding="utf-8").strip()
     assert line == json.dumps(
         {"a": 1, "id": "x", "ts": "t", "type": "Note", "v": 1},
         sort_keys=True,

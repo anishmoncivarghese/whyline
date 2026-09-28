@@ -140,7 +140,7 @@ def test_relay_offer_treats_end_of_input_as_no(repo, monkeypatch):
 def test_existing_relay_setup_is_reported_without_asking(repo, monkeypatch, capsys):
     config = repo.path / ".whyline" / "relay" / "config.toml"
     config.parent.mkdir(parents=True)
-    config.write_text("configured = true\n")
+    config.write_text("configured = true\n", encoding="utf-8")
     calls = install_fake_relay(monkeypatch)
 
     def unexpected(prompt):

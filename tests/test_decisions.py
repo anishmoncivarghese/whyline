@@ -34,7 +34,7 @@ def test_render_entry_omits_empty_sections():
 def test_append_entry_creates_the_file_with_a_heading(tmp_path):
     path = tmp_path / "decisions.md"
     decisions.append_entry(path, make_note())
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     assert content.startswith("# Decisions")
     assert "Store absolute monotonic expiry" in content
 
@@ -45,7 +45,7 @@ def test_append_entry_is_append_only(tmp_path):
     second = make_note()
     second["decision"] = "A later decision"
     decisions.append_entry(path, second)
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     assert content.count("# Decisions") == 1
     assert content.index("Store absolute") < content.index("A later decision")
 
@@ -77,7 +77,10 @@ def test_parse_entries_round_trips_with_render_entry(tmp_path):
 
 def test_parse_entries_yields_empty_values_for_missing_sections(tmp_path):
     path = tmp_path / "decisions.md"
-    path.write_text("## 2026-08-09 — Just a heading\n\n<!-- whyline-event: abc123 -->\n")
+    path.write_text(
+        "## 2026-08-09 — Just a heading\n\n<!-- whyline-event: abc123 -->\n",
+        encoding="utf-8",
+    )
 
     parsed = decisions.parse_entries(path)
 
@@ -99,7 +102,8 @@ def test_parse_entries_tolerates_unexpected_prose_between_entries(tmp_path):
         "<!-- whyline-event: first-id -->\n\n"
         "A stray paragraph an editor left behind, not a heading.\n\n"
         "## 2026-08-10 — Second decision\n\n"
-        "<!-- whyline-event: second-id -->\n"
+        "<!-- whyline-event: second-id -->\n",
+        encoding="utf-8",
     )
 
     parsed = decisions.parse_entries(path)
