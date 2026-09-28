@@ -1,4 +1,4 @@
-- [ ] MTU-1: `dispatch()` becomes public; add the `[ui]` extra
+- [x] MTU-1: `dispatch()` becomes public; add the `[ui]` extra
 
   ## Global Constraints
 
