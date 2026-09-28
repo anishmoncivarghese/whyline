@@ -1978,3 +1978,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/editor.py, tests/console/test_editor.py
 
 <!-- whyline-event: 163faf61bc56464a8bf4fc1d47dd1a29 -->
+
+## 2026-09-28 — Dispatch in-flight command inside scoped try/except KeyboardInterrupt
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UCF-6
+
+**Because:** isolates cancellation to running command so Ctrl+C cancels active command without killing the REPL session
+
+**Rejected:**
+
+- wrapping entire loop — exits the console session whenever Ctrl+C is pressed
+
+**Files:** src/whyline/console/repl.py, src/whyline/cli.py
+
+<!-- whyline-event: de53aa6ae0814d4e8465ed2777f5b5a8 -->
+
+## 2026-09-28 — Approve console REPL and CLI wiring
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-6
+
+**Because:** The REPL composes the established session, editor, and adapter interfaces; command cancellation is scoped to dispatch, interactive bare commands are refused by the adapter, focused coverage passes, and the plain full suite passes
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found
+
+**Files:** src/whyline/console/repl.py, src/whyline/cli.py, tests/console/test_repl.py, tests/test_cli_console.py
+
+<!-- whyline-event: 784c9260a220415495340fcf8c3d86f2 -->

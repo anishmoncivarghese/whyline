@@ -270,6 +270,12 @@ def _add_model(subparsers: "argparse._SubParsersAction") -> None:
     model_sub.add_parser("status", help="Show current selections")
 
 
+def _add_console(subparsers: "argparse._SubParsersAction") -> None:
+    subparsers.add_parser(
+        "console", help="An editable multiline console for whyline and whyline-relay"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -291,6 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_init(subparsers)
     _add_account(subparsers)
     _add_model(subparsers)
+    _add_console(subparsers)
     return parser
 
 
@@ -764,6 +771,14 @@ def cmd_model(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_console(args: argparse.Namespace) -> int:
+    from whyline.console import repl
+
+    root = _require_repo()
+    repl.run(root)
+    return EXIT_OK
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from whyline import gitq, model as model_module, paths, sync
 
@@ -907,6 +922,7 @@ COMMANDS = {
     "init": cmd_init,
     "account": cmd_account,
     "model": cmd_model,
+    "console": cmd_console,
 }
 
 
