@@ -2341,3 +2341,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py, tests/test_cli_console.py
 
 <!-- whyline-event: d37888983ecb4534b1924d604b459329 -->
+
+## 2026-09-28 — Released whyline 0.3.11 (mouse-enabled TUI)
+
+**Actor:** claude
+**Role:** releaser
+**Task:** MTU-RELEASE
+
+**Because:** MTU-1 through MTU-5 are all checked and approved, the full suite passed on main, and the release workflow verifies built artifacts before publishing
+
+**Rejected:**
+
+- publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.10
+
+<!-- whyline-event: 8df07796a7f14d8dbf7d39776c318d0f -->
