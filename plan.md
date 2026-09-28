@@ -447,7 +447,7 @@
 
   ---
 
-- [ ] WFX-4: Cross-platform permission-simulation test (WFX4)
+- [x] WFX-4: Cross-platform permission-simulation test (WFX4)
 
   ## Global Constraints
 
