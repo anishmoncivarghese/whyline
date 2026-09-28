@@ -1637,3 +1637,15 @@ Append-only. Written by whyline; readable without it.
 - reset and redo — wastes correct, test-verified work
 
 <!-- whyline-event: 50ae2da486564f2e9d40d6ec8943ed57 -->
+
+## 2026-09-28 — Request changes: UCF-1 implementation and tests are absent
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-1
+
+**Because:** The base-to-HEAD diff contains only auto-recovery metadata; pyproject.toml is unchanged and src/whyline/console plus tests/console do not exist, so the passing legacy suite does not demonstrate task completion
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: 7c8aa10aa3464caf91180b6f943c75d8 -->

@@ -34,6 +34,7 @@ dependencies = []
 
 [project.optional-dependencies]
 relay = ["whyline-relay>=0.2.1,<0.3"]
+console = ["prompt_toolkit>=3.0,<4.0"]
 
 [project.urls]
 Homepage = "https://github.com/anishmoncivarghese/whyline"
@@ -67,4 +68,4 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "whyline-relay>=0.2.1,<0.3"]
