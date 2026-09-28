@@ -1784,3 +1784,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/session.py
 
 <!-- whyline-event: a3c5296a370541b691da210c9ed9391a -->
+
+## 2026-09-28 — Completed UCF-1's commit and approval handoff manually after codex's sandbox denied writing .git/index.lock
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** UCF-1
+
+**Because:** codex's review genuinely passed (session model and tests correct, full suite green) but its 'codex exec -s workspace-write' sandbox could not create .git/index.lock to commit; verified .git has normal ownership/permissions and no stale lock from this shell, so it's specific to codex's own sandbox policy, not a real filesystem issue
+
+**Rejected:**
+
+- add --add-dir .git to codex's command — untested and changes the reviewer's permission surface for every future task, not just this one-off; a manual completion is safer until this is confirmed to recur
+
+<!-- whyline-event: 973ace7be5a44441aec5604ed32851ca -->
