@@ -286,7 +286,7 @@
 
   ---
 
-- [ ] MTU-3: Send dispatches through a background worker
+- [x] MTU-3: Send dispatches through a background worker
 
   ## Global Constraints
 
