@@ -2163,3 +2163,36 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/repl.py, pyproject.toml, tests/console/test_repl.py, uv.lock
 
 <!-- whyline-event: ca02995bed54437f815c411f4f09aa9c -->
+
+## 2026-09-28 — Import-guard Textual with fallback object base and add pytest-asyncio to dev dependencies for Pilot testing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** MTU-2
+
+**Because:** Keeps base whyline dependency-free while allowing WhylineConsoleApp to be defined without textual, and enables asynchronous Pilot smoke testing of UI widgets in development
+
+**Rejected:**
+
+- hard import of textual — breaks zero-dependency guarantee for base whyline
+- mocking Textual App class instead of real smoke test — does not catch actual widget composition or pilot behavior
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py, pyproject.toml
+
+<!-- whyline-event: d31fcb10ab5b47e7ad91fce9c6550cf9 -->
+
+## 2026-09-28 — Approve guarded Textual TUI skeleton and Pilot smoke test
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** MTU-2
+
+**Because:** The module remains importable without Textual, composes the required header/transcript/prompt/control layout with no attachments panel, the real Textual 0.89.1 APIs are compatible, and both focused and full suites pass
+
+**Rejected:**
+
+- request changes — no correctness, safety, dependency, or coverage defect remains
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py, pyproject.toml, uv.lock
+
+<!-- whyline-event: ed89def5692d48aaa1c141da5923d72e -->

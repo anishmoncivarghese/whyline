@@ -69,4 +69,8 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "whyline-relay>=0.2.1,<0.3"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=1.4.0",
+    "whyline-relay>=0.2.1,<0.3",
+]
