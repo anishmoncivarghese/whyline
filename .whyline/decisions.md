@@ -1679,3 +1679,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/session.py
 
 <!-- whyline-event: 7b668338227341119b353ab332c4628f -->
+
+## 2026-09-28 — Auto-resume script recovered UCF-1: grok exited without handing off but its work passed the full suite
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** UCF-1
+
+**Because:** the same handoff-stall pattern seen throughout this project's use of grok -- its code is reliably correct, it just doesn't always call whyline handoff itself
+
+**Rejected:**
+
+- reset and redo — wastes correct, test-verified work
+
+<!-- whyline-event: 299a6ac3f1044a53bf29b00d73d18490 -->
