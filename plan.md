@@ -424,7 +424,7 @@
 
   ---
 
-- [ ] MTU-4: Model/Route/History/Help buttons and Stop
+- [x] MTU-4: Model/Route/History/Help buttons and Stop
 
   ## Global Constraints
 
