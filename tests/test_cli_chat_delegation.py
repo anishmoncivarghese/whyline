@@ -100,7 +100,10 @@ def test_entry_menu_runs_detection_on_the_very_first_call(monkeypatch, tmp_path,
 def test_entry_menu_does_not_redetect_on_a_later_call(monkeypatch, tmp_path):
     from whyline import account, cli
     monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
-    account.save_global({"codex": {"plan": "plus", "available": True}})
+    account.save_global({
+        agent: {"plan": None, "available": True}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
     calls = []
     monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
     answers = iter(["chat", "chat"])
@@ -111,4 +114,74 @@ def test_entry_menu_does_not_redetect_on_a_later_call(monkeypatch, tmp_path):
         print_fn=lambda *a, **k: None,
     )
     assert calls == []
+
+
+def test_entry_menu_redetects_a_pre_0_3_7_account_file(monkeypatch, tmp_path):
+    """Regression: a file saved before account-capability gating (0.3.7) has
+    only {"codex": {...}, "claude": {...}} with no "available" key and no
+    antigravity/grok entries at all -- that schema must never be trusted as
+    "already detected," or every agent reads as permanently unavailable
+    with no way to self-heal short of an explicit `whyline account detect`."""
+    from whyline import account, cli
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({
+        "codex": {"auth_mode": "chatgpt", "plan": "plus"},
+        "claude": {"auth_method": "claude.ai", "plan": "pro"},
+    })
+    monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
+    monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
+    monkeypatch.setattr(
+        account, "detect_antigravity",
+        lambda: {"plan": None, "available": False, "reason": "not found"},
+    )
+    monkeypatch.setattr(
+        account, "detect_grok",
+        lambda: {"plan": None, "available": False, "reason": "not found"},
+    )
+    answers = iter(["chat", "chat"])
+    cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda *a: None,
+        input_fn=lambda prompt="": next(answers),
+        print_fn=lambda *a, **k: None,
+    )
+    refreshed = account.load_global()
+    assert refreshed["codex"]["available"] is True
+    assert "antigravity" in refreshed
+
+
+def test_entry_menu_does_not_exec_into_chat_when_model_setup_fails(monkeypatch):
+    import subprocess
+    from whyline import cli
+
+    calls = []
+    answers = iter(["chat", "model"])
+    printed = []
+    result = cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
+        input_fn=lambda prompt="": next(answers),
+        print_fn=lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
+        subprocess_fn=lambda argv: subprocess.CompletedProcess(argv, 1),
+    )
+    assert result is True
+    assert calls == []  # never execs into chat
+    assert any("did not complete" in line for line in printed)
+
+
+def test_entry_menu_execs_into_chat_when_model_setup_succeeds(monkeypatch):
+    import subprocess
+    from whyline import cli
+
+    calls = []
+    answers = iter(["chat", "model"])
+    result = cli.run_entry_menu(
+        which=lambda name: "/usr/bin/whyline-relay",
+        exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
+        input_fn=lambda prompt="": next(answers),
+        print_fn=lambda *a, **k: None,
+        subprocess_fn=lambda argv: subprocess.CompletedProcess(argv, 0),
+    )
+    assert result is True
+    assert calls == [("exec", "whyline-relay", ["whyline-relay", "chat"])]
 

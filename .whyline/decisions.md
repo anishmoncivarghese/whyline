@@ -2024,3 +2024,31 @@ Append-only. Written by whyline; readable without it.
 - publish without a version bump — would make the PyPI and GitHub release indistinguishable from 0.3.7
 
 <!-- whyline-event: be461e56d3a048568781cee05c7aef94 -->
+
+## 2026-09-28 — Fix ensure_detected() trusting a pre-0.3.7 account.json as already-detected
+
+**Actor:** claude
+**Role:** fixer
+**Task:** ACCOUNT-STALE-SCHEMA
+
+**Because:** a file saved before account-capability gating shipped has no 'available' key at all and no antigravity/grok entries; ensure_detected()'s old check (load_global() is not None) treated any existing file as already-detected forever, permanently marking every agent unavailable with no way to self-heal short of a manual whyline account detect -- confirmed live on this machine (account.json dated 2026-09-25, predating 0.3.7)
+
+**Rejected:**
+
+- leave it and just tell users to run whyline account detect manually — doesn't fix the entry menu's own auto-detection, and a first-time upgrader would never know to do this
+
+<!-- whyline-event: fcce7b39183648358909e3cd54196dfa -->
+
+## 2026-09-28 — Fix run_entry_menu execing into chat even when whyline model failed
+
+**Actor:** claude
+**Role:** fixer
+**Task:** ENTRY-MENU-EXIT-CODE
+
+**Because:** subprocess_fn's exit code was never checked before proceeding -- a failed 'set a model first' (e.g. no agents available) silently dropped the user into whyline-relay chat's own REPL with no signal they'd left the shell, observed live: the user then typed 'whyline account detect' at the chat prompt, which got sent to codex as a message instead of run as a command
+
+**Rejected:**
+
+- keep proceeding but print a warning — still lands the user in an AI conversation they didn't intend to start, when the actual fix (fixing model setup) requires leaving anyway
+
+<!-- whyline-event: 3ef573c4158b46ac8221217936bf7ebd -->

@@ -69,7 +69,13 @@ def run_entry_menu(
         "Start chatting, or set a model first? [chat]: "
     ).strip().lower()
     if model_choice == "model":
-        subprocess_fn(["whyline", "model"])
+        result = subprocess_fn(["whyline", "model"])
+        if getattr(result, "returncode", 0) != 0:
+            print_fn(
+                "Model setup did not complete -- not starting chat. Fix the "
+                "issue above, then run `whyline` again."
+            )
+            return True
 
     exec_fn("whyline-relay", ["whyline-relay", "chat"])
     return True  # unreachable when exec_fn is the real os.execvp

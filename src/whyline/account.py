@@ -162,17 +162,33 @@ def refresh() -> dict:
     return detected
 
 
+def _looks_current(data: dict) -> bool:
+    """True only if every one of the four agents this module knows about is
+    present and carries an "available" key. A file written before 0.3.7
+    (account-capability gating) has just {"codex": {...}, "claude": {...}}
+    with no "available" field at all and no antigravity/grok keys -- that
+    schema must never be trusted as "already detected," or every agent
+    would read as permanently unavailable with no way to self-heal short of
+    an explicit `whyline account detect`."""
+    return all(
+        isinstance(data.get(agent), dict) and "available" in data[agent]
+        for agent in ("codex", "claude", "antigravity", "grok")
+    )
+
+
 def ensure_detected() -> dict | None:
-    """Runs refresh() only if no global account data exists yet -- the
-    very first time anything needs it, anywhere. Returns the freshly
-    detected data if it just ran, None if data already existed, or None
-    if refresh() itself fails for any reason (this module's own
-    docstring already promises detection never blocks anything else;
-    a total refresh() failure -- e.g. a disk error saving the global
-    file -- must not crash whichever caller just wanted to know what's
-    available, matching detect()'s existing per-agent guarantee one
+    """Runs refresh() unless global account data already exists in the
+    current schema -- the very first time anything needs it, anywhere, or
+    the first time after upgrading past a pre-0.3.7 install. Returns the
+    freshly detected data if it just ran, None if current data already
+    existed, or None if refresh() itself fails for any reason (this
+    module's own docstring already promises detection never blocks
+    anything else; a total refresh() failure -- e.g. a disk error saving
+    the global file -- must not crash whichever caller just wanted to know
+    what's available, matching detect()'s existing per-agent guarantee one
     level up)."""
-    if load_global() is not None:
+    existing = load_global()
+    if existing is not None and _looks_current(existing):
         return None
     try:
         return refresh()

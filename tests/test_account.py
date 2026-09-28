@@ -327,10 +327,49 @@ def test_ensure_detected_runs_only_once(monkeypatch, tmp_path):
     first = account.ensure_detected()
     assert first is not None
     assert calls == [1]
-    account.save_global({"codex": {"available": True}})
+    account.save_global({
+        agent: {"available": True}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
     second = account.ensure_detected()
     assert second is None
     assert calls == [1]  # refresh() was not called again
+
+
+def test_ensure_detected_treats_a_pre_0_3_7_file_as_not_yet_detected(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({
+        "codex": {"auth_mode": "chatgpt", "plan": "plus"},
+        "claude": {"auth_method": "claude.ai", "plan": "pro"},
+    })
+    calls = []
+    monkeypatch.setattr(
+        account, "refresh",
+        lambda: calls.append(1) or {
+            agent: {"available": True}
+            for agent in ("codex", "claude", "antigravity", "grok")
+        },
+    )
+    result = account.ensure_detected()
+    assert result is not None
+    assert calls == [1]
+
+
+def test_ensure_detected_treats_a_current_file_as_already_detected(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.save_global({
+        agent: {"plan": None, "available": True}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
+    calls = []
+    monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
+    result = account.ensure_detected()
+    assert result is None
+    assert calls == []
 
 
 def test_set_manual_creates_and_overrides(tmp_path, monkeypatch):
@@ -352,7 +391,11 @@ def test_set_manual_does_not_disturb_other_agents(tmp_path, monkeypatch):
 
 
 def test_available_agents_from_global_data(tmp_path, monkeypatch):
-    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    # A separate home dir from the repo root -- global and repo account
+    # files must never collide onto the same physical path in a test, or
+    # save_repo silently overwrites whatever save_global just wrote (and
+    # vice versa), matching neither in isolation.
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path / "home")
     account.save_global({
         "codex": {"plan": "plus", "available": True},
         "claude": {"plan": "unknown", "available": False},
@@ -363,8 +406,11 @@ def test_available_agents_from_global_data(tmp_path, monkeypatch):
 
 
 def test_available_agents_prefers_repo_confirmation_over_global(tmp_path, monkeypatch):
-    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
-    account.save_global({"codex": {"available": True}, "claude": {"available": True}})
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path / "home")
+    account.save_global({
+        agent: {"available": True}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
     account.save_repo(tmp_path, {"codex": {"available": True}, "claude": {"available": False}})
     assert account.available_agents(tmp_path) == {"codex"}
 
