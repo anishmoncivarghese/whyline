@@ -896,7 +896,7 @@
 
   ---
 
-- [ ] UCF-6: `repl.py`, `cli.py` wiring, and end-to-end test
+- [x] UCF-6: `repl.py`, `cli.py` wiring, and end-to-end test
 
   ## Global Constraints
 
