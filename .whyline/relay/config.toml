@@ -1,6 +1,6 @@
 # whyline-relay configuration. Every key is optional.
 plan = "plan.md"
-max_rounds = 3
+max_rounds = 6
 timeout_minutes = 30
 branch_prefix = "relay/"
 
@@ -27,5 +27,7 @@ command = [
   "--allow", "Bash(git diff:*)", "--allow", "Bash(git status:*)", "--allow", "Bash(git log:*)",
   "--allow", "Bash(whyline:*)", "--allow", "Bash(python3:*)",
   "--allow", "Bash(uv run:*)", "--allow", "Bash(uv:*)",
+  "--allow", "Bash(mkdir:*)", "--allow", "Bash(ls:*)", "--allow", "Bash(find:*)",
+  "--allow", "Bash(touch:*)", "--allow", "Bash(cat:*)",
   "-p"
 ]
