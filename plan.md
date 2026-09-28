@@ -1,553 +1,699 @@
-- [x] WFX-1: Portable file lock (WFX1)
+- [ ] FC-1: `run_entry_menu` launches the richest available console (FC1)
 
   ## Global Constraints
 
-  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
-  - Each task's own job stops at implementing, testing locally, committing, and handing off -- never attempt git push/checking GitHub Actions results yourselves. Your own sandboxed environment may not have outbound network access to github.com at all (confirmed on WFX-3: a DNS resolution failure inside the sandbox, not a real outage -- pushing the identical branch succeeded immediately from outside it). Real Windows CI verification against every fix in this plan is the orchestrator's own job, done once the whole plan completes, not each agent's.
-  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
+  - No new runtime dependency.
+  - The old plain-text entry menu's own code and behavior are completely untouched -- it remains the permanent zero-extras fallback, never removed.
+  - Every existing test for the keyboard console (`test_repl.py`) and the entry menu (`test_cli_chat_delegation.py`) must keep passing unmodified -- the extraction in Task 2 must not change any existing behavior, only its internal shape.
+  - `/route relay`'s setup handoff never asks for confirmation first -- it matches today's entry menu exactly, which execs into setup immediately once "relay" is chosen.
   - Every existing test in this repo must still pass after every task.
 
   **Note on this pairing:** Antigravity implements, Codex reviews.
 
   **Files:**
-  - Modify: `src/whyline/state.py`
-  - Test: `tests/test_state_lock.py` (new file)
+  - Modify: `src/whyline/cli.py`
+  - Test: `tests/test_cli_chat_delegation.py`
 
   **Interfaces:**
-  - Produces: `file_lock(path)` (unchanged public signature and context-manager behavior) now implemented via two new private helpers, `_acquire_lock(lock_path: Path, timeout: float = 10.0) -> None` and `_release_lock(lock_path: Path) -> None`, both stdlib-only and portable across POSIX and Windows.
+  - Produces: `run_entry_menu(...)` checks, before its existing "Chat or relay?" prompt, whether a repo root exists and `tui.TUI_AVAILABLE`/`editor.AVAILABLE`, launching the appropriate console instead when so. No change to its existing parameters or fallback behavior.
 
-  Step 1: Read `state.py` fresh
+  Step 1: Read `run_entry_menu` fresh
 
-  Read the whole file (it's short) before changing anything -- confirm
-  `file_lock`'s current body matches what's shown below.
+  Read the whole function in `src/whyline/cli.py` before changing it --
+  confirm its current body matches:
 
   ```python
-  @contextmanager
-  def file_lock(path: Path):
-      """Serialize a checkout-local read/modify/write cycle on macOS and Linux."""
-      try:
-          import fcntl
-      except ImportError:  # pragma: no cover - Windows remains unverified
-          yield
-          return
+  def run_entry_menu(
+      which=None, exec_fn=None, input_fn=None, print_fn=None, subprocess_fn=None,
+  ) -> bool:
+      """..."""
+      which = which if which is not None else _which
+      exec_fn = exec_fn if exec_fn is not None else _exec
+      input_fn = input_fn if input_fn is not None else input
+      print_fn = print_fn if print_fn is not None else print
+      subprocess_fn = subprocess_fn if subprocess_fn is not None else subprocess.run
 
-      path.parent.mkdir(parents=True, exist_ok=True)
-      lock_path = path.with_name(path.name + ".lock")
-      with lock_path.open("a+", encoding="utf-8") as handle:
-          fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-          try:
-              yield
-          finally:
-              fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+      if which("whyline-relay") is None:
+          return False
+
+      from whyline import account
+
+      freshly_detected = account.ensure_detected()
+      if freshly_detected is not None:
+          print_fn("First run: checking which agents you have access to...")
+          for agent in ("codex", "claude", "antigravity", "grok"):
+              info = freshly_detected.get(agent, {})
+              state = "available" if info.get("available") else "not available"
+              print_fn(f"  {agent}: {state}")
+
+      choice = input_fn("Chat or relay? [chat]: ").strip().lower()
+      if choice == "relay":
+          exec_fn("whyline-relay", ["whyline-relay", "setup"])
+          return True  # unreachable when exec_fn is the real os.execvp
+
+      model_choice = input_fn(
+          "Start chatting, or set a model first? [chat]: "
+      ).strip().lower()
+      if model_choice == "model":
+          result = subprocess_fn(["whyline", "model"])
+          if getattr(result, "returncode", 0) != 0:
+              print_fn(
+                  "Model setup did not complete -- not starting chat. Fix the "
+                  "issue above, then run `whyline` again."
+              )
+              return True
+
+      exec_fn("whyline-relay", ["whyline-relay", "chat"])
+      return True  # unreachable when exec_fn is the real os.execvp
   ```
 
   Step 2: Write the failing tests
 
-  Create `tests/test_state_lock.py`:
+  Add to `tests/test_cli_chat_delegation.py`:
 
   ```python
-  import os
-  import time
-  from pathlib import Path
+  def test_entry_menu_launches_the_mouse_tui_when_available(monkeypatch, tmp_path):
+      from whyline import cli
+      from whyline.console import tui
 
-  import pytest
+      monkeypatch.setattr(cli.paths, "find_repo_root", lambda: tmp_path)
+      monkeypatch.setattr(tui, "TUI_AVAILABLE", True)
+      calls = []
+      monkeypatch.setattr(tui, "launch", lambda root: calls.append(root))
 
-  from whyline import state
+      def _unexpected_prompt(prompt=""):
+          raise AssertionError("must not reach the plain text menu")
 
-
-  def test_acquire_then_release_allows_a_second_acquire(tmp_path: Path):
-      lock_path = tmp_path / "x.lock"
-      state._acquire_lock(lock_path)
-      state._release_lock(lock_path)
-      # Must not raise or block -- the lock file is gone after release.
-      state._acquire_lock(lock_path)
-      state._release_lock(lock_path)
-
-
-  def test_a_held_lock_blocks_a_second_acquire_until_timeout(tmp_path: Path):
-      lock_path = tmp_path / "x.lock"
-      state._acquire_lock(lock_path)
-      try:
-          with pytest.raises(TimeoutError, match=str(lock_path)):
-              state._acquire_lock(lock_path, timeout=0.3)
-      finally:
-          state._release_lock(lock_path)
+      result = cli.run_entry_menu(
+          which=lambda name: "/usr/bin/whyline-relay",
+          input_fn=_unexpected_prompt,
+      )
+      assert result is True
+      assert calls == [tmp_path]
 
 
-  def test_a_stale_lock_is_cleared_and_reacquired(tmp_path: Path):
-      lock_path = tmp_path / "x.lock"
-      lock_path.write_text("", encoding="utf-8")
-      # Force the lock file's mtime far enough into the past to look abandoned.
-      old = time.time() - 3600
-      os.utime(lock_path, (old, old))
-      # Must succeed quickly -- the stale lock is cleared, not waited out.
-      started = time.monotonic()
-      state._acquire_lock(lock_path, timeout=5.0)
-      elapsed = time.monotonic() - started
-      state._release_lock(lock_path)
-      assert elapsed < 2.0
+  def test_entry_menu_launches_the_keyboard_console_when_tui_unavailable(
+      monkeypatch, tmp_path
+  ):
+      from whyline import cli
+      from whyline.console import editor, repl, tui
+
+      monkeypatch.setattr(cli.paths, "find_repo_root", lambda: tmp_path)
+      monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
+      monkeypatch.setattr(editor, "AVAILABLE", True)
+      calls = []
+      monkeypatch.setattr(repl, "run", lambda root, **kwargs: calls.append(root))
+
+      def _unexpected_prompt(prompt=""):
+          raise AssertionError("must not reach the plain text menu")
+
+      result = cli.run_entry_menu(
+          which=lambda name: "/usr/bin/whyline-relay",
+          input_fn=_unexpected_prompt,
+      )
+      assert result is True
+      assert calls == [tmp_path]
 
 
-  def test_release_of_an_already_missing_lock_does_not_raise(tmp_path: Path):
-      lock_path = tmp_path / "never-created.lock"
-      state._release_lock(lock_path)  # must not raise
+  def test_entry_menu_falls_through_to_plain_menu_when_neither_extra_is_available(
+      monkeypatch, tmp_path
+  ):
+      from whyline import cli
+      from whyline.console import editor, tui
+
+      monkeypatch.setattr(cli.paths, "find_repo_root", lambda: tmp_path)
+      monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
+      monkeypatch.setattr(editor, "AVAILABLE", False)
+      answers = iter(["", ""])
+      calls = []
+      result = cli.run_entry_menu(
+          which=lambda name: "/usr/bin/whyline-relay",
+          exec_fn=lambda binary, argv: calls.append((binary, argv)),
+          input_fn=lambda prompt="": next(answers),
+      )
+      assert result is True
+      assert calls == [("whyline-relay", ["whyline-relay", "chat"])]
 
 
-  def test_file_lock_context_manager_still_works(tmp_path: Path):
-      target = tmp_path / "some-state.json"
-      with state.file_lock(target):
-          target.write_text("{}", encoding="utf-8")
-      assert target.read_text(encoding="utf-8") == "{}"
-      # The lock file itself must not be left behind after a clean exit.
-      assert not target.with_name(target.name + ".lock").exists()
+  def test_entry_menu_falls_through_when_no_repo_root_found(monkeypatch):
+      from whyline import cli
+      from whyline.console import tui
+
+      monkeypatch.setattr(cli.paths, "find_repo_root", lambda: None)
+      monkeypatch.setattr(tui, "TUI_AVAILABLE", True)
+      calls = []
+      monkeypatch.setattr(tui, "launch", lambda root: calls.append(root))
+      answers = iter(["", ""])
+      result = cli.run_entry_menu(
+          which=lambda name: "/usr/bin/whyline-relay",
+          exec_fn=lambda binary, argv: None,
+          input_fn=lambda prompt="": next(answers),
+      )
+      assert result is True
+      assert calls == []  # the TUI is never launched without a repo root
   ```
+
+  Check `cli.py`'s current imports -- if `paths` isn't already imported at
+  module level (it may only be imported lazily inside individual command
+  functions today, matching this file's own "keep imports light" cold-start
+  philosophy), the tests above reference `cli.paths.find_repo_root`, so
+  Step 3's implementation must make `paths` reachable as `cli.paths` (a
+  module-level `from whyline import paths` addition, or importing it lazily
+  inside `run_entry_menu` itself and monkeypatching `whyline.paths` directly
+  instead -- pick whichever matches this file's existing import style most
+  closely, and adjust the test's monkeypatch target to match).
 
   Step 3: Run the tests to verify they fail
 
-  Run: `uv run pytest tests/test_state_lock.py -v`
-  Expected: FAIL (`AttributeError: module 'state' has no attribute '_acquire_lock'`)
+  Run: `uv run pytest tests/test_cli_chat_delegation.py -v`
+  Expected: FAIL (the new tests fail; all pre-existing tests in the file
+  still pass, since nothing has changed yet)
 
   Step 4: Implement
 
-  Replace `file_lock` in `src/whyline/state.py` with:
+  In `src/whyline/cli.py`, insert the new priority check into
+  `run_entry_menu`, right after the existing first-run detection block and
+  before the `choice = input_fn("Chat or relay? [chat]: ")` line:
 
   ```python
-  _STALE_LOCK_SECONDS = 10.0
-  _POLL_INTERVAL_SECONDS = 0.05
+      from whyline import paths
+      from whyline.console import editor, repl, tui
 
+      root = paths.find_repo_root()
+      if root is not None:
+          if tui.TUI_AVAILABLE:
+              tui.launch(root)
+              return True
+          if editor.AVAILABLE:
+              repl.run(root)
+              return True
 
-  def _acquire_lock(lock_path: Path, timeout: float = 10.0) -> None:
-      """Blocks until `lock_path` can be exclusively created, or raises
-      TimeoutError. os.O_CREAT | os.O_EXCL is honored identically on POSIX
-      and Windows -- no platform branch, no new dependency. A lock file
-      older than _STALE_LOCK_SECONDS is treated as abandoned by a crashed
-      process (this primitive, unlike fcntl.flock, does not auto-release on
-      crash) and cleared before retrying."""
-      lock_path.parent.mkdir(parents=True, exist_ok=True)
-      deadline = time.monotonic() + timeout
-      while True:
-          try:
-              fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-              os.close(fd)
-              return
-          except FileExistsError:
-              try:
-                  age = time.time() - lock_path.stat().st_mtime
-              except FileNotFoundError:
-                  continue  # another process just released it -- retry immediately
-              if age > _STALE_LOCK_SECONDS:
-                  try:
-                      lock_path.unlink()
-                  except FileNotFoundError:
-                      pass  # another process already cleared it -- fine either way
-                  continue
-              if time.monotonic() > deadline:
-                  raise TimeoutError(
-                      f"could not acquire lock {lock_path} within {timeout}s"
-                  )
-              time.sleep(_POLL_INTERVAL_SECONDS)
-
-
-  def _release_lock(lock_path: Path) -> None:
-      lock_path.unlink(missing_ok=True)
-
-
-  @contextmanager
-  def file_lock(path: Path):
-      """Serialize a checkout-local read/modify/write cycle, portably."""
-      lock_path = path.with_name(path.name + ".lock")
-      _acquire_lock(lock_path)
-      try:
-          yield
-      finally:
-          _release_lock(lock_path)
+      choice = input_fn("Chat or relay? [chat]: ").strip().lower()
   ```
 
-  Add `import time` to the existing imports at the top of `state.py` (it
-  currently imports `json`, `os`, `tempfile`, `contextmanager`, `Path` --
-  `os` is already there, `time` is new).
+  If `paths` needs to be reachable as `cli.paths` for the tests above (per
+  Step 2's note), add `from whyline import paths` to the top-level imports
+  in `cli.py` instead of importing it lazily inside the function -- check
+  whether `paths` is already imported at the top of the file first.
 
   Step 5: Run the tests to verify they pass
 
-  Run: `uv run pytest tests/test_state_lock.py -v`
-  Expected: PASS
+  Run: `uv run pytest tests/test_cli_chat_delegation.py -v`
+  Expected: PASS (every test in the file, old and new)
 
   Step 6: Run the whole suite
 
   Run: `uv run pytest -q`
-  Expected: PASS (including the pre-existing
-  `tests/test_ownership.py::test_concurrent_claims_do_not_overwrite_each_other`,
-  unmodified -- the fix is underneath it)
+  Expected: PASS
 
   Step 7: Commit
 
   ```bash
-  git add src/whyline/state.py tests/test_state_lock.py
-  git commit -m "fix: portable file lock using exclusive creation instead of fcntl"
+  git add src/whyline/cli.py tests/test_cli_chat_delegation.py
+  git commit -m "feat: bare whyline launches the richest available console"
   ```
 
   ---
 
-- [x] WFX-2: Add missing `encoding="utf-8"` everywhere (WFX2)
+- [ ] FC-2: Shared slash-command handling, fixing the TUI button bug (FC4, keyboard side of FC2)
 
   ## Global Constraints
 
-  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
-  - Each task's own job stops at implementing, testing locally, committing, and handing off -- never attempt git push/checking GitHub Actions results yourselves. Your own sandboxed environment may not have outbound network access to github.com at all (confirmed on WFX-3: a DNS resolution failure inside the sandbox, not a real outage -- pushing the identical branch succeeded immediately from outside it). Real Windows CI verification against every fix in this plan is the orchestrator's own job, done once the whole plan completes, not each agent's.
-  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
+  - No new runtime dependency.
+  - The old plain-text entry menu's own code and behavior are completely untouched -- it remains the permanent zero-extras fallback, never removed.
+  - Every existing test for the keyboard console (`test_repl.py`) and the entry menu (`test_cli_chat_delegation.py`) must keep passing unmodified -- the extraction in Task 2 must not change any existing behavior, only its internal shape.
+  - `/route relay`'s setup handoff never asks for confirmation first -- it matches today's entry menu exactly, which execs into setup immediately once "relay" is chosen.
   - Every existing test in this repo must still pass after every task.
 
   **Note on this pairing:** Antigravity implements, Codex reviews.
 
   **Files:**
-  - Modify: `tests/test_model.py`, `tests/test_sync.py`, `tests/test_claudemd.py`, `tests/test_init_relay.py`, `tests/test_handoff.py`, `tests/test_hooks.py`, `tests/test_gitq.py`, `tests/test_agentsmd.py`, `tests/test_account_cli.py`, `tests/test_cli.py`, `tests/test_account.py`, `tests/test_decisions.py`, `tests/test_ledger.py`, `tests/console/test_adapters_relay_structured.py`
+  - Modify: `src/whyline/console/repl.py`, `src/whyline/console/adapters.py`
+  - Test: `tests/console/test_repl.py`, `tests/console/test_adapters_whyline.py`
 
   **Interfaces:**
-  - Produces: no interface changes -- every listed call site gains an explicit `encoding="utf-8"` keyword argument, with no other behavior change.
+  - Produces: `adapters.relay_is_configured(root: Path) -> bool`. `repl.handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | None` -- returns the event to render for `/help`, `/status`, `/handoff`, `/history`, `/route`, `/model`; returns `None` if `text` isn't one of these (the caller falls through to `dispatch()`). A new `SessionEvent` kind, `"needs_setup"`, is used for `/route relay` when `not adapters.relay_is_configured(session.root)`.
 
-  Step 1: Fix every occurrence in this exact list
+  Step 1: Read `repl.py`'s current `run()` loop fresh
 
-  This is the complete, verified list of every `.write_text(...)`/
-  `.read_text(...)` call in `src/` and `tests/` missing an explicit
-  `encoding=` keyword (confirmed by scanning each call's full span, not
-  just its opening line, so a multi-line call already specifying encoding
-  on a later line is correctly excluded). `src/` has none -- every
-  occurrence is in a test file. For each, add `encoding="utf-8"` as a
-  keyword argument: a bare `.read_text()` becomes
-  `.read_text(encoding="utf-8")`; a `.write_text(some_value)` becomes
-  `.write_text(some_value, encoding="utf-8")` (or, for an already
-  multi-line call, add `encoding="utf-8"` as one more argument on its own
-  line before the closing parenthesis, matching that call's existing
-  style).
+  Read the whole file -- confirm the loop's current cascade of
+  `if text == ...`/`if text.startswith(...)` branches (for `/exit`,
+  `/help`, `/status`, `/handoff`, `/history`, `/route`, `/model`, `/stop`,
+  unrecognized `/...`, and the final fallback to `dispatch()`) matches what
+  this task assumes below, and confirm `_handle_model`'s exact current body
+  (it directly calls `print_fn(...)` in each of its four branches today).
 
-  ```
-  tests/test_model.py:15
-  tests/test_model.py:21
-  tests/test_sync.py:39
-  tests/test_sync.py:143
-  tests/test_claudemd.py:7
-  tests/test_claudemd.py:14
-  tests/test_claudemd.py:16
-  tests/test_claudemd.py:26
-  tests/test_claudemd.py:32
-  tests/test_claudemd.py:34
-  tests/test_init_relay.py:143
-  tests/test_handoff.py:24
-  tests/test_hooks.py:11
-  tests/test_hooks.py:17
-  tests/test_hooks.py:33
-  tests/test_hooks.py:54
-  tests/test_hooks.py:66
-  tests/test_hooks.py:69
-  tests/test_hooks.py:75
-  tests/test_hooks.py:78
-  tests/test_hooks.py:84
-  tests/test_hooks.py:87
-  tests/test_hooks.py:95
-  tests/test_gitq.py:110
-  tests/test_gitq.py:111
-  tests/test_gitq.py:112
-  tests/test_agentsmd.py:7
-  tests/test_agentsmd.py:15
-  tests/test_agentsmd.py:17
-  tests/test_agentsmd.py:26
-  tests/test_account_cli.py:30
-  tests/test_cli.py:222
-  tests/test_cli.py:234
-  tests/test_cli.py:238
-  tests/test_cli.py:245
-  tests/test_cli.py:247
-  tests/test_cli.py:254
-  tests/test_cli.py:255
-  tests/test_cli.py:258
-  tests/test_cli.py:259
-  tests/test_cli.py:264
-  tests/test_cli.py:265
-  tests/test_cli.py:271
-  tests/test_cli.py:272
-  tests/test_cli.py:274
-  tests/test_cli.py:275
-  tests/test_cli.py:618
-  tests/test_cli.py:634
-  tests/test_cli.py:751
-  tests/test_cli.py:788
-  tests/test_cli.py:824
-  tests/test_cli.py:850
-  tests/test_cli.py:868
-  tests/test_cli.py:931
-  tests/test_cli.py:949
-  tests/test_cli.py:979
-  tests/test_account.py:23
-  tests/test_account.py:31
-  tests/test_account.py:38
-  tests/test_account.py:50
-  tests/test_account.py:66
-  tests/test_account.py:179
-  tests/test_account.py:202
-  tests/test_decisions.py:37
-  tests/test_decisions.py:48
-  tests/test_decisions.py:80
-  tests/test_decisions.py:94
-  tests/test_ledger.py:13
-  tests/test_ledger.py:19
-  tests/console/test_adapters_relay_structured.py:13
-  tests/console/test_adapters_relay_structured.py:183
+  Step 2: Write the failing tests
+
+  Add to `tests/console/test_adapters_whyline.py`:
+
+  ```python
+  def test_relay_is_configured_true_when_config_toml_exists(tmp_path):
+      from whyline.console import adapters
+
+      config_dir = tmp_path / ".whyline" / "relay"
+      config_dir.mkdir(parents=True)
+      (config_dir / "config.toml").write_text("", encoding="utf-8")
+      assert adapters.relay_is_configured(tmp_path) is True
+
+
+  def test_relay_is_configured_false_when_absent(tmp_path):
+      from whyline.console import adapters
+
+      assert adapters.relay_is_configured(tmp_path) is False
   ```
 
-  Line numbers are accurate as of this plan's writing on `main` -- if a
-  file has drifted since (another task landed first), find each call by
-  the pattern (`.write_text(` or `.read_text(` with no `encoding=` anywhere
-  in that call's own parentheses) rather than trusting the line number
-  blindly once it's off by more than a line or two.
+  Add to `tests/console/test_repl.py`:
 
-  Step 2: Verify nothing was missed or double-handled
+  ```python
+  def test_handle_slash_command_help(tmp_path):
+      from whyline.console.repl import handle_slash_command
+      from whyline.console.session import ConsoleSession
 
-  Run this check -- it must print nothing (no output means no remaining
-  occurrences):
+      session = ConsoleSession(root=tmp_path)
+      event = handle_slash_command(session, "/help")
+      assert event is not None
+      assert "Commands:" in event.text
 
-  ```bash
-  python3 -c "
-  import re
-  from pathlib import Path
 
-  pattern = re.compile(r'\.(write_text|read_text)\(')
-  for path in list(Path('src').rglob('*.py')) + list(Path('tests').rglob('*.py')):
-      text = path.read_text(encoding='utf-8')
-      lines = text.splitlines()
-      for i, line in enumerate(lines):
-          for m in pattern.finditer(line):
-              depth = 0
-              buf = []
-              k = i
-              rem = line[m.end()-1:]
-              while True:
-                  for ch in rem:
-                      if ch == '(':
-                          depth += 1
-                      elif ch == ')':
-                          depth -= 1
-                      buf.append(ch)
-                      if depth == 0:
-                          break
-                  if depth == 0:
-                      break
-                  k += 1
-                  if k >= len(lines):
-                      break
-                  rem = lines[k]
-                  buf.append('\n')
-              if 'encoding=' not in ''.join(buf):
-                  print(f'{path}:{i+1}')
-  "
+  def test_handle_slash_command_returns_none_for_ordinary_text(tmp_path):
+      from whyline.console.repl import handle_slash_command
+      from whyline.console.session import ConsoleSession
+
+      session = ConsoleSession(root=tmp_path)
+      assert handle_slash_command(session, "hello there") is None
+
+
+  def test_handle_slash_command_route_relay_needs_setup(tmp_path):
+      from whyline.console.repl import handle_slash_command
+      from whyline.console.session import ConsoleSession
+
+      session = ConsoleSession(root=tmp_path, mode="command")
+      event = handle_slash_command(session, "/route relay")
+      assert event is not None
+      assert event.kind == "needs_setup"
+      assert session.mode == "command"  # unchanged -- the handoff hasn't happened yet
+
+
+  def test_handle_slash_command_route_relay_switches_when_configured(tmp_path):
+      from whyline.console.repl import handle_slash_command
+      from whyline.console.session import ConsoleSession
+
+      config_dir = tmp_path / ".whyline" / "relay"
+      config_dir.mkdir(parents=True)
+      (config_dir / "config.toml").write_text("", encoding="utf-8")
+      session = ConsoleSession(root=tmp_path, mode="command")
+      event = handle_slash_command(session, "/route relay")
+      assert event is not None
+      assert event.kind != "needs_setup"
+      assert session.mode == "relay"
+
+
+  def test_handle_slash_command_route_invalid_mode(tmp_path):
+      from whyline.console.repl import handle_slash_command
+      from whyline.console.session import ConsoleSession
+
+      session = ConsoleSession(root=tmp_path)
+      event = handle_slash_command(session, "/route nonsense")
+      assert event is not None
+      assert "Usage: /route" in event.text
+
+
+  def test_route_relay_with_no_config_execs_into_setup(tmp_path, monkeypatch):
+      monkeypatch.setattr(
+          editor, "build_session",
+          lambda root: FakePromptSession(["/route relay", "/exit"]),
+      )
+      calls = []
+      lines = []
+      repl.run(
+          tmp_path, print_fn=lines.append,
+          exec_fn=lambda binary, argv: calls.append((binary, argv)),
+      )
+      assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+      # The user sees why they're being handed off, before it happens --
+      # unlike today's plain entry menu (which execs silently), this is a
+      # deliberate small improvement, not a parity requirement.
+      assert any("No relay setup found" in line for line in lines)
   ```
 
-  Step 3: Run the whole suite
+  `repl.run` doesn't accept `exec_fn` yet -- Step 4 adds it. Also re-run the
+  *entire existing* `tests/console/test_repl.py` file as part of Step 3
+  below (not just the new tests), since this task's whole point is that no
+  existing test's outcome changes.
+
+  Step 3: Run the tests to verify they fail
+
+  Run: `uv run pytest tests/console/test_repl.py tests/console/test_adapters_whyline.py -v`
+  Expected: FAIL on every new test; every pre-existing test in `test_repl.py`
+  still passes (nothing has changed yet).
+
+  Step 4: Implement
+
+  Add to `src/whyline/console/adapters.py`:
+
+  ```python
+  def relay_is_configured(root: Path) -> bool:
+      """No import of whyline_relay needed just to check this -- the path is
+      stable and simple enough to check directly."""
+      return (root / ".whyline" / "relay" / "config.toml").exists()
+  ```
+
+  In `src/whyline/console/repl.py`, add `handle_slash_command` (place it
+  above `run()`):
+
+  ```python
+  def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | None:
+      """Handles /help, /status, /handoff, /history, /route, /model
+      uniformly for both console flavors. Returns the event to render, or
+      None if `text` isn't one of these at all -- the caller should fall
+      through to ordinary dispatch() in that case. /exit and /stop stay
+      outside this function on purpose: each means something different per
+      console (see the final-cutover design's FC4)."""
+      if text == "/help":
+          return SessionEvent(kind="output", text="Commands: " + ", ".join(SLASH_COMMANDS))
+      if text == "/status":
+          return adapters.run_status(session.root)
+      if text == "/handoff":
+          return adapters.run_last_handoff(session.root)
+      if text == "/history":
+          if not session.transcript:
+              return SessionEvent(kind="output", text="(nothing yet)")
+          lines = [f"{_PREFIX.get(e.kind, '')}{e.text}" for e in session.transcript]
+          return SessionEvent(kind="output", text="\n".join(lines))
+      if text.startswith("/route"):
+          parts = text.split(maxsplit=1)
+          chosen = parts[1].strip() if len(parts) == 2 else ""
+          if chosen not in ("chat", "relay", "command"):
+              return SessionEvent(kind="error", text="Usage: /route <chat|relay|command>")
+          if chosen == "relay" and not adapters.relay_is_configured(session.root):
+              return SessionEvent(
+                  kind="needs_setup",
+                  text="No relay setup found here. Running whyline-relay setup...",
+              )
+          session.mode = chosen
+          return SessionEvent(kind="output", text=f"Mode is now {session.mode}.")
+      if text.startswith("/model"):
+          return _model_event(session, text)
+      return None
+
+
+  def _model_event(session: ConsoleSession, text: str) -> SessionEvent:
+      from whyline import account, model
+
+      available = account.available_agents(session.root)
+      if not available:
+          return SessionEvent(
+              kind="error",
+              text="No agents detected as available. Run: whyline account detect",
+          )
+      parts = text.split(maxsplit=2)
+      if len(parts) == 1:
+          return SessionEvent(kind="output", text="Available: " + ", ".join(sorted(available)))
+      agent = parts[1]
+      if agent not in available:
+          return SessionEvent(
+              kind="error",
+              text=f"{agent} is not available here. Available: {', '.join(sorted(available))}",
+          )
+      if len(parts) == 3:
+          model.set_one(session.root, agent, parts[2])
+          session.agent = agent
+          return SessionEvent(kind="output", text=f"{agent} model set; now the active chat agent.")
+      session.agent = agent
+      return SessionEvent(kind="output", text=f"{agent} is now the active chat agent.")
+  ```
+
+  Now replace `run()`'s loop body. Find the whole cascade from
+  `if text == "/exit":` through the final `_print_event(session.record(event), print_fn)`
+  call, and replace it with:
+
+  ```python
+          if text == "/exit":
+              break
+          if text == "/stop":
+              print_fn("Nothing in flight to stop.")
+              continue
+
+          slash_event = handle_slash_command(session, text)
+          if slash_event is not None:
+              if slash_event.kind == "needs_setup":
+                  print_fn(slash_event.text)
+                  exec_fn("whyline-relay", ["whyline-relay", "setup"])
+                  return
+              _print_event(session.record(slash_event), print_fn)
+              continue
+          if text.startswith("/"):
+              print_fn(f"Unknown command: {text}. Try {', '.join(SLASH_COMMANDS)}.")
+              continue
+
+          try:
+              event = dispatch(session, text)
+          except KeyboardInterrupt:
+              print_fn("Cancelled.")
+              continue
+          _print_event(session.record(event), print_fn)
+  ```
+
+  Delete the now-unused `_handle_model` function entirely (replaced by
+  `_model_event` above).
+
+  Finally, give `run()` an injectable `exec_fn`, resolved the same way this
+  project always resolves optional collaborators (inside the function body,
+  never as a default argument):
+
+  ```python
+  def run(root: Path, *, print_fn=print, prompt_session=None, exec_fn=None) -> None:
+      if exec_fn is None:
+          exec_fn = _exec
+      ...
+  ```
+
+  Add a small `_exec` helper near the top of `repl.py`, matching `cli.py`'s
+  own:
+
+  ```python
+  def _exec(binary: str, argv: list[str]) -> None:
+      os.execvp(binary, argv)
+  ```
+
+  (add `import os` to `repl.py`'s existing imports if not already present).
+
+  Step 5: Run the tests to verify they pass
+
+  Run: `uv run pytest tests/console/test_repl.py tests/console/test_adapters_whyline.py -v`
+  Expected: PASS -- every pre-existing test in `test_repl.py` unchanged in
+  outcome, plus every new test from Step 2.
+
+  Step 6: Run the whole suite
 
   Run: `uv run pytest -q`
   Expected: PASS
 
-  Step 4: Commit
+  Step 7: Commit
 
   ```bash
-  git add tests/
-  git commit -m "fix: add explicit encoding=\"utf-8\" to every text read/write missing it"
+  git add src/whyline/console/repl.py src/whyline/console/adapters.py tests/console/test_repl.py tests/console/test_adapters_whyline.py
+  git commit -m "feat: extract shared slash-command handling; /route relay hands off to setup when unconfigured"
   ```
 
   ---
 
-- [x] WFX-3: Forward-slash-consistent paths in `hook_entry.py` (WFX3)
+- [ ] FC-3: Wire the TUI to the shared handler, fixing its buttons (FC2 TUI side, FC4 completion)
 
   ## Global Constraints
 
-  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
-  - Each task's own job stops at implementing, testing locally, committing, and handing off -- never attempt git push/checking GitHub Actions results yourselves. Your own sandboxed environment may not have outbound network access to github.com at all (confirmed on WFX-3: a DNS resolution failure inside the sandbox, not a real outage -- pushing the identical branch succeeded immediately from outside it). Real Windows CI verification against every fix in this plan is the orchestrator's own job, done once the whole plan completes, not each agent's.
-  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
+  - No new runtime dependency.
+  - The old plain-text entry menu's own code and behavior are completely untouched -- it remains the permanent zero-extras fallback, never removed.
+  - Every existing test for the keyboard console (`test_repl.py`) and the entry menu (`test_cli_chat_delegation.py`) must keep passing unmodified -- the extraction in Task 2 must not change any existing behavior, only its internal shape.
+  - `/route relay`'s setup handoff never asks for confirmation first -- it matches today's entry menu exactly, which execs into setup immediately once "relay" is chosen.
   - Every existing test in this repo must still pass after every task.
 
   **Note on this pairing:** Antigravity implements, Codex reviews.
 
   **Files:**
-  - Modify: `src/whyline/hook_entry.py`
-  - Test: `tests/test_hook_entry.py`
+  - Modify: `src/whyline/console/tui.py`
+  - Test: `tests/console/test_tui.py`
 
   **Interfaces:**
-  - Produces: `_relative(root, raw)` returns a forward-slash path string on every platform (unchanged return type, `str | None`).
+  - Produces: `WhylineConsoleApp`'s Model/Route/History/Help buttons call `handle_slash_command` directly and render its result synchronously (no worker). `_send()` checks `handle_slash_command` first, before deciding whether to spawn a worker for `dispatch()`. `launch(root, *, exec_fn=None)` performs a deferred `exec` after `app.run()` returns, if the app requested one.
 
-  Step 1: Write the failing test
+  Step 1: Read `tui.py` fresh
 
-  Add to `tests/test_hook_entry.py`:
+  Read the whole file -- confirm `_send`, `_dispatch_text`,
+  `_dispatch_in_thread`, `on_button_pressed`, and `launch` match this
+  plan's earlier description of them (from Task 4 of the mouse-TUI plan).
 
-  ```python
-  def test_relative_returns_forward_slashes_for_a_nested_path(tmp_path):
-      from whyline.hook_entry import _relative
+  Step 2: Write the failing tests
 
-      nested = tmp_path / "src" / "pkg" / "mod.py"
-      nested.parent.mkdir(parents=True)
-      nested.write_text("x", encoding="utf-8")
-      result = _relative(tmp_path, str(nested))
-      assert result == "src/pkg/mod.py"
-      assert "\\" not in result
-  ```
-
-  Step 2: Run the test to verify it fails
-
-  Run: `uv run pytest tests/test_hook_entry.py -k forward_slashes -v`
-  Expected: PASS on macOS/Linux (native separator is already `/`), but this
-  specific defect only reproduces on Windows -- this test's real value is
-  being part of the suite the Windows CI job runs. If you're implementing
-  on macOS/Linux, this step won't show a local failure; proceed to Step 3
-  anyway, since the existing `test_codex_apply_patch_records_each_in_repo_path`
-  is the test that actually caught this bug on Windows CI and is the one
-  that matters here.
-
-  Step 3: Implement
-
-  In `src/whyline/hook_entry.py`, find `_relative`:
+  Add to `tests/console/test_tui.py`:
 
   ```python
-  def _relative(root: Path, raw: str) -> str | None:
-      try:
-          candidate = Path(raw)
-          if not candidate.is_absolute():
-              candidate = root / candidate
-          return str(candidate.resolve().relative_to(root.resolve()))
-      except (ValueError, OSError):
-          return None
+  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+  @pytest.mark.asyncio
+  async def test_model_button_actually_lists_available_agents(tmp_path, monkeypatch):
+      from whyline import account
+
+      monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+      app = tui.WhylineConsoleApp(root=tmp_path)
+      async with app.run_test() as pilot:
+          await pilot.click("#model")
+          await pilot.pause()
+          transcript = app.query_one("#transcript", tui.RichLog)
+          assert any(
+              "claude" in str(line) and "codex" in str(line) for line in transcript.lines
+          )
+
+
+  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+  @pytest.mark.asyncio
+  async def test_route_relay_with_no_config_defers_exec_until_after_exit(
+      tmp_path, monkeypatch
+  ):
+      app = tui.WhylineConsoleApp(root=tmp_path)
+      async with app.run_test() as pilot:
+          await pilot.click("#route")
+          await pilot.pause()
+          assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
+      # app.run_test()'s own context manager has now exited (app.run() returned)
+      # -- confirm launch() is what actually performs the exec, not the app itself.
+
+
+  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+  def test_launch_performs_the_deferred_exec_after_app_run_returns(tmp_path, monkeypatch):
+      calls = []
+
+      class FakeApp:
+          def __init__(self, *, root):
+              self._exec_after = None
+
+          def run(self):
+              self._exec_after = ("whyline-relay", ["whyline-relay", "setup"])
+
+      monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
+      tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
+      assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+
+
+  @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+  def test_launch_does_not_exec_when_nothing_was_requested(tmp_path, monkeypatch):
+      calls = []
+
+      class FakeApp:
+          def __init__(self, *, root):
+              self._exec_after = None
+
+          def run(self):
+              pass  # ordinary exit, no setup requested
+
+      monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
+      tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
+      assert calls == []
   ```
 
-  Change the return line:
+  Step 3: Run the tests to verify they fail
+
+  Run: `uv run pytest tests/console/test_tui.py -v`
+  Expected: FAIL on every new test; every pre-existing test in the file
+  still passes (nothing has changed yet).
+
+  Step 4: Implement
+
+  In `src/whyline/console/tui.py`, add the import:
 
   ```python
-  def _relative(root: Path, raw: str) -> str | None:
-      try:
-          candidate = Path(raw)
-          if not candidate.is_absolute():
-              candidate = root / candidate
-          return candidate.resolve().relative_to(root.resolve()).as_posix()
-      except (ValueError, OSError):
-          return None
+  from whyline.console.repl import dispatch, handle_slash_command
   ```
 
-  Step 4: Run the tests to verify they pass
+  Add `self._exec_after: tuple[str, list[str]] | None = None` to
+  `__init__` (alongside the existing `self._dispatch_token`).
 
-  Run: `uv run pytest tests/test_hook_entry.py -v`
-  Expected: PASS
+  Replace `on_button_pressed`:
 
-  Step 5: Run the whole suite
+  ```python
+      def on_button_pressed(self, event: "Button.Pressed") -> None:
+          button_id = event.button.id
+          if button_id == "send":
+              self._send()
+          elif button_id == "stop":
+              self._stop()
+          elif button_id in ("model", "route", "history", "help"):
+              self._handle_slash(f"/{button_id}")
+  ```
+
+  Replace `_send`:
+
+  ```python
+      def _send(self) -> None:
+          prompt = self.query_one("#prompt", TextArea)
+          text = prompt.text.strip()
+          if not text:
+              return
+          prompt.text = ""
+          if not self._handle_slash(text):
+              self._dispatch_text(text)
+  ```
+
+  Add `_handle_slash`, the shared entry point both `on_button_pressed` and
+  `_send` use:
+
+  ```python
+      def _handle_slash(self, text: str) -> bool:
+          """Handles a slash command synchronously on the main thread -- no
+          worker needed, these are fast, local operations. Returns True if
+          `text` was a recognized slash command (whether or not it also
+          triggered a setup handoff), False otherwise, so _send() knows
+          whether to fall through to an ordinary (possibly slow) dispatch()
+          call in a worker."""
+          event = handle_slash_command(self.session, text)
+          if event is None:
+              return False
+          if event.kind == "needs_setup":
+              self._exec_after = ("whyline-relay", ["whyline-relay", "setup"])
+              self.exit()
+              return True
+          self.render_event(event)
+          return True
+  ```
+
+  Replace `launch`:
+
+  ```python
+  def launch(root: Path, *, exec_fn=None) -> None:
+      if not TUI_AVAILABLE:
+          raise TuiUnavailable(
+              "The mouse TUI needs textual. Run: pip install 'whyline[ui]'"
+          )
+      if exec_fn is None:
+          exec_fn = _exec
+      app = WhylineConsoleApp(root=root)
+      app.run()
+      if app._exec_after is not None:
+          binary, argv = app._exec_after
+          exec_fn(binary, argv)
+  ```
+
+  Add the same `_exec` helper `repl.py` has (or import it from there, if
+  you prefer a single shared definition -- either is fine, since it's a
+  one-line wrapper: `def _exec(binary, argv): os.execvp(binary, argv)`,
+  needing `import os`).
+
+  Step 5: Run the tests to verify they pass
+
+  Run: `uv run pytest tests/console/test_tui.py -v`
+  Expected: PASS -- every pre-existing test unchanged in outcome, plus
+  every new test from Step 2.
+
+  Step 6: Run the whole suite
 
   Run: `uv run pytest -q`
   Expected: PASS
 
-  Step 6: Commit
+  Step 7: Commit
 
   ```bash
-  git add src/whyline/hook_entry.py tests/test_hook_entry.py
-  git commit -m "fix: hook_entry._relative returns forward-slash paths on every platform"
-  ```
-
-  ---
-
-- [x] WFX-4: Cross-platform permission-simulation test (WFX4)
-
-  ## Global Constraints
-
-  - No new runtime dependency -- the lock fix uses only `os.open`/`os.close`/`Path.unlink`, all stdlib.
-  - Each task's own job stops at implementing, testing locally, committing, and handing off -- never attempt git push/checking GitHub Actions results yourselves. Your own sandboxed environment may not have outbound network access to github.com at all (confirmed on WFX-3: a DNS resolution failure inside the sandbox, not a real outage -- pushing the identical branch succeeded immediately from outside it). Real Windows CI verification against every fix in this plan is the orchestrator's own job, done once the whole plan completes, not each agent's.
-  - `encoding="utf-8"` is added to every occurrence found missing it (Task 2's own list); no new occurrence should be introduced by any other task's own new code.
-  - Every existing test in this repo must still pass after every task.
-
-  **Note on this pairing:** Antigravity implements, Codex reviews.
-
-  **Files:**
-  - Modify: `tests/test_cli.py`
-
-  **Interfaces:**
-  - Produces: no interface changes -- one existing test's *setup* changes; its assertions and intent are unchanged.
-
-  Step 1: Read the current test fresh
-
-  Read `test_note_reports_cleanly_when_decisions_md_cannot_be_written` in
-  `tests/test_cli.py` (starts at line 888) -- its exact current body, in
-  full, is:
-
-  ```python
-  def test_note_reports_cleanly_when_decisions_md_cannot_be_written(repo, capsys):
-      """2026-08-18: note raised a raw traceback when storage was unwritable, and
-      because the ledger was written first, a failure on decisions.md left the note
-      in the local ledger only — brief and status showed it while a clone never
-      would. The stores diverged silently."""
-      import os
-
-      from whyline import ledger
-
-      paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
-      paths.ledger_path(repo.path).touch()
-      directory = paths.whyline_dir(repo.path)
-      os.chmod(directory, 0o500)
-      try:
-          code, out, err = run_in_both(repo, ["note", "cannot store this"], capsys)
-      finally:
-          os.chmod(directory, 0o755)
-
-      assert code == cli.EXIT_ERROR
-      assert "Traceback" not in err
-      assert "Nothing was recorded" in out + err
-      # And crucially: the ledger must not hold what the committed record lacks.
-      found, _ = ledger.read_all(paths.ledger_path(repo.path))
-      assert [e for e in found if e.get("type") == events.NOTE] == []
-  ```
-
-  Step 2: Replace the permission simulation
-
-  Replace the whole function body with:
-
-  ```python
-  def test_note_reports_cleanly_when_decisions_md_cannot_be_written(repo, capsys):
-      """2026-08-18: note raised a raw traceback when storage was unwritable, and
-      because the ledger was written first, a failure on decisions.md left the note
-      in the local ledger only — brief and status showed it while a clone never
-      would. The stores diverged silently."""
-      from whyline import ledger
-
-      paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
-      paths.ledger_path(repo.path).touch()
-      # Writing text to a path that is actually a directory fails consistently
-      # on every platform, with no OS-specific permission semantics involved --
-      # os.chmod's effect on Windows doesn't restrict writes the way it does
-      # on POSIX, so this simulates "cannot write" portably instead.
-      paths.decisions_path(repo.path).mkdir(parents=True, exist_ok=True)
-      try:
-          code, out, err = run_in_both(repo, ["note", "cannot store this"], capsys)
-      finally:
-          paths.decisions_path(repo.path).rmdir()
-
-      assert code == cli.EXIT_ERROR
-      assert "Traceback" not in err
-      assert "Nothing was recorded" in out + err
-      # And crucially: the ledger must not hold what the committed record lacks.
-      found, _ = ledger.read_all(paths.ledger_path(repo.path))
-      assert [e for e in found if e.get("type") == events.NOTE] == []
-  ```
-
-  Note `import os` is removed -- it was only ever used for the two
-  `os.chmod` calls this replaces, and nothing else in this function needs
-  it.
-
-  Step 3: Run the test to verify it still passes with the new setup
-
-  Run: `uv run pytest tests/test_cli.py -k test_note_reports_cleanly_when_decisions_md_cannot_be_written -v`
-  Expected: PASS
-
-  Step 4: Run the whole suite
-
-  Run: `uv run pytest -q`
-  Expected: PASS
-
-  Step 5: Commit
-
-  ```bash
-  git add tests/test_cli.py
-  git commit -m "fix: simulate an unwritable decisions.md portably, not via POSIX chmod"
+  git add src/whyline/console/tui.py tests/console/test_tui.py
+  git commit -m "feat: wire the TUI's buttons to the shared slash-command handler; deferred setup handoff"
   ```
 
   ---
