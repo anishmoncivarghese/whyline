@@ -2463,3 +2463,17 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/hook_entry.py, tests/test_hook_entry.py
 
 <!-- whyline-event: a7ae3d92b7384a1cba8b7ba8ce77d1ed -->
+
+## 2026-09-28 — Completed WFX-3's push+CI-verification manually after codex's sandbox could not resolve github.com
+
+**Actor:** claude
+**Role:** fixer
+**Task:** WFX-3
+
+**Because:** codex's own review of the implementation and test already passed (uv run pytest -q green, commit b9917f6); only the push+Windows-CI-verification step failed, with 'Could not resolve host: github.com' -- a DNS failure specific to codex's sandboxed network access, not a real outage, confirmed by pushing the same branch successfully from this shell within seconds
+
+**Rejected:**
+
+- wait and retry the same push from codex's own sandbox — the sandbox's network restriction is not transient, retrying from inside it would not help
+
+<!-- whyline-event: 1acb2c6e1a2f4fb6a38641c41264a1c3 -->
