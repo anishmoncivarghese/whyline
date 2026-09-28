@@ -2372,3 +2372,36 @@ Append-only. Written by whyline; readable without it.
 **Files:** .github/workflows/ci.yml, .github/workflows/release.yml
 
 <!-- whyline-event: 89630f6776cb484e8f0fadb5cc395159 -->
+
+## 2026-09-28 — Portable file lock using stdlib exclusive file creation and stale lock clearing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** WFX-1
+
+**Because:** os.O_CREAT | os.O_EXCL is portable across POSIX and Windows without new runtime dependencies, and mtime threshold safely clears locks abandoned by crashed processes
+
+**Rejected:**
+
+- fcntl.flock with Windows no-op fallback — leaves Windows checkouts uncoordinated against concurrent writes
+- external filelock dependency — violates zero new runtime dependency constraint
+
+**Files:** src/whyline/state.py, tests/test_state_lock.py
+
+<!-- whyline-event: fca080e6f75b47ca922a1b0d5bee29e6 -->
+
+## 2026-09-28 — Approve portable exclusive-creation lock for WFX-1
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WFX-1
+
+**Because:** The implementation matches the required stdlib-only cross-platform design, focused lock tests pass, and the full suite passes; the 10-second stale-lock lease is the task's accepted crash-recovery tradeoff for short checkout-local updates
+
+**Rejected:**
+
+- Request ownership-token hardening in this task — it would exceed the specified helper interfaces and prescribed implementation, while the remaining stale-lease risk is already explicit
+
+**Files:** src/whyline/state.py, tests/test_state_lock.py
+
+<!-- whyline-event: b2916b638d8d49b3aa4830a1d7b41f79 -->
