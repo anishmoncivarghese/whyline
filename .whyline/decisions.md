@@ -1663,3 +1663,19 @@ Append-only. Written by whyline; readable without it.
 - reset and redo — wastes correct, test-verified work
 
 <!-- whyline-event: b400881d86c348deb7083c0130934dd3 -->
+
+## 2026-09-28 — Request changes: UCF-1 session model and tests remain absent in round 2
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UCF-1
+
+**Because:** The task commit adds the optional/dev dependencies and lockfile only; src/whyline/console and tests/console do not exist, so the required SessionEvent, ConsoleSession, and their coverage were never implemented despite the legacy suite passing
+
+**Rejected:**
+
+- approve dependency-only commit — it omits the central interfaces and all task-specific tests
+
+**Files:** src/whyline/console/session.py
+
+<!-- whyline-event: 7b668338227341119b353ab332c4628f -->
