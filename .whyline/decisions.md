@@ -2309,3 +2309,35 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py, tests/console/test_tui.py
 
 <!-- whyline-event: 68ae8f7dbbc84b25a89430f83233d1a2 -->
+
+## 2026-09-28 — Wire whyline console --ui to tui.launch with TuiUnavailable fallback
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** MTU-5
+
+**Because:** Provides entry point to mouse-enabled TUI while keeping bare whyline console unchanged and reporting install hint if textual missing
+
+**Rejected:**
+
+- make textual a hard requirement — violates global constraint that base whyline remains dependency-free
+
+**Files:** src/whyline/cli.py, tests/test_cli_console.py
+
+<!-- whyline-event: 6fd6362a5b944714a318b5f700cde244 -->
+
+## 2026-09-28 — Approve console --ui CLI wiring
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** MTU-5
+
+**Because:** The flag launches tui.launch with the resolved repository root, preserves the keyboard REPL path, reports TuiUnavailable with an install hint, and both focused and full test suites pass
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found
+
+**Files:** src/whyline/cli.py, tests/test_cli_console.py
+
+<!-- whyline-event: d37888983ecb4534b1924d604b459329 -->

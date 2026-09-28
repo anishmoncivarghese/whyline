@@ -277,8 +277,13 @@ def _add_model(subparsers: "argparse._SubParsersAction") -> None:
 
 
 def _add_console(subparsers: "argparse._SubParsersAction") -> None:
-    subparsers.add_parser(
+    parser = subparsers.add_parser(
         "console", help="An editable multiline console for whyline and whyline-relay"
+    )
+    parser.add_argument(
+        "--ui",
+        action="store_true",
+        help="Launch the full-screen, mouse-enabled console instead of the keyboard-only one",
     )
 
 
@@ -778,9 +783,18 @@ def cmd_model(args: argparse.Namespace) -> int:
 
 
 def cmd_console(args: argparse.Namespace) -> int:
+    root = _require_repo()
+    if getattr(args, "ui", False):
+        from whyline.console import tui
+
+        try:
+            tui.launch(root)
+        except tui.TuiUnavailable as error:
+            print(str(error))
+            return EXIT_ERROR
+        return EXIT_OK
     from whyline.console import repl
 
-    root = _require_repo()
     repl.run(root)
     return EXIT_OK
 
