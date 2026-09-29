@@ -2906,3 +2906,47 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/account.py
 
 <!-- whyline-event: 7dd5d06015924eb1aedc817a290db6ff -->
+
+## 2026-09-29 — Console brainstorm reuses whyline-relay's brainstorm engine and passes whyline agent names (antigravity), not relay's menu key (agy)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-UX-3
+
+**Because:** relay's chat resolves 'antigravity' but rejects 'agy', so relay's own /brainstorm option for Antigravity fails; reimplementing the passes would duplicate relay
+
+**Rejected:**
+
+- call relay's ask_brainstorm_setup — input()-driven, unusable in the TUI, and carries the agy key bug
+
+**Files:** src/whyline/console/adapters.py
+
+<!-- whyline-event: 3fadd84e27654368aa53bbd7293a466c -->
+
+## 2026-09-29 — /repo switch requires confirmation, clears the transcript, chdirs, and drops Relay mode if the new repo has no relay setup
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-UX-3
+
+**Because:** command mode runs whyline against the working directory, and each repo keeps its own chat history; the user asked for a warning that old text is cleared
+
+**Rejected:**
+
+- keep the transcript across repos — mixes two projects' conversations on one screen
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: fdbe7c35054a4c019075c7cc32453094 -->
+
+## 2026-09-29 — Brainstorm form pins its error line and buttons outside the scrolling field area
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-UX-3
+
+**Because:** a validation message pushed Start out of the visible dialog on small terminals
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: ce2ef1ca86db4e61a5d2cd6d9ec734db -->

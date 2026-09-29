@@ -29,6 +29,8 @@ _RELAY_MISSING = (
 SLASH_COMMANDS = (
     "/model",
     "/login",
+    "/brainstorm",
+    "/repo",
     "/route",
     "/status",
     "/handoff",
@@ -45,6 +47,8 @@ _COMMAND_HELP = {
     "/model": "/model claude opus      pick the chat agent (and model); /model alone lists them,\n"
     "                          /model refresh re-checks what's installed and logged in",
     "/login": "/login claude           sign in with the agent's own login, then re-check",
+    "/brainstorm": "/brainstorm             several models research a topic, one writes it up",
+    "/repo": "/repo ~/other-project   show or switch the repository (clears this transcript)",
     "/route": "/route <mode>           switch to command, chat or relay",
     "/status": "/status                 repo and relay status",
     "/handoff": "/handoff                the most recent handoff",
@@ -105,7 +109,95 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         return _model_event(session, text)
     if text.startswith("/login"):
         return _login_event(text)
+    if text == "/brainstorm":
+        # Each console collects topic/models/passes its own way (a form in
+        # the TUI, prompts in the REPL), then calls adapters.run_brainstorm.
+        return SessionEvent(kind="needs_brainstorm", text="")
+    if text == "/repo" or text.startswith("/repo "):
+        return _repo_event(session, text)
     return None
+
+
+def repo_label(root: Path) -> str:
+    home = Path.home()
+    try:
+        shown = "~/" + str(root.relative_to(home))
+    except ValueError:
+        shown = str(root)
+    return f"{root.name}  {shown}"
+
+
+def context_label(session: ConsoleSession) -> str:
+    """"claude · opus" -- who Chat talks to, and with which model."""
+    from whyline import model
+
+    agent = session.agent or "claude"
+    chosen = model.load(session.root).get(agent) or "default model"
+    return f"{agent} · {chosen}"
+
+
+def _repo_event(session: ConsoleSession, text: str) -> SessionEvent:
+    from whyline import paths
+
+    parts = text.split(maxsplit=1)
+    if len(parts) == 1:
+        return SessionEvent(
+            kind="output",
+            text=f"Repository: {repo_label(session.root)}. Switch with /repo <path>.",
+        )
+    target = Path(parts[1].strip()).expanduser()
+    if not target.is_absolute():
+        target = session.root / target
+    if not target.is_dir():
+        return SessionEvent(kind="error", text=f"No such directory: {target}")
+    root = paths.find_repo_root(target)
+    if root is None:
+        return SessionEvent(kind="error", text=f"{target} isn't inside a git repository.")
+    if root == session.root.resolve():
+        return SessionEvent(kind="output", text=f"Already in {root.name}.")
+    # Each console asks for confirmation before calling switch_repo().
+    return SessionEvent(kind="confirm_repo", text=str(root))
+
+
+def repo_switch_warning(root: Path) -> str:
+    return (
+        f"Switch to {root.name}? This clears the transcript on screen and starts a "
+        "fresh chat context -- each repository keeps its own chat history and "
+        "model settings."
+    )
+
+
+def switch_repo(session: ConsoleSession, root: Path) -> SessionEvent:
+    """Moves the whole console to `root`: command mode runs `whyline ...`
+    against the working directory, so that changes too."""
+    os.chdir(root)
+    session.root = root
+    session.transcript.clear()
+    note = ""
+    if session.mode == "relay" and not adapters.relay_is_configured(root):
+        session.mode = "command"
+        note = " The relay isn't set up here, so you're in command mode."
+    return SessionEvent(kind="output", text=f"Now working in {repo_label(root)}.{note}")
+
+
+BRAINSTORM_AGENTS = ("claude", "codex", "antigravity", "grok")
+
+
+def parse_brainstorm_agents(raw: str) -> list[str] | None:
+    """"1,2,4", "claude, grok" or "all" -> agent names in the canonical
+    order; None if nothing valid was named."""
+    raw = raw.strip().lower()
+    if raw in ("all", "5"):
+        return list(BRAINSTORM_AGENTS)
+    chosen = set()
+    for token in (t.strip() for t in raw.split(",")):
+        if token.isdigit() and 1 <= int(token) <= len(BRAINSTORM_AGENTS):
+            chosen.add(BRAINSTORM_AGENTS[int(token) - 1])
+        elif token in BRAINSTORM_AGENTS:
+            chosen.add(token)
+        elif token:
+            return None
+    return [a for a in BRAINSTORM_AGENTS if a in chosen] or None
 
 
 _AGENTS_LINE = "Agents: claude, codex, antigravity, grok."
@@ -253,7 +345,10 @@ def run(
     print_fn("whyline console -- /help for commands, /exit to quit.")
     while True:
         try:
-            text = prompt_session.prompt(f"({session.mode}) > ")
+            label = session.mode
+            if session.mode == "chat":
+                label = f"chat · {context_label(session)}"
+            text = prompt_session.prompt(f"({label}) > ")
         except (EOFError, KeyboardInterrupt):
             break
         text = text.strip()
@@ -276,17 +371,84 @@ def run(
                 code = login_fn(login_argv(agent))
                 _print_event(session.record(after_login(session, agent, code)), print_fn)
                 continue
+            if slash_event.kind == "confirm_repo":
+                target = Path(slash_event.text)
+                answer = _ask(prompt_session, repo_switch_warning(target) + " [y/N] ")
+                if answer is None or answer.lower() not in ("y", "yes"):
+                    print_fn("Staying put.")
+                    continue
+                _print_event(session.record(switch_repo(session, target)), print_fn)
+                continue
+            if slash_event.kind == "needs_brainstorm":
+                _brainstorm_prompts(session, prompt_session, print_fn)
+                continue
             _print_event(session.record(slash_event), print_fn)
             continue
         if text.startswith("/"):
             print_fn(f"Unknown command: {text}. Try {', '.join(SLASH_COMMANDS)}.")
             continue
+        print_fn(busy_label(session) + "...")
         try:
             event = dispatch(session, text)
         except KeyboardInterrupt:
             print_fn("Cancelled.")
             continue
         _print_event(session.record(event), print_fn)
+
+
+def busy_label(session: ConsoleSession) -> str:
+    """What the console says while a reply is pending."""
+    if session.mode == "chat":
+        return f"{session.agent or 'claude'} is thinking"
+    if session.mode == "relay":
+        return "relay is working"
+    return "running"
+
+
+def _ask(prompt_session, question: str) -> str | None:
+    try:
+        return prompt_session.prompt(question).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+
+def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> None:
+    """The keyboard console's version of the TUI's brainstorm form."""
+    from whyline import account
+
+    topic = _ask(prompt_session, "What should we brainstorm? ")
+    if not topic:
+        print_fn("Brainstorm cancelled.")
+        return
+    status = account.agent_status(session.root)
+    menu = ", ".join(
+        f"{n} {a}" + ("" if status[a]["available"] else " (unavailable)")
+        for n, a in enumerate(BRAINSTORM_AGENTS, start=1)
+    )
+    agents = None
+    while agents is None:
+        raw = _ask(prompt_session, f"Which models? ({menu}, or all): ")
+        if raw is None:
+            print_fn("Brainstorm cancelled.")
+            return
+        agents = parse_brainstorm_agents(raw)
+        if agents is None:
+            print_fn("Use numbers or names separated by commas, e.g. 1,2 or claude,grok.")
+    raw = _ask(prompt_session, "How many review passes? [1] ") or "1"
+    passes = int(raw) if raw.isdigit() else 1
+    raw = (_ask(prompt_session, f"Who writes the final synthesis? [{agents[0]}] ") or agents[0]).lower()
+    final_agent = raw if raw in agents else agents[0]
+    print_fn("Brainstorming -- this runs several full agent turns, so it takes a while.")
+    try:
+        event = adapters.run_brainstorm(
+            session.root, topic=topic, agents=agents, passes=passes,
+            final_agent=final_agent, progress=print_fn,
+        )
+    except KeyboardInterrupt:
+        event = SessionEvent(kind="error", text="Brainstorm cancelled.")
+    except Exception as error:  # an agent failure mid-run must not end the console
+        event = SessionEvent(kind="error", text=f"Brainstorm stopped: {error}")
+    _print_event(session.record(event), print_fn)
 
 
 def dispatch(session: ConsoleSession, text: str) -> SessionEvent:

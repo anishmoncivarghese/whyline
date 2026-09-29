@@ -249,3 +249,68 @@ def relay_is_configured(root: Path) -> bool:
     """No import of whyline_relay needed just to check this -- the path is
     stable and simple enough to check directly."""
     return (root / ".whyline" / "relay" / "config.toml").exists()
+
+
+BRAINSTORM_LABELS = {
+    "claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "grok": "Grok",
+}
+
+
+def run_brainstorm(
+    root: Path,
+    *,
+    topic: str,
+    agents: list[str],
+    passes: int,
+    final_agent: str,
+    progress=None,
+    run_fn=None,
+) -> SessionEvent:
+    """Multi-model brainstorming via whyline-relay's own brainstorm module:
+    each model researches independently, the drafts are merged, `passes`
+    review rounds follow, then `final_agent` writes the synthesis to
+    docs/brainstorm/<topic>.md. `progress` receives one line per step.
+
+    Agents are passed by whyline's names ("antigravity"), which relay's
+    chat resolves -- not relay brainstorm's own menu key "agy", which its
+    chat rejects."""
+    from whyline_relay import brainstorm, config as relay_config
+
+    progress = progress if progress is not None else (lambda line: None)
+    settings = relay_config.load(root)
+    models = [(agent, BRAINSTORM_LABELS[agent]) for agent in agents]
+    skipped = brainstorm.check_availability(settings, models)
+    if skipped:
+        progress("Skipping (not set up for chat here): " + ", ".join(l for _, l in skipped))
+        models = [m for m in models if m not in skipped]
+    if not models:
+        return SessionEvent(kind="error", text="None of the chosen models can chat in this repo.")
+    if final_agent not in {key for key, _ in models}:
+        final_agent = models[0][0]
+        progress(f"Final synthesis will come from {models[0][1]} instead.")
+    kwargs = {"run_fn": run_fn} if run_fn is not None else {}
+    names = ", ".join(label for _, label in models)
+    progress(f"Researching independently: {names}")
+    actual = brainstorm.run_pass_zero(
+        root, models, topic, settings=settings, print_fn=progress, **kwargs
+    )
+    brainstorm.merge_pass_zero(root, models, topic, actual_agents=actual)
+    for number in range(1, passes + 1):
+        progress(f"Review pass {number} of {passes}")
+        actual = brainstorm.run_review_pass(
+            root, models, topic, number, settings=settings, print_fn=progress,
+            actual_agents=actual, **kwargs,
+        )
+    progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
+    record = brainstorm.run_final_synthesis(
+        root, final_agent, models, topic, settings=settings, **kwargs
+    )
+    path = brainstorm.shared_path(root, topic)
+    try:
+        shown = path.relative_to(root)
+    except ValueError:
+        shown = path
+    return SessionEvent(
+        kind="output",
+        text=f"[{record['agent']}] {record['response']}\n\nSaved to {shown}",
+    )

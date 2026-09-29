@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from whyline.console import editor, repl
@@ -659,3 +661,154 @@ def test_repl_login_that_does_not_take_says_so(tmp_path, monkeypatch):
         "claude still isn't available: not logged in (login exited with 1)" in line
         for line in lines
     )
+
+
+# --- /repo, /brainstorm, context and busy labels ------------------------------
+
+
+def _git_repo(path):
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".git").mkdir()
+    return path.resolve()
+
+
+def test_repo_shows_the_current_repository(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    root = _git_repo(tmp_path / "proj")
+    event = handle_slash_command(ConsoleSession(root=root), "/repo")
+    assert "Repository: proj" in event.text and "/repo <path>" in event.text
+
+
+def test_repo_rejects_missing_and_non_git_paths_and_notices_the_same_repo(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    root = _git_repo(tmp_path / "proj")
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    session = ConsoleSession(root=root)
+    assert "No such directory" in handle_slash_command(session, "/repo /nope/not/here").text
+    assert "isn't inside a git repository" in handle_slash_command(session, f"/repo {plain}").text
+    (root / "sub").mkdir()
+    same = handle_slash_command(session, f"/repo {root / 'sub'}")
+    assert same.text == "Already in proj."
+
+
+def test_repo_to_another_repository_asks_for_confirmation(tmp_path):
+    from whyline.console.repl import handle_slash_command, repo_switch_warning
+    from whyline.console.session import ConsoleSession
+
+    root = _git_repo(tmp_path / "proj")
+    other = _git_repo(tmp_path / "other")
+    session = ConsoleSession(root=root)
+    event = handle_slash_command(session, f"/repo {other}")
+    assert (event.kind, event.text) == ("confirm_repo", str(other))
+    assert session.root == root  # nothing changes until confirmed
+    assert "clears the transcript" in repo_switch_warning(other)
+
+
+def test_switch_repo_moves_root_and_cwd_and_clears_the_transcript(tmp_path, monkeypatch):
+    import os
+    from whyline.console.repl import switch_repo
+    from whyline.console.session import ConsoleSession, SessionEvent
+
+    monkeypatch.chdir(tmp_path)
+    root = _git_repo(tmp_path / "proj")
+    other = _git_repo(tmp_path / "other")
+    session = ConsoleSession(root=root, mode="relay")
+    session.record(SessionEvent(kind="output", text="old text"))
+    event = switch_repo(session, other)
+    assert session.root == other
+    assert Path(os.getcwd()).resolve() == other
+    assert session.transcript == []
+    # the relay isn't set up in the new repo, so relay mode would only fail
+    assert session.mode == "command"
+    assert "Now working in other" in event.text and "command mode" in event.text
+
+
+def test_parse_brainstorm_agents():
+    from whyline.console.repl import parse_brainstorm_agents
+
+    assert parse_brainstorm_agents("1,2,4") == ["claude", "codex", "grok"]
+    assert parse_brainstorm_agents("grok, Claude") == ["claude", "grok"]
+    assert parse_brainstorm_agents("all") == ["claude", "codex", "antigravity", "grok"]
+    assert parse_brainstorm_agents("9") is None
+    assert parse_brainstorm_agents("") is None
+
+
+def test_context_and_busy_labels(tmp_path):
+    from whyline import model
+    from whyline.console.repl import busy_label, context_label
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=tmp_path, mode="chat")
+    assert context_label(session) == "claude · default model"
+    model.set_one(tmp_path, "codex", "gpt-5")
+    session.agent = "codex"
+    assert context_label(session) == "codex · gpt-5"
+    assert busy_label(session) == "codex is thinking"
+    session.mode = "relay"
+    assert busy_label(session) == "relay is working"
+
+
+def test_repl_repo_switch_needs_a_yes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = _git_repo(tmp_path / "proj")
+    other = _git_repo(tmp_path / "other")
+    monkeypatch.setattr(
+        editor, "build_session",
+        lambda r: FakePromptSession([f"/repo {other}", "n", f"/repo {other}", "y", "/repo", "/exit"]),
+    )
+    lines = []
+    repl.run(root, print_fn=lines.append)
+    assert "Staying put." in lines
+    assert any("Now working in other" in line for line in lines)
+    assert any(line.startswith("Repository: other") for line in lines)
+
+
+def test_repl_brainstorm_asks_then_runs(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    calls = []
+    monkeypatch.setattr(
+        adapters, "run_brainstorm",
+        lambda root, **kw: calls.append(kw) or SessionEvent(kind="output", text="synthesis"),
+    )
+    monkeypatch.setattr(
+        editor, "build_session",
+        lambda r: FakePromptSession(
+            ["/brainstorm", "retry policy", "bogus", "1,2", "2", "codex", "/exit"]
+        ),
+    )
+    lines = []
+    repl.run(tmp_path, print_fn=lines.append)
+    assert calls[0]["topic"] == "retry policy"
+    assert calls[0]["agents"] == ["claude", "codex"]
+    assert calls[0]["passes"] == 2 and calls[0]["final_agent"] == "codex"
+    assert any("Use numbers or names" in line for line in lines)  # "bogus" re-asked
+    assert "synthesis" in lines
+
+
+def test_repl_brainstorm_failure_does_not_end_the_console(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console import adapters
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+
+    def boom(root, **kw):
+        raise RuntimeError("agent crashed")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", boom)
+    monkeypatch.setattr(
+        editor, "build_session",
+        lambda r: FakePromptSession(["/brainstorm", "t", "1", "", "", "/help", "/exit"]),
+    )
+    lines = []
+    repl.run(tmp_path, print_fn=lines.append)
+    assert any("Brainstorm stopped: agent crashed" in line for line in lines)
+    assert any("Commands:" in line for line in lines)  # still running afterwards

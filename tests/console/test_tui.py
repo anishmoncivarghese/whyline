@@ -461,3 +461,128 @@ async def test_login_suspends_the_app_runs_the_login_and_reports(tmp_path, monke
     assert ran == [(["in"], ["claude", "auth", "login"])]
     assert suspended == ["in", "out"]
     assert any("claude is ready" in line for line in lines)
+
+
+# --- thinking line, context label, brainstorm form, repo switch ---------------
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_thinking_line_shows_while_a_reply_is_pending(tmp_path, monkeypatch):
+    import threading
+    from whyline.console.session import SessionEvent
+
+    release = threading.Event()
+
+    def slow(session, text):
+        release.wait(timeout=2)
+        return SessionEvent(kind="output", text="done")
+
+    monkeypatch.setattr(tui, "dispatch", slow)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#mode-chat")
+        thinking = app.query_one("#thinking", tui.Static)
+        assert not thinking.display
+        app.query_one("#prompt", tui.Input).value = "hi"
+        await pilot.click("#send")
+        await pilot.pause(0.3)
+        assert thinking.display
+        assert "claude is thinking" in str(thinking.renderable)
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert not thinking.display
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_context_label_shows_agent_model_and_repo(tmp_path, monkeypatch):
+    from whyline import account, model
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"codex"})
+    model.set_one(tmp_path, "codex", "gpt-5")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 30)) as pilot:
+        context = app.query_one("#context", tui.Static)
+        assert "claude · default model" in str(context.renderable)
+        assert f"repo: {tmp_path.name}" in str(context.renderable)
+        app.query_one("#prompt", tui.Input).value = "/model codex"
+        await pilot.click("#send")
+        await pilot.pause()
+        assert "codex · gpt-5" in str(context.renderable)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_brainstorm_form_validates_then_runs_with_progress(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    calls = []
+
+    def fake_run(root, *, progress, **choice):
+        calls.append(choice)
+        progress("Researching independently: Claude, Codex")
+        return SessionEvent(kind="output", text="final synthesis")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_run)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, tui.BrainstormScreen)
+        # unavailable agents are shown but can't be ticked
+        assert form.query_one("#bs-grok", tui.Checkbox).disabled
+        assert not form.query_one("#bs-claude", tui.Checkbox).disabled
+        await pilot.click("#bs-start")  # no topic yet
+        await pilot.pause()
+        assert "Enter a topic" in str(form.query_one("#bs-error", tui.Static).renderable)
+        # Textual ignores a second press while the first press's 0.2s
+        # highlight is still showing; a person never clicks that fast.
+        await pilot.pause(0.3)
+        form.query_one("#bs-topic", tui.Input).value = "retry policy"
+        form.query_one("#bs-passes", tui.Input).value = "2"
+        await pilot.click("#bs-start")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    assert calls == [{
+        "topic": "retry policy", "agents": ["claude", "codex"],
+        "passes": 2, "final_agent": "claude",
+    }]
+    assert any("· Researching independently" in line for line in lines)
+    assert any("final synthesis" in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_repo_switch_asks_first_and_clears_the_transcript(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "proj"
+    other = tmp_path / "other"
+    for repo in (root, other):
+        (repo / ".git").mkdir(parents=True)
+    root, other = root.resolve(), other.resolve()
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one("#prompt", tui.Input).value = f"/repo {other}"
+        await pilot.click("#send")
+        await pilot.pause()
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        await pilot.click("#cancel")
+        await pilot.pause()
+        assert app.session.root == root
+        app.query_one("#prompt", tui.Input).value = f"/repo {other}"
+        await pilot.click("#send")
+        await pilot.pause()
+        await pilot.click("#confirm")
+        await pilot.pause()
+        assert app.session.root == other
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert not any("Staying put" in line for line in lines)  # old text is gone
+        assert any("Now working in other" in line for line in lines)
+        assert "repo: other" in str(app.query_one("#context", tui.Static).renderable)

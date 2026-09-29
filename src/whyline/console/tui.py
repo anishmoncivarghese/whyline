@@ -10,35 +10,188 @@ layer, not a second implementation of the console's logic.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 try:
     from textual.app import App, ComposeResult
-    from textual.containers import Horizontal
+    from textual.containers import Horizontal, Vertical, VerticalScroll
+    from textual.screen import ModalScreen
     from rich.text import Text
-    from textual.widgets import Button, Footer, Header, Input, RichLog, Static
+    from textual.widgets import (
+        Button, Checkbox, Footer, Header, Input, Label, RichLog, Select, Static,
+    )
 
     TUI_AVAILABLE = True
 except ImportError:
-    App = object  # placeholder base so WhylineConsoleApp can still be defined
+    App = ModalScreen = object  # placeholder bases so the classes can still be defined
     ComposeResult = None
-    Horizontal = None
-    Button = Footer = Header = Input = RichLog = Static = Text = None
+    Horizontal = Vertical = VerticalScroll = None
+    Button = Checkbox = Footer = Header = Input = Label = RichLog = Select = None
+    Static = Text = None
     TUI_AVAILABLE = False
 
+from whyline.console import adapters
 from whyline.console.repl import (
+    BRAINSTORM_AGENTS,
     RELAY_SETUP,
     _run_login,
     after_login,
+    busy_label,
+    context_label,
     dispatch,
     handle_slash_command,
     login_argv,
+    repo_label,
+    repo_switch_warning,
+    switch_repo,
 )
 from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
 _MODES = ("command", "chat", "relay")
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+class ConfirmScreen(ModalScreen):
+    """A yes/no dialog; dismisses with True only for the confirm button."""
+
+    DEFAULT_CSS = """
+    ConfirmScreen { align: center middle; }
+    ConfirmScreen > Vertical {
+        width: 70; height: auto; padding: 1 2;
+        border: thick $warning; background: $surface;
+    }
+    ConfirmScreen Label { width: 100%; }
+    ConfirmScreen Horizontal { height: auto; margin-top: 1; }
+    ConfirmScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, message: str, confirm_label: str) -> None:
+        super().__init__()
+        self._message = message
+        self._confirm_label = confirm_label
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(self._message),
+            Horizontal(
+                Button(self._confirm_label, id="confirm", variant="warning"),
+                Button("Cancel", id="cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss(event.button.id == "confirm")
+
+
+class BrainstormScreen(ModalScreen):
+    """Collects topic, models, passes and the final model, then dismisses
+    with them as a dict (or None when cancelled). Models the user can't use
+    are shown, disabled, with the reason -- the same labels /model uses."""
+
+    DEFAULT_CSS = """
+    BrainstormScreen { align: center middle; }
+    BrainstormScreen > Vertical {
+        width: 84; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
+        border: thick $accent; background: $surface;
+    }
+    BrainstormScreen #bs-fields { height: auto; max-height: 1fr; }
+    BrainstormScreen Label { width: 100%; }
+    BrainstormScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
+    BrainstormScreen Horizontal { height: auto; }
+    BrainstormScreen .field-label { width: 18; padding: 1 1 0 0; }
+    BrainstormScreen #bs-passes { width: 10; }
+    BrainstormScreen #bs-final { width: 30; }
+    BrainstormScreen #bs-error { color: $error; height: auto; }
+    BrainstormScreen #bs-error.-empty { display: none; }
+    BrainstormScreen #bs-buttons { margin-top: 1; }
+    BrainstormScreen #bs-buttons Button { margin-right: 2; }
+    """
+
+    def __init__(self, status: dict, active: str) -> None:
+        super().__init__()
+        self._status = status
+        self._usable = [a for a in BRAINSTORM_AGENTS if status[a]["available"]]
+        self._default_final = active if active in self._usable else (
+            self._usable[0] if self._usable else BRAINSTORM_AGENTS[0]
+        )
+
+    def compose(self) -> ComposeResult:
+        boxes = []
+        for agent in BRAINSTORM_AGENTS:
+            info = self._status[agent]
+            label = f"{agent:<12} {info['label']}"
+            boxes.append(
+                Checkbox(label, value=info["available"], disabled=not info["available"],
+                         id=f"bs-{agent}")
+            )
+        # Only the fields scroll; the error line and buttons stay pinned
+        # below them, so Start can never be pushed out of view.
+        fields = VerticalScroll(
+            Label("Brainstorm: each model researches on its own, reviews the others, "
+                  "then one writes it up in docs/brainstorm/."),
+            Input(placeholder="Topic, e.g. how the relay should handle a failed Codex run",
+                  id="bs-topic"),
+            Label("Models:", classes="field-label"),
+            *boxes,
+            Horizontal(
+                Label("Review passes:", classes="field-label"),
+                Input("1", id="bs-passes"),
+            ),
+            Horizontal(
+                Label("Final write-up:", classes="field-label"),
+                Select([(a, a) for a in BRAINSTORM_AGENTS], value=self._default_final,
+                       allow_blank=False, id="bs-final"),
+            ),
+            id="bs-fields",
+        )
+        yield Vertical(
+            fields,
+            Static("", id="bs-error", classes="-empty"),
+            Horizontal(
+                Button("Start", id="bs-start", variant="success"),
+                Button("Cancel", id="bs-cancel"),
+                id="bs-buttons",
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#bs-topic", Input).focus()
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "bs-cancel":
+            self.dismiss(None)
+            return
+        chosen = self.collect()
+        if isinstance(chosen, str):
+            error = self.query_one("#bs-error", Static)
+            error.update(chosen)
+            error.remove_class("-empty")
+            return
+        self.dismiss(chosen)
+
+    def collect(self) -> "dict | str":
+        """The form's values, or a message saying what's missing."""
+        topic = self.query_one("#bs-topic", Input).value.strip()
+        if not topic:
+            return "Enter a topic."
+        agents = [a for a in BRAINSTORM_AGENTS if self.query_one(f"#bs-{a}", Checkbox).value]
+        if not agents:
+            return "Pick at least one model."
+        raw = self.query_one("#bs-passes", Input).value.strip() or "0"
+        if not raw.isdigit():
+            return "Review passes must be a whole number (0 or more)."
+        final = self.query_one("#bs-final", Select).value
+        return {
+            "topic": topic,
+            "agents": agents,
+            "passes": int(raw),
+            "final_agent": final if final in agents else agents[0],
+        }
 
 
 class TuiUnavailable(RuntimeError):
@@ -77,6 +230,8 @@ class WhylineConsoleApp(App):
     RichLog#transcript { height: 1fr; }
     #modes, #input-row, #controls { height: auto; }
     #modes-label { width: auto; padding: 1 1 0 1; }
+    #context { width: 1fr; padding: 1 1 0 1; text-align: right; color: $text-muted; }
+    #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
     Input#prompt { width: 1fr; }
     """
 
@@ -86,6 +241,9 @@ class WhylineConsoleApp(App):
         self._dispatch_token: object | None = None
         self._exec_after: tuple[str, list[str]] | None = None
         self._login_fn = _run_login
+        self._busy_text = ""
+        self._busy_since = 0.0
+        self._spin = 0
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -95,6 +253,7 @@ class WhylineConsoleApp(App):
         "command" mode looked like the console was just broken instead of
         interpreting free text as a `whyline` CLI invocation."""
         self._sync_mode_indicator()
+        self.set_interval(0.1, self._tick)
         self.query_one("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
@@ -116,6 +275,11 @@ class WhylineConsoleApp(App):
             button = self.query_one(f"#mode-{name}", Button)
             button.variant = "primary" if name == mode else "default"
         self.query_one("#prompt", Input).placeholder = self._placeholder(mode)
+        # Who Chat talks to (and with what model) and which repository
+        # everything runs against, always in view.
+        self.query_one("#context", Static).update(
+            f"{context_label(self.session)}   │   repo: {repo_label(self.session.root)}"
+        )
 
     def _placeholder(self, mode: str) -> str:
         if mode == "chat":
@@ -132,9 +296,11 @@ class WhylineConsoleApp(App):
             Button("Command", id="mode-command"),
             Button("Chat", id="mode-chat"),
             Button("Relay", id="mode-relay"),
+            Static("", id="context"),
             id="modes",
         )
         yield RichLog(id="transcript", wrap=True)
+        yield Static("", id="thinking")
         yield Horizontal(
             Input(id="prompt"),
             Button("Send", id="send", variant="success"),
@@ -142,6 +308,7 @@ class WhylineConsoleApp(App):
         )
         yield Horizontal(
             Button("Model", id="model"),
+            Button("Brainstorm", id="brainstorm"),
             Button("History", id="history"),
             Button("Stop", id="stop", disabled=True),
             Button("Help", id="help"),
@@ -168,7 +335,7 @@ class WhylineConsoleApp(App):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
         elif button_id == "copy":
             self._copy_transcript()
-        elif button_id in ("model", "history", "help"):
+        elif button_id in ("model", "history", "help", "brainstorm"):
             self._handle_slash(f"/{button_id}")
 
     def on_input_submitted(self, event: "Input.Submitted") -> None:
@@ -208,8 +375,29 @@ class WhylineConsoleApp(App):
             worker.cancel()
         self._set_busy(False)
 
-    def _set_busy(self, busy: bool) -> None:
+    def _set_busy(self, busy: bool, label: str | None = None) -> None:
+        """Enables Stop and shows the thinking line ("⠋ claude is thinking…
+        12s") while a reply is pending, so a slow agent doesn't look like a
+        frozen console."""
         self.query_one("#stop", Button).disabled = not busy
+        thinking = self.query_one("#thinking", Static)
+        if busy:
+            self._busy_text = label or busy_label(self.session)
+            self._busy_since = time.monotonic()
+            thinking.display = True
+            self._tick()
+        else:
+            self._busy_text = ""
+            thinking.display = False
+
+    def _tick(self) -> None:
+        if not self._busy_text:
+            return
+        self._spin = (self._spin + 1) % len(_SPINNER)
+        elapsed = int(time.monotonic() - self._busy_since)
+        self.query_one("#thinking", Static).update(
+            f"{_SPINNER[self._spin]} {self._busy_text}… {elapsed}s"
+        )
 
     def _send(self) -> None:
         prompt = self.query_one("#prompt", Input)
@@ -238,9 +426,65 @@ class WhylineConsoleApp(App):
         if event.kind == "needs_login":
             self._login(event.text)
             return True
+        if event.kind == "confirm_repo":
+            target = Path(event.text)
+            self.push_screen(
+                ConfirmScreen(repo_switch_warning(target), f"Switch to {target.name}"),
+                lambda confirmed: self._switch_repo(target, confirmed),
+            )
+            return True
+        if event.kind == "needs_brainstorm":
+            from whyline import account
+
+            self.push_screen(
+                BrainstormScreen(account.agent_status(self.session.root),
+                                 self.session.agent or "claude"),
+                self._start_brainstorm,
+            )
+            return True
         self.render_event(event)
         self._sync_mode_indicator()
         return True
+
+    def _switch_repo(self, target: Path, confirmed: bool) -> None:
+        if not confirmed:
+            self.render_event(SessionEvent(kind="output", text="Staying put."))
+            return
+        self._stop()  # a reply still pending belongs to the old repository
+        result = switch_repo(self.session, target)
+        self.query_one("#transcript", RichLog).clear()
+        self.render_event(result)
+        self._sync_mode_indicator()
+
+    def _start_brainstorm(self, choice: "dict | None") -> None:
+        if choice is None:
+            return
+        names = ", ".join(choice["agents"])
+        self.render_event(SessionEvent(
+            kind="output",
+            text=f"Brainstorming \"{choice['topic']}\" with {names} -- several full "
+                 "agent turns, so this takes a while.",
+        ))
+        token = object()
+        self._dispatch_token = token
+        self._set_busy(True, "brainstorming")
+        self.run_worker(lambda: self._brainstorm_in_thread(choice, token), thread=True)
+
+    def _brainstorm_in_thread(self, choice: dict, token: object) -> None:
+        def progress(line: str) -> None:
+            self.call_from_thread(self._brainstorm_progress, line, token)
+
+        try:
+            result = adapters.run_brainstorm(self.session.root, progress=progress, **choice)
+        except Exception as error:  # an agent failure mid-run must not end the console
+            result = SessionEvent(kind="error", text=f"Brainstorm stopped: {error}")
+        self.call_from_thread(self._finish_dispatch, result, token)
+
+    def _brainstorm_progress(self, line: str, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self.render_event(SessionEvent(kind="output", text=f"· {line}"))
+        self._busy_text = f"brainstorming: {line}"
 
     def _login(self, agent: str) -> None:
         """Steps the full-screen app aside so the agent's own login can use
