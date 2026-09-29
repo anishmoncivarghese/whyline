@@ -3078,3 +3078,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
 
 <!-- whyline-event: 7a8d2192449a4f8d8ec94d6abfb7386f -->
+
+## 2026-09-29 — Revise Codex's Whyline brainstorm after combined review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** brainstorm-whyline-review-1
+
+**Because:** Independent convergence elevates durable provenance, decision lifecycle, stale operational state, rename-aware relevance, ledger hygiene, and diff-wide explain; the other passes also sharpened the ledger scale and missing hook-coverage findings
+
+**Rejected:**
+
+- Keep the independent pass unchanged — it would omit stronger evidence and corrections from the combined review
+- Add a separate metadata file and review command now — extending the existing entry metadata and note schema avoids premature parallel concepts
+
+**Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
+
+<!-- whyline-event: 07475e9ddf6644a08bd8e2f85ede6a9f -->

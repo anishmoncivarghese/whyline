@@ -168,136 +168,182 @@ rather than a parallel command family. Worth revisiting after supersede/retract
 
 ## Codex
 
-# Independent findings: further updates that can help Whyline
+### Review pass 1: revised findings
 
-Whyline already has the right core shape: a committed human-readable decision log, a local event ledger, explicit handoffs, advisory ownership, and honest confidence levels. The most valuable next work is not another front end. It is strengthening the link between a decision, the code it explains, and the period in which it is valid.
+The strongest result from the combined review is convergence. Claude and
+Antigravity independently identified the same load-bearing gaps as my first
+pass: commit-bound provenance, decision lifecycle, stale operational state,
+rename-aware relevance, searchable history, hook diagnostics, and diff-wide
+explanation. That agreement changes the recommendation from a broad feature
+list into a narrower hardening program. Antigravity also corrected my scale
+focus: the growing `ledger.jsonl`, not the relatively small committed decision
+log, is the file most likely to threaten the cold-start budget.
 
-## 1. Make decision-to-commit attribution explicit and durable
+### 1. Make provenance durable and exact
 
-This is the highest-leverage update. `whyline note` records time, files, actor, role, and task, but not a commit. `resolve.explain` therefore infers attribution by placing note timestamps inside Git commit windows. That can be ambiguous when several decisions occur between commits, and a fresh clone loses the ledger's precise timestamp because `decisions.md` parses only the date from its heading. The tests correctly prevent that degraded record from claiming high confidence, but the underlying limitation remains.
+This remains the highest-leverage update. `explain` currently infers a
+decision's relationship to a blamed commit through timestamp windows. The
+committed Markdown heading keeps only day precision, so a fresh clone without
+the gitignored ledger cannot recover the exact timestamp and is structurally
+unable to reach high confidence through that path.
 
-Add an optional immutable Git binding to a decision:
+Add an optional immutable commit binding and a lossless committed record:
 
-- `whyline note ... --commit <sha>` for decisions recorded after a commit;
-- `whyline note ... --pending-commit` followed by `whyline attach <decision-id> --commit HEAD` for the common pre-commit workflow;
-- optionally let `handoff` attach all still-pending decisions for its task to `--current` after explicit confirmation.
+- `whyline note ... --commit <sha>` for a known commit;
+- a pending state plus an explicit attach operation for decisions made before
+  the code is committed;
+- exact timestamp, event ID, files, task, lifecycle links, and commit binding
+  in a versioned metadata payload inside the existing decision-entry HTML
+  comment;
+- backward-compatible parsing of today's display-oriented entries.
 
-`explain` should prefer an exact commit binding, fall back to the existing time-window heuristic, and say which mechanism produced its confidence. Do not silently bind every note to `HEAD`: decisions are commonly recorded while the relevant changes are still uncommitted, so that would create confident false provenance.
+Claude's suggestion to extend the existing comment is better than my earlier
+allowance for a separate structured companion file: one atomic entry avoids a
+second source of truth. I still reject Antigravity's proposed automatic binding
+to `HEAD` merely because the tree is clean. Cleanliness does not prove that the
+decision describes `HEAD`, and a false exact link is worse than honest
+heuristic confidence. `explain` should state whether confidence came from an
+exact binding or the timestamp fallback.
 
-The committed Markdown format also needs a lossless, versioned machine representation. It currently preserves only the event ID in an HTML comment; the parser reconstructs the rest from display text, truncates timestamp precision to a day, and splits files on commas. Keep the readable entry, but add a safely encoded/versioned metadata comment (or a committed structured companion file) containing the exact timestamp, decision ID, files, task, and commit binding. Older entries should continue to parse through the current fallback.
+Acceptance bar: after a fresh clone with no local ledger, an exactly bound
+decision still resolves at high confidence; a pending or ambiguous one does
+not.
 
-Acceptance bar: after cloning with no local ledger, an exactly commit-bound decision can still produce high confidence; ambiguous or pending notes cannot.
+### 2. Give decisions append-only lifecycle semantics and a query surface
 
-## 2. Add lifecycle semantics for decisions
+All three passes agree that old and current choices cannot remain peers
+forever. Preserve the audit trail with explicit `supersede` and `retract`
+events: superseding means a replacement now governs, while retracting means
+the old decision was invalid without implying a replacement. `brief` and
+`sync` should default to current decisions, whereas `explain` must retain an
+old decision when it explains historical code and show the later lifecycle
+chain.
 
-The decision log is append-only, but decisions themselves are not eternal. Today a superseded architecture choice and its replacement are both ranked as current history, with no relationship between them. That makes accumulated context less trustworthy over time.
+The lifecycle work should land with a first-class `whyline decisions` family:
 
-Add explicit append-only lifecycle events rather than editing history in place:
-
-- `whyline supersede <decision-id> --with <decision-id> --because ...`;
-- `whyline retract <decision-id> --because ...` for a decision later found invalid;
-- `whyline decisions show <id>` should display the chain;
-- `brief`, `sync`, and `explain` should default to current decisions, while clearly disclosing relevant superseded decisions when they explain older blamed commits.
-
-This preserves auditability while answering two different questions correctly: “what rule applies now?” and “why did this old line exist then?”
-
-## 3. Expire or close checkout-local operational state
-
-Ownership claims and the active handoff persist until someone explicitly replaces or releases them. `claimed_at` is recorded but never interpreted, and there is no handoff close/clear command. In a long-running checkout, abandoned claims become permanent warnings and an old handoff continues to look active.
-
-Introduce leases and terminal states:
-
-- a configurable claim TTL, with `whyline claim --ttl`, `renew`, and `release --all-for-task`;
-- stale claims shown separately and excluded from active conflicts by default;
-- `whyline handoff close <task> --status completed|cancelled` and `handoff clear`;
-- optionally release that task's claims when a handoff is closed;
-- `status` and `sync` should warn when the handoff's recorded `current_commit` differs from `HEAD`, or when its file/dirty snapshot no longer matches the checkout.
-
-Never delete stale state silently. Mark it stale, make cleanup explicit or policy-driven, and retain the original timestamp for diagnosis.
-
-## 4. Add privacy and retention controls for the local ledger
-
-The hook stores every `UserPromptSubmit` body verbatim in `ledger.jsonl`. The file is gitignored and timeline JSON redacts prompts by default, which prevents accidental publication, but secrets and sensitive problem statements can still live indefinitely on disk.
-
-Add repository-local capture policy with safe defaults:
-
-- `prompt_capture = "metadata" | "redacted" | "full"`, preferably defaulting to metadata for new repositories;
-- optional redaction patterns for known secret formats;
-- `whyline ledger prune --older-than 30d` and `whyline ledger compact`;
-- `status` should report capture mode, ledger size, oldest event, and retention policy;
-- `init` should state plainly what will be captured before installing hooks.
-
-Decision text remains committed by design, so this policy should apply only to mechanical local events and raw prompts, not quietly rewrite `decisions.md`.
-
-## 5. Make history retrieval a first-class command
-
-`brief` is optimized for agent injection, `timeline` reads only the local ledger, and `explain` starts from one path or line. There is no direct way to search committed decisions by text, actor, role, task, status, or ID—especially on a fresh clone.
-
-Add a `whyline decisions` family over the merged history model:
-
-- `list --task --file --actor --role --since --status`;
-- `search <text>` across decision, rationale, and rejected alternatives;
-- `show <id> --json`;
+- `list` with task, file, actor, role, status, and date filters;
+- `search` across decision, rationale, and rejected alternatives;
+- `show <id>` displaying commit bindings and supersede/retract chains;
 - stable JSON output for integrations.
 
-This can remain a linear scan initially. The README's own 50,000-event measurement does not justify introducing SQLite yet. Add an index only after a measured threshold is crossed.
+I prefer this grouping over `whyline log`, because `log` is easy to confuse
+with the mechanical timeline. A linear scan is enough initially; none of the
+evidence justifies SQLite or another index yet.
 
-## 6. Follow file renames in decision relevance, not only Git windows
+### 3. Close stale ownership and handoff state
 
-`gitq.commits_touching` already uses `git log --follow`, so commit-window calculation survives a rename. But note selection still uses exact path equality in `resolve._mentions` and exact file intersection in `brief.select_entries`. A decision recorded for `src/old.py` is therefore invisible when asking about `src/new.py`, even if Git knows they are the same history.
+This is a present defect, not future polish. The sync run for this review still
+reports an approved FC-3 handoff as active even though the checkout has moved
+past its recorded commit, plus an overlapping ownership warning among old
+claims. Antigravity was right to treat the handoff and ownership files as two
+instances of the same lifecycle problem.
 
-Build a rename-aware alias set for a requested path from Git history, then use it consistently in `explain`, `brief`, and `sync`. Report the matched historical path so the user can see why the decision was included. Keep this conservative: only follow Git-detected renames, not similarity guesses invented by Whyline.
+Add claim leases (`--ttl`, `renew`, `release --stale`, and task-wide release),
+handoff terminal states (`close --status completed|cancelled`), and explicit
+archival/clearing. Stale records should remain inspectable but be excluded from
+active conflict warnings and default sync context. Closing a handoff may offer
+to release its task's claims, but automatic deletion would hide useful
+diagnostic history.
 
-## 7. Create a durable review outcome surface
+Antigravity also found that omitted handoff bases can collapse to
+`base == current`. That should become an explicit unknown or use the previous
+handoff/current task boundary when reliable. Blindly choosing
+`merge-base HEAD origin/main` is unsafe in repositories without that upstream
+convention.
 
-The repository documents a measured gap: implementers record decisions, while reviewer rulings often disappear into an uncommitted tracker. Wording in `AGENTS.md` was improved, but the cause and effect remain unmeasured.
+### 4. Fix ledger privacy and scale together
 
-Add a compact review record rather than hoping every verdict is translated into a generic note:
+My first pass covered retention primarily as a privacy issue. Antigravity's
+code-grounded finding is sharper: `history.load()` can deserialize the entire
+mixed mechanical ledger merely to recover note events, so high-volume prompts
+and file touches eventually tax nearly every command. Meanwhile raw prompt
+bodies may persist indefinitely even though timeline output redacts them.
 
-```text
-whyline review WL-42 --actor claude --verdict approved \
-  --commit <sha> --test "pytest -q: passed" \
-  --finding "accepted bounded retry risk: upstream call is idempotent"
-```
+Treat these as one storage-policy track:
 
-The durable entry should capture verdict, reviewed commit/range, findings that changed the result, accepted risks, and tests. It should not become a dump of every nit. `sync` can then distinguish implementation decisions from review evidence, and the next measurement can directly answer whether review capture improved.
+- default new repositories to `prompt_capture = metadata`, with explicit
+  `redacted` and `full` modes;
+- report capture mode, oldest event, size, and retention policy in status;
+- add prune/compact or rotation operations for old mechanical events;
+- keep committed decision text outside this policy;
+- benchmark a reverse-scan, lightweight note stream, or offset cache before
+  choosing an index architecture.
 
-## 8. Add diff-wide explanation for review and migration work
+The last point matters: the problem is measured full-file work, not proof that
+a database is required. Preserve the standard-library and cold-start goals.
 
-Single-line `explain` is useful interactively but expensive during a review. Add:
+### 5. Make relevance rename-aware
 
-- `whyline explain --diff <base>..<head>`;
-- `whyline explain --staged`;
-- grouping by decision ID so one decision is not repeated for every changed line;
-- a coverage summary: exact, heuristic, mechanical-only, and unexplained changed lines/files.
+Git commit-window lookup follows renames, but note selection still compares
+literal paths. Build a conservative historical alias set from Git's detected
+rename history and use it consistently in `explain`, `brief`, and `sync`.
+Output should name the historical path that matched so relevance remains
+auditable. Do not invent aliases from Whyline-side similarity guesses.
 
-This turns Whyline from a lookup tool into a review aid and gives the project a measurable provenance-coverage signal. The output must preserve the current honesty rules: uncommitted lines and unmatched paths stay unexplained rather than inheriting a nearby file-level decision.
+### 6. Add diff-wide explanation as the review-facing workflow
 
-## 9. Turn `status` into an actionable doctor without conflating configuration and observation
+All three passes converge here. Add `whyline explain --diff <base>..<head>`
+and `--staged`, group results by decision ID, and summarize exact, heuristic,
+mechanical-only, and unexplained coverage. Modified and deleted lines should
+surface their prior rationale; unmatched or uncommitted lines must stay
+unexplained instead of borrowing a nearby file-level decision. Once exact
+bindings and rename aliases exist, this becomes a meaningful review tool and a
+measurable provenance-coverage signal rather than merely a loop over lines.
 
-`status` already does unusually careful hook inspection and distinguishes “configured” from “observed.” Extend that foundation with a `whyline doctor` command that checks:
+### 7. Extend decision records for review evidence before adding a new command
 
-- writable ledger and decision paths;
-- parseability/conflict markers in `decisions.md`;
-- instruction block freshness;
-- exact hook command availability and last observation by agent;
-- stale handoff/ownership state;
-- configured agent binaries/models;
-- oversized ledger and privacy policy.
+I still think durable review outcomes matter, but Claude's pushback on a
+standalone `whyline review` command is persuasive. A review is already a
+reviewer-authored decision; the missing structure is verdict, reviewed
+commit/range, tests, accepted risks, and material findings. Add those as
+optional fields in the same versioned note schema first, and teach
+`decisions list/show` to filter and render them. Introduce a dedicated command
+only if usage shows that a shorthand improves capture. Do not record every nit.
 
-For hooks, keep configuration, executable availability, and actual vendor observation as three separate facts. A synthetic `whyline hook test` can validate the entrypoint and write path, but it must not claim that Codex or Claude actually invoked the hook; only a real observed vendor event proves that.
+### 8. Complete hook coverage, then consolidate diagnostics
 
-## Recommended sequence
+Antigravity found an ecosystem gap absent from my first pass: it is available
+as a runner but lacks the mechanical hook installation and status path used by
+the other supported agents. Confirm the actual Antigravity hook contract, then
+add installation, payload translation, observation reporting, and tests rather
+than assuming that launch support implies capture support.
 
-1. Introduce the versioned, lossless decision metadata and exact commit binding, with backward-compatible parsing.
-2. Add decision lifecycle events and the query/show commands needed to manage them.
-3. Add stale-state detection, handoff close, and ownership leases.
-4. Add prompt-capture policy and ledger retention controls before the local log grows further.
-5. Add rename-aware relevance and diff-wide explain on top of the stronger provenance model.
-6. Add durable review outcomes and measure whether reviewer capture improves.
-7. Consolidate all diagnostics under `doctor` after the new policies exist.
+A synthetic hook check remains useful, but its claim must be precise. It can
+prove configuration parses, the executable resolves, payload translation
+works, and the ledger is writable. It cannot prove that a vendor invoked the
+hook; only a real observed event can. Fold this into an actionable
+`whyline doctor` covering decision parseability, writable paths, instruction
+freshness, stale operational state, agent configuration, ledger policy/size,
+and three distinct hook facts: configured, executable, and observed.
 
-The unifying principle is: preserve Whyline's human-readable, local-first design, but make every confidence claim reproducible from durable identifiers rather than timing and convention alone.
+### 9. Lower-priority additions and cautions
+
+- Gemini support is a reasonable same-shape runner/account addition from
+  Claude's pass, but it should not outrank correctness for already-supported
+  agents.
+- Directory or glob ownership claims would require prefix-aware conflict
+  checks; exact string overlap is sufficient only while claims remain exact
+  files.
+- The colon-delimited `--rejected "option: reason"` interface is ambiguous
+  when the option itself contains a colon. Structured repeatable option/reason
+  arguments are safer than increasingly clever parsing.
+- Never silently infer that an approved handoff, clean tree, configured hook,
+  or similarly suggestive state proves more than it actually does. Whyline's
+  honest-confidence rule should govern operational UX as well as `explain`.
+
+### Recommended sequence
+
+1. Versioned decision metadata, exact commit binding, and compatible parsing.
+2. Supersede/retract plus `decisions list/search/show`.
+3. Ownership leases and handoff close/archive behavior.
+4. Prompt-capture policy and measured ledger fast paths/retention.
+5. Rename-aware relevance and diff-wide explanation.
+6. Structured review fields and measurement of reviewer capture.
+7. Missing agent hook support and consolidated `doctor` diagnostics.
+
+The unifying principle remains local, human-readable, and honest: durable IDs
+and explicit lifecycle should support every strong claim, while inference stays
+visible as inference.
 
 ## Antigravity
 
