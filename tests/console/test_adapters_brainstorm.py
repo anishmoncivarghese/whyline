@@ -46,7 +46,8 @@ def test_run_brainstorm_runs_every_stage_in_order(tmp_path, monkeypatch):
     ]
     assert event.kind == "output"
     assert "the synthesis" in event.text
-    assert "Saved to docs/brainstorm/retry-policy.md" in event.text
+    # the path is shown in the platform's own form (backslashes on Windows)
+    assert f"Saved to {Path('docs/brainstorm/retry-policy.md')}" in event.text
     assert any("Review pass 2 of 2" in line for line in progress)
 
 
