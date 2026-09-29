@@ -2,211 +2,168 @@
 
 ## Codex
 
-# What else can be updated in Whyline — independent Codex pass
+# Revised Codex view after the combined review
 
-## Executive view
+## Bottom line
 
-Whyline has moved beyond a decision-log CLI. At v0.3.18 it is also a multi-agent launcher, account/model selector, chat console, brainstorm surface, and front end for Whyline Relay. The local baseline is healthy (`498 passed, 1 skipped`), but this fast expansion has created three kinds of product debt:
+The other passes changed my priorities. My independent pass leaned too far toward expanding the agent surface and too readily treated current vendor features as a reason to add more adapters. The combined evidence points somewhere more useful: Whyline should first make its existing handoff packet relevant, make its console cancellation real, survive restricted environments, and ensure its public claims match its code.
 
-1. Agent support is duplicated and hard-coded, so every new CLI will become increasingly expensive to add correctly.
-2. Several high-value capabilities are now present in vendor CLIs but Whyline exposes only a model string and a final text response.
-3. The core differentiator—the durable decision record—still has no first-class lifecycle for superseding, validating, or retiring old decisions.
+The next milestone should be **trustworthy context transfer**, not “support every agent.” A small internal agent registry and one explicit decision-supersession link are worthwhile foundations, but user-loaded plugins, model catalogs, MCP, automatic quota parsing, AST attribution, and worktree management should wait for evidence that the simpler mechanisms are insufficient.
 
-My recommendation is to make the next milestone “open agent registry + trustworthy decision lifecycle,” not another isolated adapter. Gemini should be the first adapter built through that registry because the repository's current statement that Gemini CLI is dead is no longer true.
+## What the combined review establishes
 
-## Repository findings
+Several findings are independently visible in the current tree or in this review session:
 
-- The four agents are repeated across `runner.py`, `account.py`, `cli.py`, `console/repl.py`, `console/tui.py`, and `console/adapters.py`. Adding one agent requires coordinated edits to launch commands, model flags, login commands, status labels, brainstorm choices, defaults, and tests.
-- `whyline model set` accepts arbitrary strings. This is future-proof but offers no discovery, capability check, typo warning, provider selection, reasoning-effort setting, or distinction between interactive and unattended-safe models.
-- `whyline account detect` writes `~/.whyline/account.json`. In a sandbox that can read the repository but cannot write the home directory, detection can succeed and still be discarded; callers then see no available agents. The transcript that prompted this brainstorm demonstrates the failure directly.
-- `console/adapters.py` imports Whyline Relay internals and, for `start`/`resume`, redirects CLI output and classifies it with regular expressions such as `^Paused:` and `^Plan complete`. This is a version-coupling point despite the broad dependency range `whyline-relay>=0.2.1,<0.3`.
-- The console stores a prompt history file, but its structured transcript is only in memory. The TUI shows a spinner and receives a final response; it does not consume the structured streaming output now offered by most agent CLIs.
-- The decision log is append-only and readable, which is a good invariant, but its schema has no `supersedes`, `verified_at`, `status`, or stable subject anchor beyond file paths. A newer decision can contradict an older one and both remain equally eligible for `brief` and `explain`.
-- Mechanical capture is implemented only for Claude and Codex. New launch adapters would otherwise appear fully supported while contributing no hook events.
-- Raw prompt text is retained indefinitely in the gitignored ledger. Local-only is safer than hosted telemetry, but users still need retention, redaction, and deletion controls.
-- Documentation can become stale independently of code. The README still excludes Gemini on a premise contradicted by current official documentation, while CI and packaging comments also retain assumptions from the older optional-extra layout.
+- `whyline sync` emitted 25 ownership claims before decisions, then omitted one of only three task-relevant decisions under its 1,200-token budget.
+- The active FC-3 handoff recorded commit `eadabbc`, while the current checkout is at `0c0f26f`; the packet prints both values without interpreting the divergence.
+- `handoff.create` replaces the active handoff but does not release the originating ownership claim, so completed task-only claims accumulate indefinitely.
+- `account.save_global` writes directly to `~/.whyline/account.json`; a successful probe can become unusable when that location is unwritable.
+- TUI Stop invalidates a result token and cancels a Textual worker, but its own code states that the underlying blocking operation continues.
+- Agent facts are duplicated across runner, account, REPL/TUI, and brainstorm code.
+- The README says Whyline does not orchestrate and never reads a vendor token, while the package now exposes Relay orchestration and Codex plan detection decodes the local ID-token payload.
 
-## Highest-priority updates
+These are not speculative feature requests. They are product-contract failures a user can encounter today.
 
-### 1. Replace hard-coded agent maps with a capability registry
+## Priority 0: make current behavior dependable
 
-Create one `AgentSpec`/adapter contract as the source of truth. Suggested fields:
+### 1. Make `sync` spend its budget on the next decision
 
-- stable key and display label
-- executable and interactive prompt placement
-- model, effort, working-directory, attachment, and resume arguments
-- install, login, login-status, version, and model-list probes
-- headless command builder and supported output formats
-- permission/sandbox policy and whether unattended writes are safe
-- instruction files read (`AGENTS.md`, `CLAUDE.md`, and vendor-specific files)
-- hook support and mechanical-capture confidence
-- availability meaning: installed, authenticated, subscribed, or manually enabled
-- supported modes: `run`, console chat, brainstorm, relay role
+Relevant decisions are the scarce, durable information; old advisory claims are not. Change packet composition so it:
 
-All CLI choices, `/model`, `/login`, brainstorm UI, account detection, and documentation tables should derive from this registry. A capability must be allowed to be “unknown”; Whyline's strongest design habit is refusing to over-claim.
+1. reserves space for the handoff, Git state, and the highest-ranked decisions;
+2. shows ownership claims matching the active task, explicitly requested files, or dirty paths;
+3. summarizes unrelated claims as a count instead of listing them;
+4. preserves overlap warnings when the overlap touches the active scope;
+5. says when the recorded handoff commit differs from HEAD, ideally with ahead/behind counts.
 
-Keep built-ins in the package initially. Add user-defined adapters only after the contract is stable, with a declarative config for ordinary argv shapes and a Python entry point only for complex probes/parsers. Never let a third-party adapter silently inherit unattended-write permission.
+On handoff completion or transfer, release the handing-off actor’s matching task claim. Keep explicit `ownership release` for exceptional cases, and add a `status` warning for old unrelated claims rather than inventing a lock service or automatic time-based expiry.
 
-### 2. Add Gemini CLI first, then Cursor and Copilot
+Acceptance criterion: this repository’s current packet includes all three FC-3 decisions within the default budget and does not enumerate finished unrelated task-only claims.
 
-The current README assertion that Gemini CLI is dead should be removed. Google's current CLI supports:
+### 2. Make account detection useful when global state is unwritable
 
-- interactive `gemini`
-- headless `-p`/`--prompt`
-- JSON and streaming JSON output
-- `--model` and an `auto` model route
-- Google-account authentication, including free individual accounts and paid Google AI subscriptions
+Detection and persistence should have separate outcomes. `account detect` should still return and display fresh results if saving globally fails. Add an explicit repo-scoped mode and report where, if anywhere, the result was cached.
 
-Official references: [Gemini authentication](https://geminicli.com/docs/get-started/authentication/), [headless mode](https://geminicli.com/docs/cli/headless/), [model selection](https://geminicli.com/docs/cli/model/), and [plans](https://geminicli.com/plans/).
+A conservative resolution order is:
 
-Recommended adapter order:
+1. explicit `WHYLINE_HOME` or platform state directory;
+2. the existing global Whyline directory;
+3. repo-local confirmation when the user requested it;
+4. in-memory results for the current command.
 
-| Candidate | Why it fits | Main validation needed |
-|---|---|---|
-| Gemini CLI | Official CLI, subscription/free-account login, model flag, structured headless output | Permission behavior, login-status probe, hook/instruction behavior, quota failure signatures |
-| Cursor Agent | Interactive and headless modes, `--model`, JSON streams, browser login/status, resume, and `AGENTS.md` support | Whether subscription login is valid for all headless use and safe unattended permission defaults |
-| GitHub Copilot CLI | Available across Copilot plans, interactive and `-p` modes, `--model`, JSONL, attachments, and `AGENTS.md` support | Organization policy restrictions, tool approval policy, credit-limit reporting |
-| Kiro CLI | Interactive/headless modes, model listing, resume, effort levels, structured streams | Headless mode currently requires an API key, which conflicts with Whyline's “subscriptions already paid for” positioning |
+Do not silently treat a write failure as “no agents available.” Do not scrape new vendors’ private auth files as the general solution; prefer documented status commands, and describe the existing Codex ID-token claim read honestly if it remains.
 
-Official references: [Cursor CLI parameters](https://docs.cursor.com/en/cli/reference/parameters), [Cursor authentication](https://docs.cursor.com/en/cli/reference/authentication), [Copilot CLI quickstart](https://docs.github.com/en/copilot/get-started/cli-quickstart), [Copilot programmatic reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference), and [Kiro CLI commands](https://kiro.dev/docs/cli/reference/cli-commands/).
+### 3. Make Stop terminate work, not only hide its result
 
-Aider, OpenCode, and direct Ollama/provider wrappers should remain generic/community adapters at first. They can be useful, but they change Whyline's credential and billing story because they are not simply handing control to the user's official subscription CLI. Local models are better introduced through a vendor-supported route first—for example, Codex's current `--oss` with Ollama or LM Studio—using a launch profile rather than pretending the provider is just another model string.
+A Stop button must stop the process consuming time and quota. Supervised console and Relay operations should run in a child process group with a cancellation handle. Stop should send a graceful termination, wait briefly, then escalate if necessary. It should preserve any already-written Relay state and still discard late UI events.
 
-### 3. Upgrade model selection into launch profiles
+This does not require changing `whyline run`: its exec-and-get-out-of-the-way contract remains valuable. The supervision boundary belongs only to the console/brainstorm/Relay paths that already promise a Stop control.
 
-The user-visible object is no longer only a model. It is a launch profile:
+### 4. Correct documentation against executable behavior
 
-```text
-agent + model + provider + effort + permission mode + context/attachment support
-```
+Reconcile the README and console design documents with the shipped product:
 
-Add commands such as:
+- distinguish the non-orchestrating decision-record core from the opt-in Relay surface that does orchestrate and assign roles;
+- replace “never reads a vendor token” with the exact Codex behavior, or replace that behavior with a documented CLI status probe;
+- report Codex hook capture from observed status rather than carrying a stale blanket claim;
+- keep Windows labelled unverified until a real Windows run passes;
+- reconcile the permanent plain-menu fallback, deferred attachments, and TUI copy behavior across the console specs;
+- remove or revalidate claims about vendor products instead of encoding market conclusions in `runner.py` comments.
 
-- `whyline model list <agent>`: query the installed CLI when it exposes a model list; show “not discoverable” otherwise.
-- `whyline profile set deep --agent codex --model ... --effort high`
-- `whyline profile set local --agent codex --provider ollama --model ...`
-- `/profile deep` in the console.
+Documentation consistency deserves a release check because Whyline’s central promise is honest provenance.
 
-Validation should be advisory unless the vendor offers a reliable discovery command. Distinguish “verified available,” “vendor accepts arbitrary ID,” and “unverified string.” Cache discovery with the CLI version and a refresh command so new models are not blocked by Whyline releases.
+## Priority 1: improve the read and record loop
 
-Do not add opaque automatic routing first. Start with named profiles and explicit rules such as “brainstorm uses `fast`; final synthesis uses `deep`.” If automatic recommendations are later added, print the reason and require confirmation for any transition into unattended execution.
+### 5. Inject context where a documented session hook permits it
 
-### 4. Make account detection work in restricted environments
+The 43% Claude read-side result shows that an instruction to run `sync` is not enough. The most direct experiment is to have Claude’s project `SessionStart` hook return the existing nonce-fenced sync packet on startup, resume, and compaction, while retaining the ledger event and the “never fail the session” contract.
 
-Add a standard state-directory resolution order, for example:
+This should be a bounded, measured change:
 
-1. `WHYLINE_HOME`
-2. XDG/platform application-state directory
-3. `~/.whyline`
+- verify the exact installed Claude hook contract before implementation;
+- inject only on session-boundary events, not every prompt or tool call;
+- record latency and token cost;
+- compare read/use behavior before and after;
+- make no equivalent claim for Codex or another agent until its own hook contract is verified.
 
-If the chosen global location is unwritable, keep the fresh result in memory for the current command and optionally save a repo-local confirmation; do not convert a successful probe into “no agents available.” The status surface should separate `probe`, `cache`, and `repo confirmation` so users can see exactly which step failed.
+MCP is not the default answer. Registering tools does not prove agents will call them, and it creates another installation and compatibility surface. Reconsider it only after an A/B test against session injection or for a vendor with no usable session-context hook.
 
-Also prefer vendor-supported status commands over reading private auth formats. The current Codex plan detection decodes an undocumented JWT from `~/.codex/auth.json`, even though current Codex exposes `codex login status`. The CLI may not reveal the plan tier, so use it for authentication truth and treat tier as optional enrichment rather than making availability depend on a private claim.
+### 6. Let reviewers target the repository they reviewed
 
-### 5. Give decisions an explicit lifecycle
+Add `--repo <path>` to `note` and `handoff`. A reviewer operating from another checkout otherwise writes to the wrong repository or records nothing because that project’s instructions are absent.
 
-Preserve the append-only Markdown artifact, but add links between records:
+This is small and directly testable: review a target checkout while the process CWD is elsewhere, then assert that only the target’s `.whyline/decisions.md` and handoff state changed.
 
-- `whyline note ... --supersedes <event-id>`
-- `whyline verify <event-id> --file ...`
-- statuses such as active, superseded, invalidated, and needs-review
-- an optional stable subject anchor: symbol name plus a content fingerprint, not only a mutable line number or a rebase-sensitive commit SHA
+### 7. Show related notes without overstating attribution
 
-`brief` should show active decisions by default and include a compact “superseded history exists” notice. `explain` should prefer an active verified decision and state when the relevant code changed after verification. A new `whyline audit` could report contradictory active decisions, missing files, decisions attached to code that has materially changed, unresolved merge markers, and records with unreadable metadata.
+For a dirty line, `explain` correctly cannot claim commit-level provenance, but hiding all notes that name the file is too austere. Add a clearly separate “related, not attributed” block showing the count and latest file-level decisions. Use the same treatment when note timestamps cannot establish a blame-window link.
 
-This is more central to Whyline's identity than another console button. It turns a growing archive into maintained institutional memory.
+Confidence must remain `none` or `low`. Do not promote a file-level or symbol-name match to causal attribution.
 
-### 6. Define a stable Whyline–Relay protocol
+### 8. Add minimal decision supersession
 
-Move console integration away from importing private relay modules and parsing rendered text. Whyline Relay should expose a small supported API returning typed events such as:
+Keep `decisions.md` append-only, but allow a new note to carry `supersedes: <event-id>`. `brief` and `explain` should prefer the active note, mention the replaced ID, and retain the old entry for history.
 
-```text
-started, progress, handoff, paused(kind, reason, recovery), completed, failed
-```
+Start with that single relation. A larger status/verification/audit system should follow only if real ledgers show recurring ambiguity that supersession does not solve.
 
-Add protocol-version/capability negotiation and show both package versions in `doctor`. Pin or test against the oldest and newest supported relay versions. This will also make streaming, cancellation, and better TUI rendering possible without depending on phrases in console output.
+## Priority 2: reduce maintenance cost without opening a plugin platform
 
-### 7. Stream progress and make cancellation real
+### 9. Create one internal `AgentSpec`
 
-Claude, Codex, Grok, Gemini, Cursor, Copilot, and Kiro now expose structured or streaming headless forms. Introduce a provider-neutral event stream for console/brainstorm/relay use:
+Consolidate the existing built-ins into one source of truth containing:
 
-- text delta
-- thinking/progress status
-- tool requested/started/finished
-- usage/quota metadata when provided
-- final response
-- typed failure
+- stable ID, label, binary, argv prefix, and model flag;
+- login command and detection method;
+- supported surfaces: run, chat, brainstorm, Relay;
+- hook installer/capture confidence;
+- whether “available” means authenticated or merely present on PATH.
 
-Keep `whyline run` as the existing unsupervised `exec` path; streaming belongs only to surfaces that already supervise a child process. Stop should terminate the process group, wait briefly, escalate if necessary, and preserve resumable relay state. This addresses the current gap where cancelling a UI worker can suppress a late result without necessarily stopping the underlying vendor work.
+Derive CLI choices, status rows, login hints, and brainstorm labels from it. Keep the registry package-internal first. Adding arbitrary TOML/Python adapters would introduce command-execution, credential, permission, and compatibility policy before the built-in contract is stable.
 
-### 8. Treat quota/session limits as routing state
+A new built-in agent should require one record plus adapter-specific tests, but “can invoke a binary” must not be called full support. Authentication truth, cancellation, instruction loading, headless behavior, and unattended permissions must all be explicit.
 
-The initiating transcript shows the actual user problem: one model hits a session limit and the user must manually understand what happened next. Persist a local cooldown record when a CLI reports a reset time, display it in `/model`, and offer a one-turn or session-level fallback. Never infer billing or quota from weak text if structured data is available.
+### 10. Add global model defaults, not a drifting model catalog
 
-Suggested behavior:
+Repo-scoped choices are useful, but `/repo` makes users reselect routine defaults. Add a gitignored global default per agent, overridden by the repo file.
 
-- “Claude unavailable until 16:30; continue with Codex for this turn?”
-- remember the cooldown, not the credential or full response
-- clear it on `/model refresh` or after expiry
-- show why an agent was skipped during brainstorm
-- estimate how many models/passes a brainstorm will invoke before starting
+Keep model strings vendor-owned and unvalidated unless a CLI exposes a reliable machine-readable listing. Do not ship hand-maintained aliases or warnings that will drift. Named launch profiles may become useful later, but only after effort, provider, and permission settings have stable cross-agent meanings.
 
-### 9. Finish attachments as a capability-aware feature
+### 11. Tighten privacy controls around the local ledger
 
-Attachments were intentionally deferred, but current CLIs increasingly support images and file inputs. Add a manifest with path, media type, size, digest, source, and whether it may be copied outside the repository. Map it per adapter instead of embedding paths in prose.
+The ledger stores raw prompts indefinitely. Add a small, explicit privacy surface:
 
-The UI should disable unsupported attachment types for the selected profile, redact secret-like files by default, enforce size/count limits, and record only metadata—not attachment contents—in operational history. Text files/directories can be passed as explicit scoped context; image support should be declared per agent/model.
+- `whyline privacy status` listing each operational file and what it contains;
+- prompt capture modes such as `full`, `redacted`, and `off`;
+- age-based prompt cleanup that preserves committed decisions and structural events;
+- a sanitized diagnostics export that excludes prompt text, credentials, and home paths.
 
-## Additional worthwhile updates
+This is a better near-term investment than persisting full chat transcripts by default.
 
-### Privacy and maintenance
+## Ideas to defer or reject for now
 
-- Add `whyline privacy status` showing exactly which files contain prompts, account metadata, model choices, and decisions.
-- Add configurable prompt capture (`full`, `redacted`, `off`) and retention, plus `whyline gc`/`whyline purge-prompts`.
-- Add a sanitized diagnostics bundle that excludes prompt text, tokens, home paths, and credentials by construction.
-- Add a semantic merge helper for `.whyline/decisions.md`; detecting conflict markers is good, but resolving append-only concurrent entries should be easy and deterministic.
+| Idea | Current judgment |
+|---|---|
+| User-defined agent/plugin registry | Defer until the internal `AgentSpec` survives another built-in and has a security policy. |
+| Gemini/Cursor/Copilot/local-model expansion | Evaluate one at a time only after the registry and acceptance matrix exist; do not let vendor freshness drive the roadmap. |
+| Parsing “session limit” strings and auto-writing handoffs | Reject in core: brittle vendor-output supervision. Surface typed Relay pauses where available. |
+| MCP as the compliance fix | Defer pending measured advantage over session-boundary injection. Never claim near-100% compliance without data. |
+| AST/symbol-level high-confidence `explain` | Reject for attribution: a stable name is not stable behavior. An optional symbol hint may be low/medium-confidence metadata. |
+| Worktree-per-agent automation | Keep outside Whyline until advisory ownership proves insufficient; Git already owns this workflow. |
+| SQLite, BM25, semantic search, MADR export | Defer: current Markdown scale is within budget and is already human-readable/exportable. |
+| Attachments and structured streaming everywhere | Defer until cancellation and a stable supervised-event boundary exist. |
 
-### Portability and UX
+## Recommended sequence
 
-- Generate Bash/Zsh/Fish/PowerShell completions from the argparse command tree.
-- Add end-to-end PTY/TUI smoke tests, especially on Windows. Unit tests on `windows-latest` are valuable but do not verify terminal interaction, mouse behavior, process groups, or vendor CLI launching.
-- Persist structured console transcripts per repository with an explicit privacy toggle; current `/history` is session-memory only even though prompt recall uses a file.
-- Add `whyline context export/import` for a sanitized, user-approved handoff bundle across clones or machines. Keep operational state gitignored by default.
-- Generate the README agent/capability matrix from the registry, and add a release test that fails when documented built-ins differ from registered built-ins.
+1. Rebudget `sync`, filter claims, release completed claims, and explain handoff/HEAD divergence.
+2. Separate account detection from global persistence failure.
+3. Implement real child-process cancellation for supervised surfaces.
+4. Correct README/spec claims and add consistency checks.
+5. Add `note --repo`, `handoff --repo`, and unattributed related notes in `explain`.
+6. Run the bounded Claude SessionStart injection experiment.
+7. Consolidate built-in agent metadata into `AgentSpec`.
+8. Add `supersedes`, global model defaults, and ledger privacy controls.
 
-### Measurement and quality
-
-- Repeat the read-side and reviewer-recording experiments on more than one project/operator. The current 43% automatic read rate is explicitly unreliable evidence for instruction-only handoff.
-- Add property/fuzz tests around Markdown parsing, hostile fence content, malformed hook payloads, paths, and relay event decoding—the data crosses a prompt-injection boundary.
-- Add an opt-in local effectiveness report: handoffs completed, decisions read, decisions superseded, conflicts found, and fallback frequency. Keep it local and source-free to preserve the no-telemetry promise.
-
-## Suggested sequence
-
-1. Correct the Gemini documentation and run a bounded Gemini adapter spike.
-2. Introduce the capability registry and migrate the existing four agents without changing behavior.
-3. Fix state-directory/cache fallback and separate authentication truth from plan-tier enrichment.
-4. Add Gemini through the registry; then evaluate Cursor and Copilot with the same acceptance matrix.
-5. Add decision supersession/verification plus `whyline audit`.
-6. Establish the typed Relay protocol and version diagnostics.
-7. Build streaming/cancellation and quota cooldowns on that protocol.
-8. Add launch profiles, attachments, privacy controls, and sanitized context export.
-
-## Acceptance bar for any new agent
-
-A new agent should not be called “supported” until Whyline has verified:
-
-- interactive launch with an initial prompt
-- model selection behavior and argument ordering
-- login detection without reading or exposing credentials
-- console/headless response parsing and exit codes
-- rate-limit, auth failure, timeout, cancellation, and empty-response behavior
-- instruction-file loading and decision-record compliance
-- safe unattended permissions, or an explicit prohibition on relay roles
-- Windows/macOS/Linux availability claims that match actual tests
-- brainstorm fallback and final-writer behavior
-- documentation generated from the same registered capability data
-
-This bar prevents “can invoke the binary” from being mistaken for end-to-end Whyline support.
+That sequence strengthens Whyline’s core claim—reliable, honest cross-agent context—before expanding the number of agents or the amount of automation it owns.
 
 ## Antigravity
 

@@ -2950,3 +2950,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py
 
 <!-- whyline-event: ce2ef1ca86db4e61a5d2cd6d9ec734db -->
+
+## 2026-09-29 — Reprioritize Whyline roadmap around trustworthy context transfer
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WHYLINE-BRAINSTORM-REVIEW-1
+
+**Because:** The combined review and current sync packet provide direct evidence for decision-budget loss, stale claims, sandbox-fragile persistence, ineffective cancellation, and documentation drift; those defects should be fixed before expanding adapters or orchestration surfaces
+
+**Rejected:**
+
+- Lead with an open plugin registry and new vendor adapters — expands credential, permission, and compatibility policy before current handoffs are dependable
+- Treat MCP and vendor quota parsing as immediate compliance fixes — neither has measured reliability here and both add brittle integration surfaces
+
+**Files:** docs/brainstorm/what-other-updates-can-be-done-in-whyline.md
+
+<!-- whyline-event: fc9d6db5aed4462aa427615823bdd28f -->
