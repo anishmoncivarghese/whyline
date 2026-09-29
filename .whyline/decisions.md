@@ -2862,3 +2862,47 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/cli.py
 
 <!-- whyline-event: 281facaec9f040faab2b04b04048899b -->
+
+## 2026-09-29 — /model shows all four agents with status label, plan, model and a fix hint; unavailable /model <agent> re-runs detection before refusing
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AGENT-DETECT-1
+
+**Because:** detection ran once ever and failures gave no reason, so a newly installed/logged-in agent stayed refused with no explanation
+
+**Rejected:**
+
+- re-detect on every /model call — claude auth status can take seconds and blocks the TUI's main thread
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: f86baf2fc4914aefa17b6a4b0c5ce104 -->
+
+## 2026-09-29 — /login runs the agent's own login command (claude auth login, codex login, grok login) with the TUI suspended; antigravity gets instructions only
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AGENT-DETECT-1
+
+**Because:** whyline must never handle credentials; agy --help shows no login subcommand, it signs in when run
+
+**Rejected:**
+
+- whyline-driven auth flow — would put credentials in whyline's hands
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 2963c586b29140b4ba6b8b0158db970a -->
+
+## 2026-09-29 — antigravity and grok are labelled 'installed (login not checked)', not logged in
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AGENT-DETECT-1
+
+**Because:** neither CLI has a non-interactive login-status check; agy models needs the network and its logged-out behaviour is unverified
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 7dd5d06015924eb1aedc817a290db6ff -->

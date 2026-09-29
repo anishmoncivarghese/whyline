@@ -196,9 +196,9 @@ async def test_model_button_actually_lists_available_agents(tmp_path, monkeypatc
         await pilot.click("#model")
         await pilot.pause()
         transcript = app.query_one("#transcript", tui.RichLog)
-        assert any(
-            "claude" in str(line) and "codex" in str(line) for line in transcript.lines
-        )
+        lines = [str(line) for line in transcript.lines]
+        assert any("claude" in line and "✓" in line for line in lines)
+        assert any("codex" in line and "✓" in line for line in lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -427,3 +427,37 @@ async def test_stop_is_only_enabled_while_a_reply_is_running(tmp_path, monkeypat
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert stop.disabled
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_login_suspends_the_app_runs_the_login_and_reports(tmp_path, monkeypatch):
+    import contextlib
+    import shutil
+    from whyline import account
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    available = set()
+    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(account, "refresh", lambda: available.add("claude") or {})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    suspended = []
+
+    @contextlib.contextmanager
+    def fake_suspend():
+        suspended.append("in")
+        yield
+        suspended.append("out")
+
+    ran = []
+    async with app.run_test() as pilot:
+        monkeypatch.setattr(app, "suspend", fake_suspend)
+        app._login_fn = lambda argv: ran.append((list(suspended), argv)) or 0
+        app.query_one("#prompt", tui.Input).value = "/login claude"
+        await pilot.click("#send")
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    # the login ran while the app was suspended, not before or after
+    assert ran == [(["in"], ["claude", "auth", "login"])]
+    assert suspended == ["in", "out"]
+    assert any("claude is ready" in line for line in lines)

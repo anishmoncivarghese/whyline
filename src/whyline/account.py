@@ -262,3 +262,67 @@ def load_repo(root: Path) -> dict | None:
         return data if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
+
+
+AGENT_ORDER = ("claude", "codex", "antigravity", "grok")
+BINARIES = {"claude": "claude", "codex": "codex", "antigravity": "agy", "grok": "grok"}
+
+# Each agent's own login command, run in the user's terminal so whyline never
+# sees or stores a credential. Antigravity has no separate login subcommand
+# (confirmed via `agy --help`): it signs in when `agy` itself is run.
+LOGIN_COMMANDS = {
+    "claude": ["claude", "auth", "login"],
+    "codex": ["codex", "login"],
+    "grok": ["grok", "login"],
+}
+
+# Only these two have a non-interactive login check (see detect_claude /
+# detect_codex); for the others "available" can honestly mean only
+# "installed".
+_LOGIN_CHECKED = ("claude", "codex")
+
+
+def login_hint(agent: str) -> str:
+    if agent in LOGIN_COMMANDS:
+        return f"Run /login {agent}"
+    return f"Run `{BINARIES[agent]}` in a terminal and sign in there, then /model refresh"
+
+
+def agent_status(root: Path, which=None) -> dict[str, dict]:
+    """Per agent: whether it's available plus a short human `label` and, when
+    it isn't, a `hint` saying how to fix it. Availability comes from
+    available_agents() (so repo confirmation and manual overrides still
+    decide it); the label and hint come from the detection details and a
+    live PATH check, so "not installed" is never stale."""
+    which = which if which is not None else shutil.which
+    available = available_agents(root)
+    global_data = load_global() or {}
+    status = {}
+    for agent in AGENT_ORDER:
+        info = global_data.get(agent) if isinstance(global_data.get(agent), dict) else {}
+        plan = info.get("plan")
+        if agent in available:
+            if plan and plan != "unknown":
+                label = plan
+            elif agent in _LOGIN_CHECKED:
+                # plan None *recorded* means detection saw an API key rather
+                # than a subscription; no record at all claims nothing.
+                label = "API key" if "plan" in info and plan is None else "available"
+            else:
+                label = "installed (login not checked)"
+            status[agent] = {"available": True, "label": label, "hint": None}
+            continue
+        if info.get("manual"):
+            label, hint = "turned off", f"Run: whyline account enable {agent}"
+        elif which(BINARIES[agent]) is None:
+            label = "not installed"
+            hint = f"Install {agent}, then /model refresh"
+        elif info.get("available"):
+            # globally fine, but this repo's confirmed account says no
+            label, hint = "off for this repo", "Run: whyline account (to re-confirm)"
+        elif agent in _LOGIN_CHECKED:
+            label, hint = "not logged in", login_hint(agent)
+        else:
+            label, hint = "not detected yet", "Run /model refresh"
+        status[agent] = {"available": False, "label": label, "hint": hint}
+    return status

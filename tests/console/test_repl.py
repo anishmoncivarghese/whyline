@@ -197,7 +197,7 @@ def test_model_slash_command_sets_model_and_active_agent(tmp_path, monkeypatch):
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
     assert recorded == [("claude", "sonnet-3.7")]
-    assert any("claude model set; now the active chat agent." in line for line in lines)
+    assert any("claude is now the active chat agent" in line for line in lines)
 
 
 def test_model_slash_command_with_no_available_agents_or_unknown_agent(
@@ -205,15 +205,23 @@ def test_model_slash_command_with_no_available_agents_or_unknown_agent(
 ):
     from whyline import account
 
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     monkeypatch.setattr(account, "available_agents", lambda root: set())
     monkeypatch.setattr(
         editor,
         "build_session",
-        lambda root: FakePromptSession(["/model", "/exit"]),
+        lambda root: FakePromptSession(["/model", "/model cluade", "/exit"]),
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
-    assert any("No agents detected as available" in line for line in lines)
+    # every agent is still listed, each with why it's missing
+    table = next(line for line in lines if line.startswith("Agents:"))
+    for agent in ("claude", "codex", "antigravity", "grok"):
+        assert f"{agent}" in table
+    assert table.count("✗ not installed") == 4
+    assert any("Unknown agent 'cluade'" in line for line in lines)
 
     monkeypatch.setattr(account, "available_agents", lambda root: {"codex"})
     monkeypatch.setattr(
@@ -223,7 +231,7 @@ def test_model_slash_command_with_no_available_agents_or_unknown_agent(
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
-    assert any("claude is not available here" in line for line in lines)
+    assert any("claude isn't available: not installed" in line for line in lines)
 
 
 def test_slash_help_and_stop_and_unknown(tmp_path, monkeypatch):
@@ -369,8 +377,10 @@ def test_model_lists_agents_and_marks_the_active_one(tmp_path, monkeypatch):
     monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
     session = ConsoleSession(root=tmp_path, agent="codex")
     event = handle_slash_command(session, "/model")
-    assert "codex (active)" in event.text
-    assert "claude" in event.text and "claude (active)" not in event.text
+    lines = event.text.splitlines()
+    codex_line = next(line for line in lines if line.strip().startswith("codex"))
+    claude_line = next(line for line in lines if line.strip().startswith("claude"))
+    assert "(active)" in codex_line and "(active)" not in claude_line
     assert "/model <agent>" in event.text
 
 
@@ -477,3 +487,175 @@ def test_dispatch_does_not_swallow_other_missing_modules(tmp_path, monkeypatch):
     monkeypatch.setattr(adapters, "run_chat_turn", missing)
     with pytest.raises(ModuleNotFoundError):
         dispatch(ConsoleSession(root=tmp_path, mode="chat"), "hello")
+
+
+# --- agent status, /model refresh and /login --------------------------------
+
+
+def _fake_which(installed):
+    binaries = {"claude": "claude", "codex": "codex", "antigravity": "agy", "grok": "grok"}
+    wanted = {binaries[a] for a in installed}
+    return lambda name: f"/usr/bin/{name}" if name in wanted else None
+
+
+def test_agent_status_explains_each_unavailable_agent(tmp_path, monkeypatch):
+    from whyline import account
+
+    account.save_global({
+        "claude": {"plan": "max", "available": True},
+        "codex": {"plan": "unknown", "available": False, "reason": "no auth.json"},
+        "antigravity": {"available": False, "manual": True},
+        "grok": {"plan": None, "available": False},
+    })
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    status = account.agent_status(
+        tmp_path, which=_fake_which({"claude", "codex", "antigravity"})
+    )
+    assert status["claude"] == {"available": True, "label": "max", "hint": None}
+    assert status["codex"]["label"] == "not logged in"
+    assert status["codex"]["hint"] == "Run /login codex"
+    assert status["antigravity"]["label"] == "turned off"
+    assert "whyline account enable antigravity" in status["antigravity"]["hint"]
+    assert status["grok"]["label"] == "not installed"
+
+
+def test_agent_status_labels_api_key_and_unchecked_logins(tmp_path, monkeypatch):
+    from whyline import account
+
+    account.save_global({
+        "claude": {"plan": None, "available": True},
+        "codex": {"plan": "plus", "available": True},
+        "antigravity": {"plan": None, "available": True},
+        "grok": {"plan": None, "available": True},
+    })
+    monkeypatch.setattr(
+        account, "available_agents", lambda root: {"claude", "codex", "antigravity", "grok"}
+    )
+    status = account.agent_status(tmp_path, which=_fake_which(set()))
+    assert status["claude"]["label"] == "API key"
+    assert status["codex"]["label"] == "plus"
+    assert status["grok"]["label"] == "installed (login not checked)"
+
+
+def test_model_rechecks_before_refusing_and_accepts_a_newly_available_agent(
+    tmp_path, monkeypatch
+):
+    from whyline import account
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    available = {"claude"}
+    refreshed = []
+
+    def refresh():
+        refreshed.append(1)
+        available.add("codex")  # e.g. the user logged into codex meanwhile
+        return {}
+
+    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(account, "refresh", refresh)
+    session = ConsoleSession(root=tmp_path)
+    event = handle_slash_command(session, "/model codex")
+    assert refreshed == [1]
+    assert event.kind == "output"
+    assert session.agent == "codex"
+
+
+def test_model_on_an_available_agent_does_not_recheck(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    monkeypatch.setattr(account, "refresh", lambda: (_ for _ in ()).throw(AssertionError))
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/model claude")
+    assert "fable | opus | sonnet" in event.text
+    assert "model: its default" in event.text
+
+
+def test_model_refresh_rechecks_and_shows_the_table(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    calls = []
+    monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/model refresh")
+    assert calls == [1]
+    assert event.text.startswith("Re-checked every agent.")
+    assert "Agents:" in event.text
+
+
+def test_model_table_shows_each_agents_configured_model(tmp_path, monkeypatch):
+    from whyline import account, model
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    model.set_one(tmp_path, "claude", "opus")
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/model")
+    claude_line = next(l for l in event.text.splitlines() if l.strip().startswith("claude"))
+    assert "model: opus" in claude_line and "(active)" in claude_line
+
+
+def test_login_validates_the_agent(tmp_path, monkeypatch):
+    import shutil
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=tmp_path)
+    assert "Usage: /login" in handle_slash_command(session, "/login").text
+    assert "Unknown agent 'cluade'" in handle_slash_command(session, "/login cluade").text
+    antigravity = handle_slash_command(session, "/login antigravity")
+    assert antigravity.kind == "output" and "Run `agy` in a terminal" in antigravity.text
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert "isn't installed" in handle_slash_command(session, "/login grok").text
+
+
+def test_login_on_an_installed_agent_asks_the_console_to_run_it(tmp_path, monkeypatch):
+    import shutil
+    from whyline.console.repl import handle_slash_command, login_argv
+    from whyline.console.session import ConsoleSession
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/login Claude")
+    assert (event.kind, event.text) == ("needs_login", "claude")
+    assert login_argv("claude") == ["claude", "auth", "login"]
+    assert login_argv("codex") == ["codex", "login"]
+    assert login_argv("grok") == ["grok", "login"]
+
+
+def test_repl_login_runs_the_agents_own_login_then_rechecks(tmp_path, monkeypatch):
+    import shutil
+    from whyline import account
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    available = set()
+    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(account, "refresh", lambda: available.add("codex") or {})
+    monkeypatch.setattr(
+        editor, "build_session", lambda root: FakePromptSession(["/login codex", "/exit"])
+    )
+    ran = []
+    lines = []
+    repl.run(tmp_path, print_fn=lines.append, login_fn=lambda argv: ran.append(argv) or 0)
+    assert ran == [["codex", "login"]]
+    assert any("codex is ready" in line for line in lines)
+
+
+def test_repl_login_that_does_not_take_says_so(tmp_path, monkeypatch):
+    import shutil
+    from whyline import account
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(account, "available_agents", lambda root: set())
+    monkeypatch.setattr(
+        editor, "build_session", lambda root: FakePromptSession(["/login claude", "/exit"])
+    )
+    lines = []
+    repl.run(tmp_path, print_fn=lines.append, login_fn=lambda argv: 1)
+    assert any(
+        "claude still isn't available: not logged in (login exited with 1)" in line
+        for line in lines
+    )

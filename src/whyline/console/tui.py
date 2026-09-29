@@ -26,7 +26,14 @@ except ImportError:
     Button = Footer = Header = Input = RichLog = Static = Text = None
     TUI_AVAILABLE = False
 
-from whyline.console.repl import RELAY_SETUP, dispatch, handle_slash_command
+from whyline.console.repl import (
+    RELAY_SETUP,
+    _run_login,
+    after_login,
+    dispatch,
+    handle_slash_command,
+    login_argv,
+)
 from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
@@ -78,6 +85,7 @@ class WhylineConsoleApp(App):
         self.session = ConsoleSession(root=root)
         self._dispatch_token: object | None = None
         self._exec_after: tuple[str, list[str]] | None = None
+        self._login_fn = _run_login
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -227,9 +235,20 @@ class WhylineConsoleApp(App):
             self._exec_after = RELAY_SETUP
             self.exit()
             return True
+        if event.kind == "needs_login":
+            self._login(event.text)
+            return True
         self.render_event(event)
         self._sync_mode_indicator()
         return True
+
+    def _login(self, agent: str) -> None:
+        """Steps the full-screen app aside so the agent's own login can use
+        the real terminal (it may open a browser or ask for a code), then
+        comes back and re-checks."""
+        with self.suspend():
+            code = self._login_fn(login_argv(agent))
+        self.render_event(after_login(self.session, agent, code))
 
     def _dispatch_text(self, text: str) -> None:
         """Launches one dispatch in a background thread. `token` is a
