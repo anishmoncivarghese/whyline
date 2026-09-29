@@ -52,14 +52,17 @@ async def test_send_ignores_empty_or_whitespace_prompt(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
-        baseline = len(transcript.lines)  # the on_mount onboarding banner
+        # Count recorded events, not rendered lines: how the wrapped banner
+        # splits into lines depends on when the log first learns its width,
+        # which made line counts flaky on CI.
+        baseline = len(app.session.transcript)  # the on_mount onboarding banner
         prompt = app.query_one("#prompt", tui.Input)
         prompt.value = "   \n  "
         await pilot.click("#send")
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert called == []
-        assert len(transcript.lines) == baseline
+        assert len(app.session.transcript) == baseline
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -98,7 +101,10 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
-        baseline = len(transcript.lines)  # the on_mount onboarding banner
+        # Count recorded events, not rendered lines: how the wrapped banner
+        # splits into lines depends on when the log first learns its width,
+        # which made line counts flaky on CI.
+        baseline = len(app.session.transcript)  # the on_mount onboarding banner
         prompt = app.query_one("#prompt", tui.Input)
         prompt.value = "slow"
         await pilot.click("#send")
@@ -110,7 +116,8 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         # only the echoed "› slow" was added -- never the stale reply
-        assert len(transcript.lines) == baseline + 1
+        added = app.session.transcript[baseline:]
+        assert [(e.kind, e.text) for e in added] == [("input", "slow")]
         assert not any("slow output" in str(line) for line in transcript.lines)
 
 
