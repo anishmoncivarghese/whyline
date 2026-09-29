@@ -52,9 +52,6 @@ async def test_send_ignores_empty_or_whitespace_prompt(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
-        # Count recorded events, not rendered lines: how the wrapped banner
-        # splits into lines depends on when the log first learns its width,
-        # which made line counts flaky on CI.
         baseline = len(app.session.transcript)  # the on_mount onboarding banner
         prompt = app.query_one("#prompt", tui.Input)
         prompt.value = "   \n  "
@@ -87,31 +84,32 @@ async def test_dispatch_error_renders_as_error_event(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
     import threading
-    import time
     from whyline.console.session import SessionEvent
 
     slow_started = threading.Event()
+    release = threading.Event()
 
     def slow_dispatch(session, text):
         slow_started.set()
-        time.sleep(0.05)
+        # Held open until the token is superseded. A fixed sleep here raced
+        # on slow CI runners: it could elapse while pilot.click was still
+        # running, so the reply legitimately landed before the supersede.
+        release.wait(timeout=2)
         return SessionEvent(kind="output", text="slow output")
 
     monkeypatch.setattr(tui, "dispatch", slow_dispatch)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
-        # Count recorded events, not rendered lines: how the wrapped banner
-        # splits into lines depends on when the log first learns its width,
-        # which made line counts flaky on CI.
         baseline = len(app.session.transcript)  # the on_mount onboarding banner
         prompt = app.query_one("#prompt", tui.Input)
         prompt.value = "slow"
         await pilot.click("#send")
         # Wait for slow dispatch to begin running in worker thread
         assert slow_started.wait(timeout=2.0)
-        # Supersede the token
+        # Supersede the token, then let the dispatch finish
         app._dispatch_token = object()
+        release.set()
         # Wait for worker to finish
         await app.workers.wait_for_complete()
         await pilot.pause()
