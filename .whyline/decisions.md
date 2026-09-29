@@ -3001,3 +3001,63 @@ Append-only. Written by whyline; readable without it.
 **Files:** .whyline/relay/brainstorm-tmp/codex.md
 
 <!-- whyline-event: 0f9f5a7031084c19abce2818cfd78ba5 -->
+
+## 2026-09-29 — Console widget lookups go through _main() (the console's own screen), never App.query_one
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-UX-4
+
+**Because:** App.query_one searches the active screen, so Enter in the brainstorm form (and any render while a dialog is open) crashed with NoMatches
+
+**Rejected:**
+
+- only filter Input.Submitted by id — fixes the reported crash but leaves progress/spinner renders crashing under any dialog
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b1c88414f9844a089e2e9a42a7875e81 -->
+
+## 2026-09-29 — Refuse non-slash sends while a request is pending instead of starting a second dispatch
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-UX-4
+
+**Because:** a new dispatch replaces the token, silently discarding the pending result -- a whole brainstorm in the reported case
+
+**Rejected:**
+
+- per-request tokens with concurrent dispatches — agent turns share the repo's chat history and git tree, so running two at once is unsafe
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: ecdb8a90fffa4041a4c9352bfc30a1a3 -->
+
+## 2026-09-29 — Require whyline-relay>=0.2.23 and render its per-model ProgressEvents, skipping 'running' heartbeats
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-UX-4
+
+**Because:** long research passes showed one line for minutes; 0.2.23 also carries the antigravity/agy naming fix
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: a36669fc812343219346d5b8cd435240 -->
+
+## 2026-09-29 — Prioritize deterministic commit-bound provenance, advisory ownership cleanup, and native Antigravity hook integration
+
+**Actor:** antigravity
+**Role:** researcher
+**Task:** brainstorm-whyline-updates
+
+**Because:** Timestamp heuristics fail across squashes and fresh clones, stale claims pollute sync context, and Antigravity currently lacks mechanical hook telemetry
+
+**Rejected:**
+
+- Add more interactive UI wizards first — Core provenance precision and state hygiene are prerequisites for reliable cross-agent context
+
+**Files:** .whyline/relay/brainstorm-tmp/antigravity.md
+
+<!-- whyline-event: 1a713a5a66094654ae569fcf61aeac27 -->
