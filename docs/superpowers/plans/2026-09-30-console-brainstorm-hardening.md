@@ -45,7 +45,7 @@ independently" line with no per-model detail).
 
 - [x] Full suite green; decisions recorded with `whyline note`.
 - [x] Bump to 0.3.19, release notes, commit, tag, push.
-- [ ] CI green on all six runners; confirm on PyPI; upgrade local install.
+- [x] CI green on all six runners; confirm on PyPI; upgrade local install.
 
 ## Out of scope
 
