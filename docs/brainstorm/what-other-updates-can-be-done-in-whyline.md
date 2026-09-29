@@ -167,258 +167,130 @@ That sequence strengthens Whyline’s core claim—reliable, honest cross-agent 
 
 ## Antigravity
 
-# Independent Research & Brainstorm: Recommended Updates for Whyline
-**Contributor:** Antigravity (Google DeepMind Agent)  
-**Date:** 2026-09-29  
-**Status:** Independent Pass (Pass Zero — Multi-Model Brainstorm)  
-**Target:** Whyline Architecture & Roadmap
+# Revised Antigravity view after combined review pass 1
 
----
+## 1. Bottom line & revised perspective
 
-## 1. Executive Summary & Antigravity Perspective
+Reviewing the independent findings from Codex and Grok against the live state of the repository has fundamentally reshaped my priorities. In Pass 0, my analysis over-indexed on expanding Whyline's footprint: introducing a generalized MCP server (`whyline mcp`), building an open user-facing plugin registry (`agents.toml`), scraping vendor CLI outputs for rate limits, and implementing AST/symbol-level blame tracing.
 
-Whyline solves one of the most critical friction points in contemporary AI-assisted software engineering: **preventing multi-agent amnesia without introducing bloated orchestration or vendor lock-in**. By keeping a durable, git-blamed decision log (`decisions.md`) and a lightweight, token-bounded active handoff packet (`whyline sync`), Whyline allows developers to pair different AI coding agents (Claude Code, Codex, Antigravity, Grok) on their existing subscriptions with zero credential forwarding and zero per-token markup.
+The combined evidence demonstrates that **Whyline's core value is trustworthy, bounded, zero-lock-in context transfer**. Adding speculative integration layers or secondary protocols before stabilizing current contracts weakens that value. Live verification on this checkout confirms the core issues:
+- `whyline sync` burned its 1,200-token budget enumerating 25 stale, completed task claims, omitting a critical active decision for task FC-3.
+- `account detect` crashes with an unhandled `PermissionError` in sandboxed agent environments where `~/.whyline/` is read-only.
+- The TUI `Stop` button cancels the Textual worker and invalidates UI tokens, but leaves the underlying blocking agent process running in the background, consuming quota and compute.
+- Core public documentation (README, console design specs) has drifted from actual code behavior regarding orchestration, Codex auth token reads, and platform support.
 
-Recent releases (0.3.16 through 0.3.18) made significant strides by bundling the TUI/console, introducing multi-agent brainstorming (`/brainstorm`), adding repository switching (`/repo`), and establishing basic account/model detection.
+The revised roadmap prioritizes **core provenance integrity, sandbox resilience, genuine cancellation, and verified session hooks** over unvetted agent expansion.
 
-However, real-world development sessions reveal several key friction points:
-1. **Sandbox & Permission Fragility:** Commands like `whyline account detect` fail hard when run inside sandboxed agent environments (e.g. Codex, Antigravity, Docker, restricted subagents) because they insist on writing to `~/.whyline/account.json`.
-2. **Quota / Session-Limit Abruptness:** When an agent hits an hourly or 5-hour session limit (e.g., Anthropic's *"You've hit your session limit · resets 4:30pm"* or OpenAI's usage caps), the developer or relay hits a brick wall. Whyline does not currently detect, track, or smoothly hand off across session resets.
-3. **Static Agent Architecture:** Adding new models or agent backends (Cursor CLI, Aider, OpenCode/Goose, local Ollama/vLLM endpoints) requires manual code changes across hardcoded dictionaries in `runner.py`, `account.py`, and `cli.py`.
-4. **The 43% Compliance Barrier:** Historical measurements showed unprompted CLI `whyline brief` compliance was only 43%, and reviewer decision capture lagged significantly behind implementers.
-5. **Console & TUI Ergonomics:** Command mode vs. Chat mode confusion, lack of command autocompletion, and missing global configuration defaults.
+## 2. What the combined review establishes
 
-This document presents an independent, exhaustive blueprint of updates for Whyline across six functional pillars:
-- **Pillar 1:** Critical Reliability & Sandbox Resilience
-- **Pillar 2:** Session-Limit & Quota-Aware Auto-Handoff
-- **Pillar 3:** Pluggable Agent & Model Architecture ("Adding More Models")
-- **Pillar 4:** First-Class Antigravity Parity & Agent Customizations
-- **Pillar 5:** Closing the Compliance Gap via MCP & Proactive Extraction
-- **Pillar 6:** Next-Gen Decision Intelligence (`whyline explain` 2.0 & ADRs)
+Cross-referencing the three independent passes and our live session context reveals several undeniable conclusions:
 
----
+1. **Context budget starvation in `sync`:** `whyline sync` spent token budget printing 25 advisory ownership claims from long-completed tasks (WEM, ACG, UCF, RLV, MTU, WFX, FC) while omitting a relevant FC-3 decision. Handoff creation replaces the active handoff file but never releases the creator's task claim, leading to permanent claim accumulation.
+2. **SessionStart hook beats MCP for compliance:** Claude Code's project `SessionStart` hook (`hookSpecificOutput.additionalContext`) natively injects context on startup, resume, and compact without model compliance risk or per-turn token re-billing. MCP adds another protocol surface that models must be prompted to call.
+3. **Sandbox filesystem fragility:** `account.save_global()` writes unconditionally to `~/.whyline/account.json`. In sandboxed agent environments (Codex, Antigravity subagents, containerized CI), this throws an unhandled `PermissionError` and breaks `whyline account detect`.
+4. **Supervised operations lack real cancellation:** In `tui.py`, `_stop()` invalidates a dispatch token and calls `worker.cancel()`, but Textual workers cannot interrupt blocking Python calls. Background agent processes continue running and burning quota.
+5. **Exec-not-supervise remains non-negotiable:** Regex parsing of vendor CLI output for rate-limit strings (`"You've hit your session limit"`) is fragile across CLI releases and violates Whyline's boundary. Cancellation and Relay structured pauses solve the actual user pain.
+6. **Duplicated agent metadata:** Agent tuples are copy-pasted across 7+ modules (`runner.py`, `account.py`, `cli.py`, `tui.py`, etc.). A single internal `AgentSpec` registry is needed before any external extensibility is considered.
+7. **Attribution truth over speculative matching:** Symbol/AST matching cannot be claimed as high confidence because symbols retain names across semantic rewrites. Instead, `whyline explain` simply needs an unattributed "Related decisions on this file" block when lines are dirty or uncommitted.
+8. **Documentation drift:** The README states Whyline "never orchestrates" and "never reads vendor tokens", but `whyline relay` orchestrates and `account.detect_codex` decodes the local `id_token` payload.
 
-## 2. Pillar 1: Critical Reliability & Sandbox Resilience
+## 3. Priority 0: make current behavior dependable
 
-### 1.1 Graceful Sandbox Degradation for Account Detection
-* **The Problem:** In sandboxed agent environments (Codex, Antigravity subagents, containerized CI), writing to paths outside the repository root (specifically `~/.whyline/account.json` via `save_global`) triggers an unhandled `OSError` (`PermissionError`). This completely breaks `whyline account detect`, causing the agent to abort with an error directing the user to run it in a normal terminal.
-* **Proposed Update:**
-  1. **Safe Fallback in `account.save_global()`:** Wrap the write operation in a try/except for `OSError`. If `~/.whyline` is unwritable, fall back automatically to the repo-local `.whyline/account.json` and output an informational warning to `stderr`:
-     ```text
-     warning: ~/.whyline/account.json is read-only (sandbox detected); cached account status locally in .whyline/account.json.
-     ```
-  2. **Explicit Flags:** Add `--repo-only` / `--local` and `--dry-run` to `whyline account detect` so agents running in automated pipelines or sandbox tiers can safely refresh status without attempting global filesystem writes.
-  3. **In-Memory Cache Fallback:** If even the repo-local file is somehow constrained, return the detected dictionary in-memory so the current command execution never crashes.
+### 1. Fix `sync` token budgeting and release completed claims
+- **Rebalance budget:** Reserve token budget for active handoff status, Git state, and relevant decisions first. Filter claims so only those matching the active task or dirty paths are enumerated; summarize the rest as a count (e.g. `"22 completed/unrelated claims omitted"`).
+- **Auto-release on handoff:** When `whyline handoff` completes, automatically release the actor's task-level ownership claim. Keep explicit `whyline ownership release` for manual cleanup, and add a warning in `whyline status` when old claims accumulate.
+- **Handoff vs. HEAD divergence:** When the recorded handoff commit differs from Git HEAD (e.g. handoff at `eadabbc` vs. HEAD at `f6d83af`), explicitly print the commit divergence (ahead/behind counts) rather than silently printing two differing hashes.
 
-### 1.2 Defensive File Locking Across Platforms
-* Build upon the recent Windows file lock refactor (`state.py`) by adding lock timeouts and stale PID detection. If a prior agent crashed mid-write leaving `.lock` files behind, provide an automatic recovery mechanism after a 10-second threshold without requiring manual user intervention.
+### 2. Graceful sandbox degradation for account detection
+- **Orderly persistence fallback:** Wrap `account.save_global()` in `try/except OSError`. If `~/.whyline/` is unwritable, fall back in order:
+  1. Explicit path in `WHYLINE_HOME`
+  2. Global default `~/.whyline/account.json`
+  3. Local checkout `.whyline/account.json` (emitting a short notice to stderr)
+  4. In-memory cache for the lifetime of the command
+- **Safe detection flags:** Add `--local` and `--dry-run` to `whyline account detect`. A failure to write the global cache must never crash the command or falsely report that no agents are available.
 
----
+### 3. Real process group termination for console Stop
+- **Process group isolation:** Supervised console chat and Relay worker tasks must run in an isolated child process group (`os.setpgrp` / `preexec_fn=os.setsid`).
+- **Escalating signal cancellation:** When the user clicks Stop or issues cancellation, Whyline must send `SIGTERM` to the process group, wait briefly (500ms), and escalate to `SIGKILL` if processes remain alive.
+- **State preservation:** Preserve on-disk Relay state up to the cancellation point while discarding late UI events. Core `whyline run` retains its exec-and-exit contract.
 
-## 3. Pillar 2: Session-Limit & Quota-Aware Smart Handoff
+### 4. Reconcile public documentation with executable reality
+- **Orchestration honesty:** Update the README to clearly distinguish the un-orchestrated core decision-record from opt-in `whyline relay` orchestration.
+- **Token reading disclosure:** Replace "never reads a vendor token" with an accurate description: Whyline decodes the local cached Codex `id_token` payload to inspect plan type and discards it without storing credentials; Claude uses CLI status.
+- **Windows verification:** Keep Windows marked as unverified in the README and package classifiers until end-to-end Windows CI runs pass green.
+- **Console specifications:** Reconcile console design docs to reflect that the plain CLI menu is the permanent zero-dependency fallback, and attachments are deferred.
 
-In modern AI agent usage, **session limits and rate limits are the #1 cause of workflow interruption**. When an agent runs out of quota, the user must manually notice the error, open another terminal, summarize the state, and restart with a different agent. Whyline is uniquely positioned to solve this.
+## 4. Priority 1: improve the read and record loop
 
-### 2.1 Quota & Session-Limit Pattern Recognition
-Vendors emit distinct, predictable strings when session limits or rate limits are reached:
-* **Claude Code:** `"You've hit your session limit · resets <time>"`, `"Usage limit reached"`, `"429 Too Many Requests"`
-* **Codex:** `"Rate limit exceeded"`, `"You have reached your current usage limit"`, `"quota exceeded"`
-* **Antigravity:** `"RESOURCE_EXHAUSTED"`, `"Quota exceeded for quota metric"`, `"rate limit reached"`
-* **Grok:** `"Rate limit hit"`, `"Credits exhausted"`
+### 5. Claude SessionStart hook context injection
+- **Bounded hook injection:** In `hook_entry.py`, on Claude's `SessionStart` event (`startup`, `resume`, `compact`), print the nonce-fenced `sync` packet via `hookSpecificOutput.additionalContext`.
+- **Fail-safe contract:** Keep hook execution on `exit 0` always. If sync generation fails, log the ledger event and exit cleanly without breaking the user's session.
+- **Measurement:** Measure read compliance and token consumption empirically. Leave the `AGENTS.md` instruction intact as defense-in-depth and for other agents. Defer MCP until hook injection is proven insufficient.
 
-### 2.2 Automated "Limit Handoff" Protocol
-When `whyline run <agent>` or the console chat adapter detects a session limit:
-1. **Automatic Handoff Snapshot:** Whyline immediately captures the uncommitted working tree diff, the last prompt, and the failure message into an active handoff:
-   ```bash
-   whyline handoff <task-id> \
-     --from claude --to codex \
-     --status paused-session-limit \
-     --summary "Claude hit session limit (resets 4:30pm). Handoff to continue implementation." \
-     --risk "Context window transition mid-task"
-   ```
-2. **Quota Cooldown State Tracker (`.whyline/quota-status.json`):**
-   Record the cooldown timestamp (e.g. `{"claude": {"limited_until": "2026-09-29T16:30:00+05:30"}}`).
-   - In `/model` and `agent_status()`, display: `claude ✗ rate-limited (resets in 42m)`.
-   - Prevent the console or relay from dispatching to an agent currently under active quota restriction.
-3. **One-Click Failover Prompt:**
-   In console or terminal:
-   ```text
-   ⚠ Claude reached its session limit (resets 4:30pm).
-   Available agents ready:
-     [1] Antigravity (gemini-2.5-pro)
-     [2] Codex (o3-mini)
-   Switch to Antigravity and continue task? [Y/n]:
-   ```
+### 6. Cross-repository reviewer flags (`--repo <path>`)
+- Add `--repo <path>` to `whyline note` and `whyline handoff`.
+- Reviewers frequently operate from an external checkout or parent directory. Without `--repo`, notes are either written to the wrong repository or fail because `AGENTS.md` is missing from the reviewer's current directory.
 
----
-
-## 4. Pillar 3: Pluggable Agent & Model Architecture
-
-The user specifically asked: *"In brainstorming, how can I add more models?"*  
-Currently, models and agents are constrained by two bottlenecks:
-1. Agent CLIs are hardcoded in `runner.py`'s `AGENTS` and `MODEL_FLAG`.
-2. Model selections in `whyline model set <agent> <model>` accept arbitrary strings with zero discovery, validation, or autocompletion.
-
-### 4.1 Declarative Agent Registry (`agents.toml`)
-Instead of hardcoding agents in Python source code, introduce an extensible registry. Whyline ships built-in defaults but allows user/repo overrides in `.whyline/agents.toml` or `~/.whyline/agents.toml`:
-
-```toml
-[agents.claude]
-binary = "claude"
-model_flag = "--model"
-login_command = ["claude", "auth", "login"]
-auth_type = "cli"
-prompt_mode = "arg"
-
-[agents.antigravity]
-binary = "agy"
-args = ["-i"]
-model_flag = "--model"
-auth_type = "path_or_config"
-prompt_mode = "arg"
-
-[agents.cursor]
-binary = "cursor"
-args = ["agent"]
-model_flag = "--model"
-prompt_mode = "arg"
-
-[agents.aider]
-binary = "aider"
-model_flag = "--model"
-prompt_mode = "arg"
-
-[agents.local_ollama]
-binary = "llm"
-args = ["-m"]
-model_flag = "-m"
-prompt_mode = "arg"
-```
-
-This transforms Whyline from a 4-agent fixed launcher into a universal AI coding harness supporting **Cursor CLI, Aider, OpenCode/Goose, GitHub Copilot CLI, and local Ollama/vLLM runners**.
-
-### 4.2 Dynamic Model Discovery & Soft-Validation Catalog
-To replace blind string entry with an intuitive experience:
-1. **Provider Querying / Listing:**
-   - **Antigravity:** Invoke `agy models` (or read cached models) to enumerate available models (`gemini-2.5-pro`, `gemini-2.5-flash`, etc.).
-   - **Claude:** Catalog canonical aliases (`opus`, `sonnet`, `haiku`, `claude-3-7-sonnet`, `claude-3-5-sonnet-latest`).
-   - **Codex:** Catalog common models (`o3-mini`, `o1`, `gpt-4o`, `gpt-4.5-preview`).
-   - **Grok:** Catalog `grok-2`, `grok-beta`, `grok-code`.
-2. **Interactive Selection in TUI & CLI:**
-   - In the TUI `/model` modal and CLI `whyline model`: Provide an interactive searchable picker of known models plus a `[Custom...]` option.
-   - Soft-Validation: If a user specifies an unrecognized model string, display a gentle warning rather than an error:
-     ```text
-     Note: 'gpt-4-turbo' is not in Codex's known alias list. Using as typed.
-     ```
-3. **Global Defaults (`/default` & `~/.whyline/model.json`):**
-   - Allow setting global fallback models per agent so users do not have to re-run `whyline model set` in every new Git repository clone.
-
----
-
-## 5. Pillar 4: First-Class Antigravity Parity
-
-As Google's Antigravity (`agy`), the agent has unique strengths: multi-turn reasoning, native skill loading, subagent delegation, and deep IDE workspace integration. Currently in Whyline, Antigravity has several rough edges that should be polished:
-
-1. **Non-Interactive Auth Detection for Antigravity:**
-   - Currently, `account.py` marks Antigravity as `"installed (login not checked)"` because `agy` lacks a simple auth status subcommand.
-   - *Fix:* Inspect `~/.gemini/` configuration, environment credentials (`GEMINI_API_KEY` / Google Cloud ADC), or run a lightweight validation probe to report real authentication state.
-2. **Antigravity Rule & Hook Installation:**
-   - When running `whyline init`, Whyline installs `.claude/settings.json` and `.codex/hooks.json`, but does not configure Antigravity workspace rules.
-   - *Fix:* Have `whyline init` populate `.gemini/rules/whyline.md` or Antigravity workspace instructions with the canonical `whyline sync` and `whyline note` directives.
-3. **First-Class Relay Integration:**
-   - The README currently notes: *"Antigravity is safe for whyline run, but not currently safe for unattended whyline-relay role without the generic-adapter recipe"*.
-   - *Fix:* Bring native headless execution flags for `agy` into `whyline-relay` so Antigravity can act as a first-class Implementer, Tester, or Reviewer alongside Claude and Codex.
-
----
-
-## 6. Pillar 5: Closing the 43% Compliance Gap via MCP & Proactive Extraction
-
-The 43% read-side compliance rate observed during initial benchmarking is the single greatest bottleneck in manual multi-agent handoffs. An instruction in `AGENTS.md` is often skipped when an agent receives a direct user prompt.
-
-### 6.1 Native Model Context Protocol (MCP) Server (`whyline mcp`)
-The industry has converged on the **Model Context Protocol (MCP)**. Claude Code, Antigravity, Cursor, Windsurf, Zed, and Claude Desktop all natively support MCP servers.
-
-By implementing `whyline mcp` (a lightweight stdlib JSON-RPC server):
-* Tools exposed:
-  - `whyline_sync(task_id, files)`: Injects handoff and active decisions directly into agent context.
-  - `whyline_note(decision, because, rejected, files)`: First-class structured tool for recording decisions.
-  - `whyline_explain(target)`: Directly inspects why a line/file was created.
-  - `whyline_handoff(...)`: Formats and records handoffs.
-* **Why this is revolutionary:** When Whyline tools are exposed as native agent tool declarations, agent compliance jumps from **43% to ~100%**, because models are trained to proactively invoke relevant registered tools.
-
-### 6.2 Proactive Decision Extraction & Drafting
-Even when an agent forgets to run `whyline note`:
-* **Diff Analysis on Commit:** A Git `post-commit` or hook script compares modified files against recent notes.
-* If a 50+ line diff introduces new architecture without a matching decision, Whyline prompts:
+### 7. Unattributed related decisions in `whyline explain`
+- When inspecting an uncommitted/dirty line or a commit where notes postdate the commit window, `whyline explain` currently suppresses all discovered notes.
+- Instead, render a clearly separated block:
   ```text
-  Whyline Notice: Significant changes detected in src/auth/jwt.py.
-  Suggested note:
-    whyline note "Implement JWT RS256 token verification" \
-      --because "Decouple auth service from database lookups" \
-      --rejected "symmetric HS256: secret sharing risk" \
-      --file src/auth/jwt.py
-  Record this decision? [Y/n/edit]:
+  Not attributed: Line is uncommitted (no git blame provenance)
+  Recent decisions on this file:
+    - [2026-09-28] "Approve the TUI shared-handler cutover..." (FC-3)
+    - [2026-09-28] "Update legacy TUI button mock tests..." (FC-3)
   ```
+- Keep confidence strictly at `none` or `low`. Do not promote these notes into causal Decision/Because/Rejected fields.
 
----
+### 8. Minimal decision supersession (`supersedes: <event-id>`)
+- Add an optional `--supersedes <event-id>` flag to `whyline note`, recorded as an explicit line in `decisions.md`.
+- Keep the log append-only. When multiple notes match a blame window, `explain` prioritizes the active decision and notes that earlier event IDs were superseded, eliminating historical confusion without deleting history.
 
-## 7. Pillar 6: Next-Gen Decision Intelligence (`whyline explain` 2.0)
+## 5. Priority 2: maintainability and ergonomics
 
-`whyline explain` is Whyline's signature feature: bridging `git blame` to developer rationale. Several enhancements can expand its depth:
+### 9. Unified internal `AgentSpec` registry
+- Consolidate agent metadata currently scattered across `runner.py`, `account.py`, `cli.py`, and `tui.py` into a single internal dataclass:
+  - Agent identifier, display label, binary, argv prefix, model flag
+  - Login command and detection mechanism (CLI status vs. token decode vs. PATH-only)
+  - Supported execution surfaces (interactive run, chat, brainstorm, Relay)
+  - Hook installer contract
+- **Antigravity parity:**
+  - Standardize `agy` invocation (`["agy", "-i"]`, `--model`).
+  - Keep detection PATH-only until `agy` provides a non-interactive status command; do not scrape `~/.gemini/`.
+  - Add Antigravity workspace rules installation (`.gemini/rules/whyline.md`) to `whyline init`.
+  - Add headless relay support flags for Antigravity in `whyline relay`.
 
-### 7.1 AST & Symbol-Aware Explanation
-* **The Problem:** Lines move. Code formatters (Black, Prettier, Ruff) rewrite lines, causing `git blame` on a line to point to a formatting commit rather than the architectural change.
-* **Solution:** Support symbol-level explanation:
-  ```bash
-  whyline explain src/auth/session.py:SessionManager.validate_token
-  ```
-  Use `git log -L :<funcname>:<file>` or AST parsing to track the semantic lifetime of the function, ensuring decisions stick to the code even across reformatting.
+### 10. Global model defaults without catalog drift
+- Support `~/.whyline/model.json` to provide user-level default models per agent, overridable by repo-local `.whyline/model.json`.
+- Do not maintain a hardcoded model catalog or dynamic CLI queries (`agy models`). Keep model strings vendor-owned; invalid names fail fast at the vendor CLI boundary.
 
-### 7.2 Decision Search & Semantic Querying
-* As projects grow, `decisions.md` accumulates hundreds of entries.
-* Add `whyline search <query>` (e.g. `whyline search "cache TTL"` or `whyline query "why did we reject SQLite?"`).
-* Implement via fast in-memory BM25 or keyword matching over parsed `decisions.md` blocks.
+### 11. Local ledger privacy controls
+- Add `whyline privacy status` detailing stored ledger files.
+- Provide options to scrub prompt text in `.whyline/events.jsonl` while preserving structured decisions, handoffs, and audit hashes.
 
-### 7.3 Architectural Decision Record (ADR) Export
-* Add `whyline export --format adr --output docs/adr/` to export Whyline decisions into industry-standard MADR (Markdown Architectural Decision Records) or static HTML documentation for engineering team onboarding and compliance reviews.
+## 6. Ideas to defer or reject for now
 
-### 7.4 Worktree Isolation for Multi-Agent Concurrency
-* Running two agents in parallel in the same Git working tree leads to file conflicts and dirty state contamination.
-* Provide `whyline worktree create <agent>` to automatically spin up temporary Git worktrees (`.whyline/worktrees/<agent>`), allowing concurrent agent tasks without risk of collision.
-
----
-
-## 8. Console & TUI UX Enhancements
-
-Based on real console feedback in 0.3.18:
-1. **Unified Smart Input Bar & Route Suggestion:**
-   - If a user types natural language (e.g. *"let's brainstorm caching options"*) while in **Command mode**, do not return an ugly `argparse` error. Instead, auto-detect conversational intent and show:
-     ```text
-     › "let's..." looks like a chat message. Press Tab to switch to Chat mode, or type /help.
-     ```
-2. **Slash Command Auto-Suggest:**
-   - In Textual TUI and prompt_toolkit REPL, trigger a floating completion popup when `/` is typed, showing descriptions and syntax for `/model`, `/repo`, `/brainstorm`, `/handoff`, etc.
-3. **Diff Previews in Transcript:**
-   - Render syntax-highlighted diffs inside the TUI log when agents touch files or when viewing `/handoff`.
-
----
-
-## 9. Phased Implementation Roadmap
-
-| Phase | Title | Scope & Key Deliverables |
+| Proposal | Current judgment | Rationale |
 |---|---|---|
-| **Phase 1** | **Sandbox & Quota Resilience** | Fallback for `account.save_global` on read-only `~/.whyline`; rate-limit string detection; automated limit-handoff. |
-| **Phase 2** | **Pluggable Agent Registry** | Extract `AGENTS` and `MODEL_FLAG` to extensible `agents.toml`; dynamic model listing (`agy models`, Claude aliases); `/default` global models. |
-| **Phase 3** | **Antigravity Parity & Workspace Rules** | Antigravity auth detection; `whyline init` support for `.gemini/rules/`; first-class headless relay support. |
-| **Phase 4** | **Whyline MCP Server** | Implement `whyline mcp` stdlib JSON-RPC server exposing `sync`, `note`, `explain`, and `handoff` tools. |
-| **Phase 5** | **Decision Intelligence 2.0** | AST/Symbol-level `explain`; `whyline search` keyword retrieval; ADR export generator. |
-| **Phase 6** | **Console Autocompletion & Worktree Isolation** | TUI slash-command autocomplete; smart mode routing; isolated Git worktrees per agent. |
+| **Whyline MCP Server** | **Defer** | Adds protocol complexity without guaranteeing compliance. Claude `SessionStart` hook injection provides deterministic context delivery at session boundaries. |
+| **Parsing vendor output for session limits** | **Reject** | Violates `exec-not-supervise`. Fragile across vendor CLI versions. Rely on process-group cancellation and structured Relay pause states. |
+| **User-defined plugin registry (`agents.toml`)** | **Defer** | Premature before the internal `AgentSpec` is hardened. Introduces security, PTY, and auth liabilities. |
+| **AST / Symbol-level blame attribution** | **Reject** | High confidence requires git blame window alignment. Symbols retain names across semantic rewrites. Unattributed file notes solve the dirty-line blind spot. |
+| **In-Whyline Git worktree management** | **Reject** | Worktrees are Git's responsibility. Whyline provides advisory ownership warnings, not repository orchestration. |
+| **SQLite / BM25 / Semantic decision search** | **Defer** | Current Markdown parsing takes ~159ms for 50,000 events. Committed Markdown is durable, portable, and human-readable. |
+| **Scraping private vendor auth files (`~/.gemini/`)** | **Reject** | Rely on documented CLI status probes. The Codex ID-token read is an exception to narrow, not a pattern to copy. |
 
----
+## 7. Recommended implementation sequence
 
-## 10. Conclusion
-
-Whyline has already proven its core premise: cross-agent coordination without shared memory or credential theft is both possible and practical. By addressing sandbox constraints, automating session-limit handoffs, generalizing the model/agent registry, and bridging to modern agent protocols via MCP, Whyline will transition from a helpful CLI utility to the foundational control plane for multi-agent software engineering.
+1. **Rebalance `sync` budget:** Filter claims to active task/dirty scope, release claims on handoff, and report handoff/HEAD divergence.
+2. **Harden sandbox account detection:** Implement fallback cascade for `account.save_global()`.
+3. **Implement process group termination:** Give console `Stop` real `SIGTERM`/`SIGKILL` handles.
+4. **Correct public documentation:** Align README, specs, and classifiers with shipped code behavior.
+5. **Implement Claude SessionStart hook injection:** Automatically provide sync packet on startup, resume, and compact.
+6. **Add cross-repo support:** Introduce `--repo <path>` on `note` and `handoff`.
+7. **Surface unattributed notes in `explain`:** Display recent file notes when lines are uncommitted or dirty.
+8. **Consolidate `AgentSpec` & add supersession:** Unify internal agent metadata and add `--supersedes <event-id>`.
+9. **Add global model defaults & privacy controls:** Support `~/.whyline/model.json` and ledger sanitization.
 
 ## Grok
 

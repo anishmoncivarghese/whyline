@@ -2967,3 +2967,21 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/brainstorm/what-other-updates-can-be-done-in-whyline.md
 
 <!-- whyline-event: fc9d6db5aed4462aa427615823bdd28f -->
+
+## 2026-09-29 — Pivot Antigravity brainstorm roadmap to provenance integrity, sandbox resilience, and hook injection
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** WHYLINE-BRAINSTORM-REVIEW-1
+
+**Because:** Combined review evidence proved MCP and vendor error scraping are fragile compared to Claude SessionStart hook injection and process-group cancellation, while stale claim budgeting and sandbox write failures represent immediate operational failures
+
+**Rejected:**
+
+- Retain MCP server as primary compliance fix — SessionStart hook directly injects context without agent tool invocation or prompt overhead
+- Retain regex string scraping for session limits — violates exec-not-supervise boundary; true need is child process termination and structured pause surfacing
+- Open user plugin registry before internal consolidation — duplicates already exist across 7+ modules and must be unified into AgentSpec first
+
+**Files:** docs/brainstorm/what-other-updates-can-be-done-in-whyline.md
+
+<!-- whyline-event: d97015543bbb47f9ae6f6ade410b910c -->
