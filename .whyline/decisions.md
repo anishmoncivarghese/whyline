@@ -3095,3 +3095,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
 
 <!-- whyline-event: 07475e9ddf6644a08bd8e2f85ede6a9f -->
+
+## 2026-09-29 — Revise Antigravity's section after combined review pass 1 on Whyline brainstorm
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** brainstorm-whyline-review-1
+
+**Because:** Convergence across Claude, Codex, and Antigravity elevates durable provenance, supersede/retract lifecycle, operational staleness, rename tracking, diff-wide explain, and ledger scaling; accepted Codex's pushback against auto-binding HEAD to preserve honest confidence, and consolidated diagnostics and command grouping
+
+**Rejected:**
+
+- Auto-bind to HEAD on clean tree — Cleanliness does not prove the decision describes HEAD, violating honest confidence
+- Separate whyline log command — Collides conceptually with git log and timeline; whyline decisions family is cleaner
+
+**Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
+
+<!-- whyline-event: 97ffb0311cd84f27afcf004558a01f29 -->
