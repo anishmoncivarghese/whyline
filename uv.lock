@@ -214,18 +214,12 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.3.15"
+version = "0.3.16"
 source = { editable = "." }
-
-[package.optional-dependencies]
-console = [
+dependencies = [
     { name = "prompt-toolkit" },
-]
-relay = [
-    { name = "whyline-relay" },
-]
-ui = [
     { name = "textual" },
+    { name = "whyline-relay" },
 ]
 
 [package.dev-dependencies]
@@ -237,11 +231,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "prompt-toolkit", marker = "extra == 'console'", specifier = ">=3.0,<4.0" },
-    { name = "textual", marker = "extra == 'ui'", specifier = ">=0.60,<1.0" },
-    { name = "whyline-relay", marker = "extra == 'relay'", specifier = ">=0.2.1,<0.3" },
+    { name = "prompt-toolkit", specifier = ">=3.0,<4.0" },
+    { name = "textual", specifier = ">=0.60,<1.0" },
+    { name = "whyline-relay", specifier = ">=0.2.1,<0.3" },
 ]
-provides-extras = ["relay", "console", "ui"]
+provides-extras = ["relay", "console", "ui", "all"]
 
 [package.metadata.requires-dev]
 dev = [
