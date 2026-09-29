@@ -3061,3 +3061,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** .whyline/relay/brainstorm-tmp/antigravity.md
 
 <!-- whyline-event: 1a713a5a66094654ae569fcf61aeac27 -->
+
+## 2026-09-29 — Claude review pass 1 on brainstorm doc: revise own section after reading Codex/Antigravity independent research
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** brainstorm-whyline-updates
+
+**Because:** Convergence across all three passes on commit-bound provenance, supersede/retract, ownership+handoff staleness, rename-aware matching, and diff-wide explain is a stronger signal than any single pass; Antigravity's ledger.jsonl diagnosis and live sync evidence, and Codex's day-precision-timestamp and privacy findings, were sharper than my original draft on those points
+
+**Rejected:**
+
+- Codex's separate structured companion file for decision metadata — extending the existing HTML comment is less to keep in sync than a parallel format
+- Codex's standalone whyline review command — likely just a --verdict/--test field on the existing note schema, not new plumbing
+
+**Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
+
+<!-- whyline-event: 7a8d2192449a4f8d8ec94d6abfb7386f -->

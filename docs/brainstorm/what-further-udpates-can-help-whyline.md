@@ -2,135 +2,156 @@
 
 ## Claude
 
-# What other updates can be done in Whyline — independent research
+# What other updates can be done in Whyline — review pass 1
 
-Grounded in the current source under `src/whyline/` (5.3k lines across `cli.py`,
-`decisions.py`, `resolve.py`, `brief.py`, `sync.py`, `ownership.py`, `gitq.py`,
-`account.py`, `model.py`, `hooks.py`, plus the console/TUI/relay layer) and the
-README's stated design constraints (no orchestration, no credential handling,
-advisory-only ownership). Ideas below are things I'd actually build next, not a
-wishlist — each is tied to a concrete gap in the code as it exists today.
+Having read Codex's and Antigravity's independent passes alongside my own, the
+headline result is convergence, not disagreement: all three of us landed on
+commit-bound provenance, supersede/retract semantics, stale advisory state, and
+rename-aware matching as the load-bearing gaps, arrived at independently from
+the same source. That's a stronger signal than any one pass alone. What follows
+keeps my original grounding but revises priority and detail where the other two
+passes caught something sharper, and pushes back where I think a proposal adds
+more machinery than the problem needs.
 
-## 1. Give `explain` a deterministic link instead of a timestamp-window guess
+## 1. Deterministic commit binding for `explain` — converged, strengthen the format
 
-`resolve.py` reaches HIGH confidence only by matching a note's timestamp against
-a git-blame commit's epoch window (`explain()` in `resolve.py:70-225`) — a
-genuinely clever heuristic, but still a heuristic: two decisions recorded close
-together, or a note written slightly before/after the commit that landed it, can
-land on MEDIUM or the wrong entry. `note` and `handoff` already know which files
-are affected; they don't know which commit. Adding an optional `--commit <sha>`
-to `whyline note` (defaulting to `HEAD` when the tree is clean at note time, and
-back-fillable by a lightweight `git commit` post-hook that stamps the most recent
-untied note) would let `explain` match on exact SHA first and only fall back to
-the epoch-window logic when no commit was recorded. This turns the tool's most
-distinctive feature — "why does this line exist" — from probabilistic into exact
-for every decision recorded going forward, while keeping the existing heuristic
-as the fallback for older history.
+All three passes independently proposed `--commit <sha>` on `whyline note` so
+`explain` can match exact SHA before falling back to the epoch-window heuristic
+in `resolve.py:70-225`. Codex and Antigravity both caught something I
+under-weighted: `decisions.py:38`'s `render_entry` writes only `## YYYY-MM-DD`,
+truncating to day precision, so even a same-day note/commit pairing can't be
+told apart on a fresh clone where `.whyline/ledger.jsonl` (gitignored) is
+absent — `_has_day_precision()` hard-caps confidence at MEDIUM regardless of how
+few decisions or commits exist. That's a sharper diagnosis than "the heuristic
+is sometimes wrong"; it's "the heuristic can't even reach HIGH from a clone
+today." I'd fold the fix in with mine: store the exact timestamp and commit SHA
+in the existing HTML comment on the entry (it already carries the event ID),
+rather than Codex's suggestion of a separate "committed structured companion
+file" — extending one comment is less to keep in sync than a parallel format,
+and the parser already has to read that line. Keep backward-compatible parsing
+for older entries without the comment.
 
-## 2. Decisions have no supersede/retract relationship
+## 2. Supersede/retract — converged, adopt the sharper two-verb split
 
-`decisions.md` is append-only by design (`decisions.py:1-5`), which is right for
-auditability, but there's no way to mark a later decision as replacing an earlier
-one on the same file. Today, if an agent reverses an earlier call, `brief` and
-`explain` will happily surface both the original and the reversal with no
-ordering signal beyond timestamp — a future reader (human or agent) has to infer
-which one is "live." A `--supersedes <event-id>` flag on `note`, rendered as a
-new `**Supersedes:**` field parsed the same way `**Files:**` is (`decisions.py:
-92-116`), would let `brief`/`explain` either suppress the superseded entry or
-label it clearly. Small addition, closes a real correctness gap in the
-committed record.
+I originally proposed a single `--supersedes`. Codex and Antigravity both split
+this into `supersede` (a new decision explicitly replaces an old one) and
+`retract` (a decision is later found simply wrong, with no replacement) — that
+distinction is worth keeping instead of collapsing into one flag, since "why did
+this line exist then" and "what rule applies now" need different answers for
+each case. `brief`/`sync` should default to current decisions and disclose
+superseded ones only when they're the ones explaining an older blamed commit;
+`explain` should prefer an active superseding decision when multiple candidates
+land in the same commit window, resolving what is currently the MEDIUM-confidence
+"several decisions match, ambiguous" branch back to HIGH.
 
-## 3. Ownership claims never go stale
+## 3. Ownership *and* handoff staleness — converged, and I was too narrow
 
-`ownership.claim()` stamps `claimed_at` (`ownership.py:59`) but nothing ever
-reads it back — `conflicts()` only checks for shared files or a shared task
-(`ownership.py:18-38`), forever, regardless of age. In practice a claim from
-three weeks ago that an agent simply forgot to `release` will keep surfacing as
-a live conflict in `claim`, `sync`, and `status` indefinitely, training users to
-ignore the warning. Since ownership is explicitly advisory and local
-(`.whyline/ownership.json` is gitignored per the README), the fix is cheap: have
-`conflicts()` (or its callers) flag claims older than some threshold (e.g. 48h)
-as "stale" rather than "active," and let `whyline release --stale` clear all of
-them in one shot. This keeps the "advisory, never blocking" philosophy intact
-while making the warning meaningful again.
+I only flagged ownership claims never expiring (`ownership.py:59`,
+`conflicts()` at `ownership.py:18-38`). Antigravity's pass caught the same shape
+of bug in `handoff.py:66`: an approved/completed handoff sits in
+`active-handoff.json` forever and keeps injecting itself into every `sync` as
+if still open. I can confirm this isn't theoretical — the `whyline sync` I ran
+for this review pass surfaced exactly that: task FC-3, status "approved,"
+already committed at `eadabbc` days ago, still presented as the active handoff,
+plus a live "1 overlapping ownership claim" warning against an old task. Both
+deserve the same fix shape: a TTL/staleness threshold (`claim --ttl`,
+`release --stale`, `release --all-for-task` for ownership; `handoff close
+--status` and auto-clearing on approval for handoffs), with stale state marked
+and excluded from active warnings rather than silently deleted. Same principle,
+two files — worth doing together rather than as separate work items.
 
-## 4. `explain` and `brief` break silently across renames
+## 4. Rename-aware matching — converged
 
-`resolve._mentions()` matches a note's recorded path against `rel_path` with
-plain equality (`resolve.py:64-67`), and `blame_line()` in `gitq.py:58-85` blames
-one literal path with no `--follow`. Meanwhile `commits_touching()` *does* use
-`--follow` specifically because "history stops at the most recent rename"
-(`gitq.py:90-92`) — the code already knows renames matter for git history, but
-that awareness doesn't extend to matching decisions against a renamed file. A
-decision recorded against `src/cache.py` becomes invisible to `explain` the
-moment that file is renamed to `src/caching/store.py`, even though git itself
-can still trace the line's ancestry. Worth resolving the note's recorded path
-through the same rename chain `commits_touching` already walks, so old decisions
-keep attaching to a file that moved.
+`resolve._mentions()` (`resolve.py:64-67`) and `blame_line()`
+(`gitq.py:58-85`) match on literal path equality with no `--follow`, while
+`commits_touching()` already uses `--follow` for exactly this reason
+(`gitq.py:90-92`). All three passes independently found this; Antigravity named
+the concrete fix I'd converge on — `gitq.historical_paths()` built from `git log
+--follow --name-only`, with the resulting alias set used consistently across
+`explain`, `brief`, and `sync`, and the matched historical path surfaced in
+output so a reader can see why a decision was included.
 
-## 5. No way to query the decision log
+## 5. Queryable decision log — converged on need, diverged on shape
 
-There's `whyline timeline` (mechanical ledger events) and `whyline brief`
-(relevance-ranked, token-budgeted, meant for agent context), but nothing meant
-for a human to just ask "what has codex decided in the last week" or "show me
-every decision that touched `src/cli.py`." `decisions.parse_entries()` already
-returns structured dicts with actor/role/task/files/because/alternatives
-(`decisions.py:92-141`) — the parsing exists, there's just no CLI surface over
-it besides the token-capped brief. A `whyline log [--actor] [--file] [--task]
-[--since] [--grep]` command, printing full entries with no budget trimming,
-would make the committed record actually browsable instead of only
-machine-consumable.
+All three of us want a query surface beyond token-capped `brief` and
+mechanical-only `timeline`; `decisions.parse_entries()` already returns
+everything needed (`decisions.py:92-141`). I proposed `whyline log [...]`,
+Antigravity proposed the same name and flag shape, Codex proposed a
+`whyline decisions` family (`list`/`search`/`show --json`). I'd side with
+Codex's grouping here on reflection — `log` reads as a mechanical-ledger name
+next to `timeline`, and a `decisions` subcommand family scales better once
+supersede/retract (above) needs its own `decisions show <id>` to display a
+chain. Linear scan is fine to start; no index until a measured threshold is
+crossed, per Codex's note that the README's own 50k-event measurement doesn't
+justify one yet.
 
-## 6. Codex mechanical capture is still an unverified assumption
+## 6. Hook health check — my framing was too narrow, broaden it
 
-The README says plainly: hooks are "Verified against Claude Code only... no
-Codex hook event has been observed yet" and `whyline status` reports Codex as
-"configured but never observed" until one organically arrives. That's an honest
-status quo, but it means the tool's second-most-important pillar (mechanical
-capture, layer 2 of 3 in the README's own model) is running on faith for half
-its supported agents. A `whyline doctor --fire-test-event` that synthesizes one
-hook payload through the real `hook_entry.py` path and confirms it lands in the
-ledger would convert "never observed" into a real pass/fail check that runs at
-`init` time, instead of waiting on an agent to happen to fire one.
+I proposed a Codex-only `--fire-test-event` because the README singles out
+Codex as unverified. Antigravity's pass points out this should be agent-general
+(`whyline hook check [--agent]`) rather than Codex-specific, and Codex's own
+pass wants it folded into a broader `whyline doctor`. I now agree the broader
+framing is right, especially since Antigravity separately notes the project has
+zero hook coverage for itself: no `.agents/hooks.json` install path exists, so
+any Antigravity-run session produces zero mechanical events today. A synthetic
+per-agent hook check only becomes meaningful once there's a real target for it
+to check.
 
-## 7. No Gemini support in account/model detection
+## 7. Ledger scale — my diagnosis was on the wrong file
 
-`account.py` detects Claude, Codex, Antigravity, and Grok (`detect_codex`,
-`detect_claude`, `detect_antigravity`, `detect_grok`); `detect_antigravity` and
-`detect_grok` are already PATH-only "installed, not subscribed" checks
-(`account.py:97-113`) precisely because those CLIs have no reliable
-non-interactive login check. Gemini CLI is in the same boat and is a real
-competitor in this exact niche (coding agent with a CLI). Adding
-`detect_gemini` on the same PATH-only pattern, plus a `model.py` entry, is a
-same-shape addition, not new design — and the console's brainstorm/relay
-feature already treats "some models available, others greyed out with a
-reason" as a first-class UI state, so a new agent slots in without touching the
-console layer at all.
+I flagged `decisions.md` needing a rotation story. Antigravity's pass is more
+precise: `decisions.md` stays small by comparison; the actual growth risk is
+`ledger.jsonl`, which `history.load()` reads and fully deserializes on nearly
+every command (`brief`, `sync`, `explain`, `timeline`, `status`) just to pull
+out `events.NOTE`, even though it also carries every `FileTouched` and raw
+`Instruction` prompt (`ledger.py:20-38`, `history.py:94-107`). That's the file
+that actually threatens the <200ms cold-start budget at scale, not the decision
+log. I'd deprioritize my original archive-file proposal for `decisions.md` and
+replace it with Antigravity's: reverse-read the ledger only up to the last
+known committed decision timestamp when all `brief`/`sync` need is notes, plus
+an explicit rotation command for old mechanical events.
 
-## 8. `decisions.md` has no rotation story for long-lived repos
+## 8. Ledger privacy/retention — a real gap I missed
 
-Every read path (`brief.compose`, `resolve.explain`, the new `log` idea above)
-parses the *entire* `decisions.md` on every call — fine at the 19-decisions/
-3-days scale the design was measured at, but the file is committed and
-append-only forever. A repository that lives for two years will eventually be
-parsing thousands of entries on every `sync` call just to rank and discard most
-of them. Worth deciding now, while the format is still young: either an index
-(`.whyline/decisions.idx.json`, rebuildable, gitignored, mapping id → byte
-offset) to avoid re-parsing on every read, or an explicit `whyline archive
---before <date>` that moves old entries to `decisions-YYYY.md` while `explain`
-and `brief` search all archive files but the hot path only touches the current
-one. Either is a straightforward addition on top of the existing parser; doing
-nothing means a silent performance cliff a few years out.
+Codex's pass raised something absent from my list entirely: `ledger.jsonl`
+stores every `UserPromptSubmit` body verbatim, and while it's gitignored and
+`timeline` redacts by default, nothing stops a secret or sensitive prompt from
+living on disk indefinitely. A repo-local `prompt_capture =
+metadata|redacted|full` setting (defaulting to metadata for new repos), plus
+`whyline ledger prune --older-than` and surfacing capture mode in `status`, is a
+reasonable safety addition that's orthogonal to the performance fix above —
+worth doing regardless of ledger size, and cheap given the redaction logic
+already exists for `timeline`.
 
-## 9. `whyline explain` has no batch/diff mode
+## 9. Diff-wide `explain` — converged
 
-`explain` takes exactly one `path:line` (`cli.py:358-384`, `_split_target`).
-The natural companion to `sync` — which already computes `gitq.changed_paths()`
-for the working tree (`gitq.py:131-160`) — would be `whyline explain --diff`,
-explaining every changed line across the dirty tree in one pass, reusing the
-same per-line `blame_line` + note-window logic already in `resolve.py`. That's
-the moment a reviewer actually wants "why do these lines exist" — right before
-committing or reviewing a diff — not one line at a time.
+Single-line `explain` (`cli.py:358-384`) has no batch mode; all three passes
+want `whyline explain --diff`/`--staged`, reusing `gitq.changed_paths()`
+(`gitq.py:131-160`) and the existing per-line resolution logic. Codex's addition
+of grouping by decision ID (so one decision isn't repeated per changed line) and
+a coverage summary (exact/heuristic/mechanical-only/unexplained) is worth
+adopting directly — it turns this from "explain, looped" into an actual review
+aid. Keep the honesty rule intact: uncommitted or unmatched lines stay
+unexplained rather than inheriting a nearby file-level decision.
+
+## 10. Gemini support — still unique to my pass, still low priority
+
+Neither other pass flagged this. `detect_antigravity`/`detect_grok` are already
+PATH-only checks (`account.py:97-113`) because those CLIs have no reliable
+non-interactive login check; Gemini CLI is the same shape and the console
+already treats "installed, greyed out" as first-class UI. I'd leave this as a
+same-shape, low-effort addition, but rank it below everything above — it's not
+blocking anything the other passes found, unlike the provenance/staleness work.
+
+## Noted but not adopting as-is
+
+Codex's proposal for a dedicated `whyline review` command (verdict/commit/test/
+finding as a distinct record from a generic `note`) is interesting but I'm not
+convinced it needs new plumbing: a review is already an actor=reviewer note
+with `--because` and `--rejected`; the missing piece is probably just a
+`--verdict` and `--test` field on the existing `note`/`decisions.py` schema
+rather than a parallel command family. Worth revisiting after supersede/retract
+(item 2) lands, since both touch the same rendering code.
 
 ## Lower-priority / smaller polish
 
