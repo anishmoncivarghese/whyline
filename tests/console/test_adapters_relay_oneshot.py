@@ -76,7 +76,7 @@ def test_run_relay_oneshot_shows_the_install_hint_when_whyline_relay_is_missing(
 
     event = adapters.run_relay_oneshot("/some/repo", ["start"])
     assert event.kind == "error"
-    assert "whyline[relay]" in event.text or "whyline-relay" in event.text
+    assert "uv tool install --reinstall whyline" in event.text
 
 
 def test_run_relay_oneshot_reraises_missing_relay_internal_module(monkeypatch):

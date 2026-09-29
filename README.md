@@ -44,6 +44,12 @@ of code exists — which is the same mechanism, read at a longer horizon.
 uv tool install whyline
 ```
 
+That one command is everything: the relay and the full-screen console come
+with it, so there are no extras to remember. (Already installed an older
+version with extras? `uv tool install --reinstall whyline` brings it in line;
+the old `whyline[relay]`, `[console]` and `[ui]` names still work but add
+nothing.)
+
 **Once per repository:**
 
 ```bash
@@ -74,17 +80,19 @@ pressing Enter accepts — running the command is the consent. Answer `n`, or pa
 without asking, for scripts. Whatever block `init` replaces is copied to
 `.whyline/AGENTS.md.bak` first.
 
-Zero production dependencies — standard library only. Python 3.11+, plus `git`.
+Python 3.11+, plus `git`. The decision log, hooks and every command other than
+the console and relay use only the standard library; the three dependencies
+(`whyline-relay`, `prompt_toolkit`, `textual`) are there for the console and
+the relay.
 
 Re-run `whyline init` any time; it upgrades an outdated instruction block in place
 and leaves everything you wrote around it untouched.
 
 ## Automated mode (optional)
 
-Everything above is manual: you switch between an agent's terminal and the next. There is also an optional, separate program, [whyline-relay](https://github.com/anishmoncivarghese/whyline-relay), that does the switching for you. Give it a Markdown plan and it runs each task through Codex (implements) and Claude (reviews and commits), routing on whyline's own handoff record, and stops when something needs a human. It launches agents unattended and spends your subscription quota, so it is opt-in and never installed or set up unless you ask.
+Everything above is manual: you switch between an agent's terminal and the next. There is also [whyline-relay](https://github.com/anishmoncivarghese/whyline-relay), installed with whyline, that does the switching for you. Give it a Markdown plan and it runs each task through Codex (implements) and Claude (reviews and commits), routing on whyline's own handoff record, and stops when something needs a human. It launches agents unattended and spends your subscription quota, so although it is installed, it is never set up in a repository or run unless you ask.
 
 ```bash
-uv tool install 'whyline[relay]'      # whyline plus the relay
 whyline init --relay                  # normal setup, then the relay's own setup
 whyline relay plan-format             # how to write a plan (and a prompt for an AI that drafts one)
 whyline relay doctor                  # checks whyline, both agent logins, the plan and the tree
@@ -92,9 +100,9 @@ whyline relay start                   # run the plan
 whyline relay status                  # is it running, or where did it pause
 ```
 
-`whyline init` asks whether to set the relay up, and the default is no: `--yes` alone does not opt in, `--relay` does, and `--no-relay` skips the question. You can add it to a repository later with `whyline relay init` and take it out again with `whyline relay remove`. Without the extra, `whyline relay` prints how to install it.
+`whyline init` asks whether to set the relay up, and the default is no: `--yes` alone does not opt in, `--relay` does, and `--no-relay` skips the question. You can add it to a repository later with `whyline relay init` and take it out again with `whyline relay remove`.
 
-Installed this way the command is `whyline relay <command>`; there is no separate `whyline-relay` command on your PATH. To have both, install the relay on its own too: `uv tool install whyline-relay`. The relay's README covers plans, phases, permissions, what it costs and how to read a pause.
+The command is `whyline relay <command>`; there is no separate `whyline-relay` command on your PATH, and whyline never needs one. If you want it anyway, install the relay on its own too: `uv tool install whyline-relay`. The relay's README covers plans, phases, permissions, what it costs and how to read a pause.
 
 ## Then just work
 
@@ -281,7 +289,7 @@ Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
   ledger produces an honest empty answer, not a guess. File-level `explain` never
   claims high confidence, because without a line there is no blamed commit.
 - **`run` supports Claude Code, Codex, Antigravity (`agy`), and Grok (`grok`, "Grok Build")** — Gemini CLI itself is dead (its free personal tier was withdrawn); Antigravity is Google's actual working successor and is not the same binary or invocation.
-- **Typing `whyline` with no arguments asks "Chat or relay?"** (if whyline-relay is installed; otherwise it prints its usual usage). Chat leads into `whyline-relay chat` -- the same interactive REPL as before, with an added first question letting you run `whyline model` before starting if you want to pick a model. Relay leads into `whyline-relay setup`, a guided wizard that assigns implementer/tester/reviewer roles to a plan and runs `doctor`'s own correctness checks before offering to start it. See whyline-relay's own README for the full picture of both.
+- **Typing `whyline` with no arguments opens the console** inside a repository: a full-screen, mouse-enabled app with a Command / Chat / Relay mode switch at the top. Command runs what you type as `whyline ...` (e.g. `status`, `sync`); Chat talks to the active agent (`/model claude opus` picks one; `/model` alone lists them); Relay drives `doctor`, `status`, `start` and `resume`. Help in the console explains the rest. Outside a repository it asks "Chat or relay?" instead: Chat leads into `whyline relay chat`, and Relay into `whyline relay setup`, a guided wizard that assigns implementer/tester/reviewer roles to a plan and runs `doctor`'s own checks before offering to start it.
 - **Ownership is advisory.** Whyline warns about overlapping writes but provides
   no lock, scheduler, merge engine, or worktree isolation.
 - **A fresh clone loses operational state, deliberately.** It retains committed

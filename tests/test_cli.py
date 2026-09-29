@@ -23,7 +23,7 @@ def test_unknown_command_is_a_usage_error():
 
 
 def test_no_command_is_a_usage_error(monkeypatch):
-    # Real environments often have whyline-relay on PATH, which would make an
+    # whyline-relay is a required dependency, which would make an
     # unmocked cli.main([]) actually run the entry menu (and potentially
     # exec) rather than reach the usage-error path this test checks.
     monkeypatch.setattr(cli, "run_entry_menu", lambda **kwargs: False)

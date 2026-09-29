@@ -424,9 +424,56 @@ def test_route_relay_with_no_config_execs_into_setup(tmp_path, monkeypatch):
         tmp_path, print_fn=lines.append,
         exec_fn=lambda binary, argv: calls.append((binary, argv)),
     )
-    assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+    assert calls == [("whyline", ["whyline", "relay", "setup"])]
     # The user sees why they're being handed off, before it happens --
     # unlike today's plain entry menu (which execs silently), this is a
     # deliberate small improvement, not a parity requirement.
     assert any("No relay setup found" in line for line in lines)
 
+
+
+def test_model_agent_name_is_case_insensitive(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    session = ConsoleSession(root=tmp_path)
+    event = handle_slash_command(session, "/model Claude")
+    assert event.kind == "output"
+    assert session.agent == "claude"
+
+
+def test_help_shows_a_real_model_example_not_bracket_notation(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/help")
+    assert "/model claude opus" in event.text
+    assert "[agent" not in event.text
+
+
+def test_dispatch_turns_a_missing_relay_into_a_fix_it_message(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.repl import dispatch
+    from whyline.console.session import ConsoleSession
+
+    def missing(*args, **kwargs):
+        raise ModuleNotFoundError("No module named 'whyline_relay'", name="whyline_relay")
+
+    monkeypatch.setattr(adapters, "run_chat_turn", missing)
+    event = dispatch(ConsoleSession(root=tmp_path, mode="chat"), "hello")
+    assert event.kind == "error"
+    assert "uv tool install --reinstall whyline" in event.text
+
+
+def test_dispatch_does_not_swallow_other_missing_modules(tmp_path, monkeypatch):
+    import pytest
+    from whyline.console import adapters
+    from whyline.console.repl import dispatch
+    from whyline.console.session import ConsoleSession
+
+    def missing(*args, **kwargs):
+        raise ModuleNotFoundError("No module named 'yaml'", name="yaml")
+
+    monkeypatch.setattr(adapters, "run_chat_turn", missing)
+    with pytest.raises(ModuleNotFoundError):
+        dispatch(ConsoleSession(root=tmp_path, mode="chat"), "hello")

@@ -2817,3 +2817,48 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py
 
 <!-- whyline-event: 884058fc5dc94d0e898490b7f1ed88ab -->
+
+## 2026-09-29 — whyline-relay, prompt_toolkit and textual become required dependencies; extras kept as empty aliases
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-2
+
+**Because:** the console's Chat/Relay import whyline-relay directly, so the README's plain install produced a console that failed with a raw ImportError; the user chose one install with nothing to forget
+
+**Rejected:**
+
+- keep relay opt-in plus an [all] extra — still a forget-trap for anyone following the plain install
+- drop the extras entirely — breaks existing whyline[relay] install commands
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: 3bf09724cfcb404388e433e8cd869561 -->
+
+## 2026-09-29 — Relay is installed by default but still only set up or run on explicit opt-in
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-2
+
+**Because:** installing the package spends nothing; the earlier opt-in rationale (unattended runs spend quota) is about setup and running, which stay gated
+
+**Files:** README.md
+
+<!-- whyline-event: c21ecae55199422a9159afbd5e09d5ce -->
+
+## 2026-09-29 — Detect the relay by importability and hand off via 'whyline relay <cmd>', never a whyline-relay executable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-2
+
+**Because:** as a uv tool dependency the relay's executable is not on PATH, and a separately installed relay on PATH passed the old check while whyline could not import it
+
+**Rejected:**
+
+- exec python -m whyline_relay — package has no __main__
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 281facaec9f040faab2b04b04048899b -->

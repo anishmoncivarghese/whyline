@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,35 +19,50 @@ EXIT_USAGE = 2
 EXIT_UNINITIALISED = 3
 
 
-def _which(name: str) -> str | None:
-    return shutil.which(name)
+def _relay_available() -> bool:
+    """Whether whyline itself can import whyline-relay -- not whether a
+    `whyline-relay` executable is on PATH. The two diverge: a separately
+    installed whyline-relay tool lives in its own isolated environment, and
+    a whyline install that depends on it doesn't put its executable on PATH
+    at all. Checking PATH let the console open with a Chat mode that could
+    only fail with "No module named 'whyline_relay'"."""
+    import importlib.util
+
+    return importlib.util.find_spec("whyline_relay") is not None
 
 
 def _exec(binary: str, argv: list[str]) -> None:
     os.execvp(binary, argv)
 
 
+# Relay subcommands are reached through `whyline relay ...`, never a bare
+# `whyline-relay` executable: installed as a whyline dependency, the relay's
+# own executable isn't on PATH.
+RELAY_SETUP_ARGV = ["whyline", "relay", "setup"]
+
+
 def run_entry_menu(
-    which=None, exec_fn=None, input_fn=None, print_fn=None, subprocess_fn=None,
+    relay_available=None, exec_fn=None, input_fn=None, print_fn=None,
+    subprocess_fn=None,
 ) -> bool:
     """Ask "Chat or relay?" and act on it. Returns False only when
     whyline-relay isn't installed, so main()'s existing fallback-to-usage
     behavior is unchanged for anyone not using the relay side.
 
-    `which`/`exec_fn`/`subprocess_fn` are resolved here, not as default
+    `relay_available`/`exec_fn`/`subprocess_fn` are resolved here, not as default
     arguments -- binding them in the signature would capture the function
     objects at import time, so a test's monkeypatch would silently have no
     effect and this would exec/spawn something real during a test run.
     `runner.py` documents this exact defect happening twice already; the
     same shape is used here on purpose.
     """
-    which = which if which is not None else _which
+    relay_available = relay_available if relay_available is not None else _relay_available
     exec_fn = exec_fn if exec_fn is not None else _exec
     input_fn = input_fn if input_fn is not None else input
     print_fn = print_fn if print_fn is not None else print
     subprocess_fn = subprocess_fn if subprocess_fn is not None else subprocess.run
 
-    if which("whyline-relay") is None:
+    if not relay_available():
         return False
 
     from whyline import account
@@ -74,7 +88,7 @@ def run_entry_menu(
 
     choice = input_fn("Chat or relay? [chat]: ").strip().lower()
     if choice == "relay":
-        exec_fn("whyline-relay", ["whyline-relay", "setup"])
+        exec_fn("whyline", RELAY_SETUP_ARGV)
         return True  # unreachable when exec_fn is the real os.execvp
 
     model_choice = input_fn(
@@ -89,7 +103,7 @@ def run_entry_menu(
             )
             return True
 
-    exec_fn("whyline-relay", ["whyline-relay", "chat"])
+    exec_fn("whyline", ["whyline", "relay", "chat"])
     return True  # unreachable when exec_fn is the real os.execvp
 
 
@@ -920,11 +934,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def relay_install_hint() -> str:
+    # whyline-relay is a required dependency, so this only happens in a
+    # broken or hand-assembled environment; reinstalling repairs it.
     return (
-        "The automated relay is not installed.\n"
-        "  uv tool install 'whyline[relay]'   (adds it to whyline)\n"
-        "  uv tool install whyline-relay      "
-        "(a standalone whyline-relay command)"
+        "whyline-relay is missing from this whyline install.\n"
+        "  uv tool install --reinstall whyline"
     )
 
 

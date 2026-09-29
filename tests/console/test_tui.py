@@ -205,7 +205,7 @@ async def test_route_relay_with_no_config_defers_exec_until_after_exit(
     async with app.run_test() as pilot:
         await pilot.click("#mode-relay")
         await pilot.pause()
-        assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
+        assert app._exec_after == ("whyline", ["whyline", "relay", "setup"])
     # app.run_test()'s own context manager has now exited (app.run() returned)
     # -- confirm launch() is what actually performs the exec, not the app itself.
 
@@ -221,7 +221,7 @@ async def test_typing_route_relay_with_no_config_defers_exec_until_after_exit(
         prompt.value = "/route relay"
         await pilot.click("#send")
         await pilot.pause()
-        assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
+        assert app._exec_after == ("whyline", ["whyline", "relay", "setup"])
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -233,11 +233,11 @@ def test_launch_performs_the_deferred_exec_after_app_run_returns(tmp_path, monke
             self._exec_after = None
 
         def run(self):
-            self._exec_after = ("whyline-relay", ["whyline-relay", "setup"])
+            self._exec_after = ("whyline", ["whyline", "relay", "setup"])
 
     monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
     tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
-    assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+    assert calls == [("whyline", ["whyline", "relay", "setup"])]
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

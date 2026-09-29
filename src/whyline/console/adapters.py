@@ -202,7 +202,7 @@ def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            code = relay_cli.main(full_argv, prog="whyline-relay")
+            code = relay_cli.main(full_argv, prog="whyline relay")
     except SystemExit as error:
         code = error.code if isinstance(error.code, int) else 1
     text = buf.getvalue()

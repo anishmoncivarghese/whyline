@@ -26,7 +26,7 @@ except ImportError:
     Button = Footer = Header = Input = RichLog = Static = Text = None
     TUI_AVAILABLE = False
 
-from whyline.console.repl import dispatch, handle_slash_command
+from whyline.console.repl import RELAY_SETUP, dispatch, handle_slash_command
 from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
@@ -224,7 +224,7 @@ class WhylineConsoleApp(App):
         if event is None:
             return False
         if event.kind == "needs_setup":
-            self._exec_after = ("whyline-relay", ["whyline-relay", "setup"])
+            self._exec_after = RELAY_SETUP
             self.exit()
             return True
         self.render_event(event)

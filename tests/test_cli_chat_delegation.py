@@ -18,33 +18,33 @@ def test_entry_menu_default_choice_execs_into_chat():
     calls = []
     answers = iter(["", ""])  # accept both bracketed defaults: chat, chat
     result = cli.run_entry_menu(
-        which=lambda name: f"/usr/bin/{name}" if name == "whyline-relay" else None,
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
         input_fn=lambda prompt="": next(answers),
         subprocess_fn=lambda argv: calls.append(("subprocess", argv)),
     )
     assert result is True
-    assert calls == [("exec", "whyline-relay", ["whyline-relay", "chat"])]
+    assert calls == [("exec", "whyline", ["whyline", "relay", "chat"])]
 
 
 def test_entry_menu_relay_choice_execs_into_setup():
     calls = []
     answers = iter(["relay"])
     result = cli.run_entry_menu(
-        which=lambda name: f"/usr/bin/{name}" if name == "whyline-relay" else None,
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
         input_fn=lambda prompt="": next(answers),
         subprocess_fn=lambda argv: calls.append(("subprocess", argv)),
     )
     assert result is True
-    assert calls == [("exec", "whyline-relay", ["whyline-relay", "setup"])]
+    assert calls == [("exec", "whyline", ["whyline", "relay", "setup"])]
 
 
 def test_entry_menu_model_choice_runs_whyline_model_then_execs_into_chat():
     calls = []
     answers = iter(["chat", "model"])
     result = cli.run_entry_menu(
-        which=lambda name: f"/usr/bin/{name}" if name == "whyline-relay" else None,
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
         input_fn=lambda prompt="": next(answers),
         subprocess_fn=lambda argv: calls.append(("subprocess", argv)),
@@ -52,17 +52,17 @@ def test_entry_menu_model_choice_runs_whyline_model_then_execs_into_chat():
     assert result is True
     assert calls == [
         ("subprocess", ["whyline", "model"]),
-        ("exec", "whyline-relay", ["whyline-relay", "chat"]),
+        ("exec", "whyline", ["whyline", "relay", "chat"]),
     ]
 
 
-def test_entry_menu_falls_through_when_whyline_relay_is_not_installed():
+def test_entry_menu_falls_through_when_whyline_relay_cannot_be_imported():
     def _unexpected_prompt(prompt=""):
         raise AssertionError(f"should never prompt when relay is absent: {prompt!r}")
 
     calls = []
     result = cli.run_entry_menu(
-        which=lambda name: None,
+        relay_available=lambda: False,
         exec_fn=lambda binary, argv: calls.append((binary, argv)),
         input_fn=_unexpected_prompt,
         subprocess_fn=lambda argv: calls.append(("subprocess", argv)),
@@ -101,7 +101,7 @@ def test_entry_menu_runs_detection_on_the_very_first_call(monkeypatch, tmp_path,
     )
     answers = iter(["chat", "chat"])
     cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda *a: None,
         input_fn=lambda prompt="": next(answers),
         print_fn=lambda *a, **k: None,
@@ -121,7 +121,7 @@ def test_entry_menu_does_not_redetect_on_a_later_call(monkeypatch, tmp_path):
     monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
     answers = iter(["chat", "chat"])
     cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda *a: None,
         input_fn=lambda prompt="": next(answers),
         print_fn=lambda *a, **k: None,
@@ -153,7 +153,7 @@ def test_entry_menu_redetects_a_pre_0_3_7_account_file(monkeypatch, tmp_path):
     )
     answers = iter(["chat", "chat"])
     cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda *a: None,
         input_fn=lambda prompt="": next(answers),
         print_fn=lambda *a, **k: None,
@@ -171,7 +171,7 @@ def test_entry_menu_does_not_exec_into_chat_when_model_setup_fails(monkeypatch):
     answers = iter(["chat", "model"])
     printed = []
     result = cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
         input_fn=lambda prompt="": next(answers),
         print_fn=lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
@@ -189,14 +189,14 @@ def test_entry_menu_execs_into_chat_when_model_setup_succeeds(monkeypatch):
     calls = []
     answers = iter(["chat", "model"])
     result = cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: calls.append(("exec", binary, argv)),
         input_fn=lambda prompt="": next(answers),
         print_fn=lambda *a, **k: None,
         subprocess_fn=lambda argv: subprocess.CompletedProcess(argv, 0),
     )
     assert result is True
-    assert calls == [("exec", "whyline-relay", ["whyline-relay", "chat"])]
+    assert calls == [("exec", "whyline", ["whyline", "relay", "chat"])]
 
 
 def test_entry_menu_launches_the_mouse_tui_when_available(monkeypatch, tmp_path):
@@ -212,7 +212,7 @@ def test_entry_menu_launches_the_mouse_tui_when_available(monkeypatch, tmp_path)
         raise AssertionError("must not reach the plain text menu")
 
     result = cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         input_fn=_unexpected_prompt,
     )
     assert result is True
@@ -235,7 +235,7 @@ def test_entry_menu_launches_the_keyboard_console_when_tui_unavailable(
         raise AssertionError("must not reach the plain text menu")
 
     result = cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         input_fn=_unexpected_prompt,
     )
     assert result is True
@@ -254,12 +254,12 @@ def test_entry_menu_falls_through_to_plain_menu_when_neither_extra_is_available(
     answers = iter(["", ""])
     calls = []
     result = cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: calls.append((binary, argv)),
         input_fn=lambda prompt="": next(answers),
     )
     assert result is True
-    assert calls == [("whyline-relay", ["whyline-relay", "chat"])]
+    assert calls == [("whyline", ["whyline", "relay", "chat"])]
 
 
 def test_entry_menu_falls_through_when_no_repo_root_found(monkeypatch):
@@ -272,9 +272,23 @@ def test_entry_menu_falls_through_when_no_repo_root_found(monkeypatch):
     monkeypatch.setattr(tui, "launch", lambda root: calls.append(root))
     answers = iter(["", ""])
     result = cli.run_entry_menu(
-        which=lambda name: "/usr/bin/whyline-relay",
+        relay_available=lambda: True,
         exec_fn=lambda binary, argv: None,
         input_fn=lambda prompt="": next(answers),
     )
     assert result is True
     assert calls == []  # the TUI is never launched without a repo root
+
+
+def test_relay_available_checks_importability_not_path(monkeypatch):
+    import importlib.util
+    import shutil
+
+    # a whyline-relay executable on PATH is not enough...
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/whyline-relay")
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    assert cli._relay_available() is False
+    # ...and none on PATH is fine, as long as whyline can import it
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    assert cli._relay_available() is True

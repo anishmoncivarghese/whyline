@@ -16,6 +16,15 @@ def _exec(binary: str, argv: list[str]) -> None:
     os.execvp(binary, argv)
 
 
+# `whyline relay setup`, not `whyline-relay setup`: installed as whyline's
+# dependency, the relay's own executable isn't on PATH.
+RELAY_SETUP = ("whyline", ["whyline", "relay", "setup"])
+_RELAY_MISSING = (
+    "Chat and Relay need whyline-relay, which is missing from this install. "
+    "Run: uv tool install --reinstall whyline"
+)
+
+
 SLASH_COMMANDS = (
     "/model",
     "/route",
@@ -31,7 +40,7 @@ _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 # One line per command in /help -- a bare list of names told the user
 # what exists but not what any of it was for.
 _COMMAND_HELP = {
-    "/model": "/model [agent [model]]  show agents, or pick the chat agent",
+    "/model": "/model claude opus      pick the chat agent (and model); /model alone lists them",
     "/route": "/route <mode>           switch to command, chat or relay",
     "/status": "/status                 repo and relay status",
     "/handoff": "/handoff                the most recent handoff",
@@ -84,7 +93,7 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         if chosen == "relay" and not adapters.relay_is_configured(session.root):
             return SessionEvent(
                 kind="needs_setup",
-                text="No relay setup found here. Running whyline-relay setup...",
+                text="No relay setup found here. Running whyline relay setup...",
             )
         session.mode = chosen
         return SessionEvent(kind="output", text=f"Mode is now {session.mode}.")
@@ -103,6 +112,8 @@ def _model_event(session: ConsoleSession, text: str) -> SessionEvent:
             text="No agents detected as available. Run: whyline account detect",
         )
     parts = text.split(maxsplit=2)
+    if len(parts) > 1:
+        parts[1] = parts[1].lower()  # "/model Claude" means claude
     if len(parts) == 1:
         active = session.agent or "claude"  # dispatch()'s own chat default
         names = [f"{a} (active)" if a == active else a for a in sorted(available)]
@@ -153,7 +164,7 @@ def run(root: Path, *, print_fn=print, prompt_session=None, exec_fn=None) -> Non
         if slash_event is not None:
             if slash_event.kind == "needs_setup":
                 print_fn(slash_event.text)
-                exec_fn("whyline-relay", ["whyline-relay", "setup"])
+                exec_fn(*RELAY_SETUP)
                 return
             _print_event(session.record(slash_event), print_fn)
             continue
@@ -169,6 +180,17 @@ def run(root: Path, *, print_fn=print, prompt_session=None, exec_fn=None) -> Non
 
 
 def dispatch(session: ConsoleSession, text: str) -> SessionEvent:
+    try:
+        return _dispatch(session, text)
+    except ModuleNotFoundError as error:
+        # A raw "No module named 'whyline_relay'" told the user nothing
+        # about how to fix it.
+        if error.name != "whyline_relay":
+            raise
+        return SessionEvent(kind="error", text=_RELAY_MISSING)
+
+
+def _dispatch(session: ConsoleSession, text: str) -> SessionEvent:
     if session.mode == "command":
         return adapters.run_whyline_command(text.split())
     if session.mode == "chat":
