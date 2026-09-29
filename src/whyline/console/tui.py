@@ -16,6 +16,7 @@ from pathlib import Path
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, Vertical, VerticalScroll
+    from textual.css.query import NoMatches
     from textual.screen import ModalScreen
     from rich.text import Text
     from textual.widgets import (
@@ -25,6 +26,7 @@ try:
     TUI_AVAILABLE = True
 except ImportError:
     App = ModalScreen = object  # placeholder bases so the classes can still be defined
+    NoMatches = LookupError
     ComposeResult = None
     Horizontal = Vertical = VerticalScroll = None
     Button = Checkbox = Footer = Header = Input = Label = RichLog = Select = None
@@ -415,9 +417,13 @@ class WhylineConsoleApp(App):
             return  # idle, or the app is shutting down
         self._spin = (self._spin + 1) % len(_SPINNER)
         elapsed = int(time.monotonic() - self._busy_since)
-        self._main("#thinking", Static).update(
-            f"{_SPINNER[self._spin]} {self._busy_text}… {elapsed}s"
-        )
+        try:
+            thinking = self._main("#thinking", Static)
+        except NoMatches:
+            # Quitting while a reply is still pending: the timer can fire
+            # once more after the widgets are gone.
+            return
+        thinking.update(f"{_SPINNER[self._spin]} {self._busy_text}… {elapsed}s")
 
     def _send(self) -> None:
         prompt = self._main("#prompt", Input)

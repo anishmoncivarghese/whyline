@@ -2985,3 +2985,19 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/brainstorm/what-other-updates-can-be-done-in-whyline.md
 
 <!-- whyline-event: d97015543bbb47f9ae6f6ade410b910c -->
+
+## 2026-09-29 — Prioritize durable commit-bound provenance before expanding Whyline's UI
+
+**Actor:** codex
+**Role:** researcher
+**Task:** brainstorm-whyline-updates
+
+**Because:** The current explain path relies on timestamp windows and loses precision on clone, while stale operational state and unbounded raw-prompt retention compound trust and maintenance costs
+
+**Rejected:**
+
+- Add more console features first — the existing interfaces already expose the core workflows, while the provenance and lifecycle gaps affect correctness across every interface
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: 0f9f5a7031084c19abce2818cfd78ba5 -->
