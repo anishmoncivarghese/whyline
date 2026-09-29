@@ -15,20 +15,23 @@ from pathlib import Path
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal
-    from textual.widgets import Button, Footer, Header, RichLog, TextArea
+    from rich.text import Text
+    from textual.widgets import Button, Footer, Header, Input, RichLog, Static
 
     TUI_AVAILABLE = True
 except ImportError:
     App = object  # placeholder base so WhylineConsoleApp can still be defined
     ComposeResult = None
     Horizontal = None
-    Button = Footer = Header = RichLog = TextArea = None
+    Button = Footer = Header = Input = RichLog = Static = Text = None
     TUI_AVAILABLE = False
 
 from whyline.console.repl import dispatch, handle_slash_command
 from whyline.console.session import ConsoleSession, SessionEvent
 
-_PREFIX = {"error": "⚠ ", "pause": "⏸ "}
+_PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
+
+_MODES = ("command", "chat", "relay")
 
 
 class TuiUnavailable(RuntimeError):
@@ -54,14 +57,20 @@ class WhylineConsoleApp(App):
     # the space, the prompt box gets a whole band for what is usually one
     # line of text, and the button row -- three rows tall by content --
     # sits inside a band just as tall as the transcript's, leaving a dead
-    # strip of empty space beneath the buttons. Pinning the prompt to a
-    # small fixed height and the button row to `auto` gives the transcript
-    # the rest of the screen and puts the buttons flush above the footer.
+    # strip of empty space beneath the buttons. Pinning every row but the
+    # transcript to `auto` gives the transcript the rest of the screen and
+    # puts the buttons flush above the footer.
+    #
+    # The prompt is an Input, not a TextArea: this project's pinned Textual
+    # has no TextArea placeholder, and TextArea's Enter inserts a newline,
+    # so there was neither a hint that the box was for typing nor a way to
+    # send without reaching for the mouse.
     DEFAULT_CSS = """
     Horizontal > Button { min-width: 6; width: auto; }
     RichLog#transcript { height: 1fr; }
-    TextArea#prompt { height: 5; }
-    #controls { height: auto; }
+    #modes, #input-row, #controls { height: auto; }
+    #modes-label { width: auto; padding: 1 1 0 1; }
+    Input#prompt { width: 1fr; }
     """
 
     def __init__(self, *, root: Path) -> None:
@@ -78,30 +87,55 @@ class WhylineConsoleApp(App):
         "command" mode looked like the console was just broken instead of
         interpreting free text as a `whyline` CLI invocation."""
         self._sync_mode_indicator()
+        self.query_one("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
                 kind="output",
                 text=(
-                    "whyline console -- command mode runs what you type as "
-                    "`whyline ...`; /route chat switches to talking with an "
-                    "agent instead. /help for commands."
+                    "whyline console -- pick a mode above. Command runs what "
+                    "you type as `whyline ...`, Chat talks to an agent, Relay "
+                    "drives whyline-relay. Help explains the rest."
                 ),
             )
         )
 
     def _sync_mode_indicator(self) -> None:
-        self.sub_title = f"mode: {self.session.mode}"
+        """The subtitle alone was easy to miss, so the current mode is also
+        the highlighted mode button and shapes the prompt's placeholder."""
+        mode = self.session.mode
+        self.sub_title = f"mode: {mode}"
+        for name in _MODES:
+            button = self.query_one(f"#mode-{name}", Button)
+            button.variant = "primary" if name == mode else "default"
+        self.query_one("#prompt", Input).placeholder = self._placeholder(mode)
+
+    def _placeholder(self, mode: str) -> str:
+        if mode == "chat":
+            agent = self.session.agent or "claude"
+            return f"Message {agent}... (Enter to send)"
+        if mode == "relay":
+            return "Relay command: doctor, status, start, resume (Enter to run)"
+        return "whyline command, e.g. status or log (Enter to run)"
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield RichLog(id="transcript")
-        yield TextArea(id="prompt")
         yield Horizontal(
-            Button("Send", id="send"),
+            Static("Mode:", id="modes-label"),
+            Button("Command", id="mode-command"),
+            Button("Chat", id="mode-chat"),
+            Button("Relay", id="mode-relay"),
+            id="modes",
+        )
+        yield RichLog(id="transcript", wrap=True)
+        yield Horizontal(
+            Input(id="prompt"),
+            Button("Send", id="send", variant="success"),
+            id="input-row",
+        )
+        yield Horizontal(
             Button("Model", id="model"),
-            Button("Route", id="route"),
             Button("History", id="history"),
-            Button("Stop", id="stop"),
+            Button("Stop", id="stop", disabled=True),
             Button("Help", id="help"),
             Button("Copy", id="copy"),
             id="controls",
@@ -111,7 +145,10 @@ class WhylineConsoleApp(App):
     def render_event(self, event: SessionEvent) -> None:
         self.session.record(event)
         transcript = self.query_one("#transcript", RichLog)
-        transcript.write(f"{_PREFIX.get(event.kind, '')}{event.text}")
+        line = f"{_PREFIX.get(event.kind, '')}{event.text}"
+        # What you typed is set apart from replies, so the transcript reads
+        # as a conversation rather than an unattributed log.
+        transcript.write(Text(line, style="bold cyan") if event.kind == "input" else line)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         button_id = event.button.id
@@ -119,12 +156,15 @@ class WhylineConsoleApp(App):
             self._send()
         elif button_id == "stop":
             self._stop()
-        elif button_id == "route":
-            self._handle_slash("/route relay")
+        elif button_id and button_id.startswith("mode-"):
+            self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
         elif button_id == "copy":
             self._copy_transcript()
         elif button_id in ("model", "history", "help"):
             self._handle_slash(f"/{button_id}")
+
+    def on_input_submitted(self, event: "Input.Submitted") -> None:
+        self._send()
 
     def _copy_transcript(self) -> None:
         """Pushes the whole transcript onto the system clipboard via OSC 52
@@ -158,13 +198,18 @@ class WhylineConsoleApp(App):
         self._dispatch_token = object()
         for worker in self.workers:
             worker.cancel()
+        self._set_busy(False)
+
+    def _set_busy(self, busy: bool) -> None:
+        self.query_one("#stop", Button).disabled = not busy
 
     def _send(self) -> None:
-        prompt = self.query_one("#prompt", TextArea)
-        text = prompt.text.strip()
+        prompt = self.query_one("#prompt", Input)
+        text = prompt.value.strip()
         if not text:
             return
-        prompt.text = ""
+        prompt.value = ""
+        self.render_event(SessionEvent(kind="input", text=text))
         if not self._handle_slash(text):
             self._dispatch_text(text)
 
@@ -196,6 +241,7 @@ class WhylineConsoleApp(App):
         or doesn't guarantee about a thread already running Python code."""
         token = object()
         self._dispatch_token = token
+        self._set_busy(True)
         self.run_worker(lambda: self._dispatch_in_thread(text, token), thread=True)
 
     def _dispatch_in_thread(self, text: str, token: object) -> None:
@@ -203,8 +249,16 @@ class WhylineConsoleApp(App):
             result = dispatch(self.session, text)
         except Exception as error:  # a safety net beyond adapters.py's own handling
             result = SessionEvent(kind="error", text=str(error))
-        if token is self._dispatch_token:
-            self.call_from_thread(self.render_event, result)
+        self.call_from_thread(self._finish_dispatch, result, token)
+
+    def _finish_dispatch(self, result: SessionEvent, token: object) -> None:
+        # Checked here, on the main thread, rather than in the worker: a
+        # Stop or newer dispatch that lands between the worker's check and
+        # this call would otherwise still let a stale result through.
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self.render_event(result)
 
 
 def _exec(binary: str, argv: list[str]) -> None:

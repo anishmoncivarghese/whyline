@@ -26,7 +26,30 @@ SLASH_COMMANDS = (
     "/help",
     "/exit",
 )
-_PREFIX = {"error": "⚠ ", "pause": "⏸ "}
+_PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
+
+# One line per command in /help -- a bare list of names told the user
+# what exists but not what any of it was for.
+_COMMAND_HELP = {
+    "/model": "/model [agent [model]]  show agents, or pick the chat agent",
+    "/route": "/route <mode>           switch to command, chat or relay",
+    "/status": "/status                 repo and relay status",
+    "/handoff": "/handoff                the most recent handoff",
+    "/stop": "/stop                   cancel the reply in flight",
+    "/history": "/history                everything shown this session",
+    "/help": "/help                   this help",
+    "/exit": "/exit                   quit the console",
+}
+_HELP_TEXT = "\n".join(
+    [
+        "Modes:",
+        "  Command  what you type runs as `whyline ...` (e.g. status, log)",
+        "  Chat     talk to the active agent (see /model)",
+        "  Relay    drive whyline-relay: doctor, status, start, resume",
+        "Commands:",
+        *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),
+    ]
+)
 
 
 def _print_event(event: SessionEvent, print_fn) -> None:
@@ -41,7 +64,7 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
     outside this function on purpose: each means something different per
     console (see the final-cutover design's FC4)."""
     if text == "/help":
-        return SessionEvent(kind="output", text="Commands: " + ", ".join(SLASH_COMMANDS))
+        return SessionEvent(kind="output", text=_HELP_TEXT)
     if text == "/status":
         return adapters.run_status(session.root)
     if text == "/handoff":
@@ -56,6 +79,8 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         chosen = parts[1].strip() if len(parts) == 2 else ""
         if chosen not in ("chat", "relay", "command"):
             return SessionEvent(kind="error", text="Usage: /route <chat|relay|command>")
+        if chosen == session.mode:
+            return SessionEvent(kind="output", text=f"Already in {chosen} mode.")
         if chosen == "relay" and not adapters.relay_is_configured(session.root):
             return SessionEvent(
                 kind="needs_setup",
@@ -79,7 +104,13 @@ def _model_event(session: ConsoleSession, text: str) -> SessionEvent:
         )
     parts = text.split(maxsplit=2)
     if len(parts) == 1:
-        return SessionEvent(kind="output", text="Available: " + ", ".join(sorted(available)))
+        active = session.agent or "claude"  # dispatch()'s own chat default
+        names = [f"{a} (active)" if a == active else a for a in sorted(available)]
+        return SessionEvent(
+            kind="output",
+            text="Agents: " + ", ".join(names)
+            + " -- switch with /model <agent> [model]",
+        )
     agent = parts[1]
     if agent not in available:
         return SessionEvent(

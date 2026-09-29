@@ -19,7 +19,7 @@ async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
     async with app.run_test() as pilot:
         assert app.query_one("#transcript") is not None
         assert app.query_one("#prompt") is not None
-        for button_id in ("send", "model", "route", "history", "stop", "help", "copy"):
+        for button_id in ("send", "model", "mode-command", "mode-chat", "mode-relay", "history", "stop", "help", "copy"):
             assert app.query_one(f"#{button_id}") is not None
 
 
@@ -34,14 +34,14 @@ async def test_send_dispatches_in_a_worker_and_renders_the_result(tmp_path, monk
     )
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        prompt = app.query_one("#prompt", tui.TextArea)
-        prompt.text = "hello"
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "hello"
         await pilot.click("#send")
         await app.workers.wait_for_complete()
         await pilot.pause()  # let the call_from_thread land
         transcript = app.query_one("#transcript", tui.RichLog)
         assert any("ran 'hello'" in str(line) for line in transcript.lines)
-        assert prompt.text == ""
+        assert prompt.value == ""
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -53,8 +53,8 @@ async def test_send_ignores_empty_or_whitespace_prompt(tmp_path, monkeypatch):
     async with app.run_test() as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
         baseline = len(transcript.lines)  # the on_mount onboarding banner
-        prompt = app.query_one("#prompt", tui.TextArea)
-        prompt.text = "   \n  "
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "   \n  "
         await pilot.click("#send")
         await app.workers.wait_for_complete()
         await pilot.pause()
@@ -71,8 +71,8 @@ async def test_dispatch_error_renders_as_error_event(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "dispatch", failing_dispatch)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        prompt = app.query_one("#prompt", tui.TextArea)
-        prompt.text = "fail"
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "fail"
         await pilot.click("#send")
         await app.workers.wait_for_complete()
         await pilot.pause()
@@ -99,8 +99,8 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
     async with app.run_test() as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
         baseline = len(transcript.lines)  # the on_mount onboarding banner
-        prompt = app.query_one("#prompt", tui.TextArea)
-        prompt.text = "slow"
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "slow"
         await pilot.click("#send")
         # Wait for slow dispatch to begin running in worker thread
         assert slow_started.wait(timeout=2.0)
@@ -109,7 +109,9 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
         # Wait for worker to finish
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert len(transcript.lines) == baseline
+        # only the echoed "› slow" was added -- never the stale reply
+        assert len(transcript.lines) == baseline + 1
+        assert not any("slow output" in str(line) for line in transcript.lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -131,7 +133,7 @@ async def test_model_button_dispatches_the_same_text_as_typing_it(tmp_path, monk
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_route_history_help_buttons_dispatch_their_slash_commands(tmp_path, monkeypatch):
+async def test_mode_history_help_buttons_dispatch_their_slash_commands(tmp_path, monkeypatch):
     from whyline.console.session import SessionEvent
 
     seen = []
@@ -141,11 +143,12 @@ async def test_route_history_help_buttons_dispatch_their_slash_commands(tmp_path
     )
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        await pilot.click("#route")
+        await pilot.click("#mode-relay")
+        await pilot.click("#mode-chat")
         await pilot.click("#history")
         await pilot.click("#help")
         await pilot.pause()
-    assert seen == ["/route relay", "/history", "/help"]
+    assert seen == ["/route relay", "/route chat", "/history", "/help"]
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -165,8 +168,8 @@ async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "dispatch", slow_dispatch)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        prompt = app.query_one("#prompt", tui.TextArea)
-        prompt.text = "long running"
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "long running"
         await pilot.click("#send")
         assert started.wait(timeout=2.0)  # let the worker actually start and block on release
         await pilot.click("#stop")  # invalidates the token while still blocked
@@ -200,7 +203,7 @@ async def test_route_relay_with_no_config_defers_exec_until_after_exit(
 ):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        await pilot.click("#route")
+        await pilot.click("#mode-relay")
         await pilot.pause()
         assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
     # app.run_test()'s own context manager has now exited (app.run() returned)
@@ -214,8 +217,8 @@ async def test_typing_route_relay_with_no_config_defers_exec_until_after_exit(
 ):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        prompt = app.query_one("#prompt", tui.TextArea)
-        prompt.text = "/route relay"
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "/route relay"
         await pilot.click("#send")
         await pilot.pause()
         assert app._exec_after == ("whyline-relay", ["whyline-relay", "setup"])
@@ -277,7 +280,7 @@ async def test_mount_shows_the_default_mode_and_an_onboarding_banner(tmp_path):
     async with app.run_test() as pilot:
         assert app.sub_title == "mode: command"
         transcript = app.query_one("#transcript", tui.RichLog)
-        assert any("command mode" in str(line) for line in transcript.lines)
+        assert any("Command runs" in str(line) for line in transcript.lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -288,7 +291,7 @@ async def test_route_button_updates_the_mode_indicator(tmp_path, monkeypatch):
     monkeypatch.setattr(adapters, "relay_is_configured", lambda root: True)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        await pilot.click("#route")
+        await pilot.click("#mode-relay")
         await pilot.pause()
         assert app.sub_title == "mode: relay"
 
@@ -304,14 +307,14 @@ async def test_transcript_gets_most_of_the_screen_not_an_equal_three_way_split(t
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)) as pilot:
         transcript = app.query_one("#transcript", tui.RichLog)
-        prompt = app.query_one("#prompt", tui.TextArea)
+        prompt = app.query_one("#prompt", tui.Input)
         buttons_row = app.query_one("#controls")
         assert transcript.region.height > prompt.region.height
         assert transcript.region.height > buttons_row.region.height
         # The button row should hug its buttons, not leave dead space
         # beneath them.
-        send_button = app.query_one("#send", tui.Button)
-        assert buttons_row.region.height == send_button.region.height
+        model_button = app.query_one("#model", tui.Button)
+        assert buttons_row.region.height == model_button.region.height
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -328,3 +331,94 @@ def test_launch_does_not_exec_when_nothing_was_requested(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
     tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
     assert calls == []
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_send_sits_to_the_right_of_the_prompt_on_the_same_row(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        prompt = app.query_one("#prompt", tui.Input)
+        send = app.query_one("#send", tui.Button)
+        assert send.region.x > prompt.region.x + prompt.region.width - 1
+        assert prompt.region.y <= send.region.y < prompt.region.y + prompt.region.height + 1
+        assert prompt.region.width > 40  # the prompt takes the rest of the row
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_placeholder_tells_you_what_to_type_for_the_current_mode(tmp_path, monkeypatch):
+    from whyline.console import adapters
+
+    monkeypatch.setattr(adapters, "relay_is_configured", lambda root: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt", tui.Input)
+        assert "whyline" in prompt.placeholder
+        await pilot.click("#mode-chat")
+        await pilot.pause()
+        assert "Message claude" in prompt.placeholder
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        assert "relay" in prompt.placeholder.lower()
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_active_mode_button_is_highlighted(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        assert app.query_one("#mode-command", tui.Button).variant == "primary"
+        assert app.query_one("#mode-chat", tui.Button).variant == "default"
+        await pilot.click("#mode-chat")
+        await pilot.pause()
+        assert app.query_one("#mode-chat", tui.Button).variant == "primary"
+        assert app.query_one("#mode-command", tui.Button).variant == "default"
+        assert app.sub_title == "mode: chat"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_enter_submits_and_echoes_what_you_typed(tmp_path, monkeypatch):
+    from whyline.console.session import SessionEvent
+
+    monkeypatch.setattr(
+        tui, "dispatch", lambda session, text: SessionEvent(kind="output", text="reply")
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#prompt")
+        await pilot.press(*"hi there", "enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("› hi there" in line for line in lines)
+        assert any("reply" in line for line in lines)
+        assert app.query_one("#prompt", tui.Input).value == ""
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_stop_is_only_enabled_while_a_reply_is_running(tmp_path, monkeypatch):
+    import threading
+    from whyline.console.session import SessionEvent
+
+    release = threading.Event()
+
+    def slow_dispatch(session, text):
+        release.wait(timeout=2)
+        return SessionEvent(kind="output", text="done")
+
+    monkeypatch.setattr(tui, "dispatch", slow_dispatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        stop = app.query_one("#stop", tui.Button)
+        assert stop.disabled
+        app.query_one("#prompt", tui.Input).value = "go"
+        await pilot.click("#send")
+        await pilot.pause()
+        assert not stop.disabled
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert stop.disabled

@@ -2760,3 +2760,60 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py, src/whyline/console/adapters.py
 
 <!-- whyline-event: d0a1f748b66e42deb95441dc586ab8c0 -->
+
+## 2026-09-29 — TUI prompt is a single-line Input with mode-aware placeholder, Send on its right; Enter submits
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-1
+
+**Because:** pinned textual<1.0 TextArea has no placeholder and Enter inserts a newline, so users could not tell where to type or send without the mouse
+
+**Rejected:**
+
+- overlay a Static hint on TextArea — fragile, and still no Enter-to-send
+- upgrade textual to 1.x for TextArea.placeholder — wider blast radius than a UX fix
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 49713b9ed6404e5990a97425769878e4 -->
+
+## 2026-09-29 — Replace the relay-only Route button with a Command/Chat/Relay mode switch that highlights the active mode
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-1
+
+**Because:** Route could only enter relay, leaving no click path back to chat or command; the header subtitle alone was too easy to miss
+
+**Rejected:**
+
+- add a separate Chat button — still no way back to command, and no at-a-glance mode
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8c64352977534d0c90271881022569b6 -->
+
+## 2026-09-29 — Shared /help lists modes plus one described line per command; /route to current mode says 'Already in X mode'; /model marks the active agent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-1
+
+**Because:** bare command names did not say what anything was for; repeated Route clicks spammed 'Mode is now relay' and could re-trigger setup
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: c403c457ccb0441da2c82cb49174caf3 -->
+
+## 2026-09-29 — Echo typed input as '› text' and enable Stop only while a dispatch is in flight; stale-token check moved to the main thread
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-UX-1
+
+**Because:** transcript read as an unattributed log; checking the token in the worker left a race where a Stop between check and call_from_thread still rendered a stale result
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 884058fc5dc94d0e898490b7f1ed88ab -->

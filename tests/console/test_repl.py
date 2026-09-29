@@ -234,7 +234,7 @@ def test_slash_help_and_stop_and_unknown(tmp_path, monkeypatch):
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
-    assert any("Commands: /model" in line for line in lines)
+    assert any("/model" in line and "Commands:" in line for line in lines)
     assert any("Nothing in flight to stop." in line for line in lines)
     assert any("Unknown command: /unknown." in line for line in lines)
 
@@ -332,6 +332,46 @@ def test_handle_slash_command_help(tmp_path):
     event = handle_slash_command(session, "/help")
     assert event is not None
     assert "Commands:" in event.text
+
+
+def test_help_explains_modes_and_what_each_command_does(tmp_path):
+    from whyline.console.repl import SLASH_COMMANDS, handle_slash_command
+    from whyline.console.session import ConsoleSession
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/help")
+    for mode in ("Command", "Chat", "Relay"):
+        assert mode in event.text
+    # every command gets its own line with a description, not a bare list
+    for command in SLASH_COMMANDS:
+        line = next(l for l in event.text.splitlines() if l.strip().startswith(command))
+        assert len(line.strip()) > len(command) + 5
+
+
+def test_route_to_the_current_mode_says_so_instead_of_repeating(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    session = ConsoleSession(root=tmp_path, mode="chat")
+    event = handle_slash_command(session, "/route chat")
+    assert event.text == "Already in chat mode."
+
+
+def test_route_to_current_relay_mode_does_not_rerun_setup(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    session = ConsoleSession(root=tmp_path, mode="relay")
+    event = handle_slash_command(session, "/route relay")
+    assert event.kind == "output"
+
+
+def test_model_lists_agents_and_marks_the_active_one(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    session = ConsoleSession(root=tmp_path, agent="codex")
+    event = handle_slash_command(session, "/model")
+    assert "codex (active)" in event.text
+    assert "claude" in event.text and "claude (active)" not in event.text
+    assert "/model <agent>" in event.text
 
 
 def test_handle_slash_command_returns_none_for_ordinary_text(tmp_path):
