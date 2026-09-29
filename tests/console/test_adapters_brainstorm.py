@@ -70,3 +70,28 @@ def test_run_brainstorm_with_no_usable_models_is_an_error(tmp_path, monkeypatch)
     )
     assert event.kind == "error"
     assert calls == []
+
+
+def test_run_brainstorm_reports_each_models_start_and_finish(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm
+
+    _fake_relay(monkeypatch)
+
+    def pass_zero(root, models, topic, *, settings, print_fn=None, progress_fn=None, **kw):
+        for status in ("starting", "running", "succeeded"):
+            progress_fn(brainstorm.ProgressEvent(
+                status=status, agent="codex", label="Codex", phase=brainstorm.PHASE_PASS_ZERO,
+                ordinal=2, total=2, elapsed_seconds=41.0,
+            ))
+        return {}
+
+    monkeypatch.setattr(brainstorm, "run_pass_zero", pass_zero)
+    progress = []
+    adapters.run_brainstorm(
+        tmp_path, topic="t", agents=["claude", "codex"], passes=0,
+        final_agent="claude", progress=progress.append,
+    )
+    per_model = [line for line in progress if line.startswith("[2/2] Codex")]
+    # "running" heartbeats are not printed; start and finish are
+    assert len(per_model) == 2
+    assert "starting" in per_model[0] and "succeeded" in per_model[1]

@@ -101,6 +101,9 @@ class BrainstormScreen(ModalScreen):
     BrainstormScreen #bs-fields { height: auto; max-height: 1fr; }
     BrainstormScreen Label { width: 100%; }
     BrainstormScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
+    /* Textual's own :focus rule adds a tall border, which on a one-line
+       checkbox covers the label entirely; its label highlight is enough. */
+    BrainstormScreen Checkbox:focus { border: none; }
     BrainstormScreen Horizontal { height: auto; }
     BrainstormScreen .field-label { width: 18; padding: 1 1 0 0; }
     BrainstormScreen #bs-passes { width: 10; }
@@ -160,6 +163,10 @@ class BrainstormScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#bs-topic", Input).focus()
+
+    def on_input_submitted(self, event: "Input.Submitted") -> None:
+        event.stop()  # handled here; must not reach the console behind
+        self.query_one("#bs-start", Button).press()
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
@@ -254,7 +261,7 @@ class WhylineConsoleApp(App):
         interpreting free text as a `whyline` CLI invocation."""
         self._sync_mode_indicator()
         self.set_interval(0.1, self._tick)
-        self.query_one("#prompt", Input).focus()
+        self._main("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
                 kind="output",
@@ -272,12 +279,12 @@ class WhylineConsoleApp(App):
         mode = self.session.mode
         self.sub_title = f"mode: {mode}"
         for name in _MODES:
-            button = self.query_one(f"#mode-{name}", Button)
+            button = self._main(f"#mode-{name}", Button)
             button.variant = "primary" if name == mode else "default"
-        self.query_one("#prompt", Input).placeholder = self._placeholder(mode)
+        self._main("#prompt", Input).placeholder = self._placeholder(mode)
         # Who Chat talks to (and with what model) and which repository
         # everything runs against, always in view.
-        self.query_one("#context", Static).update(
+        self._main("#context", Static).update(
             f"{context_label(self.session)}   │   repo: {repo_label(self.session.root)}"
         )
 
@@ -319,7 +326,7 @@ class WhylineConsoleApp(App):
 
     def render_event(self, event: SessionEvent) -> None:
         self.session.record(event)
-        transcript = self.query_one("#transcript", RichLog)
+        transcript = self._main("#transcript", RichLog)
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
         # What you typed is set apart from replies, so the transcript reads
         # as a conversation rather than an unattributed log.
@@ -339,7 +346,20 @@ class WhylineConsoleApp(App):
             self._handle_slash(f"/{button_id}")
 
     def on_input_submitted(self, event: "Input.Submitted") -> None:
-        self._send()
+        # Only the console's own message box sends; Enter in a dialog's
+        # input (the brainstorm topic) is that dialog's business.
+        if event.input.id == "prompt":
+            self._send()
+
+    def _main(self, selector: str, expect_type=None):
+        """Query the console's own screen, never whichever dialog is on top.
+        App.query_one searches the *active* screen, so with the brainstorm
+        form or a confirmation open, looking up #prompt or #transcript
+        crashed the console with NoMatches."""
+        screen = self.screen_stack[0]
+        if expect_type is None:
+            return screen.query_one(selector)
+        return screen.query_one(selector, expect_type)
 
     def _copy_transcript(self) -> None:
         """Pushes the whole transcript onto the system clipboard via OSC 52
@@ -379,8 +399,8 @@ class WhylineConsoleApp(App):
         """Enables Stop and shows the thinking line ("⠋ claude is thinking…
         12s") while a reply is pending, so a slow agent doesn't look like a
         frozen console."""
-        self.query_one("#stop", Button).disabled = not busy
-        thinking = self.query_one("#thinking", Static)
+        self._main("#stop", Button).disabled = not busy
+        thinking = self._main("#thinking", Static)
         if busy:
             self._busy_text = label or busy_label(self.session)
             self._busy_since = time.monotonic()
@@ -391,18 +411,27 @@ class WhylineConsoleApp(App):
             thinking.display = False
 
     def _tick(self) -> None:
-        if not self._busy_text:
-            return
+        if not self._busy_text or not self.screen_stack:
+            return  # idle, or the app is shutting down
         self._spin = (self._spin + 1) % len(_SPINNER)
         elapsed = int(time.monotonic() - self._busy_since)
-        self.query_one("#thinking", Static).update(
+        self._main("#thinking", Static).update(
             f"{_SPINNER[self._spin]} {self._busy_text}… {elapsed}s"
         )
 
     def _send(self) -> None:
-        prompt = self.query_one("#prompt", Input)
+        prompt = self._main("#prompt", Input)
         text = prompt.value.strip()
         if not text:
+            return
+        if self._busy_text and not text.startswith("/"):
+            # A new dispatch would replace the pending one's token, silently
+            # discarding its result -- a whole brainstorm, possibly. The text
+            # stays in the box so it can be sent once this finishes.
+            self.render_event(SessionEvent(
+                kind="output",
+                text="Still working on the last request -- wait for it, or press Stop.",
+            ))
             return
         prompt.value = ""
         self.render_event(SessionEvent(kind="input", text=text))
@@ -452,7 +481,7 @@ class WhylineConsoleApp(App):
             return
         self._stop()  # a reply still pending belongs to the old repository
         result = switch_repo(self.session, target)
-        self.query_one("#transcript", RichLog).clear()
+        self._main("#transcript", RichLog).clear()
         self.render_event(result)
         self._sync_mode_indicator()
 

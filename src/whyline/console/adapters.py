@@ -277,6 +277,13 @@ def run_brainstorm(
     from whyline_relay import brainstorm, config as relay_config
 
     progress = progress if progress is not None else (lambda line: None)
+
+    def on_event(event) -> None:
+        # One line per model as it starts, finishes or fails; relay's
+        # periodic "running" heartbeats would just repeat the start line.
+        if event.status != "running":
+            progress(brainstorm.format_progress_line(event))
+
     settings = relay_config.load(root)
     models = [(agent, BRAINSTORM_LABELS[agent]) for agent in agents]
     skipped = brainstorm.check_availability(settings, models)
@@ -292,18 +299,20 @@ def run_brainstorm(
     names = ", ".join(label for _, label in models)
     progress(f"Researching independently: {names}")
     actual = brainstorm.run_pass_zero(
-        root, models, topic, settings=settings, print_fn=progress, **kwargs
+        root, models, topic, settings=settings, print_fn=progress,
+        progress_fn=on_event, **kwargs
     )
     brainstorm.merge_pass_zero(root, models, topic, actual_agents=actual)
     for number in range(1, passes + 1):
         progress(f"Review pass {number} of {passes}")
         actual = brainstorm.run_review_pass(
             root, models, topic, number, settings=settings, print_fn=progress,
-            actual_agents=actual, **kwargs,
+            actual_agents=actual, progress_fn=on_event, **kwargs,
         )
     progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
     record = brainstorm.run_final_synthesis(
-        root, final_agent, models, topic, settings=settings, **kwargs
+        root, final_agent, models, topic, settings=settings, print_fn=progress,
+        actual_agents=actual, progress_fn=on_event, **kwargs
     )
     path = brainstorm.shared_path(root, topic)
     try:

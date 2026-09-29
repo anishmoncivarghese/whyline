@@ -586,3 +586,113 @@ async def test_repo_switch_asks_first_and_clears_the_transcript(tmp_path, monkey
         assert not any("Staying put" in line for line in lines)  # old text is gone
         assert any("Now working in other" in line for line in lines)
         assert "repo: other" in str(app.query_one("#context", tui.Static).renderable)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_a_focused_brainstorm_checkbox_keeps_its_label_visible(tmp_path, monkeypatch):
+    # Textual's own `:focus` style adds a tall border; on a one-line
+    # checkbox that border ate the only line, so the focused model turned
+    # into what looked like an empty text box.
+    from whyline import account
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        box = app.screen.query_one("#bs-claude", tui.Checkbox)
+        box.focus()
+        await pilot.pause()
+        assert box.has_focus
+        assert box.content_region.height == 1
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_sending_while_busy_is_refused_so_the_pending_result_is_not_lost(
+    tmp_path, monkeypatch
+):
+    import threading
+    from whyline.console.session import SessionEvent
+
+    release = threading.Event()
+    calls = []
+
+    def slow(session, text):
+        calls.append(text)
+        release.wait(timeout=2)
+        return SessionEvent(kind="output", text=f"reply to {text}")
+
+    monkeypatch.setattr(tui, "dispatch", slow)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.focus()
+        prompt.value = "first"
+        await pilot.press("enter")
+        await pilot.pause()
+        prompt.value = "second"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert prompt.value == "second"  # kept, so it can be sent afterwards
+        # slash commands still work while busy
+        prompt.value = "/help"
+        await pilot.press("enter")
+        await pilot.pause()
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    assert calls == ["first"]
+    assert any("Still working" in line for line in lines)
+    assert any("Commands:" in line for line in lines)
+    assert any("reply to first" in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_enter_in_the_brainstorm_topic_starts_it_instead_of_crashing(tmp_path, monkeypatch):
+    # Regression: Enter in the form's topic box bubbled Input.Submitted up
+    # to the app, whose handler looked for #prompt on the (modal) active
+    # screen and crashed the console with NoMatches.
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    calls = []
+    monkeypatch.setattr(
+        adapters, "run_brainstorm",
+        lambda root, *, progress, **choice: calls.append(choice)
+        or SessionEvent(kind="output", text="done"),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        await pilot.press(*"retry policy", "enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert not isinstance(app.screen, tui.BrainstormScreen)
+    assert calls and calls[0]["topic"] == "retry policy"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_progress_and_spinner_keep_working_while_a_dialog_is_open(tmp_path, monkeypatch):
+    # Anything the app renders while a dialog is on top (a brainstorm
+    # progress line, the spinner tick) must reach the main screen's
+    # widgets, not search the dialog for them.
+    from whyline.console.session import SessionEvent
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app._set_busy(True, "working")
+        app.push_screen(tui.ConfirmScreen("Sure?", "Yes"))
+        await pilot.pause(0.3)  # several spinner ticks with the dialog up
+        app.render_event(SessionEvent(kind="output", text="progress while dialog open"))
+        app._set_busy(False)
+        await pilot.pause()
+        assert isinstance(app.screen, tui.ConfirmScreen)
+    assert any(e.text == "progress while dialog open" for e in app.session.transcript)
