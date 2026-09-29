@@ -27,8 +27,8 @@ class EditorUnavailable(RuntimeError):
 def build_session(root: Path):
     if not AVAILABLE:
         raise EditorUnavailable(
-            "The console's editor needs prompt_toolkit. Run: "
-            "pip install 'whyline[console]'"
+            "The console's editor needs prompt_toolkit, which is missing "
+            "from this install. Run: uv tool install --reinstall whyline"
         )
     history_path = root / ".whyline" / "console-history"
     history_path.parent.mkdir(parents=True, exist_ok=True)

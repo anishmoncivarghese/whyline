@@ -8,7 +8,7 @@ def test_build_session_raises_a_clear_error_without_prompt_toolkit(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(editor, "AVAILABLE", False)
-    with pytest.raises(editor.EditorUnavailable, match=r"whyline\[console\]"):
+    with pytest.raises(editor.EditorUnavailable, match=r"reinstall whyline"):
         editor.build_session(tmp_path)
 
 
@@ -33,6 +33,15 @@ def test_module_imports_cleanly_even_if_prompt_toolkit_is_missing(monkeypatch):
     not editor.AVAILABLE, reason="prompt_toolkit not installed -- skip the real smoke test"
 )
 def test_build_session_returns_a_real_prompt_session_when_installed(tmp_path):
-    session = editor.build_session(tmp_path)
+    # Pipe input + dummy output: a real PromptSession otherwise needs an
+    # actual console, which Windows CI runners don't have
+    # (NoConsoleScreenBufferError). This only started running on CI once
+    # prompt_toolkit became a required dependency.
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        session = editor.build_session(tmp_path)
     assert session is not None
     assert (tmp_path / ".whyline" / "console-history").parent.exists()

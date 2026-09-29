@@ -8,7 +8,7 @@ def test_tui_available_flag_exists():
 
 def test_launch_raises_a_clear_error_without_textual(monkeypatch, tmp_path):
     monkeypatch.setattr(tui, "TUI_AVAILABLE", False)
-    with pytest.raises(tui.TuiUnavailable, match=r"whyline\[ui\]"):
+    with pytest.raises(tui.TuiUnavailable, match=r"reinstall whyline"):
         tui.launch(tmp_path)
 
 

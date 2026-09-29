@@ -268,7 +268,8 @@ def _exec(binary: str, argv: list[str]) -> None:
 def launch(root: Path, *, exec_fn=None) -> None:
     if not TUI_AVAILABLE:
         raise TuiUnavailable(
-            "The mouse TUI needs textual. Run: pip install 'whyline[ui]'"
+            "The mouse TUI needs textual, which is missing from this "
+            "install. Run: uv tool install --reinstall whyline"
         )
     if exec_fn is None:
         exec_fn = _exec
