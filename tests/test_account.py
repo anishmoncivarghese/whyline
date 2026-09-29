@@ -424,6 +424,29 @@ def test_available_agents_prefers_repo_confirmation_over_global(tmp_path, monkey
     assert account.available_agents(tmp_path) == {"codex"}
 
 
+def test_available_agents_falls_back_to_global_when_repo_file_predates_available_field(
+    tmp_path, monkeypatch
+):
+    # A repo account.json written before 0.3.7 (account-capability gating)
+    # has plan/detected_at but no "available" key anywhere -- see
+    # _looks_current's docstring for the same schema on the global file.
+    # available_agents() must not read that as "every agent unavailable
+    # here": it predates the question, so the accurate, current global
+    # data should be used instead, exactly as ensure_detected() already
+    # does for a stale global file.
+    monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path / "home")
+    account.save_global({
+        agent: {"available": True}
+        for agent in ("codex", "claude", "antigravity", "grok")
+    })
+    account.save_repo(tmp_path, {
+        "codex": {"plan": "plus", "detected_at": "2026-09-25T00:00:00"},
+        "claude": {"plan": "pro", "detected_at": "2026-09-25T00:00:00"},
+        "confirmed": True,
+    })
+    assert account.available_agents(tmp_path) == {"codex", "claude", "antigravity", "grok"}
+
+
 def test_available_agents_empty_when_detection_itself_raises(tmp_path, monkeypatch):
     # account.py's own module docstring already promises "never raises: ...
     # so one agent's detection problem never blocks the other's" -- that

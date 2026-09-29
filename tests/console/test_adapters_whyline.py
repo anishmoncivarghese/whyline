@@ -22,6 +22,23 @@ def test_run_whyline_command_captures_output_and_succeeds(repo):
     assert event.kind == "output"
 
 
+def test_run_whyline_command_gives_a_friendly_error_for_conversational_text(repo):
+    # Command mode runs everything typed as `whyline <argv>` -- plain
+    # conversation ("let's talk about X") used to hit argparse's own
+    # "invalid choice" usage dump, which is accurate but doesn't explain
+    # why ordinary text just failed. This checks the friendlier message
+    # replaces it and points to /help and /route chat.
+    previous = _chdir(repo.path)
+    try:
+        event = adapters.run_whyline_command(["let's", "talk"])
+    finally:
+        os.chdir(previous)
+    assert event.kind == "error"
+    assert "isn't a whyline command" in event.text
+    assert "/route chat" in event.text
+    assert "usage: whyline" not in event.text
+
+
 def test_run_whyline_command_reports_a_nonzero_exit_as_an_error(repo, monkeypatch):
     previous = _chdir(repo.path)
     try:

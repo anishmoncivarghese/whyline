@@ -2677,3 +2677,86 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/console/tui.py
 
 <!-- whyline-event: a484b5eb1a654b70a693a616af88a2fa -->
+
+## 2026-09-29 — Cut over bare 'whyline' to launch the richest installed console (TUI > keyboard > plain menu), fixing the TUI's slash-command dispatch bug in the same change
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** FC-6-release
+
+**Because:** sub-projects 1-5 were all shipped with nothing pointing users at them yet; the TUI button bug (dispatch() had no slash-command handling) was a real prerequisite for FC2's relay-setup handoff to work correctly, not separate scope
+
+**Rejected:**
+
+- filing the TUI bug as a separate follow-up — rejected, user confirmed fixing it here since FC2 needs it anyway
+- building a console-native relay setup wizard — rejected, hand off to whyline-relay setup via exec, matching today's parity
+
+**Files:** src/whyline/cli.py, src/whyline/console/repl.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 29ee629b0fd9447fb1ae7caafb8e6134 -->
+
+## 2026-09-29 — Fix TUI 1fr/1fr/1fr layout split so transcript gets most of the screen and the button row hugs its buttons
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-LAYOUT-1
+
+**Because:** RichLog, TextArea and Horizontal all default to Textual's height: 1fr, splitting the screen into three equal bands; the transcript only got a third of it and the button row's band was 2-3x taller than its buttons, leaving dead space beneath them that made the whole panel look broken
+
+**Rejected:**
+
+- leaving TextArea at height — auto: starts at 1 row and only grows with typed content, too cramped for a multi-line prompt
+- targeting the Horizontal by type selector alone — same-specificity CSS from the app didn't win over Horizontal's own DEFAULT_CSS in this Textual version; had to give it an id and select by #controls
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e05d67fe96d046198cb94d90326a7d04 -->
+
+## 2026-09-29 — Add a Copy button that pushes the transcript to the clipboard via OSC 52 (App.copy_to_clipboard)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-LAYOUT-1
+
+**Because:** The project's pinned Textual version (0.89, capped <1.0) predates Textual's text-selection feature -- RichLog has no ALLOW_SELECT support to fall back on -- so there was no in-app way to copy output at all; OSC 52 works without needing the user to know their terminal's own bypass-selection modifier key
+
+**Rejected:**
+
+- waiting for a newer Textual with built-in text selection — pyproject.toml pins textual<1.0, and RichLog specifically may not support selection even then since it renders Rich renderables
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 9f6cdfcf0d40460392cf50841949d2e9 -->
+
+## 2026-09-29 — available_agents() falls back to global account data when the repo confirmation file predates the 0.3.7 available-key schema, instead of reading it as every agent unavailable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-LAYOUT-1
+
+**Because:** This repo's own .whyline/account.json was a pre-0.3.7 confirmation snapshot (plan/detected_at only, no available key on any agent), which made the TUI's Model button always report 'No agents detected as available' even though whyline account detect had already found all four agents current and available in the global file
+
+**Rejected:**
+
+- reusing _looks_current() as-is — it requires all four agents present with an available key, which would also invalidate the existing, intentionally-partial repo confirmations covered by test_available_agents_prefers_repo_confirmation_over_global
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 5f736043cbc04c78a5b1cab9f1486838 -->
+
+## 2026-09-29 — Make the console's default 'command' mode discoverable instead of silent: TUI now shows 'mode: <mode>' in the header and prints an onboarding banner on mount, and command-mode's unrecognized-first-word error is a friendly one-liner instead of argparse's raw usage dump
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-LAYOUT-1
+
+**Because:** The console defaulted to 'command' mode with zero visible indicator in the TUI (the plain REPL at least shows '(mode) >' in its prompt), so typing ordinary conversation ('let's...') silently got argparse'd as a whyline CLI invocation and dumped a full 'invalid choice' usage block with no explanation of why
+
+**Rejected:**
+
+- changing the default mode away from command — no evidence this was ever the actual complaint, and command mode (type a whyline subcommand directly, no 'whyline' prefix) is a reasonable default for a console named after the CLI it wraps -- the missing piece was visibility and a kinder failure message, not the default itself
+- suppressing all command-mode errors — only the specific 'first word isn't a known whyline command' case is unfriendly; a real error from a valid command's own bad flags should still show its real argparse message
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: d0a1f748b66e42deb95441dc586ab8c0 -->

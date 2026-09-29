@@ -205,13 +205,27 @@ def set_manual(agent: str, available: bool) -> None:
     save_global(data)
 
 
+def _has_availability_info(data: dict) -> bool:
+    """True if at least one agent entry in `data` carries an "available"
+    key -- the schema introduced in 0.3.7. A repo confirmation file
+    written before that (just plan/detected_at, no "available" key on any
+    agent) must not be read as "every agent confirmed unavailable here";
+    it simply predates the question, same as a pre-0.3.7 global file
+    (see _looks_current)."""
+    return any(
+        isinstance(data.get(agent), dict) and "available" in data[agent]
+        for agent in ("codex", "claude", "antigravity", "grok")
+    )
+
+
 def available_agents(root: Path) -> set[str]:
     """Every agent currently considered available: repo-confirmed data
-    if present, else global data, else nothing. Always ensures
-    detection has run at least once first (see ensure_detected)."""
+    if present and from the current schema, else global data, else
+    nothing. Always ensures detection has run at least once first (see
+    ensure_detected)."""
     ensure_detected()
     data = load_repo(root)
-    if data is None:
+    if data is None or not _has_availability_info(data):
         data = load_global()
     if data is None:
         return set()

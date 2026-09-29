@@ -39,16 +39,29 @@ class WhylineConsoleApp(App):
     """The mouse-enabled console. Every widget dispatches through the same
     ConsoleSession/dispatch() path the keyboard REPL already uses."""
 
-    # Textual's default Button width is 16 columns; six of them (Send,
-    # Model, Route, History, Stop, Help) at that width total 96 columns,
+    # Textual's default Button width is 16 columns; seven of them (Send,
+    # Model, Route, History, Stop, Help, Copy) at that width would be
     # wider than an 80-column terminal -- the standard default, and what
-    # Textual's own test harness uses. Without this, "Stop" and "Help" are
+    # Textual's own test harness uses. Without this, later buttons are
     # genuinely off-screen, not just visually cramped: real mouse clicks
     # (and Pilot.click in tests) can't reach them at all. Sizing buttons to
     # their label instead of a fixed width keeps the whole row within 80
-    # columns comfortably (measured: ~41 columns total for these six).
+    # columns comfortably.
+    #
+    # RichLog, TextArea and Horizontal all default to `height: 1fr` (see
+    # Textual's own DEFAULT_CSS for each), so left alone they split the
+    # screen into three equal bands: the transcript gets only a third of
+    # the space, the prompt box gets a whole band for what is usually one
+    # line of text, and the button row -- three rows tall by content --
+    # sits inside a band just as tall as the transcript's, leaving a dead
+    # strip of empty space beneath the buttons. Pinning the prompt to a
+    # small fixed height and the button row to `auto` gives the transcript
+    # the rest of the screen and puts the buttons flush above the footer.
     DEFAULT_CSS = """
     Horizontal > Button { min-width: 6; width: auto; }
+    RichLog#transcript { height: 1fr; }
+    TextArea#prompt { height: 5; }
+    #controls { height: auto; }
     """
 
     def __init__(self, *, root: Path) -> None:
@@ -56,6 +69,28 @@ class WhylineConsoleApp(App):
         self.session = ConsoleSession(root=root)
         self._dispatch_token: object | None = None
         self._exec_after: tuple[str, list[str]] | None = None
+
+    def on_mount(self) -> None:
+        """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
+        plus the mode it's silently defaulting to: unlike the REPL prompt
+        (which prints "(mode) > " before every line), the TUI had no
+        indicator at all, so typing ordinary conversation in the default
+        "command" mode looked like the console was just broken instead of
+        interpreting free text as a `whyline` CLI invocation."""
+        self._sync_mode_indicator()
+        self.render_event(
+            SessionEvent(
+                kind="output",
+                text=(
+                    "whyline console -- command mode runs what you type as "
+                    "`whyline ...`; /route chat switches to talking with an "
+                    "agent instead. /help for commands."
+                ),
+            )
+        )
+
+    def _sync_mode_indicator(self) -> None:
+        self.sub_title = f"mode: {self.session.mode}"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -68,6 +103,8 @@ class WhylineConsoleApp(App):
             Button("History", id="history"),
             Button("Stop", id="stop"),
             Button("Help", id="help"),
+            Button("Copy", id="copy"),
+            id="controls",
         )
         yield Footer()
 
@@ -84,8 +121,28 @@ class WhylineConsoleApp(App):
             self._stop()
         elif button_id == "route":
             self._handle_slash("/route relay")
+        elif button_id == "copy":
+            self._copy_transcript()
         elif button_id in ("model", "history", "help"):
             self._handle_slash(f"/{button_id}")
+
+    def _copy_transcript(self) -> None:
+        """Pushes the whole transcript onto the system clipboard via OSC 52
+        (App.copy_to_clipboard), since a mouse-driven click-drag selection
+        is captured by the app itself here, not the terminal -- there is no
+        text-selection support to fall back on in this project's pinned
+        Textual version (see tui.py's own module docstring situation:
+        RichLog predates Textual's text-selection feature). This works
+        without the user needing to know their terminal's own
+        bypass-selection modifier key."""
+        if not self.session.transcript:
+            self.render_event(SessionEvent(kind="output", text="(nothing to copy yet)"))
+            return
+        text = "\n".join(
+            f"{_PREFIX.get(e.kind, '')}{e.text}" for e in self.session.transcript
+        )
+        self.copy_to_clipboard(text)
+        self.render_event(SessionEvent(kind="output", text="Transcript copied to clipboard."))
 
     def _stop(self) -> None:
         """Invalidates the current dispatch token (MTU6): whatever
@@ -126,6 +183,7 @@ class WhylineConsoleApp(App):
             self.exit()
             return True
         self.render_event(event)
+        self._sync_mode_indicator()
         return True
 
     def _dispatch_text(self, text: str) -> None:

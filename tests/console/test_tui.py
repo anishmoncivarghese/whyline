@@ -19,7 +19,7 @@ async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
     async with app.run_test() as pilot:
         assert app.query_one("#transcript") is not None
         assert app.query_one("#prompt") is not None
-        for button_id in ("send", "model", "route", "history", "stop", "help"):
+        for button_id in ("send", "model", "route", "history", "stop", "help", "copy"):
             assert app.query_one(f"#{button_id}") is not None
 
 
@@ -51,14 +51,15 @@ async def test_send_ignores_empty_or_whitespace_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "dispatch", lambda session, text: called.append(text))
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
+        transcript = app.query_one("#transcript", tui.RichLog)
+        baseline = len(transcript.lines)  # the on_mount onboarding banner
         prompt = app.query_one("#prompt", tui.TextArea)
         prompt.text = "   \n  "
         await pilot.click("#send")
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert called == []
-        transcript = app.query_one("#transcript", tui.RichLog)
-        assert transcript.lines == []
+        assert len(transcript.lines) == baseline
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -96,6 +97,8 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "dispatch", slow_dispatch)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
+        transcript = app.query_one("#transcript", tui.RichLog)
+        baseline = len(transcript.lines)  # the on_mount onboarding banner
         prompt = app.query_one("#prompt", tui.TextArea)
         prompt.text = "slow"
         await pilot.click("#send")
@@ -106,8 +109,7 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
         # Wait for worker to finish
         await app.workers.wait_for_complete()
         await pilot.pause()
-        transcript = app.query_one("#transcript", tui.RichLog)
-        assert transcript.lines == []
+        assert len(transcript.lines) == baseline
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -233,6 +235,83 @@ def test_launch_performs_the_deferred_exec_after_app_run_returns(tmp_path, monke
     monkeypatch.setattr(tui, "WhylineConsoleApp", FakeApp)
     tui.launch(tmp_path, exec_fn=lambda binary, argv: calls.append((binary, argv)))
     assert calls == [("whyline-relay", ["whyline-relay", "setup"])]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_button_pushes_transcript_to_clipboard(tmp_path, monkeypatch):
+    from whyline.console.session import SessionEvent
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.transcript.clear()  # drop the on_mount onboarding banner
+        app.session.record(SessionEvent(kind="output", text="earlier output"))
+        copied = []
+        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: copied.append(text))
+        await pilot.click("#copy")
+        await pilot.pause()
+        assert copied == ["earlier output"]
+        transcript = app.query_one("#transcript", tui.RichLog)
+        assert any("copied to clipboard" in str(line) for line in transcript.lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_button_with_no_transcript_does_not_touch_the_clipboard(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.transcript.clear()  # drop the on_mount onboarding banner
+        copied = []
+        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: copied.append(text))
+        await pilot.click("#copy")
+        await pilot.pause()
+        assert copied == []
+        transcript = app.query_one("#transcript", tui.RichLog)
+        assert any("nothing to copy" in str(line) for line in transcript.lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_mount_shows_the_default_mode_and_an_onboarding_banner(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        assert app.sub_title == "mode: command"
+        transcript = app.query_one("#transcript", tui.RichLog)
+        assert any("command mode" in str(line) for line in transcript.lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_route_button_updates_the_mode_indicator(tmp_path, monkeypatch):
+    from whyline.console import adapters
+
+    monkeypatch.setattr(adapters, "relay_is_configured", lambda root: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#route")
+        await pilot.pause()
+        assert app.sub_title == "mode: relay"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_transcript_gets_most_of_the_screen_not_an_equal_three_way_split(tmp_path):
+    # Regression test: RichLog, TextArea and Horizontal all default to
+    # `height: 1fr` in Textual, which used to split the screen into three
+    # equal bands -- the transcript only got a third of it, and the button
+    # row's band was taller than its buttons, leaving dead space beneath
+    # them. The transcript should now get the lion's share.
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        transcript = app.query_one("#transcript", tui.RichLog)
+        prompt = app.query_one("#prompt", tui.TextArea)
+        buttons_row = app.query_one("#controls")
+        assert transcript.region.height > prompt.region.height
+        assert transcript.region.height > buttons_row.region.height
+        # The button row should hug its buttons, not leave dead space
+        # beneath them.
+        send_button = app.query_one("#send", tui.Button)
+        assert buttons_row.region.height == send_button.region.height
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

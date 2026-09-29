@@ -49,6 +49,23 @@ def run_whyline_command(argv: list[str]) -> SessionEvent:
 
     from whyline import cli
 
+    if argv and argv[0] not in cli.COMMANDS:
+        # Command mode runs everything you type as `whyline <argv>` --
+        # ordinary conversation ("let's ...") lands here as an unrecognized
+        # first word. argparse's own "invalid choice" usage dump is
+        # accurate but says nothing about *why* plain text just blew up,
+        # so this replaces it with a pointer back to the two ways out:
+        # /help (what command mode actually understands) or /route chat
+        # (stop treating input as commands at all).
+        return SessionEvent(
+            kind="error",
+            text=(
+                f"{argv[0]!r} isn't a whyline command, so command mode "
+                "can't run it. /help lists the commands, or /route chat "
+                "to talk with an agent instead."
+            ),
+        )
+
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
