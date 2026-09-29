@@ -3112,3 +3112,20 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
 
 <!-- whyline-event: 97ffb0311cd84f27afcf004558a01f29 -->
+
+## 2026-09-29 — Wrote Final Synthesis section combining all three models' converged brainstorm findings into one prioritized sequence
+
+**Actor:** claude
+**Role:** synthesizer
+**Task:** brainstorm-whyline-updates
+
+**Because:** All three independent+review passes converged on the same core gaps (commit-bound provenance, decision lifecycle, stale ownership/handoff state, rename-aware matching); synthesis orders fixes by honesty/staleness first, then features
+
+**Rejected:**
+
+- Ranking ledger scale/privacy before operational staleness fixes — staleness is an active, measured bug degrading every sync call today, not a future scaling risk
+- A standalone whyline review command — reviewers can use note with new verdict/test fields instead of new plumbing
+
+**Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
+
+<!-- whyline-event: 171ac23a81f94d449cd5dbc498b95cd7 -->

@@ -1,5 +1,89 @@
 # Brainstorm: what further udpates can help whyline
 
+## Final Synthesis
+
+Three independent passes (Claude, Codex, Antigravity), followed by three review
+passes reading each other's work, converged on the same diagnosis without
+being told to: Whyline's core problem right now is not missing features, it's
+that its claims of confidence and currency are weaker than they look.
+Timestamps can't prove a decision matches a commit, decisions never expire or
+get superseded, ownership and handoff state never expires either, and file
+history breaks across renames. All three models found live evidence of this
+in the repo itself while writing the brainstorm — `whyline sync` showed a
+days-stale "approved" handoff for FC-3 and a stale ownership conflict from
+task UCF-1. That's the strongest possible argument for the order below: fix
+honesty and staleness before adding surface area.
+
+### Recommended sequence
+
+1. **Exact, honest provenance.** Add `whyline note --commit <sha>` for
+   explicit commit binding, plus a pending/`attach` workflow for decisions
+   made before the code lands (never auto-bind to `HEAD` just because the
+   tree is clean — Codex's objection to Antigravity's original proposal,
+   which Antigravity conceded). Store exact timestamp, event ID, and commit
+   SHA in a versioned payload inside the existing HTML comment on each
+   decision entry (`decisions.py:38`), not a separate companion file — one
+   source of truth, backward-compatible parsing for older entries. This is
+   the fix for the day-precision truncation that currently caps fresh-clone
+   confidence at MEDIUM regardless of evidence quality.
+
+2. **Stop the operational bleed.** Ownership claims (`ownership.py`) and
+   handoffs (`handoff.py`) are the same bug in two files: advisory state that
+   never expires and keeps injecting itself into every `sync`. Add TTLs and
+   `release --stale`/`release --all-for-task` for claims, and explicit
+   `handoff close --status` plus auto-suppression once an approved handoff's
+   commit is behind HEAD. This is a present, measured defect, not future
+   scaling work — fix it early since it's actively degrading context on every
+   `sync` call today.
+
+3. **Decision lifecycle and a query surface.** Split supersede (a new
+   decision replaces an old one, old one stays as historical rationale) from
+   retract (a decision was simply wrong, no replacement) as two verbs, not
+   one flag. Ship them alongside a `whyline decisions` command family
+   (`list`, `search`, `show <id>`, `--json`) rather than `whyline log`, which
+   collides with `git log` and `whyline timeline`. `explain` should prefer an
+   active superseding decision when multiple candidates match, resolving
+   ambiguous MEDIUM cases back to HIGH. Add review-evidence fields
+   (`--verdict`, `--reviewed-commit`, `--test`) directly to `note` rather than
+   inventing a parallel `whyline review` command.
+
+4. **Ledger scale and privacy, as one track.** The real cold-start risk is
+   `ledger.jsonl`, not `decisions.md` — `history.load()` fully deserializes
+   every mechanical event and raw prompt body just to pull out notes. Fix
+   the read path (reverse-scan or a lightweight note stream) and the
+   retention question (`prompt_capture = metadata|redacted|full`, defaulting
+   safely; `ledger prune --older-than`) together, since both touch the same
+   file and one motivates the other. Benchmark before reaching for an index
+   or database — nothing measured yet justifies one.
+
+5. **Rename-aware relevance and diff-wide explain.** Build a historical-path
+   alias set from `git log --follow` (`gitq.historical_paths()`) and use it
+   consistently across `explain`/`brief`/`sync`, surfacing the matched alias
+   so relevance stays auditable. Then add `whyline explain --diff`/`--staged`,
+   grouped by decision ID with a coverage summary (exact/heuristic/
+   mechanical-only/unexplained) — this is what turns `explain` from a
+   single-line debugging tool into an actual PR review aid, and it's most
+   valuable once steps 1 and this alias set both exist.
+
+6. **Ecosystem and diagnostics last.** Antigravity currently has zero
+   mechanical hook coverage (no `.agents/hooks.json` install path) despite
+   being a first-class runner — close that gap first, since a synthetic hook
+   check is meaningless without a real target. Then consolidate all health
+   checks (hook config/executable/observed status, ledger policy and size,
+   stale ownership/handoffs, decision parseability) into one `whyline doctor`
+   command rather than scattered ad hoc checks. Gemini support is reasonable
+   but strictly lower priority than any correctness work above.
+
+### Cross-cutting principle
+
+Every item above is in service of one rule the three passes kept re-deriving
+independently: Whyline should never let suggestive state (a clean tree, an
+approved-looking handoff, an installed-but-unverified hook) imply more
+certainty than it has actually proven. Inference must stay visibly inference;
+exactness should be earned via explicit binding, not guessed from
+correlation. That principle, not any single feature, is the real output of
+this brainstorm.
+
 ## Claude
 
 # What other updates can be done in Whyline — review pass 1
