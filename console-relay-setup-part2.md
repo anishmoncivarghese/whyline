@@ -1,4 +1,4 @@
-- [ ] CRS-5: Require relay 0.2.26 and add `relay_ops.py`
+- [x] CRS-5: Require relay 0.2.26 and add `relay_ops.py`
 
   ## Global Constraints
 
