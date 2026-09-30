@@ -3809,3 +3809,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0ac534187c0e4e6c9149646a90421f1b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:59:34.242Z"} -->
+
+## 2026-09-30 — Set height auto on nested Vertical and Horizontal containers in RelayPlanScreen
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-9
+
+**Because:** Textual Vertical containers default to height: 1fr inside scrollable forms, which causes child groups to expand and push modal action buttons off-screen on constrained displays
+
+**Rejected:**
+
+- Setting explicit heights per group — brittle across different sources and future layout changes
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: b4b7d73c168147cdb6408a9907d1b2ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:05:02.400Z"} -->
+
+## 2026-09-30 — Approve pasted-plan popup and console wiring
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-9
+
+**Because:** The popup validates and saves pasted plans, confirms replacement, switches source fields correctly, respects the home-repository guard, keeps controls visible at 110x40, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — no functional, safety, layout, or test-coverage defect was found within CRS-9 scope
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 5a9eada655a841a68ec5b2dda7d7f1b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:06:46.068Z"} -->

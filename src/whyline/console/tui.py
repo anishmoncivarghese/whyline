@@ -713,7 +713,29 @@ class WhylineConsoleApp(App):
     def _open_relay_plan(self) -> None:
         if self._refuse_in_home():
             return
-        self.render_event(SessionEvent(kind="output", text="Plan: coming in the next task."))
+        from whyline import account
+        from whyline.console.relay_screens import RelayPlanScreen
+
+        self.push_screen(
+            RelayPlanScreen(
+                self.session.root,
+                account.agent_status(self.session.root),
+                self.session.agent or "claude",
+            ),
+            self._plan_saved,
+        )
+
+    def _plan_saved(self, path: Path | None) -> None:
+        if path is None:
+            return
+        self.render_event(
+            SessionEvent(
+                kind="output",
+                text=f"Saved {path.name} and committed it. Next: Set up, to pick who "
+                "implements, tests and reviews.",
+            )
+        )
+        self._sync_relay_buttons()
 
     def _open_relay_setup(self) -> None:
         if self._refuse_in_home():
