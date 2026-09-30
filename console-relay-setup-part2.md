@@ -2298,7 +2298,7 @@
   git commit -m "feat(console): plan from a new or existing brainstorm"
   ```
 
-- [ ] CRS-12: Set up popup — roles, check, start
+- [x] CRS-12: Set up popup — roles, check, start
 
   ## Global Constraints
 
