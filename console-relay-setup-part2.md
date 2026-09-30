@@ -473,7 +473,7 @@
   git commit -m "feat(console): relay_ops for planning and setup; require whyline-relay 0.2.26"
   ```
 
-- [ ] CRS-6: Relay-mode buttons, and Relay mode stays in the console
+- [x] CRS-6: Relay-mode buttons, and Relay mode stays in the console
 
   ## Global Constraints
 
