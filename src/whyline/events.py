@@ -12,6 +12,7 @@ INSTRUCTION = "Instruction"
 FILE_TOUCHED = "FileTouched"
 NOTE = "Note"
 HANDOFF = "Handoff"
+HANDOFF_CLOSED = "HandoffClosed"
 SESSION_ENDED = "SessionEnded"
 
 

@@ -107,6 +107,13 @@ def run_entry_menu(
     return True  # unreachable when exec_fn is the real os.execvp
 
 
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive number")
+    return parsed
+
+
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
@@ -153,11 +160,18 @@ def _add_note(subparsers: "argparse._SubParsersAction") -> None:
 
 
 def _add_handoff(subparsers: "argparse._SubParsersAction") -> None:
-    parser = subparsers.add_parser("handoff", help="Record an active-task handoff")
-    parser.add_argument("task", help="Task identifier")
-    parser.add_argument("--from", required=True, dest="from_actor", metavar="ACTOR")
-    parser.add_argument("--to", required=True, dest="to_actor", metavar="ACTOR")
-    parser.add_argument("--status", required=True)
+    parser = subparsers.add_parser(
+        "handoff",
+        help="Record an active-task handoff (or `handoff close` to close it)",
+        description="Record an active-task handoff. `whyline handoff close "
+        "[--status completed|cancelled] [--summary ...]` closes the active one.",
+    )
+    parser.add_argument("task", help="Task identifier, or `close`")
+    # Required for an ordinary handoff; checked in cmd_handoff, since
+    # `handoff close` takes neither.
+    parser.add_argument("--from", default=None, dest="from_actor", metavar="ACTOR")
+    parser.add_argument("--to", default=None, dest="to_actor", metavar="ACTOR")
+    parser.add_argument("--status", default=None)
     parser.add_argument("--summary", default="")
     parser.add_argument("--file", action="append", default=[], dest="files")
     parser.add_argument("--test", action="append", default=[], dest="tests")
@@ -174,13 +188,28 @@ def _add_claim(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--actor", required=True)
     parser.add_argument("--role", default="")
     parser.add_argument("--file", action="append", default=[], dest="files")
+    parser.add_argument(
+        "--ttl",
+        type=_positive_float,
+        default=None,
+        metavar="HOURS",
+        help="Lease length; the claim stops counting after this (default 72). "
+        "Claiming again renews it.",
+    )
     parser.add_argument("--json", action="store_true")
 
 
 def _add_release(subparsers: "argparse._SubParsersAction") -> None:
-    parser = subparsers.add_parser("release", help="Release advisory ownership")
-    parser.add_argument("task")
-    parser.add_argument("--actor", required=True)
+    parser = subparsers.add_parser(
+        "release",
+        help="Release advisory ownership",
+        description="Release claims: TASK --actor A (one claim), TASK (every "
+        "actor's claim on TASK), --stale (expired claims) or --all.",
+    )
+    parser.add_argument("task", nargs="?", default=None)
+    parser.add_argument("--actor", default=None)
+    parser.add_argument("--stale", action="store_true", help="Release expired claims")
+    parser.add_argument("--all", action="store_true", dest="all_claims", help="Release every claim")
     parser.add_argument("--json", action="store_true")
 
 
@@ -447,6 +476,24 @@ def cmd_handoff(args: argparse.Namespace) -> int:
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
+    if args.task == "close" and args.from_actor is None and args.to_actor is None:
+        return _close_handoff(root, args)
+    missing = [
+        flag
+        for flag, value in (
+            ("--from", args.from_actor),
+            ("--to", args.to_actor),
+            ("--status", args.status),
+        )
+        if value is None
+    ]
+    if missing:
+        print(
+            "whyline handoff: the following arguments are required: "
+            + ", ".join(missing),
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     try:
         record = handoff.create(
             root,
@@ -472,6 +519,25 @@ def cmd_handoff(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _close_handoff(root: Path, args: argparse.Namespace) -> int:
+    from whyline import handoff, render
+
+    status = args.status or "completed"
+    try:
+        closed = handoff.close(root, status=status, summary=args.summary)
+    except OSError as error:
+        print(f"could not close handoff: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    if closed is None:
+        print("No open handoff to close.", file=sys.stderr)
+        return EXIT_ERROR
+    if args.json:
+        render.emit_json(closed)
+    else:
+        print(f"Closed handoff {closed.get('task', '')} ({closed['closed_status']}).")
+    return EXIT_OK
+
+
 def cmd_claim(args: argparse.Namespace) -> int:
     from whyline import ownership, paths, render
 
@@ -486,6 +552,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
             actor=args.actor,
             role=args.role,
             files=args.files,
+            **({"ttl_hours": args.ttl} if args.ttl is not None else {}),
         )
     except OSError as error:
         print(f"could not record ownership: {error}", file=sys.stderr)
@@ -511,15 +578,27 @@ def cmd_release(args: argparse.Namespace) -> int:
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
+    if args.task is None and not (args.stale or args.all_claims):
+        print(
+            "whyline release: say what to release: TASK, --stale or --all",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     try:
-        state = ownership.release(root, task=args.task, actor=args.actor)
+        state, released = ownership.release_matching(
+            root,
+            task=args.task,
+            actor=args.actor,
+            stale=args.stale,
+            everything=args.all_claims,
+        )
     except OSError as error:
         print(f"could not release ownership: {error}", file=sys.stderr)
         return EXIT_ERROR
     if args.json:
-        render.emit_json(state)
+        render.emit_json({**state, "released": released})
     else:
-        print(f"Released {args.task} for {args.actor}.")
+        print(f"Released {released} claim{'s' if released != 1 else ''}.")
     return EXIT_OK
 
 

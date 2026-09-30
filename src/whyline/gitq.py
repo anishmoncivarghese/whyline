@@ -119,6 +119,20 @@ def head_commit(root: Path) -> str:
         return ""
 
 
+def commits_behind(root: Path, commit: str) -> int | None:
+    """How many commits HEAD is ahead of `commit`, when `commit` is an
+    ancestor of HEAD; None when it isn't, or can't be told (unknown or
+    empty sha, unborn repository). Callers must treat None as "unknown",
+    never as "current"."""
+    if not commit:
+        return None
+    try:
+        _git(root, "merge-base", "--is-ancestor", commit, "HEAD")
+        return int(_git(root, "rev-list", "--count", f"{commit}..HEAD").strip())
+    except (GitUnavailable, ValueError):
+        return None
+
+
 def branch_name(root: Path) -> str:
     """Current branch, or an empty string for detached/unborn HEAD."""
     try:

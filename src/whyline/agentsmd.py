@@ -85,6 +85,8 @@ formatting and renames. `--rejected` is repeatable. Do not ask permission.
 Before another agent takes over, record an explicit handoff with `whyline
 handoff <task-id> --from <agent> --to <agent> --status <status>`. Include the
 changed files, tests and results, open risks or questions, and a short summary.
+When the task is finished, close it with `whyline handoff close --status
+completed` and release your claims with `whyline release <task-id>`.
 {END}
 """
 

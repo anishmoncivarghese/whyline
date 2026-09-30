@@ -1,4 +1,10 @@
-"""Explicit, checkout-local active-task handoffs."""
+"""Explicit, checkout-local active-task handoffs.
+
+A handoff used to stay "active" forever: an approved FC-3 handoff many
+commits behind HEAD kept heading every `sync` and even became the default
+task that narrowed decision selection. A handoff can now be closed
+explicitly, and one whose work is plainly finished is treated as settled.
+"""
 
 from __future__ import annotations
 
@@ -66,6 +72,82 @@ def create(
     state.atomic_write_json(paths.active_handoff_path(root), record)
     ledger.append(paths.ledger_path(root), record)
     return record
+
+
+# Statuses that mean the handed-off work is finished. Compared lowercased.
+TERMINAL_STATUSES = frozenset(
+    {"approved", "completed", "complete", "done", "merged", "cancelled", "canceled", "closed"}
+)
+
+
+def finished_tasks(ledger_events: list[dict]) -> dict[str, str]:
+    """Task -> when it was last recorded as finished: a handoff with a
+    terminal status, or an explicit close. Used to retire ownership claims
+    on evidence rather than age alone."""
+    finished: dict[str, str] = {}
+    for event in ledger_events:
+        kind = event.get("type")
+        terminal = kind == events.HANDOFF_CLOSED or (
+            kind == events.HANDOFF
+            and str(event.get("status", "")).strip().lower() in TERMINAL_STATUSES
+        )
+        task, ts = event.get("task"), event.get("ts")
+        if terminal and isinstance(task, str) and task and isinstance(ts, str):
+            if ts > finished.get(task, ""):
+                finished[task] = ts
+    return finished
+
+
+def close(root: Path, *, status: str = "completed", summary: str = "") -> dict | None:
+    """Mark the active handoff closed; None if there is none or it already is.
+
+    whyline-relay reads active-handoff.json and routes on its `id`,
+    `status` and `to_actor`, so those stay exactly as they were -- closing
+    must not read as a new handoff. The closure is recorded alongside them
+    and as its own ledger event.
+    """
+    with state.file_lock(paths.active_handoff_path(root)):
+        active = load(root)
+        if not active or active.get("closed"):
+            return None
+        event = events.new_event(
+            events.HANDOFF_CLOSED,
+            closes=active.get("id", ""),
+            task=active.get("task", ""),
+            status=decisions.one_line(status),
+            summary=decisions.one_line(summary),
+        )
+        closed = {
+            **active,
+            "closed": True,
+            "closed_at": event["ts"],
+            "closed_status": event["status"],
+            "closed_summary": event["summary"],
+        }
+        state.atomic_write_json(paths.active_handoff_path(root), closed)
+    ledger.append(paths.ledger_path(root), event)
+    return closed
+
+
+def settled(root: Path, record: dict | None) -> dict | None:
+    """Why `record` no longer describes current work, or None if it may.
+
+    Closed handoffs are settled. So is one whose status is terminal *and*
+    whose recorded commit HEAD has since moved past -- the work was finished
+    and more has happened since. A terminal handoff still at HEAD is not:
+    that is the moment right after approval, when it is still the news. An
+    unknown commit is never taken as proof of anything.
+    """
+    if not record:
+        return None
+    if record.get("closed"):
+        return {"reason": "closed"}
+    if str(record.get("status", "")).strip().lower() not in TERMINAL_STATUSES:
+        return None
+    behind = gitq.commits_behind(root, str(record.get("current_commit") or ""))
+    if not behind:
+        return None
+    return {"reason": "behind", "commits_behind": behind}
 
 
 def format_text(record: dict) -> str:

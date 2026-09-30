@@ -3129,3 +3129,48 @@ Append-only. Written by whyline; readable without it.
 **Files:** docs/brainstorm/what-further-udpates-can-help-whyline.md
 
 <!-- whyline-event: 171ac23a81f94d449cd5dbc498b95cd7 -->
+
+## 2026-09-30 — Retire ownership claims on evidence (a later finished handoff or close for the task) as well as a 72h lease
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-2
+
+**Because:** the lease alone left all 25 of this repo's 1-2 day old claims active though every task but one had an approved handoff after the claim
+
+**Rejected:**
+
+- shorter default lease (e.g. 24h) — guesses from age; still wrong for long tasks and slow for fast ones
+- delete stale claims automatically — hides diagnostic history; kept and hidden, cleared by release --stale
+
+**Files:** src/whyline/ownership.py
+
+<!-- whyline-event: 48fe90a69a5442158e09bcf7356b6bdc -->
+
+## 2026-09-30 — handoff close adds closed/closed_at/closed_status and a HandoffClosed event, leaving id/status/to_actor unchanged
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-2
+
+**Because:** whyline-relay reads active-handoff.json directly and routes on those fields; closing must not look like a new handoff
+
+**Rejected:**
+
+- overwrite status with completed and a new id — a running relay would treat it as a fresh handoff to route
+
+**Files:** src/whyline/handoff.py
+
+<!-- whyline-event: 89c7aec0b5694b928c1df9b39d093596 -->
+
+## 2026-09-30 — A finished-status handoff counts as settled only once HEAD has strictly moved past its commit
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-2
+
+**Because:** right after approval it is still the latest news; an unknown or non-ancestor commit is never taken as proof
+
+**Files:** src/whyline/handoff.py
+
+<!-- whyline-event: 89c889e977d74277a2dfdee33fcb96e8 -->

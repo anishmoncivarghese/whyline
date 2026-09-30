@@ -29,6 +29,14 @@ def _summarised_paths(values: list[str], limit: int = 6) -> str:
 
 def _state(root: Path, task: str | None, files: list[str] | None):
     active = handoff.load(root)
+    last = None
+    settled = handoff.settled(root, active)
+    if settled:
+        # Finished work: reported in one line, and no longer allowed to pick
+        # the default task or rank files -- it would narrow selection to a
+        # task nobody is working on.
+        last = {**active, "settled": settled}
+        active = None
     changed = gitq.changed_paths(root)
     effective_task = task or (str(active.get("task", "")) if active else "") or None
     # The caller's own --file narrows. The working tree's changed paths and the
@@ -50,9 +58,19 @@ def _state(root: Path, task: str | None, files: list[str] | None):
         "dirty": bool(changed),
     }
     ownership_state = ownership.load(root)
-    ownership_state["conflicts"] = ownership.conflicts(ownership_state["claims"])
+    live, stale = ownership.split(
+        ownership_state["claims"],
+        finished_tasks=handoff.finished_tasks(loaded.ledger_events),
+    )
+    ownership_state = {
+        **ownership_state,
+        "claims": live,
+        "stale": stale,
+        "conflicts": ownership.conflicts(live),
+    }
     return (
         active,
+        last,
         git,
         ownership_state,
         loaded,
@@ -67,6 +85,7 @@ def _state(root: Path, task: str | None, files: list[str] | None):
 def payload(root: Path, task: str | None, files: list[str] | None) -> dict:
     (
         active,
+        last,
         git,
         ownership_state,
         _loaded,
@@ -76,6 +95,7 @@ def payload(root: Path, task: str | None, files: list[str] | None) -> dict:
     ) = _state(root, task, files)
     return {
         "active_handoff": active,
+        "last_handoff": last,
         "git": git,
         "task": effective_task,
         "files": effective_files,
@@ -84,6 +104,21 @@ def payload(root: Path, task: str | None, files: list[str] | None) -> dict:
             {**entry.event, "source": entry.source} for entry in relevant
         ],
     }
+
+
+def _last_handoff_line(last: dict | None) -> list[str]:
+    if not last:
+        return []
+    settled = last.get("settled") or {}
+    status = last.get("closed_status") if settled.get("reason") == "closed" else last.get("status")
+    if settled.get("reason") == "closed":
+        when = "closed"
+    else:
+        count = settled.get("commits_behind", 0)
+        when = f"at {_safe(last.get('current_commit', ''))[:7]}, {count} commit" + (
+            "s" if count != 1 else ""
+        ) + " ago"
+    return [f"Last handoff: {_clipped(last.get('task', ''))} ({_clipped(status or '')}, {when})"]
 
 
 def _handoff_lines(active: dict | None, *, compact: bool = False) -> list[str]:
@@ -127,7 +162,23 @@ def _handoff_lines(active: dict | None, *, compact: bool = False) -> list[str]:
     return lines
 
 
+def _stale_line(ownership_state: dict) -> list[str]:
+    count = len(ownership_state.get("stale") or [])
+    if not count:
+        return []
+    return [
+        f"({count} stale claim{'s' if count != 1 else ''} hidden -- expired or "
+        "task finished; clear with: whyline release --stale)"
+    ]
+
+
 def _ownership_lines(ownership_state: dict, *, compact: bool = False) -> list[str]:
+    return _live_ownership_lines(ownership_state, compact=compact) + _stale_line(
+        ownership_state
+    )
+
+
+def _live_ownership_lines(ownership_state: dict, *, compact: bool = False) -> list[str]:
     claims = ownership_state.get("claims") or []
     found_conflicts = ownership_state.get("conflicts") or []
     if not claims:
@@ -177,6 +228,7 @@ def compose(
         raise ValueError(f"token budget must be at least {MIN_TOKEN_BUDGET}")
     (
         active,
+        last,
         git,
         ownership_state,
         loaded,
@@ -204,6 +256,7 @@ def compose(
             + ").",
             "",
             *_handoff_lines(active, compact=compact),
+            *_last_handoff_line(last),
             "",
             "Git:",
             f"- branch: {_clipped(git['branch']) or '(detached/unborn)'}",

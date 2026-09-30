@@ -108,6 +108,8 @@ def timeline_text(events_: list[dict]) -> str:
         detail = (
             event.get("decision") or event.get("path") or event.get("session") or ""
         )
+        if not detail and kind in ("Handoff", "HandoffClosed"):
+            detail = f"{event.get('task', '')}: {event.get('status', '')}"
         lines.append(f"{stamp}  {kind:<15} {detail}")
     return "\n".join(lines)
 
@@ -123,7 +125,11 @@ def status_payload(root) -> dict:
     }
     active = handoff.load(root)
     ownership_state = ownership.load(root)
-    ownership_conflicts = ownership.conflicts(ownership_state["claims"])
+    live_claims, stale_claims = ownership.split(
+        ownership_state["claims"],
+        finished_tasks=handoff.finished_tasks(loaded.ledger_events),
+    )
+    ownership_conflicts = ownership.conflicts(live_claims)
     return {
         "root": str(root),
         "initialised": paths.is_initialised(root),
@@ -136,7 +142,9 @@ def status_payload(root) -> dict:
         "hook_detail": hook_detail,
         "hooks": hook_reports,
         "active_handoff": active,
-        "ownership_claims": len(ownership_state["claims"]),
+        "ownership_claims": len(live_claims),
+        "ownership_stale_claims": len(stale_claims),
+        "handoff_settled": handoff.settled(root, active),
         "ownership_conflicts": len(ownership_conflicts),
         "decisions_md": paths.decisions_path(root).exists(),
     }
@@ -383,7 +391,20 @@ def status_text(payload: dict) -> str:
                 f"{report['last_event']} ({age_text})"
             )
     active = payload.get("active_handoff")
-    if active:
+    settled = payload.get("handoff_settled")
+    if active and settled:
+        how = (
+            "closed" if settled.get("reason") == "closed"
+            else f"{settled.get('commits_behind', 0)} commit"
+            + ("s" if settled.get("commits_behind", 0) != 1 else "")
+            + " behind HEAD"
+        )
+        lines.append(
+            f"Last handoff   {clipped(active.get('task', ''), 60)}: "
+            f"{clipped(active.get('closed_status') or active.get('status', ''), 40)} "
+            f"(settled, {how})"
+        )
+    elif active:
         # Clipped and fence-sanitised like every other display path. A handoff is
         # written by the *other* agent, and `status` is an agent-facing surface,
         # so these values are untrusted input: unclipped they let a 20,000-character
@@ -398,7 +419,12 @@ def status_text(payload: dict) -> str:
         )
     else:
         lines.append("Active handoff none")
-    lines.append(f"Ownership      {payload.get('ownership_claims', 0)} active claims")
+    stale = payload.get("ownership_stale_claims", 0)
+    lines.append(
+        f"Ownership      {payload.get('ownership_claims', 0)} active claim"
+        + ("s" if payload.get("ownership_claims", 0) != 1 else "")
+        + (f"; {stale} stale (whyline release --stale)" if stale else "")
+    )
     if payload.get("ownership_conflicts"):
         lines.append(
             f"WARNING        {payload['ownership_conflicts']} ownership conflicts"
