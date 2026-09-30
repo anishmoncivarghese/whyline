@@ -3490,3 +3490,9 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 280f3a68e3514eba981b036e409d8fcb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T11:02:19.554Z"} -->
+
+<!-- whyline-attach: {"v":1,"note":"932561c808ca42cabad14dbe59f55bc8","commit":"8447ec3007a74f222218cd794bd538a7bf7cad44","ts":"2026-09-30T11:04:26.619Z"} -->
+
+<!-- whyline-attach: {"v":1,"note":"734b91a7948a4b69b6d441ab4b7f184b","commit":"8447ec3007a74f222218cd794bd538a7bf7cad44","ts":"2026-09-30T11:04:26.679Z"} -->
+
+<!-- whyline-attach: {"v":1,"note":"280f3a68e3514eba981b036e409d8fcb","commit":"8447ec3007a74f222218cd794bd538a7bf7cad44","ts":"2026-09-30T11:04:26.749Z"} -->

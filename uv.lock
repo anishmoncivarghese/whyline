@@ -214,7 +214,7 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.3.26"
+version = "0.3.27"
 source = { editable = "." }
 dependencies = [
     { name = "prompt-toolkit" },
