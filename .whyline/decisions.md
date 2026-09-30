@@ -3945,3 +3945,34 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ff920c5c16e64327810bd704ff8fcb8c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:41:02.121Z"} -->
+
+## 2026-09-30 — Bump version to 0.3.29 and author release notes for console relay setup
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-13
+
+**Because:** Completes CRS-13 by packaging in-console Plan, Set up, process management, and live run controls with whyline-relay 0.2.26
+
+**Rejected:**
+
+- publishing without scratch validation — risked shipping broken modal or process transitions
+- reusing 0.3.28 — PyPI releases are immutable
+
+**Files:** pyproject.toml, uv.lock, docs/releases/v0.3.29.md
+
+<!-- whyline-event: 10f35faac46b4792a1162390546f08be -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:51:55.032Z"} -->
+
+## 2026-09-30 — Approve whyline 0.3.29 release metadata
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-13
+
+**Because:** The version and lockfile agree, both relay constraints remain >=0.2.26,<0.3, the release notes match CRS-13, the diff is clean, and the independent full test suite passed
+
+**Files:** pyproject.toml, uv.lock, docs/releases/v0.3.29.md
+
+<!-- whyline-event: 847dc4fdb1c743a7a4ec2395eaec404f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:56:45.193Z"} -->
