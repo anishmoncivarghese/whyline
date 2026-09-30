@@ -2652,7 +2652,7 @@
   git commit -m "feat(console): Set up popup assigns roles, checks and starts the relay"
   ```
 
-- [ ] CRS-13: Try it for real, then release whyline 0.3.29
+- [x] CRS-13: Try it for real, then release whyline 0.3.29
 
   ## Global Constraints
 
