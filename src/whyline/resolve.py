@@ -61,24 +61,39 @@ def _has_day_precision(event: dict) -> bool:
     return isinstance(value, str) and len(value) == 10
 
 
-def _mentions(event: dict, rel_path: str) -> bool:
-    if event.get("path") == rel_path:
-        return True
-    return rel_path in (event.get("files") or [])
+def _mentions(event: dict, names: list[str] | str) -> str | None:
+    """The name under which `event` mentions the file, if any."""
+    if isinstance(names, str):
+        names = [names]
+    for name in names:
+        if event.get("path") == name or name in (event.get("files") or []):
+            return name
+    return None
+
+
+def _matching(loaded: history.History, names: list[str]) -> tuple[list[dict], list[dict]]:
+    """(notes, mechanical events) about the file under any of its names. A
+    note found only through an earlier name carries `matched_path`, so the
+    rename inference stays visible instead of reading as a direct match."""
+    notes = []
+    for entry in loaded.notes:
+        matched = _mentions(entry.event, names)
+        if matched is None:
+            continue
+        notes.append(entry.event if matched == names[0] else {**entry.event, "matched_path": matched})
+    mechanical = [
+        event
+        for event in loaded.ledger_events
+        if event.get("type") in MECHANICAL_TYPES and _mentions(event, names)
+    ]
+    return notes, mechanical
 
 
 def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
     loaded = history.load(root)
-    all_events = loaded.ledger_events
     skipped_lines = loaded.skipped_lines
-    notes = [
-        entry.event for entry in loaded.notes if _mentions(entry.event, rel_path)
-    ]
-    mechanical = [
-        event
-        for event in all_events
-        if event.get("type") in MECHANICAL_TYPES and _mentions(event, rel_path)
-    ]
+    names = gitq.historical_paths(root, rel_path)
+    notes, mechanical = _matching(loaded, names)
 
     blame = gitq.blame_line(root, rel_path, line) if line is not None else None
 
@@ -97,6 +112,26 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             reason="file-level explanation; no line requested",
             skipped_ledger_lines=skipped_lines,
         )
+
+    return explain_blamed(root, loaded, rel_path, line, blame, names=names)
+
+
+def explain_blamed(
+    root: Path,
+    loaded: history.History,
+    rel_path: str,
+    line: int,
+    blame: gitq.Blame | None,
+    *,
+    names: list[str] | None = None,
+    commits_cache: dict | None = None,
+) -> Explanation:
+    """The line-level rules of `explain`, for a caller that already has the
+    history and the blame (explain --diff resolves many lines at once).
+    `commits_cache` memoizes per-path commit history across calls."""
+    names = names or gitq.historical_paths(root, rel_path)
+    notes, mechanical = _matching(loaded, names)
+    skipped_lines = loaded.skipped_lines
 
     if blame is None:
         return Explanation(
@@ -146,7 +181,17 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             skipped_ledger_lines=skipped_lines,
         )
 
-    lower = gitq.previous_commit_epoch(root, rel_path, blame.sha)
+    if commits_cache is None:
+        lower = gitq.previous_commit_epoch(root, rel_path, blame.sha)
+    else:
+        if rel_path not in commits_cache:
+            commits_cache[rel_path] = gitq.commits_touching(root, rel_path)
+        lower = None
+        touching = commits_cache[rel_path]
+        for index, (candidate, _) in enumerate(touching):
+            if candidate == blame.sha:
+                lower = touching[index + 1][1] if index + 1 < len(touching) else None
+                break
     in_window = [
         note
         for note in notes

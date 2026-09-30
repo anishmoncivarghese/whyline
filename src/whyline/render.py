@@ -55,6 +55,9 @@ def explanation_text(result: resolve.Explanation) -> str:
     for note in _attributed_notes(result):
         lines.append("")
         lines.append(f"Decision          {note.get('decision', '')}")
+        if note.get("matched_path"):
+            # Matched through a rename, not directly: say so.
+            lines.append(f"                  (recorded as {note['matched_path']})")
         # The reason a line was written stays the reason even after it is
         # replaced -- but the reader must not mistake it for current.
         if note.get("lifecycle") == "superseded":

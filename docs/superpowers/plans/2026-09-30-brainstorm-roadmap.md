@@ -18,8 +18,8 @@ the next starts.
 | 1. Exact commit provenance | 0.3.21 | released |
 | 3. Decision lifecycle + `whyline decisions` | 0.3.22 | released |
 | 4. Ledger read path + prompt retention | 0.3.23 | released |
-| 5. Rename-aware relevance + `explain --diff` | 0.3.24 | next |
-| 6. Antigravity hooks + `whyline doctor` | 0.3.25 | planned |
+| 5. Rename-aware relevance + `explain --diff` | 0.3.24 | released |
+| 6. Antigravity hooks + `whyline doctor` | 0.3.25 | next |
 
 ---
 
@@ -232,3 +232,45 @@ and gitignore entry; prune keeps durable types and honors the cut-off and
 output; skip_types equivalence with a full read for the kept types (incl.
 a note whose text mentions "Instruction"); history.load mechanical=False
 leaves notes/handoff state identical; timeline wording.
+
+---
+
+## Item 5 — Rename-aware relevance and diff-wide explain (0.3.24)
+
+**Defect:** decisions record paths as they were. After `git mv`, `explain`
+(`resolve._mentions`), `brief/sync --file` and `decisions --file` compare
+literal paths, so every decision recorded under the old name silently stops
+matching. And `explain` answers one line at a time, which is no help when
+reviewing a change.
+
+### Tasks
+
+- [x] **5.1 `gitq.historical_paths(root, path)`** -- every name the file has
+  had (`git log --follow --name-only`), current name first. Empty history
+  (untracked/new) → just the path.
+- [x] **5.2 Rename-aware matching.** `explain` matches notes and mechanical
+  events against all historical names; a note matched only through an old
+  name carries `matched_path`, shown as "(recorded as old/name.py)" so the
+  inference stays visible. `brief --file`, `sync --file` and
+  `decisions list --file` expand requested files the same way. (Rank hints
+  from the dirty tree are not expanded: one `git log` per dirty file on
+  every `sync` is not worth it for a ranking hint.)
+- [x] **5.3 `gitq.blame_range(root, path, start, end, rev=None)`** -- one
+  porcelain blame for a range, parsed per line.
+- [x] **5.4 `resolve.explain_blamed(...)`** -- the line-level rules of
+  `explain`, factored so a caller with a preloaded history and a blame can
+  reuse them; `explain` itself is unchanged in behavior.
+- [x] **5.5 `whyline explain --diff` / `--staged`.** For every changed
+  line that existed in HEAD, blame it at HEAD (one blame per hunk) and
+  resolve it; lines that are purely new are counted as new. Output groups
+  lines by decision (id, decision text, confidence, file:line ranges) and
+  ends with coverage: high / medium / low / unexplained / new. `--json`.
+  Deleted files count their removed lines; binary files are skipped.
+
+### Tests
+
+historical_paths across one and two renames; explain HIGH via an old path
+with matched_path shown; brief/sync/decisions --file finding old-path
+decisions; blame_range against per-line blame; explain_blamed parity with
+explain; --diff grouping, coverage counts, new-line counting, --staged vs
+working tree, no changes, deleted file, JSON shape.

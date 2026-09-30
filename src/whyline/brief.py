@@ -11,7 +11,7 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from whyline import decisions, history, paths, textbudget
+from whyline import decisions, gitq, history, paths, textbudget
 
 TAG = "whyline-context"
 DEFAULT_TOKEN_BUDGET = 1200
@@ -53,7 +53,11 @@ def select_entries(
     # Only decisions still standing are handed over as reasoning; superseded
     # and retracted ones stay queryable with `whyline decisions --all`.
     current = loaded.active
-    requested_files = set(files or [])
+    # A requested file also means every earlier name it had: decisions
+    # record paths as they were when written.
+    requested_files = {
+        name for requested in (files or []) for name in gitq.historical_paths(root, requested)
+    }
     hint_files = set(rank_files or [])
     if task is None and not requested_files and not hint_files:
         return loaded, list(current)

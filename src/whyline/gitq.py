@@ -85,6 +85,65 @@ def blame_line(root: Path, rel_path: str, line: int) -> Blame | None:
     )
 
 
+def blame_range(
+    root: Path, rel_path: str, start: int, end: int, rev: str | None = None
+) -> dict[int, Blame]:
+    """Blame lines start..end (inclusive) in one git call; {line: Blame}.
+    With `rev`, blame the file as it was at that commit (line numbers are
+    that version's). Lines git can't blame are simply absent."""
+    args = ["blame", "-L", f"{start},{end}", "--porcelain"]
+    if rev:
+        args.append(rev)
+    try:
+        output = _git(root, *args, "--", rel_path)
+    except GitUnavailable:
+        _require_usable_repo(root)
+        return {}
+    authors: dict[str, str] = {}
+    epochs: dict[str, int] = {}
+    owner: dict[int, str] = {}
+    sha = ""
+    final = 0
+    for entry in output.splitlines():
+        if entry.startswith("\t"):
+            if sha:
+                owner[final] = sha
+            continue
+        fields = entry.split()
+        if len(fields) >= 3 and len(fields[0]) == 40 and fields[2].isdigit():
+            sha, final = fields[0], int(fields[2])
+        elif entry.startswith("author "):
+            authors.setdefault(sha, entry[len("author ") :].strip())
+        elif entry.startswith("author-time "):
+            epochs.setdefault(sha, int(entry[len("author-time ") :].strip()))
+    return {
+        line: Blame(
+            sha=owner_sha,
+            author=authors.get(owner_sha, ""),
+            epoch=epochs.get(owner_sha, 0),
+            committed=owner_sha != UNCOMMITTED_SHA,
+        )
+        for line, owner_sha in owner.items()
+    }
+
+
+def historical_paths(root: Path, rel_path: str) -> list[str]:
+    """Every name `rel_path` has had, current first, following renames.
+
+    Decisions record paths as they were when written; without this, a
+    `git mv` silently orphans every decision about the file."""
+    try:
+        output = _git(root, "log", "--follow", "--name-only", "--format=", "--", rel_path)
+    except GitUnavailable:
+        return [rel_path]
+    names = [rel_path]
+    for entry in output.splitlines():
+        name = entry.strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def commits_touching(root: Path, rel_path: str) -> list[tuple[str, int]]:
     """Every commit that touched this path, newest first, as (sha, epoch)."""
     # --follow requires exactly one pathspec, which `rel_path` always is here.

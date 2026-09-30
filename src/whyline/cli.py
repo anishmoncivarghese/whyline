@@ -132,7 +132,14 @@ def _add_explain(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "explain", help="Why does this code exist?"
     )
-    parser.add_argument("target", metavar="<file>[:line]")
+    parser.add_argument("target", metavar="<file>[:line]", nargs="?", default=None)
+    parser.add_argument(
+        "--diff", action="store_true",
+        help="Explain every line the working tree changes against HEAD",
+    )
+    parser.add_argument(
+        "--staged", action="store_true", help="Explain every line the index changes against HEAD"
+    )
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
 
 
@@ -486,6 +493,25 @@ def cmd_explain(args: argparse.Namespace) -> int:
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
+    if args.diff or args.staged:
+        if args.target is not None or (args.diff and args.staged):
+            print("explain takes a <file>[:line], --diff or --staged -- one of them.", file=sys.stderr)
+            return EXIT_USAGE
+        from whyline import diffexplain
+
+        try:
+            report = diffexplain.explain_diff(root, staged=args.staged)
+        except gitq.GitUnavailable as error:
+            print(f"git is unavailable: {error}", file=sys.stderr)
+            return EXIT_ERROR
+        if args.json:
+            render.emit_json(report)
+        else:
+            render.emit(diffexplain.text(report))
+        return EXIT_OK
+    if args.target is None:
+        print("explain needs a <file>[:line], or --diff / --staged.", file=sys.stderr)
+        return EXIT_USAGE
     rel_path, line = _split_target(args.target)
     try:
         result = resolve.explain(root, rel_path, line)
@@ -736,7 +762,12 @@ def cmd_decisions(args: argparse.Namespace) -> int:
         if getattr(args, "task", None):
             selected = [event for event in selected if event.get("task") == args.task]
         if getattr(args, "file", None):
-            selected = [event for event in selected if args.file in (event.get("files") or [])]
+            from whyline import gitq
+
+            names = set(gitq.historical_paths(root, args.file))
+            selected = [
+                event for event in selected if names.intersection(event.get("files") or [])
+            ]
     limit = getattr(args, "limit", None)
     if limit:
         selected = selected[:limit]

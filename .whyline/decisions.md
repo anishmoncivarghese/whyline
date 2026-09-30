@@ -3339,3 +3339,51 @@ Append-only. Written by whyline; readable without it.
 <!-- whyline-attach: {"v":1,"note":"42a15a66fff94e3f9581fe63f517c342","commit":"d45ab1b8138c96a92fd681604b33d9f43a98813e","ts":"2026-09-30T04:08:00.196Z"} -->
 
 <!-- whyline-attach: {"v":1,"note":"d13676a1aff84948b88b811fb8b4db36","commit":"d45ab1b8138c96a92fd681604b33d9f43a98813e","ts":"2026-09-30T04:08:00.294Z"} -->
+
+## 2026-09-30 — Match decisions against every historical name of a file, and mark matches found only through an old name
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-5
+
+**Because:** decisions record paths as they were; a git mv silently orphaned all of them, and a rename match is an inference that must stay visible
+
+**Rejected:**
+
+- rewrite recorded paths on rename — decisions.md is append-only history
+
+**Files:** src/whyline/resolve.py
+
+<!-- whyline-event: 4a647ed525be4fefb5f0bea489ea81a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:13:36.497Z"} -->
+
+## 2026-09-30 — explain --diff blames changed lines as they were in HEAD, one blame per hunk, and reuses explain's per-line rules
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-5
+
+**Because:** the question for a change is which recorded reasoning it overrides; one blame per hunk and a shared history keep it fast
+
+**Rejected:**
+
+- blame the working tree — uncommitted lines have no provenance
+- call explain per line — reloads history and runs git log for every line
+
+**Files:** src/whyline/diffexplain.py
+
+<!-- whyline-event: 9e43e6fa1a7846608db50f092bf684ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:13:36.573Z"} -->
+
+## 2026-09-30 — Do not expand sync's dirty-tree rank hints to historical names
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-5
+
+**Because:** one git log per dirty file on every sync is too costly for a ranking hint; explicit --file requests are expanded
+
+**Files:** src/whyline/brief.py
+
+<!-- whyline-event: d412b71248274c9d8af61c57d936904b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:13:36.635Z"} -->
