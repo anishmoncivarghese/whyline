@@ -58,6 +58,11 @@ _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
 _MODES = ("command", "chat", "relay")
 
+# Brainstorming makes one full agent turn per selected model and phase. Keep
+# the bound explicit in the UI so a single stalled provider cannot hold the
+# whole console indefinitely.
+BRAINSTORM_TIMEOUT_OPTIONS = (15, 30, 45, 60)
+
 # Native clipboard commands, tried in order. OSC 52 (what Textual's
 # copy_to_clipboard sends) is ignored by several terminals -- macOS Terminal
 # among them, and iTerm2 unless enabled -- so it said "copied" while nothing
@@ -141,6 +146,7 @@ class BrainstormScreen(ModalScreen):
     BrainstormScreen .field-label { width: 18; padding: 1 1 0 0; }
     BrainstormScreen #bs-passes { width: 10; }
     BrainstormScreen #bs-final { width: 30; }
+    BrainstormScreen #bs-timeout { width: 30; }
     BrainstormScreen #bs-error { color: $error; height: auto; }
     BrainstormScreen #bs-error.-empty { display: none; }
     BrainstormScreen #bs-buttons { margin-top: 1; }
@@ -181,6 +187,15 @@ class BrainstormScreen(ModalScreen):
                 Label("Final write-up:", classes="field-label"),
                 Select([(a, a) for a in BRAINSTORM_AGENTS], value=self._default_final,
                        allow_blank=False, id="bs-final"),
+            ),
+            Horizontal(
+                Label("Per-agent timeout:", classes="field-label"),
+                Select(
+                    [(f"{minutes} minutes", minutes) for minutes in BRAINSTORM_TIMEOUT_OPTIONS],
+                    value=15,
+                    allow_blank=False,
+                    id="bs-timeout",
+                ),
             ),
             id="bs-fields",
         )
@@ -226,11 +241,15 @@ class BrainstormScreen(ModalScreen):
         if not raw.isdigit():
             return "Review passes must be a whole number (0 or more)."
         final = self.query_one("#bs-final", Select).value
+        timeout = self.query_one("#bs-timeout", Select).value
+        if timeout not in BRAINSTORM_TIMEOUT_OPTIONS:
+            return "Choose a timeout of 15, 30, 45, or 60 minutes."
         return {
             "topic": topic,
             "agents": agents,
             "passes": int(raw),
             "final_agent": final if final in agents else agents[0],
+            "timeout_minutes": timeout,
         }
 
 

@@ -214,7 +214,7 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.3.27"
+version = "0.3.28"
 source = { editable = "." }
 dependencies = [
     { name = "prompt-toolkit" },
@@ -233,7 +233,7 @@ dev = [
 requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0,<4.0" },
     { name = "textual", specifier = ">=0.60,<1.0" },
-    { name = "whyline-relay", specifier = ">=0.2.24,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.25,<0.3" },
 ]
 provides-extras = ["relay", "console", "ui", "all"]
 
@@ -241,14 +241,14 @@ provides-extras = ["relay", "console", "ui", "all"]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "whyline-relay", specifier = ">=0.2.24,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.25,<0.3" },
 ]
 
 [[package]]
 name = "whyline-relay"
-version = "0.2.24"
+version = "0.2.25"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b4/22/b523216592b93045590fa230cd3e803ccbb62fea8756c2e5f100d6a3ea73/whyline_relay-0.2.24.tar.gz", hash = "sha256:3a9957f25d1dd34fde852ab206e5f856baf0b243ddbd64ed14117ee8725f2021", size = 191256, upload-time = "2026-09-30T10:17:28.836Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/ad/62f4f543bc890d96f620bd15b7425623ad8a8eba0d38ea5347fd22b0546f/whyline_relay-0.2.25.tar.gz", hash = "sha256:f180b4bb29163fe7ca3255888971f139bb7f8bac4ca95973a0586418cda36c2d", size = 194193, upload-time = "2026-09-30T13:19:00.58Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/6b/1b0e0dbb7dfc63642c906fc04973ec95b0570768c70e0a02b411d053b3a7/whyline_relay-0.2.24-py3-none-any.whl", hash = "sha256:dc6b12d06d697739563627f252d45838795587c5fbe92ca1ed73ce767c666a48", size = 110034, upload-time = "2026-09-30T10:17:27.276Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/e5/df911314294596c1c8498da45ab69528bd9c500c4b2a4fc210f3cb127053/whyline_relay-0.2.25-py3-none-any.whl", hash = "sha256:d011ddf1cdfacaaedfd2dc32681b31dacfcd1377aac8c3ef9723121e41af104a", size = 111159, upload-time = "2026-09-30T13:18:59.285Z" },
 ]

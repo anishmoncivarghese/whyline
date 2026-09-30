@@ -263,6 +263,7 @@ def run_brainstorm(
     agents: list[str],
     passes: int,
     final_agent: str,
+    timeout_minutes: int = 15,
     progress=None,
     run_fn=None,
 ) -> SessionEvent:
@@ -298,7 +299,8 @@ def run_brainstorm(
     names = ", ".join(label for _, label in models)
     progress(f"Researching independently: {names}")
     actual = brainstorm.run_pass_zero(
-        root, models, topic, settings=settings, print_fn=progress, **kwargs
+        root, models, topic, settings=settings, print_fn=progress,
+        timeout_seconds=timeout_minutes * 60, **kwargs
     )
     researched = [
         label for key, label in models
@@ -318,12 +320,12 @@ def run_brainstorm(
         progress(f"Review pass {number} of {passes}")
         actual = brainstorm.run_review_pass(
             root, models, topic, number, settings=settings, print_fn=progress,
-            actual_agents=actual, **kwargs,
+            actual_agents=actual, timeout_seconds=timeout_minutes * 60, **kwargs,
         )
     progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
     record = brainstorm.run_final_synthesis(
         root, final_agent, models, topic, settings=settings, print_fn=progress,
-        actual_agents=actual, **kwargs
+        actual_agents=actual, timeout_seconds=timeout_minutes * 60, **kwargs
     )
     path = brainstorm.shared_path(root, topic)
     try:

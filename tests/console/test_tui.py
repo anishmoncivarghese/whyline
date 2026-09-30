@@ -547,13 +547,15 @@ async def test_brainstorm_form_validates_then_runs_with_progress(tmp_path, monke
         await pilot.pause(0.3)
         form.query_one("#bs-topic", tui.Input).value = "retry policy"
         form.query_one("#bs-passes", tui.Input).value = "2"
+        assert form.query_one("#bs-timeout", tui.Select).value == 15
+        form.query_one("#bs-timeout", tui.Select).value = 45
         await pilot.click("#bs-start")
         await app.workers.wait_for_complete()
         await pilot.pause()
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
     assert calls == [{
         "topic": "retry policy", "agents": ["claude", "codex"],
-        "passes": 2, "final_agent": "claude",
+        "passes": 2, "final_agent": "claude", "timeout_minutes": 45,
     }]
     assert any("· Researching independently" in line for line in lines)
     assert any("final synthesis" in line for line in lines)

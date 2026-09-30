@@ -3496,3 +3496,20 @@ Append-only. Written by whyline; readable without it.
 <!-- whyline-attach: {"v":1,"note":"734b91a7948a4b69b6d441ab4b7f184b","commit":"8447ec3007a74f222218cd794bd538a7bf7cad44","ts":"2026-09-30T11:04:26.679Z"} -->
 
 <!-- whyline-attach: {"v":1,"note":"280f3a68e3514eba981b036e409d8fcb","commit":"8447ec3007a74f222218cd794bd538a7bf7cad44","ts":"2026-09-30T11:04:26.749Z"} -->
+
+## 2026-09-30 — Expose the per-agent brainstorm timeout in the TUI and pass it through every relay phase
+
+**Actor:** codex
+**Role:** implementer
+**Task:** TUI-BRAINSTORM-TIMEOUT
+
+**Because:** The relay already supports a bounded timeout per agent turn, so the TUI must collect the same setting instead of silently using its default
+
+**Rejected:**
+
+- unbounded turns — a stalled provider can block the whole brainstorm
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: ae7d51acc7f1424eaf22dea9221e29b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T13:30:39.722Z"} -->
