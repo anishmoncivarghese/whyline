@@ -57,3 +57,46 @@ def test_file_lock_context_manager_still_works(tmp_path: Path):
     assert target.read_text(encoding="utf-8") == "{}"
     # The lock file itself must not be left behind after a clean exit.
     assert not target.with_name(target.name + ".lock").exists()
+
+
+def test_a_lock_file_being_deleted_on_windows_counts_as_busy(tmp_path, monkeypatch):
+    """Windows refuses to create a file whose deletion is still pending
+    (PermissionError, not FileExistsError) -- the moment right after
+    another thread released the lock. That is contention, not a failure:
+    seen on CI as test_concurrent_claims_do_not_overwrite_each_other
+    crashing on windows-latest."""
+    import os
+
+    from whyline import state
+
+    real_open = os.open
+    attempts = []
+
+    def pending_delete_once(path, flags, *args):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise PermissionError(13, "Permission denied", path)
+        return real_open(path, flags, *args)
+
+    monkeypatch.setattr(state, "_WINDOWS", True)
+    monkeypatch.setattr(state.os, "open", pending_delete_once)
+    with state.file_lock(tmp_path / "x.json"):
+        pass
+    assert len(attempts) == 2
+
+
+def test_permission_errors_elsewhere_are_still_errors(tmp_path, monkeypatch):
+    import os
+
+    import pytest
+
+    from whyline import state
+
+    def denied(path, flags, *args):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(state, "_WINDOWS", False)
+    monkeypatch.setattr(state.os, "open", denied)
+    with pytest.raises(PermissionError):
+        with state.file_lock(tmp_path / "x.json"):
+            pass

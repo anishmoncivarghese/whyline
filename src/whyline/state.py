@@ -37,6 +37,11 @@ def load_object(path: Path) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
+# Windows reports creating a file whose deletion is still pending as
+# PermissionError rather than FileExistsError -- the instant right after
+# another thread or process released the lock. There it means "busy".
+_WINDOWS = os.name == "nt"
+
 _STALE_LOCK_SECONDS = 10.0
 _POLL_INTERVAL_SECONDS = 0.05
 
@@ -55,6 +60,15 @@ def _acquire_lock(lock_path: Path, timeout: float = 10.0) -> None:
             fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             os.close(fd)
             return
+        except PermissionError:
+            if not _WINDOWS:
+                raise
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"could not acquire lock {lock_path} within {timeout}s"
+                )
+            time.sleep(_POLL_INTERVAL_SECONDS)
+            continue
         except FileExistsError:
             try:
                 age = time.time() - lock_path.stat().st_mtime
