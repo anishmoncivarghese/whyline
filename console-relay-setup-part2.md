@@ -943,7 +943,7 @@
   git commit -m "feat(console): run the relay as its own process and follow its log"
   ```
 
-- [ ] CRS-8: Start, Resume, Stop and quit with a running relay
+- [x] CRS-8: Start, Resume, Stop and quit with a running relay
 
   ## Global Constraints
 
