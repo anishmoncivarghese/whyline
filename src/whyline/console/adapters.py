@@ -205,7 +205,13 @@ def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:
             code = relay_cli.main(full_argv, prog="whyline relay")
     except SystemExit as error:
         code = error.code if isinstance(error.code, int) else 1
-    text = buf.getvalue()
+    return classify_relay_output(root, buf.getvalue(), code)
+
+
+def classify_relay_output(root: Path | str, text: str, code: int) -> SessionEvent:
+    """Turns a finished relay run's output into one event: a structured
+    pause, a completion, or an error. Shared by the in-process one-shot and
+    the console's streamed relay process."""
     if _PAUSE_PATTERN.search(text):
         from whyline_relay import state as relay_state
 
@@ -225,6 +231,7 @@ def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:
     else:
         kind = "error"
     return SessionEvent(kind=kind, text=text)
+
 
 
 def run_last_handoff(root: Path) -> SessionEvent:

@@ -3513,3 +3513,165 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ae7d51acc7f1424eaf22dea9221e29b7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T13:30:39.722Z"} -->
+
+## 2026-09-30 — Release 0.3.28 requires whyline-relay>=0.2.25 for the brainstorm timeout
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TUI-BRAINSTORM-TIMEOUT
+
+**Because:** relay 0.2.24 lacks timeout_seconds on the brainstorm phases, so the new TUI setting would raise TypeError at brainstorm start
+
+**Rejected:**
+
+- keep >=0.2.24 — installs could resolve a relay that crashes on the new kwarg
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: bad0d6b9df5e45629bc7f845245d8c8c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T14:27:39.613Z"} -->
+
+## 2026-09-30 — Frame the India quant system as point-in-time research plus statistical forecasting, not one self-training LLM
+
+**Actor:** codex
+**Role:** researcher
+**Task:** BRAINSTORM-TRADINGPLATFORM
+
+**Because:** The PRD and primary sources show that data provenance, licensing, leakage-resistant validation, and deterministic risk controls dominate model choice; daily RAG ingestion should not mutate model weights
+
+**Rejected:**
+
+- Fine-tune an open LLM first — no labelled India-specific error set or proven incremental signal exists yet
+- Use RAG output directly for trades — retrieval can leak future documents and prose is not a calibrated forecast or risk control
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: 5a1493895cb4448e83a9ce374f976a3d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T14:47:53.751Z"} -->
+
+## 2026-09-30 — Deconstruct open-source LLM trading into modular NLP extraction, point-in-time RAG, and statistical forecasting
+
+**Actor:** antigravity
+**Role:** researcher
+**Task:** BRAINSTORM-TRADINGPLATFORM
+
+**Because:** Direct LLM price prediction fails due to BPE tokenization, SNR mismatch, and lookahead leakage; modular architecture using local 7B models for filing triage, temporal RAG for historical analogues, and LightGBM for alpha respects Indian cost hurdles and SEBI rules
+
+**Rejected:**
+
+- End-to-end LLM price forecasting — BPE tokenization breaks continuous numbers and auto-regressive loss overfits financial noise
+- Generic document RAG — leaks future data unless constrained by point-in-time timestamp filters and outputs prose instead of quantitative return distributions
+
+**Files:** .whyline/relay/brainstorm-tmp/antigravity.md
+
+<!-- whyline-event: 14436407edf1493f983761b6aa6bd391 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T14:50:39.527Z"} -->
+
+## 2026-09-30 — Synthesize India quant brainstorm around a gated modular research stack
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BRAINSTORM-TRADINGPLATFORM
+
+**Because:** Both passes converge on extraction plus point-in-time RAG plus statistical forecasting, while the combined review shows that feature efficacy, data rights, model selection, broker authentication, and protective-order semantics must remain measured or broker-confirmed assumptions
+
+**Rejected:**
+
+- Monolithic open-LLM stock predictor — text objectives and uncalibrated outputs do not provide a defensible trading policy
+- Hard-code the other pass's named models, signal correlations, vendors, and automation details — several are hypotheses or mutable operational facts
+
+**Files:** docs/brainstorm/users-anish-tradingplatform-look-at-this-there-prd-document-.md
+
+<!-- whyline-event: 5f9df0d9c0984b1cabc79339b0c0b3d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T15:04:03.813Z"} -->
+
+## 2026-09-30 — Align Indian quant architecture on modular extraction, point-in-time event RAG, and strict data rights gates
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** BRAINSTORM-TRADINGPLATFORM
+
+**Because:** Both passes converge on small open-weight LLMs for filing extraction, immutable point-in-time RAG for historical analogues, and tabular statistical models for alpha; cross-review clarifies that candidate features (flows, macro) must be walk-forward tested, data scraping requires verified licensing, and small analogue samples require empirical Bayes shrinkage
+
+**Rejected:**
+
+- Treat historical analogue match win rates as uncalibrated facts — Small sample sizes (N=10-15) overstate certainty without empirical Bayes shrinkage and multiple testing controls
+- Assume public exchange filings confer scraping and model training rights — NSE terms of service and commercial data distribution rules require explicit data governance at Gate 0
+- Rely on headless broker 2FA or GTT as guaranteed execution — Broker security compliance favors interactive morning check-ins and GTT limit orders do not protect against overnight gap-downs past the trigger
+
+**Files:** docs/brainstorm/users-anish-tradingplatform-look-at-this-there-prd-document-.md
+
+<!-- whyline-event: 0fbe0be7611d4b9b91f4c9d7b6c09220 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T15:07:28.590Z"} -->
+
+## 2026-09-30 — Unify the India quant brainstorm around a gated point-in-time research stack
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BRAINSTORM-TRADINGPLATFORM-FINAL
+
+**Because:** Both model reviews agree that open-weight LLMs should perform evidence-linked extraction while point-in-time RAG, statistical forecasting, deterministic risk controls, and human-approved execution carry the trading workflow; the top synthesis converts that consensus into explicit build gates and stop conditions
+
+**Rejected:**
+
+- Monolithic LLM price predictor — language-model objectives and outputs are not calibrated trading policies
+- Daily online weight updates — append-only research memory and controlled offline champion-challenger promotion are safer and auditable
+- Fixed vendors, fees, or single-metric promotion thresholds — these are mutable assumptions that require current verification and multi-dimensional evidence
+
+**Files:** docs/brainstorm/users-anish-tradingplatform-look-at-this-there-prd-document-.md
+
+<!-- whyline-event: 1ac03215ef324795b3d92073e1cdc5f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T15:10:48.883Z"} -->
+
+## 2026-09-30 — Console relay setup is two popups (Plan, Set up) and Start runs the relay as a separate streamed process
+
+**Actor:** claude
+**Role:** designer
+**Task:** CONSOLE-RELAY-SETUP
+
+**Because:** planning is long and ends in human approval while roles/checks are quick, so either can be redone alone; a subprocess gives live output, survives console crashes/quit, and avoids process-wide stdout redirection beside the TUI
+
+**Rejected:**
+
+- one stepped wizard — hard to leave and resume mid-plan
+- in-process start with a progress hook — needs new relay hook and keeps the global stdout redirect
+- status polling only — loses the relay's own messages
+
+**Files:** docs/superpowers/specs/2026-09-30-console-relay-setup-design.md
+
+<!-- whyline-event: f3529644b7fd4b30ba6bfc67c779bdc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T15:39:19.797Z"} -->
+
+## 2026-09-30 — Isolate console relay planning and setup operations in relay_ops with lazy relay imports
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-5
+
+**Because:** Keeps console importable without whyline-relay and encapsulates planning/setup/preflight data conversion behind plain data classes
+
+**Rejected:**
+
+- Directly import whyline_relay in console screens — would break running the console when relay is not installed
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 8fb24fcdb8344dbead3ec45298fa105a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:27:21.614Z"} -->
+
+## 2026-09-30 — Approve CRS-5 relay operations extraction and dependency bump
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-5
+
+**Because:** The wrappers match whyline-relay 0.2.26 APIs, preserve lazy imports and path-scoped relay commits, and the plain full test suite passes
+
+**Rejected:**
+
+- Request changes — no correctness, coverage, or safety defect was found in the requested scope
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 28d6003c33114885a40ab8231a6a28a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:30:56.282Z"} -->
