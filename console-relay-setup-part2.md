@@ -1306,7 +1306,7 @@
   git commit -m "feat(console): start, stop and resume the relay with live progress"
   ```
 
-- [ ] CRS-9: Plan popup — Paste
+- [x] CRS-9: Plan popup — Paste
 
   ## Global Constraints
 
