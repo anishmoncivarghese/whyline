@@ -246,7 +246,7 @@ def test_slash_help_and_stop_and_unknown(tmp_path, monkeypatch):
     repl.run(tmp_path, print_fn=lines.append)
     assert any("/model" in line and "Commands:" in line for line in lines)
     assert any("Nothing in flight to stop." in line for line in lines)
-    assert any("Unknown command: /unknown." in line for line in lines)
+    assert any("Unknown command /unknown." in line for line in lines)
 
 
 def test_slash_status_and_history(tmp_path, monkeypatch):
@@ -812,3 +812,43 @@ def test_repl_brainstorm_failure_does_not_end_the_console(tmp_path, monkeypatch)
     repl.run(tmp_path, print_fn=lines.append)
     assert any("Brainstorm stopped: agent crashed" in line for line in lines)
     assert any("Commands:" in line for line in lines)  # still running afterwards
+
+
+# --- home-directory repo guard and unknown commands ------------------------------------
+
+
+def test_chat_relay_and_brainstorm_refuse_to_run_in_the_home_directory_repo(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.repl import dispatch, handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(adapters, "run_chat_turn", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    session = ConsoleSession(root=tmp_path, mode="chat")
+    event = dispatch(session, "hello")
+    assert event.kind == "error" and "home directory" in event.text and "/repo" in event.text
+    session.mode = "relay"
+    assert "home directory" in dispatch(session, "status").text
+    assert "home directory" in handle_slash_command(session, "/brainstorm").text
+    # command mode still works there
+    session.mode = "command"
+    assert "home directory" not in dispatch(session, "--version").text
+
+
+def test_home_repo_warning_names_the_folder_you_started_in(tmp_path, monkeypatch):
+    from whyline.console.repl import home_repo_warning
+
+    project = tmp_path / "TradingPlatform"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    text = home_repo_warning(tmp_path, project)
+    assert "TradingPlatform" in text and "git init" in text and "whyline init" in text
+    assert home_repo_warning(tmp_path / "elsewhere", project) is None
+
+
+def test_unknown_commands_are_explained_not_sent_to_the_agent():
+    from whyline.console.repl import unknown_command_text
+
+    assert "/model" in unknown_command_text("/agents")
+    assert "/model codex" in unknown_command_text("/default codex")
+    assert "/help" in unknown_command_text("/frobnicate")

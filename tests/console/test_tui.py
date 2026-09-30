@@ -255,10 +255,11 @@ async def test_copy_button_pushes_transcript_to_clipboard(tmp_path, monkeypatch)
         app.session.transcript.clear()  # drop the on_mount onboarding banner
         app.session.record(SessionEvent(kind="output", text="earlier output"))
         copied = []
-        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: copied.append(text))
+        monkeypatch.setattr(tui, "_system_copy", lambda text: copied.append(text) or True)
+        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: copied.append(("osc52", text)))
         await pilot.click("#copy")
         await pilot.pause()
-        assert copied == ["earlier output"]
+        assert copied == ["earlier output"]  # the system clipboard, not the escape code
         transcript = app.query_one("#transcript", tui.RichLog)
         assert any("copied to clipboard" in str(line) for line in transcript.lines)
 
@@ -706,3 +707,75 @@ async def test_progress_and_spinner_keep_working_while_a_dialog_is_open(tmp_path
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
     assert any(e.text == "progress while dialog open" for e in app.session.transcript)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_unknown_slash_commands_never_reach_the_agent(tmp_path, monkeypatch):
+    sent = []
+    monkeypatch.setattr(tui, "dispatch", lambda session, text: sent.append(text))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#mode-chat")
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.focus()
+        for text in ("/agents", "/default codex"):
+            prompt.value = text
+            await pilot.press("enter")
+            await pilot.pause()
+        await app.workers.wait_for_complete()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    assert sent == []
+    assert any("Unknown command /agents" in line for line in lines)
+    assert any("/model codex" in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_console_in_the_home_repo_says_so_at_start(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    project = tmp_path / "TradingPlatform"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(project)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    text = " ".join(lines)
+    assert "home directory" in text and "TradingPlatform" in text
+
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_without_a_system_clipboard_is_honest_about_it(tmp_path, monkeypatch):
+    from whyline.console.session import SessionEvent
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.record(SessionEvent(kind="output", text="x"))
+        sent = []
+        monkeypatch.setattr(tui, "_system_copy", lambda text: False)
+        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: sent.append(text))
+        await pilot.click("#copy")
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    assert sent  # the terminal escape code is still tried
+    assert any("may not" in line and "OSC 52" in line for line in lines)
+    assert not any("Transcript copied to clipboard." in line for line in lines)
+
+
+def test_system_copy_uses_the_platform_command(monkeypatch):
+    calls = []
+
+    class Done:
+        returncode = 0
+
+    monkeypatch.setattr(tui.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "pbcopy" else None)
+    monkeypatch.setattr(tui.subprocess, "run", lambda argv, **kw: calls.append((argv, kw["input"])) or Done())
+    assert tui._system_copy("hello") is True
+    assert calls == [(["pbcopy"], "hello")]
+    monkeypatch.setattr(tui.shutil, "which", lambda name: None)
+    assert tui._system_copy("hello") is False

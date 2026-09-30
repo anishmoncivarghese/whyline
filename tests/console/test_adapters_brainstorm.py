@@ -15,6 +15,10 @@ def _fake_relay(monkeypatch, unavailable=()):
 
     def pass_zero(root, models, topic, *, settings, print_fn=None, **kw):
         calls.append(("zero", [k for k, _ in models]))
+        for key, _ in models:  # each model's research note, as a real turn writes
+            target = brainstorm.temp_path(root, key)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("research\n")
         return {}
 
     def review(root, models, topic, number, *, settings, print_fn=None, actual_agents=None, **kw):
@@ -72,26 +76,52 @@ def test_run_brainstorm_with_no_usable_models_is_an_error(tmp_path, monkeypatch)
     assert calls == []
 
 
-def test_run_brainstorm_reports_each_models_start_and_finish(tmp_path, monkeypatch):
+def test_run_brainstorm_does_not_print_relays_progress_twice(tmp_path, monkeypatch):
+    """relay prints each model's progress line itself (through print_fn);
+    also passing progress_fn and formatting its events printed every line
+    twice."""
     from whyline_relay import brainstorm
 
     _fake_relay(monkeypatch)
+    seen = {}
 
     def pass_zero(root, models, topic, *, settings, print_fn=None, progress_fn=None, **kw):
-        for status in ("starting", "running", "succeeded"):
-            progress_fn(brainstorm.ProgressEvent(
-                status=status, agent="codex", label="Codex", phase=brainstorm.PHASE_PASS_ZERO,
-                ordinal=2, total=2, elapsed_seconds=41.0,
-            ))
+        seen["progress_fn"] = progress_fn
+        for key, _ in models:
+            target = brainstorm.temp_path(root, key)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("research\n")
         return {}
 
     monkeypatch.setattr(brainstorm, "run_pass_zero", pass_zero)
+    adapters.run_brainstorm(tmp_path, topic="t", agents=["claude"], passes=0, final_agent="claude")
+    assert seen["progress_fn"] is None
+
+
+def test_run_brainstorm_stops_when_no_model_finished_its_research(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm
+
+    calls = _fake_relay(monkeypatch)
+
+    def pass_zero(root, models, topic, *, settings, print_fn=None, **kw):
+        calls.append(("zero", [k for k, _ in models]))
+        return {}  # every model timed out: nothing written
+
+    monkeypatch.setattr(brainstorm, "run_pass_zero", pass_zero)
+    event = adapters.run_brainstorm(
+        tmp_path, topic="t", agents=["codex"], passes=1, final_agent="codex"
+    )
+    assert event.kind == "error"
+    assert "No model finished its research" in event.text
+    assert calls == [("zero", ["codex"])]  # no merge, review or synthesis after that
+
+
+def test_skipped_models_say_how_to_set_them_up(tmp_path, monkeypatch):
+    _fake_relay(monkeypatch, unavailable=("grok",))
     progress = []
     adapters.run_brainstorm(
-        tmp_path, topic="t", agents=["claude", "codex"], passes=0,
+        tmp_path, topic="t", agents=["claude", "grok"], passes=0,
         final_agent="claude", progress=progress.append,
     )
-    per_model = [line for line in progress if line.startswith("[2/2] Codex")]
-    # "running" heartbeats are not printed; start and finish are
-    assert len(per_model) == 2
-    assert "starting" in per_model[0] and "succeeded" in per_model[1]
+    line = next(line for line in progress if line.startswith("Skipping"))
+    assert "Grok" in line and "whyline relay setup" in line

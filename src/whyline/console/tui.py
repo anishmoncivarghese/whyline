@@ -10,6 +10,8 @@ layer, not a second implementation of the console's logic.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -43,16 +45,45 @@ from whyline.console.repl import (
     context_label,
     dispatch,
     handle_slash_command,
+    home_repo_warning,
     login_argv,
     repo_label,
     repo_switch_warning,
     switch_repo,
+    unknown_command_text,
 )
 from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
 _MODES = ("command", "chat", "relay")
+
+# Native clipboard commands, tried in order. OSC 52 (what Textual's
+# copy_to_clipboard sends) is ignored by several terminals -- macOS Terminal
+# among them, and iTerm2 unless enabled -- so it said "copied" while nothing
+# reached the clipboard.
+_CLIPBOARD_COMMANDS = (
+    ["pbcopy"],
+    ["wl-copy"],
+    ["xclip", "-selection", "clipboard"],
+    ["xsel", "--clipboard", "--input"],
+    ["clip"],
+)
+
+
+def _system_copy(text: str) -> bool:
+    """Put `text` on the system clipboard with the platform's own command;
+    False when none is available or it failed."""
+    for argv in _CLIPBOARD_COMMANDS:
+        if shutil.which(argv[0]) is None:
+            continue
+        try:
+            result = subprocess.run(argv, input=text, text=True, capture_output=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            return True
+    return False
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
@@ -274,6 +305,9 @@ class WhylineConsoleApp(App):
                 ),
             )
         )
+        warning = home_repo_warning(self.session.root, Path.cwd())
+        if warning:
+            self.render_event(SessionEvent(kind="error", text=warning))
 
     def _sync_mode_indicator(self) -> None:
         """The subtitle alone was easy to miss, so the current mode is also
@@ -378,8 +412,16 @@ class WhylineConsoleApp(App):
         text = "\n".join(
             f"{_PREFIX.get(e.kind, '')}{e.text}" for e in self.session.transcript
         )
+        if _system_copy(text):
+            self.render_event(SessionEvent(kind="output", text="Transcript copied to clipboard."))
+            return
         self.copy_to_clipboard(text)
-        self.render_event(SessionEvent(kind="output", text="Transcript copied to clipboard."))
+        self.render_event(SessionEvent(
+            kind="output",
+            text="Sent the transcript to your terminal's clipboard (OSC 52). It may not "
+            "have arrived: no system clipboard command was found, and some terminals "
+            "ignore OSC 52 unless it's enabled in their settings.",
+        ))
 
     def _stop(self) -> None:
         """Invalidates the current dispatch token (MTU6): whatever
@@ -442,6 +484,11 @@ class WhylineConsoleApp(App):
         prompt.value = ""
         self.render_event(SessionEvent(kind="input", text=text))
         if not self._handle_slash(text):
+            if text.startswith("/"):
+                # Never send an unrecognized command to the agent as a
+                # message -- and never let it start a turn mid-brainstorm.
+                self.render_event(SessionEvent(kind="error", text=unknown_command_text(text)))
+                return
             self._dispatch_text(text)
 
     def _handle_slash(self, text: str) -> bool:

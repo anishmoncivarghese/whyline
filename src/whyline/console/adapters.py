@@ -276,19 +276,18 @@ def run_brainstorm(
     chat rejects."""
     from whyline_relay import brainstorm, config as relay_config
 
+    # relay prints each model's start/finish/failure line through print_fn
+    # itself; also passing progress_fn printed every line twice.
     progress = progress if progress is not None else (lambda line: None)
-
-    def on_event(event) -> None:
-        # One line per model as it starts, finishes or fails; relay's
-        # periodic "running" heartbeats would just repeat the start line.
-        if event.status != "running":
-            progress(brainstorm.format_progress_line(event))
-
     settings = relay_config.load(root)
     models = [(agent, BRAINSTORM_LABELS[agent]) for agent in agents]
     skipped = brainstorm.check_availability(settings, models)
     if skipped:
-        progress("Skipping (not set up for chat here): " + ", ".join(l for _, l in skipped))
+        progress(
+            "Skipping (not set up for chat here): "
+            + ", ".join(l for _, l in skipped)
+            + " -- add them with: whyline relay setup"
+        )
         models = [m for m in models if m not in skipped]
     if not models:
         return SessionEvent(kind="error", text="None of the chosen models can chat in this repo.")
@@ -299,20 +298,32 @@ def run_brainstorm(
     names = ", ".join(label for _, label in models)
     progress(f"Researching independently: {names}")
     actual = brainstorm.run_pass_zero(
-        root, models, topic, settings=settings, print_fn=progress,
-        progress_fn=on_event, **kwargs
+        root, models, topic, settings=settings, print_fn=progress, **kwargs
     )
+    researched = [
+        label for key, label in models
+        if brainstorm.temp_path(root, key).exists()
+        and brainstorm.temp_path(root, key).read_text(encoding="utf-8").strip()
+    ]
+    if not researched:
+        # Reviewing and synthesising nothing just burns more agent turns
+        # before failing anyway.
+        return SessionEvent(
+            kind="error",
+            text="No model finished its research, so there is nothing to review or "
+            "synthesise. The lines above say why for each model.",
+        )
     brainstorm.merge_pass_zero(root, models, topic, actual_agents=actual)
     for number in range(1, passes + 1):
         progress(f"Review pass {number} of {passes}")
         actual = brainstorm.run_review_pass(
             root, models, topic, number, settings=settings, print_fn=progress,
-            actual_agents=actual, progress_fn=on_event, **kwargs,
+            actual_agents=actual, **kwargs,
         )
     progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
     record = brainstorm.run_final_synthesis(
         root, final_agent, models, topic, settings=settings, print_fn=progress,
-        actual_agents=actual, progress_fn=on_event, **kwargs
+        actual_agents=actual, **kwargs
     )
     path = brainstorm.shared_path(root, topic)
     try:

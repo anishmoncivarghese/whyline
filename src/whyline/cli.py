@@ -41,9 +41,38 @@ def _exec(binary: str, argv: list[str]) -> None:
 RELAY_SETUP_ARGV = ["whyline", "relay", "setup"]
 
 
+def _repo_for_here(input_fn, print_fn, offer: bool) -> Path | None:
+    """The repository to work in, offering to create one in this folder.
+
+    The nearest repo above is right for a subfolder of a real project, but
+    not for a new project folder with none of its own: the search walked up
+    to whatever was above -- on a Mac with a dotfiles repo, the whole home
+    directory, where agents then committed. So when there is no repo at all,
+    or the only one is the home directory's, ask. Only when someone can
+    answer (`offer`): a script never gets a repository it didn't ask for.
+    """
+    start = Path.cwd().resolve()
+    root = paths.find_repo_root()
+    home = Path.home().resolve()
+    lands_on_home = root is not None and root.resolve() == home and start != home
+    if (root is not None and not lands_on_home) or not offer:
+        return root
+    detail = " (the nearest one is your home directory's)" if lands_on_home else ""
+    print_fn(f"{start} has no git repository of its own{detail}.")
+    try:
+        answer = input_fn("Set one up here (git init + whyline init)? [Y/n] ").strip().lower()
+    except EOFError:
+        answer = "n"
+    if answer not in ("", "y", "yes"):
+        return root
+    subprocess.run(["git", "init", "-q"], cwd=start, check=True)
+    main(["init", "--yes", "--no-relay"])
+    return start
+
+
 def run_entry_menu(
     relay_available=None, exec_fn=None, input_fn=None, print_fn=None,
-    subprocess_fn=None,
+    subprocess_fn=None, offer_git=None,
 ) -> bool:
     """Ask "Chat or relay?" and act on it. Returns False only when
     whyline-relay isn't installed, so main()'s existing fallback-to-usage
@@ -77,7 +106,8 @@ def run_entry_menu(
 
     from whyline.console import editor, repl, tui
 
-    root = paths.find_repo_root()
+    offer = sys.stdin.isatty() if offer_git is None else offer_git
+    root = _repo_for_here(input_fn, print_fn, offer)
     if root is not None:
         if tui.TUI_AVAILABLE:
             tui.launch(root)
@@ -1311,7 +1341,9 @@ def cmd_model(args: argparse.Namespace) -> int:
 
 
 def cmd_console(args: argparse.Namespace) -> int:
-    root = _require_repo()
+    root = _repo_for_here(input, print, sys.stdin.isatty())
+    if root is None:
+        root = _require_repo()
     if getattr(args, "ui", False):
         from whyline.console import tui
 

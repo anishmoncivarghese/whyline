@@ -109,6 +109,8 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         return _model_event(session, text)
     if text.startswith("/login"):
         return _login_event(text)
+    if text == "/brainstorm" and _is_home(session.root):
+        return SessionEvent(kind="error", text=_HOME_REFUSAL)
     if text == "/brainstorm":
         # Each console collects topic/models/passes its own way (a form in
         # the TUI, prompts in the REPL), then calls adapters.run_brainstorm.
@@ -116,6 +118,70 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
     if text == "/repo" or text.startswith("/repo "):
         return _repo_event(session, text)
     return None
+
+
+def _is_home(root: Path) -> bool:
+    try:
+        return root.resolve() == Path.home().resolve()
+    except OSError:
+        return False
+
+
+_HOME_REFUSAL = (
+    "Not running agents here: this console is in your home directory's git "
+    "repo, where every agent turn commits, and which is too large for git to "
+    "handle quickly. Switch to your project with /repo <path> (a new project "
+    "folder needs `git init` and `whyline init` first)."
+)
+
+
+def home_repo_warning(root: Path, started_in: Path) -> str | None:
+    """Said once at startup when the console landed on the home-directory
+    repo -- typically because the folder it was started in (a new project)
+    has no git repo of its own, so the search walked up to ~."""
+    if not _is_home(root):
+        return None
+    where = ""
+    try:
+        if started_in.resolve() != root.resolve():
+            where = (
+                f" You started in {started_in}, which has no git repo of its own, "
+                "so whyline walked up to the one in your home directory."
+            )
+    except OSError:
+        pass
+    return (
+        "Warning: this console is working in your home directory's git repo (~)."
+        + where
+        + f" To work on that folder as its own project: cd {started_in} && git init "
+        "&& whyline init, then start whyline there (or /repo it). Chat, Relay and "
+        "Brainstorm are disabled in the home repo."
+    )
+
+
+# Commands people bring over from `whyline relay chat`, pointed at their
+# console equivalents instead of being sent to the agent as a message.
+_RELAY_CHAT_HINTS = {
+    "/agents": "here, /model lists every agent and whether it's ready",
+    "/default": "here, /model {arg} makes it the chat agent",
+    "/history": "here, /history shows this session",
+    "/clear": "start a new console session to clear it",
+    "/backups": "run `whyline relay chat` for backup overrides",
+    "/reset-backup": "run `whyline relay chat` for backup overrides",
+    "/claude": "here, /model claude switches to it",
+    "/codex": "here, /model codex switches to it",
+    "/agy": "here, /model antigravity switches to it",
+    "/grok": "here, /model grok switches to it",
+}
+
+
+def unknown_command_text(text: str) -> str:
+    head, _, rest = text.strip().partition(" ")
+    hint = _RELAY_CHAT_HINTS.get(head)
+    if hint:
+        arg = rest.strip() or "<agent>"
+        return f"Unknown command {head} -- that's a `whyline relay chat` command; {hint.format(arg=arg)}."
+    return f"Unknown command {head}. /help lists what this console understands."
 
 
 def repo_label(root: Path) -> str:
@@ -343,6 +409,9 @@ def run(
             return
     session = ConsoleSession(root=root)
     print_fn("whyline console -- /help for commands, /exit to quit.")
+    warning = home_repo_warning(root, Path.cwd())
+    if warning:
+        print_fn(warning)
     while True:
         try:
             label = session.mode
@@ -385,7 +454,7 @@ def run(
             _print_event(session.record(slash_event), print_fn)
             continue
         if text.startswith("/"):
-            print_fn(f"Unknown command: {text}. Try {', '.join(SLASH_COMMANDS)}.")
+            print_fn(unknown_command_text(text))
             continue
         print_fn(busy_label(session) + "...")
         try:
@@ -463,6 +532,8 @@ def dispatch(session: ConsoleSession, text: str) -> SessionEvent:
 
 
 def _dispatch(session: ConsoleSession, text: str) -> SessionEvent:
+    if session.mode in ("chat", "relay") and _is_home(session.root):
+        return SessionEvent(kind="error", text=_HOME_REFUSAL)
     if session.mode == "command":
         return adapters.run_whyline_command(text.split())
     if session.mode == "chat":

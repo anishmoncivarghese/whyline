@@ -3446,3 +3446,47 @@ Append-only. Written by whyline; readable without it.
 <!-- whyline-attach: {"v":1,"note":"ad7800ced9be40d1a6a44e648c5dc0e7","commit":"e4814c61ef150459a27d106062ad8de41e86ea94","ts":"2026-09-30T09:59:18.674Z"} -->
 
 <!-- whyline-attach: {"v":1,"note":"c5d053df04264669925070829426e8b8","commit":"e4814c61ef150459a27d106062ad8de41e86ea94","ts":"2026-09-30T09:59:18.777Z"} -->
+
+## 2026-09-30 — Offer git init + whyline init when the folder has no repo of its own or only the home directory's, and only when a terminal can answer
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-HOME
+
+**Because:** a new project folder silently resolved to ~/.git; agents then committed into the home repo
+
+**Rejected:**
+
+- always use the nearest repo above — silently adopts the home directory
+- create the repo automatically — a script would get a repository it never asked for
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 932561c808ca42cabad14dbe59f55bc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T11:02:19.495Z"} -->
+
+## 2026-09-30 — Chat, Relay and Brainstorm refuse to run in the home-directory repo; command mode still works
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-HOME
+
+**Because:** agent turns commit there, and git on a whole home directory is too slow (status timed out, index.lock collisions)
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 734b91a7948a4b69b6d441ab4b7f184b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T11:02:19.526Z"} -->
+
+## 2026-09-30 — Copy uses the platform clipboard command first and only falls back to OSC 52, saying it may not have worked
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-HOME
+
+**Because:** OSC 52 is ignored by macOS Terminal and by iTerm2 unless enabled, so 'copied' was untrue
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 280f3a68e3514eba981b036e409d8fcb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T11:02:19.554Z"} -->
