@@ -2047,7 +2047,7 @@
   git commit -m "feat(console): draft a plan, review it, request changes or approve"
   ```
 
-- [ ] CRS-11: Plan popup — Brainstorm source (new or existing doc)
+- [x] CRS-11: Plan popup — Brainstorm source (new or existing doc)
 
   ## Global Constraints
 
