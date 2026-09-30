@@ -3393,3 +3393,50 @@ Append-only. Written by whyline; readable without it.
 <!-- whyline-attach: {"v":1,"note":"9e43e6fa1a7846608db50f092bf684ad","commit":"dd0917bda4172345b8058f0f5ddfcd8bbb6797bf","ts":"2026-09-30T04:14:09.764Z"} -->
 
 <!-- whyline-attach: {"v":1,"note":"d412b71248274c9d8af61c57d936904b","commit":"dd0917bda4172345b8058f0f5ddfcd8bbb6797bf","ts":"2026-09-30T04:14:09.863Z"} -->
+
+## 2026-09-30 — Antigravity hook uses PreInvocation, PostToolUse and Stop only; never PreToolUse
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-6
+
+**Because:** PreToolUse output must carry a permission decision, so a recording hook would change what agy may do; PostToolUse carries the tool call (verified by a real run)
+
+**Rejected:**
+
+- PreToolUse for richer data — forces allow/deny/ask on every tool call
+
+**Files:** src/whyline/hook_entry.py
+
+<!-- whyline-event: 339b4b0db9424493b117e172f7094ef7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T09:58:41.944Z"} -->
+
+## 2026-09-30 — Record agy file touches only from TargetFile (writes), not AbsolutePath (reads)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-6
+
+**Because:** agy's writing tools name their file TargetFile; recording reads would claim an agent changed files it only looked at
+
+**Files:** src/whyline/hook_entry.py
+
+<!-- whyline-event: ad7800ced9be40d1a6a44e648c5dc0e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T09:58:42.025Z"} -->
+
+## 2026-09-30 — whyline doctor is read-only and never edits Antigravity's trusted folders
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-6
+
+**Because:** trust is a security setting that belongs to the user; doctor reports and gives the fix
+
+**Rejected:**
+
+- auto-add the repo to trustedWorkspaces — widens agy permissions machine-wide without asking
+
+**Files:** src/whyline/doctor.py
+
+<!-- whyline-event: c5d053df04264669925070829426e8b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T09:58:42.087Z"} -->

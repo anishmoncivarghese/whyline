@@ -47,9 +47,58 @@ def _touched_paths(root: Path, payload: dict) -> list[str]:
     return sorted(path for path in relative if path is not None)
 
 
-def main(stdin_text: str, root: Path, agent: str = "claude-code") -> int:
+def _antigravity(payload: dict, root: Path, event: str | None) -> None:
+    """agy hook payloads: camelCase, no hook_event_name (the event comes
+    from the command line), and -- verified, though undocumented -- the tool
+    call on PostToolUse. Only writes are recorded: agy's file-writing tools
+    name their file `TargetFile`; reads use `AbsolutePath`."""
+    target = paths.ledger_path(root)
+    session = str(payload.get("conversationId", ""))
+    if event == "PreInvocation":
+        if payload.get("invocationNum") == 0:
+            ledger.append(
+                target,
+                events.new_event(events.SESSION_STARTED, session=session, agent="antigravity"),
+            )
+    elif event == "PostToolUse":
+        call = payload.get("toolCall")
+        args = call.get("args") if isinstance(call, dict) else None
+        if payload.get("error") or not isinstance(args, dict):
+            return
+        raw = args.get("TargetFile")
+        relative = _relative(root, str(raw)) if isinstance(raw, str) and raw else None
+        if relative:
+            ledger.append(
+                target,
+                events.new_event(
+                    events.FILE_TOUCHED,
+                    session=session,
+                    path=relative,
+                    tool=str(call.get("name", "")),
+                    agent="antigravity",
+                ),
+            )
+    elif event == "Stop":
+        ledger.append(
+            target,
+            events.new_event(
+                events.SESSION_ENDED,
+                session=session,
+                status=str(payload.get("terminationReason", "")) or "ended",
+                agent="antigravity",
+            ),
+        )
+
+
+def main(
+    stdin_text: str, root: Path, agent: str = "claude-code", event: str | None = None
+) -> int:
     try:
         payload = json.loads(stdin_text)
+        if agent == "antigravity":
+            if isinstance(payload, dict):
+                _antigravity(payload, root, event)
+            return 0
         name = payload.get("hook_event_name")
         session = payload.get("session_id", "")
         target = paths.ledger_path(root)
@@ -105,13 +154,22 @@ def main(stdin_text: str, root: Path, agent: str = "claude-code") -> int:
 def entry() -> None:
     try:
         agent = "claude-code"
-        if "--agent" in sys.argv[1:]:
-            index = sys.argv.index("--agent")
-            if index + 1 < len(sys.argv):
-                agent = sys.argv[index + 1]
+        event = None
+        for flag in ("--agent", "--event"):
+            if flag in sys.argv[1:]:
+                index = sys.argv.index(flag)
+                if index + 1 < len(sys.argv):
+                    if flag == "--agent":
+                        agent = sys.argv[index + 1]
+                    else:
+                        event = sys.argv[index + 1]
         text = sys.stdin.read()
         root = paths.find_repo_root() or Path.cwd()
-        main(text, root, agent=agent)
+        main(text, root, agent=agent, event=event)
     except Exception:  # noqa: BLE001 — the console entrypoint has the same contract
         pass
+    if agent == "antigravity":
+        # agy expects a JSON object on stdout from every hook; {} means
+        # "no opinion" for all three events whyline uses (verified).
+        sys.stdout.write("{}\n")
     raise SystemExit(0)

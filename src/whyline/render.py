@@ -134,6 +134,12 @@ def status_payload(root) -> dict:
         "claude": _agent_hook_report(root, loaded.ledger_events, "claude"),
         "codex": _agent_hook_report(root, loaded.ledger_events, "codex"),
     }
+    from whyline import hooks as hooks_module
+
+    if hooks_module.antigravity_in_use(root) or hooks_module.antigravity_path(root).exists():
+        hook_reports["antigravity"] = _agent_hook_report(
+            root, loaded.ledger_events, "antigravity"
+        )
     active = handoff.load(root)
     ownership_state = ownership.load(root)
     live_claims, stale_claims = ownership.split(
@@ -285,6 +291,9 @@ def _agent_hook_report(root, found: list[dict], agent: str) -> dict:
             check_claude_denies=True,
         )
         aliases = {"claude", "claude-code"}
+    elif agent == "antigravity":
+        configured, config_detail = hooks.antigravity_configured(root)
+        aliases = {"antigravity"}
     else:
         configured, config_detail = _config_state(
             root / ".codex" / "hooks.json", hooks.CODEX_HOOK_COMMAND
@@ -302,6 +311,11 @@ def _agent_hook_report(root, found: list[dict], agent: str) -> dict:
         detail = "configured, but whyline-hook was not found as an executable on PATH"
     elif not observed and agent == "codex":
         detail = "configured but never observed; open /hooks in Codex and review trust"
+    elif not observed and agent == "antigravity":
+        detail = (
+            "configured but never observed; trust this folder in Antigravity (agy) "
+            "so it loads workspace hooks, then start a session"
+        )
     elif not observed:
         detail = "configured but never observed; start a new Claude Code session"
     else:
@@ -391,8 +405,12 @@ def status_text(payload: dict) -> str:
         f"Events         {payload['events']}",
         f"Decisions      {payload['notes']}",
     ]
-    for label, key in (("Claude hook", "claude"), ("Codex hook", "codex")):
-        report = payload["hooks"][key]
+    for label, key in (
+        ("Claude hook", "claude"), ("Codex hook", "codex"), ("Antigravity", "antigravity")
+    ):
+        report = payload["hooks"].get(key)
+        if report is None:
+            continue
         lines.append(f"{label:<14} {report['detail']}")
         if report["last_event"]:
             age = report["last_event_age_seconds"]

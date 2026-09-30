@@ -19,7 +19,7 @@ the next starts.
 | 3. Decision lifecycle + `whyline decisions` | 0.3.22 | released |
 | 4. Ledger read path + prompt retention | 0.3.23 | released |
 | 5. Rename-aware relevance + `explain --diff` | 0.3.24 | released |
-| 6. Antigravity hooks + `whyline doctor` | 0.3.25 | next |
+| 6. Antigravity hooks + `whyline doctor` | 0.3.25 | released |
 
 ---
 
@@ -274,3 +274,56 @@ with matched_path shown; brief/sync/decisions --file finding old-path
 decisions; blame_range against per-line blame; explain_blamed parity with
 explain; --diff grouping, coverage counts, new-line counting, --staged vs
 working tree, no changes, deleted file, JSON shape.
+
+---
+
+## Item 6 — Antigravity hooks and `whyline doctor` (0.3.25)
+
+**Defect:** Antigravity is a first-class runner (`whyline run antigravity`,
+relay roles) but whyline records nothing mechanical for it, and health
+checks are scattered across `status` and ad hoc advice.
+
+**Verified, not assumed (2026-09-30):** agy 1.2.x reads workspace hooks from
+`<repo>/.agents/hooks.json` (named hooks; events PreToolUse, PostToolUse,
+PreInvocation, PostInvocation, Stop), runs them with `sh -c` in the
+`.agents/` directory, and loads them only for trusted workspaces. A probe
+hook in this repository captured real payloads: camelCase JSON with
+`conversationId`, `workspacePaths`, `invocationNum` (PreInvocation),
+`terminationReason` (Stop), and -- undocumented but present --
+`toolCall {name, args}` on PostToolUse. File-writing tools pass the file as
+`TargetFile` (write_to_file, edit_file, replace_file_content); reads use
+`AbsolutePath`. `{}` on stdout was accepted for all three events.
+PreToolUse is deliberately not used: its output must carry a permission
+`decision`, so a recording hook would change what the agent may do.
+
+### Tasks
+
+- [x] **6.1 `hooks.install_antigravity(root)`** writes a `whyline` named
+  hook into `.agents/hooks.json` (PreInvocation, PostToolUse `*`, Stop →
+  `whyline-hook --agent antigravity --event <Event>`), preserving every
+  other named hook; refuses to touch an unreadable file.
+- [x] **6.2 Hook entry, antigravity mode.** PreInvocation with
+  `invocationNum` 0 → SessionStarted; PostToolUse with a `TargetFile`
+  inside the repo (and no error) → FileTouched; Stop → SessionEnded with
+  the termination reason. Always prints `{}`; never fails.
+- [x] **6.3 `whyline init`** installs it when `agy` is on PATH or `.agents/`
+  exists, and says the folder must be trusted in Antigravity. whyline never
+  edits Antigravity's trust list (a security setting).
+- [x] **6.4 `status`** reports the Antigravity hook (configured / observed)
+  when Antigravity is in use.
+- [x] **6.5 `whyline doctor`** -- one list of ok / warn / fail checks, each
+  with its fix: initialisation; instruction block current; each in-use
+  agent's hook configured and observed; Antigravity trust for this folder
+  (read-only); ledger unreadable lines, size, prompt policy; stale claims,
+  live overlaps, finished-but-unclosed handoff; decisions.md conflict
+  markers; relay importable. `--json`; exit 1 if any check fails.
+- Gemini support stays out: lower priority than every correctness item, as
+  the brainstorm said, and Gemini CLI itself is retired.
+
+### Tests
+
+install (new file, merge with other hooks, idempotent, unreadable file);
+hook entry for each event incl. read tools ignored, outside-repo paths
+ignored, errors ignored, malformed stdin, always `{}`; init with/without
+agy; status report; each doctor check in its ok and warn/fail state,
+exit codes, JSON.

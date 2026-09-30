@@ -226,6 +226,13 @@ def _add_ledger(subparsers: "argparse._SubParsersAction") -> None:
     stats.add_argument("--json", action="store_true")
 
 
+def _add_doctor(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "doctor", help="Check everything whyline depends on here, with fixes"
+    )
+    parser.add_argument("--json", action="store_true")
+
+
 def _add_decisions(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "decisions", help="List, search or show recorded decisions"
@@ -453,6 +460,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_retract(subparsers)
     _add_decisions(subparsers)
     _add_ledger(subparsers)
+    _add_doctor(subparsers)
     _add_handoff(subparsers)
     _add_claim(subparsers)
     _add_release(subparsers)
@@ -780,6 +788,18 @@ def cmd_decisions(args: argparse.Namespace) -> int:
     for event in selected:
         print(_decision_line(event))
     return EXIT_OK
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from whyline import doctor, render
+
+    root = _require_repo()
+    checks = doctor.run(root)
+    if args.json:
+        render.emit_json({"checks": checks})
+    else:
+        print(doctor.text(checks))
+    return EXIT_ERROR if any(c["status"] == doctor.FAIL for c in checks) else EXIT_OK
 
 
 def cmd_ledger(args: argparse.Namespace) -> int:
@@ -1173,6 +1193,12 @@ def cmd_init(args: argparse.Namespace) -> int:
             print(f"Claude hook: {claude_outcome}")
             print(f"Codex hook: {codex_outcome}")
             print("Codex trust: open /hooks in Codex and approve this project hook.")
+            if hooks.antigravity_in_use(root):
+                print(f"Antigravity hook: {hooks.install_antigravity(root)}")
+                print(
+                    "Antigravity trust: trust this folder in Antigravity (agy) so it "
+                    "loads workspace hooks; whyline does not change that setting."
+                )
         except hooks.SettingsUnreadable as error:
             print(str(error), file=sys.stderr)
             return EXIT_ERROR
@@ -1447,6 +1473,7 @@ COMMANDS = {
     "retract": cmd_retract,
     "decisions": cmd_decisions,
     "ledger": cmd_ledger,
+    "doctor": cmd_doctor,
     "handoff": cmd_handoff,
     "claim": cmd_claim,
     "release": cmd_release,
