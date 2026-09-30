@@ -3993,3 +3993,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: acacf840d69745ea8036eed755ad46cb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T19:09:29.616Z"} -->
+
+## 2026-09-30 — Synchronize CLI version with package metadata for 0.3.30
+
+**Actor:** codex
+**Role:** implementer
+**Task:** VERSION-0.3.30
+
+**Because:** Users installing 0.3.29 received correct package metadata but whyline --version reported stale 0.3.27 from the hardcoded module constant; updating both constants prevents misleading upgrade verification
+
+**Rejected:**
+
+- Leave the mismatch — makes a successful installation appear stale and complicates support
+
+**Files:** src/whyline/__init__.py, pyproject.toml
+
+<!-- whyline-event: d6ee5772aee44e2e8e5aebe3098b3377 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T19:22:02.704Z"} -->
