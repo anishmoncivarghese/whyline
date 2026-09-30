@@ -568,17 +568,27 @@ async def test_repo_switch_asks_first_and_clears_the_transcript(tmp_path, monkey
         (repo / ".git").mkdir(parents=True)
     root, other = root.resolve(), other.resolve()
     app = tui.WhylineConsoleApp(root=root)
+
+    async def ask_to_switch(pilot):
+        # Enter in the input rather than clicking Send twice: Textual ignores
+        # a second press of the same button within its 0.2s highlight, which
+        # on a slow CI runner swallowed the second /repo entirely.
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.focus()
+        prompt.value = f"/repo {other}"
+        await pilot.press("enter")
+        for _ in range(50):  # until the dialog is actually up
+            if isinstance(app.screen, tui.ConfirmScreen):
+                return
+            await pilot.pause(0.05)
+        raise AssertionError("confirmation dialog never appeared")
+
     async with app.run_test(size=(100, 30)) as pilot:
-        app.query_one("#prompt", tui.Input).value = f"/repo {other}"
-        await pilot.click("#send")
-        await pilot.pause()
-        assert isinstance(app.screen, tui.ConfirmScreen)
+        await ask_to_switch(pilot)
         await pilot.click("#cancel")
         await pilot.pause()
         assert app.session.root == root
-        app.query_one("#prompt", tui.Input).value = f"/repo {other}"
-        await pilot.click("#send")
-        await pilot.pause()
+        await ask_to_switch(pilot)
         await pilot.click("#confirm")
         await pilot.pause()
         assert app.session.root == other
