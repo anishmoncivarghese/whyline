@@ -62,7 +62,8 @@ _HELP_TEXT = "\n".join(
         "Modes:",
         "  Command  what you type runs as `whyline ...` (e.g. status, log)",
         "  Chat     talk to the active agent (see /model)",
-        "  Relay    drive whyline-relay: doctor, status, start, resume",
+        "  Relay    Plan makes plan.md, Set up picks roles and starts; or type\n"
+        "           doctor, status, start, resume",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),
     ]

@@ -35,10 +35,11 @@ except ImportError:
     Static = Text = None
     TUI_AVAILABLE = False
 
-from whyline.console import adapters
+from whyline.console import adapters, relay_ops
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
-    RELAY_SETUP,
+    _HOME_REFUSAL,
+    _is_home,
     _run_login,
     after_login,
     busy_label,
@@ -303,6 +304,7 @@ class WhylineConsoleApp(App):
         self._busy_text = ""
         self._busy_since = 0.0
         self._spin = 0
+        self._relay = None  # the RelayProcess started by Start/Resume, if any
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -342,6 +344,20 @@ class WhylineConsoleApp(App):
         self._main("#context", Static).update(
             f"{context_label(self.session)}   │   repo: {repo_label(self.session.root)}"
         )
+        self._sync_relay_buttons()
+
+    def _sync_relay_buttons(self) -> None:
+        """Plan and Set up only make sense in Relay mode; Resume only when a
+        run is paused and nothing is running."""
+        in_relay = self.session.mode == "relay"
+        running = self._relay is not None and self._relay.running()
+        self._main("#relay-plan", Button).disabled = not in_relay
+        self._main("#relay-setup", Button).disabled = not in_relay or running
+        try:
+            paused = in_relay and relay_ops.paused_run(self.session.root)
+        except Exception:  # no relay installed, unreadable state: not resumable
+            paused = False
+        self._main("#relay-resume", Button).disabled = not paused or running
 
     def _placeholder(self, mode: str) -> str:
         if mode == "chat":
@@ -375,6 +391,9 @@ class WhylineConsoleApp(App):
             Button("Stop", id="stop", disabled=True),
             Button("Help", id="help"),
             Button("Copy", id="copy"),
+            Button("Plan", id="relay-plan", disabled=True),
+            Button("Set up", id="relay-setup", disabled=True),
+            Button("Resume", id="relay-resume", disabled=True),
             id="controls",
         )
         yield Footer()
@@ -397,6 +416,12 @@ class WhylineConsoleApp(App):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
         elif button_id == "copy":
             self._copy_transcript()
+        elif button_id == "relay-plan":
+            self._open_relay_plan()
+        elif button_id == "relay-setup":
+            self._open_relay_setup()
+        elif button_id == "relay-resume":
+            self._launch_relay(["resume"])
         elif button_id in ("model", "history", "help", "brainstorm"):
             self._handle_slash(f"/{button_id}")
 
@@ -521,8 +546,14 @@ class WhylineConsoleApp(App):
         if event is None:
             return False
         if event.kind == "needs_setup":
-            self._exec_after = RELAY_SETUP
-            self.exit()
+            # Setup happens here now (Plan, then Set up), not in the
+            # terminal wizard, so the console stays open.
+            self.session.mode = "relay"
+            self.render_event(SessionEvent(
+                kind="output",
+                text="Mode is now relay. No relay setup here yet -- use Plan, then Set up.",
+            ))
+            self._sync_mode_indicator()
             return True
         if event.kind == "needs_login":
             self._login(event.text)
@@ -623,6 +654,25 @@ class WhylineConsoleApp(App):
             return
         self._set_busy(False)
         self.render_event(result)
+
+    def _refuse_in_home(self) -> bool:
+        if _is_home(self.session.root):
+            self.render_event(SessionEvent(kind="error", text=_HOME_REFUSAL))
+            return True
+        return False
+
+    def _open_relay_plan(self) -> None:
+        if self._refuse_in_home():
+            return
+        self.render_event(SessionEvent(kind="output", text="Plan: coming in the next task."))
+
+    def _open_relay_setup(self) -> None:
+        if self._refuse_in_home():
+            return
+        self.render_event(SessionEvent(kind="output", text="Set up: coming in a later task."))
+
+    def _launch_relay(self, argv: list[str]) -> None:
+        self.render_event(SessionEvent(kind="output", text="Relay runs: coming in a later task."))
 
 
 def _exec(binary: str, argv: list[str]) -> None:

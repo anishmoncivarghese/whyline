@@ -19,7 +19,11 @@ async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
     async with app.run_test() as pilot:
         assert app.query_one("#transcript") is not None
         assert app.query_one("#prompt") is not None
-        for button_id in ("send", "model", "mode-command", "mode-chat", "mode-relay", "history", "stop", "help", "copy"):
+        for button_id in (
+            "send", "model", "mode-command", "mode-chat", "mode-relay",
+            "history", "stop", "help", "copy",
+            "relay-plan", "relay-setup", "relay-resume",
+        ):
             assert app.query_one(f"#{button_id}") is not None
 
 
@@ -203,30 +207,71 @@ async def test_model_button_actually_lists_available_agents(tmp_path, monkeypatc
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_route_relay_with_no_config_defers_exec_until_after_exit(
-    tmp_path, monkeypatch
-):
+async def test_relay_mode_without_config_stays_in_the_console(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.click("#mode-relay")
         await pilot.pause()
-        assert app._exec_after == ("whyline", ["whyline", "relay", "setup"])
-    # app.run_test()'s own context manager has now exited (app.run() returned)
-    # -- confirm launch() is what actually performs the exec, not the app itself.
+        assert app._exec_after is None
+        assert app.session.mode == "relay"
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("use Plan, then Set up" in line for line in lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_typing_route_relay_with_no_config_defers_exec_until_after_exit(
-    tmp_path, monkeypatch
-):
+async def test_plan_and_setup_are_only_enabled_in_relay_mode(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        prompt = app.query_one("#prompt", tui.Input)
-        prompt.value = "/route relay"
-        await pilot.click("#send")
+        for button_id in ("relay-plan", "relay-setup", "relay-resume"):
+            assert app.query_one(f"#{button_id}", tui.Button).disabled
+        await pilot.click("#mode-relay")
         await pilot.pause()
-        assert app._exec_after == ("whyline", ["whyline", "relay", "setup"])
+        assert not app.query_one("#relay-plan", tui.Button).disabled
+        assert not app.query_one("#relay-setup", tui.Button).disabled
+        assert app.query_one("#relay-resume", tui.Button).disabled  # nothing paused
+        await pilot.click("#mode-chat")
+        await pilot.pause()
+        assert app.query_one("#relay-plan", tui.Button).disabled
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_resume_is_enabled_when_a_run_is_paused(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        assert not app.query_one("#relay-resume", tui.Button).disabled
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_all_bottom_buttons_fit_in_80_columns(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)):
+        for button in app.query("#controls Button"):
+            assert button.region.right <= 80, button.id
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_plan_refuses_in_the_home_repo(tmp_path, monkeypatch):
+    monkeypatch.setattr(tui.Path, "home", classmethod(lambda cls: tmp_path))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.click("#relay-plan")
+        await pilot.pause()
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        # "Not running agents here" is the refusal itself; the startup warning
+        # also mentions the home directory, so it can't be the check.
+        assert any("Not running agents here" in line for line in lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

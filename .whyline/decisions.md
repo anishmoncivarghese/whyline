@@ -3675,3 +3675,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 28d6003c33114885a40ab8231a6a28a1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:30:56.282Z"} -->
+
+## 2026-09-30 — Add relay control buttons and keep relay mode inside console
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-6
+
+**Because:** Allows interactive planning and setup workflows to stay in-console rather than deferring exec to external wizard
+
+**Rejected:**
+
+- Exit to external terminal relay setup wizard — breaks conversational continuity in TUI
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 7171d8f4d589409bb48d0f5ed429c7d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:37:10.805Z"} -->
+
+## 2026-09-30 — Approve Relay-mode controls and in-console setup routing
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-6
+
+**Because:** The implementation matches CRS-6, keeps relay imports lazy and main-screen lookups scoped, covers button state, 80-column fit, and home refusal, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — no correctness, safety, or coverage defect was found
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: c09b3c5a5f33463b9e649aa4936eee6e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:39:38.577Z"} -->
