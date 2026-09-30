@@ -120,11 +120,41 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             skipped_ledger_lines=skipped_lines,
         )
 
+    # Explicit binding beats any timestamp inference: a decision recorded
+    # with `note --commit` or `attach` for exactly this commit explains it,
+    # even from a clone where only day precision survives. A bound decision
+    # that names no files is about the whole commit, so it applies too.
+    bound_here = list(
+        {
+            id(note): note
+            for note in [n for n in notes if n.get("commit") == blame.sha]
+            + [
+                entry.event
+                for entry in loaded.notes
+                if entry.event.get("commit") == blame.sha and not entry.event.get("files")
+            ]
+        }.values()
+    )
+    if bound_here:
+        return Explanation(
+            path=rel_path,
+            line=line,
+            confidence=HIGH,
+            blame=blame,
+            notes=bound_here,
+            reason="recorded as bound to the commit that wrote this line",
+            skipped_ledger_lines=skipped_lines,
+        )
+
     lower = gitq.previous_commit_epoch(root, rel_path, blame.sha)
     in_window = [
         note
         for note in notes
-        if _epoch_of(note) <= blame.epoch
+        # A decision bound to a different commit is about that commit;
+        # letting the time window attribute it here would be a guess
+        # overriding a recorded fact.
+        if not note.get("commit")
+        and _epoch_of(note) <= blame.epoch
         and (lower is None or _epoch_end(note) > lower)
     ]
 

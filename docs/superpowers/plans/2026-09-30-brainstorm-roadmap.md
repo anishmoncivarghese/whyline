@@ -15,8 +15,8 @@ the next starts.
 | Item | Release | Status |
 |------|---------|--------|
 | 2. Stale ownership and handoffs | 0.3.20 | released |
-| 1. Exact commit provenance | 0.3.21 | next |
-| 3. Decision lifecycle + `whyline decisions` | 0.3.22 | planned |
+| 1. Exact commit provenance | 0.3.21 | released |
+| 3. Decision lifecycle + `whyline decisions` | 0.3.22 | next |
 | 4. Ledger read path + prompt retention | 0.3.23 | planned |
 | 5. Rename-aware relevance + `explain --diff` | 0.3.24 | planned |
 | 6. Antigravity hooks + `whyline doctor` | 0.3.25 | planned |
@@ -82,3 +82,53 @@ CLI parsing including `handoff close` vs a normal handoff.
 
 Full suite, decisions via `whyline note`, 0.3.20 notes, tag, CI on six
 runners, PyPI, local upgrade.
+
+---
+
+## Item 1 — Exact commit provenance (0.3.21)
+
+**Measured defect:** `decisions.md` (the committed store) records only
+`## YYYY-MM-DD`, so on a fresh clone -- where the gitignored ledger is
+absent -- `explain` caps at MEDIUM even for a single matching decision
+(`resolve._has_day_precision`). Nothing ties a decision to a commit except
+time windows, which can misattribute.
+
+**Rule (from the brainstorm):** exactness is earned by explicit binding,
+never inferred from a clean tree or from HEAD.
+
+### Tasks
+
+- [x] **1.1 Exact metadata in decisions.md.** Every new entry gets a second
+  comment after `<!-- whyline-event: ID -->`:
+  `<!-- whyline-meta: {"v":1,"ts":"<full ISO>","commit":"<sha>"} -->`
+  (`commit` only when bound). A separate comment, not an extension of the
+  event comment: older whyline versions read the whole `whyline-event`
+  comment as the id, so extending it would corrupt ids and duplicate every
+  entry for anyone not yet upgraded. `parse_entries` uses the meta `ts`
+  when present and valid (full precision), else the heading day as before.
+- [x] **1.2 `whyline note --commit SHA`.** Resolved with
+  `git rev-parse --verify SHA^{commit}`; the full sha is stored in the
+  ledger event and the meta comment. Unknown sha → error, nothing recorded.
+  No automatic binding to HEAD.
+- [x] **1.3 `whyline attach ID --commit SHA`.** Binds an existing decision
+  (id or unique id prefix) after its code lands. Recorded as a
+  `NoteAttached` ledger event and as an append-only
+  `<!-- whyline-attach: {"v":1,"note":…,"commit":…,"ts":…} -->` line in
+  decisions.md, so it survives a clone. `history.load` applies attachments
+  (latest wins). Ambiguous or unknown id → error.
+- [x] **1.4 `explain` prefers binding.** For a blamed line: notes bound to
+  exactly the blamed commit (mentioning the path, or with no files) →
+  HIGH, "bound to the commit that wrote this line", regardless of
+  timestamp precision. Notes bound to a *different* commit are excluded
+  from the time-window heuristic (they can still be reported by the
+  "recorded earlier, since moved" fallback). Unbound notes behave as today.
+- [x] **1.5 Show it.** brief/sync decision lines add `commit: <7 chars>`
+  when bound; `explain --json` notes carry `commit`.
+
+### Tests
+
+Render/parse round trip with and without meta (and a pre-0.3.21 entry);
+old-parser compatibility (the event id still parses); `note --commit`
+valid/unknown/HEAD-by-name; `attach` by prefix, ambiguous, unknown, and
+from a fresh clone (ledger deleted); explain HIGH via binding on a clone,
+bound-elsewhere exclusion, mixed bound/unbound; brief/sync commit display.

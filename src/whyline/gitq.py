@@ -119,6 +119,16 @@ def head_commit(root: Path) -> str:
         return ""
 
 
+def resolve_commit(root: Path, rev: str) -> str | None:
+    """The full sha `rev` names if it is a commit here, else None."""
+    if not rev or rev.startswith("-"):
+        return None
+    try:
+        return _git(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}").strip() or None
+    except GitUnavailable:
+        return None
+
+
 def commits_behind(root: Path, commit: str) -> int | None:
     """How many commits HEAD is ahead of `commit`, when `commit` is an
     ancestor of HEAD; None when it isn't, or can't be told (unknown or

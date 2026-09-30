@@ -91,6 +91,28 @@ def merge_notes(
     return entries
 
 
+def _apply_attachments(
+    entries: list[HistoryEntry], attachments: list[dict]
+) -> list[HistoryEntry]:
+    """Bind decisions to commits recorded later with `whyline attach`. The
+    same attachment is usually in both decisions.md and the ledger; the
+    latest one per decision wins either way."""
+    bound: dict[str, tuple[str, str]] = {}
+    for item in attachments:
+        note, commit, ts = item.get("note"), item.get("commit"), str(item.get("ts", ""))
+        if isinstance(note, str) and isinstance(commit, str) and commit:
+            if note not in bound or ts >= bound[note][0]:
+                bound[note] = (ts, commit)
+    if not bound:
+        return entries
+    return [
+        HistoryEntry({**entry.event, "commit": bound[entry.event["id"]][1]}, entry.source)
+        if entry.event.get("id") in bound
+        else entry
+        for entry in entries
+    ]
+
+
 def load(root: Path) -> History:
     """Load local events and the durable decision log as one merged history."""
     local_events, skipped = ledger.read_all(paths.ledger_path(root))
@@ -98,9 +120,14 @@ def load(root: Path) -> History:
         event for event in local_events if event.get("type") == events.NOTE
     ]
     committed_notes = decisions.parse_entries(paths.decisions_path(root))
+    notes = _apply_attachments(
+        merge_notes(ledger_notes, committed_notes),
+        decisions.parse_attachments(paths.decisions_path(root))
+        + [event for event in local_events if event.get("type") == events.NOTE_ATTACHED],
+    )
     return History(
         ledger_events=local_events,
-        notes=merge_notes(ledger_notes, committed_notes),
+        notes=notes,
         skipped_lines=skipped,
         committed_count=len(committed_notes),
     )

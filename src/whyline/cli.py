@@ -157,6 +157,22 @@ def _add_note(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--actor", default="", help="Agent or person deciding")
     parser.add_argument("--role", default="", help="Role for this decision")
     parser.add_argument("--task", default="", help="Task identifier")
+    parser.add_argument(
+        "--commit",
+        default=None,
+        metavar="SHA",
+        help="Bind this decision to the commit it explains (e.g. HEAD after "
+        "committing). Never assumed: without it the decision is unbound.",
+    )
+
+
+def _add_attach(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "attach",
+        help="Bind an earlier decision to the commit that implemented it",
+    )
+    parser.add_argument("decision_id", help="Decision id, or a unique prefix of it")
+    parser.add_argument("--commit", required=True, metavar="SHA")
 
 
 def _add_handoff(subparsers: "argparse._SubParsersAction") -> None:
@@ -351,6 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     _add_explain(subparsers)
     _add_note(subparsers)
+    _add_attach(subparsers)
     _add_handoff(subparsers)
     _add_claim(subparsers)
     _add_release(subparsers)
@@ -421,6 +438,15 @@ def cmd_note(args: argparse.Namespace) -> int:
     # C5, 2026-08-17: normalise at the boundary so the ledger and decisions.md
     # hold the same value. Sanitising only at render time would leave the two
     # stores silently disagreeing about what was recorded.
+    bound = {}
+    if args.commit is not None:
+        from whyline import gitq
+
+        sha = gitq.resolve_commit(root, args.commit)
+        if sha is None:
+            print(f"{args.commit} is not a commit in this repository. Nothing was recorded.", file=sys.stderr)
+            return EXIT_ERROR
+        bound = {"commit": sha}
     alternatives = [
         {
             "option": decisions.one_line(alt["option"]),
@@ -437,6 +463,7 @@ def cmd_note(args: argparse.Namespace) -> int:
         actor=decisions.one_line(args.actor),
         role=decisions.one_line(args.role),
         task=decisions.one_line(args.task),
+        **bound,
     )
     # decisions.md FIRST, then the ledger. Order matters at the failure
     # boundary, found 2026-08-18: with the ledger written first, a failure on
@@ -466,6 +493,52 @@ def cmd_note(args: argparse.Namespace) -> int:
     # Echo what was stored, not what was typed — they differ when a multi-line
     # value is normalised, and printing the raw form would misreport the record.
     print(f"Recorded: {event['decision']}")
+    return EXIT_OK
+
+
+def cmd_attach(args: argparse.Namespace) -> int:
+    from whyline import decisions, events, gitq, history, ledger, paths
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    prefix = args.decision_id.strip()
+    matches = sorted(
+        {
+            entry.event["id"]
+            for entry in history.load(root).notes
+            if prefix and str(entry.event.get("id", "")).startswith(prefix)
+        }
+    )
+    if not matches:
+        print(f"No decision with id {prefix or '(empty)'}.", file=sys.stderr)
+        return EXIT_ERROR
+    if len(matches) > 1:
+        print(
+            f"{prefix} matches {len(matches)} decisions; use more of the id.",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    sha = gitq.resolve_commit(root, args.commit)
+    if sha is None:
+        print(f"{args.commit} is not a commit in this repository.", file=sys.stderr)
+        return EXIT_ERROR
+    event = events.new_event(events.NOTE_ATTACHED, note=matches[0], commit=sha)
+    # Same order as `note`: the committed record first, so a failure never
+    # leaves the binding only in the gitignored ledger.
+    try:
+        decisions.append_attachment(
+            paths.decisions_path(root), note=matches[0], commit=sha, ts=event["ts"]
+        )
+    except OSError as error:
+        print(f"could not write {paths.decisions_path(root)}: {error.strerror}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        ledger.append(paths.ledger_path(root), event)
+    except OSError:
+        pass  # decisions.md already carries it
+    print(f"Attached {prefix} to {sha[:7]}.")
     return EXIT_OK
 
 
@@ -1035,6 +1108,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
 COMMANDS = {
     "explain": cmd_explain,
     "note": cmd_note,
+    "attach": cmd_attach,
     "handoff": cmd_handoff,
     "claim": cmd_claim,
     "release": cmd_release,

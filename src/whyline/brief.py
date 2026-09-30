@@ -107,6 +107,8 @@ def entry_lines(entry: history.HistoryEntry) -> list[str]:
     note_files = note.get("files") or []
     if note_files:
         lines.append(f"    files: {', '.join(_sanitise(file) for file in note_files)}")
+    if note.get("commit"):
+        lines.append(f"    commit: {_sanitise(note['commit'])[:7]}")
     return lines
 
 

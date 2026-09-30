@@ -6,6 +6,7 @@ still be readable here with no tooling at all.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -18,6 +19,14 @@ _ACTOR_RE = re.compile(r"^\*\*Actor:\*\* (?P<value>.*)$", re.MULTILINE)
 _ROLE_RE = re.compile(r"^\*\*Role:\*\* (?P<value>.*)$", re.MULTILINE)
 _TASK_RE = re.compile(r"^\*\*Task:\*\* (?P<value>.*)$", re.MULTILINE)
 _ID_RE = re.compile(r"<!-- whyline-event: (?P<value>.*?) -->")
+# Exact time and bound commit, since 0.3.21. A comment of its own rather than
+# more text in the whyline-event comment: older versions read that whole
+# comment as the id, so extending it would corrupt ids -- and duplicate every
+# entry -- for anyone who hasn't upgraded yet.
+_META_RE = re.compile(r"<!-- whyline-meta: (?P<value>\{.*?\}) -->")
+_ATTACH_RE = re.compile(r"<!-- whyline-attach: (?P<value>\{.*?\}) -->")
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_FULL_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 _CONFLICT_RE = re.compile(r"(?m)^(<{7}|={7}|>{7})")
 
 
@@ -59,8 +68,54 @@ def render_entry(event: dict) -> str:
         lines.append(f"**Files:** {', '.join(one_line(f) for f in files)}")
         lines.append("")
     lines.append(f"<!-- whyline-event: {event.get('id', '')} -->")
+    meta = _meta(event)
+    if meta:
+        lines.append(f"<!-- whyline-meta: {json.dumps(meta, separators=(',', ':'))} -->")
     lines.append("")
     return "\n".join(lines)
+
+
+def _meta(event: dict) -> dict:
+    meta: dict = {}
+    ts = one_line(event.get("ts", ""))
+    if _FULL_TS_RE.match(ts):
+        meta["ts"] = ts
+    commit = str(event.get("commit") or "")
+    if _SHA_RE.match(commit):
+        meta["commit"] = commit
+    return {"v": 1, **meta} if meta else {}
+
+
+def _load_json(raw: str) -> dict | None:
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) and value.get("v") == 1 else None
+
+
+def append_attachment(path: Path, *, note: str, commit: str, ts: str) -> None:
+    """Record, append-only, that decision `note` is about `commit`."""
+    payload = {"v": 1, "note": note, "commit": commit, "ts": ts}
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"\n<!-- whyline-attach: {json.dumps(payload, separators=(',', ':'))} -->\n")
+
+
+def parse_attachments(path: Path) -> list[dict]:
+    """Every well-formed attachment in decisions.md, in file order."""
+    if not path.exists():
+        return []
+    found = []
+    for match in _ATTACH_RE.finditer(path.read_text(encoding="utf-8")):
+        payload = _load_json(match.group("value"))
+        if (
+            payload
+            and isinstance(payload.get("note"), str)
+            and payload["note"]
+            and _SHA_RE.match(str(payload.get("commit", "")))
+        ):
+            found.append(payload)
+    return found
 
 
 def append_entry(path: Path, event: dict) -> None:
@@ -99,8 +154,13 @@ def _parse_block(block: str) -> dict | None:
     role_match = _ROLE_RE.search(block)
     task_match = _TASK_RE.search(block)
     id_match = _ID_RE.search(block)
-    return {
-        "ts": heading_match.group("day").strip(),
+    meta_match = _META_RE.search(block)
+    meta = _load_json(meta_match.group("value")) if meta_match else None
+    ts = heading_match.group("day").strip()
+    if meta and _FULL_TS_RE.match(str(meta.get("ts", ""))) and meta["ts"][:10] == ts:
+        ts = meta["ts"]  # exact time; the heading still says the same day
+    parsed = {
+        "ts": ts,
         "decision": heading_match.group("decision").strip(),
         "because": because_match.group("value").strip() if because_match else "",
         "alternatives": _parse_alternatives(block),
@@ -114,6 +174,9 @@ def _parse_block(block: str) -> dict | None:
         "task": task_match.group("value").strip() if task_match else "",
         "id": id_match.group("value").strip() if id_match else "",
     }
+    if meta and _SHA_RE.match(str(meta.get("commit", ""))):
+        parsed["commit"] = meta["commit"]
+    return parsed
 
 
 def parse_entries(path: Path) -> list[dict]:

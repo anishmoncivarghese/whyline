@@ -274,6 +274,13 @@ def test_same_day_committed_entries_are_not_dropped_first_by_limit(repo):
         paths.decisions_path(repo.path),
         _note("committed same day", "2026-08-05T00:00:00.000Z", event_id="c9"),
     )
+    # As written before 0.3.21, which committed only the day.
+    path = paths.decisions_path(repo.path)
+    path.write_text(
+        "".join(line for line in path.read_text(encoding="utf-8").splitlines(True)
+                if "whyline-meta" not in line),
+        encoding="utf-8",
+    )
     ledger.append(
         paths.ledger_path(repo.path),
         _note("ledger earlier that day", "2026-08-05T01:00:00.000Z", event_id="l9"),

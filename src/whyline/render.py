@@ -110,6 +110,8 @@ def timeline_text(events_: list[dict]) -> str:
         )
         if not detail and kind in ("Handoff", "HandoffClosed"):
             detail = f"{event.get('task', '')}: {event.get('status', '')}"
+        if not detail and kind == "NoteAttached":
+            detail = f"{str(event.get('note', ''))[:8]} -> {str(event.get('commit', ''))[:7]}"
         lines.append(f"{stamp}  {kind:<15} {detail}")
     return "\n".join(lines)
 

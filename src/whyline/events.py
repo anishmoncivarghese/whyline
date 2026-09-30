@@ -13,6 +13,7 @@ FILE_TOUCHED = "FileTouched"
 NOTE = "Note"
 HANDOFF = "Handoff"
 HANDOFF_CLOSED = "HandoffClosed"
+NOTE_ATTACHED = "NoteAttached"
 SESSION_ENDED = "SessionEnded"
 
 

@@ -3174,3 +3174,51 @@ Append-only. Written by whyline; readable without it.
 **Files:** src/whyline/handoff.py
 
 <!-- whyline-event: 89c889e977d74277a2dfdee33fcb96e8 -->
+
+## 2026-09-30 — decisions.md carries exact time and bound commit in a separate whyline-meta comment
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-1
+
+**Because:** day-only headings capped explain at MEDIUM on every clone; a separate comment keeps the whyline-event id intact for older whyline versions
+
+**Rejected:**
+
+- extend the whyline-event comment — older parsers read the whole comment as the id, corrupting ids and duplicating entries
+- a separate companion file — two sources of truth to keep in sync
+
+**Files:** src/whyline/decisions.py
+
+<!-- whyline-event: b77f0a9b758d4a47b939a693f8f0a69f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T03:54:14.196Z"} -->
+
+## 2026-09-30 — Bind decisions to commits only explicitly: note --commit or attach, never HEAD by default
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-1
+
+**Because:** a clean tree or current HEAD does not prove which commit a decision explains; exactness must be earned
+
+**Rejected:**
+
+- auto-bind to HEAD when the tree is clean — the brainstorm's own agreed objection -- suggestive state is not proof
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 036f03533b92441c8e6790b93542ee97 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T03:54:14.253Z"} -->
+
+## 2026-09-30 — explain: a decision bound to the blamed commit is HIGH; one bound to a different commit is excluded from the time window
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-1
+
+**Because:** a recorded binding is a fact; the timestamp window is a guess and must not override it
+
+**Files:** src/whyline/resolve.py
+
+<!-- whyline-event: 545933278e2344c8b73d1510e9619462 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T03:54:14.310Z"} -->

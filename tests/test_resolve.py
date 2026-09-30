@@ -97,11 +97,33 @@ def test_day_precision_committed_note_cannot_claim_high_confidence(repo):
     from whyline import decisions
 
     decisions.append_entry(paths.decisions_path(repo.path), event)
+    # As written before 0.3.21, which committed only the day.
+    path = paths.decisions_path(repo.path)
+    path.write_text(
+        "".join(line for line in path.read_text(encoding="utf-8").splitlines(True)
+                if "whyline-meta" not in line),
+        encoding="utf-8",
+    )
 
     result = resolve.explain(repo.path, "a.py", 1)
 
     assert result.confidence != "high"
     assert [note["decision"] for note in result.notes] == ["day precision only"]
+
+
+def test_an_entry_with_exact_committed_time_can_claim_high_confidence(repo):
+    """Since 0.3.21 decisions.md carries the exact time, so a clone with no
+    ledger reaches HIGH for a single matching decision, as the ledger does."""
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_786_000_000)
+    event = events.new_event(events.NOTE, decision="exact", files=["a.py"])
+    event["ts"] = iso(1_785_950_000)
+    from whyline import decisions
+
+    decisions.append_entry(paths.decisions_path(repo.path), event)
+
+    result = resolve.explain(repo.path, "a.py", 1)
+
+    assert result.confidence == "high"
 
 
 def test_no_confidence_for_uncommitted_lines(repo):
