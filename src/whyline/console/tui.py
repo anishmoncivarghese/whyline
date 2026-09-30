@@ -36,6 +36,7 @@ except ImportError:
     TUI_AVAILABLE = False
 
 from whyline.console import adapters, relay_ops
+from whyline.console.relay_process import RelayProcess
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
     _HOME_REFUSAL,
@@ -124,6 +125,39 @@ class ConfirmScreen(ModalScreen):
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
         self.dismiss(event.button.id == "confirm")
+
+
+class QuitRelayScreen(ModalScreen):
+    """Asked on quit while the relay is running: leave it running, stop it
+    after the current agent, or stay."""
+
+    DEFAULT_CSS = """
+    QuitRelayScreen { align: center middle; }
+    QuitRelayScreen > Vertical {
+        width: 70; height: auto; padding: 1 2; border: thick $warning; background: $surface;
+    }
+    QuitRelayScreen Horizontal { height: auto; margin-top: 1; }
+    QuitRelayScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self._label = label
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(f"The relay is still working ({self._label}). Leave it running?"),
+            Horizontal(
+                Button("Leave it running", id="quit-leave", variant="primary"),
+                Button("Stop it, then quit", id="quit-stop", variant="warning"),
+                Button("Cancel", id="quit-cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        choices = {"quit-leave": "leave", "quit-stop": "stop"}
+        self.dismiss(choices.get(event.button.id))
 
 
 class BrainstormScreen(ModalScreen):
@@ -305,6 +339,7 @@ class WhylineConsoleApp(App):
         self._busy_since = 0.0
         self._spin = 0
         self._relay = None  # the RelayProcess started by Start/Resume, if any
+        self._relay_label = ""
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -411,7 +446,15 @@ class WhylineConsoleApp(App):
         if button_id == "send":
             self._send()
         elif button_id == "stop":
-            self._stop()
+            if self._relay_running():
+                self._relay.request_stop()
+                self.render_event(SessionEvent(
+                    kind="output",
+                    text="Stop requested: the current agent finishes its turn, then the "
+                         "relay pauses. Resume carries on from there.",
+                ))
+            else:
+                self._stop()
         elif button_id and button_id.startswith("mode-"):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
         elif button_id == "copy":
@@ -487,7 +530,7 @@ class WhylineConsoleApp(App):
         """Enables Stop and shows the thinking line ("⠋ claude is thinking…
         12s") while a reply is pending, so a slow agent doesn't look like a
         frozen console."""
-        self._main("#stop", Button).disabled = not busy
+        self._main("#stop", Button).disabled = not busy and not self._relay_running()
         thinking = self._main("#thinking", Static)
         if busy:
             self._busy_text = label or busy_label(self.session)
@@ -496,10 +539,12 @@ class WhylineConsoleApp(App):
             self._tick()
         else:
             self._busy_text = ""
-            thinking.display = False
+            if not self._relay_running():
+                thinking.display = False
 
     def _tick(self) -> None:
-        if not self._busy_text or not self.screen_stack:
+        label = self._busy_text or self._relay_label
+        if not label or not self.screen_stack:
             return  # idle, or the app is shutting down
         self._spin = (self._spin + 1) % len(_SPINNER)
         elapsed = int(time.monotonic() - self._busy_since)
@@ -509,7 +554,7 @@ class WhylineConsoleApp(App):
             # Quitting while a reply is still pending: the timer can fire
             # once more after the widgets are gone.
             return
-        thinking.update(f"{_SPINNER[self._spin]} {self._busy_text}… {elapsed}s")
+        thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s")
 
     def _send(self) -> None:
         prompt = self._main("#prompt", Input)
@@ -527,6 +572,10 @@ class WhylineConsoleApp(App):
             return
         prompt.value = ""
         self.render_event(SessionEvent(kind="input", text=text))
+        first = text.split(maxsplit=1)[0]
+        if self.session.mode == "relay" and first in ("start", "resume"):
+            self._launch_relay(text.split())
+            return
         if not self._handle_slash(text):
             if text.startswith("/"):
                 # Never send an unrecognized command to the agent as a
@@ -671,8 +720,82 @@ class WhylineConsoleApp(App):
             return
         self.render_event(SessionEvent(kind="output", text="Set up: coming in a later task."))
 
-    def _launch_relay(self, argv: list[str]) -> None:
-        self.render_event(SessionEvent(kind="output", text="Relay runs: coming in a later task."))
+    def _relay_running(self) -> bool:
+        return self._relay is not None and self._relay.running()
+
+    def _launch_relay(self, args: list[str]) -> None:
+        """Start/Resume, from a button or typed. One relay at a time: ours,
+        or one started elsewhere (a terminal) that running.live still sees."""
+        if self._refuse_in_home():
+            return
+        if self._relay_running():
+            self.render_event(SessionEvent(kind="error", text="The relay is already running."))
+            return
+        other = relay_ops.live_run(self.session.root)
+        if other:
+            self.render_event(SessionEvent(
+                kind="error", text=f"A relay is already running here ({other})."))
+            return
+        self._relay = RelayProcess(
+            self.session.root, args,
+            on_line=lambda line: self.call_from_thread(self._relay_line, line),
+            on_exit=lambda code, text: self.call_from_thread(self._relay_finished, code, text),
+        )
+        try:
+            self._relay.start()
+        except OSError as error:
+            self._relay = None
+            self.render_event(SessionEvent(
+                kind="error", text=f"Could not start the relay ({' '.join(args)}): {error}"))
+            return
+        self._relay_label = f"relay: {' '.join(args)}"
+        self._busy_since = time.monotonic()
+        self.render_event(SessionEvent(
+            kind="output", text=f"Running `whyline relay {' '.join(args)}`. Progress follows."))
+        self._main("#thinking", Static).display = True
+        self._main("#stop", Button).disabled = False
+        self._sync_relay_buttons()
+
+    def _relay_line(self, line: str) -> None:
+        self.render_event(SessionEvent(kind="output", text=f"relay · {line}"))
+        live = relay_ops.live_run(self.session.root)
+        if live:
+            self._relay_label = f"relay: {live}"
+
+    def _relay_finished(self, code: int, text: str) -> None:
+        self._relay = None
+        self._relay_label = ""
+        if not self._busy_text:
+            self._main("#thinking", Static).display = False
+            self._main("#stop", Button).disabled = True
+        event = adapters.classify_relay_output(self.session.root, text, code)
+        if event.kind == "pause":
+            self.render_event(event)
+        elif event.kind == "output":
+            self.render_event(SessionEvent(kind="output", text="Relay finished."))
+        else:
+            self.render_event(SessionEvent(
+                kind="error",
+                text=f"The relay stopped with exit code {code}. Its full output is in "
+                     ".whyline/relay/logs/console-run.log.",
+            ))
+        self._sync_relay_buttons()
+
+    async def action_quit(self) -> None:
+        if self._relay_running():
+            self.push_screen(QuitRelayScreen(self._relay_label or "relay"), self._quit_choice)
+            return
+        self.exit()
+
+    def _quit_choice(self, choice: "str | None") -> None:
+        if choice is None:
+            return
+        if self._relay is not None:
+            if choice == "stop":
+                self._relay.request_stop()
+            self._relay.stop_following()
+        self.exit()
+
 
 
 def _exec(binary: str, argv: list[str]) -> None:

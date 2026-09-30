@@ -3740,3 +3740,72 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b69297879d814b15b04719565b5d4480 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:44:48.823Z"} -->
+
+## 2026-09-30 — Stream detached relay process lines to console transcript and modal-confirm on quit
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-8
+
+**Because:** Provides live visibility in TUI without freezing UI, allows clean pause via stop file, and permits console exit without killing active relay run
+
+**Rejected:**
+
+- Killing relay subprocess on quit — terminates agent turn abruptly and risks dirty state
+- Blocking synchronous relay run — freezes TUI event loop and prevents stop interactions
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 504c9e4255b344a1b2d9f12691abc019 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:49:13.499Z"} -->
+
+## 2026-09-30 — Request changes for relay quit lifecycle race
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-8
+
+**Because:** The full suite passes, but a relay can finish while QuitRelayScreen is open; _relay_finished clears self._relay and either non-cancel choice then dereferences None, so quitting can fail exactly at normal relay completion
+
+**Rejected:**
+
+- Approve as-is — the existing quit test only covers leaving before completion and does not exercise the identified race or the stop-and-quit action
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 69339b3217b04d8ba72cfdb3f2e720f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:52:38.780Z"} -->
+
+## 2026-09-30 — Guard quit-modal choice against relay completion race before dismissal
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-8
+
+**Because:** A running relay can finish while QuitRelayScreen is open; checking self._relay is not None allows either non-cancel choice to cleanly exit without dereferencing None while still requesting stop and unfollowing when the relay is running
+
+**Rejected:**
+
+- Holding a local reference to RelayProcess — could still attempt to request_stop or stop_following an already completed run and doesn't reflect active console state
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 0d1e0613d6e94fb6905a713d4b6fda8b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:56:00.911Z"} -->
+
+## 2026-09-30 — Approve relay run controls and quit-modal lifecycle fix
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-8
+
+**Because:** The implementation streams detached relay progress, requests graceful stops, prevents overlapping runs, supports typed start and resume, and safely handles both quit choices even when the relay completes while the modal is open; the full test suite passes
+
+**Rejected:**
+
+- Request further changes — the previously identified completion race is guarded and covered for both leave and stop choices
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 0ac534187c0e4e6c9149646a90421f1b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:59:34.242Z"} -->
