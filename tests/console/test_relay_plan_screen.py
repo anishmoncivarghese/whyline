@@ -98,7 +98,6 @@ async def test_paste_over_an_existing_plan_asks_first(tmp_path, monkeypatch):
     assert calls == [False, True]
     assert results == [tmp_path / "plan.md"]
 
-
 async def test_only_the_chosen_sources_fields_show(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
@@ -133,3 +132,167 @@ async def test_plan_button_opens_the_popup_and_reports_the_saved_plan(tmp_path, 
         await pilot.pause()
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
         assert any("Saved plan.md" in line and "Set up" in line for line in lines)
+
+
+def _draft(tmp_path, text="- [ ] T-1: build it\n", source="planner"):
+    path = tmp_path / "draft.md"
+    path.write_text(text)
+    return relay_ops.Draft(path=path, text=text, drafted_by="codex", source=source)
+
+
+async def _wait_for(pilot, condition, what):
+    for _ in range(100):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
+
+
+async def test_draft_reviews_then_approves(tmp_path, monkeypatch):
+    calls = []
+
+    def draft_plan(root, description, refs, *, progress):
+        calls.append((description, refs))
+        progress("codex is drafting the plan")
+        return _draft(tmp_path)
+
+    monkeypatch.setattr(relay_ops, "missing_references", lambda root, refs: [])
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(
+        relay_ops,
+        "approve_plan",
+        lambda root, draft, replace=False: root / "plan.md",
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rp-description").load_text("Build what PRD.md describes")
+        screen.query_one("#rp-refs").load_text("PRD.md\n\n  docs/b.md  \n")
+        await pilot.click("#rp-go")
+        await _wait_for(pilot, lambda: screen.query_one("#rp-review").display, "review")
+        assert "T-1: build it" in str(screen.query_one("#rp-draft", tui.Static).renderable)
+        await pilot.click("#rp-approve")
+        await pilot.pause()
+    assert calls == [("Build what PRD.md describes", ["PRD.md", "docs/b.md"])]
+    assert results == [tmp_path / "plan.md"]
+
+
+async def test_draft_reports_missing_reference_files_before_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "missing_references", lambda root, refs: ["nope.md"])
+    monkeypatch.setattr(
+        relay_ops,
+        "draft_plan",
+        lambda *a, **k: pytest.fail("must not draft"),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-description").load_text("Build it")
+        screen.query_one("#rp-refs").load_text("nope.md")
+        await pilot.click("#rp-go")
+        await pilot.pause()
+        assert "nope.md" in _error_text(screen)
+
+
+async def test_draft_needs_a_description(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rp-go")
+        await pilot.pause()
+        assert "Describe what the plan should build" in _error_text(screen)
+
+
+async def test_an_agent_failure_returns_to_the_form_with_inputs_kept(tmp_path, monkeypatch):
+    def fail(*a, **k):
+        raise RuntimeError("codex is not logged in")
+
+    monkeypatch.setattr(relay_ops, "missing_references", lambda root, refs: [])
+    monkeypatch.setattr(relay_ops, "draft_plan", fail)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-description").load_text("Build it")
+        await pilot.click("#rp-go")
+        await _wait_for(pilot, lambda: "not logged in" in _error_text(screen), "error")
+        assert screen.query_one("#rp-form").display
+        assert screen.query_one("#rp-description").text == "Build it"
+
+
+async def test_request_changes_sends_feedback_and_shows_the_new_draft(tmp_path, monkeypatch):
+    revised = []
+    monkeypatch.setattr(relay_ops, "missing_references", lambda root, refs: [])
+    monkeypatch.setattr(relay_ops, "draft_plan", lambda *a, **k: _draft(tmp_path))
+
+    def revise(root, draft, feedback, *, progress):
+        revised.append(feedback)
+        return _draft(tmp_path, "- [ ] T-1: a\n- [ ] T-2: b\n")
+
+    monkeypatch.setattr(relay_ops, "revise_plan", revise)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-description").load_text("Build it")
+        await pilot.click("#rp-go")
+        await _wait_for(pilot, lambda: screen.query_one("#rp-review").display, "review")
+        await pilot.click("#rp-changes")
+        await pilot.pause()
+        screen.query_one("#rp-feedback", tui.Input).value = "split it in two"
+        await pilot.click("#rp-send-changes")
+        await _wait_for(
+            pilot,
+            lambda: "T-2: b" in str(screen.query_one("#rp-draft", tui.Static).renderable),
+            "revised draft",
+        )
+    assert revised == ["split it in two"]
+
+
+async def test_an_unfinished_draft_can_be_resumed(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "pending_draft", lambda root: "Build it")
+    monkeypatch.setattr(relay_ops, "resume_draft", lambda root, *, progress: _draft(tmp_path))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        assert "left unfinished" in _error_text(screen)
+        await pilot.click("#rp-resume-draft")
+        await _wait_for(pilot, lambda: screen.query_one("#rp-review").display, "review")
+
+
+async def test_an_unfinished_draft_can_be_discarded(tmp_path, monkeypatch):
+    discarded = []
+    monkeypatch.setattr(relay_ops, "pending_draft", lambda root: "Build it")
+    monkeypatch.setattr(relay_ops, "discard_draft", lambda root, draft: discarded.append(draft))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rp-discard-draft")
+        await pilot.pause()
+        assert discarded == [None]
+        assert _error_text(screen) == ""
+        assert not screen.query_one("#rp-resume-draft").display
+
+
+async def test_approving_over_an_existing_plan_asks_first(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(relay_ops, "missing_references", lambda root, refs: [])
+    monkeypatch.setattr(relay_ops, "draft_plan", lambda *a, **k: _draft(tmp_path))
+
+    def approve(root, draft, replace=False):
+        calls.append(replace)
+        if not replace:
+            raise PlanExists("exists")
+        return root / "plan.md"
+
+    monkeypatch.setattr(relay_ops, "approve_plan", approve)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rp-description").load_text("Build it")
+        await pilot.click("#rp-go")
+        await _wait_for(pilot, lambda: screen.query_one("#rp-review").display, "review")
+        await pilot.click("#rp-approve")
+        await pilot.pause()
+        await pilot.click("#confirm")
+        await pilot.pause()
+    assert calls == [False, True]
+    assert results == [tmp_path / "plan.md"]

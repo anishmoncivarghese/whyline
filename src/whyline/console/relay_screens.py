@@ -54,6 +54,7 @@ class RelayPlanScreen(ModalScreen):
         self._active = active
         self._token: object | None = None
         self._draft: relay_ops.Draft | None = None
+        self._state: str = "form"
 
     def compose(self) -> ComposeResult:
         form = VerticalScroll(
@@ -220,8 +221,96 @@ class RelayPlanScreen(ModalScreen):
 
     def _on_rp_cancel(self) -> None:
         self._token = object()  # a late result from a cancelled run is dropped
+        if self._state == "review" and self._draft is not None:
+            relay_ops.discard_draft(self._root, self._draft)
         self.dismiss(None)
 
     def _on_rp_go(self) -> None:
-        if self._source() == "paste":
+        source = self._source()
+        if source == "paste":
             self._save_paste()
+        elif source == "draft":
+            self._start_draft()
+        else:
+            self._start_brainstorm()
+
+    def _start_brainstorm(self) -> None:
+        """Filled in by Task 11."""
+        self._error("Brainstorm source: coming in a later task.")
+
+    def _start_draft(self) -> None:
+        description = self.query_one("#rp-description", TextArea).text.strip()
+        if not description:
+            self._error("Describe what the plan should build.")
+            return
+        refs = [
+            line.strip()
+            for line in self.query_one("#rp-refs", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        missing = relay_ops.missing_references(self._root, refs)
+        if missing:
+            self._error("Can't find: " + ", ".join(missing))
+            return
+        root = self._root
+
+        def work(progress):
+            try:
+                return relay_ops.draft_plan(root, description, refs, progress=progress)
+            except relay_ops.in_progress_error() as error:
+                raise RuntimeError(
+                    "A plan draft is already unfinished -- close this and open Plan "
+                    "again to resume or discard it."
+                ) from error
+
+        self._run(work, self._show_review)
+
+    def _show_review(self, draft: relay_ops.Draft) -> None:
+        self._draft = draft
+        self.query_one("#rp-draft", Static).update(draft.text)
+        self._set_state("review")
+
+    def _on_rp_approve(self, replace: bool = False) -> None:
+        try:
+            path = relay_ops.approve_plan(self._root, self._draft, replace=replace)
+        except relay_ops.plan_exists_error():
+            self._confirm_replace(lambda: self._on_rp_approve(replace=True))
+            return
+        except ValueError as error:  # plan.PlanError: the draft isn't a usable plan
+            self._error(f"{error}. The draft is still at {self._draft.path}.")
+            return
+        self.dismiss(path)
+
+    def _on_rp_changes(self) -> None:
+        feedback = self.query_one("#rp-feedback", Input)
+        feedback.display = True
+        self.query_one("#rp-send-changes").display = True
+        self.query_one("#rp-changes").display = False
+        feedback.focus()
+
+    def _on_rp_send_changes(self) -> None:
+        feedback = self.query_one("#rp-feedback", Input).value.strip()
+        if not feedback:
+            self._error("Say what should change.")
+            return
+        draft, root = self._draft, self._root
+        self.query_one("#rp-feedback", Input).value = ""
+        self._run(
+            lambda progress: relay_ops.revise_plan(
+                root, draft, feedback, progress=progress
+            ),
+            self._show_review,
+        )
+
+    def _on_rp_resume_draft(self) -> None:
+        root = self._root
+        self._run(
+            lambda progress: relay_ops.resume_draft(root, progress=progress),
+            self._show_review,
+        )
+
+    def _on_rp_discard_draft(self) -> None:
+        relay_ops.discard_draft(self._root, None)
+        self._error("")
+        self.query_one("#rp-resume-draft").display = False
+        self.query_one("#rp-discard-draft").display = False

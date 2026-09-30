@@ -3843,3 +3843,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5a9eada655a841a68ec5b2dda7d7f1b9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:06:46.068Z"} -->
+
+## 2026-09-30 — Route draft lifecycle through review state and discard checkpoint on cancel
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-10
+
+**Because:** The review state lets users inspect or request changes before approval, while cancelling an active review cleans up the planner checkpoint without deleting the draft on disk
+
+**Rejected:**
+
+- Immediately saving drafts on generation — denies the user an opportunity to review or request revisions before plan.md is written
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4586d507e8c34f3caaa95d7f027d72fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:10:33.680Z"} -->
+
+## 2026-09-30 — Approve draft plan review and recovery lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-10
+
+**Because:** Drafting validates inputs and references, preserves form data on worker failure, supports revision and recovery, clears planner checkpoints on review cancellation, confirms plan replacement, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — no functional or safety defect was found; only trailing EOF whitespace was cleaned before commit
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 03ae96106b1b4adbb239b69875e95789 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:12:50.831Z"} -->
