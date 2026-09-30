@@ -3333,3 +3333,9 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d13676a1aff84948b88b811fb8b4db36 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:07:26.921Z"} -->
+
+<!-- whyline-attach: {"v":1,"note":"c06bb06e64fd4f44a84789d88bd048d3","commit":"d45ab1b8138c96a92fd681604b33d9f43a98813e","ts":"2026-09-30T04:08:00.084Z"} -->
+
+<!-- whyline-attach: {"v":1,"note":"42a15a66fff94e3f9581fe63f517c342","commit":"d45ab1b8138c96a92fd681604b33d9f43a98813e","ts":"2026-09-30T04:08:00.196Z"} -->
+
+<!-- whyline-attach: {"v":1,"note":"d13676a1aff84948b88b811fb8b4db36","commit":"d45ab1b8138c96a92fd681604b33d9f43a98813e","ts":"2026-09-30T04:08:00.294Z"} -->
