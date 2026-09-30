@@ -65,8 +65,10 @@ blocks on `input()`, and the planner's progress goes to stdout.
   `RELAY_SETUP`'s exit-to-wizard path is removed from `/route relay`.
 - **CRS4 -- Start launches the relay as a separate process and streams its
   output.** `whyline relay start --repo <root>` runs via `subprocess.Popen`
-  with `PYTHONUNBUFFERED=1` and `start_new_session=True`; a worker thread
-  reads its stdout line by line into the transcript. The status line reads
+  with `PYTHONUNBUFFERED=1` in its own process group, its output going to
+  `.whyline/relay/logs/console-run.log`; a worker thread follows that file
+  line by line into the transcript. Output goes to a file, not a pipe, so
+  the relay never dies of a broken pipe once the console has quit. The status line reads
   `running.live(root)` for "T2 · codex implementing · 3m". Rejected:
   in-process with a progress hook (needs a new relay hook and keeps the
   process-wide stdout redirect beside the full-screen UI); status polling
@@ -83,9 +85,10 @@ blocks on `input()`, and the planner's progress goes to stdout.
 - **CRS8 -- Every setup commit is scoped to its own files.** Plan approval
   already commits only `plan.md`. Role assignment commits only
   `config.toml` and `prompts/test.md` (today `commit_all`).
-- **CRS9 -- Set up preserves a custom pipeline.** If `config.toml` exists,
-  only the `[roles]` keys and `[backup].chain` are rewritten; otherwise the
-  default pipeline template is written.
+- **CRS9 -- Set up preserves a custom pipeline.** If `config.toml` exists
+  and has a `[pipeline]` table, only the `[roles]` keys and `[backup].chain`
+  are rewritten. Otherwise (no file, or the older two-role format, where a
+  `tester` key would not load) the default pipeline template is written.
 - **CRS10 -- The relay change ships first.** whyline-relay 0.2.26 adds the
   non-interactive functions; whyline 0.3.29 requires `>=0.2.26`.
 
@@ -94,9 +97,12 @@ blocks on `input()`, and the planner's progress goes to stdout.
 All new functions take an optional `print_fn` for progress instead of
 printing, and raise instead of prompting.
 
-- `planner.draft(root, settings, description, *, print_fn=None,
-  timeout_seconds=None) -> Path` -- runs the draft<->review pipeline and
-  returns the draft path. Refuses (`PlanAlreadyInProgress`) like `start`.
+- `planner.draft(root, settings, description, *, print_fn=None) -> Path` --
+  runs the draft<->review pipeline and returns the draft path. Refuses
+  (`PlanAlreadyInProgress`) like `start`. Agent turns use the config's
+  `timeout_minutes`, as they do today.
+- `planner.resume_draft(root, settings, *, print_fn=None) -> Path` --
+  finishes a checkpointed draft without the terminal gate.
 - `planner.revise(root, settings, feedback, *, print_fn=None) -> Path` --
   re-runs the pipeline with the human's feedback.
 - `planner.approve(root, settings, draft_path, *, drafted_by,
