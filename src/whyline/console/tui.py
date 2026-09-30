@@ -160,6 +160,60 @@ class QuitRelayScreen(ModalScreen):
         self.dismiss(choices.get(event.button.id))
 
 
+def brainstorm_field_widgets(status: dict, default_final: str) -> list:
+    """Topic, models, passes, final writer and timeout -- shared by the
+    Brainstorm popup and the Plan popup's brainstorm source."""
+    boxes = []
+    for agent in BRAINSTORM_AGENTS:
+        info = status[agent]
+        boxes.append(
+            Checkbox(f"{agent:<12} {info['label']}", value=info["available"],
+                     disabled=not info["available"], id=f"bs-{agent}")
+        )
+    return [
+        Input(placeholder="Topic, e.g. how the relay should handle a failed Codex run",
+              id="bs-topic"),
+        Label("Models:", classes="field-label"),
+        *boxes,
+        Horizontal(Label("Review passes:", classes="field-label"), Input("1", id="bs-passes")),
+        Horizontal(
+            Label("Final write-up:", classes="field-label"),
+            Select([(a, a) for a in BRAINSTORM_AGENTS], value=default_final,
+                   allow_blank=False, id="bs-final"),
+        ),
+        Horizontal(
+            Label("Per-agent timeout:", classes="field-label"),
+            Select([(f"{m} minutes", m) for m in BRAINSTORM_TIMEOUT_OPTIONS],
+                   value=15, allow_blank=False, id="bs-timeout"),
+        ),
+    ]
+
+
+def collect_brainstorm(query_one) -> "dict | str":
+    """The brainstorm fields' values, or a message saying what's missing.
+    `query_one` is the owning screen's query_one."""
+    topic = query_one("#bs-topic", Input).value.strip()
+    if not topic:
+        return "Enter a topic."
+    agents = [a for a in BRAINSTORM_AGENTS if query_one(f"#bs-{a}", Checkbox).value]
+    if not agents:
+        return "Pick at least one model."
+    raw = query_one("#bs-passes", Input).value.strip() or "0"
+    if not raw.isdigit():
+        return "Review passes must be a whole number (0 or more)."
+    final = query_one("#bs-final", Select).value
+    timeout = query_one("#bs-timeout", Select).value
+    if timeout not in BRAINSTORM_TIMEOUT_OPTIONS:
+        return "Choose a timeout of 15, 30, 45, or 60 minutes."
+    return {
+        "topic": topic,
+        "agents": agents,
+        "passes": int(raw),
+        "final_agent": final if final in agents else agents[0],
+        "timeout_minutes": timeout,
+    }
+
+
 class BrainstormScreen(ModalScreen):
     """Collects topic, models, passes and the final model, then dismisses
     with them as a dict (or None when cancelled). Models the user can't use
@@ -197,41 +251,12 @@ class BrainstormScreen(ModalScreen):
         )
 
     def compose(self) -> ComposeResult:
-        boxes = []
-        for agent in BRAINSTORM_AGENTS:
-            info = self._status[agent]
-            label = f"{agent:<12} {info['label']}"
-            boxes.append(
-                Checkbox(label, value=info["available"], disabled=not info["available"],
-                         id=f"bs-{agent}")
-            )
         # Only the fields scroll; the error line and buttons stay pinned
         # below them, so Start can never be pushed out of view.
         fields = VerticalScroll(
             Label("Brainstorm: each model researches on its own, reviews the others, "
                   "then one writes it up in docs/brainstorm/."),
-            Input(placeholder="Topic, e.g. how the relay should handle a failed Codex run",
-                  id="bs-topic"),
-            Label("Models:", classes="field-label"),
-            *boxes,
-            Horizontal(
-                Label("Review passes:", classes="field-label"),
-                Input("1", id="bs-passes"),
-            ),
-            Horizontal(
-                Label("Final write-up:", classes="field-label"),
-                Select([(a, a) for a in BRAINSTORM_AGENTS], value=self._default_final,
-                       allow_blank=False, id="bs-final"),
-            ),
-            Horizontal(
-                Label("Per-agent timeout:", classes="field-label"),
-                Select(
-                    [(f"{minutes} minutes", minutes) for minutes in BRAINSTORM_TIMEOUT_OPTIONS],
-                    value=15,
-                    allow_blank=False,
-                    id="bs-timeout",
-                ),
-            ),
+            *brainstorm_field_widgets(self._status, self._default_final),
             id="bs-fields",
         )
         yield Vertical(
@@ -266,26 +291,7 @@ class BrainstormScreen(ModalScreen):
 
     def collect(self) -> "dict | str":
         """The form's values, or a message saying what's missing."""
-        topic = self.query_one("#bs-topic", Input).value.strip()
-        if not topic:
-            return "Enter a topic."
-        agents = [a for a in BRAINSTORM_AGENTS if self.query_one(f"#bs-{a}", Checkbox).value]
-        if not agents:
-            return "Pick at least one model."
-        raw = self.query_one("#bs-passes", Input).value.strip() or "0"
-        if not raw.isdigit():
-            return "Review passes must be a whole number (0 or more)."
-        final = self.query_one("#bs-final", Select).value
-        timeout = self.query_one("#bs-timeout", Select).value
-        if timeout not in BRAINSTORM_TIMEOUT_OPTIONS:
-            return "Choose a timeout of 15, 30, 45, or 60 minutes."
-        return {
-            "topic": topic,
-            "agents": agents,
-            "passes": int(raw),
-            "final_agent": final if final in agents else agents[0],
-            "timeout_minutes": timeout,
-        }
+        return collect_brainstorm(self.query_one)
 
 
 class TuiUnavailable(RuntimeError):

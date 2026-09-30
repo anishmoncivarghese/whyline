@@ -3877,3 +3877,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 03ae96106b1b4adbb239b69875e95789 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:12:50.831Z"} -->
+
+## 2026-09-30 — Extract shared brainstorm field widgets and reuse for plan creation
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-11
+
+**Because:** Extracting brainstorm_field_widgets and collect_brainstorm avoids drift between the brainstorm popup and plan popup while letting new brainstorms reuse their final write-up agent
+
+**Rejected:**
+
+- Duplicating brainstorm form fields in relay_screens — risks validation and widget drift between screens
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 7a81efbb6ae84ad3beabb712ae76f10c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:18:51.594Z"} -->
+
+## 2026-09-30 — Approve brainstorm-sourced plan creation from new and existing documents
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-11
+
+**Because:** The plan popup toggles the correct fields, validates and runs new brainstorms before planning, handles existing documents directly, surfaces brainstorm failures without planning, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect remains after adding bidirectional toggle assertions
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: e7f0ce7d63b140c5a26fdb8a39c85f0f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:21:08.287Z"} -->

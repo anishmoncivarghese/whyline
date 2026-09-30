@@ -41,6 +41,10 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen TextArea { height: 8; }
     RelayPlanScreen #rp-refs { height: 4; }
     RelayPlanScreen #rp-source { width: 40; }
+    RelayPlanScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
+    /* Textual's own :focus rule adds a tall border, which on a one-line
+       checkbox covers the label entirely; its label highlight is enough. */
+    RelayPlanScreen Checkbox:focus { border: none; }
     RelayPlanScreen #rp-error { color: $error; height: auto; }
     RelayPlanScreen #rp-error.-empty { display: none; }
     RelayPlanScreen #rp-buttons { margin-top: 1; }
@@ -100,12 +104,31 @@ class RelayPlanScreen(ModalScreen):
         )
 
     def _brainstorm_widgets(self) -> list:
-        """Filled in by Task 11; empty until then."""
-        return [Label("Brainstorm source: coming in a later task.")]
+        from whyline.console.repl import BRAINSTORM_AGENTS
+        from whyline.console.tui import brainstorm_field_widgets
+
+        usable = [a for a in BRAINSTORM_AGENTS if self._status[a]["available"]]
+        default = self._active if self._active in usable else (usable or ["claude"])[0]
+        docs = relay_ops.brainstorm_docs(self._root)
+        return [
+            Horizontal(
+                Label("From:", classes="field-label"),
+                Select([("New brainstorm", "new"), *((doc, doc) for doc in docs)],
+                       value="new", allow_blank=False, id="rp-from"),
+            ),
+            Horizontal(
+                Label("Plan writer:", classes="field-label"),
+                Select([(a, a) for a in (usable or ["claude"])], value=default,
+                       allow_blank=False, id="rp-writer"),
+                id="rp-writer-row",
+            ),
+            Vertical(*brainstorm_field_widgets(self._status, default), id="rp-new-group"),
+        ]
 
     def on_mount(self) -> None:
         self._set_state("form")
         self._show_source("draft")
+        self.query_one("#rp-writer-row").display = False
         pending = relay_ops.pending_draft(self._root)
         if pending:
             self._error(f'A plan draft for "{pending}" was left unfinished.')
@@ -139,6 +162,11 @@ class RelayPlanScreen(ModalScreen):
     def on_select_changed(self, event: "Select.Changed") -> None:
         if event.select.id == "rp-source":
             self._show_source(event.value)
+        elif event.select.id == "rp-from":
+            new = event.value == "new"
+            self.query_one("#rp-new-group").display = new
+            # A new brainstorm's own "Final write-up" also writes the plan.
+            self.query_one("#rp-writer-row").display = not new
 
     def _error(self, text: str) -> None:
         error = self.query_one("#rp-error", Static)
@@ -235,8 +263,38 @@ class RelayPlanScreen(ModalScreen):
             self._start_brainstorm()
 
     def _start_brainstorm(self) -> None:
-        """Filled in by Task 11."""
-        self._error("Brainstorm source: coming in a later task.")
+        from whyline.console import adapters
+        from whyline.console.tui import collect_brainstorm
+
+        root = self._root
+        chosen = self.query_one("#rp-from", Select).value
+        if chosen != "new":
+            writer = self.query_one("#rp-writer", Select).value
+            self._run(
+                lambda progress: relay_ops.plan_from_brainstorm(
+                    root, chosen, writer, progress=progress
+                ),
+                self._show_review,
+            )
+            return
+        choice = collect_brainstorm(self.query_one)
+        if isinstance(choice, str):
+            self._error(choice)
+            return
+
+        def work(progress):
+            result = adapters.run_brainstorm(root, progress=progress, **choice)
+            if result.kind == "error":
+                raise RuntimeError(result.text)
+            return relay_ops.plan_from_brainstorm(
+                root,
+                choice["topic"],
+                choice["final_agent"],
+                progress=progress,
+                timeout_minutes=choice["timeout_minutes"],
+            )
+
+        self._run(work, self._show_review)
 
     def _start_draft(self) -> None:
         description = self.query_one("#rp-description", TextArea).text.strip()

@@ -296,3 +296,95 @@ async def test_approving_over_an_existing_plan_asks_first(tmp_path, monkeypatch)
         await pilot.pause()
     assert calls == [False, True]
     assert results == [tmp_path / "plan.md"]
+
+
+async def test_an_existing_brainstorm_doc_becomes_a_plan(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(relay_ops, "brainstorm_docs", lambda root: ["trading-prd"])
+
+    def plan_from(root, topic, agent, *, progress, timeout_minutes=None):
+        calls.append((topic, agent))
+        return _draft(tmp_path, source="brainstorm")
+
+    monkeypatch.setattr(relay_ops, "plan_from_brainstorm", plan_from)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        await pilot.pause()
+        assert screen.query_one("#rp-new-group").display
+        assert not screen.query_one("#rp-writer-row").display
+        screen.query_one("#rp-from", tui.Select).value = "trading-prd"
+        await pilot.pause()
+        assert not screen.query_one("#rp-new-group").display
+        assert screen.query_one("#rp-writer-row").display
+        screen.query_one("#rp-from", tui.Select).value = "new"
+        await pilot.pause()
+        assert screen.query_one("#rp-new-group").display
+        assert not screen.query_one("#rp-writer-row").display
+        screen.query_one("#rp-from", tui.Select).value = "trading-prd"
+        await pilot.pause()
+        screen.query_one("#rp-writer", tui.Select).value = "codex"
+        await pilot.click("#rp-go")
+        await _wait_for(pilot, lambda: screen.query_one("#rp-review").display, "review")
+    assert calls == [("trading-prd", "codex")]
+
+
+async def test_a_new_brainstorm_runs_then_becomes_a_plan(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    ran, planned = [], []
+
+    def run_brainstorm(root, *, progress, **choice):
+        ran.append(choice)
+        progress("Researching independently: Claude, Codex")
+        return SessionEvent(kind="output", text="done")
+
+    def plan_from(root, topic, agent, *, progress, timeout_minutes=None):
+        planned.append((topic, agent, timeout_minutes))
+        return _draft(tmp_path, source="brainstorm")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", run_brainstorm)
+    monkeypatch.setattr(relay_ops, "plan_from_brainstorm", plan_from)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        await pilot.pause()
+        assert screen.query_one("#rp-from", tui.Select).value == "new"
+        screen.query_one("#bs-topic", tui.Input).value = "trading platform"
+        screen.query_one("#bs-timeout", tui.Select).value = 30
+        await pilot.click("#rp-go")
+        await _wait_for(pilot, lambda: screen.query_one("#rp-review").display, "review")
+    assert ran[0]["topic"] == "trading platform"
+    assert ran[0]["agents"] == ["claude", "codex"]
+    assert planned == [("trading platform", "claude", 30)]
+
+
+async def test_a_failed_brainstorm_is_shown_and_no_plan_is_made(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    monkeypatch.setattr(
+        adapters,
+        "run_brainstorm",
+        lambda root, *, progress, **c: SessionEvent(
+            kind="error", text="No selected agent succeeded"
+        ),
+    )
+    monkeypatch.setattr(
+        relay_ops, "plan_from_brainstorm", lambda *a, **k: pytest.fail("no plan")
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        await pilot.pause()
+        screen.query_one("#bs-topic", tui.Input).value = "x"
+        await pilot.click("#rp-go")
+        await _wait_for(
+            pilot,
+            lambda: "No selected agent succeeded" in _error_text(screen),
+            "error",
+        )
