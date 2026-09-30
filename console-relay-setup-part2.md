@@ -710,7 +710,7 @@
   git commit -m "feat(console): Plan, Set up and Resume buttons in Relay mode"
   ```
 
-- [ ] CRS-7: `RelayProcess` — run the relay as its own process and follow its log
+- [x] CRS-7: `RelayProcess` — run the relay as its own process and follow its log
 
   ## Global Constraints
 
