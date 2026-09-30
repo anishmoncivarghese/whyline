@@ -55,6 +55,12 @@ def explanation_text(result: resolve.Explanation) -> str:
     for note in _attributed_notes(result):
         lines.append("")
         lines.append(f"Decision          {note.get('decision', '')}")
+        # The reason a line was written stays the reason even after it is
+        # replaced -- but the reader must not mistake it for current.
+        if note.get("lifecycle") == "superseded":
+            lines.append(f"Status            superseded by {str(note.get('superseded_by', ''))[:8]}")
+        elif note.get("lifecycle") == "retracted":
+            lines.append(f"Status            retracted: {note.get('retracted_because', '')}")
         if note.get("because"):
             lines.append(f"Because           {note['because']}")
         for alternative in note.get("alternatives") or []:

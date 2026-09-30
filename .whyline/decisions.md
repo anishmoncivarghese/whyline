@@ -3228,3 +3228,50 @@ Append-only. Written by whyline; readable without it.
 <!-- whyline-attach: {"v":1,"note":"036f03533b92441c8e6790b93542ee97","commit":"ab10a0b13d6614e8823857882a258198f0168d34","ts":"2026-09-30T03:55:00.419Z"} -->
 
 <!-- whyline-attach: {"v":1,"note":"545933278e2344c8b73d1510e9619462","commit":"ab10a0b13d6614e8823857882a258198f0168d34","ts":"2026-09-30T03:55:00.511Z"} -->
+
+## 2026-09-30 — Retraction is its own event and visible decisions.md entry, kept apart from decisions by history
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-3
+
+**Because:** a withdrawal must be readable without tooling, yet must never be handed to agents as a decision itself
+
+**Rejected:**
+
+- a retracted flag edited into the original entry — decisions.md is append-only
+
+**Files:** src/whyline/history.py
+
+<!-- whyline-event: 5e57c5618cfd4e51abab9100ac638733 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:00:45.685Z"} -->
+
+## 2026-09-30 — brief/sync hand over only active decisions; explain keeps superseded ones but labels them
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-3
+
+**Because:** agents act on what brief says is current; but the reason a line was written stays true history even after it is replaced
+
+**Rejected:**
+
+- hide superseded decisions from explain too — would deny the real reason an old line exists
+
+**Files:** src/whyline/brief.py
+
+<!-- whyline-event: 5ad5a7e212f647b5814a9a1f0b6fac72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:00:45.833Z"} -->
+
+## 2026-09-30 — Query surface is 'whyline decisions list|search|show', not 'whyline log'
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-3
+
+**Because:** log collides with git log and whyline timeline; decisions names the thing it lists
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 9520fb3061b448bf9ff2b6c5b70ed046 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:00:46.004Z"} -->

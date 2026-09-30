@@ -16,8 +16,8 @@ the next starts.
 |------|---------|--------|
 | 2. Stale ownership and handoffs | 0.3.20 | released |
 | 1. Exact commit provenance | 0.3.21 | released |
-| 3. Decision lifecycle + `whyline decisions` | 0.3.22 | next |
-| 4. Ledger read path + prompt retention | 0.3.23 | planned |
+| 3. Decision lifecycle + `whyline decisions` | 0.3.22 | released |
+| 4. Ledger read path + prompt retention | 0.3.23 | next |
 | 5. Rename-aware relevance + `explain --diff` | 0.3.24 | planned |
 | 6. Antigravity hooks + `whyline doctor` | 0.3.25 | planned |
 
@@ -132,3 +132,50 @@ old-parser compatibility (the event id still parses); `note --commit`
 valid/unknown/HEAD-by-name; `attach` by prefix, ambiguous, unknown, and
 from a fresh clone (ledger deleted); explain HIGH via binding on a clone,
 bound-elsewhere exclusion, mixed bound/unbound; brief/sync commit display.
+
+---
+
+## Item 3 — Decision lifecycle and a query surface (0.3.22)
+
+**Defect:** a decision can never stop being current. A replaced or plainly
+wrong decision keeps being handed to every agent by `brief`/`sync` as live
+reasoning, and several matching decisions for one commit leave `explain`
+at an ambiguous MEDIUM even when only one of them still stands. There is
+also no way to list or search decisions short of reading `decisions.md`.
+
+### Tasks
+
+- [x] **3.1 Supersede.** `whyline note … --supersedes ID` (repeatable; id
+  or unique prefix; must exist). Stored as full ids on the new note, in the
+  meta comment, and as a visible `**Supersedes:**` line.
+- [x] **3.2 Retract.** `whyline retract ID --because TEXT` records a
+  `Retraction` event and a visible `## <day> — Retracted: <decision>`
+  entry (with meta `retracts`) in decisions.md. Retraction entries are not
+  decisions: history keeps them apart.
+- [x] **3.3 Lifecycle.** `history.load` marks every note `lifecycle`:
+  `active`, `superseded` (+ `superseded_by`) or `retracted`
+  (+ `retracted_because`, `retracted_by`). A retracted note's own
+  `supersedes` no longer take effect.
+- [x] **3.4 Current reasoning only.** `brief`/`sync` select from active
+  notes; "N recorded in total" still counts all.
+- [x] **3.5 Explain.** When several decisions match a commit and exactly one
+  is active, that one wins at HIGH ("…; N superseded or retracted"). A
+  sole match that is superseded or retracted is still shown (it is why the
+  line was written) with its status in the text and JSON.
+- [x] **3.6 Review evidence on `note`.** `--verdict TEXT`,
+  `--reviewed-commit SHA` (resolved), `--test "cmd: result"` (repeatable).
+  Visible `**Verdict:**` / `**Reviewed commit:**` / `**Test:**` lines,
+  parsed back; shown by brief/sync and `decisions show`.
+- [x] **3.7 `whyline decisions`.** `list` (default; `--task`, `--file`,
+  `--all`, `--limit`, `--json`), `search TEXT` (case-insensitive over
+  decision, because, rejected options, files, task; `--all`, `--json`),
+  `show ID` (full record incl. lifecycle and binding; `--json`). Named
+  `decisions`, not `log`, which would collide with `git log` and
+  `whyline timeline`.
+
+### Tests
+
+Supersede/retract recording and round trip from a clone; lifecycle
+computation incl. retracted superseder; brief/sync exclusion; explain
+disambiguation and status display; review fields round trip; each
+`decisions` subcommand, filters, `--all`, `--json`, unknown/ambiguous ids.

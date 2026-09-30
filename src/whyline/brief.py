@@ -50,27 +50,30 @@ def select_entries(
     someone asking for one file means.
     """
     loaded = history.load(root)
+    # Only decisions still standing are handed over as reasoning; superseded
+    # and retracted ones stay queryable with `whyline decisions --all`.
+    current = loaded.active
     requested_files = set(files or [])
     hint_files = set(rank_files or [])
     if task is None and not requested_files and not hint_files:
-        return loaded, list(loaded.notes)
+        return loaded, list(current)
 
     def matches_files(entry: history.HistoryEntry, wanted: set[str]) -> bool:
         return bool(wanted.intersection(entry.event.get("files") or []))
 
     task_matches = [
-        entry for entry in loaded.notes if task is not None and entry.event.get("task") == task
+        entry for entry in current if task is not None and entry.event.get("task") == task
     ]
     chosen = {id(entry) for entry in task_matches}
     file_matches = [
         entry
-        for entry in loaded.notes
+        for entry in current
         if id(entry) not in chosen and matches_files(entry, requested_files)
     ]
     chosen.update(id(entry) for entry in file_matches)
     hint_matches = [
         entry
-        for entry in loaded.notes
+        for entry in current
         if id(entry) not in chosen and matches_files(entry, hint_files)
     ]
     chosen.update(id(entry) for entry in hint_matches)
@@ -79,7 +82,7 @@ def select_entries(
     if task is None and not requested_files:
         # Nothing was excluded on the caller's behalf, so the remainder follows
         # rather than disappearing. The token budget decides what actually fits.
-        ranked += [entry for entry in loaded.notes if id(entry) not in chosen]
+        ranked += [entry for entry in current if id(entry) not in chosen]
     return loaded, ranked
 
 
@@ -109,6 +112,16 @@ def entry_lines(entry: history.HistoryEntry) -> list[str]:
         lines.append(f"    files: {', '.join(_sanitise(file) for file in note_files)}")
     if note.get("commit"):
         lines.append(f"    commit: {_sanitise(note['commit'])[:7]}")
+    if note.get("verdict"):
+        reviewed = note.get("reviewed_commit")
+        lines.append(
+            f"    verdict: {_sanitise(note['verdict'])}"
+            + (f" (reviewed {_sanitise(reviewed)[:7]})" if reviewed else "")
+        )
+    for test in note.get("tests") or []:
+        lines.append(
+            f"    test: {_sanitise(test.get('command', ''))}: {_sanitise(test.get('result', ''))}"
+        )
     return lines
 
 

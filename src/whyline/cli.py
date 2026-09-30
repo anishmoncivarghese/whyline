@@ -164,6 +164,58 @@ def _add_note(subparsers: "argparse._SubParsersAction") -> None:
         help="Bind this decision to the commit it explains (e.g. HEAD after "
         "committing). Never assumed: without it the decision is unbound.",
     )
+    parser.add_argument(
+        "--supersedes",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="A decision this one replaces (id or unique prefix). Repeatable.",
+    )
+    parser.add_argument("--verdict", default="", help="Review verdict, e.g. approved")
+    parser.add_argument(
+        "--reviewed-commit", default=None, metavar="SHA", help="The commit that was reviewed"
+    )
+    parser.add_argument(
+        "--test",
+        action="append",
+        default=[],
+        dest="tests",
+        metavar='"COMMAND: RESULT"',
+        help="A check that was run and its result. Repeatable.",
+    )
+
+
+def _add_retract(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "retract", help="Withdraw a decision that turned out wrong (no replacement)"
+    )
+    parser.add_argument("decision_id", help="Decision id, or a unique prefix of it")
+    parser.add_argument("--because", default=None, help="Why it was wrong (required)")
+    parser.add_argument("--actor", default="")
+    parser.add_argument("--role", default="")
+    parser.add_argument("--task", default="")
+
+
+def _add_decisions(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "decisions", help="List, search or show recorded decisions"
+    )
+    sub = parser.add_subparsers(dest="decisions_command")
+    listing = sub.add_parser("list", help="Current decisions, newest first (default)")
+    listing.add_argument("--task", default=None)
+    listing.add_argument("--file", default=None)
+    for command in (listing, sub.add_parser("search", help="Find decisions by text")):
+        if command is not listing:
+            command.add_argument("text")
+        command.add_argument(
+            "--all", action="store_true", dest="all_decisions",
+            help="Include superseded and retracted decisions",
+        )
+        command.add_argument("--limit", type=_positive_int, default=None)
+        command.add_argument("--json", action="store_true")
+    show = sub.add_parser("show", help="One decision in full")
+    show.add_argument("decision_id")
+    show.add_argument("--json", action="store_true")
 
 
 def _add_attach(subparsers: "argparse._SubParsersAction") -> None:
@@ -368,6 +420,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_explain(subparsers)
     _add_note(subparsers)
     _add_attach(subparsers)
+    _add_retract(subparsers)
+    _add_decisions(subparsers)
     _add_handoff(subparsers)
     _add_claim(subparsers)
     _add_release(subparsers)
@@ -447,6 +501,35 @@ def cmd_note(args: argparse.Namespace) -> int:
             print(f"{args.commit} is not a commit in this repository. Nothing was recorded.", file=sys.stderr)
             return EXIT_ERROR
         bound = {"commit": sha}
+    if args.supersedes:
+        from whyline import history
+
+        loaded = history.load(root)
+        replaced = []
+        for prefix in args.supersedes:
+            found, problem = _one_decision(loaded, prefix)
+            if problem:
+                print(problem + " Nothing was recorded.", file=sys.stderr)
+                return EXIT_ERROR
+            replaced.append(found)
+        bound["supersedes"] = sorted(set(replaced), key=replaced.index)
+    if args.reviewed_commit is not None:
+        from whyline import gitq
+
+        reviewed = gitq.resolve_commit(root, args.reviewed_commit)
+        if reviewed is None:
+            print(
+                f"{args.reviewed_commit} is not a commit in this repository. Nothing was recorded.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        bound["reviewed_commit"] = reviewed
+    if args.verdict:
+        bound["verdict"] = decisions.one_line(args.verdict)
+    if args.tests:
+        from whyline import handoff
+
+        bound["tests"] = [handoff.parse_test(value) for value in args.tests]
     alternatives = [
         {
             "option": decisions.one_line(alt["option"]),
@@ -496,6 +579,154 @@ def cmd_note(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _one_decision(loaded, prefix: str) -> tuple[str, str]:
+    """(full id, "") for a unique match, else ("", the problem)."""
+    from whyline import history
+
+    matches = history.find(loaded, prefix)
+    if not matches:
+        return "", f"No decision with id {prefix.strip() or '(empty)'}."
+    if len(matches) > 1:
+        return "", f"{prefix.strip()} matches {len(matches)} decisions; use more of the id."
+    return matches[0], ""
+
+
+def cmd_retract(args: argparse.Namespace) -> int:
+    from whyline import decisions, events, history, ledger, paths
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    if not (args.because or "").strip():
+        print("whyline retract: --because is required: say why it was wrong.", file=sys.stderr)
+        return EXIT_USAGE
+    loaded = history.load(root)
+    target, problem = _one_decision(loaded, args.decision_id)
+    if problem:
+        print(problem, file=sys.stderr)
+        return EXIT_ERROR
+    original = next(e.event for e in loaded.notes if e.event.get("id") == target)
+    event = events.new_event(
+        events.RETRACTION,
+        retracts=target,
+        # Written as a visible decisions.md entry so a person reading the
+        # file sees the withdrawal, not just a changed status elsewhere.
+        decision=f"Retracted: {decisions.one_line(original.get('decision', ''))}",
+        because=decisions.one_line(args.because),
+        alternatives=[],
+        files=list(original.get("files") or []),
+        actor=decisions.one_line(args.actor),
+        role=decisions.one_line(args.role),
+        task=decisions.one_line(args.task),
+    )
+    try:
+        decisions.append_entry(paths.decisions_path(root), event)
+    except OSError as error:
+        print(f"could not write {paths.decisions_path(root)}: {error.strerror}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        ledger.append(paths.ledger_path(root), event)
+    except OSError:
+        pass  # decisions.md already carries it
+    print(f"Retracted {target[:8]}: {original.get('decision', '')}")
+    return EXIT_OK
+
+
+def _decision_line(event: dict) -> str:
+    status = event.get("lifecycle", "active")
+    task = f"  (task {event['task']})" if event.get("task") else ""
+    return (
+        f"{str(event.get('id', ''))[:8]}  {str(event.get('ts', ''))[:10]}  "
+        + (f"[{status}] " if status != "active" else "")
+        + f"{event.get('decision', '')}{task}"
+    )
+
+
+def _decision_detail(event: dict) -> str:
+    rows = [("Decision", event.get("decision", "")), ("Id", event.get("id", "")),
+            ("Recorded", event.get("ts", ""))]
+    status = event.get("lifecycle", "active")
+    if status == "superseded":
+        rows.append(("Status", f"superseded by {str(event.get('superseded_by', ''))[:8]}"))
+    elif status == "retracted":
+        rows.append(("Status", f"retracted: {event.get('retracted_because', '')}"))
+    else:
+        rows.append(("Status", "active"))
+    if event.get("because"):
+        rows.append(("Because", event["because"]))
+    for alternative in event.get("alternatives") or []:
+        why_not = alternative.get("why_not", "")
+        rows.append(("Rejected", alternative.get("option", "") + (f" -- {why_not}" if why_not else "")))
+    for label, key in (("Task", "task"), ("Actor", "actor"), ("Role", "role")):
+        if event.get(key):
+            rows.append((label, event[key]))
+    if event.get("files"):
+        rows.append(("Files", ", ".join(event["files"])))
+    if event.get("commit"):
+        rows.append(("Commit", event["commit"]))
+    if event.get("supersedes"):
+        rows.append(("Supersedes", ", ".join(str(v)[:8] for v in event["supersedes"])))
+    if event.get("verdict"):
+        rows.append(("Verdict", event["verdict"]))
+    if event.get("reviewed_commit"):
+        rows.append(("Reviewed", event["reviewed_commit"]))
+    for test in event.get("tests") or []:
+        rows.append(("Test", f"{test.get('command', '')}: {test.get('result', '')}"))
+    return "\n".join(f"{label:<11}{value}" for label, value in rows)
+
+
+def _searchable(event: dict) -> str:
+    parts = [event.get("decision", ""), event.get("because", ""), event.get("task", "")]
+    parts += [a.get("option", "") + " " + a.get("why_not", "") for a in event.get("alternatives") or []]
+    parts += list(event.get("files") or [])
+    return " ".join(str(p) for p in parts).lower()
+
+
+def cmd_decisions(args: argparse.Namespace) -> int:
+    from whyline import history, paths, render
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    loaded = history.load(root)
+    command = args.decisions_command or "list"
+    if command == "show":
+        found, problem = _one_decision(loaded, args.decision_id)
+        if problem:
+            print(problem, file=sys.stderr)
+            return EXIT_ERROR
+        event = next(e.event for e in loaded.notes if e.event.get("id") == found)
+        if args.json:
+            render.emit_json(event)
+        else:
+            print(_decision_detail(event))
+        return EXIT_OK
+    include_all = getattr(args, "all_decisions", False)
+    selected = [e.event for e in (loaded.notes if include_all else loaded.active)]
+    if command == "search":
+        needle = args.text.lower()
+        selected = [event for event in selected if needle in _searchable(event)]
+    else:
+        if getattr(args, "task", None):
+            selected = [event for event in selected if event.get("task") == args.task]
+        if getattr(args, "file", None):
+            selected = [event for event in selected if args.file in (event.get("files") or [])]
+    limit = getattr(args, "limit", None)
+    if limit:
+        selected = selected[:limit]
+    if getattr(args, "json", False):
+        render.emit_json(selected)
+        return EXIT_OK
+    if not selected:
+        print("No matching decisions." + ("" if include_all else " (--all includes superseded and retracted ones)"))
+        return EXIT_OK
+    for event in selected:
+        print(_decision_line(event))
+    return EXIT_OK
+
+
 def cmd_attach(args: argparse.Namespace) -> int:
     from whyline import decisions, events, gitq, history, ledger, paths
 
@@ -504,22 +735,11 @@ def cmd_attach(args: argparse.Namespace) -> int:
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
     prefix = args.decision_id.strip()
-    matches = sorted(
-        {
-            entry.event["id"]
-            for entry in history.load(root).notes
-            if prefix and str(entry.event.get("id", "")).startswith(prefix)
-        }
-    )
-    if not matches:
-        print(f"No decision with id {prefix or '(empty)'}.", file=sys.stderr)
+    found, problem = _one_decision(history.load(root), prefix)
+    if problem:
+        print(problem, file=sys.stderr)
         return EXIT_ERROR
-    if len(matches) > 1:
-        print(
-            f"{prefix} matches {len(matches)} decisions; use more of the id.",
-            file=sys.stderr,
-        )
-        return EXIT_ERROR
+    matches = [found]
     sha = gitq.resolve_commit(root, args.commit)
     if sha is None:
         print(f"{args.commit} is not a commit in this repository.", file=sys.stderr)
@@ -1109,6 +1329,8 @@ COMMANDS = {
     "explain": cmd_explain,
     "note": cmd_note,
     "attach": cmd_attach,
+    "retract": cmd_retract,
+    "decisions": cmd_decisions,
     "handoff": cmd_handoff,
     "claim": cmd_claim,
     "release": cmd_release,

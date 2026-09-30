@@ -14,6 +14,7 @@ NOTE = "Note"
 HANDOFF = "Handoff"
 HANDOFF_CLOSED = "HandoffClosed"
 NOTE_ATTACHED = "NoteAttached"
+RETRACTION = "Retraction"
 SESSION_ENDED = "SessionEnded"
 
 

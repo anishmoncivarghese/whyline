@@ -18,6 +18,9 @@ _FILES_RE = re.compile(r"^\*\*Files:\*\* (?P<value>.*)$", re.MULTILINE)
 _ACTOR_RE = re.compile(r"^\*\*Actor:\*\* (?P<value>.*)$", re.MULTILINE)
 _ROLE_RE = re.compile(r"^\*\*Role:\*\* (?P<value>.*)$", re.MULTILINE)
 _TASK_RE = re.compile(r"^\*\*Task:\*\* (?P<value>.*)$", re.MULTILINE)
+_VERDICT_RE = re.compile(r"^\*\*Verdict:\*\* (?P<value>.*)$", re.MULTILINE)
+_REVIEWED_RE = re.compile(r"^\*\*Reviewed commit:\*\* (?P<value>[0-9a-f]{40})$", re.MULTILINE)
+_TEST_RE = re.compile(r"^\*\*Test:\*\* (?P<value>.*)$", re.MULTILINE)
 _ID_RE = re.compile(r"<!-- whyline-event: (?P<value>.*?) -->")
 # Exact time and bound commit, since 0.3.21. A comment of its own rather than
 # more text in the whyline-event comment: older versions read that whole
@@ -63,6 +66,22 @@ def render_entry(event: dict) -> str:
             why_not = one_line(alternative.get("why_not", ""))
             lines.append(f"- {option}" + (f" — {why_not}" if why_not else ""))
         lines.append("")
+    review = []
+    if event.get("verdict"):
+        review.append(f"**Verdict:** {one_line(event['verdict'])}")
+    if _SHA_RE.match(str(event.get("reviewed_commit") or "")):
+        review.append(f"**Reviewed commit:** {event['reviewed_commit']}")
+    for test in event.get("tests") or []:
+        review.append(
+            f"**Test:** {one_line(test.get('command', ''))}: {one_line(test.get('result', ''))}"
+        )
+    if review:
+        lines.extend(review)
+        lines.append("")
+    supersedes = [str(value) for value in event.get("supersedes") or []]
+    if supersedes:
+        lines.append(f"**Supersedes:** {', '.join(value[:8] for value in supersedes)}")
+        lines.append("")
     files = event.get("files") or []
     if files:
         lines.append(f"**Files:** {', '.join(one_line(f) for f in files)}")
@@ -83,6 +102,11 @@ def _meta(event: dict) -> dict:
     commit = str(event.get("commit") or "")
     if _SHA_RE.match(commit):
         meta["commit"] = commit
+    supersedes = [str(value) for value in event.get("supersedes") or [] if value]
+    if supersedes:
+        meta["supersedes"] = supersedes
+    if event.get("retracts"):
+        meta["retracts"] = str(event["retracts"])
     return {"v": 1, **meta} if meta else {}
 
 
@@ -176,6 +200,26 @@ def _parse_block(block: str) -> dict | None:
     }
     if meta and _SHA_RE.match(str(meta.get("commit", ""))):
         parsed["commit"] = meta["commit"]
+    if meta and isinstance(meta.get("supersedes"), list):
+        parsed["supersedes"] = [str(value) for value in meta["supersedes"] if value]
+    if meta and isinstance(meta.get("retracts"), str) and meta["retracts"]:
+        parsed["retracts"] = meta["retracts"]
+    verdict_match = _VERDICT_RE.search(block)
+    if verdict_match:
+        parsed["verdict"] = verdict_match.group("value").strip()
+    reviewed_match = _REVIEWED_RE.search(block)
+    if reviewed_match:
+        parsed["reviewed_commit"] = reviewed_match.group("value")
+    tests = []
+    for match in _TEST_RE.finditer(block):
+        command, separator, result = match.group("value").rpartition(": ")
+        tests.append(
+            {"command": command.strip(), "result": result.strip()}
+            if separator
+            else {"command": match.group("value").strip(), "result": ""}
+        )
+    if tests:
+        parsed["tests"] = tests
     return parsed
 
 

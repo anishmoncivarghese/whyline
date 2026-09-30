@@ -158,6 +158,16 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
         and (lower is None or _epoch_end(note) > lower)
     ]
 
+    # Several candidates, but only one still standing: the others were
+    # superseded or retracted, so the current one is the answer, not an
+    # ambiguity.
+    retired = ""
+    if len(in_window) > 1:
+        current = [note for note in in_window if note.get("lifecycle", "active") == "active"]
+        if len(current) == 1:
+            retired = f"; {len(in_window) - 1} superseded or retracted"
+            in_window = current
+
     if len(in_window) == 1:
         if _has_day_precision(in_window[0]):
             return Explanation(
@@ -168,7 +178,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
                 notes=in_window,
                 reason=(
                     "one committed decision overlaps this commit window, but "
-                    "its timestamp has only day precision"
+                    "its timestamp has only day precision" + retired
                 ),
                 skipped_ledger_lines=skipped_lines,
             )
@@ -178,7 +188,7 @@ def explain(root: Path, rel_path: str, line: int | None) -> Explanation:
             confidence=HIGH,
             blame=blame,
             notes=in_window,
-            reason="one recorded decision matches the commit that wrote this line",
+            reason="one recorded decision matches the commit that wrote this line" + retired,
             skipped_ledger_lines=skipped_lines,
         )
     if len(in_window) > 1:
