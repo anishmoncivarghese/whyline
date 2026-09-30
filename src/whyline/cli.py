@@ -196,6 +196,29 @@ def _add_retract(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--task", default="")
 
 
+def _add_ledger(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "ledger", help="Inspect, prune or change what the local ledger keeps"
+    )
+    sub = parser.add_subparsers(dest="ledger_command", required=True)
+    policy = sub.add_parser(
+        "policy",
+        help="Show or set prompt capture: metadata (default), redacted or full",
+    )
+    policy.add_argument("value", nargs="?", choices=("metadata", "redacted", "full"))
+    prune = sub.add_parser(
+        "prune", help="Remove old prompt, file-touch and session events"
+    )
+    prune.add_argument("--older-than", type=_positive_float, required=True, metavar="DAYS")
+    prune.add_argument("--dry-run", action="store_true")
+    scrub = sub.add_parser(
+        "scrub-prompts", help="Apply the current capture policy to recorded prompts"
+    )
+    scrub.add_argument("--dry-run", action="store_true")
+    stats = sub.add_parser("stats", help="What the ledger holds")
+    stats.add_argument("--json", action="store_true")
+
+
 def _add_decisions(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "decisions", help="List, search or show recorded decisions"
@@ -422,6 +445,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_attach(subparsers)
     _add_retract(subparsers)
     _add_decisions(subparsers)
+    _add_ledger(subparsers)
     _add_handoff(subparsers)
     _add_claim(subparsers)
     _add_release(subparsers)
@@ -504,7 +528,7 @@ def cmd_note(args: argparse.Namespace) -> int:
     if args.supersedes:
         from whyline import history
 
-        loaded = history.load(root)
+        loaded = history.load(root, mechanical=False)
         replaced = []
         for prefix in args.supersedes:
             found, problem = _one_decision(loaded, prefix)
@@ -601,7 +625,7 @@ def cmd_retract(args: argparse.Namespace) -> int:
     if not (args.because or "").strip():
         print("whyline retract: --because is required: say why it was wrong.", file=sys.stderr)
         return EXIT_USAGE
-    loaded = history.load(root)
+    loaded = history.load(root, mechanical=False)
     target, problem = _one_decision(loaded, args.decision_id)
     if problem:
         print(problem, file=sys.stderr)
@@ -690,7 +714,7 @@ def cmd_decisions(args: argparse.Namespace) -> int:
     if not paths.is_initialised(root):
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
-    loaded = history.load(root)
+    loaded = history.load(root, mechanical=False)
     command = args.decisions_command or "list"
     if command == "show":
         found, problem = _one_decision(loaded, args.decision_id)
@@ -727,6 +751,54 @@ def cmd_decisions(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_ledger(args: argparse.Namespace) -> int:
+    from whyline import ledgerops, paths, render
+
+    root = _require_repo()
+    if not paths.is_initialised(root):
+        print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
+        return EXIT_UNINITIALISED
+    command = args.ledger_command
+    try:
+        if command == "policy":
+            if args.value:
+                ledgerops.set_policy(root, args.value)
+                print(f"Prompt capture is now {args.value}.")
+                if args.value != "full":
+                    print("Prompts already recorded keep their text until: whyline ledger scrub-prompts")
+            else:
+                print(f"Prompt capture: {ledgerops.policy(root)}")
+            return EXIT_OK
+        if command == "prune":
+            count = ledgerops.prune(root, older_than_days=args.older_than, dry_run=args.dry_run)
+            verb = "Would remove" if args.dry_run else "Removed"
+            print(f"{verb} {count} event{'s' if count != 1 else ''} older than {args.older_than:g} days "
+                  "(decisions, handoffs, attachments and retractions are always kept).")
+            return EXIT_OK
+        if command == "scrub-prompts":
+            count = ledgerops.scrub(root, dry_run=args.dry_run)
+            verb = "Would scrub" if args.dry_run else "Scrubbed"
+            print(f"{verb} {count} prompt{'s' if count != 1 else ''} to {ledgerops.policy(root)}.")
+            return EXIT_OK
+        report = ledgerops.stats(root)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    except OSError as error:
+        print(f"could not update the ledger: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    if args.json:
+        render.emit_json(report)
+        return EXIT_OK
+    print(f"{'Ledger':<14}{report['path']} ({report['bytes'] / 1e6:.1f} MB)")
+    print(f"{'Events':<14}{report['events']}")
+    for kind, count in report["types"].items():
+        print(f"  {kind:<18}{count} event{'s' if count != 1 else ''}")
+    print(f"{'Prompt text':<14}{report['prompt_text_bytes'] / 1e6:.2f} MB")
+    print(f"{'Policy':<14}{report['policy']}")
+    return EXIT_OK
+
+
 def cmd_attach(args: argparse.Namespace) -> int:
     from whyline import decisions, events, gitq, history, ledger, paths
 
@@ -735,7 +807,7 @@ def cmd_attach(args: argparse.Namespace) -> int:
         print("whyline is not initialised here. Run: whyline init", file=sys.stderr)
         return EXIT_UNINITIALISED
     prefix = args.decision_id.strip()
-    found, problem = _one_decision(history.load(root), prefix)
+    found, problem = _one_decision(history.load(root, mechanical=False), prefix)
     if problem:
         print(problem, file=sys.stderr)
         return EXIT_ERROR
@@ -952,6 +1024,7 @@ GITIGNORE_LINES = (
     "*.bak",
     "account.json",
     "model.json",
+    "config.json",
     "!decisions.md",
 )
 
@@ -1236,6 +1309,15 @@ def _without_prompt_text(event: dict) -> dict:
     return redacted
 
 
+def _prompt_or_why_not(event: dict) -> dict:
+    """Asked for prompts: say plainly when one was never stored."""
+    from whyline import events as events_module
+
+    if event.get("type") != events_module.INSTRUCTION or "text" in event:
+        return event
+    return {**event, "text": f"[not captured: prompt_capture={event.get('capture', 'metadata')}]"}
+
+
 def cmd_timeline(args: argparse.Namespace) -> int:
     from whyline import ledger, paths, render
 
@@ -1278,6 +1360,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         # which is routinely redirected, unless explicitly asked.
         if not args.include_prompts:
             found = [_without_prompt_text(event) for event in found]
+        else:
+            found = [_prompt_or_why_not(event) for event in found]
         render.emit_json({"events": found})
     elif not found and filtered and total:
         # Never claim the ledger is empty when a filter simply matched nothing.
@@ -1331,6 +1415,7 @@ COMMANDS = {
     "attach": cmd_attach,
     "retract": cmd_retract,
     "decisions": cmd_decisions,
+    "ledger": cmd_ledger,
     "handoff": cmd_handoff,
     "claim": cmd_claim,
     "release": cmd_release,

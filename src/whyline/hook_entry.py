@@ -72,13 +72,17 @@ def main(stdin_text: str, root: Path, agent: str = "claude-code") -> int:
                 ),
             )
         elif name == "UserPromptSubmit":
+            from whyline import ledgerops
+
             ledger.append(
                 target,
                 events.new_event(
                     events.INSTRUCTION,
                     session=session,
-                    text=payload.get("prompt", ""),
                     agent=agent,
+                    **ledgerops.capture_fields(
+                        str(payload.get("prompt", "")), ledgerops.policy(root)
+                    ),
                 ),
             )
         elif name == "PostToolUse":

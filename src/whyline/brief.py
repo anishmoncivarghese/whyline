@@ -49,7 +49,7 @@ def select_entries(
     An explicit `task` or `files` from the caller still narrows, which is what
     someone asking for one file means.
     """
-    loaded = history.load(root)
+    loaded = history.load(root, mechanical=False)
     # Only decisions still standing are handed over as reasoning; superseded
     # and retracted ones stay queryable with `whyline decisions --all`.
     current = loaded.active

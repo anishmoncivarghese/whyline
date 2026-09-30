@@ -172,9 +172,20 @@ def find(loaded: "History", prefix: str) -> list[str]:
     )
 
 
-def load(root: Path) -> History:
-    """Load local events and the durable decision log as one merged history."""
-    local_events, skipped = ledger.read_all(paths.ledger_path(root))
+# Prompt and file-touch events: most of a working ledger, needed only by
+# status, explain and timeline.
+MECHANICAL_TYPES = (events.INSTRUCTION, events.FILE_TOUCHED)
+
+
+def load(root: Path, *, mechanical: bool = True) -> History:
+    """Load local events and the durable decision log as one merged history.
+
+    `mechanical=False` skips prompt and file-touch events without decoding
+    them; decisions, handoffs and everything derived from them are
+    identical either way."""
+    local_events, skipped = ledger.read_all(
+        paths.ledger_path(root), skip_types=() if mechanical else MECHANICAL_TYPES
+    )
     ledger_notes = [
         event for event in local_events if event.get("type") == events.NOTE
     ]

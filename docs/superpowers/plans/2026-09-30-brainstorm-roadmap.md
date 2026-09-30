@@ -17,8 +17,8 @@ the next starts.
 | 2. Stale ownership and handoffs | 0.3.20 | released |
 | 1. Exact commit provenance | 0.3.21 | released |
 | 3. Decision lifecycle + `whyline decisions` | 0.3.22 | released |
-| 4. Ledger read path + prompt retention | 0.3.23 | next |
-| 5. Rename-aware relevance + `explain --diff` | 0.3.24 | planned |
+| 4. Ledger read path + prompt retention | 0.3.23 | released |
+| 5. Rename-aware relevance + `explain --diff` | 0.3.24 | next |
 | 6. Antigravity hooks + `whyline doctor` | 0.3.25 | planned |
 
 ---
@@ -179,3 +179,56 @@ Supersede/retract recording and round trip from a clone; lifecycle
 computation incl. retracted superseder; brief/sync exclusion; explain
 disambiguation and status display; review fields round trip; each
 `decisions` subcommand, filters, `--all`, `--json`, unknown/ambiguous ids.
+
+---
+
+## Item 4 — Ledger read path and prompt retention (0.3.23)
+
+**Measured (this repository, 2026-09-30):** `ledger.jsonl` is 2.1 MB /
+2,123 events; `Instruction` events (raw prompt bodies) are 918 events and
+1.72 MB -- 81% of the file. Nothing reads prompt text except
+`timeline --include-prompts`. Full parse: 16 ms now; 85 ms at 10x (21 MB),
+452 ms at 50x (107 MB). Skipping `Instruction`/`FileTouched` lines before
+JSON-decoding them: 29 ms / 145 ms. Conclusion, as the brainstorm asked:
+no index or database is justified; skip what a command doesn't need,
+store less, and allow pruning.
+
+### Tasks
+
+- [x] **4.1 Prompt capture policy.** `metadata` (default: no text, only
+  `chars` and `sha256`), `redacted` (text with secret-shaped substrings
+  masked, best effort, marked `redacted: true`), or `full` (as before).
+  Stored in `.whyline/config.json`, which is local and gitignored (added to
+  `.whyline/.gitignore` on write, so existing repositories are covered).
+  `whyline ledger policy [metadata|redacted|full]` shows or sets it. The
+  hook applies it at capture time.
+- [x] **4.2 `whyline ledger prune --older-than DAYS [--dry-run]`.** Removes
+  `Instruction`, `FileTouched`, `SessionStarted`, `SessionEnded` events
+  older than DAYS. Never removes decisions, handoffs, closes, attachments
+  or retractions. Rewrite is atomic and picks up lines appended by hooks
+  during the rewrite. *Changed during implementation:* `ledger.append` now
+  takes the ledger's lock (about 0.1 ms per event), because copying late
+  lines alone still left an instant before the file swap in which a hook's
+  event could be lost; the late-line copy remains for unlocked writers
+  such as an older installed hook.
+- [x] **4.3 `whyline ledger scrub-prompts [--dry-run]`.** Applies the
+  current policy to prompts already recorded (e.g. after switching from
+  the old implicit `full` to `metadata`).
+- [x] **4.4 `whyline ledger stats`.** Size, events per type, prompt bytes,
+  current policy.
+- [x] **4.5 Lighter read path.** `ledger.read_all(..., skip_types=…)`
+  skips lines by their serialized `"type":"…"` before decoding;
+  `history.load(root, mechanical=False)` uses it. `brief`, `sync`,
+  `decisions`, `attach`, `retract` load without mechanical events;
+  `status`, `explain`, `timeline` keep the full read.
+- [x] **4.6 Timeline.** `--include-prompts` says when a prompt was not
+  captured (and under which policy) instead of printing nothing.
+
+### Tests
+
+Hook capture under each policy; secret masking samples; config read/write
+and gitignore entry; prune keeps durable types and honors the cut-off and
+`--dry-run`; prune/scrub preserve lines appended mid-rewrite; stats
+output; skip_types equivalence with a full read for the kept types (incl.
+a note whose text mentions "Instruction"); history.load mechanical=False
+leaves notes/handoff state identical; timeline wording.

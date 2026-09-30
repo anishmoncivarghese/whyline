@@ -3281,3 +3281,55 @@ Append-only. Written by whyline; readable without it.
 <!-- whyline-attach: {"v":1,"note":"5ad5a7e212f647b5814a9a1f0b6fac72","commit":"08fdb69af05aaf4a5b1ceb7cb2a4551328b24ade","ts":"2026-09-30T04:01:16.484Z"} -->
 
 <!-- whyline-attach: {"v":1,"note":"9520fb3061b448bf9ff2b6c5b70ed046","commit":"08fdb69af05aaf4a5b1ceb7cb2a4551328b24ade","ts":"2026-09-30T04:01:16.587Z"} -->
+
+## 2026-09-30 — Default prompt capture is metadata (length + sha256, no text); redacted and full are opt-in via .whyline/config.json
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-4
+
+**Because:** raw prompts were 81% of the ledger and read by nothing but an explicit timeline flag; the brainstorm asked for a safe default
+
+**Rejected:**
+
+- keep full as default — stores sensitive text nobody reads
+- commit the policy with the repo — prompt privacy is personal, not per-project
+
+**Files:** src/whyline/ledgerops.py
+
+<!-- whyline-event: c06bb06e64fd4f44a84789d88bd048d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:07:26.780Z"} -->
+
+## 2026-09-30 — No ledger index or database; skip undecoded prompt/file-touch lines on the light read path
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-4
+
+**Because:** measured 16 ms now, 452 ms at 107 MB, 145 ms with skipping -- linear and cheap; nothing justifies an index yet
+
+**Rejected:**
+
+- SQLite index — new moving part with no measured need
+
+**Files:** src/whyline/ledger.py
+
+<!-- whyline-event: 42a15a66fff94e3f9581fe63f517c342 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:07:26.860Z"} -->
+
+## 2026-09-30 — ledger.append takes the ledger lock so prune/scrub rewrites cannot lose a concurrent hook's event
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ROADMAP-4
+
+**Because:** copying late lines left an instant before the file swap where an append was lost; the lock costs ~0.1 ms per event
+
+**Rejected:**
+
+- lock-free tail copy only — provably racy at the swap
+
+**Files:** src/whyline/ledger.py
+
+<!-- whyline-event: d13676a1aff84948b88b811fb8b4db36 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T04:07:26.921Z"} -->
