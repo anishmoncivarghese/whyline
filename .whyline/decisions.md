@@ -3976,3 +3976,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 847dc4fdb1c743a7a4ec2395eaec404f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:56:45.193Z"} -->
+
+## 2026-09-30 — Complete CRS-13 release despite legacy CLI version string mismatch
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-13
+
+**Because:** The planned 0.3.29 metadata, GitHub tag, CI, release workflow, PyPI artifacts, and installation all succeeded; the CLI still reports 0.3.27 because src/whyline/__init__.py contains a pre-existing hardcoded version and correcting it would require a new immutable release
+
+**Rejected:**
+
+- Patch and republish within CRS-13 — PyPI 0.3.29 is already immutable and the plan did not include a source-version follow-up release
+
+**Files:** src/whyline/__init__.py, pyproject.toml
+
+<!-- whyline-event: acacf840d69745ea8036eed755ad46cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T19:09:29.616Z"} -->
