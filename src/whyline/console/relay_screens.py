@@ -372,3 +372,154 @@ class RelayPlanScreen(ModalScreen):
         self._error("")
         self.query_one("#rp-resume-draft").display = False
         self.query_one("#rp-discard-draft").display = False
+
+
+class RelaySetupScreen(ModalScreen):
+    """Who implements, tests and reviews; a check (doctor); then Start.
+    Start is only enabled by a check with no FAIL, and any edit after a
+    check clears it, so nothing starts on settings nobody checked."""
+
+    DEFAULT_CSS = """
+    RelaySetupScreen { align: center middle; }
+    RelaySetupScreen > Vertical {
+        width: 90; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
+        border: thick $accent; background: $surface;
+    }
+    RelaySetupScreen Horizontal { height: auto; }
+    RelaySetupScreen .field-label { width: 18; padding: 1 1 0 0; }
+    RelaySetupScreen Select { width: 30; }
+    RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
+    RelaySetupScreen Checkbox:focus { border: none; }
+    RelaySetupScreen #rs-results { height: auto; max-height: 12; }
+    RelaySetupScreen #rs-error { color: $error; height: auto; }
+    RelaySetupScreen #rs-error.-empty { display: none; }
+    RelaySetupScreen #rs-buttons { margin-top: 1; }
+    RelaySetupScreen #rs-buttons Button { margin-right: 2; }
+    """
+
+    ROLES = (("implementer", "Implementer:"), ("tester", "Tester:"), ("reviewer", "Reviewer:"))
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self._root = root
+        self._agents = relay_ops.relay_agents()
+        self._roles = relay_ops.current_roles(root)
+        self._token: object | None = None
+        self._filling = True  # ignore change events while the form is built
+
+    def compose(self) -> ComposeResult:
+        rows = [
+            Horizontal(
+                Label(label, classes="field-label"),
+                Select(
+                    [(a, a) for a in self._agents],
+                    value=self._roles.get(role)
+                    if self._roles.get(role) in self._agents
+                    else (self._agents[0] if self._agents else None),
+                    allow_blank=False,
+                    id=f"rs-{role}",
+                ),
+            )
+            for role, label in self.ROLES
+        ]
+        backups = [
+            Checkbox(agent, value=agent in self._roles.get("backup", []), id=f"rs-backup-{agent}")
+            for agent in self._agents
+        ]
+        yield Vertical(
+            Label("Set up: who does what, then check everything is ready."),
+            *rows,
+            Label("Backup, used when an agent fails:"),
+            *backups,
+            VerticalScroll(Static("", id="rs-checks"), id="rs-results"),
+            Static("", id="rs-error", classes="-empty"),
+            Horizontal(
+                Button("Check", id="rs-check", variant="primary"),
+                Button("Start", id="rs-start", variant="success", disabled=True),
+                Button("Cancel", id="rs-cancel"),
+                id="rs-buttons",
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self._ready)
+
+    def _ready(self) -> None:
+        self._filling = False
+
+    def _error(self, text: str) -> None:
+        error = self.query_one("#rs-error", Static)
+        error.update(text)
+        error.set_class(not text, "-empty")
+
+    def _invalidate(self) -> None:
+        if self._filling:
+            return
+        self._token = object()
+        self.query_one("#rs-checks", Static).update("")
+        self.query_one("#rs-start", Button).disabled = True
+
+    def on_select_changed(self, event: "Select.Changed") -> None:
+        self._invalidate()
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        self._invalidate()
+
+    def _chosen(self) -> tuple[str, str, str, list[str]]:
+        implementer, tester, reviewer = (
+            self.query_one(f"#rs-{role}", Select).value for role, _ in self.ROLES
+        )
+        backup = [a for a in self._agents if self.query_one(f"#rs-backup-{a}", Checkbox).value]
+        return implementer, tester, reviewer, backup
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "rs-cancel":
+            self._token = object()
+            self.dismiss(None)
+        elif event.button.id == "rs-start":
+            self.dismiss("start")
+        elif event.button.id == "rs-check":
+            self._check()
+
+    def _check(self) -> None:
+        token = object()
+        self._token = token
+        self._error("")
+        self.query_one("#rs-start", Button).disabled = True
+        self.query_one("#rs-checks", Static).update("Checking…")
+        root, chosen = self._root, self._chosen()
+
+        def in_thread() -> None:
+            try:
+                relay_ops.save_roles(root, *chosen)
+                checks = relay_ops.run_checks(root)
+                running = relay_ops.live_run(root)
+            except Exception as error:
+                self.app.call_from_thread(self._check_failed, error, token)
+                return
+            self.app.call_from_thread(self._show_checks, checks, running, token)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _check_failed(self, error: Exception, token: object) -> None:
+        if token is not self._token:
+            return
+        self.query_one("#rs-checks", Static).update("")
+        self._error(str(error) or error.__class__.__name__)
+
+    def _show_checks(self, checks: list, running: str | None, token: object) -> None:
+        if token is not self._token:
+            return
+        lines = []
+        for check in checks:
+            line = f"{check.status:<4}  {check.message}"
+            if check.status != "ok" and check.hint:
+                line += f"\n      fix: {check.hint}"
+            lines.append(line)
+        failures = sum(check.status == "FAIL" for check in checks)
+        lines.append("All checks passed." if failures == 0 else f"{failures} problem(s) found.")
+        self.query_one("#rs-checks", Static).update("\n".join(lines))
+        if running:
+            self._error(f"A relay is already running here ({running}).")
+        self.query_one("#rs-start", Button).disabled = failures > 0 or bool(running)

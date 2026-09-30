@@ -3911,3 +3911,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e7f0ce7d63b140c5a26fdb8a39c85f0f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:21:08.287Z"} -->
+
+## 2026-09-30 — Invalidate preflight check results and disable Start when roles change
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-12
+
+**Because:** Ensures the relay cannot start on an unverified role configuration if the user alters roles or backups after checking
+
+**Rejected:**
+
+- Keeping check results valid after field edits — could allow launching with untested agent assignments or failing preflight conditions
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4a5af4afae374a01a649bf7d9aeb51ff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:24:56.325Z"} -->
+
+## 2026-09-30 — Approve relay setup popup with guarded preflight and start flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-12
+
+**Because:** The popup prefills and saves supported relay roles, renders check outcomes and fixes, rejects failed or already-running launches, invalidates checks after edits, wires Start to the relay launcher, and the full suite passes
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect remains after reviewing the diff and exercising the full suite
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: ff920c5c16e64327810bd704ff8fcb8c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T18:41:02.121Z"} -->

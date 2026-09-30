@@ -746,7 +746,13 @@ class WhylineConsoleApp(App):
     def _open_relay_setup(self) -> None:
         if self._refuse_in_home():
             return
-        self.render_event(SessionEvent(kind="output", text="Set up: coming in a later task."))
+        from whyline.console.relay_screens import RelaySetupScreen
+
+        self.push_screen(RelaySetupScreen(self.session.root), self._setup_done)
+
+    def _setup_done(self, choice: str | None) -> None:
+        if choice == "start":
+            self._launch_relay(["start"])
 
     def _relay_running(self) -> bool:
         return self._relay is not None and self._relay.running()
