@@ -1745,7 +1745,7 @@
   git commit -m "feat(console): Plan popup with a pasted plan"
   ```
 
-- [ ] CRS-10: Plan popup — Draft, review, request changes, resume/discard
+- [x] CRS-10: Plan popup — Draft, review, request changes, resume/discard
 
   ## Global Constraints
 
