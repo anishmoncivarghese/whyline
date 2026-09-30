@@ -3709,3 +3709,34 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c09b3c5a5f33463b9e649aa4936eee6e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:39:38.577Z"} -->
+
+## 2026-09-30 — Run relay as detached process group writing to log file followed by reader thread
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CRS-7
+
+**Because:** Pipes break when the console exits or crashes killing the relay, while log file follower survives console exit and retains full logs
+
+**Rejected:**
+
+- Pipes (stdout=subprocess.PIPE) — closing console causes broken pipe and kills the relay run
+- In-process execution — couples relay lifetime to console UI and complicates terminal output redirection
+
+**Files:** src/whyline/console/relay_process.py
+
+<!-- whyline-event: d684e82434f64044bd783ee5d4f1be78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:42:35.718Z"} -->
+
+## 2026-09-30 — Approve detached RelayProcess and asynchronous log follower
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CRS-7
+
+**Because:** The implementation satisfies the CRS-7 interfaces, keeps relay output off pipes, preserves relay lifetime after the console stops following, and the full test suite passes
+
+**Files:** src/whyline/console/relay_process.py
+
+<!-- whyline-event: b69297879d814b15b04719565b5d4480 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-09-30T17:44:48.823Z"} -->
