@@ -2,21 +2,21 @@
 
 ## Codex
 
-# Independent brainstorm: attachments in the Whyline terminal UI
+# Attachments in the Whyline terminal UI: Codex view
 
 ## Bottom line
 
-Yes, Whyline can make files and images feel close to attachments in a desktop chat app, but the feature should not be designed as “paste a path into the prompt.” It should be a small attachment subsystem with a visible manifest, safe local staging, and agent-specific delivery.
+Yes, Whyline can make files and images feel close to attachments in a desktop chat app, but the feature is not fundamentally a paste feature. It is a small pipeline with four explicit stages: **acquire → validate/stage → review → deliver**. Each stage needs its own capability checks and failure state.
 
 The best product shape is:
 
-1. Add an **Attach** action next to the prompt.
-2. Accept files through an embedded browser, pasted/dropped path confirmation, and an explicit “attach image from clipboard” action.
-3. Copy or materialize accepted inputs into a gitignored, session-scoped attachment directory and create metadata records.
-4. Show every pending attachment before Send and let the user remove it.
-5. At send time, let each agent adapter decide whether to pass an image natively, reference a local file, extract text, or reject the type with a precise explanation.
+1. Add an **Attach** action beside the prompt and a compact staging tray above it.
+2. Accept files through an embedded browser, explicit path entry, conservative pasted/dropped-path confirmation, and an explicit **Clipboard image** action.
+3. Snapshot accepted inputs into a gitignored, session-scoped workspace directory and create a metadata manifest.
+4. Show every pending item, its validation/delivery state, and a remove action before Send.
+5. At send time, prepare one atomic turn: each agent adapter must either deliver every item by a verified mechanism or reject the turn with per-item reasons.
 
-Do not make terminal image preview, automatic directory ingestion, native OS dialogs, or remote drag-and-drop prerequisites for the first release. They are useful enhancements, not the core feature.
+Do not make terminal image preview, automatic directory ingestion, native OS dialogs, content extraction, deduplication, or remote drag-and-drop prerequisites for the first release. They are enhancements around the core contract: the user can see what is staged, the selected agent can actually receive it, and nothing is silently omitted.
 
 ## What the source note gets right
 
@@ -30,7 +30,7 @@ It is also right that ordinary terminal stdin is fundamentally a text stream. A 
 
 The note is also directionally right about bracketed paste. The repository currently pins Textual below 1.0, and the installed version is Textual 0.89.1. That version already enables bracketed paste and exposes `textual.events.Paste`; Whyline should consume that event rather than manually emitting enable/disable escape sequences.
 
-## Corrections and important caveats
+## Non-negotiable constraints and corrections
 
 ### A drop is not reliably distinguishable from a paste
 
@@ -46,13 +46,17 @@ This avoids turning a pasted command, stack trace, or sentence containing a path
 
 ### Clipboard shortcuts are owned by the terminal
 
-On many terminals, Cmd+V or Ctrl+Shift+V is consumed by the emulator, which then sends text to the application. The TUI cannot depend on intercepting that keystroke to discover a clipboard image. Use a dedicated Whyline binding and button such as `Ctrl+A` / **Attach → Clipboard image**. If only text is present, either decline cleanly or offer to paste the text into the prompt.
+On many terminals, Cmd+V or Ctrl+Shift+V is consumed by the emulator, which then sends text to the application. The TUI cannot depend on intercepting that keystroke to discover a clipboard image. Use a dedicated Whyline binding, chosen after auditing existing editor shortcuts, plus **Attach → Clipboard image**. If only text is present, either decline cleanly or offer to paste the text into the prompt.
+
+This rules out an acquisition design that probes the OS clipboard on every ordinary paste event. Besides shortcut ownership, clipboard contents and pasted text can legitimately differ; silently substituting a clipboard bitmap for text the terminal delivered would be surprising. Clipboard-image capture must be an explicit action.
 
 ### Local and remote paths are different
 
 When Whyline runs over SSH, a path dropped from the laptop’s Finder or Explorer may not exist on the remote host. The MVP must detect this and say so. It must not display a successful attachment that the agent cannot read.
 
 Newer kitty releases define dedicated clipboard and drag/drop protocols that can transfer MIME data and can work remotely, but these are terminal-specific extensions. They are a valuable later backend, not a portable baseline.
+
+Likewise, a base64 data-URI paste should not be the recommended remote fallback. It is large, easy to truncate, may hit terminal or shell limits, and makes accidental binary ingestion too easy. A later helper or terminal protocol can transfer local bytes, but v1 should explain the host mismatch and ask the user to transfer the file deliberately.
 
 ### Preview and delivery are separate capabilities
 
@@ -70,18 +74,24 @@ A native file chooser is pleasant for images because it can show thumbnails, but
 
 A later system-picker backend can be exposed only when the environment supports it, with the embedded browser as fallback.
 
+If added, a native picker must run outside Textual's render thread and return cancellation as an ordinary result. Environment variables such as `DISPLAY` are hints, not proof that a dialog can open; capability probing and a reliable TUI fallback matter more than platform detection.
+
+### Prompt wrappers do not sanitize hostile content
+
+XML or Markdown fences can help identify provenance, but they do not make attached instructions safe. Whyline should label attachment-derived content as untrusted, avoid auto-inlining by default, preserve the originating attachment ID/hash, and let the agent's existing trust and tool policy remain the security boundary. “Prompt-injection sanitization” is not a truthful product promise.
+
 ## Recommended user experience
 
 ### Main screen
 
-Put a compact **Attach** button in the input row, not in the already crowded global control row. When attachments exist, show a one- or two-line strip directly above the prompt:
+Put a compact **Attach** button in the input row, not in the already crowded global control row. When attachments exist, show a one- or two-line staging tray directly above the prompt:
 
 ```text
-Attachments (2): [chart.png 842 KB ×] [notes.pdf 1.8 MB ×]  [Manage]
+Attachments (2): [chart.png 842 KB ✓ ×] [notes.pdf 1.8 MB ! ×]  [Manage]
 Prompt: Compare the chart with the attached notes...             [Send]
 ```
 
-If the terminal is too narrow, show `Attachments: 2 [Manage]` and put details in a modal. Never send an attachment that is not represented in this manifest.
+If the terminal is too narrow, show `Attachments: 2 · 1 needs attention [Manage]` and put details in a modal. The status is more important than a thumbnail: staged, validating, ready for this agent, unsupported, failed, or missing. Never send an attachment that is not represented in this manifest.
 
 ### Attach modal
 
@@ -92,7 +102,7 @@ The modal should offer four routes:
 3. **Clipboard image** — uses the best available clipboard backend and reports why it is unavailable.
 4. **System picker** — optional and shown only when a supported local GUI backend is detected.
 
-The review state should show name, type, size, source, and any warning. Selection does not imply sending; the user’s normal Send action remains the authorization boundary.
+The review state should show name, type, size, source, validation result, and delivery support for the currently selected agent. Selection does not imply sending; the user’s normal Send action remains the authorization boundary. Provider changes must recompute readiness before Send.
 
 ### Pasted or dropped paths
 
@@ -125,20 +135,30 @@ Attachment
   kind               image | text | document | directory | unsupported
   original_path      optional, display only
   extraction_status  not_needed | pending | ready | failed | unsupported
+  delivery_status    unchecked | ready | unsupported | failed
   warnings           tuple of user-visible warnings
 ```
 
-The `ConsoleSession` should own `pending_attachments`, while Textual only renders and mutates that collection through explicit session methods. The plain console can later gain `/attach`, `/attachments`, and `/detach` over the same core.
+The `ConsoleSession` should own `pending_attachments`, while Textual only renders and mutates that collection through explicit session methods. The plain console can later gain `/attach`, `/attachments`, and `/detach` over the same core. Do not make `is_image` a stored source of truth when it can be derived from verified media type, and treat any token estimate as optional provider-specific advisory data rather than a stable attachment property.
+
+Use a small explicit lifecycle rather than loosely coupled booleans:
+
+```text
+selected → staging → validating → ready → preparing → submitted
+                    ↘ rejected       ↘ failed
+```
+
+Only `ready` items may enter turn preparation. Pending items should clear only after the chat turn has been accepted for execution; a preparation or launch failure must leave them visible and retryable.
 
 ### 2. Safe staging
 
 Stage a snapshot under a directory such as:
 
 ```text
-.whyline/relay/attachments/<session-id>/<attachment-id>/<safe-name>
+.whyline/attachments/<session-id>/<attachment-id>/<safe-name>
 ```
 
-Add `attachments/` to `.whyline/relay/.gitignore` before the first attachment is staged. This is especially important because the current chat path may commit agent changes after a turn; attachment bytes must never be swept into a repository commit.
+The attachment feature belongs to console/chat generally, not only to relay orchestration, so it should not live below `.whyline/relay/`. Add `attachments/` to the managed `.whyline/.gitignore` before the first attachment is staged and cover that behavior with `git check-ignore`. The current repository does not yet ignore either proposed attachment path. Attachment bytes must never be swept into a repository commit.
 
 Staging provides stable content and solves outside-workspace access for sandboxed agents. It should:
 
@@ -149,7 +169,8 @@ Staging provides stable content and solves outside-workspace access for sandboxe
 - write clipboard data to a temporary file and atomically move it into place;
 - enforce per-file, per-turn, and file-count limits before copying;
 - use restrictive local permissions where the OS supports them;
-- clean up abandoned pending items and expose a retention policy for sent items.
+- clean up abandoned pending items and expose a retention policy for sent items;
+- avoid a permanent archive and global deduplication until product requirements justify their privacy and lifecycle complexity.
 
 Do not recursively ingest directories in v1. Directory expansion introduces unbounded size, secrets, dependency trees, symlink loops, and enormous prompts. A later directory flow should first show a bounded file manifest with ignore rules and require confirmation.
 
@@ -174,9 +195,11 @@ Suggested order:
 
 No backend should be described as supported merely because the operating system matches. Probe the actual command/protocol and return actionable diagnostics.
 
+Picker backends should follow the same contract. A native dialog can be a useful local-desktop accelerator, but it should run in a Textual worker and fail over to the embedded picker. The built-in picker should default to the repository root, permit an explicit path outside it, and never imply that a path on the local terminal client exists on a remote host.
+
 ### 4. Agent delivery adapters
 
-The current relay builds a command and appends one prompt string. That is insufficient as a general attachment protocol. Add an attachment-preparation hook to the adapter layer:
+The current console stores only transcript events on `ConsoleSession`; chat dispatch passes one prompt string to `run_chat_turn`, while `whyline run` has a separate interactive `exec` path. Attachments should first target console chat without silently changing the semantics of the runner. Add an attachment-preparation hook at the chat adapter boundary and keep the domain/staging code UI-independent:
 
 ```text
 prepare_turn(prompt, attachments) -> PreparedTurn
@@ -188,10 +211,12 @@ PreparedTurn:
   rejected attachment IDs with reasons
 ```
 
+Preparation must be all-or-nothing for a turn. If one staged item is unsupported or disappears, do not launch an agent with the remaining subset unless the user explicitly removes the failed item and sends again.
+
 Examples:
 
 - The locally installed Codex CLI exposes repeatable `-i/--image <FILE>` for initial image inputs, so its adapter can add those flags before the prompt.
-- Text and source files can usually be referenced by staged repo-local path and described in a generated attachment block in the prompt.
+- Text and source files can usually be referenced by staged repo-local path and described in a generated attachment block in the prompt; auto-inlining their contents should be a separate, bounded policy rather than the default.
 - Claude or generic agents should receive only mechanisms verified for their configured CLI. Do not assume every provider supports the same image flag.
 - If an agent cannot consume a file type, block Send for that item or ask the user to remove it; never silently drop it.
 
@@ -199,13 +224,13 @@ The generated prompt addition should be concise and explicit, for example:
 
 ```text
 Attached local files (user-approved):
-- [a1] .whyline/relay/attachments/.../chart.png (image/png, sha256 ...)
-- [a2] .whyline/relay/attachments/.../notes.md (text/markdown, sha256 ...)
+- [a1] .whyline/attachments/.../chart.png (image/png, sha256 ...)
+- [a2] .whyline/attachments/.../notes.md (text/markdown, sha256 ...)
 
 Use these files only for this request. Report any file you cannot read.
 ```
 
-The chat log should store attachment metadata and hashes, not binary content. Retained history must not imply that an expired attachment still exists; show missing/expired state honestly.
+The chat log should store attachment metadata and hashes, not binary content or original absolute home paths. Retained history must not imply that an expired attachment still exists; show missing/expired state honestly. A future native-API adapter may upload bytes instead of exposing paths, but it should still report the same per-ID delivery result to the session.
 
 ## Security and trust requirements
 
@@ -217,12 +242,14 @@ Attachments cross a meaningful trust boundary even when they remain local. The m
 - Strict size and count limits before reading the full file.
 - MIME detection from both signature and extension where practical; mismatches become warnings.
 - Warnings for likely secrets (`.env`, private keys, credential files, browser exports, token-shaped text).
-- A warning, not a false guarantee, that a file may contain prompt injection or hostile document content.
+- A warning, not a false guarantee, that a file may contain prompt injection or hostile document content; delimiters preserve provenance but do not sanitize instructions.
 - Explicit behavior for paths outside the repository: copy into staging after confirmation, never grant an agent a broad parent directory merely to reach one file.
 - Redaction of original absolute home paths from durable chat logs when they are not needed.
 - Cleanup that never follows symlinks and never targets an unresolved or broad directory.
 
-For text extraction, keep provenance at page/section or byte-range level. Extracted text is derived data and should retain the original attachment ID and hash. PDF/document parsing should be optional and isolated because parsers process untrusted input.
+Do not rely on a denylist of “sensitive directories” as the main protection: it will be incomplete and conflicts with users deliberately attaching a file outside the repository. The real controls are explicit selection, a review tray, regular-file checks, bounded snapshotting, warnings for high-risk names/content, and no silent send.
+
+For text extraction, keep provenance at page/section or byte-range level. Extracted text is derived data and should retain the original attachment ID and hash. PDF/document parsing should be optional and isolated because parsers process untrusted input. Image dimensions should be checked from headers before full decode, but a specific Pillow threshold is an implementation choice to test—not a product guarantee to copy blindly.
 
 ## Phased delivery plan
 
@@ -236,11 +263,11 @@ Before building the UI, capture exact events for:
 - clipboard text versus screenshot image;
 - Textual 0.89.1 event propagation when an `Input` has focus.
 
-The output should be a small compatibility matrix, not assumptions baked into code.
+Also probe each installed agent's real invocation shape and whether it can consume images, ordinary files, or only prompt references. The output should be a small compatibility matrix with evidence and exact versions, not assumptions baked into code.
 
 ### Phase 1: file-path attachments, end to end
 
-Build the attachment model, safe staging, manifest UI, Attach modal using `DirectoryTree`, explicit path entry, removal, and `/attach` parity in the plain console. Support regular text/source files and Codex-native images first. Add adapter rejection for unsupported combinations.
+Build the attachment model, safe staging, managed gitignore entry, manifest UI, Attach modal using `DirectoryTree`, explicit path entry, removal, and adapter capability/rejection behavior. Support regular text/source files and one verified native image path first. Add `/attach` parity in the plain console if it fits the same session API; it need not block the TUI slice.
 
 This phase delivers the real product value without needing clipboard or previews.
 
@@ -248,13 +275,13 @@ This phase delivers the real product value without needing clipboard or previews
 
 Add explicit clipboard capture with capability probes for the project’s supported operating systems. Store an acquired screenshot as a normal staged attachment, so the rest of the pipeline remains unchanged.
 
-### Phase 3: documents and richer provider support
+### Phase 3: richer provider support and documents
 
-Add optional PDF/document extraction, provider capability metadata, validated image delivery for each configured agent, and retention/cleanup controls. Keep extraction out of the UI layer.
+Validate image/file delivery for each configured agent, then add optional PDF/document extraction and retention/cleanup controls. Keep extraction out of the UI layer and do not claim provider support until an integration test proves it.
 
 ### Phase 4: polish
 
-Add native system pickers where reliable, thumbnails or inline previews through detected protocols, and kitty’s richer clipboard/drag-and-drop protocols. Preserve the manifest-only fallback everywhere.
+Add native system pickers where reliable, thumbnails or inline previews through detected protocols, and richer clipboard/drag-and-drop protocols where independently verified. Preserve the manifest-only fallback everywhere. Unicode image rendering is also polish, not a universal requirement: metadata is a better fallback than costly low-fidelity decoding in small terminals.
 
 ## Tests and acceptance gates
 
@@ -266,7 +293,8 @@ The most valuable tests are boundary tests, not screenshots alone.
 - Stager rejects special files, oversize files, symlink escapes, and count/total-size overflow.
 - Hash and metadata match the staged bytes.
 - Clipboard backends distinguish unsupported, empty, text-only, permission-denied, oversized, and valid-image states.
-- Every adapter either delivers or explicitly rejects every attachment.
+- State transitions reject invalid jumps and retain items after preparation/launch failure.
+- Every adapter either delivers or explicitly rejects every attachment; mixed success cannot produce a partial turn.
 
 ### Textual Pilot tests
 
@@ -274,6 +302,8 @@ The most valuable tests are boundary tests, not screenshots alone.
 - Send includes the manifest and clears pending items only after the turn is accepted.
 - Removing an item prevents delivery.
 - A path-like Paste event asks for confirmation; ordinary pasted text remains text.
+- An ordinary paste never triggers clipboard-image acquisition.
+- Changing the selected agent recomputes support and can disable Send with an actionable reason.
 - Narrow terminals retain access to Attach, Manage, Send, and removal.
 - Dialog events do not leak into the prompt behind the modal.
 
@@ -281,34 +311,37 @@ The most valuable tests are boundary tests, not screenshots alone.
 
 - Fake agent argv proves Codex images appear as image flags before the prompt.
 - Generic agents receive repo-local staged paths and no unsupported flags.
-- Staged files remain gitignored and cannot appear in the chat turn’s automatic commit.
+- Staged files remain gitignored and do not appear in Git status or commit candidates.
 - An outside-repo file is copied, not made accessible by broadening the sandbox.
 - SSH/local-path mismatch produces a clear error.
+- Native picker failure or cancellation returns control to the TUI and preserves prompt text.
 - Cleanup removes only the intended session directory.
 
 Release only when the UI can truthfully answer: what is attached, where its stable copy is, whether the selected agent can consume it, and whether it was actually delivered.
 
 ## Product decisions I would make now
 
-- **Choose:** visible manifest and local staging. **Reject:** inserting opaque paths into prompt text.
+- **Choose:** explicit acquire/validate/review/deliver pipeline. **Reject:** treating attachment support as a paste handler.
+- **Choose:** visible manifest and workspace-local snapshotting. **Reject:** inserting opaque external paths into prompt text.
 - **Choose:** embedded Textual browser as the baseline. **Defer:** native dialogs until a capability-tested fallback exists.
 - **Choose:** explicit clipboard-image action. **Reject:** pretending ordinary paste carries binary image data.
 - **Choose:** conservative paste-path confirmation. **Reject:** silent auto-attachment heuristics.
-- **Choose:** per-agent capabilities. **Reject:** one universal attachment command shape.
+- **Choose:** per-agent capabilities and atomic preparation. **Reject:** one universal command shape or partial silent delivery.
 - **Choose:** metadata-only history plus retention rules. **Reject:** base64 blobs in chat history or prompts.
 - **Choose:** no directories or archives in v1. **Defer:** bounded, reviewable expansion.
 - **Choose:** graceful text-only UI everywhere. **Defer:** image previews to terminal-specific polish.
+- **Choose:** provenance labels and existing trust policy. **Reject:** claiming XML fences “sanitize” prompt injection.
 
 ## First implementable slice
 
 The smallest credible pull request is not “clipboard screenshots.” It is:
 
-1. `Attachment` and staging primitives with limits and gitignore coverage.
+1. `Attachment` lifecycle and staging primitives with limits and managed `.whyline/.gitignore` coverage.
 2. An Attach button and modal using Textual `DirectoryTree` plus direct path entry.
-3. A visible pending manifest with remove support.
-4. A `PreparedTurn` adapter hook.
+3. A visible pending manifest with remove, readiness, and failure states.
+4. An atomic `PreparedTurn` chat-adapter hook with per-ID results.
 5. Text/source delivery by staged path and Codex image delivery through `--image`.
-6. Pilot, parser, staging, adapter, and git-safety tests.
+6. Pilot, parser, lifecycle, staging, adapter, no-partial-send, and git-safety tests.
 
 That slice proves the architecture and gives users a dependable feature. Clipboard capture then becomes one additional acquisition backend rather than a second attachment system.
 
