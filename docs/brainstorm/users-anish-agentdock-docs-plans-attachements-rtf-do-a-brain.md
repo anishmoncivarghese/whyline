@@ -1,5 +1,115 @@
 # Brainstorm: /Users/anish/agentdock/docs/Plans/Attachements.rtf, do a brainstorm on this
 
+## Final Synthesis
+
+### Recommendation
+
+Build attachments as a UI-independent, four-stage subsystem—**acquire → stage and validate → review → deliver**—rather than as special behavior inside the prompt field. The product contract should be simple and strict: the user can always see what is pending, Whyline snapshots it somewhere the selected agent can access, and a turn is sent only when the adapter can account for every attachment. Nothing is attached, omitted, or substituted silently.
+
+The first release should prove that contract with ordinary files and one verified image-delivery path. Clipboard capture, pasted-path detection, native dialogs, document extraction, and terminal thumbnails should reuse the same pipeline in later phases rather than create parallel attachment systems.
+
+### User experience
+
+Add an **Attach** action next to the prompt and a compact staging tray immediately above it. Each item should show its display name, type, size, warning/readiness state for the currently selected agent, and a remove action. On narrow terminals, collapse this to an attachment count and a **Manage** modal without hiding errors. Selecting or acquiring a file only stages it; the normal **Send** action remains the authorization boundary.
+
+The attachment modal should provide:
+
+1. **Browse workspace** using Textual's `DirectoryTree` as the dependable local, headless, container, and SSH-compatible baseline.
+2. **Enter path** for repository-relative or absolute paths.
+3. **Clipboard image** as an explicit action with a capability-specific failure message.
+4. **System picker** only as an optional accelerator when a usable desktop backend has been positively detected.
+
+Handle drag-and-drop and pasted paths conservatively. A terminal usually delivers both as text, and bracketed paste marks an event boundary rather than proving drag provenance. Only offer `Attach N files?` when the entire paste parses unambiguously into existing regular files or `file://` URIs. Otherwise preserve the original prompt text byte-for-byte. Never evaluate pasted input in a shell. Ordinary paste must never trigger an OS clipboard-image probe; terminal emulators own paste shortcuts, and the delivered text may not match the clipboard's current image content.
+
+### Core design
+
+Place the domain logic outside Textual, for example in `whyline.console.attachments`, and let `ConsoleSession` own the pending manifest. The UI should render and invoke that model rather than own filesystem or provider behavior.
+
+Each staged attachment needs, at minimum:
+
+- a stable local ID and lifecycle state;
+- a safe display name and workspace-relative staged path;
+- acquisition source, verified media type, kind, byte size, and SHA-256 digest;
+- an optional original path kept out of durable history where possible;
+- validation warnings and delivery readiness for the selected adapter.
+
+Use an explicit lifecycle such as `selected → staging → validating → ready → preparing → submitted`, with rejected and failed exits. Clear pending items only after the downstream turn has actually been accepted. Preparation or launch failure must leave them visible and retryable. Changing providers must recompute readiness before Send.
+
+Snapshot accepted inputs under:
+
+```text
+.whyline/attachments/<session-id>/<attachment-id>/<safe-name>
+```
+
+Before writing attachment bytes, programmatically ensure `attachments/` is covered by `.whyline/.gitignore`, and test the result with `git check-ignore`. Workspace-local snapshots make content stable, avoid granting an agent access to an external parent directory, and satisfy workspace-bound sandboxes. Durable chat history should store metadata, digests, and the actual delivery method—not blobs, base64 payloads, or unnecessary absolute home paths. If retention cleanup removes a staged file, history must show it as expired rather than implying it is still readable.
+
+The stager should accept regular files only in v1; reject directories, devices, sockets, and FIFOs; resolve symlinks deliberately; copy and hash through a bounded stream; use restrictive permissions; and commit temporary output with an atomic move. Enforce configurable per-file, per-turn, and item-count limits before copying. The proposed `25 MB / 50 MB / 10 items` values are reasonable starting defaults, but should be confirmed against supported providers and made policy rather than scattered constants. Similarly, retention should be explicit and bounded, but a `7 day / 200 MB` cleanup rule should be validated before becoming a product guarantee.
+
+Do not recursively ingest directories or extract archives in v1. Those features require a separate, bounded manifest review because of secret leakage, symlink loops, dependency trees, decompression bombs, and unpredictable cost.
+
+### Provider delivery contract
+
+Introduce an adapter boundary such as:
+
+```text
+prepare_turn(prompt, attachments) -> PreparedTurn | PreparationError
+```
+
+`PreparedTurn` should identify the final prompt, provider arguments or native multimodal parts, and the delivery result for every attachment ID. Preparation is atomic: if any item is missing, invalid, or unsupported, block the turn with per-item diagnostics. Do not launch with a best-effort subset.
+
+Use a versioned, integration-tested capability matrix rather than provider-name assumptions:
+
+- For a Codex CLI version that exposes repeatable `-i/--image`, pass staged images as flags before the prompt.
+- For text and source files, prefer concise workspace-relative references over automatic full-content inlining.
+- For Claude, Gemini, Antigravity, or any other adapter, use only mechanisms verified for that configured CLI or API version—native multimodal parts, file tools, or prompt references as appropriate.
+- Treat unknown providers as unsupported for any attachment kind that has not been proven end to end.
+
+Prompt preambles should list attachment IDs, paths, media types, and digests, clearly labeling the files as user-approved but untrusted data. Delimiters preserve provenance; they do not sanitize prompt injection. The real controls remain agent permissions, explicit user review, bounded staging, and an honest provider capability check.
+
+### Acquisition, remote use, and previews
+
+Implement acquisition backends behind capability probes that return both supported media types and an actionable reason when unavailable. Platform names and environment variables are hints, not proof. Candidate backends include `pngpaste` or a tested macOS helper, `wl-paste` on Wayland, `xclip`/`xsel` on X11, and a tested PowerShell/.NET path on Windows. Run native pickers outside Textual's render loop and treat cancellation as an ordinary no-op.
+
+Detect SSH/container mismatches explicitly. A path dragged from a laptop may not exist on the remote host, and a remote process normally cannot read the laptop clipboard. Explain that mismatch and ask the user to transfer the file deliberately; do not recommend large base64 data-URI pastes through a PTY. Terminal-specific transfer protocols can be added later as independently tested backends.
+
+Keep preview capability separate from acquisition and delivery. The universal fallback is a Rich metadata card. Kitty, iTerm2, Sixel, or related graphics can add thumbnails later, but inability to render an image must not imply inability to deliver it to an agent—or vice versa.
+
+### Security baseline
+
+- Require explicit acquisition and an explicit Send; never auto-send after paste, drop, selection, or clipboard capture.
+- Validate type using signatures plus extensions where practical, and surface mismatches rather than trusting either alone.
+- Warn on likely credential and secret files, but do not rely on brittle sensitive-directory denylists.
+- Never broaden a sandbox merely to expose an original external path; copy the selected file into staging.
+- Treat document parsers and image decoders as untrusted-input surfaces; defer extraction and use resource limits when it is introduced.
+- Make cleanup target only a validated session/attachment directory and never follow symlinks.
+- Preserve provenance for any future extracted text down to its source attachment and page, section, or byte range.
+
+### Implementation sequence
+
+**Phase 0 — evidence spike:** Record actual Textual 0.89.1 paste behavior for paths, spaces, multiple files, local/SSH sessions, and focused inputs. Probe the exact installed provider versions and produce a tested acquisition/delivery capability matrix.
+
+**Phase 1 — smallest credible end-to-end slice:** Implement the attachment model and lifecycle, bounded workspace staging, managed git-ignore rule, `DirectoryTree`/path-entry modal, visible tray with removal and readiness states, atomic adapter preparation, workspace-path delivery for supported files, and one verified native image path such as Codex `--image`.
+
+**Phase 2 — explicit clipboard images:** Add capability-probed clipboard backends and `/attach --clipboard`, producing the same staged attachment records as Phase 1.
+
+**Phase 3 — conservative paste/drop and governance:** Add the path parser and confirmation flow, secret warnings, retention controls, and broader provider/document support only where integration tests prove delivery.
+
+**Phase 4 — polish:** Add optional native pickers, terminal thumbnails, and terminal-specific remote transfer protocols while retaining the metadata-only fallback.
+
+### Release gates
+
+Release the first slice only when tests prove all of the following:
+
+- ambiguous paste is preserved, while valid path-only paste requires confirmation;
+- special files, unsafe symlink cases, quota overflow, and missing inputs are rejected safely;
+- staged bytes, metadata, and hashes agree, and all staged content is ignored by Git;
+- removing an item prevents delivery, while preparation/launch failure preserves it for retry;
+- provider changes recompute readiness and unsupported mixed sets cannot partially send;
+- adapter integration tests assert exact argv, prompt, or native-part construction for supported versions;
+- SSH clipboard/path mismatches and picker failures produce useful errors without corrupting prompt state;
+- cleanup removes only the intended attachment directory;
+- the UI can always answer: **what is attached, where the stable snapshot is, whether this agent can consume it, and whether it was actually delivered**.
+
 ## Codex
 
 # Attachments in the Whyline terminal UI: Codex view
