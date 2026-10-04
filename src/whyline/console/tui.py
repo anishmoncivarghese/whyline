@@ -355,6 +355,8 @@ class WhylineConsoleApp(App):
         self._plan_request: plan_job.PlanRequest | None = None
         self._plan_outcome: plan_job.Outcome | None = None
         self._stale_pause: str | None = None
+        self._run_flow = False
+
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -405,6 +407,7 @@ class WhylineConsoleApp(App):
         run is paused and nothing is running."""
         in_relay = self.session.mode == "relay"
         running = self._relay is not None and self._relay.running()
+        self._main("#relay-run", Button).disabled = not in_relay or running
         self._main("#relay-plan", Button).disabled = not in_relay
         self._main("#relay-setup", Button).disabled = not in_relay or running
         try:
@@ -425,8 +428,9 @@ class WhylineConsoleApp(App):
             agent = self.session.agent or "claude"
             return f"Message {agent}... (Enter to send)"
         if mode == "relay":
-            return "Relay command: doctor, status, start, resume (Enter to run)"
+            return "Relay: run (guided), doctor, status, start, resume (Enter to run)"
         return "whyline command, e.g. status or log (Enter to run)"
+
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -458,6 +462,7 @@ class WhylineConsoleApp(App):
             Button("Stop", id="stop", disabled=True),
             Button("Help", id="help"),
             Button("Copy", id="copy"),
+            Button("Run", id="relay-run", disabled=True),
             Button("Plan", id="relay-plan", disabled=True),
             Button("Set up", id="relay-setup", disabled=True),
             Button("Resume", id="relay-resume", disabled=True),
@@ -491,10 +496,13 @@ class WhylineConsoleApp(App):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
         elif button_id == "copy":
             self._copy_transcript()
+        elif button_id == "relay-run":
+            self._run_flow_start()
         elif button_id == "relay-plan":
             self._open_relay_plan()
         elif button_id == "relay-setup":
             self._open_relay_setup()
+
         elif button_id == "relay-resume":
             if getattr(self, "_stale_pause", None):
                 task = self._stale_pause
@@ -572,6 +580,7 @@ class WhylineConsoleApp(App):
         self._dispatch_token = object()
         if self._plan_state == "working":
             self._leave_plan()
+            self._end_run_flow("Run stopped: no plan was saved.")
         for worker in self.workers:
             worker.cancel()
         self._set_busy(False)
@@ -625,10 +634,14 @@ class WhylineConsoleApp(App):
         if self._plan_state in ("review", "answering") and not text.startswith("/"):
             self._plan_reply(text)
             return
+        if self.session.mode == "relay" and text.strip() == "run":
+            self._run_flow_start()
+            return
         first = text.split(maxsplit=1)[0]
         if self.session.mode == "relay" and first in ("start", "resume"):
             self._launch_relay(text.split())
             return
+
         if not self._handle_slash(text):
             if text.startswith("/"):
                 # Never send an unrecognized command to the agent as a
@@ -849,6 +862,7 @@ class WhylineConsoleApp(App):
 
     def _plan_chosen(self, result) -> None:
         if result is None:
+            self._end_run_flow("Run cancelled.")
             return
         if isinstance(result, plan_job.PlanRequest):
             self._start_plan_job(result)
@@ -867,6 +881,9 @@ class WhylineConsoleApp(App):
             )
         )
         self._sync_relay_buttons()
+        if self._run_flow:
+            self._open_relay_setup(guided=True, plan=path)
+
 
     # -- the plan job (spec section 4) ------------------------------------
     def _set_plan_state(self, state: str) -> None:
@@ -929,6 +946,8 @@ class WhylineConsoleApp(App):
             text=f"Planning stopped: {error or error.__class__.__name__}. Anything drafted "
                  "so far is kept -- open Plan and choose Resume draft to try again.",
         ))
+        self._end_run_flow("Run stopped: no plan was saved.")
+
 
     def _plan_done(self, outcome: plan_job.Outcome, token: object) -> None:
         if token is not self._dispatch_token:
@@ -979,6 +998,7 @@ class WhylineConsoleApp(App):
             relay_ops.discard_draft(self.session.root, self._plan_outcome.draft)
         self._leave_plan()
         self.render_event(SessionEvent(kind="output", text="Draft discarded."))
+        self._end_run_flow("Run stopped: no plan was saved.")
 
     def _leave_plan(self) -> None:
         self._plan_request = None
@@ -992,19 +1012,62 @@ class WhylineConsoleApp(App):
         self._leave_plan()
         where = f"It is still at {draft.path}." if draft else "Open Plan and choose Resume draft to come back."
         self.render_event(SessionEvent(kind="output", text=f"Left the plan. {where}"))
+        self._end_run_flow("Run stopped: no plan was saved.")
 
-    def _open_relay_setup(self) -> None:
+    def _run_flow_start(self) -> None:
+        """Run (spec 6a): which plan, then who does what, then check and start."""
+        if self._refuse_in_home():
+            return
+        if self._relay_running():
+            self.render_event(SessionEvent(kind="error", text="The relay is already running."))
+            return
+        if self._plan_state:
+            self.render_event(SessionEvent(
+                kind="error",
+                text="A plan is already in progress: approve it, Discard it, or press Esc."))
+            return
+        self._run_flow = True
+        if not relay_ops.list_plans(self.session.root):
+            self.render_event(SessionEvent(kind="output", text="No plan yet -- let's make one."))
+            self._open_relay_plan()
+            return
+        from whyline.console.relay_screens import RunChoiceScreen
+
+        self.push_screen(RunChoiceScreen(), self._run_choice)
+
+    def _run_choice(self, choice: str | None) -> None:
+        if choice == "new":
+            self._open_relay_plan()
+        elif choice == "existing":
+            self._open_relay_setup(guided=True)
+        else:
+            self._end_run_flow("Run cancelled.")
+
+    def _end_run_flow(self, text: str) -> None:
+        if self._run_flow:
+            self._run_flow = False
+            self.render_event(SessionEvent(kind="output", text=text))
+
+    def _open_relay_setup(self, guided: bool = False, plan: Path | None = None) -> None:
         if self._refuse_in_home():
             return
         from whyline.console.relay_screens import RelaySetupScreen
 
-        self.push_screen(RelaySetupScreen(self.session.root), self._setup_done)
+        self.push_screen(
+            RelaySetupScreen(self.session.root, guided=guided, plan=plan),
+            self._setup_done,
+        )
 
     def _setup_done(self, choice: str | None) -> None:
         if choice == "start":
+            self._run_flow = False
             self._launch_relay(["start"])
         elif choice == "plan":
+            self._run_flow = True
             self._open_relay_plan()
+        else:
+            self._run_flow = False
+
 
     def _relay_running(self) -> bool:
         return self._relay is not None and self._relay.running()

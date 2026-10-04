@@ -479,3 +479,50 @@ def forget_antigravity_decline(root: Path) -> None:
 
     antigravity.forget_decline(root)
 
+
+def roles_configured(root: Path) -> bool:
+    """Whether this repository's relay config already assigns roles."""
+    from whyline_relay import config
+
+    path = config.config_path(root)
+    if not path.exists():
+        return False
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return False
+    return bool(raw.get("roles"))
+
+
+_PREFERENCE = {
+    "implementer": ("codex", "claude", "antigravity", "grok"),
+    "tester": ("claude", "codex", "grok", "antigravity"),
+    "reviewer": ("claude", "codex", "grok", "antigravity"),
+}
+
+
+def recommend_roles(usable: list[str]) -> dict:
+    """A different agent per role where possible (spec 6b); the rest back up."""
+    roles: dict = {}
+    used: set[str] = set()
+    for role in ("implementer", "tester", "reviewer"):
+        order = [a for a in _PREFERENCE[role] if a in usable] + [
+            a for a in usable if a not in _PREFERENCE[role]
+        ]
+        fresh = [a for a in order if a not in used]
+        roles[role] = (fresh or order or ["claude"])[0]
+        used.add(roles[role])
+    roles["backup"] = [a for a in _PREFERENCE["implementer"] if a in usable and a not in used]
+    return roles
+
+
+def usable_agents(root: Path, status: dict) -> list[str]:
+    """Installed relay agents that are also logged in."""
+    return [a for a in relay_agents(root) if status.get(a, {}).get("available")]
+
+
+def role_meaning(implementer: str, tester: str, reviewer: str) -> str:
+    return (f"{implementer} writes the code → {tester} runs the tests → "
+            f"{reviewer} reviews and commits.")
+
+

@@ -4551,3 +4551,72 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6fea81bd38304644be3eb500c311b0b5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:30:47.926Z"} -->
+
+## 2026-10-04 — Run is one guided path: plan (new or existing), roles summary with Looks good/Change, check, start
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-16
+
+**Because:** users should not need to know Plan comes before Set up before Start
+
+**Rejected:**
+
+- Remove Plan and Set up buttons — they stay as shortcuts for experienced users
+- Machine-wide default backup — the user chose per-repository backup (option B)
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 6cc21d8d4ebb4da5abca249c1b0dbab0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:42:31.302Z"} -->
+
+## 2026-10-04 — Request changes: stopping a guided plan must end the Run flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-16
+
+**Because:** the Stop path clears the active plan state but leaves _run_flow true, so a later ordinary Plan save unexpectedly continues the cancelled Run into guided Set up
+
+**Rejected:**
+
+- Approve as-is — the full suite passes but does not cover cancelling plan generation during Run
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 0e381a0463c84f44bb50fbf754c60bae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:47:21.697Z"} -->
+
+## 2026-10-04 — Stopping plan generation ends the active Run flow
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-16
+
+**Because:** stopping cancels the guided Run so subsequent standalone plan operations cannot inadvertently trigger guided Set up
+
+**Rejected:**
+
+- Clear _run_flow only on full TUI reset — leaves stale flow state active during interactive editing
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: f312cd66fafa4540a490965a2094c58e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:53:51.855Z"} -->
+
+## 2026-10-04 — Approve guided Run flow and stop-state regression
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-16
+
+**Because:** Run now guides plan selection or creation through recommended role setup, check, and start; stopping plan generation clears the guided state; the full test suite and 80-column layout checks pass
+
+**Rejected:**
+
+- Request changes — no functional defect or missing required coverage remains
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py, tests/console/test_run_flow.py
+
+<!-- whyline-event: 65bf1c684cb84eca927e8c67e9cb0d9a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:56:42.355Z"} -->

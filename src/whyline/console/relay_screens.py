@@ -309,6 +309,34 @@ class PlanDraftScreen(ModalScreen):
         self.dismiss(None)
 
 
+class RunChoiceScreen(ModalScreen):
+    """Run, step 1: a new plan or a saved one."""
+
+    DEFAULT_CSS = """
+    RunChoiceScreen { align: center middle; }
+    RunChoiceScreen > Vertical {
+        width: 70; height: auto; padding: 1 2;
+        border: thick $accent; background: $surface;
+    }
+    RunChoiceScreen Horizontal { height: auto; margin-top: 1; }
+    RunChoiceScreen Button { margin-right: 2; }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Run the relay. Which plan should it work through?"),
+            Horizontal(
+                Button("Make a new plan", id="run-new", variant="primary"),
+                Button("Use an existing plan", id="run-existing", variant="success"),
+                Button("Cancel", id="run-cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss({"run-new": "new", "run-existing": "existing"}.get(event.button.id))
+
+
 class RelaySetupScreen(ModalScreen):
     """Who implements, tests and reviews; a check (doctor); then Start.
     Start is only enabled by a check with no FAIL, and any edit after a
@@ -327,6 +355,10 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen #rs-no-plan { color: $warning; padding: 1 0 0 0; }
     RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelaySetupScreen Checkbox:focus { border: none; }
+    RelaySetupScreen #rs-roles { height: auto; }
+    RelaySetupScreen #rs-summary { width: 1fr; padding: 1 1 0 0; }
+    RelaySetupScreen #rs-summary-row Button { margin-left: 1; }
+    RelaySetupScreen #rs-meaning { color: $text-muted; padding: 1 0; }
     RelaySetupScreen #rs-results { height: auto; max-height: 12; }
     RelaySetupScreen #rs-error { color: $error; height: auto; }
     RelaySetupScreen #rs-error.-empty { display: none; }
@@ -336,18 +368,59 @@ class RelaySetupScreen(ModalScreen):
 
     ROLES = (("implementer", "Implementer:"), ("tester", "Tester:"), ("reviewer", "Reviewer:"))
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, guided: bool = False, plan: Path | None = None) -> None:
         super().__init__()
         self._root = root
+        self._guided = guided
         self._agents = relay_ops.relay_agents(root)
         self._roles = relay_ops.current_roles(root)
+        self._configured_roles = dict(self._roles)
+        self._configured = relay_ops.roles_configured(root)
         self._plans = relay_ops.list_plans(root)
         current = relay_ops.configured_plan(root)
         listed = [str(info.path) for info in self._plans]
-        self._plan_default = str(current) if current and str(current) in listed else (
-            listed[0] if listed else None)
+        if plan is not None and str(plan) in listed:
+            self._plan_default = str(plan)
+        elif current is not None and str(current) in listed:
+            self._plan_default = str(current)
+        else:
+            self._plan_default = listed[0] if listed else None
+
+        if self._guided:
+            from whyline import account
+
+            self._usable = relay_ops.usable_agents(root, account.agent_status(root))
+            self._recommended = relay_ops.recommend_roles(self._usable)
+            in_use = [self._roles[r] for r in ("implementer", "tester", "reviewer")]
+            self._unusable = [a for a in dict.fromkeys(in_use) if a not in self._usable]
+            if not self._configured or self._unusable:
+                self._roles = {**self._recommended} if not self._configured else {
+                    **self._roles,
+                    **{
+                        r: self._recommended[r]
+                        for r in ("implementer", "tester", "reviewer")
+                        if self._roles[r] in self._unusable
+                    },
+                }
+        else:
+            self._usable = self._agents
+            self._recommended = {}
+            self._unusable = []
+
+        self._summary = self._guided and self._configured
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
+
+    def _roles_line(self) -> str:
+        r = self._configured_roles
+        backup = " → ".join(r.get("backup", [])) or "none"
+        line = (
+            f"Implementer: {r['implementer']} · Tester: {r['tester']} · "
+            f"Reviewer: {r['reviewer']} · Backup: {backup}"
+        )
+        if self._unusable:
+            line += "   ⚠ " + ", ".join(f"{a} isn't logged in" for a in self._unusable)
+        return line
 
     @staticmethod
     def _plan_label(info: "relay_ops.PlanInfo") -> str:
@@ -373,8 +446,13 @@ class RelaySetupScreen(ModalScreen):
             Checkbox(agent, value=agent in self._roles.get("backup", []), id=f"rs-backup-{agent}")
             for agent in self._agents
         ]
+        title = (
+            "Run: check who does what, then start."
+            if self._guided
+            else "Set up: who does what, then check everything is ready."
+        )
         yield Vertical(
-            Label("Set up: who does what, then check everything is ready."),
+            Label(title),
             (
                 Horizontal(
                     Label("Plan:", classes="field-label"),
@@ -388,9 +466,26 @@ class RelaySetupScreen(ModalScreen):
                 if self._plans
                 else Static("No plan yet. Make one first.", id="rs-no-plan")
             ),
-            *rows,
-            Label("Backup, used when an agent fails:"),
-            *backups,
+            *(
+                [
+                    Horizontal(
+                        Static(self._roles_line(), id="rs-summary"),
+                        Button("Looks good", id="rs-looks-good", variant="success"),
+                        Button("Change", id="rs-change"),
+                        id="rs-summary-row",
+                    )
+                ]
+                if self._summary
+                else []
+            ),
+            Vertical(
+                Static("Recommended for the agents you have.", id="rs-recommended"),
+                *rows,
+                Label("Backup, used when an agent fails:"),
+                *backups,
+                Static("", id="rs-meaning"),
+                id="rs-roles",
+            ),
             VerticalScroll(Static("", id="rs-checks"), id="rs-results"),
             Static("", id="rs-error", classes="-empty"),
             Horizontal(
@@ -404,7 +499,21 @@ class RelaySetupScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#rs-make-plan").display = not self._plans
+        if self._configured or not self._guided:
+            self.query_one("#rs-recommended").display = False
+        if self._summary:
+            if self._unusable:
+                self.query_one("#rs-roles").display = True
+                self.query_one("#rs-summary-row").display = True
+            else:
+                self.query_one("#rs-roles").display = False
+                self.query_one("#rs-check").display = False
+        self._update_meaning()
         self.call_after_refresh(self._ready)
+
+    def _update_meaning(self) -> None:
+        i, t, r, _ = self._chosen()
+        self.query_one("#rs-meaning", Static).update(relay_ops.role_meaning(i, t, r))
 
     def _ready(self) -> None:
         self._filling = False
@@ -423,6 +532,7 @@ class RelaySetupScreen(ModalScreen):
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         self._invalidate()
+        self._update_meaning()
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         self._invalidate()
@@ -443,8 +553,15 @@ class RelaySetupScreen(ModalScreen):
             self.dismiss("start")
         elif event.button.id == "rs-check":
             self._check()
+        elif event.button.id == "rs-looks-good":
+            self._check()
+        elif event.button.id == "rs-change":
+            self.query_one("#rs-summary-row").display = False
+            self.query_one("#rs-roles").display = True
+            self.query_one("#rs-check").display = True
         elif event.button.id == "rs-make-plan":
             self.dismiss("plan")
+
 
     def _check(self) -> None:
         token = object()

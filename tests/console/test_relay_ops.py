@@ -305,3 +305,28 @@ def test_a_paused_run_with_work_left_is_not_stale(repo):
     ))
     assert relay_ops.stale_pause(repo) is None
 
+
+def test_roles_configured(repo):
+    assert relay_ops.roles_configured(repo) is False
+    relay_ops.save_roles(repo, "codex", "claude", "claude", [])
+    assert relay_ops.roles_configured(repo) is True
+
+
+@pytest.mark.parametrize("usable, expected", [
+    (["antigravity", "claude", "codex", "grok"],
+     {"implementer": "codex", "tester": "claude", "reviewer": "grok", "backup": ["antigravity"]}),
+    (["claude", "codex"],
+     {"implementer": "codex", "tester": "claude", "reviewer": "claude", "backup": []}),
+    (["grok"],
+     {"implementer": "grok", "tester": "grok", "reviewer": "grok", "backup": []}),
+])
+def test_recommend_roles(usable, expected):
+    assert relay_ops.recommend_roles(usable) == expected
+
+
+def test_role_meaning():
+    assert relay_ops.role_meaning("antigravity", "claude", "codex") == (
+        "antigravity writes the code → claude runs the tests → codex reviews and commits."
+    )
+
+
