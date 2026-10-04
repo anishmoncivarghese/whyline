@@ -4320,3 +4320,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7c881c7295bc455fa7ee52bb664e38ff -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T11:49:18.808Z"} -->
+
+## 2026-10-04 — Plans are plans/<slug>.plan.md with a whyline-plan v1 marker on line 1
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-11
+
+**Because:** Set up must find every plan automatically, and the relay parser ignores non-task lines
+
+**Rejected:**
+
+- Keep one plan.md — users keep several plans
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 4d5cad70bef44ddfa77fc7b47a0537ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:34:30.710Z"} -->
+
+## 2026-10-04 — Approve named plan files, question helpers, and reviewed planner attribution
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-11
+
+**Because:** The implementation matches RPF-11, exercises the new relay APIs with real integration tests, passes the focused and full test suites, and has no functional or safety defects
+
+**Rejected:**
+
+- Request changes — no substantive defect was found
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: e6b5d2374fab4016afc621fc1f2af199 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:38:15.088Z"} -->

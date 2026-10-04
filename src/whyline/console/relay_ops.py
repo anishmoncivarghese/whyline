@@ -4,14 +4,30 @@ presentation. whyline_relay is imported inside each function, like
 adapters.py does, so the console imports without it."""
 from __future__ import annotations
 
+import re
 import shutil
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass, replace as dc_replace
+from datetime import datetime
 from pathlib import Path
 
 from whyline.console.adapters import BRAINSTORM_LABELS
 
+PLANS_DIR = "plans"
+_MARKER = "<!-- whyline-plan v1"
+_SOURCE_LABELS = {"planner": "draft"}
 _DEFAULT_ROLES = {"implementer": "codex", "tester": "claude", "reviewer": "claude"}
+
+
+@dataclass(frozen=True)
+class PlanInfo:
+    path: Path
+    name: str
+    source: str
+    created: str
+    done: int
+    total: int
 
 
 @dataclass(frozen=True)
@@ -55,21 +71,163 @@ def validate_plan(text: str) -> list[str]:
     return planner.validate(text)
 
 
-def save_pasted_plan(root: Path, text: str, *, replace: bool = False) -> Path:
+def plan_slug(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40].rstrip("-")
+    return slug or "plan"
+
+
+def plan_path(root: Path, name: str) -> Path:
+    return root / PLANS_DIR / f"{plan_slug(name)}.plan.md"
+
+
+def with_marker(text: str, *, source: str, drafted_by: str, now: datetime | None = None) -> str:
+    created = (now or datetime.now().astimezone()).isoformat(timespec="seconds")
+    lines = text.splitlines()
+    if lines and lines[0].startswith(_MARKER):
+        lines = lines[1:]
+    body = "\n".join(lines).strip("\n")
+    return (
+        f"{_MARKER} | source: {source} | drafted-by: {drafted_by} | "
+        f"created: {created} -->\n{body}\n"
+    )
+
+
+def _marker_fields(first_line: str) -> dict | None:
+    if not first_line.startswith(_MARKER):
+        return None
+    fields = {}
+    for part in first_line.strip().removesuffix("-->").split("|")[1:]:
+        key, _, value = part.partition(":")
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def _counts(text: str) -> tuple[int, int] | None:
+    from whyline_relay import plan
+
+    try:
+        tasks = plan.parse(text)
+    except plan.PlanError:
+        return None
+    if not tasks:
+        return None
+    return sum(task.checked for task in tasks), len(tasks)
+
+
+def list_plans(root: Path) -> list[PlanInfo]:
+    """Every saved plan, newest first; a valid legacy plan.md last."""
+    found: list[PlanInfo] = []
+    folder = root / PLANS_DIR
+    for path in sorted(folder.glob("*.plan.md")) if folder.is_dir() else []:
+        text = path.read_text(encoding="utf-8")
+        fields = _marker_fields(text.split("\n", 1)[0])
+        counts = _counts(text)
+        if fields is None or counts is None:
+            continue
+        found.append(PlanInfo(
+            path, path.name.removesuffix(".plan.md"), fields.get("source", ""),
+            fields.get("created", ""), *counts,
+        ))
+    found.sort(key=lambda info: info.created, reverse=True)
+    legacy = root / "plan.md"
+    if legacy.is_file():
+        counts = _counts(legacy.read_text(encoding="utf-8"))
+        if counts:
+            found.append(PlanInfo(legacy, "plan.md (older format)", "hand", "", *counts))
+    return found
+
+
+def _approve_marked(
+    root: Path, text: str, *, name: str, source: str, drafted_by: str,
+    replace: bool, clear_checkpoint: bool = False,
+) -> Path:
     from whyline_relay import config, planner
 
-    problems = planner.validate(text)
-    if problems:
-        raise ValueError("\n".join(problems))
-    source = config.relay_dir(root) / "pasted-plan.md"
-    source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+    staged = config.relay_dir(root) / "approved-plan.md"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text(with_marker(text, source=source, drafted_by=drafted_by), encoding="utf-8")
     try:
         return planner.approve(
-            root, _settings(root), source, drafted_by="hand", replace=replace
+            root, _settings(root), staged, drafted_by=drafted_by, replace=replace,
+            clear_checkpoint=clear_checkpoint, target=plan_path(root, name),
         )
     finally:
-        source.unlink(missing_ok=True)
+        staged.unlink(missing_ok=True)
+
+
+def configured_plan(root: Path) -> Path | None:
+    try:
+        return root / _settings(root).plan
+    except Exception:  # unreadable config
+        return None
+
+
+def select_plan(root: Path, path: Path) -> None:
+    from whyline_relay import setup
+
+    setup.write_plan(root, path.relative_to(root).as_posix())
+
+
+def planner_agents(root: Path) -> tuple[str, str]:
+    try:
+        planner_cfg = _settings(root).planner
+    except Exception:
+        return ("codex", "claude")
+    return planner_cfg.draft, planner_cfg.review
+
+
+def save_planner(root: Path, draft: str, review: str) -> None:
+    from whyline_relay import setup
+
+    setup.write_planner(root, draft, review)
+
+
+def plan_questions_error():
+    from whyline_relay import planner
+
+    return planner.PlanQuestions
+
+
+def answer_plan(root: Path, answers: str, *, progress) -> Draft:
+    from whyline_relay import planner
+
+    return _planner_draft(
+        root, planner.answer(root, _settings(root), answers, print_fn=progress)
+    )
+
+
+def open_questions(text: str) -> list[str]:
+    found: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line[3:].strip().lower() == "open questions"
+            continue
+        if inside:
+            match = re.match(r"^\s*(?:[-*]|\d+[.)])\s+(.*\S)", line)
+            if match:
+                found.append(match.group(1))
+    return found
+
+
+def question_feedback(questions: Sequence[str], answers: str) -> str:
+    asked = "\n".join(f"{n}. {q}" for n, q in enumerate(questions, 1))
+    return (
+        f"You listed these open questions:\n{asked}\nThe human answered:\n"
+        f"{answers.strip()}\nRewrite the whole plan with these decisions, and "
+        "remove the answered questions from ## Open questions."
+    )
+
+
+def save_pasted_plan(root: Path, text: str, name: str, *, replace: bool = False) -> Path:
+    problems = validate_plan(text)
+    if problems:
+        raise ValueError("\n".join(problems))
+    return _approve_marked(
+        root, text, name=name, source="paste", drafted_by="hand", replace=replace
+    )
 
 
 def missing_references(root: Path, refs: list[str]) -> list[str]:
@@ -93,10 +251,11 @@ def draft_description(description: str, refs: list[str]) -> str:
 
 
 def _planner_draft(root: Path, path: Path) -> Draft:
+    cfg = _settings(root).planner
     return Draft(
         path=path,
         text=path.read_text(encoding="utf-8"),
-        drafted_by=_settings(root).planner.draft,
+        drafted_by=f"{cfg.draft} (reviewed by {cfg.review})",
         source="planner",
     )
 
@@ -156,13 +315,12 @@ def revise_plan(root: Path, draft: Draft, feedback: str, *, progress) -> Draft:
     return dc_replace(draft, text=draft.path.read_text(encoding="utf-8"))
 
 
-def approve_plan(root: Path, draft: Draft, *, replace: bool = False) -> Path:
-    from whyline_relay import planner
-
-    return planner.approve(
+def approve_plan(root: Path, draft: Draft, name: str, *, replace: bool = False) -> Path:
+    return _approve_marked(
         root,
-        _settings(root),
-        draft.path,
+        draft.path.read_text(encoding="utf-8"),
+        name=name,
+        source=_SOURCE_LABELS.get(draft.source, draft.source),
         drafted_by=draft.drafted_by,
         replace=replace,
         clear_checkpoint=draft.source == "planner",

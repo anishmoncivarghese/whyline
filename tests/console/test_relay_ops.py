@@ -1,7 +1,10 @@
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pytest
 from whyline.console import adapters, relay_ops
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def _git(root: Path, *args: str) -> str:
@@ -21,25 +24,41 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_save_pasted_plan_commits_plan_md(repo):
-    path = relay_ops.save_pasted_plan(repo, "- [ ] T-1: build it")
-    assert path == repo / "plan.md"
-    assert path.read_text() == "- [ ] T-1: build it\n"
-    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["plan.md"]
-    assert not (repo / ".whyline" / "relay" / "pasted-plan.md").exists()
+def test_plan_slug():
+    assert relay_ops.plan_slug("Build the PRD: Trading Platform v1!") == "build-the-prd-trading-platform-v1"
+    assert relay_ops.plan_slug("x" * 60) == "x" * 40
+    assert relay_ops.plan_slug("!!!") == "plan"
+
+
+def test_with_marker_puts_one_marker_on_line_one():
+    now = datetime(2026, 10, 4, 10, 12, tzinfo=IST)
+    text = relay_ops.with_marker("- [ ] T-1: x\n", source="paste", drafted_by="hand", now=now)
+    assert text == (
+        "<!-- whyline-plan v1 | source: paste | drafted-by: hand | "
+        "created: 2026-10-04T10:12:00+05:30 -->\n- [ ] T-1: x\n"
+    )
+    again = relay_ops.with_marker(text, source="draft", drafted_by="codex", now=now)
+    assert again.count("whyline-plan v1") == 1 and "source: draft" in again
+
+
+def test_save_pasted_plan_writes_a_named_plan(repo):
+    path = relay_ops.save_pasted_plan(repo, "- [ ] T-1: build it", "My Plan")
+    assert path == repo / "plans" / "my-plan.plan.md"
+    assert path.read_text().splitlines()[0].startswith("<!-- whyline-plan v1 | source: paste")
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["plans/my-plan.plan.md"]
 
 
 def test_save_pasted_plan_rejects_prose(repo):
     with pytest.raises(ValueError, match="no tasks"):
-        relay_ops.save_pasted_plan(repo, "just words")
+        relay_ops.save_pasted_plan(repo, "just words", "p")
 
 
 def test_save_pasted_plan_asks_before_replacing(repo):
-    (repo / "plan.md").write_text("- [ ] OLD-1: old\n")
+    relay_ops.save_pasted_plan(repo, "- [ ] OLD-1: old\n", "p")
     with pytest.raises(relay_ops.plan_exists_error()):
-        relay_ops.save_pasted_plan(repo, "- [ ] T-1: new\n")
-    relay_ops.save_pasted_plan(repo, "- [ ] T-1: new\n", replace=True)
-    assert (repo / "plan.md").read_text() == "- [ ] T-1: new\n"
+        relay_ops.save_pasted_plan(repo, "- [ ] T-1: new\n", "p")
+    relay_ops.save_pasted_plan(repo, "- [ ] T-1: new\n", "p", replace=True)
+    assert "T-1: new" in (repo / "plans" / "p.plan.md").read_text()
 
 
 def test_missing_references_resolves_home_relative_and_spaces(
@@ -163,3 +182,98 @@ def test_current_roles_keep_configured_agents_that_are_not_installed(repo, monke
     assert relay_ops.current_roles(repo) == {
         "implementer": "antigravity", "tester": "grok", "reviewer": "codex", "backup": ["claude"],
     }
+
+
+def test_list_plans_reads_markers_counts_and_the_legacy_plan(repo):
+    plans = repo / "plans"
+    plans.mkdir()
+    (plans / "old.plan.md").write_text(
+        "<!-- whyline-plan v1 | source: draft | drafted-by: codex | created: 2026-10-01T09:00:00+05:30 -->\n"
+        "- [x] A-1: done\n- [ ] A-2: todo\n")
+    (plans / "new.plan.md").write_text(
+        "<!-- whyline-plan v1 | source: brainstorm | drafted-by: claude | created: 2026-10-03T09:00:00+05:30 -->\n"
+        "- [ ] B-1: todo\n")
+    (plans / "no-marker.plan.md").write_text("- [ ] C-1: x\n")
+    (plans / "no-tasks.plan.md").write_text(
+        "<!-- whyline-plan v1 | source: paste | drafted-by: hand | created: 2026-10-02T00:00:00+05:30 -->\nprose\n")
+    (repo / "plan.md").write_text("- [ ] L-1: legacy\n")
+    found = relay_ops.list_plans(repo)
+    assert [(p.name, p.source, p.done, p.total) for p in found] == [
+        ("new", "brainstorm", 0, 1),
+        ("old", "draft", 1, 2),
+        ("plan.md (older format)", "hand", 0, 1),
+    ]
+
+
+def test_select_plan_and_configured_plan(repo):
+    path = relay_ops.save_pasted_plan(repo, "- [ ] T-1: x\n", "a")
+    relay_ops.select_plan(repo, path)
+    assert relay_ops.configured_plan(repo) == path
+
+
+def test_planner_agents_default_and_saved(repo):
+    assert relay_ops.planner_agents(repo) == ("codex", "claude")
+    relay_ops.save_planner(repo, "claude", "codex")
+    assert relay_ops.planner_agents(repo) == ("claude", "codex")
+
+
+def test_open_questions_reads_only_that_section():
+    text = (
+        "# Plan\n\n## Open questions\n1. Which broker? (a) Kite (b) Upstox\n"
+        "- Paper trading in V1?\n\n## Phase 1\n- [ ] T-1: x\n"
+    )
+    assert relay_ops.open_questions(text) == [
+        "Which broker? (a) Kite (b) Upstox", "Paper trading in V1?",
+    ]
+    assert relay_ops.open_questions("- [ ] T-1: x\n") == []
+
+
+def test_question_feedback():
+    assert relay_ops.question_feedback(["Which broker?"], "Kite") == (
+        "You listed these open questions:\n1. Which broker?\nThe human answered:\nKite\n"
+        "Rewrite the whole plan with these decisions, and remove the answered "
+        "questions from ## Open questions."
+    )
+
+
+def test_approve_plan(repo):
+    draft_path = repo / "draft.md"
+    draft_path.write_text("- [ ] T-1: approved\n")
+    draft = relay_ops.Draft(
+        path=draft_path,
+        text="- [ ] T-1: approved\n",
+        drafted_by="codex (reviewed by claude)",
+        source="planner",
+    )
+    path = relay_ops.approve_plan(repo, draft, "Approved Plan")
+    assert path == repo / "plans" / "approved-plan.plan.md"
+    lines = path.read_text().splitlines()
+    assert lines[0].startswith("<!-- whyline-plan v1 | source: draft | drafted-by: codex (reviewed by claude)")
+    assert lines[1] == "- [ ] T-1: approved"
+
+
+def test_planner_draft_drafted_by(repo):
+    draft_path = repo / "d.md"
+    draft_path.write_text("- [ ] T-1: x\n")
+    draft = relay_ops._planner_draft(repo, draft_path)
+    assert draft.drafted_by == "codex (reviewed by claude)"
+
+
+def test_plan_questions_error():
+    from whyline_relay import planner
+
+    assert relay_ops.plan_questions_error() is planner.PlanQuestions
+
+
+def test_answer_plan(repo, monkeypatch):
+    from whyline_relay import planner
+
+    calls = []
+    draft_path = repo / "answered.md"
+    draft_path.write_text("- [ ] T-1: answered\n")
+    monkeypatch.setattr(
+        planner, "answer", lambda root, settings, answers, print_fn=None: calls.append(answers) or draft_path
+    )
+    draft = relay_ops.answer_plan(repo, "answer 1", progress=lambda line: None)
+    assert calls == ["answer 1"]
+    assert draft.path == draft_path
