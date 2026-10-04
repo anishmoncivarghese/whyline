@@ -1,7 +1,7 @@
 # Relay plan flow: background planning, questions, named plans
 
 Date: 2026-10-04
-Status: draft for review
+Status: approved 2026-10-04 (sections 8-9 added the same day)
 Repos: whyline-relay (relay 0.2.27) and whyline (console)
 
 ## Why
@@ -38,22 +38,30 @@ Testing the console in a fresh repo (TradingPlatform) showed five problems:
   a typed `start`.
 - Plan lets the user pick the models.
 
-Out of scope: relay adapters for grok and antigravity. They stay
-brainstorm-only, and Set up says so (see Set up below).
+Added on 2026-10-04, after a brainstorm in TradingPlatform skipped grok and
+antigravity ("not set up for chat here") and reported Claude's usage limit
+as "generic non-zero failure":
+
+- grok and antigravity are set up automatically in every repository, for
+  chat, brainstorm and every relay role, with no hand-written config. For
+  Antigravity's machine-wide trust setting, the console **asks once per
+  repository** (section 8).
+- A failed agent turn says why, in the agent's own words. A usage limit is
+  recognised as one (section 9).
 
 ## Design
 
 ### 1. Plan files
 
 - Every plan lives at `plans/<slug>.plan.md`. `<slug>` comes from a "Plan
-  name" field in the Plan popup, prefilled from the first words of the
-  description, the brainstorm topic or the pasted plan's first heading
-  (lower-case, `[a-z0-9-]`, at most 40 characters). If the name is already
+  name" field in the Plan popup. Left empty, the name is taken from the
+  description, the brainstorm topic or the pasted plan's first heading.
+  The slug is lower-case `[a-z0-9-]`, at most 40 characters. If the name is already
   taken, the user is asked "Replace it?" (the existing `ConfirmScreen`).
 - The first line of the file is the marker, a Markdown comment:
 
   ```
-  <!-- whyline-plan v1 | source: draft | drafted-by: codex, reviewed-by: claude | created: 2026-10-04T10:12:00+05:30 -->
+  <!-- whyline-plan v1 | source: draft | drafted-by: codex (reviewed by claude) | created: 2026-10-04T10:12:00+05:30 -->
   ```
 
   `source` is `draft`, `paste` or `brainstorm`. The relay's plan parser
@@ -196,10 +204,9 @@ Console:
 - No plans: the form shows "No plan yet. Make one first." and a **Make a
   plan** button, which closes Set up and opens Plan. Check and Start are
   disabled.
-- Role dropdowns are unchanged (`relay_agents()`, today claude and codex).
-  Under them is a dim line: `grok, antigravity: brainstorm only (the relay
-  can't run them yet)`. It lists only the agents that are installed but have
-  no relay adapter.
+- Role and backup choices list every agent the relay can run that is
+  installed (`relay_ops.relay_agents(root)`, section 8): claude, codex,
+  antigravity and grok when all four are on PATH.
 - Check saves the roles and the chosen plan (`setup.write_plan`), then runs
   preflight. Changing the plan clears the check result, like any other edit.
 - A typed `start` with no listed plan and no `plan.md` is refused with "No
@@ -217,6 +224,85 @@ Console:
   to finish, exactly as for chat and brainstorm today, and its handoff is
   picked up by the next Resume.
 
+### 8. grok and antigravity work in every repository
+
+**Why it happened:** the relay knows built-in commands only for claude and
+codex. agentdock works because its `.whyline/relay/config.toml` has
+hand-written `[agents.antigravity]` and `[agents.grok]` tables (the README
+recipes); TradingPlatform has no config, so `chat.resolve_command` raises
+"not configured for chat in this repo" and the brainstorm skips them.
+
+**Relay change:** a new `whyline_relay.recipes` module holds the two README
+recipes as defaults:
+
+- `antigravity`: `["agy", "--output-format", "json", "--mode", "accept-edits",
+  "--add-dir", ".", "--new-project", "-p"]`
+- `grok`: the recipe in agentdock's config (deny `git push` and `rm -rf`;
+  allow Edit, git add/commit/diff/status/log, whyline, python3, uv, mkdir, ls,
+  find, touch, cat; `-p` last).
+
+`config.load` adds each recipe as a generic agent when the repository's
+config doesn't define that name. It does not look at PATH, so loading stays
+deterministic; a missing binary is reported where the agent is used, as it
+is for claude and codex today ("skipped: missing executable"). A
+repository's own `[agents.<name>]` always wins, so customised commands are
+untouched. Role, backup and `[planner]` validation then accept both names
+everywhere.
+
+**Console change:** `relay_ops.relay_agents(root)` returns the agents in the
+loaded config whose binary is on PATH (`agy` for antigravity), sorted. Set
+up, Plan's Drafter/Reviewer and the backup checkboxes all use it.
+
+**Antigravity's trust (asked once per repository):** `agy` refuses even to
+read files unless the repository is listed in `trustedWorkspaces` in
+`~/.gemini/antigravity-cli/settings.json`, and that file covers the whole
+machine. Relay change: `whyline_relay.antigravity` gets
+`is_trusted(root) -> bool` and `trust(root) -> Path`. `trust` adds the
+resolved repository path to `trustedWorkspaces` and adds the four verified
+`permissions.allow` entries (`read_file(*)`, `write_file(*)`, `edit_file(*)`,
+`command(*)`) when missing, keeping every other key in the file and writing
+it atomically.
+
+Before the console starts anything that runs antigravity (a brainstorm that
+includes it, a chat turn with it, a plan job or relay run that gives it a
+role), it checks `is_trusted`. If the repository isn't trusted and the user
+hasn't declined for this repository, it asks:
+
+> Antigravity can only read and edit files in folders listed in
+> ~/.gemini/antigravity-cli/settings.json, a setting for the whole machine.
+> Add <repo path> to it, and allow Antigravity's file and command tools?
+
+- **Trust it** calls `trust(root)`, then carries on.
+- **Not now** records the refusal in `.whyline/relay/antigravity-declined`
+  (git-ignored through `RELAY_IGNORE`) and carries on without antigravity:
+  a brainstorm drops it with the line "Skipping Antigravity: this repo isn't
+  trusted in its settings (Model → Antigravity to ask again)"; a chat turn
+  or relay run that needs it stops with that reason instead.
+- Choosing antigravity explicitly with Model, or as a role in Set up, removes
+  the refusal file and asks again.
+
+### 9. Failures say why
+
+**Why it happened:** when an agent's turn finishes but fails,
+`brainstorm.py` prints only `classify_failure`'s category and drops the
+agent's own text. The rate-limit check knows "usage limit" and "rate limit",
+but not Claude's newer wording, so a usage limit fell through to "generic
+non-zero failure".
+
+**Relay changes:**
+
+- `agents.RATE_LIMIT_MARKERS` gains `"hit your limit"`, `"limit reached"`,
+  `"session limit"`, `"weekly limit"` and `"out of credits"`.
+- A new `brainstorm.failure_reason(record=None, error=None) -> str` returns
+  `"<category> — <detail>"`. The detail is the agent's extracted response,
+  or the last non-blank line of its raw output, printable characters only,
+  at most 160 characters, and is left out when empty or equal to the
+  category. Every place that reports a failed turn (pass zero, review
+  passes, final synthesis, the plan writer) uses it for both the progress
+  line and the status record:
+
+  `[1/4] Claude failed pass-zero (4s): quota/rate-limit — You've hit your limit · resets 3pm`
+
 ## Testing
 
 Relay (pytest, with the fake agents in `tests/fake_pipeline_agent.py`):
@@ -230,6 +316,16 @@ Relay (pytest, with the fake agents in `tests/fake_pipeline_agent.py`):
 - `write_plan` and `write_planner` change only their keys and keep a
   hand-edited config.
 - The settings-file fix (`tests/test_planner_permission_files.py`, done).
+- With no config, `config.load` has `antigravity` and `grok` as generic
+  agents with the recipe commands. A repository's own `[agents.grok]` wins.
+  `roles.implementer = "grok"` loads without an error.
+- `chat.resolve_command(settings, "grok")` works with no config.
+- `antigravity.trust` adds the repository once, keeps unrelated keys, and
+  creates the file when it is missing. `is_trusted` reads it back.
+- A turn whose output says "You've hit your limit · resets 3pm" is
+  classified as quota/rate-limit, and the progress line includes that text.
+- An exit with an unknown error shows the agent's last line after the
+  category.
 
 Console (pytest + Textual pilot, existing `tests/console` patterns):
 
@@ -244,12 +340,22 @@ Console (pytest + Textual pilot, existing `tests/console` patterns):
 - Set up with no plans disables Check and Start and offers Make a plan.
   With two plans, the chosen one is written to the config.
 - A typed `start` with no plan is refused.
+- `relay_agents(root)` lists grok and antigravity when their binaries are on
+  PATH, and leaves them out when they aren't.
+- A brainstorm that includes antigravity in an untrusted repository asks
+  once. Trust calls `trust`. Not now writes the refusal file, drops
+  antigravity with the skip line, and doesn't ask again.
 
 ## Releases
 
-1. whyline-relay 0.2.27: the settings-file fix, `PlanQuestions`, `answer`,
-   `approve(target=)`, `write_plan`, `write_planner` and the prompt sentences.
-2. whyline 0.3.31: requires `whyline-relay>=0.2.27,<0.3` and contains the
-   console changes.
+0. whyline-relay 0.2.27: the settings-file fix. **Published 2026-10-04.**
+1. whyline-relay 0.2.28: sections 8 and 9 (agent recipes, Antigravity trust,
+   failure reasons).
+2. whyline 0.3.31: requires `whyline-relay>=0.2.28,<0.3`, and adds the
+   automatic agent list and the trust question.
+3. whyline-relay 0.2.29: `PlanQuestions`, `answer`, `approve(target=)`,
+   `write_plan`, `write_planner` and the prompt sentences.
+4. whyline 0.3.32: requires `whyline-relay>=0.2.29,<0.3` and contains the
+   plan-flow console changes (sections 1-7).
 
 Both are published only after the user approves the release.
