@@ -4620,3 +4620,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 65bf1c684cb84eca927e8c67e9cb0d9a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:56:42.355Z"} -->
+
+## 2026-10-04 — Approve and release Part D (RPF-11..16) as whyline 0.3.32, with a fix: Check prepares agents' settings files
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RPF-17
+
+**Because:** an unstubbed end-to-end Run in a fresh repo failed its checks on a missing claude-settings.json; after the fix all checks pass, Start enables and the tree stays clean
+
+**Rejected:**
+
+- Release Part D as committed — the guided Run would dead-end for every new user at 'run whyline-relay init'
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 0d5ea4c8ffa845408bb577294d0e638e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:11:18.920Z"} -->
