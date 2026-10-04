@@ -14,7 +14,7 @@ never write outside tmp_path. Paths shown to people use .as_posix(). The
 bottom bar and input row must fit 80 columns. Never push, tag, bump the
 version or publish -- a human releases afterwards.
 
-- [ ] ATT-6: Staging, limits, drag-and-drop parsing, cleanup
+- [x] ATT-6: Staging, limits, drag-and-drop parsing, cleanup
   Implement "Task 6" from the plan: src/whyline/console/attachments.py
   (Attachment, PendingAttachments, stage with the 25 MB / 50 MB / 10-file
   limits, safe_name, ensure_ignored verified by git check-ignore,
