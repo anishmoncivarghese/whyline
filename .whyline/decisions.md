@@ -4354,3 +4354,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e6b5d2374fab4016afc621fc1f2af199 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:38:15.088Z"} -->
+
+## 2026-10-04 — Plan job logic lives in plan_job.py with no widgets
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-12
+
+**Because:** tui.py is already 850+ lines; the request/outcome rules are testable without Textual
+
+**Files:** src/whyline/console/plan_job.py
+
+<!-- whyline-event: c873d63df3bc426180067421dd98dd1e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:43:53.293Z"} -->
+
+## 2026-10-04 — open_questions stops at task checkboxes so unheaded task lists are not parsed as questions
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-12
+
+**Because:** a draft with tasks directly following ## Open questions without another heading treated every task as an open question
+
+**Rejected:**
+
+- Require explicit ## Tasks heading — brainstorm drafts can transition directly to task lists
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 21b54ab3824045feaaf9ca04f89b2f2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:43:56.459Z"} -->
+
+## 2026-10-04 — Approve the plan job model and open-question task boundary
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-12
+
+**Because:** The implementation matches RPF-12, the tests exercise every request and response path plus the unheaded checkbox boundary, and the full suite passes
+
+**Rejected:**
+
+- Request changes — no substantive defect was found
+
+**Files:** src/whyline/console/plan_job.py, src/whyline/console/relay_ops.py, tests/console/test_plan_job.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: b6bb4db38ccf40f2aa844be1c9d81ce1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:45:49.329Z"} -->

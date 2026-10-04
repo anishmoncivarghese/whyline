@@ -206,6 +206,8 @@ def open_questions(text: str) -> list[str]:
             inside = line[3:].strip().lower() == "open questions"
             continue
         if inside:
+            if re.match(r"^\s*[-*]\s+\[[ xX]\]", line):
+                break
             match = re.match(r"^\s*(?:[-*]|\d+[.)])\s+(.*\S)", line)
             if match:
                 found.append(match.group(1))

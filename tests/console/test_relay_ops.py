@@ -226,6 +226,7 @@ def test_open_questions_reads_only_that_section():
         "Which broker? (a) Kite (b) Upstox", "Paper trading in V1?",
     ]
     assert relay_ops.open_questions("- [ ] T-1: x\n") == []
+    assert relay_ops.open_questions("## Open questions\n1. Question?\n\n- [ ] T-1: task\n") == ["Question?"]
 
 
 def test_question_feedback():
