@@ -4303,3 +4303,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 135f0744c95243f48e5ffc5d3742ad6f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T11:40:02.472Z"} -->
+
+## 2026-10-04 — Fix current_roles to validate against every known relay agent, not only installed ones; re-tag v0.3.31 on the fix
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RPF-7
+
+**Because:** CI (no agent CLIs) showed configured roles silently replaced by defaults; v0.3.31 had published nothing, so moving the tag keeps the version plan
+
+**Rejected:**
+
+- Release as 0.3.32 — shifts every planned version for an unpublished tag
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 7c881c7295bc455fa7ee52bb664e38ff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T11:49:18.808Z"} -->
