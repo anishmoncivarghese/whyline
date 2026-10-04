@@ -36,7 +36,7 @@
 
 ---
 
-### Task 1: Spike: read-only, denials, headless, logins (human)
+### Task 1: Spike: read-only, denials, headless, logins (human) — DONE 2026-10-04 (except step 5, done in Task 16), see `docs/agents-capabilities.md`
 
 **Files:**
 - Create: `docs/agents-capabilities.md`
@@ -740,7 +740,7 @@ git commit -m "feat: agent run records, reports and ledger events (AG-3)"
 **Interfaces:**
 - Produces: `READ_ONLY: dict[str, Callable[[list[str]], list[str]]]`; `read_only_command(cli, command) -> list[str] | None`; `DENIALS: dict[str, Callable[[str], bool]]`; `denied(cli, raw) -> bool`; `LOGIN_MARKERS: tuple[str, ...]`; `UNATTENDED_OK: frozenset[str]`; `can_run(cli) -> bool`; `can_run_unattended(cli) -> bool`.
 
-The values below are the expected results. **Before this task runs, Task 1 must have confirmed or corrected them**; use exactly what `docs/agents-capabilities.md` records. Leave out any CLI whose read-only setting the spike could not verify, and change the tests to match.
+The values below are what the spike verified on 2026-10-04 (`docs/agents-capabilities.md`). Codex `-s read-only`, Claude `--permission-mode plan` and Grok's deny rules all blocked the write. Grok's and Antigravity's own "plan" modes did **not**, so Antigravity is left out.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -793,7 +793,8 @@ def test_denials():
 
 
 def test_unattended_list():
-    assert c.can_run_unattended("claude") and c.can_run_unattended("codex")
+    assert all(c.can_run_unattended(x) for x in ("claude", "codex", "grok"))
+    assert not c.can_run("antigravity")  # spike: --mode plan still wrote files
 ```
 
 - [ ] **Step 2: Run and verify they fail**
@@ -880,10 +881,11 @@ DENIALS: dict[str, Callable[[str], bool]] = {
     "grok": lambda raw: _json(raw).get("stopReason") == "cancelled",
 }
 
-LOGIN_MARKERS = ("not logged in", "please log in", "login required", "auth login",
-                 "authentication", "unauthorized", "sign in")
+LOGIN_MARKERS = ("not logged in", "not signed in", "please log in", "login required",
+                 "auth login", "authentication", "unauthorized", "401", "sign in")
 
-UNATTENDED_OK = frozenset({"claude", "codex"})
+# Spike 2026-10-04: all three passed read-only, headless and logged-out checks.
+UNATTENDED_OK = frozenset({"claude", "codex", "grok"})
 
 
 def read_only_command(cli: str, command: list[str]) -> list[str] | None:
@@ -3123,6 +3125,7 @@ def test_plist_runs_whyline_tick_every_two_minutes(home):
     assert data["ProgramArguments"] == ["/opt/bin/whyline", "agents", "tick"]
     assert data["StartInterval"] == 120 and data["RunAtLoad"] is True
     assert data["EnvironmentVariables"]["PATH"] == "/opt/cli:/usr/bin:/bin"
+    assert data["EnvironmentVariables"]["USER"]  # claude needs it to find its login
     assert data["StandardOutPath"].endswith(".whyline/agents/scheduler.log")
 
 
@@ -3163,6 +3166,7 @@ seconds and at login (spec section 5). No admin rights; launchd gives a
 LaunchAgent no shell PATH, so the CLIs' folders are written into it."""
 from __future__ import annotations
 
+import getpass
 import os
 import plistlib
 import shutil
@@ -3205,7 +3209,9 @@ def render_plist(whyline_path: str, path_env: str) -> bytes:
         "ProgramArguments": [whyline_path, "agents", "tick"],
         "StartInterval": 120,
         "RunAtLoad": True,
-        "EnvironmentVariables": {"PATH": path_env, "HOME": str(Path.home())},
+        # Claude reads its login from the Keychain only when USER is set (spike).
+        "EnvironmentVariables": {"PATH": path_env, "HOME": str(Path.home()),
+                                 "USER": getpass.getuser(), "LOGNAME": getpass.getuser()},
         "StandardOutPath": log,
         "StandardErrorPath": log,
     })
