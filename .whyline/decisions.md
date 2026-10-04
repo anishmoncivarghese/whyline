@@ -4650,3 +4650,35 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4e1dc6b1d04a47fea8715dd00d440287 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:32:40.133Z"} -->
+
+## 2026-10-04 — Agents mode first release = brainstorm Phases 0-2: read-only agents, repo and personal, run now + schedules + folder watch + trigger command, main/backup CLI, history/notification/report file
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AGENTS
+
+**Because:** user chose phases 0-2, both agent kinds, history+notification+report, explicit backups, and folder/trigger events; one heartbeat LaunchAgent handles sleep/wake/off uniformly
+
+**Rejected:**
+
+- One launchd plist per agent or per watched folder — more moving parts, launchd coalescing is not a source of truth
+- Reading other apps' notifications — no supported macOS API
+- Gmail/Outlook triggers — need tokens or passwords, against subscriptions-only
+
+**Files:** docs/superpowers/specs/2026-10-04-agents-mode-design.md
+
+<!-- whyline-event: e87843f23f034f41ae09b7394c644aed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:47:18.818Z"} -->
+
+## 2026-10-04 — Agents plan: 17 tasks in two releases; spike and releases by a human; scheduler polls folders from one 2-minute tick
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AGENTS
+
+**Because:** phase 1 is useful alone (run now + backups); phase 2 adds scheduling once records are trustworthy; one heartbeat avoids per-folder launchd jobs
+
+**Files:** docs/superpowers/plans/2026-10-04-agents-mode.md
+
+<!-- whyline-event: a30342c4defd4196a9b9528d4a9e7eda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:58:01.255Z"} -->
