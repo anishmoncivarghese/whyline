@@ -34,7 +34,7 @@
 
 ---
 
-### Task 1: Spike: what each agent can open (run by Claude or a human, not the relay)
+### Task 1: Spike: what each agent can open (run by Claude or a human, not the relay) — DONE 2026-10-04, see `docs/attachments-capabilities.md`
 
 This task runs real agent CLIs, which need logins and use quota, so the relay cannot run it from inside another agent's turn.
 
@@ -135,11 +135,13 @@ def test_kind_of_reads_signatures(tmp_path):
 def test_delivery_table(tmp_path):
     settings = config.load(tmp_path)
     assert attachments.delivery(settings, "codex", "image") == "native"
-    assert attachments.delivery(settings, "claude", "image") == "path"
-    assert attachments.delivery(settings, "grok", "image") == "path-unverified"
-    assert attachments.delivery(settings, "antigravity", "image") == "path-unverified"
-    for agent in ("codex", "claude", "grok", "antigravity"):
+    for agent in ("claude", "grok", "antigravity"):
+        assert attachments.delivery(settings, agent, "image") == "path"
+    for agent in ("codex", "claude", "antigravity"):
         assert attachments.delivery(settings, agent, "file") == "path"
+    assert attachments.delivery(settings, "grok", "file") == "path-unverified"
+    assert attachments.delivery(settings, "mystery", "image") == "path-unverified"
+    assert attachments.delivery(settings, "mystery", "file") == "path"
 
 
 def test_prompt_block_lists_relative_paths_and_marks_them_as_data(tmp_path):
@@ -193,10 +195,13 @@ from whyline_relay import config
 Delivery = Literal["native", "path", "path-unverified"]
 
 _TABLE: dict[str, dict[str, Delivery]] = {
+    # Verified by the attachments spike, 2026-10-04 (whyline:
+    # docs/attachments-capabilities.md). grok read a PNG and a PDF by path
+    # but stopped "cancelled" on an RTF, so its files stay unverified.
     "codex": {"image": "native", "file": "path"},
     "claude": {"image": "path", "file": "path"},
-    "grok": {"image": "path-unverified", "file": "path"},
-    "antigravity": {"image": "path-unverified", "file": "path"},
+    "antigravity": {"image": "path", "file": "path"},
+    "grok": {"image": "path", "file": "path-unverified"},
 }
 _GENERIC: dict[str, Delivery] = {"image": "path-unverified", "file": "path"}
 

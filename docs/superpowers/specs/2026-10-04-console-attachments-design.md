@@ -144,16 +144,17 @@ the plan / Start with any ⚠ asks the same one-time question.
 New module `whyline_relay.attachments`:
 
 - `Delivery = Literal["native", "path", "path-unverified"]`.
-- `delivery(settings, agent: str, kind: str) -> Delivery`. The table
-  starts as below and is updated from the spike (see "Spike first"):
+- `delivery(settings, agent: str, kind: str) -> Delivery`:
 
   | agent | image | file |
   |---|---|---|
   | codex | native (`--image=<path>`) | path |
-  | claude | path (its Read tool opens images) | path |
-  | grok | path-unverified | path |
-  | antigravity | path-unverified | path |
-  | any generic agent | path-unverified | path |
+  | claude | path | path |
+  | antigravity | path | path |
+  | grok | path | path-unverified (an RTF stopped "cancelled"; a PDF worked) |
+  | any other generic agent | path-unverified | path |
+
+  Verified by the spike on 2026-10-04 (`docs/attachments-capabilities.md`).
 
 - `prompt_block(paths: list[Path], root: Path) -> str` returns
   ```
