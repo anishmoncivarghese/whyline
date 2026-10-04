@@ -15,7 +15,7 @@ class PlanRequest:
     name: str
     replace: bool = False
     description: str = ""
-    refs: tuple[str, ...] = ()
+    attachments: tuple[Path, ...] = ()
     drafter: str = ""
     reviewer: str = ""
     brainstorm: dict | None = None  # collect_brainstorm()'s choice, for a new one
@@ -52,7 +52,7 @@ def run_request(root: Path, request: PlanRequest, progress) -> Outcome:
         def draft():
             try:
                 return relay_ops.draft_plan(
-                    root, request.description, list(request.refs), progress=progress
+                    root, request.description, list(request.attachments), progress=progress
                 )
             except relay_ops.in_progress_error() as error:
                 raise RuntimeError(
@@ -64,7 +64,7 @@ def run_request(root: Path, request: PlanRequest, progress) -> Outcome:
         return _guarded(lambda: relay_ops.resume_draft(root, progress=progress))
     if request.source == "existing":
         return _guarded(lambda: relay_ops.plan_from_brainstorm(
-            root, request.topic, request.writer, progress=progress
+            root, request.topic, request.writer, progress=progress, attachments=list(request.attachments)
         ))
     choice = request.brainstorm
 
@@ -77,6 +77,7 @@ def run_request(root: Path, request: PlanRequest, progress) -> Outcome:
         return relay_ops.plan_from_brainstorm(
             root, choice["topic"], choice["final_agent"], progress=progress,
             timeout_minutes=choice["timeout_minutes"],
+            attachments=list(choice.get("attachments", ())),
         )
 
     return _guarded(brainstorm_then_plan)

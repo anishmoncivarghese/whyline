@@ -31,11 +31,11 @@ def test_a_draft_request_saves_the_agents_then_drafts(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(relay_ops, "save_planner", lambda root, d, r: calls.append(("planner", d, r)))
     monkeypatch.setattr(relay_ops, "draft_plan",
-                        lambda root, desc, refs, progress: calls.append(("draft", desc, refs)) or _draft(tmp_path))
-    request = plan_job.PlanRequest("draft", "p", description="Build", refs=("PRD.md",),
+                        lambda root, desc, attachments, progress: calls.append(("draft", desc, attachments)) or _draft(tmp_path))
+    request = plan_job.PlanRequest("draft", "p", description="Build", attachments=(Path("PRD.md"),),
                                    drafter="claude", reviewer="codex")
     outcome = plan_job.run_request(tmp_path, request, lambda line: None)
-    assert calls == [("planner", "claude", "codex"), ("draft", "Build", ["PRD.md"])]
+    assert calls == [("planner", "claude", "codex"), ("draft", "Build", [Path("PRD.md")])]
     assert outcome.kind == "draft"
 
 
@@ -72,7 +72,7 @@ def test_brainstorm_request_runs_brainstorm_then_plans(tmp_path, monkeypatch):
         calls.append(("brainstorm", choice))
         return BrainstormResult(kind="ok", text="done")
 
-    def mock_plan(root, topic, agent, progress=None, timeout_minutes=None):
+    def mock_plan(root, topic, agent, progress=None, timeout_minutes=None, **kwargs):
         calls.append(("plan", topic, agent, timeout_minutes))
         return _draft(tmp_path, source="brainstorm", agent=agent)
 
@@ -118,7 +118,7 @@ def test_planner_questions_become_a_questions_outcome(tmp_path, monkeypatch):
 def test_open_questions_in_a_brainstorm_draft_are_questions(tmp_path, monkeypatch):
     text = "## Open questions\n1. Paper trading?\n\n- [ ] T-1: x\n"
     monkeypatch.setattr(relay_ops, "plan_from_brainstorm",
-                        lambda root, topic, agent, progress: _draft(tmp_path, text, "brainstorm", "codex"))
+                        lambda root, topic, agent, progress, **kwargs: _draft(tmp_path, text, "brainstorm", "codex"))
     outcome = plan_job.run_request(
         tmp_path, plan_job.PlanRequest("existing", "p", topic="t", writer="codex"), lambda l: None)
     assert outcome.kind == "questions" and outcome.questions == ("Paper trading?",)

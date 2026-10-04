@@ -94,3 +94,91 @@ class AttachmentTray(Horizontal):
         if event.button.id and event.button.id.startswith("remove-"):
             event.stop()
             self.post_message(self.Removed(event.button.id.removeprefix("remove-")))
+
+
+def summary_text(statuses: dict[str, str]) -> str:
+    """One line for several agents: who sees attachments fine, who only gets paths."""
+    good = [a for a, d in statuses.items() if not needs_warning(d)]
+    risky = [a for a, d in statuses.items() if needs_warning(d)]
+    parts = []
+    if good:
+        parts.append("✓ " + ", ".join(good))
+    if risky:
+        parts.append("⚠ " + ", ".join(risky) + " get images as file paths only")
+    return " · ".join(parts)
+
+
+class AttachmentsField(Vertical):
+    """Attach / Paste screenshot, the tray and a summary for a form."""
+
+    DEFAULT_CSS = """
+    AttachmentsField { height: auto; }
+    AttachmentsField Horizontal { height: auto; }
+    AttachmentsField #att-summary { color: $text-muted; }
+    """
+
+    def __init__(self, root, session: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        from whyline.console import attachments as att
+
+        self._root, self._session = root, session
+        self.pending = att.PendingAttachments()
+        self._agents: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        yield Label("Attachments (screenshots, PRDs, specs):")
+        yield Horizontal(
+            Button("Attach…", id="att-pick", disabled=not mac_input.available()),
+            Button("Paste screenshot", id="att-paste", disabled=not mac_input.available()),
+        )
+        yield AttachmentTray(id="att-tray")
+        yield Static("", id="att-summary")
+
+    def set_agents(self, agents: list[str]) -> None:
+        self._agents = list(agents)
+        self.refresh_view()
+
+    def _deliveries(self) -> dict[str, str]:
+        from whyline.console import relay_ops
+
+        kinds = {a.kind for a in self.pending.items}
+        out = {}
+        for agent in self._agents:
+            worst = "path"
+            for kind in kinds:
+                try:
+                    d = relay_ops.delivery_for(self._root, agent, kind)
+                except Exception:
+                    d = "path-unverified"
+                if needs_warning(d):
+                    worst = d
+            out[agent] = worst
+        return out
+
+    def needs_confirmation(self) -> list[str]:
+        return [a for a, d in self._deliveries().items() if needs_warning(d)]
+
+    def refresh_view(self) -> None:
+        try:
+            tray = self.query_one("#att-tray", AttachmentTray)
+            summary_widget = self.query_one("#att-summary", Static)
+        except Exception:
+            return
+        tray.show(self.pending.items, {})
+        summary = summary_text(self._deliveries()) if self.pending.items else ""
+        summary_widget.update(summary)
+
+    def on_attachment_tray_removed(self, message: AttachmentTray.Removed) -> None:
+        message.stop()
+        self.pending.remove(message.attachment_id)
+        self.refresh_view()
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        if event.button.id not in ("att-pick", "att-paste"):
+            return
+        event.stop()
+        self.app.attach_into(
+            self.pending,
+            "pick" if event.button.id == "att-pick" else "paste",
+            self.refresh_view,
+        )

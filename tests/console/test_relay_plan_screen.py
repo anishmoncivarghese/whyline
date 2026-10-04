@@ -144,16 +144,6 @@ async def test_plan_button_opens_the_popup_and_reports_the_saved_plan(tmp_path, 
         )
 
 
-async def test_draft_reports_missing_reference_files_before_running(tmp_path, monkeypatch):
-    monkeypatch.setattr(relay_ops, "missing_references", lambda root, refs: ["nope.md"])
-    app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test(size=(110, 40)) as pilot:
-        screen, _ = await _open(app, pilot)
-        screen.query_one("#rp-description").load_text("Build it")
-        screen.query_one("#rp-refs").load_text("nope.md")
-        await pilot.click("#rp-go")
-        await pilot.pause()
-        assert "nope.md" in _error_text(screen)
 
 
 async def test_draft_needs_a_description(tmp_path):

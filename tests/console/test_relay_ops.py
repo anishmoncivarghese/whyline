@@ -61,27 +61,6 @@ def test_save_pasted_plan_asks_before_replacing(repo):
     assert "T-1: new" in (repo / "plans" / "p.plan.md").read_text()
 
 
-def test_missing_references_resolves_home_relative_and_spaces(
-    repo, monkeypatch, tmp_path_factory
-):
-    home = tmp_path_factory.mktemp("home")
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))  # what expanduser reads on Windows
-    (home / "PRD one.md").write_text("x")
-    (repo / "docs").mkdir()
-    (repo / "docs" / "brief.md").write_text("x")
-    absolute = repo / "README.md"
-    refs = ["~/PRD one.md", "docs/brief.md", str(absolute), "docs/nope.md"]
-    assert relay_ops.missing_references(repo, refs) == ["docs/nope.md"]
-
-
-def test_draft_description_lists_the_references():
-    text = relay_ops.draft_description("Build the PRD", ["PRD.md", "docs/b.md"])
-    assert text == (
-        "Build the PRD\n\nRead these reference documents before planning:\n"
-        "- PRD.md\n- docs/b.md"
-    )
-    assert relay_ops.draft_description("Build it", []) == "Build it"
 
 
 def test_brainstorm_docs_lists_stems(repo):

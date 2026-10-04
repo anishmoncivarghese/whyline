@@ -15,6 +15,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static, TextArea
 
 from whyline.console import relay_ops
+from whyline.console.attachments_ui import AttachmentsField
 from whyline.console.plan_job import PlanRequest
 
 _SOURCES = [
@@ -39,7 +40,6 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen Vertical, RelayPlanScreen Horizontal { height: auto; }
     RelayPlanScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelayPlanScreen TextArea { height: 8; }
-    RelayPlanScreen #rp-refs { height: 4; }
     RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-reviewer { width: 40; }
     RelayPlanScreen #rp-name { width: 1fr; }
     RelayPlanScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
@@ -82,8 +82,7 @@ class RelayPlanScreen(ModalScreen):
             Vertical(
                 Label("What should the plan build?"),
                 TextArea(id="rp-description"),
-                Label("Reference documents, one path per line (e.g. PRD.md):"),
-                TextArea(id="rp-refs"),
+                AttachmentsField(self._root, self.app._attach_session, id="rp-attachments"),
                 Horizontal(
                     Label("Drafter:", classes="field-label"),
                     self._agent_select(drafter, "rp-drafter"),
@@ -136,7 +135,12 @@ class RelayPlanScreen(ModalScreen):
                 ),
                 id="rp-writer-row",
             ),
-            Vertical(*brainstorm_field_widgets(self._status, default), id="rp-new-group"),
+            Vertical(
+                *brainstorm_field_widgets(
+                    self._status, default, self.app.session.root, self.app._attach_session
+                ),
+                id="rp-new-group",
+            ),
         ]
 
     def on_mount(self) -> None:
@@ -147,6 +151,28 @@ class RelayPlanScreen(ModalScreen):
         self.query_one("#rp-discard-draft").display = bool(pending)
         if pending:
             self._error(f'A plan draft for "{pending}" was left unfinished.')
+        self._sync_planner_agents()
+        self._sync_brainstorm_agents()
+
+    def _sync_planner_agents(self) -> None:
+        try:
+            drafter = self.query_one("#rp-drafter", Select).value
+            reviewer = self.query_one("#rp-reviewer", Select).value
+            field = self.query_one("#rp-attachments", AttachmentsField)
+        except Exception:
+            return
+        agents = [a for a in (drafter, reviewer) if a]
+        field.set_agents(agents)
+
+    def _sync_brainstorm_agents(self) -> None:
+        from whyline.console.repl import BRAINSTORM_AGENTS
+
+        try:
+            field = self.query_one("#bs-attachments", AttachmentsField)
+        except Exception:
+            return
+        agents = [a for a in BRAINSTORM_AGENTS if self.query_one(f"#bs-{a}", Checkbox).value]
+        field.set_agents(agents)
 
     def _source(self) -> str:
         return self.query_one("#rp-source", Select).value
@@ -163,6 +189,12 @@ class RelayPlanScreen(ModalScreen):
             new = event.value == "new"
             self.query_one("#rp-new-group").display = new
             self.query_one("#rp-writer-row").display = not new
+        elif event.select.id in ("rp-drafter", "rp-reviewer"):
+            self._sync_planner_agents()
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        if event.checkbox.id and event.checkbox.id.startswith("bs-"):
+            self._sync_brainstorm_agents()
 
     def _error(self, text: str) -> None:
         error = self.query_one("#rp-error", Static)
@@ -187,6 +219,33 @@ class RelayPlanScreen(ModalScreen):
         )
 
     def _submit(self, request: PlanRequest) -> None:
+        source = self._source()
+        if source == "draft":
+            field = self.query_one("#rp-attachments", AttachmentsField)
+            risky = field.needs_confirmation()
+        elif source == "brainstorm" and self.query_one("#rp-from", Select).value == "new":
+            field = self.query_one("#bs-attachments", AttachmentsField)
+            risky = field.needs_confirmation()
+        else:
+            risky = []
+
+        if risky and not getattr(self, "_attachments_confirmed", False):
+            from whyline.console.tui import ConfirmScreen
+
+            def answered(confirmed: bool) -> None:
+                if confirmed:
+                    self._attachments_confirmed = True
+                    self._submit(request)
+
+            self.app.push_screen(
+                ConfirmScreen(
+                    f"{', '.join(risky)} get images as file paths only and may not see them.",
+                    "Continue",
+                ),
+                answered,
+            )
+            return
+
         path = relay_ops.plan_path(self._root, request.name)
         if path.exists() and not request.replace:
             self._confirm_replace(path, lambda: self.dismiss(dc_replace(request, replace=True)))
@@ -235,20 +294,12 @@ class RelayPlanScreen(ModalScreen):
         if not description:
             self._error("Describe what the plan should build.")
             return None
-        refs = [
-            line.strip()
-            for line in self.query_one("#rp-refs", TextArea).text.splitlines()
-            if line.strip()
-        ]
-        missing = relay_ops.missing_references(self._root, refs)
-        if missing:
-            self._error("Can't find: " + ", ".join(missing))
-            return None
+        field = self.query_one("#rp-attachments", AttachmentsField)
         return PlanRequest(
             "draft",
             self._plan_name(description),
             description=description,
-            refs=tuple(refs),
+            attachments=tuple(field.pending.paths()),
             drafter=self.query_one("#rp-drafter", Select).value,
             reviewer=self.query_one("#rp-reviewer", Select).value,
         )

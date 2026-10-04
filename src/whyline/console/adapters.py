@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import io
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 from whyline.console.session import SessionEvent
@@ -273,6 +274,7 @@ def run_brainstorm(
     timeout_minutes: int = 15,
     progress=None,
     run_fn=None,
+    attachments: Sequence[Path] = (),
 ) -> SessionEvent:
     """Multi-model brainstorming via whyline-relay's own brainstorm module:
     each model researches independently, the drafts are merged, `passes`
@@ -307,7 +309,7 @@ def run_brainstorm(
     progress(f"Researching independently: {names}")
     actual = brainstorm.run_pass_zero(
         root, models, topic, settings=settings, print_fn=progress,
-        timeout_seconds=timeout_minutes * 60, **kwargs
+        timeout_seconds=timeout_minutes * 60, attachments=attachments, **kwargs
     )
     researched = [
         label for key, label in models
@@ -327,12 +329,14 @@ def run_brainstorm(
         progress(f"Review pass {number} of {passes}")
         actual = brainstorm.run_review_pass(
             root, models, topic, number, settings=settings, print_fn=progress,
-            actual_agents=actual, timeout_seconds=timeout_minutes * 60, **kwargs,
+            actual_agents=actual, timeout_seconds=timeout_minutes * 60,
+            attachments=attachments, **kwargs,
         )
     progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
     record = brainstorm.run_final_synthesis(
         root, final_agent, models, topic, settings=settings, print_fn=progress,
-        actual_agents=actual, timeout_seconds=timeout_minutes * 60, **kwargs
+        actual_agents=actual, timeout_seconds=timeout_minutes * 60,
+        attachments=attachments, **kwargs
     )
     path = brainstorm.shared_path(root, topic)
     try:

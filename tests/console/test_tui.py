@@ -601,6 +601,7 @@ async def test_brainstorm_form_validates_then_runs_with_progress(tmp_path, monke
     assert calls == [{
         "topic": "retry policy", "agents": ["claude", "codex"],
         "passes": 2, "final_agent": "claude", "timeout_minutes": 45,
+        "attachments": [],
     }]
     assert any("· Researching independently" in line for line in lines)
     assert any("final synthesis" in line for line in lines)

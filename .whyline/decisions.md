@@ -4905,3 +4905,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0836a2fe37a14ff0afc2efa350689e13 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:51:40.655Z"} -->
+
+## 2026-10-04 — Replace references with staged attachments in PlanRequest and forms
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-10
+
+**Because:** Staged attachments are guaranteed to exist, git-ignored, and delivered uniformly across chat, brainstorm, and planner without manual path resolution
+
+**Rejected:**
+
+- Keep refs and attachments in parallel — creates dual reference mechanisms and causes drift between prompt path text and staged attachments
+
+**Files:** src/whyline/console/plan_job.py
+
+<!-- whyline-event: 5026896cdd8b45d0b0e49f80bdb53de5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:05:14.666Z"} -->
+
+## 2026-10-04 — Approve ATT-10 attachment forms and pass-through
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-10
+
+**Because:** AttachmentsField replaces references in Plan, Brainstorm and Plan forms collect staged paths, warning confirmation follows selected model capabilities, planner and every brainstorm stage receive the paths, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — no functional or coverage defect remained after review; only a trailing blank line required cleanup
+
+**Files:** src/whyline/console/attachments_ui.py, src/whyline/console/tui.py, src/whyline/console/relay_screens.py, src/whyline/console/plan_job.py, src/whyline/console/relay_ops.py, src/whyline/console/adapters.py, tests/console/test_form_attachments.py
+
+<!-- whyline-event: 05cd2d48b20e47ff9f830df3b436ae21 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:11:06.884Z"} -->

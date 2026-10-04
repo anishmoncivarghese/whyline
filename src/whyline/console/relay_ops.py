@@ -232,26 +232,6 @@ def save_pasted_plan(root: Path, text: str, name: str, *, replace: bool = False)
     )
 
 
-def missing_references(root: Path, refs: list[str]) -> list[str]:
-    missing = []
-    for ref in refs:
-        path = Path(ref).expanduser()
-        if not path.is_absolute():
-            path = root / path
-        if not path.exists():
-            missing.append(ref)
-    return missing
-
-
-def draft_description(description: str, refs: list[str]) -> str:
-    if not refs:
-        return description
-    listed = "\n".join(f"- {ref}" for ref in refs)
-    return (
-        f"{description}\n\nRead these reference documents before planning:\n{listed}"
-    )
-
-
 def _planner_draft(root: Path, path: Path) -> Draft:
     cfg = _settings(root).planner
     return Draft(
@@ -262,11 +242,13 @@ def _planner_draft(root: Path, path: Path) -> Draft:
     )
 
 
-def draft_plan(root: Path, description: str, refs: list[str], *, progress) -> Draft:
+def draft_plan(
+    root: Path, description: str, attachments: Sequence[Path] = (), *, progress
+) -> Draft:
     from whyline_relay import planner
 
     path = planner.draft(
-        root, _settings(root), draft_description(description, refs), print_fn=progress
+        root, _settings(root), description, attachments=attachments, print_fn=progress
     )
     return _planner_draft(root, path)
 
@@ -337,14 +319,20 @@ def brainstorm_docs(root: Path) -> list[str]:
 
 
 def plan_from_brainstorm(
-    root: Path, topic: str, agent: str, *, progress, timeout_minutes: int | None = None
+    root: Path,
+    topic: str,
+    agent: str,
+    *,
+    progress,
+    timeout_minutes: int | None = None,
+    attachments: Sequence[Path] = (),
 ) -> Draft:
     from whyline_relay import brainstorm
 
     progress(f"{BRAINSTORM_LABELS[agent]} is turning the brainstorm into a plan")
     kwargs = {"timeout_seconds": timeout_minutes * 60} if timeout_minutes else {}
     path = brainstorm.generate_plan_from_synthesis(
-        root, _settings(root), agent, _models(agent), topic, **kwargs
+        root, _settings(root), agent, _models(agent), topic, attachments=attachments, **kwargs
     )
     return Draft(
         path=path,

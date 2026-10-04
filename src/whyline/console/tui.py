@@ -48,6 +48,7 @@ from whyline.console import (
 from whyline.console.attachments_ui import (
     AttachMenuScreen,
     AttachmentTray,
+    AttachmentsField,
     needs_warning,
     status_text,
 )
@@ -176,8 +177,10 @@ class QuitRelayScreen(ModalScreen):
         self.dismiss(choices.get(event.button.id))
 
 
-def brainstorm_field_widgets(status: dict, default_final: str) -> list:
-    """Topic, models, passes, final writer and timeout -- shared by the
+def brainstorm_field_widgets(
+    status: dict, default_final: str, root: Path | None = None, session: str | None = None
+) -> list:
+    """Topic, models, passes, final writer, timeout, and attachments -- shared by the
     Brainstorm popup and the Plan popup's brainstorm source."""
     boxes = []
     for agent in BRAINSTORM_AGENTS:
@@ -202,6 +205,7 @@ def brainstorm_field_widgets(status: dict, default_final: str) -> list:
             Select([(f"{m} minutes", m) for m in BRAINSTORM_TIMEOUT_OPTIONS],
                    value=15, allow_blank=False, id="bs-timeout"),
         ),
+        AttachmentsField(root or Path("."), session or "", id="bs-attachments"),
     ]
 
 
@@ -227,6 +231,7 @@ def collect_brainstorm(query_one) -> "dict | str":
         "passes": int(raw),
         "final_agent": final if final in agents else agents[0],
         "timeout_minutes": timeout,
+        "attachments": query_one("#bs-attachments", AttachmentsField).pending.paths(),
     }
 
 
@@ -272,7 +277,9 @@ class BrainstormScreen(ModalScreen):
         fields = VerticalScroll(
             Label("Brainstorm: each model researches on its own, reviews the others, "
                   "then one writes it up in docs/brainstorm/."),
-            *brainstorm_field_widgets(self._status, self._default_final),
+            *brainstorm_field_widgets(
+                self._status, self._default_final, self.app.session.root, self.app._attach_session
+            ),
             id="bs-fields",
         )
         yield Vertical(
@@ -287,6 +294,19 @@ class BrainstormScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#bs-topic", Input).focus()
+        self._sync_attachment_agents()
+
+    def _sync_attachment_agents(self) -> None:
+        try:
+            field = self.query_one("#bs-attachments", AttachmentsField)
+        except Exception:
+            return
+        agents = [a for a in BRAINSTORM_AGENTS if self.query_one(f"#bs-{a}", Checkbox).value]
+        field.set_agents(agents)
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        if event.checkbox.id and event.checkbox.id.startswith("bs-"):
+            self._sync_attachment_agents()
 
     def on_input_submitted(self, event: "Input.Submitted") -> None:
         event.stop()  # handled here; must not reach the console behind
@@ -302,6 +322,21 @@ class BrainstormScreen(ModalScreen):
             error = self.query_one("#bs-error", Static)
             error.update(chosen)
             error.remove_class("-empty")
+            return
+        field = self.query_one("#bs-attachments", AttachmentsField)
+        risky = field.needs_confirmation()
+        if risky:
+            def answered(ok: bool) -> None:
+                if ok:
+                    self.dismiss(chosen)
+
+            self.app.push_screen(
+                ConfirmScreen(
+                    f"{', '.join(risky)} get images as file paths only and may not see them.",
+                    "Continue",
+                ),
+                answered,
+            )
             return
         self.dismiss(chosen)
 
@@ -640,7 +675,10 @@ class WhylineConsoleApp(App):
         self._main("#prompt", Input).focus()
         if choice is None:
             return
-        root, session, pending = self.session.root, self._attach_session, self._pending
+        self.attach_into(self._pending, choice, lambda: self._attached([]))
+
+    def attach_into(self, pending, choice: str, on_done=None) -> None:
+        root, session = self.session.root, self._attach_session
 
         def work():
             if choice == "pick":
@@ -668,9 +706,11 @@ class WhylineConsoleApp(App):
                 staged = work()
             except Exception as error:  # AttachmentError, PickerError
                 self.call_from_thread(self.render_event, SessionEvent(kind="error", text=str(error)))
-                self.call_from_thread(self._refresh_tray)  # files staged before the error stay
+                if on_done:
+                    self.call_from_thread(on_done)
                 return
-            self.call_from_thread(self._attached, staged)
+            if on_done:
+                self.call_from_thread(on_done)
 
         self.run_worker(in_thread, thread=True)
 
