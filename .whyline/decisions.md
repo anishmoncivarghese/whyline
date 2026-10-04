@@ -4682,3 +4682,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a30342c4defd4196a9b9528d4a9e7eda -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:58:01.255Z"} -->
+
+## 2026-10-04 — Agents: codex -s read-only, claude --permission-mode plan, grok deny rules are the read-only settings; antigravity excluded; plist sets USER
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AG-1
+
+**Because:** spike trap prompt: these blocked the file write and answered; grok and agy plan modes wrote the file; claude reported not logged in without USER
+
+**Rejected:**
+
+- grok --permission-mode plan — wrote the file
+- agy --mode plan — wrote the file
+
+**Files:** docs/agents-capabilities.md
+
+<!-- whyline-event: a987ee84213f4dba9c17e7562d217108 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T16:53:57.125Z"} -->
