@@ -16,7 +16,7 @@ never read or write the real ~/.gemini/antigravity-cli/settings.json.
 Release steps are done by a human afterwards: never push, tag, bump the
 version or publish.
 
-- [ ] RPF-11: relay_ops for plan files and questions
+- [x] RPF-11: relay_ops for plan files and questions
   Implement "Task 11: relay_ops for plan files and questions" from the plan,
   starting at Step 2: PLANS_DIR, PlanInfo, plan_slug, plan_path, with_marker,
   list_plans, save_pasted_plan(root, text, name, replace=), approve_plan(root,
