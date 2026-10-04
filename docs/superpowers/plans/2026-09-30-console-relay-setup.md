@@ -760,7 +760,7 @@ console can offer them as buttons.
 ## Upgrading
 
 ```bash
-uv tool upgrade --refresh whyline
+uv tool upgrade whyline
 ```
 ```
 
@@ -3381,7 +3381,7 @@ Relay setup moves into the console. Requires whyline-relay 0.2.26.
 ## Upgrading
 
 ```bash
-uv tool upgrade --refresh whyline
+uv tool upgrade whyline
 ```
 ```
 

@@ -586,7 +586,7 @@ grok and antigravity work in every repository, and failed turns say why.
 ## Upgrading
 
 ```bash
-uv tool upgrade --refresh whyline
+uv tool upgrade whyline
 ```
 ```
 
@@ -1014,7 +1014,7 @@ grok and antigravity work in every repository.
 ## Upgrading
 
 ```bash
-uv tool upgrade --refresh whyline
+uv tool upgrade whyline
 ```
 ```
 
@@ -1027,7 +1027,7 @@ git commit -m "chore: release whyline 0.3.31 (RPF-7)"
 git push origin HEAD:main
 git tag v0.3.31 && git push origin v0.3.31
 gh run watch "$(gh run list --workflow release.yml -L1 --json databaseId -q '.[0].databaseId')" --exit-status
-uv tool upgrade --refresh whyline && whyline --version
+uv tool upgrade whyline && whyline --version
 ```
 
 Expected: tests pass, the workflow succeeds, and `whyline --version` prints `0.3.31`. If `git push origin HEAD:main` is rejected as non-fast-forward, stop and report; don't force.
@@ -1536,7 +1536,7 @@ Plans can ask questions and live under any name.
 ## Upgrading
 
 ```bash
-uv tool upgrade --refresh whyline
+uv tool upgrade whyline
 ```
 ```
 
@@ -3749,7 +3749,7 @@ Needs whyline-relay 0.2.29.
 ## Upgrading
 
 ```bash
-uv tool upgrade --refresh whyline
+uv tool upgrade whyline
 ```
 ```
 
