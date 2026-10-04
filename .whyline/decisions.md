@@ -4952,3 +4952,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 51a2eef31ecb4674874908495b42f6da -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:21:15.310Z"} -->
+
+## 2026-10-04 — Read Windows drag-and-drop paths with non-POSIX shlex; fix Windows-unsafe tests before tagging 0.3.33
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ATT-11
+
+**Because:** CI on Windows showed every dropped Windows path was discarded (backslashes read as escapes); macOS and Linux were unaffected
+
+**Files:** src/whyline/console/attachments.py
+
+<!-- whyline-event: 054ac7ae072a4f449c288f686c0c9d34 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:34:46.948Z"} -->
