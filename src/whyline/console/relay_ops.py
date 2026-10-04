@@ -214,7 +214,9 @@ def relay_agents(root: Path | None = None, which=shutil.which) -> list[str]:
 def current_roles(root: Path) -> dict:
     from whyline_relay import config
 
-    agents = relay_agents(root)
+    # Every agent the relay knows, installed or not: Set up shows what the
+    # config says, and the ready check is what flags a missing agent.
+    agents = relay_agents(root, which=lambda binary: binary)
     roles = dict(_DEFAULT_ROLES)
     backup: list[str] = []
     path = config.config_path(root)

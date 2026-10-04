@@ -153,3 +153,13 @@ def test_classify_relay_output_keeps_run_relay_oneshot_behaviour(tmp_path):
         == "output"
     )
     assert adapters.classify_relay_output(tmp_path, "boom\n", 2).kind == "error"
+
+
+def test_current_roles_keep_configured_agents_that_are_not_installed(repo, monkeypatch):
+    # CI and fresh machines have no agent CLIs on PATH; Set up must still
+    # show what the config says (the ready check flags missing agents).
+    relay_ops.save_roles(repo, "antigravity", "grok", "codex", ["claude"])
+    monkeypatch.setenv("PATH", "/nonexistent")
+    assert relay_ops.current_roles(repo) == {
+        "implementer": "antigravity", "tester": "grok", "reviewer": "codex", "backup": ["claude"],
+    }
