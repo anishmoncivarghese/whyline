@@ -405,10 +405,39 @@ def save_roles(
     setup.write_roles(root, implementer, tester, reviewer, backup)
 
 
-def run_checks(root: Path) -> list[CheckLine]:
+def run_checks(root: Path, plan: Path | None = None) -> list[CheckLine]:
     from whyline_relay import preflight
 
-    return [CheckLine(c.status, c.message, c.hint) for c in preflight.run(root)]
+    checks = preflight.run(root, plan) if plan is not None else preflight.run(root)
+    return [CheckLine(c.status, c.message, c.hint) for c in checks]
+
+
+def stale_pause(root: Path) -> str | None:
+    """The task id of a paused run that has nothing left to resume: its task
+    is already ticked, or its plan file is gone. None otherwise."""
+    from whyline_relay import plan as relay_plan, state
+
+    saved = state.load(root)
+    if saved is None:
+        return None
+    path = Path(saved.plan)
+    if not path.is_absolute():
+        path = root / path
+    if not path.is_file():
+        return saved.task_id or "an old run"
+    try:
+        tasks = relay_plan.parse(path.read_text(encoding="utf-8"))
+    except relay_plan.PlanError:
+        return None
+    done = {task.task_id for task in tasks if task.checked}
+    return saved.task_id if saved.task_id in done else None
+
+
+def clear_pause(root: Path) -> None:
+    from whyline_relay import state
+
+    state.clear(root)
+
 
 
 def live_run(root: Path) -> str | None:

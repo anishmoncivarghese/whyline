@@ -32,6 +32,15 @@ def trust(monkeypatch):
     monkeypatch.setattr(relay_ops, "trust_antigravity", do_trust)
     monkeypatch.setattr(relay_ops, "decline_antigravity", do_decline)
     monkeypatch.setattr(relay_ops, "forget_antigravity_decline", do_forget)
+    monkeypatch.setattr(
+        relay_ops,
+        "list_plans",
+        lambda root: [
+            relay_ops.PlanInfo(
+                Path("/r/plans/p.plan.md"), "p", "draft", "2026-10-04", 0, 1
+            )
+        ],
+    )
     return calls
 
 
@@ -198,7 +207,7 @@ async def test_setup_screen_forgets_antigravity_decline_when_antigravity_saved(t
         lambda root: {"implementer": "antigravity", "tester": "claude", "reviewer": "claude", "backup": []},
     )
     monkeypatch.setattr(relay_ops, "save_roles", lambda root, *roles: saved_roles.append(roles))
-    monkeypatch.setattr(relay_ops, "run_checks", lambda root: [])
+    monkeypatch.setattr(relay_ops, "run_checks", lambda root, plan=None: [])
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
 
     app = tui.WhylineConsoleApp(root=tmp_path)

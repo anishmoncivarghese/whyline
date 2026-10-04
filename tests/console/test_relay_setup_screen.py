@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from whyline.console import relay_ops, tui
@@ -31,11 +33,18 @@ def ops(monkeypatch):
         "save_roles",
         lambda root, i, t, r, b: saved.append((i, t, r, b)),
     )
+    plans = [
+        relay_ops.PlanInfo(Path("/r/plans/new.plan.md"), "new", "draft", "2026-10-04T10:00:00+05:30", 0, 3),
+        relay_ops.PlanInfo(Path("/r/plans/old.plan.md"), "old", "paste", "2026-10-01T10:00:00+05:30", 2, 2),
+    ]
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: plans)
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: None)
+    monkeypatch.setattr(relay_ops, "select_plan", lambda root, path: saved.append(("plan", path)))
     return saved
 
 
 def _checks(*statuses):
-    return lambda root: [
+    return lambda root, plan=None: [
         relay_ops.CheckLine(s, f"{s} message", "the fix" if s == "FAIL" else None)
         for s in statuses
     ]
@@ -84,8 +93,64 @@ async def test_a_clean_check_saves_roles_and_enables_start(tmp_path, monkeypatch
         assert "warn  warn message" in _checks_text(screen)
         await pilot.click("#rs-start")
         await pilot.pause()
-    assert ops == [("codex", "codex", "codex", ["claude"])]
+    assert ops == [
+        ("codex", "codex", "codex", ["claude"]),
+        ("plan", Path("/r/plans/new.plan.md")),
+    ]
     assert results == ["start"]
+
+
+async def test_the_plan_dropdown_lists_plans_newest_first(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        select = screen.query_one("#rs-plan", tui.Select)
+        assert select.value == "/r/plans/new.plan.md"
+        labels = [str(prompt) for prompt, _ in select._options if _ is not tui.Select.BLANK]
+        assert labels[0].startswith("new · 0/3 done · draft · 2026-10-04")
+
+
+async def test_with_no_plan_setup_offers_to_make_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        assert screen.query_one("#rs-check", tui.Button).disabled
+        assert "No plan yet" in str(screen.query_one("#rs-no-plan", tui.Static).renderable)
+        await pilot.click("#rs-make-plan")
+        await pilot.pause()
+    assert results == ["plan"]
+
+
+async def test_changing_the_plan_after_a_check_disables_start(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        screen.query_one("#rs-plan", tui.Select).value = "/r/plans/old.plan.md"
+        await pilot.pause()
+        assert screen.query_one("#rs-start", tui.Button).disabled
+
+
+async def test_check_runs_against_the_chosen_plan(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        relay_ops,
+        "run_checks",
+        lambda root, plan=None: seen.append(plan) or [relay_ops.CheckLine("ok", "fine")],
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-plan", tui.Select).value = "/r/plans/old.plan.md"
+        await pilot.pause()
+        await pilot.click("#rs-check")
+        await _wait_for(pilot, lambda: seen, "check")
+    assert seen == [Path("/r/plans/old.plan.md")]
 
 
 async def test_a_failing_check_keeps_start_disabled_and_shows_the_fix(

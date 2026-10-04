@@ -323,6 +323,8 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen Horizontal { height: auto; }
     RelaySetupScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelaySetupScreen Select { width: 30; }
+    RelaySetupScreen #rs-plan { width: 70; }
+    RelaySetupScreen #rs-no-plan { color: $warning; padding: 1 0 0 0; }
     RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelaySetupScreen Checkbox:focus { border: none; }
     RelaySetupScreen #rs-results { height: auto; max-height: 12; }
@@ -339,8 +341,18 @@ class RelaySetupScreen(ModalScreen):
         self._root = root
         self._agents = relay_ops.relay_agents(root)
         self._roles = relay_ops.current_roles(root)
+        self._plans = relay_ops.list_plans(root)
+        current = relay_ops.configured_plan(root)
+        listed = [str(info.path) for info in self._plans]
+        self._plan_default = str(current) if current and str(current) in listed else (
+            listed[0] if listed else None)
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
+
+    @staticmethod
+    def _plan_label(info: "relay_ops.PlanInfo") -> str:
+        parts = [info.name, f"{info.done}/{info.total} done", info.source, info.created[:10]]
+        return " · ".join(part for part in parts if part)
 
     def compose(self) -> ComposeResult:
         rows = [
@@ -363,13 +375,27 @@ class RelaySetupScreen(ModalScreen):
         ]
         yield Vertical(
             Label("Set up: who does what, then check everything is ready."),
+            (
+                Horizontal(
+                    Label("Plan:", classes="field-label"),
+                    Select(
+                        [(self._plan_label(p), str(p.path)) for p in self._plans],
+                        value=self._plan_default,
+                        allow_blank=False,
+                        id="rs-plan",
+                    ),
+                )
+                if self._plans
+                else Static("No plan yet. Make one first.", id="rs-no-plan")
+            ),
             *rows,
             Label("Backup, used when an agent fails:"),
             *backups,
             VerticalScroll(Static("", id="rs-checks"), id="rs-results"),
             Static("", id="rs-error", classes="-empty"),
             Horizontal(
-                Button("Check", id="rs-check", variant="primary"),
+                Button("Make a plan", id="rs-make-plan", variant="primary"),
+                Button("Check", id="rs-check", variant="primary", disabled=not self._plans),
                 Button("Start", id="rs-start", variant="success", disabled=True),
                 Button("Cancel", id="rs-cancel"),
                 id="rs-buttons",
@@ -377,6 +403,7 @@ class RelaySetupScreen(ModalScreen):
         )
 
     def on_mount(self) -> None:
+        self.query_one("#rs-make-plan").display = not self._plans
         self.call_after_refresh(self._ready)
 
     def _ready(self) -> None:
@@ -416,6 +443,8 @@ class RelaySetupScreen(ModalScreen):
             self.dismiss("start")
         elif event.button.id == "rs-check":
             self._check()
+        elif event.button.id == "rs-make-plan":
+            self.dismiss("plan")
 
     def _check(self) -> None:
         token = object()
@@ -424,13 +453,16 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-start", Button).disabled = True
         self.query_one("#rs-checks", Static).update("Checking…")
         root, chosen = self._root, self._chosen()
+        plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
 
         def in_thread() -> None:
             try:
                 if "antigravity" in (chosen[0], chosen[1], chosen[2], *chosen[3]):
                     relay_ops.forget_antigravity_decline(root)
                 relay_ops.save_roles(root, *chosen)
-                checks = relay_ops.run_checks(root)
+                if plan is not None:
+                    relay_ops.select_plan(root, plan)
+                checks = relay_ops.run_checks(root, plan)
                 running = relay_ops.live_run(root)
             except Exception as error:
                 self.app.call_from_thread(self._check_failed, error, token)

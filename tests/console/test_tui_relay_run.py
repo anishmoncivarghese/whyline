@@ -33,6 +33,7 @@ def fake_relay(monkeypatch):
     monkeypatch.setattr(tui, "RelayProcess", FakeProcess)
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: ["x"])
 def _lines(app):
     return [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
 async def _relay_mode(app, pilot):
@@ -136,4 +137,33 @@ async def test_quitting_after_relay_finishes_while_modal_open_exits_safely(tmp_p
         assert app._relay is None
         await pilot.click(button_id)
         await pilot.pause()
+
+
+async def test_typed_start_without_any_plan_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app.query_one("#prompt", tui.Input).value = "start"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert FakeProcess.instances == []
+        assert any("No plan yet. Use Plan first." in line for line in _lines(app))
+
+
+async def test_a_stale_paused_run_offers_clear_instead_of_resume(tmp_path, monkeypatch):
+    cleared = []
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(relay_ops, "stale_pause", lambda root: "CRS-4")
+    monkeypatch.setattr(relay_ops, "clear_pause", lambda root: cleared.append(root))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        button = app.query_one("#relay-resume", tui.Button)
+        assert str(button.label) == "Clear old run" and not button.disabled
+        await pilot.click("#relay-resume")
+        await pilot.pause()
+        assert cleared == [tmp_path] and FakeProcess.instances == []
+        assert any("Cleared the finished run CRS-4." in line for line in _lines(app))
+
 

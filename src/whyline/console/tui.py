@@ -354,6 +354,7 @@ class WhylineConsoleApp(App):
         self._plan_state = ""  # "", "working", "review", "answering"
         self._plan_request: plan_job.PlanRequest | None = None
         self._plan_outcome: plan_job.Outcome | None = None
+        self._stale_pause: str | None = None
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -410,7 +411,14 @@ class WhylineConsoleApp(App):
             paused = in_relay and relay_ops.paused_run(self.session.root)
         except Exception:  # no relay installed, unreadable state: not resumable
             paused = False
-        self._main("#relay-resume", Button).disabled = not paused or running
+        try:
+            stale = relay_ops.stale_pause(self.session.root) if paused else None
+        except Exception:
+            stale = None
+        resume = self._main("#relay-resume", Button)
+        resume.label = "Clear old run" if stale else "Resume"
+        self._stale_pause = stale
+        resume.disabled = not paused or running
 
     def _placeholder(self, mode: str) -> str:
         if mode == "chat":
@@ -488,7 +496,14 @@ class WhylineConsoleApp(App):
         elif button_id == "relay-setup":
             self._open_relay_setup()
         elif button_id == "relay-resume":
-            self._launch_relay(["resume"])
+            if getattr(self, "_stale_pause", None):
+                task = self._stale_pause
+                relay_ops.clear_pause(self.session.root)
+                self.render_event(SessionEvent(
+                    kind="output", text=f"Cleared the finished run {task}."))
+                self._sync_relay_buttons()
+            else:
+                self._launch_relay(["resume"])
         elif button_id == "plan-approve":
             self._approve_plan()
         elif button_id == "plan-view":
@@ -988,6 +1003,8 @@ class WhylineConsoleApp(App):
     def _setup_done(self, choice: str | None) -> None:
         if choice == "start":
             self._launch_relay(["start"])
+        elif choice == "plan":
+            self._open_relay_plan()
 
     def _relay_running(self) -> bool:
         return self._relay is not None and self._relay.running()
@@ -997,6 +1014,14 @@ class WhylineConsoleApp(App):
         or one started elsewhere (a terminal) that running.live still sees."""
         if self._refuse_in_home():
             return
+        if args and args[0] == "start" and "--plan" not in args:
+            try:
+                has_plan = bool(relay_ops.list_plans(self.session.root))
+            except Exception:
+                has_plan = True  # let the relay itself report the problem
+            if not has_plan:
+                self.render_event(SessionEvent(kind="error", text="No plan yet. Use Plan first."))
+                return
         roles = relay_ops.current_roles(self.session.root)
         uses = "antigravity" in (
             roles["implementer"], roles["tester"], roles["reviewer"], *roles["backup"]

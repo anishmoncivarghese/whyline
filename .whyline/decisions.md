@@ -4517,3 +4517,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f456c09bd7e246d692d8092dad6f6068 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:14:43.298Z"} -->
+
+## 2026-10-04 — Set up writes the chosen plan into config.toml rather than passing --plan
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-15
+
+**Because:** a terminal 'whyline relay start' should run the same plan the console chose
+
+**Rejected:**
+
+- Pass --plan on Start only — the CLI and the console would disagree
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 21b21e02663440c1ab2630a46989e96d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:26:03.381Z"} -->
+
+## 2026-10-04 — Approve Set up plan selection and stale-run clearing
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-15
+
+**Because:** The implementation follows Task 15, passes the chosen plan to preflight, invalidates checks after edits, refuses planless typed starts, safely distinguishes resumable from stale state, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — no functional defect or missing required coverage remains
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 6fea81bd38304644be3eb500c311b0b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:30:47.926Z"} -->

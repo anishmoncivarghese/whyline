@@ -278,3 +278,30 @@ def test_answer_plan(repo, monkeypatch):
     draft = relay_ops.answer_plan(repo, "answer 1", progress=lambda line: None)
     assert calls == ["answer 1"]
     assert draft.path == draft_path
+
+
+def test_a_paused_run_whose_task_is_ticked_is_stale(repo):
+    from whyline_relay import state
+
+    plan_file = repo / "p.md"
+    plan_file.write_text("- [x] CRS-4: release\n")
+    state.save(repo, state.RelayState(
+        plan=str(plan_file), branch="b", task_id="CRS-4", round=1,
+        base_commit="", paused_reason="blocked", log_path="",
+    ))
+    assert relay_ops.stale_pause(repo) == "CRS-4"
+    relay_ops.clear_pause(repo)
+    assert state.load(repo) is None
+
+
+def test_a_paused_run_with_work_left_is_not_stale(repo):
+    from whyline_relay import state
+
+    plan_file = repo / "p.md"
+    plan_file.write_text("- [ ] CRS-4: release\n")
+    state.save(repo, state.RelayState(
+        plan=str(plan_file), branch="b", task_id="CRS-4", round=1,
+        base_commit="", paused_reason="blocked", log_path="",
+    ))
+    assert relay_ops.stale_pause(repo) is None
+
