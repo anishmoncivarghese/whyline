@@ -4792,3 +4792,85 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 072bb11090a5491a8274b37988d953de -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:05:27.249Z"} -->
+
+## 2026-10-04 — Clear previous children from _nodes in AttachmentTray.show before mounting
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-8
+
+**Because:** Textual remove_children prunes asynchronously; repeated show calls in the same tick fail with DuplicateIds
+
+**Rejected:**
+
+- Schedule mount in call_next — causes flicker and makes show asynchronous breaking synchronous UI refresh callers
+
+**Files:** src/whyline/console/attachments_ui.py
+
+<!-- whyline-event: 5016ec0ed9b34a23928f799c32fa95d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:17:54.049Z"} -->
+
+## 2026-10-04 — Refocus prompt after closing AttachMenuScreen and after staging files
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-8
+
+**Because:** clicking Attach steals focus to the attach button; pressing Enter afterwards would re-open the attach dialog instead of sending
+
+**Rejected:**
+
+- Rely on Textual default focus restoration — restores focus to the previously clicked Attach button instead of the prompt
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 9ea94d80464b4f7cb5f97c46062dfa1c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:18:00.164Z"} -->
+
+## 2026-10-04 — Request changes to ATT-8 attachment lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-8
+
+**Because:** The UI loses whether the relay accepted a turn when adapters convert launch exceptions to error events, ignores per-attachment secret warnings when deciding whether to confirm, and retains old-root attachments across repository switches
+
+**Rejected:**
+
+- Approve because the suite passes — the new tests bypass the production launch-error conversion and omit the secret-warning and repository-switch cases
+
+**Files:** src/whyline/console/tui.py, tests/console/test_chat_attachments.py
+
+<!-- whyline-event: fcbbbd3f73214910b8268428d5271281 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:24:30.197Z"} -->
+
+## 2026-10-04 — Preserve launch status on SessionEvent and guard secrets and repo switch in chat attachments
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-8
+
+**Because:** Pre-launch failures caught by adapters must not clear staged attachments, secret-looking files require confirmation before dispatch, and switching repos invalidates paths staged under the previous root
+
+**Rejected:**
+
+- Raise exceptions directly out of adapters — breaks the console session event rendering architecture where adapters return error events
+- Clear attachments on unconfirmed repo switch — staying put should retain existing staged files
+
+**Files:** src/whyline/console/session.py, src/whyline/console/adapters.py, src/whyline/console/tui.py, tests/console/test_chat_attachments.py
+
+<!-- whyline-event: 6129026806a84424a517a3e53c158ac9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:34:45.690Z"} -->
+
+## 2026-10-04 — Approve ATT-8 chat attachment lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-8
+
+**Because:** The implementation matches the planned attachment UI and relay plumbing, preserves staged files on adapter and dispatch launch failures, warns for secret and unverified delivery, clears state on accepted turns and repository switches, and the full and focused test suites pass
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/adapters.py, tests/console/test_chat_attachments.py
+
+<!-- whyline-event: bac35b4404ec4867acb96c7e79d8c093 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:40:18.492Z"} -->

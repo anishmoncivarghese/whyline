@@ -35,7 +35,19 @@ except ImportError:
     Static = Text = None
     TUI_AVAILABLE = False
 
-from whyline.console import adapters, plan_job, relay_ops
+from whyline.console import (
+    adapters,
+    attachments as att,
+    mac_input,
+    plan_job,
+    relay_ops,
+)
+from whyline.console.attachments_ui import (
+    AttachMenuScreen,
+    AttachmentTray,
+    needs_warning,
+    status_text,
+)
 from whyline.console.relay_process import RelayProcess
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
@@ -356,7 +368,9 @@ class WhylineConsoleApp(App):
         self._plan_outcome: plan_job.Outcome | None = None
         self._stale_pause: str | None = None
         self._run_flow = False
-
+        self._pending = att.PendingAttachments()
+        self._attach_session = att.session_name()
+        self._sent_attachments: list = []
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -365,6 +379,7 @@ class WhylineConsoleApp(App):
         indicator at all, so typing ordinary conversation in the default
         "command" mode looked like the console was just broken instead of
         interpreting free text as a `whyline` CLI invocation."""
+        self.run_worker(lambda: att.clean_old(self.session.root), thread=True)
         self._sync_mode_indicator()
         self.set_interval(0.1, self._tick)
         self._main("#prompt", Input).focus()
@@ -400,6 +415,8 @@ class WhylineConsoleApp(App):
         self._main("#context", Static).update(
             f"{context_label(self.session)}   │   repo: {repo_label(self.session.root)}"
         )
+        self._main("#attach", Button).disabled = self.session.mode != "chat"
+        self._refresh_tray()
         self._sync_relay_buttons()
 
     def _sync_relay_buttons(self) -> None:
@@ -450,8 +467,10 @@ class WhylineConsoleApp(App):
             Button("Discard", id="plan-discard", variant="warning"),
             id="plan-actions",
         )
+        yield AttachmentTray(id="tray")
         yield Horizontal(
             Input(id="prompt"),
+            Button("Attach", id="attach", disabled=True),
             Button("Send", id="send", variant="success"),
             id="input-row",
         )
@@ -482,6 +501,8 @@ class WhylineConsoleApp(App):
         button_id = event.button.id
         if button_id == "send":
             self._send()
+        elif button_id == "attach":
+            self._open_attach_menu()
         elif button_id == "stop":
             if self._relay_running():
                 self._relay.request_stop()
@@ -540,6 +561,73 @@ class WhylineConsoleApp(App):
             return screen.query_one(selector)
         return screen.query_one(selector, expect_type)
 
+    def _statuses(self) -> dict[str, str]:
+        agent = self.session.agent or "claude"
+        out = {}
+        for item in self._pending.items:
+            try:
+                delivery = relay_ops.delivery_for(self.session.root, agent, item.kind)
+            except Exception:
+                delivery = "path-unverified"
+            out[item.id] = status_text(agent, delivery)
+        return out
+
+    def _tray_text(self) -> str:
+        statuses = self._statuses()
+        return "  ".join(f"{i.name} {statuses[i.id]}" for i in self._pending.items)
+
+    def _refresh_tray(self) -> None:
+        self._main("#tray", AttachmentTray).show(self._pending.items, self._statuses())
+
+    def on_attachment_tray_removed(self, message: AttachmentTray.Removed) -> None:
+        self._pending.remove(message.attachment_id)
+        self._refresh_tray()
+
+    def _open_attach_menu(self) -> None:
+        self.push_screen(AttachMenuScreen(), self._attach_chosen)
+
+    def _attach_chosen(self, choice: str | None) -> None:
+        self._main("#prompt", Input).focus()
+        if choice is None:
+            return
+        root, session, pending = self.session.root, self._attach_session, self._pending
+
+        def work():
+            if choice == "pick":
+                staged = []
+                for p in mac_input.pick_files():
+                    item = att.stage(root, p, session=session, source="picker", pending=pending)
+                    pending.add(item)  # now, so the limits count it for the next file
+                    staged.append(item)
+                return staged
+            target = root / ".whyline" / "attachments" / session / f"screenshot-{att.session_name()}.png"
+            att.ensure_ignored(root)
+            if not mac_input.paste_image(target):
+                raise att.AttachmentError(
+                    "The clipboard has no image. Take a screenshot to the clipboard "
+                    "first (Cmd+Ctrl+Shift+4).")
+            try:
+                item = att.stage(root, target, session=session, source="clipboard", pending=pending)
+                pending.add(item)
+                return [item]
+            finally:
+                target.unlink(missing_ok=True)
+
+        def in_thread():
+            try:
+                staged = work()
+            except Exception as error:  # AttachmentError, PickerError
+                self.call_from_thread(self.render_event, SessionEvent(kind="error", text=str(error)))
+                self.call_from_thread(self._refresh_tray)  # files staged before the error stay
+                return
+            self.call_from_thread(self._attached, staged)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _attached(self, staged: list) -> None:
+        self._refresh_tray()
+        self._main("#prompt", Input).focus()
+
     def _copy_transcript(self) -> None:
         """Pushes the whole transcript onto the system clipboard via OSC 52
         (App.copy_to_clipboard), since a mouse-driven click-drag selection
@@ -578,6 +666,7 @@ class WhylineConsoleApp(App):
         self.workers vs. a single self.workers.cancel_all()) against your
         installed version."""
         self._dispatch_token = object()
+        self._sent_attachments = []
         if self._plan_state == "working":
             self._leave_plan()
             self._end_run_flow("Run stopped: no plan was saved.")
@@ -629,8 +718,50 @@ class WhylineConsoleApp(App):
                 text="Still working on the last request -- wait for it, or press Stop.",
             ))
             return
+        if self.session.mode == "chat" and self._pending.items and not text.startswith("/"):
+            missing = [a for a in self._pending.items if not a.path.exists()]
+            if missing:
+                self.render_event(SessionEvent(kind="error", text=(
+                    f"{missing[0].name} is no longer available; remove it and attach it again.")))
+                return
+            agent = self.session.agent or "claude"
+            secret_items = [a for a in self._pending.items if a.warning]
+            unverified_items = [a for a in self._pending.items
+                                if needs_warning(self._delivery_for(agent, a.kind))]
+            if (secret_items or unverified_items) and not getattr(self, "_warned_once", False):
+                parts = []
+                if secret_items:
+                    s_names = ", ".join(a.name for a in secret_items)
+                    parts.append(f"{s_names} looks like a secret.")
+                if unverified_items:
+                    u_names = ", ".join(a.name for a in unverified_items)
+                    parts.append(f"{agent} gets {u_names} as a file path and may not be able to view images.")
+                message = " ".join(parts)
+                def answered(ok: bool) -> None:
+                    if ok:
+                        self._warned_once = True
+                        self._send_with(text)
+                self.push_screen(ConfirmScreen(message, "Send anyway"), answered)
+                return
+        self._send_with(text)
+
+    def _delivery_for(self, agent: str, kind: str) -> str:
+        try:
+            return relay_ops.delivery_for(self.session.root, agent, kind)
+        except Exception:
+            return "path-unverified"
+
+    def _send_with(self, text: str) -> None:
+        prompt = self._main("#prompt", Input)
         prompt.value = ""
-        self.render_event(SessionEvent(kind="input", text=text))
+        if self.session.mode == "chat" and self._pending.items and not text.startswith("/"):
+            input_text = f"{text}\n📎 {', '.join(a.name for a in self._pending.items)}"
+            self._sent_attachments = list(self._pending.items)
+            attachments = [a.path for a in self._sent_attachments]
+        else:
+            input_text = text
+            attachments = ()
+        self.render_event(SessionEvent(kind="input", text=input_text))
         if self._plan_state in ("review", "answering") and not text.startswith("/"):
             self._plan_reply(text)
             return
@@ -648,7 +779,8 @@ class WhylineConsoleApp(App):
                 # message -- and never let it start a turn mid-brainstorm.
                 self.render_event(SessionEvent(kind="error", text=unknown_command_text(text)))
                 return
-            self._dispatch_text(text)
+            self._dispatch_text(text, attachments=attachments)
+            self._warned_once = False
 
     def _handle_slash(self, text: str) -> bool:
         """Handles a slash command synchronously on the main thread -- no
@@ -657,6 +789,9 @@ class WhylineConsoleApp(App):
         triggered a setup handoff), False otherwise, so _send() knows
         whether to fall through to an ordinary (possibly slow) dispatch()
         call in a worker."""
+        if self.session.mode == "chat" and text.strip() == "/paste":
+            self._attach_chosen("paste")
+            return True
         event = handle_slash_command(self.session, text)
         if event is None:
             return False
@@ -699,10 +834,15 @@ class WhylineConsoleApp(App):
             return
         self._leave_plan()
         self._stop()  # a reply still pending belongs to the old repository
+        self._pending.clear()
+        self._sent_attachments = []
+        self._attach_session = att.session_name()
+        self._warned_once = False
         result = switch_repo(self.session, target)
         self._main("#transcript", RichLog).clear()
         self.render_event(result)
         self._sync_mode_indicator()
+        self.run_worker(lambda: att.clean_old(target), thread=True)
 
     _ANTIGRAVITY_SKIP = (
         "Skipping Antigravity: this repo isn't trusted in its settings "
@@ -803,7 +943,7 @@ class WhylineConsoleApp(App):
             code = self._login_fn(login_argv(agent))
         self.render_event(after_login(self.session, agent, code))
 
-    def _dispatch_text(self, text: str) -> None:
+    def _dispatch_text(self, text: str, attachments=()) -> None:
         uses = self.session.mode == "chat" and (self.session.agent or "claude") == "antigravity"
 
         def proceed(allowed: bool) -> None:
@@ -814,18 +954,29 @@ class WhylineConsoleApp(App):
             token = object()
             self._dispatch_token = token
             self._set_busy(True)
-            self.run_worker(lambda: self._dispatch_in_thread(text, token), thread=True)
+            if attachments:
+                work = lambda: self._dispatch_in_thread(text, token, attachments=attachments)
+            else:
+                work = lambda: self._dispatch_in_thread(text, token)
+            self.run_worker(work, thread=True)
 
         self._with_antigravity(uses, proceed)
 
-    def _dispatch_in_thread(self, text: str, token: object) -> None:
+    def _dispatch_in_thread(self, text: str, token: object, attachments=()) -> None:
+        launched = True
         try:
-            result = dispatch(self.session, text)
+            if attachments:
+                result = dispatch(self.session, text, attachments=attachments)
+            else:
+                result = dispatch(self.session, text)
         except Exception as error:  # a safety net beyond adapters.py's own handling
-            result = SessionEvent(kind="error", text=str(error))
-        self.call_from_thread(self._finish_dispatch, result, token)
+            result = SessionEvent(kind="error", text=str(error), accepted=False)
+            launched = False
+        else:
+            launched = getattr(result, "accepted", True) and getattr(result, "launched", True)
+        self.call_from_thread(self._finish_dispatch, result, token, launched)
 
-    def _finish_dispatch(self, result: SessionEvent, token: object) -> None:
+    def _finish_dispatch(self, result: SessionEvent, token: object, launched: bool = True) -> None:
         # Checked here, on the main thread, rather than in the worker: a
         # Stop or newer dispatch that lands between the worker's check and
         # this call would otherwise still let a stale result through.
@@ -833,6 +984,11 @@ class WhylineConsoleApp(App):
             return
         self._set_busy(False)
         self.render_event(result)
+        if launched and self._sent_attachments:
+            for item in self._sent_attachments:
+                self._pending.remove(item.id)
+            self._refresh_tray()
+        self._sent_attachments = []
 
     def _refuse_in_home(self) -> bool:
         if _is_home(self.session.root):

@@ -14,6 +14,15 @@ from pathlib import Path
 class SessionEvent:
     kind: str  # "output" | "handoff" | "pause" | "error" | "exit"
     text: str
+    accepted: bool = True
+    launched: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.launched is not None and self.accepted is True:
+            object.__setattr__(self, "accepted", self.launched)
+        elif self.launched is None:
+            object.__setattr__(self, "launched", self.accepted)
+
 
 
 @dataclass

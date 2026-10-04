@@ -525,24 +525,28 @@ def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> No
     _print_event(session.record(event), print_fn)
 
 
-def dispatch(session: ConsoleSession, text: str) -> SessionEvent:
+def dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
     try:
-        return _dispatch(session, text)
+        return _dispatch(session, text, attachments=attachments)
     except ModuleNotFoundError as error:
         # A raw "No module named 'whyline_relay'" told the user nothing
         # about how to fix it.
         if error.name != "whyline_relay":
             raise
-        return SessionEvent(kind="error", text=_RELAY_MISSING)
+        return SessionEvent(kind="error", text=_RELAY_MISSING, accepted=False)
 
 
-def _dispatch(session: ConsoleSession, text: str) -> SessionEvent:
+def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
     if session.mode in ("chat", "relay") and _is_home(session.root):
-        return SessionEvent(kind="error", text=_HOME_REFUSAL)
+        return SessionEvent(kind="error", text=_HOME_REFUSAL, accepted=False)
     if session.mode == "command":
         return adapters.run_whyline_command(text.split())
     if session.mode == "chat":
         agent = session.agent or "claude"
+        if attachments:
+            return adapters.run_chat_turn(
+                session.root, agent=agent, prompt=text, attachments=attachments
+            )
         return adapters.run_chat_turn(session.root, agent=agent, prompt=text)
     # relay mode
     first = text.split(maxsplit=1)[0]

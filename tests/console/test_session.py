@@ -8,6 +8,18 @@ def test_session_event_holds_kind_and_text():
     event = SessionEvent(kind="output", text="hello")
     assert event.kind == "output"
     assert event.text == "hello"
+    assert event.accepted is True
+    assert event.launched is True
+
+
+def test_session_event_accepted_and_launched_flags():
+    e1 = SessionEvent(kind="error", text="fail", accepted=False)
+    assert e1.accepted is False
+    assert e1.launched is False
+
+    e2 = SessionEvent(kind="error", text="fail", launched=False)
+    assert e2.accepted is False
+    assert e2.launched is False
 
 
 def test_session_event_is_frozen():

@@ -541,3 +541,9 @@ def prepare_agents(root: Path, agents: list[str]) -> list[Path]:
     if created:
         gitcheck.commit_paths(root, created, "setup: generate agent permission settings")
     return created
+
+
+def delivery_for(root: Path, agent: str, kind: str) -> str:
+    from whyline_relay import attachments, config
+
+    return attachments.delivery(config.load(root), agent, kind)
