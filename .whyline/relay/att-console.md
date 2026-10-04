@@ -28,7 +28,7 @@ version or publish -- a human releases afterwards.
   arguments, never spliced into the script) and tests/console/test_mac_input.py
   with an injected run function. Verify: uv run pytest -q.
 
-- [ ] ATT-8: Attachments in Chat
+- [x] ATT-8: Attachments in Chat
   Implement "Task 8" from the plan: attachments_ui.py (AttachMenuScreen,
   AttachmentTray, status_text, needs_warning), relay_ops.delivery_for,
   attachments through adapters.run_chat_turn and repl.dispatch, and the
