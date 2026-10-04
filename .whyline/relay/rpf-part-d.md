@@ -26,7 +26,7 @@ version or publish.
   <review>)". Verify: uv run pytest tests/console/test_relay_ops.py -q, then
   uv run pytest -q.
 
-- [ ] RPF-12: The plan job (no widgets)
+- [x] RPF-12: The plan job (no widgets)
   Implement "Task 12: The plan job (no widgets)" from the plan: create
   src/whyline/console/plan_job.py (PlanRequest, Outcome, run_request,
   run_revision, run_answer, summary, questions_text) and
