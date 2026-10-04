@@ -4010,3 +4010,215 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d6ee5772aee44e2e8e5aebe3098b3377 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-09-30T19:22:02.704Z"} -->
+
+## 2026-10-03 — Design TUI attachments as staged manifests with adapter-specific delivery
+
+**Actor:** codex
+**Role:** researcher
+**Task:** BRAINSTORM-ATTACHMENTS
+
+**Because:** Terminal path paste, clipboard image acquisition, preview, and provider delivery have different portability and security constraints; one visible staged manifest keeps user consent and delivery status explicit
+
+**Rejected:**
+
+- Treat dropped or pasted paths as ordinary prompt text — cannot guarantee stable sandbox access or visible send consent
+- Make native dialogs and inline previews mandatory — breaks headless, SSH, and unsupported-terminal use
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: fb83bbf7503746e880ee963a2f337c10 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-03T12:56:14.964Z"} -->
+
+## 2026-10-03 — Architect multimodal attachments as a staged workspace manifest with dual-mode pickers and progressive terminal previews
+
+**Actor:** antigravity
+**Role:** researcher
+**Task:** BRAINSTORM-ATTACHMENTS
+
+**Because:** Terminals transport character streams rather than GUI MIME events; staging files locally in .whyline/attachments ensures agent sandboxes can access them, a staging tray avoids premature token burn, dual-mode pickers support both local GUI desktops and remote SSH sessions, and progressive terminal image protocols provide immediate verification without external windows
+
+**Rejected:**
+
+- Store clipboard images in system /tmp — Breaks OpenAI Codex sandbox boundary (-s workspace-write) and risks cleanup mid-turn
+- Immediately dispatch attachments without a staging tray — Risk accidental multi-megabyte binary uploads and huge token consumption without user confirmation
+- Rely exclusively on native OS file dialogs — Fails completely in headless Linux, remote SSH, Docker devcontainers, and cloud VMs
+
+**Files:** .whyline/relay/brainstorm-tmp/antigravity.md
+
+<!-- whyline-event: 22f54dd69d06420fbfdd47a32b2f6862 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-03T12:59:05.340Z"} -->
+
+## 2026-10-03 — Consolidate Codex attachment design around an atomic staged-manifest pipeline
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BRAINSTORM-ATTACHMENTS
+
+**Because:** Both passes converge on workspace-local staging and a visible tray; cross-review shows acquisition, validation, review, and provider delivery need separate capability states, while clipboard interception, native dialogs, previews, and content wrappers cannot be treated as portable or security guarantees
+
+**Rejected:**
+
+- Automatic clipboard probing on ordinary paste — terminal shortcuts and clipboard contents are not reliably coupled to the delivered Paste event
+- Partial best-effort delivery — silently omitting an unsupported attachment violates the visible manifest contract
+- XML fences as prompt-injection sanitization — delimiters preserve provenance but do not neutralize hostile instructions
+
+**Files:** docs/brainstorm/users-anish-agentdock-docs-plans-attachements-rtf-do-a-brain.md
+
+<!-- whyline-event: 7c05ddba98db4fb785c1111f141e167d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-03T13:04:39.141Z"} -->
+
+## 2026-10-03 — Harmonize Antigravity attachment architecture around atomic staging, explicit acquisition, and provider delivery contracts
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** BRAINSTORM-ATTACHMENTS
+
+**Because:** Cross-review confirms terminal attachments require an explicit 4-stage pipeline (acquire -> validate -> review -> deliver) rather than paste heuristics; auto-probing clipboards breaks terminal shortcut ownership, delimiters provide provenance but not prompt-injection immunity, and provider delivery must be all-or-nothing without partial drops
+
+**Rejected:**
+
+- Probing clipboard images automatically on ordinary paste — Terminal keybindings and clipboard states diverge, risking unexpected payload substitution
+- Recommending base64 data-URI paste as SSH fallback — Large base64 streams over PTYs risk truncation, buffer overruns, and terminal freezes
+- Relying on XML fences as prompt-injection sanitization — Delimiters preserve provenance but cannot neutralize hostile instructions
+
+**Files:** docs/brainstorm/users-anish-agentdock-docs-plans-attachements-rtf-do-a-brain.md
+
+<!-- whyline-event: b7684c304b0b48fda149ab2a671d0a78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-03T13:09:03.567Z"} -->
+
+## 2026-10-03 — Adopt a staged atomic attachment pipeline as the final brainstorm recommendation
+
+**Actor:** codex
+**Role:** synthesizer
+**Task:** BRAINSTORM-ATTACHMENTS
+
+**Because:** Both model reviews converge on explicit acquisition, workspace-local bounded staging, visible review, and provider-verified all-or-nothing delivery; exact quotas and provider mechanisms should remain configurable and integration-tested
+
+**Rejected:**
+
+- Paste-centric attachment handling — terminal paste carries text and does not reliably convey drag provenance or clipboard image bytes
+- Fixed universal provider assumptions — CLI and API capabilities vary by installed version and must be proven end to end
+- Preview-first MVP — terminal rendering is independent of whether an agent can consume an attachment
+
+**Files:** docs/brainstorm/users-anish-agentdock-docs-plans-attachements-rtf-do-a-brain.md
+
+<!-- whyline-event: 3f4f95472ad5415196d651f99411572c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-03T13:10:26.116Z"} -->
+
+## 2026-10-04 — Plan questions use option A: agent hands off blocked with questions, console collects answers, planner resumes the saved stage
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PLAN-FLOW
+
+**Because:** The relay runs agents as one-shot processes; keeping them alive for live Q&A needs per-CLI machinery some agents lack
+
+**Rejected:**
+
+- Live back-and-forth with a running agent — not supported by all agent CLIs
+- Always restart from draft on answers — would discard a review stage's work
+
+**Files:** docs/superpowers/specs/2026-10-04-relay-plan-flow-design.md
+
+<!-- whyline-event: e808dca503eb499ca2f626c6257807b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T06:08:36.338Z"} -->
+
+## 2026-10-04 — Ship agent auto-setup and failure reasons (relay 0.2.28 / whyline 0.3.31) before the plan-flow redesign
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PLAN-FLOW
+
+**Because:** they unblock brainstorming in every repo today and are independent of the larger plan-flow work
+
+**Rejected:**
+
+- One combined release — delays the fixes users are hitting now
+- Add attachments to this plan — separate subsystem, needs its own spec and an evidence spike first
+
+**Files:** docs/superpowers/plans/2026-10-04-relay-plan-flow.md
+
+<!-- whyline-event: beff8bff7e4d4735a4c668368914c424 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T06:30:05.407Z"} -->
+
+## 2026-10-04 — Add a guided Run flow (plan new/existing -> roles Looks good/Change -> check -> start); backup stays per repository
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PLAN-FLOW
+
+**Because:** user wants one intuitive path instead of knowing Plan, Set up and Start order; user chose per-repo backup (B)
+
+**Rejected:**
+
+- Machine-wide default backup chain (A) — user chose B
+
+**Files:** docs/superpowers/specs/2026-10-04-relay-plan-flow-design.md
+
+<!-- whyline-event: c1c739d516fd47d480d450b429f54bc7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T06:46:12.119Z"} -->
+
+## 2026-10-04 — Fold setup-ease ideas 1, 3, 5 into the plan-flow plan; readiness screen and failure memory (2, 4) plus plan capability warnings (6) go to a separate spec
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PLAN-FLOW
+
+**Because:** 1, 3 and 5 extend Tasks 9, 15 and 16 directly; 2 and 4 are a feature of their own
+
+**Rejected:**
+
+- All six in this plan (B) — delays whyline 0.3.32
+
+**Files:** docs/superpowers/plans/2026-10-04-relay-plan-flow.md
+
+<!-- whyline-event: b8d6fdf9660b4dac9291ff2ad34015cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T06:50:27.618Z"} -->
+
+## 2026-10-04 — Attachments: console stages files into git-ignored .whyline/attachments; whyline-relay delivers per agent (codex --image=, others by path) and warns before sending when an agent may not see an image
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ATTACH
+
+**Because:** only the relay builds agent command lines, so it is the one place codex can get real image input and Chat, Brainstorm and Plan share one mechanism
+
+**Rejected:**
+
+- Console-only path list — codex never sees images, forms need hacks
+- Inline file contents into the prompt — fragile, costly, risky for large files
+
+**Files:** docs/superpowers/specs/2026-10-04-console-attachments-design.md
+
+<!-- whyline-event: 7c016ed259144a81a4819b5278f8202e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T07:04:43.131Z"} -->
+
+## 2026-10-04 — Attachments plan: spike run outside the relay; relay part (ATT-2..4) and console part (ATT-6..10) run as separate relay plans; releases by a human
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ATTACH
+
+**Because:** the spike needs real logins and quota, the relay works in one repo at a time, and codex's sandbox blocks tags and network
+
+**Files:** docs/superpowers/plans/2026-10-04-console-attachments.md
+
+<!-- whyline-event: 7bb67a1f7663477f96f0ce088cc22650 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T07:10:48.538Z"} -->
+
+## 2026-10-04 — Delivery table from the spike: all four agents read images by path (codex also natively); grok files stay unverified after an RTF read was cancelled
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ATT-1
+
+**Because:** a cell is marked verified only when the spike's answer was correct
+
+**Rejected:**
+
+- Keep grok/antigravity images unverified — both described the test image correctly
+
+**Files:** docs/attachments-capabilities.md
+
+<!-- whyline-event: d2df58f5a3d34b50b564eec637da0c20 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T07:14:57.296Z"} -->

@@ -39,9 +39,11 @@ def test_run_chat_turn_returns_an_output_event_on_success(repo, monkeypatch):
 
 def test_run_chat_turn_reports_agent_unavailable(repo):
     _init_relay_repo(repo)
-    event = adapters.run_chat_turn(repo.path, agent="grok", prompt="ping")
+    # grok has a built-in recipe since relay 0.2.28; an unknown name is
+    # the one that is still unconfigured.
+    event = adapters.run_chat_turn(repo.path, agent="custom", prompt="ping")
     assert event.kind == "error"
-    assert "grok" in event.text
+    assert "custom" in event.text
 
 
 def test_run_chat_turn_reports_agent_missing(repo, monkeypatch):
