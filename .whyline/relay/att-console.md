@@ -41,7 +41,7 @@ version or publish -- a human releases afterwards.
   only existing files and asks Attach / Keep as text; anything else is
   inserted unchanged. Verify: uv run pytest -q.
 
-- [ ] ATT-10: Attachments in the Brainstorm and Plan forms
+- [x] ATT-10: Attachments in the Brainstorm and Plan forms
   Implement "Task 10" from the plan: AttachmentsField with summary_text,
   attachments in the Brainstorm form and in the Plan form (replacing the
   "Reference documents" box), PlanRequest.attachments replacing refs,
