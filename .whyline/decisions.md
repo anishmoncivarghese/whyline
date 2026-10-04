@@ -4700,3 +4700,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a987ee84213f4dba9c17e7562d217108 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T16:53:57.125Z"} -->
+
+## 2026-10-04 — Stage attachments via atomic tempfile rename into git-ignored session directories
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-6
+
+**Because:** agents reading asynchronously never observe partial writes, and session folders allow clean_old to prune by date safely
+
+**Rejected:**
+
+- Copy directly into final destination — concurrent agent could read half-written file
+- Follow symlinks during clean_old — symlinks could point outside attachments tree
+
+**Files:** src/whyline/console/attachments.py
+
+<!-- whyline-event: 4a37fdb18a294a30820c2727fcb53d4a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T17:46:33.136Z"} -->
+
+## 2026-10-04 — Request changes because safe_name can exceed its 80-character contract
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-6
+
+**Because:** The extension is never bounded; a 100-character extension produces a 101-character result, so staging does not guarantee the specified safe-name maximum
+
+**Files:** src/whyline/console/attachments.py
+
+<!-- whyline-event: 33b8bd111355451299a3eb7b06878eae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T17:49:30.868Z"} -->
+
+## 2026-10-04 — Bound sanitized extension to 78 characters in safe_name
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-6
+
+**Because:** ensures any filename with an extension leaves at least 1 character for the stem and 1 for the dot within the 80-character maximum
+
+**Rejected:**
+
+- Drop extension entirely on overflow — breaks file type identification and violates contract to preserve extension
+
+**Files:** src/whyline/console/attachments.py
+
+<!-- whyline-event: d7270dd8e8874b2d85f985ff207dbd1d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T17:54:38.274Z"} -->
+
+## 2026-10-04 — Approve ATT-6 attachment staging after bounded-extension fix
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-6
+
+**Because:** The implementation satisfies the staging, limit, safe-name, git-ignore verification, drop parsing, and symlink-safe cleanup contract; the long-extension regression is covered and uv run pytest -q passes
+
+**Files:** src/whyline/console/attachments.py
+
+<!-- whyline-event: 91dfbb02779e4bc1bcdb7b8ef5422896 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T17:57:25.457Z"} -->
