@@ -32,7 +32,7 @@ version or publish.
   run_revision, run_answer, summary, questions_text) and
   tests/console/test_plan_job.py. Verify: uv run pytest -q.
 
-- [ ] RPF-13: Plan popup becomes a form
+- [x] RPF-13: Plan popup becomes a form
   Implement "Task 13: Plan popup becomes a form" from the plan: RelayPlanScreen
   only collects a PlanRequest (Plan name, Drafter/Reviewer dropdowns, name
   clash confirm, Resume as a request; Paste still saves instantly), and add
