@@ -577,6 +577,7 @@ class RelaySetupScreen(ModalScreen):
                 if "antigravity" in (chosen[0], chosen[1], chosen[2], *chosen[3]):
                     relay_ops.forget_antigravity_decline(root)
                 relay_ops.save_roles(root, *chosen)
+                relay_ops.prepare_agents(root, [chosen[0], chosen[1], chosen[2], *chosen[3]])
                 if plan is not None:
                     relay_ops.select_plan(root, plan)
                 checks = relay_ops.run_checks(root, plan)

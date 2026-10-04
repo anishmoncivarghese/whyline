@@ -32,6 +32,7 @@ def ops(monkeypatch):
         "backup": ["claude", "codex"],
     })
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
+    monkeypatch.setattr(relay_ops, "prepare_agents", lambda root, agents: [])
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
     monkeypatch.setattr(relay_ops, "save_roles", lambda *a: None)
     monkeypatch.setattr(relay_ops, "select_plan", lambda *a: None)

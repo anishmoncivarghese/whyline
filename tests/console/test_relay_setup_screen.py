@@ -27,6 +27,7 @@ def ops(monkeypatch):
         },
     )
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
+    monkeypatch.setattr(relay_ops, "prepare_agents", lambda root, agents: [])
     saved = []
     monkeypatch.setattr(
         relay_ops,
@@ -233,3 +234,15 @@ async def test_setup_button_starts_the_relay(tmp_path, monkeypatch):
         await pilot.click("#rs-start")
         await pilot.pause()
     assert launched == [["start"]]
+
+
+async def test_check_prepares_the_chosen_agents_before_checking(tmp_path, monkeypatch):
+    order = []
+    monkeypatch.setattr(relay_ops, "prepare_agents", lambda root, agents: order.append(("prepare", sorted(set(agents)))) or [])
+    monkeypatch.setattr(relay_ops, "run_checks", lambda root, plan=None: order.append(("check",)) or [relay_ops.CheckLine("ok", "fine")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rs-check")
+        await _wait_for(pilot, lambda: ("check",) in order, "check")
+    assert order[0] == ("prepare", ["claude", "codex"]) and order[-1] == ("check",)

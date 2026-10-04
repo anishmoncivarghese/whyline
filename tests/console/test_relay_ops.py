@@ -330,3 +330,15 @@ def test_role_meaning():
     )
 
 
+
+
+def test_prepare_agents_writes_and_commits_only_their_settings_files(repo):
+    (repo / "mine.txt").write_text("uncommitted, the user's\n")
+    created = relay_ops.prepare_agents(repo, ["codex", "claude", "grok"])
+    settings = repo / ".whyline" / "relay" / "claude-settings.json"
+    assert created == [settings] and settings.exists()
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        ".whyline/relay/claude-settings.json"
+    ]
+    assert "mine.txt" in _git(repo, "status", "--porcelain")
+    assert relay_ops.prepare_agents(repo, ["claude"]) == []  # never overwritten
