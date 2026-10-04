@@ -36,7 +36,7 @@ class RelayPlanScreen(ModalScreen):
         width: 96; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
         border: thick $accent; background: $surface;
     }
-    RelayPlanScreen #rp-form { height: auto; max-height: 1fr; }
+    RelayPlanScreen #rp-form { height: auto; max-height: 70vh; }  /* 1fr has no effect in an auto-height popup */
     RelayPlanScreen Vertical, RelayPlanScreen Horizontal { height: auto; }
     RelayPlanScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelayPlanScreen TextArea { height: 8; }
@@ -410,7 +410,8 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen #rs-summary { width: 1fr; padding: 1 1 0 0; }
     RelaySetupScreen #rs-summary-row Button { margin-left: 1; }
     RelaySetupScreen #rs-meaning { color: $text-muted; padding: 1 0; }
-    RelaySetupScreen #rs-results { height: auto; max-height: 12; }
+    RelaySetupScreen #rs-fields { height: auto; max-height: 45vh; }
+    RelaySetupScreen #rs-results { height: auto; max-height: 25vh; }
     RelaySetupScreen #rs-error { color: $error; height: auto; }
     RelaySetupScreen #rs-error.-empty { display: none; }
     RelaySetupScreen #rs-buttons { margin-top: 1; }
@@ -502,7 +503,9 @@ class RelaySetupScreen(ModalScreen):
             if self._guided
             else "Set up: who does what, then check everything is ready."
         )
-        yield Vertical(
+        # The fields scroll; the check results, error line and buttons stay
+        # pinned below, so Check and Start are reachable on an 80x24 terminal.
+        yield Vertical(VerticalScroll(
             Label(title),
             (
                 Horizontal(
@@ -537,6 +540,7 @@ class RelaySetupScreen(ModalScreen):
                 Static("", id="rs-meaning"),
                 id="rs-roles",
             ),
+            id="rs-fields"),
             VerticalScroll(Static("", id="rs-checks"), id="rs-results"),
             Static("", id="rs-error", classes="-empty"),
             Horizontal(

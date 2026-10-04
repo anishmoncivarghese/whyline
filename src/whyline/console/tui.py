@@ -246,7 +246,7 @@ class BrainstormScreen(ModalScreen):
         width: 84; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
         border: thick $accent; background: $surface;
     }
-    BrainstormScreen #bs-fields { height: auto; max-height: 1fr; }
+    BrainstormScreen #bs-fields { height: auto; max-height: 70vh; }  /* 1fr has no effect in an auto-height popup */
     BrainstormScreen Label { width: 100%; }
     BrainstormScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     /* Textual's own :focus rule adds a tall border, which on a one-line

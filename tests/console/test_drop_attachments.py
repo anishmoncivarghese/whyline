@@ -38,7 +38,8 @@ async def test_dropping_two_files_asks_then_attaches(repo, tmp_path_factory):
         app.query_one("#prompt", tui.Input).post_message(events.Paste(text))
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         for _ in range(100):
             if len(app._pending.items) == 2:
                 break
@@ -55,7 +56,8 @@ async def test_keep_as_text_inserts_the_paste_unchanged(repo, tmp_path_factory):
         await _chat(app, pilot)
         app.query_one("#prompt", tui.Input).post_message(events.Paste(str(shot)))
         await pilot.pause()
-        await pilot.click("#cancel")
+        app.screen.query_one("#cancel", tui.Button).press()
+        await pilot.pause()
         await pilot.pause()
         assert app.query_one("#prompt", tui.Input).value == str(shot)
         assert app._pending.items == []
@@ -112,7 +114,8 @@ async def test_drop_staging_error_renders_error_and_keeps_earlier_staged(repo, t
         app.query_one("#prompt", tui.Input).post_message(events.Paste(text))
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         for _ in range(100):
             lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
             if any("second.png failed to stage" in l for l in lines):
@@ -131,7 +134,8 @@ async def test_drop_focus_is_restored_to_prompt(repo, tmp_path_factory):
         await _chat(app, pilot)
         app.query_one("#prompt", tui.Input).post_message(events.Paste(str(shot)))
         await pilot.pause()
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         for _ in range(100):
             if app._pending.items:
                 break

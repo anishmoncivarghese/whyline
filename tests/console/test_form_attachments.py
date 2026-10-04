@@ -164,7 +164,8 @@ async def test_relay_plan_screen_warns_on_unverified_attachments(
         await pilot.pause()
 
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         await pilot.pause()
 
     assert len(results) == 1
@@ -200,7 +201,8 @@ async def test_brainstorm_screen_attaches_and_warns(repo, monkeypatch, tmp_path_
             await pilot.pause(0.05)
 
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         await pilot.pause()
 
     assert len(results) == 1

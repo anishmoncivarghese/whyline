@@ -75,7 +75,8 @@ async def test_send_with_a_warning_asks_once_then_sends_with_attachments(repo, m
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         for _ in range(100):
             if sent and not app._pending.items:
                 break
@@ -173,7 +174,8 @@ async def test_send_with_secret_warning_asks_before_sending(repo, monkeypatch, t
         assert isinstance(app.screen, tui.ConfirmScreen)
         label_text = str(app.screen.query_one(tui.Label).renderable)
         assert f"{name} looks like a secret" in label_text
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         for _ in range(100):
             if sent and not app._pending.items:
                 break
@@ -207,7 +209,8 @@ async def test_repo_switch_clears_pending_attachments(repo, monkeypatch, tmp_pat
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#confirm")
+        app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
+        await pilot.pause()
         await pilot.pause()
 
         # In new repo, pending attachments must be cleared and tray hidden
@@ -269,7 +272,8 @@ async def test_repo_switch_cancelled_keeps_pending_attachments(repo, monkeypatch
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
-        await pilot.click("#cancel")
+        app.screen.query_one("#cancel", tui.Button).press()
+        await pilot.pause()
         await pilot.pause()
 
         # Switch cancelled: pending attachments must remain
