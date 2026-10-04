@@ -10,7 +10,7 @@ required (the dependency bump in Task 5 Step 1 is done -- skip it). Release
 steps are done by a human afterwards: never push, tag, bump the version or
 publish.
 
-- [ ] RPF-5: Every installed relay agent is offered
+- [x] RPF-5: Every installed relay agent is offered
   Implement "Task 5: Every installed relay agent is offered" from the plan,
   starting at Step 2: relay_ops.relay_agents(root, which=shutil.which) lists
   the loaded relay config's agents whose binary is on PATH (antigravity's is
