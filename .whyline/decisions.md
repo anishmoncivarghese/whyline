@@ -4452,3 +4452,68 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1144428769644108a484fab637ab0835 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:55:00.766Z"} -->
+
+## 2026-10-04 — While a draft or questions are open, typed text goes to the plan job; slash commands still run
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-14
+
+**Because:** the user answers in the normal prompt (option A) and must still reach Help, Copy and Stop
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 17b9cddb4d904b468a0948ae16206db6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:02:36.818Z"} -->
+
+## 2026-10-04 — Request changes: a confirmed repo switch must clear the active plan review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-14
+
+**Because:** slash commands are allowed during review, but /repo currently changes session.root while retaining the old repository's plan state and draft, so a later approval can commit that draft into the wrong repository
+
+**Rejected:**
+
+- Approve as-is — the full suite passes but does not cover cross-repository plan state
+
+**Files:** src/whyline/console/tui.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: c5e4d08365bc4b7eae819285b19214a9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:06:07.986Z"} -->
+
+## 2026-10-04 — Leave active plan on confirmed repository switch while keeping on-disk drafts and retaining review on cancel
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-14
+
+**Because:** switching repositories invalidates in-memory plan state so an old draft is never committed to a new repository, while keeping draft files on disk allows resuming them later in the original repo
+
+**Rejected:**
+
+- Discard on-disk draft on repository switch — the draft is still valid in the original repository and can be resumed later
+- Leave plan review active across repo switch — approving or revising would execute in the wrong repository context
+
+**Files:** src/whyline/console/tui.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: e9f06cec1bcc411496df157cec1090a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:12:25.725Z"} -->
+
+## 2026-10-04 — Approve the main-window plan job after repository-switch regression coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-14
+
+**Because:** The implementation matches the plan workflow, the confirmed-switch path clears all in-memory plan state without deleting the draft, cancellation preserves review and approval in the original repository, and the full test suite passes
+
+**Rejected:**
+
+- Request more changes — no unsafe cross-repository plan path or uncovered task requirement remains
+
+**Files:** src/whyline/console/tui.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: f456c09bd7e246d692d8092dad6f6068 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T13:14:43.298Z"} -->

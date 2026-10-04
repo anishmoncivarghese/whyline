@@ -35,7 +35,7 @@ except ImportError:
     Static = Text = None
     TUI_AVAILABLE = False
 
-from whyline.console import adapters, relay_ops
+from whyline.console import adapters, plan_job, relay_ops
 from whyline.console.relay_process import RelayProcess
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
@@ -303,6 +303,8 @@ class WhylineConsoleApp(App):
     """The mouse-enabled console. Every widget dispatches through the same
     ConsoleSession/dispatch() path the keyboard REPL already uses."""
 
+    BINDINGS = [("escape", "leave_plan", "Leave plan")]
+
     # Textual's default Button width is 16 columns; seven of them (Send,
     # Model, Route, History, Stop, Help, Copy) at that width would be
     # wider than an 80-column terminal -- the standard default, and what
@@ -334,6 +336,7 @@ class WhylineConsoleApp(App):
     #context { width: 1fr; padding: 1 1 0 1; text-align: right; color: $text-muted; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
     Input#prompt { width: 1fr; }
+    #plan-actions { height: auto; display: none; }
     """
 
     def __init__(self, *, root: Path) -> None:
@@ -348,6 +351,9 @@ class WhylineConsoleApp(App):
         self._relay = None  # the RelayProcess started by Start/Resume, if any
         self._relay_label = ""
         self._antigravity_ok = False
+        self._plan_state = ""  # "", "working", "review", "answering"
+        self._plan_request: plan_job.PlanRequest | None = None
+        self._plan_outcome: plan_job.Outcome | None = None
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -377,11 +383,15 @@ class WhylineConsoleApp(App):
         """The subtitle alone was easy to miss, so the current mode is also
         the highlighted mode button and shapes the prompt's placeholder."""
         mode = self.session.mode
-        self.sub_title = f"mode: {mode}"
+        suffix = {"review": " · plan review", "answering": " · answering"}.get(self._plan_state, "")
+        self.sub_title = f"mode: {mode}{suffix}"
         for name in _MODES:
             button = self._main(f"#mode-{name}", Button)
             button.variant = "primary" if name == mode else "default"
-        self._main("#prompt", Input).placeholder = self._placeholder(mode)
+        self._main("#prompt", Input).placeholder = {
+            "review": 'Type "approve", or say what to change (Enter to send)',
+            "answering": "Type your answers (Enter to send)",
+        }.get(self._plan_state, self._placeholder(mode))
         # Who Chat talks to (and with what model) and which repository
         # everything runs against, always in view.
         self._main("#context", Static).update(
@@ -422,6 +432,12 @@ class WhylineConsoleApp(App):
         )
         yield RichLog(id="transcript", wrap=True)
         yield Static("", id="thinking")
+        yield Horizontal(
+            Button("Approve", id="plan-approve", variant="success"),
+            Button("View draft", id="plan-view"),
+            Button("Discard", id="plan-discard", variant="warning"),
+            id="plan-actions",
+        )
         yield Horizontal(
             Input(id="prompt"),
             Button("Send", id="send", variant="success"),
@@ -473,6 +489,15 @@ class WhylineConsoleApp(App):
             self._open_relay_setup()
         elif button_id == "relay-resume":
             self._launch_relay(["resume"])
+        elif button_id == "plan-approve":
+            self._approve_plan()
+        elif button_id == "plan-view":
+            from whyline.console.relay_screens import PlanDraftScreen
+
+            if self._plan_outcome and self._plan_outcome.draft:
+                self.push_screen(PlanDraftScreen(self._plan_outcome.draft.text))
+        elif button_id == "plan-discard":
+            self._discard_plan()
         elif button_id in ("model", "history", "help", "brainstorm"):
             self._handle_slash(f"/{button_id}")
 
@@ -530,6 +555,8 @@ class WhylineConsoleApp(App):
         self.workers vs. a single self.workers.cancel_all()) against your
         installed version."""
         self._dispatch_token = object()
+        if self._plan_state == "working":
+            self._leave_plan()
         for worker in self.workers:
             worker.cancel()
         self._set_busy(False)
@@ -580,6 +607,9 @@ class WhylineConsoleApp(App):
             return
         prompt.value = ""
         self.render_event(SessionEvent(kind="input", text=text))
+        if self._plan_state in ("review", "answering") and not text.startswith("/"):
+            self._plan_reply(text)
+            return
         first = text.split(maxsplit=1)[0]
         if self.session.mode == "relay" and first in ("start", "resume"):
             self._launch_relay(text.split())
@@ -639,6 +669,7 @@ class WhylineConsoleApp(App):
         if not confirmed:
             self.render_event(SessionEvent(kind="output", text="Staying put."))
             return
+        self._leave_plan()
         self._stop()  # a reply still pending belongs to the old repository
         result = switch_repo(self.session, target)
         self._main("#transcript", RichLog).clear()
@@ -784,6 +815,11 @@ class WhylineConsoleApp(App):
     def _open_relay_plan(self) -> None:
         if self._refuse_in_home():
             return
+        if self._plan_state:
+            self.render_event(SessionEvent(
+                kind="error",
+                text="A plan is already in progress: approve it, Discard it, or press Esc."))
+            return
         from whyline import account
         from whyline.console.relay_screens import RelayPlanScreen
 
@@ -793,20 +829,154 @@ class WhylineConsoleApp(App):
                 account.agent_status(self.session.root),
                 self.session.agent or "claude",
             ),
-            self._plan_saved,
+            self._plan_chosen,
         )
+
+    def _plan_chosen(self, result) -> None:
+        if result is None:
+            return
+        if isinstance(result, plan_job.PlanRequest):
+            self._start_plan_job(result)
+        else:
+            self._plan_saved(result)
 
     def _plan_saved(self, path: Path | None) -> None:
         if path is None:
             return
+        shown = path.relative_to(self.session.root) if path.is_relative_to(self.session.root) else path
         self.render_event(
             SessionEvent(
                 kind="output",
-                text=f"Saved {path.name} and committed it. Next: Set up, to pick who "
-                "implements, tests and reviews.",
+                text=f"Saved {shown} and committed it. Next: Set up, to pick the plan and who "
+                     "implements, tests and reviews.",
             )
         )
         self._sync_relay_buttons()
+
+    # -- the plan job (spec section 4) ------------------------------------
+    def _set_plan_state(self, state: str) -> None:
+        self._plan_state = state
+        self._main("#plan-actions").display = state == "review"
+        self._sync_mode_indicator()
+
+    def _start_plan_job(self, request: plan_job.PlanRequest) -> None:
+        def proceed(allowed: bool) -> None:
+            if not allowed:
+                self.render_event(SessionEvent(
+                    kind="error",
+                    text="This plan needs Antigravity, which isn't trusted here. "
+                         "Pick other agents in Plan."))
+                return
+            self._plan_request = request
+            self._plan_outcome = None
+            self.render_event(SessionEvent(
+                kind="output", text=f'Planning "{request.name}". Progress follows.'))
+            root = self.session.root
+            self._run_plan(lambda progress: plan_job.run_request(root, request, progress))
+
+        agents = {request.drafter, request.reviewer, request.writer}
+        if request.brainstorm:
+            agents |= set(request.brainstorm["agents"])
+        self._with_antigravity("antigravity" in agents, proceed)
+
+    def _run_plan(self, work) -> None:
+        token = object()
+        self._dispatch_token = token
+        self._set_plan_state("working")
+        self._set_busy(True, "planning")
+
+        def in_thread() -> None:
+            def progress(line: str) -> None:
+                self.call_from_thread(self._plan_progress, line, token)
+
+            try:
+                outcome = work(progress)
+            except Exception as error:  # agent missing, timeout, relay pause...
+                self.call_from_thread(self._plan_failed, error, token)
+                return
+            self.call_from_thread(self._plan_done, outcome, token)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _plan_progress(self, line: str, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self.render_event(SessionEvent(kind="output", text=f"plan · {line}"))
+        self._busy_text = f"planning: {line}"
+
+    def _plan_failed(self, error: Exception, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self._set_plan_state("")
+        self.render_event(SessionEvent(
+            kind="error",
+            text=f"Planning stopped: {error or error.__class__.__name__}. Anything drafted "
+                 "so far is kept -- open Plan and choose Resume draft to try again.",
+        ))
+
+    def _plan_done(self, outcome: plan_job.Outcome, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self._plan_outcome = outcome
+        if outcome.kind == "questions":
+            self.render_event(SessionEvent(kind="output", text=plan_job.questions_text(outcome)))
+            self._set_plan_state("answering")
+        else:
+            self.render_event(SessionEvent(
+                kind="output", text=plan_job.summary(outcome.draft, self._plan_request.name)))
+            self._set_plan_state("review")
+        self._main("#prompt", Input).focus()
+
+    def _plan_reply(self, text: str) -> None:
+        root, outcome = self.session.root, self._plan_outcome
+        if self._plan_state == "review":
+            if text.strip().lower() == "approve":
+                self._approve_plan()
+                return
+            self._run_plan(lambda progress: plan_job.run_revision(root, outcome.draft, text, progress))
+            return
+        self._run_plan(lambda progress: plan_job.run_answer(root, outcome, text, progress))
+
+    def _approve_plan(self, replace: bool = False) -> None:
+        root, request = self.session.root, self._plan_request
+        draft = self._plan_outcome.draft
+        try:
+            path = relay_ops.approve_plan(root, draft, request.name,
+                                          replace=replace or request.replace)
+        except relay_ops.plan_exists_error():
+            shown = relay_ops.plan_path(root, request.name).relative_to(root)
+            self.push_screen(
+                ConfirmScreen(f"{shown} already exists. Replace it?", "Replace"),
+                lambda confirmed: confirmed and self._approve_plan(replace=True),
+            )
+            return
+        except ValueError as error:  # plan.PlanError: the draft isn't usable yet
+            self.render_event(SessionEvent(
+                kind="error", text=f"{error}. The draft is still at {draft.path}."))
+            return
+        self._leave_plan()
+        self._plan_saved(path)
+
+    def _discard_plan(self) -> None:
+        if self._plan_outcome is not None:
+            relay_ops.discard_draft(self.session.root, self._plan_outcome.draft)
+        self._leave_plan()
+        self.render_event(SessionEvent(kind="output", text="Draft discarded."))
+
+    def _leave_plan(self) -> None:
+        self._plan_request = None
+        self._plan_outcome = None
+        self._set_plan_state("")
+
+    def action_leave_plan(self) -> None:
+        if self._plan_state not in ("review", "answering"):
+            return
+        draft = self._plan_outcome.draft if self._plan_outcome else None
+        self._leave_plan()
+        where = f"It is still at {draft.path}." if draft else "Open Plan and choose Resume draft to come back."
+        self.render_event(SessionEvent(kind="output", text=f"Left the plan. {where}"))
 
     def _open_relay_setup(self) -> None:
         if self._refuse_in_home():
