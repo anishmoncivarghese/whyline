@@ -191,9 +191,13 @@ async def test_brainstorm_screen_attaches_and_warns(repo, monkeypatch, tmp_path_
                 break
             await pilot.pause(0.05)
 
+        assert screen.query_one("#bs-attachments", AttachmentsField).pending.items
         screen.query_one("#bs-topic", tui.Input).value = "Brainstorming topic"
         await pilot.click("#bs-start")
-        await pilot.pause()
+        for _ in range(100):  # slow CI runners need more than one frame
+            if isinstance(app.screen, tui.ConfirmScreen):
+                break
+            await pilot.pause(0.05)
 
         assert isinstance(app.screen, tui.ConfirmScreen)
         await pilot.click("#confirm")

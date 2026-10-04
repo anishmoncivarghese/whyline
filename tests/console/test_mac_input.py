@@ -65,6 +65,6 @@ def test_no_image_on_the_clipboard_leaves_nothing_behind(tmp_path):
 
 def test_the_target_path_is_passed_as_an_argument_not_spliced_into_the_script(tmp_path):
     seen = []
-    target = tmp_path / 'a"b.png'
+    target = tmp_path / "a 'b.png"  # a quote that is legal on every OS
     mac_input.paste_image(target, run=lambda argv, **kw: seen.append(argv) or _result(1))
     assert str(target) == seen[0][-1]

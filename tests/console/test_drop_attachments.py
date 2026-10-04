@@ -1,3 +1,4 @@
+import os
 import pytest
 from textual import events
 
@@ -28,7 +29,9 @@ async def test_dropping_two_files_asks_then_attaches(repo, tmp_path_factory):
     folder = tmp_path_factory.mktemp("drop")
     (folder / "My Shot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (folder / "PRD.pdf").write_bytes(b"%PDF")
-    text = f"{str(folder / 'My Shot.png').replace(' ', chr(92) + ' ')} {folder / 'PRD.pdf'}"
+    shot = folder / 'My Shot.png'
+    dropped = f'"{shot}"' if os.name == "nt" else str(shot).replace(' ', chr(92) + ' ')
+    text = f"{dropped} {folder / 'PRD.pdf'}"
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 40)) as pilot:
         await _chat(app, pilot)

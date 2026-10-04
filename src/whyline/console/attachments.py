@@ -176,16 +176,24 @@ def stage(
 def dropped_paths(text: str) -> list[Path] | None:
     """The files a drag-and-drop pasted, or None when the text is anything
     else. Never runs the text through a shell."""
+    windows = os.name == "nt"
     try:
-        tokens = shlex.split(text.strip(), posix=True)
+        # Windows terminals quote dropped paths ("C:\\My Shot.png") and use
+        # backslashes as separators, not escapes; macOS/Linux ones escape.
+        tokens = shlex.split(text.strip(), posix=not windows)
     except ValueError:  # an unbalanced quote: ordinary text
         return None
+    if windows:
+        tokens = [t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'" else t
+                  for t in tokens]
     if not tokens:
         return None
     paths = []
     for token in tokens:
         if token.startswith("file://"):
             token = unquote(urlparse(token).path)
+            if windows and re.match(r"^/[A-Za-z]:", token):
+                token = token[1:]  # file:///C:/x -> C:/x
         path = Path(token).expanduser()
         if not path.is_absolute() or not path.is_file():
             return None

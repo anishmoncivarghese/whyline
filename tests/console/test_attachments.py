@@ -1,4 +1,5 @@
 import os
+import os
 import subprocess
 import time
 from datetime import datetime
@@ -104,10 +105,11 @@ def test_session_name_and_safe_name():
 def test_dropped_paths(tmp_path):
     a = _file(tmp_path / "My Shot.png")
     b = _file(tmp_path / "PRD.pdf")
-    escaped = str(a).replace(" ", "\\ ")
+    # each OS's terminal drops paths its own way
+    escaped = f'"{a}"' if os.name == "nt" else str(a).replace(" ", "\\ ")
     assert att.dropped_paths(f"{escaped} {b}") == [a, b]
     assert att.dropped_paths(f"'{a}'") == [a]
-    assert att.dropped_paths(f"file://{str(a).replace(' ', '%20')}") == [a]
+    assert att.dropped_paths(a.as_uri()) == [a]
     assert att.dropped_paths(f"look at {b} please") is None
     assert att.dropped_paths(str(tmp_path / "missing.png")) is None
     assert att.dropped_paths(str(tmp_path)) is None  # a folder
