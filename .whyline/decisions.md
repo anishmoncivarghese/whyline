@@ -4939,3 +4939,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 05cd2d48b20e47ff9f830df3b436ae21 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:11:06.884Z"} -->
+
+## 2026-10-04 — Approve and release the attachments console part (ATT-6..10) as whyline 0.3.33, with a fix committing whyline's own gitignore line
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ATT-11
+
+**Because:** diff matches the plan; a real console drive (attach, per-agent status, send, drop) worked; it also showed the first attachment left .whyline/.gitignore dirty, which would block the next relay start
+
+**Files:** src/whyline/console/attachments.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 51a2eef31ecb4674874908495b42f6da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:21:15.310Z"} -->
