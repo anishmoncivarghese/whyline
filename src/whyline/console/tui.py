@@ -872,7 +872,7 @@ class WhylineConsoleApp(App):
     def _plan_saved(self, path: Path | None) -> None:
         if path is None:
             return
-        shown = path.relative_to(self.session.root) if path.is_relative_to(self.session.root) else path
+        shown = (path.relative_to(self.session.root) if path.is_relative_to(self.session.root) else path).as_posix()
         self.render_event(
             SessionEvent(
                 kind="output",
@@ -980,7 +980,7 @@ class WhylineConsoleApp(App):
             path = relay_ops.approve_plan(root, draft, request.name,
                                           replace=replace or request.replace)
         except relay_ops.plan_exists_error():
-            shown = relay_ops.plan_path(root, request.name).relative_to(root)
+            shown = relay_ops.plan_path(root, request.name).relative_to(root).as_posix()
             self.push_screen(
                 ConfirmScreen(f"{shown} already exists. Replace it?", "Replace"),
                 lambda confirmed: confirmed and self._approve_plan(replace=True),

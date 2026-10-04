@@ -106,7 +106,7 @@ async def test_the_plan_dropdown_lists_plans_newest_first(tmp_path):
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
         select = screen.query_one("#rs-plan", tui.Select)
-        assert select.value == "/r/plans/new.plan.md"
+        assert select.value == str(Path("/r/plans/new.plan.md"))
         labels = [str(prompt) for prompt, _ in select._options if _ is not tui.Select.BLANK]
         assert labels[0].startswith("new · 0/3 done · draft · 2026-10-04")
 
@@ -132,7 +132,7 @@ async def test_changing_the_plan_after_a_check_disables_start(tmp_path, monkeypa
         await _wait_for(
             pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
         )
-        screen.query_one("#rs-plan", tui.Select).value = "/r/plans/old.plan.md"
+        screen.query_one("#rs-plan", tui.Select).value = str(Path("/r/plans/old.plan.md"))
         await pilot.pause()
         assert screen.query_one("#rs-start", tui.Button).disabled
 
@@ -147,7 +147,7 @@ async def test_check_runs_against_the_chosen_plan(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
-        screen.query_one("#rs-plan", tui.Select).value = "/r/plans/old.plan.md"
+        screen.query_one("#rs-plan", tui.Select).value = str(Path("/r/plans/old.plan.md"))
         await pilot.pause()
         await pilot.click("#rs-check")
         await _wait_for(pilot, lambda: seen, "check")

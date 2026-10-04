@@ -175,7 +175,7 @@ class RelayPlanScreen(ModalScreen):
     def _confirm_replace(self, path: Path, retry) -> None:
         from whyline.console.tui import ConfirmScreen
 
-        shown = path.relative_to(self._root) if path.is_relative_to(self._root) else path
+        shown = (path.relative_to(self._root) if path.is_relative_to(self._root) else path).as_posix()
 
         def answered(confirmed: bool) -> None:
             if confirmed:
