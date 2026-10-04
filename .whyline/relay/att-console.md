@@ -36,7 +36,7 @@ version or publish -- a human releases afterwards.
   "📎 names" transcript line, clearing only after the turn was accepted.
   Verify: uv run pytest -q.
 
-- [ ] ATT-9: Drag and drop
+- [x] ATT-9: Drag and drop
   Implement "Task 9" from the plan: a PromptInput that intercepts a paste of
   only existing files and asks Attach / Keep as text; anything else is
   inserted unchanged. Verify: uv run pytest -q.
