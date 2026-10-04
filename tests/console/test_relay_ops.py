@@ -91,10 +91,23 @@ def test_current_roles_defaults_then_reads_config(repo):
     }
 
 
-def test_relay_agents_are_the_relay_builtins():
-    from whyline_relay import adapters as relay_adapters
+def test_relay_agents_lists_installed_agents_including_recipes(repo):
+    on_path = {"claude", "codex", "agy", "grok"}
+    which = lambda binary: f"/bin/{binary}" if binary in on_path else None
+    assert relay_ops.relay_agents(repo, which=which) == ["antigravity", "claude", "codex", "grok"]
 
-    assert relay_ops.relay_agents() == sorted(relay_adapters.BUILTIN)
+
+def test_relay_agents_leaves_out_what_is_not_installed(repo):
+    which = lambda binary: "/bin/x" if binary in ("claude", "grok") else None
+    assert relay_ops.relay_agents(repo, which=which) == ["claude", "grok"]
+
+
+def test_current_roles_accepts_grok(repo, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root, which=None: ["claude", "codex", "grok"])
+    relay_ops.save_roles(repo, "grok", "claude", "codex", ["grok"])
+    assert relay_ops.current_roles(repo) == {
+        "implementer": "grok", "tester": "claude", "reviewer": "codex", "backup": ["grok"],
+    }
 
 
 def test_run_checks_returns_plain_lines(repo, monkeypatch):

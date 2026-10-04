@@ -4,6 +4,7 @@ presentation. whyline_relay is imported inside each function, like
 adapters.py does, so the console imports without it."""
 from __future__ import annotations
 
+import shutil
 import tomllib
 from dataclasses import dataclass, replace as dc_replace
 from pathlib import Path
@@ -195,16 +196,25 @@ def plan_from_brainstorm(
     )
 
 
-def relay_agents() -> list[str]:
-    from whyline_relay import adapters as relay_adapters
+def relay_agents(root: Path | None = None, which=shutil.which) -> list[str]:
+    """Agents the relay can run here that are installed: its built-ins plus
+    the configured or recipe generic agents (grok, antigravity)."""
+    from whyline_relay import adapters as relay_adapters, chat, config
 
-    return sorted(relay_adapters.BUILTIN)
+    names = set(relay_adapters.BUILTIN)
+    if root is not None:
+        try:
+            names |= set(config.load(root).agents)
+        except Exception:  # an unreadable config: offer the built-ins only
+            pass
+    names = {chat.canonical_agent(name) for name in names}
+    return sorted(name for name in names if which(chat.agent_binary(name)))
 
 
 def current_roles(root: Path) -> dict:
     from whyline_relay import config
 
-    agents = relay_agents()
+    agents = relay_agents(root)
     roles = dict(_DEFAULT_ROLES)
     backup: list[str] = []
     path = config.config_path(root)

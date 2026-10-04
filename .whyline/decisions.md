@@ -4222,3 +4222,33 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d2df58f5a3d34b50b564eec637da0c20 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T07:14:57.296Z"} -->
+
+## 2026-10-04 — Console relay roles list installed agents from the loaded relay config
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-5
+
+**Because:** relay 0.2.28 runs grok and antigravity from recipes, so limiting roles to built-ins hid working agents
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 480c93cb2caf4a8aae9fb7f52a58a502 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T10:30:58.209Z"} -->
+
+## 2026-10-04 — Approve installed relay agent discovery and setup integration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-5
+
+**Because:** The implementation follows the RPF-5 plan exactly, resolves recipe binaries through whyline-relay, filters unavailable agents, propagates the repository root through role/setup consumers, updates the doctor guidance, and both required test suites pass
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: aeb79d3c6b7c473c832c494e6f69b1f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T10:34:58.756Z"} -->

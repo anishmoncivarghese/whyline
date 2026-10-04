@@ -11,7 +11,9 @@ pytestmark = [
 
 @pytest.fixture(autouse=True)
 def ops(monkeypatch):
-    monkeypatch.setattr(relay_ops, "relay_agents", lambda: ["claude", "codex"])
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex"]
+    )
     monkeypatch.setattr(
         relay_ops,
         "current_roles",

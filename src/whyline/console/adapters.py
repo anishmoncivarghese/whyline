@@ -292,9 +292,9 @@ def run_brainstorm(
     skipped = brainstorm.check_availability(settings, models)
     if skipped:
         progress(
-            "Skipping (not set up for chat here): "
+            "Skipping (no command configured here): "
             + ", ".join(l for _, l in skipped)
-            + " -- add them with: whyline relay setup"
+            + " -- see `whyline relay doctor`"
         )
         models = [m for m in models if m not in skipped]
     if not models:

@@ -402,7 +402,7 @@ class RelaySetupScreen(ModalScreen):
     def __init__(self, root: Path) -> None:
         super().__init__()
         self._root = root
-        self._agents = relay_ops.relay_agents()
+        self._agents = relay_ops.relay_agents(root)
         self._roles = relay_ops.current_roles(root)
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built

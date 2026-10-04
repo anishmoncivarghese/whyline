@@ -124,4 +124,4 @@ def test_skipped_models_say_how_to_set_them_up(tmp_path, monkeypatch):
         final_agent="claude", progress=progress.append,
     )
     line = next(line for line in progress if line.startswith("Skipping"))
-    assert "Grok" in line and "whyline relay setup" in line
+    assert "Grok" in line and "whyline relay doctor" in line
