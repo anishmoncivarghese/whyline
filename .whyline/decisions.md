@@ -4761,3 +4761,34 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 91dfbb02779e4bc1bcdb7b8ef5422896 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T17:57:25.457Z"} -->
+
+## 2026-10-04 — Pass target path as an argv argument to osascript instead of splicing into AppleScript text
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-7
+
+**Because:** prevents AppleScript syntax errors and injection risks with arbitrary filenames containing quotes, spaces, or special characters
+
+**Rejected:**
+
+- Splice path into AppleScript text — fails or opens injection vulnerabilities on paths with quotes or backslashes
+- Use third-party utilities like pngpaste — violates the constraint to avoid adding new dependencies
+
+**Files:** src/whyline/console/mac_input.py
+
+<!-- whyline-event: c07476537830484f929ce9c962b29ef1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:01:18.762Z"} -->
+
+## 2026-10-04 — Approve macOS Finder picker and clipboard image helper
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-7
+
+**Because:** The implementation matches the planned interfaces, passes destination paths to osascript as separate argv entries without script interpolation, cleans partial output on failure, and the injected-run tests cover availability, selection, cancellation, errors, clipboard success/failure, and quoted paths
+
+**Files:** src/whyline/console/mac_input.py, tests/console/test_mac_input.py
+
+<!-- whyline-event: 072bb11090a5491a8274b37988d953de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:05:27.249Z"} -->
