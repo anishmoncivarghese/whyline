@@ -4637,3 +4637,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0d5ea4c8ffa845408bb577294d0e638e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:11:18.920Z"} -->
+
+## 2026-10-04 — Re-tag v0.3.32 after fixing Windows-only issues found by the release run
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RPF-17
+
+**Because:** release CI failed on Windows (backslash paths shown to users, a popup updated after closing, a test running real git outside a repo); nothing was published, so moving the tag keeps the version plan; CI then passed on all 7 jobs
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4e1dc6b1d04a47fea8715dd00d440287 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T14:32:40.133Z"} -->
