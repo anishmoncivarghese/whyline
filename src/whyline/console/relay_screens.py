@@ -6,6 +6,7 @@ uses for chat replies)."""
 
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -14,6 +15,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static, TextArea
 
 from whyline.console import relay_ops
+from whyline.console.plan_job import PlanRequest
 
 _SOURCES = [
     ("Draft from a description", "draft"),
@@ -21,29 +23,26 @@ _SOURCES = [
     ("From a brainstorm", "brainstorm"),
 ]
 
-_STATE_BUTTONS = {
-    "form": {"rp-go", "rp-cancel"},
-    "working": {"rp-cancel"},
-    "review": {"rp-approve", "rp-changes", "rp-cancel"},
-}
-
 
 class RelayPlanScreen(ModalScreen):
+    """Collects what to plan, then dismisses with a PlanRequest; the main
+    window runs it, shows progress and the draft, and asks the questions.
+    Pasting is instant, so a pasted plan is still saved here."""
+
     DEFAULT_CSS = """
     RelayPlanScreen { align: center middle; }
     RelayPlanScreen > Vertical {
         width: 96; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
         border: thick $accent; background: $surface;
     }
-    RelayPlanScreen #rp-form, RelayPlanScreen #rp-review { height: auto; max-height: 1fr; }
+    RelayPlanScreen #rp-form { height: auto; max-height: 1fr; }
     RelayPlanScreen Vertical, RelayPlanScreen Horizontal { height: auto; }
     RelayPlanScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelayPlanScreen TextArea { height: 8; }
     RelayPlanScreen #rp-refs { height: 4; }
-    RelayPlanScreen #rp-source { width: 40; }
+    RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-reviewer { width: 40; }
+    RelayPlanScreen #rp-name { width: 1fr; }
     RelayPlanScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
-    /* Textual's own :focus rule adds a tall border, which on a one-line
-       checkbox covers the label entirely; its label highlight is enough. */
     RelayPlanScreen Checkbox:focus { border: none; }
     RelayPlanScreen #rp-error { color: $error; height: auto; }
     RelayPlanScreen #rp-error.-empty { display: none; }
@@ -56,13 +55,21 @@ class RelayPlanScreen(ModalScreen):
         self._root = root
         self._status = status
         self._active = active
-        self._token: object | None = None
-        self._draft: relay_ops.Draft | None = None
-        self._state: str = "form"
+        self._agents = relay_ops.relay_agents(root) or ["claude", "codex"]
+        self._planner = relay_ops.planner_agents(root)
+
+    def _agent_select(self, wanted: str, select_id: str) -> Select:
+        value = wanted if wanted in self._agents else self._agents[0]
+        return Select([(a, a) for a in self._agents], value=value, allow_blank=False, id=select_id)
 
     def compose(self) -> ComposeResult:
+        drafter, reviewer = self._planner
         form = VerticalScroll(
-            Label("Plan: make plan.md, the task list the relay works through."),
+            Label("Plan: make a plan the relay works through, saved under plans/."),
+            Horizontal(
+                Label("Plan name:", classes="field-label"),
+                Input(placeholder="leave empty to name it from the description", id="rp-name"),
+            ),
             Horizontal(
                 Label("Source:", classes="field-label"),
                 Select(_SOURCES, value="draft", allow_blank=False, id="rp-source"),
@@ -77,6 +84,14 @@ class RelayPlanScreen(ModalScreen):
                 TextArea(id="rp-description"),
                 Label("Reference documents, one path per line (e.g. PRD.md):"),
                 TextArea(id="rp-refs"),
+                Horizontal(
+                    Label("Drafter:", classes="field-label"),
+                    self._agent_select(drafter, "rp-drafter"),
+                ),
+                Horizontal(
+                    Label("Reviewer:", classes="field-label"),
+                    self._agent_select(reviewer, "rp-reviewer"),
+                ),
                 id="rp-draft-group",
             ),
             Vertical(*self._brainstorm_widgets(), id="rp-brainstorm-group"),
@@ -84,18 +99,9 @@ class RelayPlanScreen(ModalScreen):
         )
         yield Vertical(
             form,
-            Vertical(Static("", id="rp-progress"), id="rp-working"),
-            VerticalScroll(
-                Static("", id="rp-draft"),
-                Input(placeholder="What should change?", id="rp-feedback"),
-                id="rp-review",
-            ),
             Static("", id="rp-error", classes="-empty"),
             Horizontal(
-                Button("Save", id="rp-go", variant="success"),
-                Button("Approve", id="rp-approve", variant="success"),
-                Button("Request changes", id="rp-changes"),
-                Button("Send changes", id="rp-send-changes", variant="primary"),
+                Button("Make the plan", id="rp-go", variant="success"),
                 Button("Resume draft", id="rp-resume-draft", variant="primary"),
                 Button("Discard it", id="rp-discard-draft", variant="warning"),
                 Button("Cancel", id="rp-cancel"),
@@ -113,41 +119,34 @@ class RelayPlanScreen(ModalScreen):
         return [
             Horizontal(
                 Label("From:", classes="field-label"),
-                Select([("New brainstorm", "new"), *((doc, doc) for doc in docs)],
-                       value="new", allow_blank=False, id="rp-from"),
+                Select(
+                    [("New brainstorm", "new"), *((doc, doc) for doc in docs)],
+                    value="new",
+                    allow_blank=False,
+                    id="rp-from",
+                ),
             ),
             Horizontal(
                 Label("Plan writer:", classes="field-label"),
-                Select([(a, a) for a in (usable or ["claude"])], value=default,
-                       allow_blank=False, id="rp-writer"),
+                Select(
+                    [(a, a) for a in (usable or ["claude"])],
+                    value=default,
+                    allow_blank=False,
+                    id="rp-writer",
+                ),
                 id="rp-writer-row",
             ),
             Vertical(*brainstorm_field_widgets(self._status, default), id="rp-new-group"),
         ]
 
     def on_mount(self) -> None:
-        self._set_state("form")
         self._show_source("draft")
         self.query_one("#rp-writer-row").display = False
         pending = relay_ops.pending_draft(self._root)
+        self.query_one("#rp-resume-draft").display = bool(pending)
+        self.query_one("#rp-discard-draft").display = bool(pending)
         if pending:
             self._error(f'A plan draft for "{pending}" was left unfinished.')
-            self.query_one("#rp-resume-draft").display = True
-            self.query_one("#rp-discard-draft").display = True
-
-    # -- state -----------------------------------------------------------
-    def _set_state(self, state: str) -> None:
-        self._state = state
-        self.query_one("#rp-form").display = state == "form"
-        self.query_one("#rp-working").display = state == "working"
-        self.query_one("#rp-review").display = state == "review"
-        self.query_one("#rp-feedback").display = False
-        visible = _STATE_BUTTONS[state]
-        for button in self.query("#rp-buttons Button"):
-            button.display = button.id in visible
-        self.query_one("#rp-go", Button).label = (
-            "Save" if self._source() == "paste" else "Make the plan"
-        )
 
     def _source(self) -> str:
         return self.query_one("#rp-source", Select).value
@@ -155,9 +154,7 @@ class RelayPlanScreen(ModalScreen):
     def _show_source(self, source: str) -> None:
         for name in ("paste", "draft", "brainstorm"):
             self.query_one(f"#rp-{name}-group").display = name == source
-        self.query_one("#rp-go", Button).label = (
-            "Save" if source == "paste" else "Make the plan"
-        )
+        self.query_one("#rp-go", Button).label = "Save" if source == "paste" else "Make the plan"
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         if event.select.id == "rp-source":
@@ -165,7 +162,6 @@ class RelayPlanScreen(ModalScreen):
         elif event.select.id == "rp-from":
             new = event.value == "new"
             self.query_one("#rp-new-group").display = new
-            # A new brainstorm's own "Final write-up" also writes the plan.
             self.query_one("#rp-writer-row").display = not new
 
     def _error(self, text: str) -> None:
@@ -173,74 +169,49 @@ class RelayPlanScreen(ModalScreen):
         error.update(text)
         error.set_class(not text, "-empty")
 
-    # -- running work off the UI thread -----------------------------------
-    def _progress(self, token: object):
-        def report(line: str) -> None:
-            self.app.call_from_thread(self._add_progress, line, token)
+    def _plan_name(self, fallback: str) -> str:
+        return self.query_one("#rp-name", Input).value.strip() or fallback.strip() or "plan"
 
-        return report
-
-    def _add_progress(self, line: str, token: object) -> None:
-        if token is not self._token:
-            return
-        progress = self.query_one("#rp-progress", Static)
-        progress.update(f"{progress.renderable}\n· {line}".strip())
-
-    def _run(self, work, on_done) -> None:
-        """Runs work(progress) in a thread. on_done(result) runs on the UI
-        thread; an exception is shown in the error line and returns to the
-        form with every input still filled in."""
-        token = object()
-        self._token = token
-        self._error("")
-        self.query_one("#rp-progress", Static).update("Working…")
-        self._set_state("working")
-
-        def in_thread() -> None:
-            try:
-                result = work(self._progress(token))
-            except Exception as error:  # agent missing, timed out, parse failure...
-                self.app.call_from_thread(self._failed, error, token)
-                return
-            self.app.call_from_thread(self._succeeded, on_done, result, token)
-
-        self.run_worker(in_thread, thread=True)
-
-    def _succeeded(self, on_done, result, token: object) -> None:
-        if token is self._token:
-            on_done(result)
-
-    def _failed(self, error: Exception, token: object) -> None:
-        if token is not self._token:
-            return
-        self._set_state("form")
-        self._error(str(error) or error.__class__.__name__)
-
-    # -- saving ----------------------------------------------------------
-    def _confirm_replace(self, retry) -> None:
+    def _confirm_replace(self, path: Path, retry) -> None:
         from whyline.console.tui import ConfirmScreen
+
+        shown = path.relative_to(self._root) if path.is_relative_to(self._root) else path
 
         def answered(confirmed: bool) -> None:
             if confirmed:
                 retry()
 
         self.app.push_screen(
-            ConfirmScreen("plan.md already exists. Replace it?", "Replace"), answered
+            ConfirmScreen(f"{shown} already exists. Replace it?", "Replace"),
+            answered,
         )
+
+    def _submit(self, request: PlanRequest) -> None:
+        path = relay_ops.plan_path(self._root, request.name)
+        if path.exists() and not request.replace:
+            self._confirm_replace(path, lambda: self.dismiss(dc_replace(request, replace=True)))
+            return
+        self.dismiss(request)
 
     def _save_paste(self, replace: bool = False) -> None:
         text = self.query_one("#rp-paste", TextArea).text
+        heading = next(
+            (line.lstrip("#").strip() for line in text.splitlines() if line.startswith("#")), ""
+        )
+        name = self._plan_name(heading)
         try:
-            path = relay_ops.save_pasted_plan(self._root, text, replace=replace)
+            path = relay_ops.save_pasted_plan(self._root, text, name, replace=replace)
         except relay_ops.plan_exists_error():
-            self._confirm_replace(lambda: self._save_paste(replace=True))
+            self._confirm_replace(
+                relay_ops.plan_path(self._root, name),
+                lambda: self._save_paste(replace=True),
+            )
             return
         except ValueError as error:
             self._error(str(error))
             return
         self.dismiss(path)
 
-    # -- buttons ---------------------------------------------------------
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
         handler = getattr(self, f"_on_{event.button.id.replace('-', '_')}", None)
@@ -248,59 +219,22 @@ class RelayPlanScreen(ModalScreen):
             handler()
 
     def _on_rp_cancel(self) -> None:
-        self._token = object()  # a late result from a cancelled run is dropped
-        if self._state == "review" and self._draft is not None:
-            relay_ops.discard_draft(self._root, self._draft)
         self.dismiss(None)
 
     def _on_rp_go(self) -> None:
         source = self._source()
         if source == "paste":
             self._save_paste()
-        elif source == "draft":
-            self._start_draft()
-        else:
-            self._start_brainstorm()
-
-    def _start_brainstorm(self) -> None:
-        from whyline.console import adapters
-        from whyline.console.tui import collect_brainstorm
-
-        root = self._root
-        chosen = self.query_one("#rp-from", Select).value
-        if chosen != "new":
-            writer = self.query_one("#rp-writer", Select).value
-            self._run(
-                lambda progress: relay_ops.plan_from_brainstorm(
-                    root, chosen, writer, progress=progress
-                ),
-                self._show_review,
-            )
             return
-        choice = collect_brainstorm(self.query_one)
-        if isinstance(choice, str):
-            self._error(choice)
-            return
+        request = self._draft_request() if source == "draft" else self._brainstorm_request()
+        if request is not None:
+            self._submit(request)
 
-        def work(progress):
-            result = adapters.run_brainstorm(root, progress=progress, **choice)
-            if result.kind == "error":
-                raise RuntimeError(result.text)
-            return relay_ops.plan_from_brainstorm(
-                root,
-                choice["topic"],
-                choice["final_agent"],
-                progress=progress,
-                timeout_minutes=choice["timeout_minutes"],
-            )
-
-        self._run(work, self._show_review)
-
-    def _start_draft(self) -> None:
+    def _draft_request(self) -> PlanRequest | None:
         description = self.query_one("#rp-description", TextArea).text.strip()
         if not description:
             self._error("Describe what the plan should build.")
-            return
+            return None
         refs = [
             line.strip()
             for line in self.query_one("#rp-refs", TextArea).text.splitlines()
@@ -309,69 +243,70 @@ class RelayPlanScreen(ModalScreen):
         missing = relay_ops.missing_references(self._root, refs)
         if missing:
             self._error("Can't find: " + ", ".join(missing))
-            return
-        root = self._root
-
-        def work(progress):
-            try:
-                return relay_ops.draft_plan(root, description, refs, progress=progress)
-            except relay_ops.in_progress_error() as error:
-                raise RuntimeError(
-                    "A plan draft is already unfinished -- close this and open Plan "
-                    "again to resume or discard it."
-                ) from error
-
-        self._run(work, self._show_review)
-
-    def _show_review(self, draft: relay_ops.Draft) -> None:
-        self._draft = draft
-        self.query_one("#rp-draft", Static).update(draft.text)
-        self._set_state("review")
-
-    def _on_rp_approve(self, replace: bool = False) -> None:
-        try:
-            path = relay_ops.approve_plan(self._root, self._draft, replace=replace)
-        except relay_ops.plan_exists_error():
-            self._confirm_replace(lambda: self._on_rp_approve(replace=True))
-            return
-        except ValueError as error:  # plan.PlanError: the draft isn't a usable plan
-            self._error(f"{error}. The draft is still at {self._draft.path}.")
-            return
-        self.dismiss(path)
-
-    def _on_rp_changes(self) -> None:
-        feedback = self.query_one("#rp-feedback", Input)
-        feedback.display = True
-        self.query_one("#rp-send-changes").display = True
-        self.query_one("#rp-changes").display = False
-        feedback.focus()
-
-    def _on_rp_send_changes(self) -> None:
-        feedback = self.query_one("#rp-feedback", Input).value.strip()
-        if not feedback:
-            self._error("Say what should change.")
-            return
-        draft, root = self._draft, self._root
-        self.query_one("#rp-feedback", Input).value = ""
-        self._run(
-            lambda progress: relay_ops.revise_plan(
-                root, draft, feedback, progress=progress
-            ),
-            self._show_review,
+            return None
+        return PlanRequest(
+            "draft",
+            self._plan_name(description),
+            description=description,
+            refs=tuple(refs),
+            drafter=self.query_one("#rp-drafter", Select).value,
+            reviewer=self.query_one("#rp-reviewer", Select).value,
         )
+
+    def _brainstorm_request(self) -> PlanRequest | None:
+        from whyline.console.tui import collect_brainstorm
+
+        chosen = self.query_one("#rp-from", Select).value
+        if chosen != "new":
+            return PlanRequest(
+                "existing",
+                self._plan_name(chosen),
+                topic=chosen,
+                writer=self.query_one("#rp-writer", Select).value,
+            )
+        choice = collect_brainstorm(self.query_one)
+        if isinstance(choice, str):
+            self._error(choice)
+            return None
+        return PlanRequest("brainstorm", self._plan_name(choice["topic"]), brainstorm=choice)
 
     def _on_rp_resume_draft(self) -> None:
-        root = self._root
-        self._run(
-            lambda progress: relay_ops.resume_draft(root, progress=progress),
-            self._show_review,
-        )
+        pending = relay_ops.pending_draft(self._root) or "plan"
+        self._submit(PlanRequest("resume", self._plan_name(pending)))
 
     def _on_rp_discard_draft(self) -> None:
         relay_ops.discard_draft(self._root, None)
         self._error("")
         self.query_one("#rp-resume-draft").display = False
         self.query_one("#rp-discard-draft").display = False
+
+
+class PlanDraftScreen(ModalScreen):
+    """The full draft, read-only."""
+
+    DEFAULT_CSS = """
+    PlanDraftScreen { align: center middle; }
+    PlanDraftScreen > Vertical {
+        width: 110; max-width: 100%; height: 90%; padding: 0 2;
+        border: thick $accent; background: $surface;
+    }
+    PlanDraftScreen VerticalScroll { height: 1fr; }
+    PlanDraftScreen Horizontal { height: auto; margin-top: 1; }
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            VerticalScroll(Static(self._text, markup=False)),
+            Horizontal(Button("Close", id="pd-close", variant="primary")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss(None)
 
 
 class RelaySetupScreen(ModalScreen):

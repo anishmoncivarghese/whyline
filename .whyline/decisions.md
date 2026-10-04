@@ -4401,3 +4401,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b6bb4db38ccf40f2aa844be1c9d81ce1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:45:49.329Z"} -->
+
+## 2026-10-04 — Plan popup only collects a PlanRequest; drafting, review and questions move to the main window
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-13
+
+**Because:** a minutes-long modal blocked the console and hid progress and questions
+
+**Rejected:**
+
+- Keep review and revision in the modal — long-running agent calls locked the user out of the app
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 64bd09fe416448c8b514a42bb2c8a2ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:51:40.766Z"} -->
+
+## 2026-10-04 — Plan name helper is named _plan_name instead of _name
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-13
+
+**Because:** Textual DOMNode.__init__ initializes self._name = None, shadowing any method named _name on the Screen instance
+
+**Rejected:**
+
+- Override DOMNode._name — risks breaking Textual internal widget identification and DOM queries
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: eed2ca731098411ca66c27fa3c4e7424 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:51:44.850Z"} -->
+
+## 2026-10-04 — Approve Plan popup request form and draft viewer
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-13
+
+**Because:** RelayPlanScreen now returns validated PlanRequest values without running long-lived agent work, preserves immediate paste saving and overwrite confirmation, adds the read-only PlanDraftScreen, and the full test suite passes
+
+**Rejected:**
+
+- Request changes — the implementation matches the RPF-13 contract and no functional, lifecycle, safety, or coverage defect was found
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 1144428769644108a484fab637ab0835 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T12:55:00.766Z"} -->
