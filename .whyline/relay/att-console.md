@@ -22,7 +22,7 @@ version or publish -- a human releases afterwards.
   older than 7 days, never following symlinks) and
   tests/console/test_attachments.py. Verify: uv run pytest -q.
 
-- [ ] ATT-7: Finder picker and clipboard (macOS)
+- [x] ATT-7: Finder picker and clipboard (macOS)
   Implement "Task 7" from the plan: src/whyline/console/mac_input.py
   (available, pick_files, paste_image via osascript with paths passed as
   arguments, never spliced into the script) and tests/console/test_mac_input.py
