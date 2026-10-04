@@ -492,6 +492,8 @@ class RelaySetupScreen(ModalScreen):
 
         def in_thread() -> None:
             try:
+                if "antigravity" in (chosen[0], chosen[1], chosen[2], *chosen[3]):
+                    relay_ops.forget_antigravity_decline(root)
                 relay_ops.save_roles(root, *chosen)
                 checks = relay_ops.run_checks(root)
                 running = relay_ops.live_run(root)

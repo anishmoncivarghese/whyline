@@ -4252,3 +4252,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: aeb79d3c6b7c473c832c494e6f69b1f5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T10:34:58.756Z"} -->
+
+## 2026-10-04 — Console asks once per repo before adding it to Antigravity's machine-wide trust
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RPF-6
+
+**Because:** agy cannot read an untrusted repo, and the setting loosens every agy session on the machine
+
+**Rejected:**
+
+- Only print the manual instructions — every new repo would need hand-editing JSON
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: ab41a95cf77946f59ff82ffe7b624694 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T10:43:28.662Z"} -->
+
+## 2026-10-04 — Approve per-repository Antigravity trust gating
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RPF-6
+
+**Because:** The implementation matches the RPF-6 plan, gates brainstorms, Antigravity chat turns, and relay roles, safely isolates settings access in tests, and the full test suite exits successfully
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_ops.py, tests/console/test_antigravity_trust.py
+
+<!-- whyline-event: 80ef25f3b4b74c7fb7f2f3ba55d6cd44 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T10:46:07.946Z"} -->

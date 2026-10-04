@@ -376,6 +376,10 @@ def _model_event(session: ConsoleSession, text: str) -> SessionEvent:
     if len(parts) == 3:
         model.set_one(session.root, agent, parts[2])
     session.agent = agent
+    if agent == "antigravity":
+        from whyline.console import relay_ops
+
+        relay_ops.forget_antigravity_decline(session.root)
     current = model.load(session.root).get(agent) or "its default"
     return SessionEvent(
         kind="output",

@@ -108,17 +108,18 @@ class ConfirmScreen(ModalScreen):
     ConfirmScreen Button { margin-right: 2; }
     """
 
-    def __init__(self, message: str, confirm_label: str) -> None:
+    def __init__(self, message: str, confirm_label: str, cancel_label: str = "Cancel") -> None:
         super().__init__()
         self._message = message
         self._confirm_label = confirm_label
+        self._cancel_label = cancel_label
 
     def compose(self) -> ComposeResult:
         yield Vertical(
             Label(self._message),
             Horizontal(
                 Button(self._confirm_label, id="confirm", variant="warning"),
-                Button("Cancel", id="cancel"),
+                Button(self._cancel_label, id="cancel"),
             ),
         )
 
@@ -346,6 +347,7 @@ class WhylineConsoleApp(App):
         self._spin = 0
         self._relay = None  # the RelayProcess started by Start/Resume, if any
         self._relay_label = ""
+        self._antigravity_ok = False
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -643,9 +645,70 @@ class WhylineConsoleApp(App):
         self.render_event(result)
         self._sync_mode_indicator()
 
+    _ANTIGRAVITY_SKIP = (
+        "Skipping Antigravity: this repo isn't trusted in its settings "
+        "(Model → Antigravity to ask again)."
+    )
+
+    def _with_antigravity(self, uses: bool, proceed) -> None:
+        """Before anything runs antigravity: trusted, go; declined for this
+        repo, go without it; otherwise ask once (spec section 8)."""
+        if not uses:
+            proceed(True)
+            return
+        try:
+            state = relay_ops.antigravity_state(self.session.root)
+        except Exception:  # relay missing: let the run report it
+            state = "trusted"
+        if state == "trusted":
+            proceed(True)
+            return
+        if state == "declined":
+            self.render_event(SessionEvent(kind="output", text=self._ANTIGRAVITY_SKIP))
+            proceed(False)
+            return
+        from whyline_relay import antigravity
+
+        message = (
+            "Antigravity can only read and edit files in folders listed in "
+            f"{antigravity.settings_path()}, a setting for the whole machine. Add "
+            f"{self.session.root} to it, and allow Antigravity's file and command tools?"
+        )
+
+        def answered(trusted: bool) -> None:
+            if trusted:
+                try:
+                    relay_ops.trust_antigravity(self.session.root)
+                except Exception as error:  # e.g. SettingsUnreadable
+                    self.render_event(SessionEvent(kind="error", text=str(error)))
+                    proceed(False)
+                    return
+                proceed(True)
+                return
+            relay_ops.decline_antigravity(self.session.root)
+            self.render_event(SessionEvent(kind="output", text=self._ANTIGRAVITY_SKIP))
+            proceed(False)
+
+        self.push_screen(ConfirmScreen(message, "Trust it", "Not now"), answered)
+
     def _start_brainstorm(self, choice: "dict | None") -> None:
         if choice is None:
             return
+
+        def proceed(allowed: bool) -> None:
+            if not allowed:
+                agents = [a for a in choice["agents"] if a != "antigravity"]
+                if not agents:
+                    self.render_event(SessionEvent(
+                        kind="error", text="No model is left to brainstorm with."))
+                    return
+                final = choice["final_agent"]
+                choice.update(agents=agents, final_agent=final if final in agents else agents[0])
+            self._run_brainstorm_choice(choice)
+
+        self._with_antigravity("antigravity" in choice["agents"], proceed)
+
+    def _run_brainstorm_choice(self, choice: dict) -> None:
         names = ", ".join(choice["agents"])
         self.render_event(SessionEvent(
             kind="output",
@@ -682,17 +745,19 @@ class WhylineConsoleApp(App):
         self.render_event(after_login(self.session, agent, code))
 
     def _dispatch_text(self, text: str) -> None:
-        """Launches one dispatch in a background thread. `token` is a
-        unique, unguessable object identifying *this specific* dispatch --
-        _stop() (Task 4) replaces self._dispatch_token with a new one,
-        which is how a cancelled dispatch's late-arriving result is
-        recognized and discarded (via `is`, not equality) once it finally
-        returns, regardless of whatever Textual's own worker.cancel() does
-        or doesn't guarantee about a thread already running Python code."""
-        token = object()
-        self._dispatch_token = token
-        self._set_busy(True)
-        self.run_worker(lambda: self._dispatch_in_thread(text, token), thread=True)
+        uses = self.session.mode == "chat" and (self.session.agent or "claude") == "antigravity"
+
+        def proceed(allowed: bool) -> None:
+            if not allowed:
+                self.render_event(SessionEvent(
+                    kind="error", text="Antigravity can't run here until this repo is trusted."))
+                return
+            token = object()
+            self._dispatch_token = token
+            self._set_busy(True)
+            self.run_worker(lambda: self._dispatch_in_thread(text, token), thread=True)
+
+        self._with_antigravity(uses, proceed)
 
     def _dispatch_in_thread(self, text: str, token: object) -> None:
         try:
@@ -762,6 +827,25 @@ class WhylineConsoleApp(App):
         or one started elsewhere (a terminal) that running.live still sees."""
         if self._refuse_in_home():
             return
+        roles = relay_ops.current_roles(self.session.root)
+        uses = "antigravity" in (
+            roles["implementer"], roles["tester"], roles["reviewer"], *roles["backup"]
+        )
+        if uses and not getattr(self, "_antigravity_ok", False):
+            def proceed(allowed: bool) -> None:
+                if allowed:
+                    self._antigravity_ok = True
+                    self._launch_relay(args)
+                else:
+                    self.render_event(SessionEvent(
+                        kind="error",
+                        text="The relay gives Antigravity a role, but this repo isn't "
+                             "trusted for it. Change the role in Set up, or choose it "
+                             "there again to be asked."))
+
+            self._with_antigravity(True, proceed)
+            return
+        self._antigravity_ok = False
         if self._relay_running():
             self.render_event(SessionEvent(kind="error", text="The relay is already running."))
             return

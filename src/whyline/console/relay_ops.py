@@ -260,3 +260,31 @@ def paused_run(root: Path) -> bool:
     from whyline_relay import state
 
     return state.load(root) is not None
+
+
+def antigravity_state(root: Path) -> str:
+    from whyline_relay import antigravity
+
+    if antigravity.is_trusted(root):
+        return "trusted"
+    return "declined" if antigravity.is_declined(root) else "ask"
+
+
+def trust_antigravity(root: Path) -> None:
+    from whyline_relay import antigravity
+
+    antigravity.trust(root)
+    antigravity.forget_decline(root)
+
+
+def decline_antigravity(root: Path) -> None:
+    from whyline_relay import antigravity
+
+    antigravity.decline(root)
+
+
+def forget_antigravity_decline(root: Path) -> None:
+    from whyline_relay import antigravity
+
+    antigravity.forget_decline(root)
+
