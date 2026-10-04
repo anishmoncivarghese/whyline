@@ -1354,6 +1354,29 @@ def test_write_planner_sets_draft_and_review(repo):
     assert (loaded.planner.draft, loaded.planner.review) == ("claude", "codex")
 
 
+def test_write_roles_on_an_old_config_keeps_every_other_setting(repo):
+    _config(repo).parent.mkdir(parents=True)
+    _config(repo).write_text(
+        '# mine\nplan = "plan.md"\nmax_rounds = 6\ntimeout_minutes = 45\n'
+        'branch_prefix = "work/"\n\n'
+        '[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n\n'
+        '[status_map]\nready-for-review = "review"\n\n'
+        '[agents.grok]\nadapter = "generic"\ncommand = [\n  "grok", "--mine",\n  "-p"\n]\n\n'
+        '[planner]\ndraft = "claude"\n\n'
+        '[backup]\nchain = ["claude"]\n'
+    )
+    setup.write_roles(repo, "antigravity", "claude", "codex", ["grok"])
+    text = _config(repo).read_text()
+    loaded = config.load(repo)
+    assert loaded.pipeline is not None
+    assert (loaded.max_rounds, loaded.timeout_minutes, loaded.branch_prefix) == (6, 45, "work/")
+    assert loaded.agents["grok"] == ["grok", "--mine", "-p"]
+    assert loaded.planner.draft == "claude"
+    assert loaded.backup_chain == ["grok"]
+    assert "[status_map]" not in text and text.startswith("# mine\n")
+    assert text.count("[roles]") == 1
+
+
 def test_write_roles_keeps_plan_and_planner_written_before_setup(repo):
     setup.write_planner(repo, "grok", "claude")
     setup.write_plan(repo, "plans/a.plan.md")
@@ -1441,26 +1464,38 @@ def write_planner(root: Path, draft: str, review: str, *, commit: bool = True) -
     )
 ```
 
-In `write_roles`, change the `else:` branch so that the template keeps what Plan wrote before Set up:
+In `write_roles`, the `else:` branch must keep every setting the old file had (spec 6b): custom `[agents.*]`, `max_rounds`, `timeout_minutes`, `branch_prefix`, `plan`, `[planner]`, comments. Only `[roles]`, `[backup]` (rewritten by `_set_backup` right after) and `[status_map]` (can't be combined with `[pipeline]`) are dropped. Add this helper next to `_set_backup`:
+
+```python
+_TABLE_HEADER = re.compile(r"^\s*\[\[?([^\]]+)\]\]?\s*(#.*)?$")
+
+
+def _without_tables(text: str, names: set[str]) -> str:
+    """Drops the named top-level tables (header line through the line before
+    the next header), keeping every other line exactly as it was."""
+    kept: list[str] = []
+    skipping = False
+    for line in text.splitlines():
+        header = _TABLE_HEADER.match(line)
+        if header:
+            skipping = header.group(1).strip() in names
+        if not skipping:
+            kept.append(line)
+    return "\n".join(kept).strip("\n")
+```
+
+and replace the `else:` branch with:
 
 ```python
     else:
-        content = PIPELINE_CONFIG_TEMPLATE.format(
+        template = PIPELINE_CONFIG_TEMPLATE.format(
             implementer=implementer, tester=tester, reviewer=reviewer
         )
-        try:
-            old = tomllib.loads(existing) if existing else {}
-        except tomllib.TOMLDecodeError:
-            old = {}
-        if isinstance(old.get("plan"), str):
-            content = _set_top_level(content, "plan", old["plan"])
-        kept = {
-            key: value for key, value in (old.get("planner") or {}).items()
-            if key in ("draft", "review") and isinstance(value, str)
-        }
-        if kept:
-            content = _set_keys(content, "planner", kept)
+        kept = _without_tables(existing, {"roles", "backup", "status_map"})
+        content = f"{kept}\n\n{template}" if kept else template
 ```
+
+A multi-line array such as `command = [` … `]` is safe: its continuation lines never match `_TABLE_HEADER`, because they don't start with `[`. If a repository's config does have a continuation line starting with `[`, `config.load` in the test above will fail loudly rather than silently lose data.
 
 - [ ] **Step 5: Run the tests**
 
@@ -1472,7 +1507,7 @@ Expected: PASS. `_set_keys` on an empty string returns text that starts with bla
 ```bash
 git add src/whyline_relay/planner.py src/whyline_relay/setup.py tests/test_plan_files.py
 git commit -m "feat: named plan files and plan/planner config writers (RPF-9)"
-whyline note "Set up's role template keeps the plan and [planner] keys Plan wrote earlier" --because "Plan runs before Set up, and the template used to replace the whole config" --file src/whyline_relay/setup.py --actor <agent> --role implementer --task RPF-9
+whyline note "write_roles keeps every setting of an old config except roles, backup and status_map" --because "the template used to replace the whole file, silently dropping custom agent commands, max_rounds, plan and [planner]" --rejected "Carry over a list of known keys: any key not on the list would still be lost" --file src/whyline_relay/setup.py --actor <agent> --role implementer --task RPF-9
 ```
 
 ### Task 10: Release whyline-relay 0.2.29
@@ -1493,8 +1528,10 @@ Plans can ask questions and live under any name.
 - `planner.approve(target=...)` saves a plan anywhere in the repository
   (whyline uses `plans/<name>.plan.md`), committing only that file.
 - `setup.write_plan` and `setup.write_planner` change one setting each and
-  keep the rest of `config.toml`. Assigning roles no longer drops a plan or
-  planner choice made earlier.
+  keep the rest of `config.toml`.
+- Assigning roles on an older two-role config no longer throws the rest of
+  the file away: custom agent commands, `max_rounds`, `timeout_minutes`,
+  `branch_prefix`, the plan and `[planner]` are all kept.
 
 ## Upgrading
 
@@ -3056,6 +3093,138 @@ In `tui.py`:
                    return
    ```
 
+- [ ] **Step 4b: Check the chosen plan, and clear a finished paused run (spec 6b)**
+
+Tests first. In `tests/console/test_relay_setup_screen.py`, change the `_checks` helper to accept the plan (`return lambda root, plan=None: [...]`), and add:
+
+```python
+async def test_check_runs_against_the_chosen_plan(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(relay_ops, "run_checks",
+                        lambda root, plan=None: seen.append(plan) or [relay_ops.CheckLine("ok", "fine")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-plan", tui.Select).value = "/r/plans/old.plan.md"
+        await pilot.pause()
+        await pilot.click("#rs-check")
+        await _wait_for(pilot, lambda: seen, "check")
+    assert seen == [Path("/r/plans/old.plan.md")]
+```
+
+In `tests/console/test_relay_ops.py`, add:
+
+```python
+def test_a_paused_run_whose_task_is_ticked_is_stale(repo):
+    from whyline_relay import state
+
+    plan_file = repo / "p.md"
+    plan_file.write_text("- [x] CRS-4: release\n")
+    state.save(repo, state.RelayState(
+        plan=str(plan_file), branch="b", task_id="CRS-4", round=1,
+        base_commit="", paused_reason="blocked", log_path="",
+    ))
+    assert relay_ops.stale_pause(repo) == "CRS-4"
+    relay_ops.clear_pause(repo)
+    assert state.load(repo) is None
+
+
+def test_a_paused_run_with_work_left_is_not_stale(repo):
+    from whyline_relay import state
+
+    plan_file = repo / "p.md"
+    plan_file.write_text("- [ ] CRS-4: release\n")
+    state.save(repo, state.RelayState(
+        plan=str(plan_file), branch="b", task_id="CRS-4", round=1,
+        base_commit="", paused_reason="blocked", log_path="",
+    ))
+    assert relay_ops.stale_pause(repo) is None
+```
+
+If `state.RelayState` needs more fields than shown, copy the field list from `whyline_relay/state.py` and pass empty values for the rest.
+
+In `tests/console/test_tui_relay_run.py`, add:
+
+```python
+async def test_a_stale_paused_run_offers_clear_instead_of_resume(tmp_path, monkeypatch):
+    cleared = []
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(relay_ops, "stale_pause", lambda root: "CRS-4")
+    monkeypatch.setattr(relay_ops, "clear_pause", lambda root: cleared.append(root))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        button = app.query_one("#relay-resume", tui.Button)
+        assert str(button.label) == "Clear old run" and not button.disabled
+        await pilot.click("#relay-resume")
+        await pilot.pause()
+        assert cleared == [tmp_path] and FakeProcess.instances == []
+        assert any("Cleared the finished run CRS-4." in line for line in _lines(app))
+```
+
+Then implement. In `relay_ops.py`:
+
+```python
+def run_checks(root: Path, plan: Path | None = None) -> list[CheckLine]:
+    from whyline_relay import preflight
+
+    return [CheckLine(c.status, c.message, c.hint) for c in preflight.run(root, plan)]
+
+
+def stale_pause(root: Path) -> str | None:
+    """The task id of a paused run that has nothing left to resume: its task
+    is already ticked, or its plan file is gone. None otherwise."""
+    from whyline_relay import plan as relay_plan, state
+
+    saved = state.load(root)
+    if saved is None:
+        return None
+    path = Path(saved.plan)
+    if not path.is_file():
+        return saved.task_id or "an old run"
+    try:
+        tasks = relay_plan.parse(path.read_text(encoding="utf-8"))
+    except relay_plan.PlanError:
+        return None
+    done = {task.task_id for task in tasks if task.checked}
+    return saved.task_id if saved.task_id in done else None
+
+
+def clear_pause(root: Path) -> None:
+    from whyline_relay import state
+
+    state.clear(root)
+```
+
+In `RelaySetupScreen._check`, call `relay_ops.run_checks(root, plan)` instead of `relay_ops.run_checks(root)`.
+
+In `tui.py`:
+
+1. `_sync_relay_buttons`: after computing `paused`, compute
+   ```python
+           try:
+               stale = relay_ops.stale_pause(self.session.root) if paused else None
+           except Exception:
+               stale = None
+           resume = self._main("#relay-resume", Button)
+           resume.label = "Clear old run" if stale else "Resume"
+           self._stale_pause = stale
+   ```
+   Keep the existing `disabled` rule. A stale run counts as paused, so the button is enabled.
+2. `on_button_pressed`, `relay-resume` branch:
+   ```python
+           elif button_id == "relay-resume":
+               if getattr(self, "_stale_pause", None):
+                   task = self._stale_pause
+                   relay_ops.clear_pause(self.session.root)
+                   self.render_event(SessionEvent(
+                       kind="output", text=f"Cleared the finished run {task}."))
+                   self._sync_relay_buttons()
+               else:
+                   self._launch_relay(["resume"])
+   ```
+3. Initialise `self._stale_pause = None` in `__init__`.
+
 - [ ] **Step 5: Run the tests**
 
 Run: `uv run pytest tests/console -q`
@@ -3406,6 +3575,133 @@ In `src/whyline/console/tui.py`:
     ```
 11. `_plan_failed`, `_discard_plan` and `action_leave_plan`: at the end of each, call `self._end_run_flow("Run stopped: no plan was saved.")`.
 12. `_setup_done`: start with `self._run_flow = False` for `"start"` and `None`. For `"plan"`, set `self._run_flow = True` before `self._open_relay_plan()`, so a plan made from Set up returns to Set up.
+
+- [ ] **Step 5b: Recommended roles and what they mean (spec 6b)**
+
+Tests first. Add to `tests/console/test_relay_ops.py`:
+
+```python
+@pytest.mark.parametrize("usable, expected", [
+    (["antigravity", "claude", "codex", "grok"],
+     {"implementer": "codex", "tester": "claude", "reviewer": "grok", "backup": ["antigravity"]}),
+    (["claude", "codex"],
+     {"implementer": "codex", "tester": "claude", "reviewer": "claude", "backup": []}),
+    (["grok"],
+     {"implementer": "grok", "tester": "grok", "reviewer": "grok", "backup": []}),
+])
+def test_recommend_roles(usable, expected):
+    assert relay_ops.recommend_roles(usable) == expected
+
+
+def test_role_meaning():
+    assert relay_ops.role_meaning("antigravity", "claude", "codex") == (
+        "antigravity writes the code → claude runs the tests → codex reviews and commits."
+    )
+```
+
+The second case shows the reuse rule: with two agents, the reviewer reuses the first agent in its preference list (claude), because codex already implements.
+
+Add to `tests/console/test_run_flow.py`:
+
+```python
+async def test_with_no_roles_the_pickers_hold_the_recommendation(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: False)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        app.push_screen(RelaySetupScreen(tmp_path, guided=True))
+        await pilot.pause()
+        screen = app.screen
+        assert screen.query_one("#rs-implementer", tui.Select).value == "codex"
+        assert screen.query_one("#rs-reviewer", tui.Select).value == "antigravity"
+        assert "Recommended for the agents you have" in str(
+            screen.query_one("#rs-recommended", tui.Static).renderable)
+        assert str(screen.query_one("#rs-meaning", tui.Static).renderable) == (
+            "codex writes the code → claude runs the tests → antigravity reviews and commits."
+        )
+
+
+async def test_a_configured_agent_that_is_not_usable_is_flagged(tmp_path, monkeypatch):
+    from whyline import account
+
+    status = {a: {"available": a != "antigravity", "label": "x"} for a in STATUS}
+    monkeypatch.setattr(account, "agent_status", lambda root: status)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        app.push_screen(RelaySetupScreen(tmp_path, guided=True))
+        await pilot.pause()
+        screen = app.screen
+        assert "⚠ antigravity isn't logged in" in str(
+            screen.query_one("#rs-summary", tui.Static).renderable)
+        assert screen.query_one("#rs-roles").display
+        assert screen.query_one("#rs-implementer", tui.Select).value == "codex"
+```
+
+In this file's fixture, `relay_agents` returns `["antigravity", "claude", "codex"]` and `STATUS` marks all four available. So the recommendation is implementer codex, tester claude, reviewer antigravity, and no backup. The reviewer list is claude, codex, grok, antigravity: claude and codex are taken and grok isn't installed, so antigravity is next.
+
+Then implement. In `relay_ops.py`:
+
+```python
+_PREFERENCE = {
+    "implementer": ("codex", "claude", "antigravity", "grok"),
+    "tester": ("claude", "codex", "grok", "antigravity"),
+    "reviewer": ("claude", "codex", "grok", "antigravity"),
+}
+
+
+def recommend_roles(usable: list[str]) -> dict:
+    """A different agent per role where possible (spec 6b); the rest back up."""
+    roles: dict = {}
+    used: set[str] = set()
+    for role in ("implementer", "tester", "reviewer"):
+        order = [a for a in _PREFERENCE[role] if a in usable] + [
+            a for a in usable if a not in _PREFERENCE[role]
+        ]
+        fresh = [a for a in order if a not in used]
+        roles[role] = (fresh or order or ["claude"])[0]
+        used.add(roles[role])
+    roles["backup"] = [a for a in _PREFERENCE["implementer"] if a in usable and a not in used]
+    return roles
+
+
+def usable_agents(root: Path, status: dict) -> list[str]:
+    """Installed relay agents that are also logged in."""
+    return [a for a in relay_agents(root) if status.get(a, {}).get("available")]
+
+
+def role_meaning(implementer: str, tester: str, reviewer: str) -> str:
+    return (f"{implementer} writes the code → {tester} runs the tests → "
+            f"{reviewer} reviews and commits.")
+```
+
+In `RelaySetupScreen`:
+
+1. `__init__`: compute
+   ```python
+           from whyline import account
+
+           self._usable = relay_ops.usable_agents(root, account.agent_status(root))
+           self._recommended = relay_ops.recommend_roles(self._usable)
+           configured = relay_ops.roles_configured(root)
+           in_use = [self._roles[r] for r in ("implementer", "tester", "reviewer")]
+           self._unusable = [a for a in dict.fromkeys(in_use) if a not in self._usable]
+           if not configured or self._unusable:
+               self._roles = {**self._recommended} if not configured else {
+                   **self._roles,
+                   **{r: self._recommended[r] for r in ("implementer", "tester", "reviewer")
+                      if self._roles[r] in self._unusable},
+               }
+   ```
+   Do this before the Select widgets are built in `compose`, so they start with these values. Keep `self._summary = guided and configured`. The summary line keeps showing the configured roles and adds the warning.
+2. `_roles_line()`: append `"   ⚠ " + ", ".join(f"{a} isn't logged in" for a in self._unusable)` when `self._unusable` is non-empty. Build the line from the configured roles: keep a copy as `self._configured_roles = dict(relay_ops.current_roles(root))` before step 1 changes `self._roles`.
+3. In `compose`, inside `#rs-roles`, put first `Static("Recommended for the agents you have.", id="rs-recommended")`, shown only when the roles were not configured, and last `Static("", id="rs-meaning")`.
+4. `on_mount`: when `self._summary and self._unusable`, show `#rs-roles` and keep `#rs-summary-row` visible, so the user sees both the warning and the fix. Then call `self._update_meaning()`.
+5. Add:
+   ```python
+       def _update_meaning(self) -> None:
+           i, t, r, _ = self._chosen()
+           self.query_one("#rs-meaning", Static).update(relay_ops.role_meaning(i, t, r))
+   ```
+   and call it from `on_select_changed`, next to `_invalidate()`.
 
 - [ ] **Step 6: Run the tests**
 

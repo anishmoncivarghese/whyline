@@ -245,6 +245,45 @@ Nothing about the repository changes in this flow. The console always works
 on the repository shown at the top right, and plans are listed from that
 repository only.
 
+### 6b. Setup that is hard to get wrong (added 2026-10-04)
+
+**Setup never loses settings.** Today, `setup.write_roles` on a config
+without `[pipeline]` (the older two-role format, which agentdock and
+whyline-relay both use) replaces the whole file with the pipeline template.
+That silently drops custom `[agents.*]` commands, `max_rounds`,
+`timeout_minutes`, `branch_prefix`, `plan` and `[planner]`. Instead, it keeps
+every line of the old file except the `[roles]`, `[backup]` and
+`[status_map]` tables (`[status_map]` can't be combined with `[pipeline]`),
+then appends the template's `[roles]` and `[pipeline]` tables.
+
+**Recommended roles.** The role pickers are prefilled with a
+recommendation built from the agents that are installed (`relay_agents`)
+and logged in (`account.agent_status(...)["available"]`):
+
+- implementer: the first of codex, claude, antigravity, grok;
+- tester: the first of claude, codex, grok, antigravity not already used;
+- reviewer: the first of claude, codex, grok, antigravity not already used;
+- a role reuses an agent only when there aren't enough agents to go round;
+- backup: the remaining usable agents, in the order above.
+
+When the repository has no roles yet, guided Set up shows the pickers with
+this recommendation and the label "Recommended for the agents you have". When
+the configured roles name an agent that isn't usable (not installed or not
+logged in), the summary line says which one, for example `⚠ grok isn't
+logged in`, and opens the pickers with the recommendation filled in for that
+role. Under the pickers, and under the summary line, one sentence says what
+the choice means: "antigravity writes the code → claude runs the tests →
+codex reviews and commits." It updates as the pickers change.
+
+**Stale state is cleared, not puzzled over.**
+
+- Set up's Check runs the relay's checks against the plan chosen in the
+  dropdown (`preflight.run(root, plan)`), never the config's old default.
+- A paused run whose task is already ticked in its plan, or whose plan file
+  no longer exists, is stale. Instead of Resume, the bottom bar shows
+  **Clear old run**. Pressing it removes `.whyline/relay/state.json` and
+  says "Cleared the finished run CRS-4."
+
 ### 7. Error handling
 
 - A missing agent or timeout: an error event with the agent's own message
@@ -375,6 +414,12 @@ Console (pytest + Textual pilot, existing `tests/console` patterns):
 - A typed `start` with no plan is refused.
 - Run with no plans opens Plan. After the plan is approved, guided Set up
   opens with that plan selected. Run with plans offers new or existing.
+- `write_roles` on an old two-role config with custom agents, `max_rounds`,
+  `[planner]` and `[status_map]` keeps everything except `[status_map]`.
+- The recommendation picks distinct agents per role, skips agents that
+  aren't logged in, and reuses an agent only when there aren't enough.
+- A paused run whose task is ticked shows Clear old run, which removes the
+  state.
 - Guided Set up with roles configured shows the summary line. Looks good
   runs the check, and Change reveals the dropdowns.
 - `relay_agents(root)` lists grok and antigravity when their binaries are on
