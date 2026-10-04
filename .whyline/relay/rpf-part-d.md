@@ -46,7 +46,7 @@ version or publish.
   numbered questions answered in the prompt, Escape to leave, slash commands
   still working. Verify: uv run pytest -q.
 
-- [ ] RPF-15: Set up chooses the plan
+- [x] RPF-15: Set up chooses the plan
   Implement "Task 15: Set up chooses the plan" from the plan, including Step
   4b: the Plan dropdown, "No plan yet" with Make a plan, typed start refused
   without a plan, Check run against the chosen plan (run_checks(root, plan)),
