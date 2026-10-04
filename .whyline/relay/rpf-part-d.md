@@ -39,7 +39,7 @@ version or publish.
   PlanDraftScreen. Delete and update the tests the task names.
   Verify: uv run pytest -q.
 
-- [ ] RPF-14: The plan job in the main window
+- [x] RPF-14: The plan job in the main window
   Implement "Task 14: The plan job in the main window" from the plan: plan
   state ("working" / "review" / "answering"), progress lines "plan · ...",
   the Approve / View draft / Discard row, typed "approve" or change requests,
