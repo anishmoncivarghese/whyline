@@ -16,9 +16,11 @@ import time
 from pathlib import Path
 
 try:
+    from textual import events
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, Vertical, VerticalScroll
     from textual.css.query import NoMatches
+    from textual.message import Message
     from textual.screen import ModalScreen
     from rich.text import Text
     from textual.widgets import (
@@ -27,12 +29,13 @@ try:
 
     TUI_AVAILABLE = True
 except ImportError:
-    App = ModalScreen = object  # placeholder bases so the classes can still be defined
+    App = ModalScreen = Input = Message = object  # placeholder bases so the classes can still be defined
     NoMatches = LookupError
     ComposeResult = None
     Horizontal = Vertical = VerticalScroll = None
-    Button = Checkbox = Footer = Header = Input = Label = RichLog = Select = None
+    Button = Checkbox = Footer = Header = Label = RichLog = Select = None
     Static = Text = None
+    events = None
     TUI_AVAILABLE = False
 
 from whyline.console import (
@@ -311,6 +314,24 @@ class TuiUnavailable(RuntimeError):
     """textual is not installed."""
 
 
+class PromptInput(Input):
+    """The console's prompt. A paste that is only dropped files goes to the
+    app instead of into the text (console attachments spec, section 2)."""
+
+    class Dropped(Message):
+        def __init__(self, text: str, paths: list[Path]) -> None:
+            super().__init__()
+            self.text, self.paths = text, paths
+
+    def _on_paste(self, event: events.Paste) -> None:
+        mode = getattr(getattr(self.app, "session", None), "mode", None)
+        paths = att.dropped_paths(event.text) if mode == "chat" else None
+        if paths:
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Dropped(event.text, paths))
+
+
 class WhylineConsoleApp(App):
     """The mouse-enabled console. Every widget dispatches through the same
     ConsoleSession/dispatch() path the keyboard REPL already uses."""
@@ -469,7 +490,7 @@ class WhylineConsoleApp(App):
         )
         yield AttachmentTray(id="tray")
         yield Horizontal(
-            Input(id="prompt"),
+            PromptInput(id="prompt"),
             Button("Attach", id="attach", disabled=True),
             Button("Send", id="send", variant="success"),
             id="input-row",
@@ -582,6 +603,35 @@ class WhylineConsoleApp(App):
     def on_attachment_tray_removed(self, message: AttachmentTray.Removed) -> None:
         self._pending.remove(message.attachment_id)
         self._refresh_tray()
+
+    def on_prompt_input_dropped(self, message: PromptInput.Dropped) -> None:
+        names = ", ".join(p.name for p in message.paths)
+
+        def answered(attach: bool) -> None:
+            prompt = self._main("#prompt", Input)
+            if not attach:
+                prompt.insert_text_at_cursor(message.text)
+                prompt.focus()
+                return
+            root, session, pending = self.session.root, self._attach_session, self._pending
+
+            def in_thread():
+                staged = []
+                try:
+                    for path in message.paths:
+                        item = att.stage(root, path, session=session, source="drop", pending=pending)
+                        pending.add(item)
+                        staged.append(item)
+                except Exception as error:
+                    self.call_from_thread(self.render_event, SessionEvent(kind="error", text=str(error)))
+                self.call_from_thread(self._attached, staged)
+
+            self.run_worker(in_thread, thread=True)
+
+        count = len(message.paths)
+        self.push_screen(ConfirmScreen(
+            f"Attach {count} file{'s' if count > 1 else ''}? {names}", "Attach", "Keep as text"),
+            answered)
 
     def _open_attach_menu(self) -> None:
         self.push_screen(AttachMenuScreen(), self._attach_chosen)

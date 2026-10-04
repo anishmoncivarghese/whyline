@@ -4874,3 +4874,34 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bac35b4404ec4867acb96c7e79d8c093 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:40:18.492Z"} -->
+
+## 2026-10-04 — Intercept dropped files on PromptInput subclass without calling super in pass-through
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ATT-9
+
+**Because:** Textual MRO message dispatch traverses the class hierarchy and invokes Input._on_paste automatically; calling super duplicates pasted text
+
+**Rejected:**
+
+- Call super()._on_paste on pass-through — causes duplicate text insertion on ordinary paste
+- Handle Paste at app level — Input widget swallows Paste events before they reach the app
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 440825cded85437498fe9723dc263266 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:47:53.693Z"} -->
+
+## 2026-10-04 — Approve ATT-9 dropped-file paste interception
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ATT-9
+
+**Because:** PromptInput intercepts only all-file pastes in chat mode, offers Attach or Keep as text, preserves normal paste dispatch otherwise, handles partial staging failures, and the full test suite passes
+
+**Files:** src/whyline/console/tui.py, tests/console/test_drop_attachments.py
+
+<!-- whyline-event: 0836a2fe37a14ff0afc2efa350689e13 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T18:51:40.655Z"} -->
