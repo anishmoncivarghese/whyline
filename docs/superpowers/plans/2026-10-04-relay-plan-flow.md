@@ -4,7 +4,7 @@
 
 **Goal:** grok and antigravity work in every repository without setup, failed agent turns say why, and making a plan becomes a background job in the console's main window that can ask the user questions and saves named plans that Set up picks from.
 
-**Architecture:** Four releases. Part A (whyline-relay 0.2.28) adds built-in recipes for grok and antigravity, Antigravity's trust helpers and failure reasons. Part B (whyline 0.3.31) lists every installed relay agent and asks once per repository before trusting Antigravity. Part C (whyline-relay 0.2.29) adds planner questions, named plan files and config writers. Part D (whyline 0.3.32) moves planning into the main window, adds question answering, and gives Set up a plan dropdown.
+**Architecture:** Four releases. Part A (whyline-relay 0.2.28) adds built-in recipes for grok and antigravity, Antigravity's trust helpers and failure reasons. Part B (whyline 0.3.31) lists every installed relay agent and asks once per repository before trusting Antigravity. Part C (whyline-relay 0.2.29) adds planner questions, named plan files and config writers. Part D (whyline 0.3.32) moves planning into the main window, adds question answering, gives Set up a plan dropdown, and adds Run: one guided path through plan, roles, checks and start.
 
 **Tech Stack:** Python 3.11+, Textual 0.89.1, pytest + pytest-asyncio (Textual `run_test` pilot), `uv`, git, GitHub Actions trusted publishing to PyPI.
 
@@ -23,7 +23,7 @@
 - Plan files: `plans/<slug>.plan.md`, slug lower-case `[a-z0-9-]`, at most 40 characters, first line exactly `<!-- whyline-plan v1 | source: <draft|paste|brainstorm> | drafted-by: <who> | created: <ISO-8601 with offset> -->`.
 - The Antigravity settings file is `~/.gemini/antigravity-cli/settings.json`. Only `trust()` writes it, and only after the user chose "Trust it".
 - After each task, record the decision per `AGENTS.md`: `whyline note "<decision>" --because "<why>" --file <path> --actor <your agent name> --role implementer --task RPF-<task number>`.
-- Commit messages end with a blank line and your harness's `Co-Authored-By:` line if it adds one. Push and tag only in Tasks 4, 7, 10 and 16.
+- Commit messages end with a blank line and your harness's `Co-Authored-By:` line if it adds one. Push and tag only in Tasks 4, 7, 10 and 17.
 
 ## Review Focus
 
@@ -3069,9 +3069,364 @@ git commit -m "feat: Set up picks the plan; no plan, no start (RPF-15)"
 whyline note "Set up writes the chosen plan into config.toml rather than passing --plan" --because "a terminal 'whyline relay start' should run the same plan the console chose" --rejected "Pass --plan on Start only: the CLI and the console would disagree" --file src/whyline/console/relay_screens.py --actor <agent> --role implementer --task RPF-15
 ```
 
-### Task 16: Release whyline 0.3.32
+### Task 16: Run, one guided path
 
-Same steps as Task 7, with `0.3.31` → `0.3.32`, the tag `v0.3.32`, the commit `chore: release whyline 0.3.32 (RPF-16)`, and `docs/releases/v0.3.32.md`:
+**Files:**
+- Modify: `src/whyline/console/relay_ops.py` (new `roles_configured`)
+- Modify: `src/whyline/console/relay_screens.py` (new `RunChoiceScreen`; `RelaySetupScreen(root, *, guided=False, plan=None)`)
+- Modify: `src/whyline/console/tui.py` (Run button, typed `run`, `_run_flow` state)
+- Test: `tests/console/test_run_flow.py` (create)
+
+**Interfaces:**
+- Consumes: Task 14's `_plan_chosen`, `_plan_saved`, `_plan_failed`, `_discard_plan`, `action_leave_plan`; Task 15's plan dropdown, `#rs-make-plan` and `_setup_done`.
+- Produces: `relay_ops.roles_configured(root) -> bool`; `RunChoiceScreen` (dismisses with `"new"`, `"existing"` or `None`); `RelaySetupScreen(root, *, guided: bool = False, plan: Path | None = None)` with `#rs-summary`, `#rs-looks-good`, `#rs-change` and a `#rs-roles` container in guided mode; `WhylineConsoleApp._run_flow_start()`; the `#relay-run` button.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/console/test_run_flow.py`:
+
+```python
+from pathlib import Path
+
+import pytest
+
+from whyline.console import relay_ops, tui
+from whyline.console.relay_screens import RelayPlanScreen, RelaySetupScreen, RunChoiceScreen
+
+pytestmark = [
+    pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
+    pytest.mark.asyncio,
+]
+
+STATUS = {a: {"available": True, "label": "ok"} for a in ("claude", "codex", "antigravity", "grok")}
+PLAN = relay_ops.PlanInfo(Path("/r/plans/a.plan.md"), "a", "draft", "2026-10-04T10:00:00+05:30", 0, 3)
+
+
+@pytest.fixture(autouse=True)
+def ops(monkeypatch):
+    from whyline import account
+
+    calls = {"checks": 0}
+    monkeypatch.setattr(account, "agent_status", lambda root: STATUS)
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [PLAN])
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: None)
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["antigravity", "claude", "codex"])
+    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "claude"))
+    monkeypatch.setattr(relay_ops, "pending_draft", lambda root: None)
+    monkeypatch.setattr(relay_ops, "brainstorm_docs", lambda root: [])
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    monkeypatch.setattr(relay_ops, "current_roles", lambda root: {
+        "implementer": "antigravity", "tester": "claude", "reviewer": "codex",
+        "backup": ["claude", "codex"],
+    })
+    monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
+    monkeypatch.setattr(relay_ops, "save_roles", lambda *a: None)
+    monkeypatch.setattr(relay_ops, "select_plan", lambda *a: None)
+    monkeypatch.setattr(relay_ops, "antigravity_state", lambda root: "trusted")
+
+    def checks(root):
+        calls["checks"] += 1
+        return [relay_ops.CheckLine("ok", "fine")]
+
+    monkeypatch.setattr(relay_ops, "run_checks", checks)
+    return calls
+
+
+def _lines(app):
+    return [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+
+
+async def _relay(app, pilot):
+    app.session.mode = "relay"
+    app._sync_mode_indicator()
+    await pilot.pause()
+
+
+async def test_run_with_no_plan_opens_plan(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        await _relay(app, pilot)
+        await pilot.click("#relay-run")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert any("No plan yet -- let's make one." in l for l in _lines(app))
+
+
+async def test_typed_run_offers_new_or_existing_and_existing_opens_guided_setup(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        await _relay(app, pilot)
+        app.query_one("#prompt", tui.Input).value = "run"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, RunChoiceScreen)
+        await pilot.click("#run-existing")
+        await pilot.pause()
+        assert isinstance(app.screen, RelaySetupScreen) and app.screen._guided
+
+
+async def test_a_saved_plan_continues_to_guided_setup_with_it_selected(tmp_path, monkeypatch):
+    saved = relay_ops.PlanInfo(tmp_path / "plans" / "new.plan.md", "new", "paste", "2026-10-05T00:00:00+05:30", 0, 1)
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [saved, PLAN])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        await _relay(app, pilot)
+        await pilot.click("#relay-run")
+        await pilot.pause()
+        await pilot.click("#run-new")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        app.screen.dismiss(saved.path)  # what a pasted plan does
+        await pilot.pause()
+        assert isinstance(app.screen, RelaySetupScreen)
+        assert app.screen.query_one("#rs-plan", tui.Select).value == str(saved.path)
+
+
+async def test_cancelling_the_plan_form_ends_the_run(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        await _relay(app, pilot)
+        await pilot.click("#relay-run")
+        await pilot.pause()
+        await pilot.click("#run-new")
+        await pilot.pause()
+        await pilot.click("#rp-cancel")
+        await pilot.pause()
+        assert app._run_flow is False
+        assert any("Run cancelled" in l for l in _lines(app))
+
+
+async def test_guided_setup_summarises_roles_and_looks_good_runs_the_check(tmp_path, ops):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        app.push_screen(RelaySetupScreen(tmp_path, guided=True))
+        await pilot.pause()
+        screen = app.screen
+        summary = str(screen.query_one("#rs-summary", tui.Static).renderable)
+        assert summary == (
+            "Implementer: antigravity · Tester: claude · Reviewer: codex · Backup: claude → codex"
+        )
+        assert not screen.query_one("#rs-roles").display
+        await pilot.click("#rs-looks-good")
+        for _ in range(100):
+            if not screen.query_one("#rs-start", tui.Button).disabled:
+                break
+            await pilot.pause(0.05)
+        assert ops["checks"] == 1
+        assert not screen.query_one("#rs-start", tui.Button).disabled
+
+
+async def test_change_reveals_the_role_pickers(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        app.push_screen(RelaySetupScreen(tmp_path, guided=True))
+        await pilot.pause()
+        await pilot.click("#rs-change")
+        await pilot.pause()
+        assert app.screen.query_one("#rs-roles").display
+        assert not app.screen.query_one("#rs-summary-row").display
+
+
+async def test_with_no_roles_yet_guided_setup_shows_the_pickers(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: False)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        app.push_screen(RelaySetupScreen(tmp_path, guided=True))
+        await pilot.pause()
+        assert app.screen.query_one("#rs-roles").display
+        assert not app.screen.query("#rs-summary-row")
+
+
+async def test_the_run_button_fits_an_80_column_terminal(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        assert app.query_one("#relay-run", tui.Button).region.right <= 80
+```
+
+Add `roles_configured` tests to `tests/console/test_relay_ops.py`:
+
+```python
+def test_roles_configured(repo):
+    assert relay_ops.roles_configured(repo) is False
+    relay_ops.save_roles(repo, "codex", "claude", "claude", [])
+    assert relay_ops.roles_configured(repo) is True
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/console/test_run_flow.py tests/console/test_relay_ops.py -q`
+Expected: FAIL with `ImportError: cannot import name 'RunChoiceScreen'`.
+
+- [ ] **Step 3: `roles_configured`**
+
+Append to `src/whyline/console/relay_ops.py`:
+
+```python
+def roles_configured(root: Path) -> bool:
+    """Whether this repository's relay config already assigns roles."""
+    from whyline_relay import config
+
+    path = config.config_path(root)
+    if not path.exists():
+        return False
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return False
+    return bool(raw.get("roles"))
+```
+
+- [ ] **Step 4: `RunChoiceScreen` and guided Set up**
+
+In `src/whyline/console/relay_screens.py`, add:
+
+```python
+class RunChoiceScreen(ModalScreen):
+    """Run, step 1: a new plan or a saved one."""
+
+    DEFAULT_CSS = """
+    RunChoiceScreen { align: center middle; }
+    RunChoiceScreen > Vertical {
+        width: 70; height: auto; padding: 1 2;
+        border: thick $accent; background: $surface;
+    }
+    RunChoiceScreen Horizontal { height: auto; margin-top: 1; }
+    RunChoiceScreen Button { margin-right: 2; }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Run the relay. Which plan should it work through?"),
+            Horizontal(
+                Button("Make a new plan", id="run-new", variant="primary"),
+                Button("Use an existing plan", id="run-existing", variant="success"),
+                Button("Cancel", id="run-cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss({"run-new": "new", "run-existing": "existing"}.get(event.button.id))
+```
+
+Change `RelaySetupScreen`:
+
+1. `__init__(self, root: Path, *, guided: bool = False, plan: Path | None = None)`. Store `self._guided = guided` and `self._summary = guided and relay_ops.roles_configured(root)`. When choosing `self._plan_default` (Task 15), prefer `str(plan)` when `plan` is given and listed, then `configured_plan`, then the newest.
+2. Add:
+   ```python
+       def _roles_line(self) -> str:
+           r = self._roles
+           backup = " → ".join(r.get("backup", [])) or "none"
+           return (f"Implementer: {r['implementer']} · Tester: {r['tester']} · "
+                   f"Reviewer: {r['reviewer']} · Backup: {backup}")
+   ```
+3. In `compose`:
+   - The title label becomes `"Run: check who does what, then start."` when `self._guided`, and stays as it is otherwise.
+   - Wrap the three role rows, the "Backup, used when an agent fails:" label and the backup checkboxes in `Vertical(..., id="rs-roles")`.
+   - When `self._summary`, put this between the plan row and `#rs-roles`:
+     ```python
+             Horizontal(
+                 Static(self._roles_line(), id="rs-summary"),
+                 Button("Looks good", id="rs-looks-good", variant="success"),
+                 Button("Change", id="rs-change"),
+                 id="rs-summary-row",
+             )
+     ```
+   - CSS: `RelaySetupScreen #rs-roles { height: auto; }` and `RelaySetupScreen #rs-summary { width: 1fr; padding: 1 1 0 0; }`.
+4. In `on_mount`, when `self._summary`: hide `#rs-roles` and `#rs-check`.
+5. In `on_button_pressed`:
+   ```python
+           elif event.button.id == "rs-looks-good":
+               self._check()
+           elif event.button.id == "rs-change":
+               self.query_one("#rs-summary-row").display = False
+               self.query_one("#rs-roles").display = True
+               self.query_one("#rs-check").display = True
+   ```
+
+- [ ] **Step 5: Run in the app**
+
+In `src/whyline/console/tui.py`:
+
+1. `compose`: add `Button("Run", id="relay-run", disabled=True)` right before `Button("Plan", id="relay-plan", ...)`.
+2. `_sync_relay_buttons`: add `self._main("#relay-run", Button).disabled = not in_relay or running`.
+3. `__init__`: add `self._run_flow = False`.
+4. `on_button_pressed`: add `elif button_id == "relay-run": self._run_flow_start()`.
+5. `_send`: next to the `start`/`resume` check, add:
+   ```python
+           if self.session.mode == "relay" and text.strip() == "run":
+               self._run_flow_start()
+               return
+   ```
+6. `_placeholder("relay")` returns `"Relay: run (guided), doctor, status, start, resume (Enter to run)"`.
+7. Add:
+   ```python
+       def _run_flow_start(self) -> None:
+           """Run (spec 6a): which plan, then who does what, then check and start."""
+           if self._refuse_in_home():
+               return
+           if self._relay_running():
+               self.render_event(SessionEvent(kind="error", text="The relay is already running."))
+               return
+           if self._plan_state:
+               self.render_event(SessionEvent(
+                   kind="error",
+                   text="A plan is already in progress: approve it, Discard it, or press Esc."))
+               return
+           self._run_flow = True
+           if not relay_ops.list_plans(self.session.root):
+               self.render_event(SessionEvent(kind="output", text="No plan yet -- let's make one."))
+               self._open_relay_plan()
+               return
+           from whyline.console.relay_screens import RunChoiceScreen
+
+           self.push_screen(RunChoiceScreen(), self._run_choice)
+
+       def _run_choice(self, choice: str | None) -> None:
+           if choice == "new":
+               self._open_relay_plan()
+           elif choice == "existing":
+               self._open_relay_setup(guided=True)
+           else:
+               self._end_run_flow("Run cancelled.")
+
+       def _end_run_flow(self, text: str) -> None:
+           if self._run_flow:
+               self._run_flow = False
+               self.render_event(SessionEvent(kind="output", text=text))
+   ```
+8. `_open_relay_setup(self, guided: bool = False, plan: Path | None = None)`: pass them through, `RelaySetupScreen(self.session.root, guided=guided, plan=plan)`.
+9. `_plan_chosen`: when `result is None`, call `self._end_run_flow("Run cancelled.")` before returning.
+10. `_plan_saved(path)`: after rendering its message, add:
+    ```python
+            if self._run_flow:
+                self._open_relay_setup(guided=True, plan=path)
+    ```
+11. `_plan_failed`, `_discard_plan` and `action_leave_plan`: at the end of each, call `self._end_run_flow("Run stopped: no plan was saved.")`.
+12. `_setup_done`: start with `self._run_flow = False` for `"start"` and `None`. For `"plan"`, set `self._run_flow = True` before `self._open_relay_plan()`, so a plan made from Set up returns to Set up.
+
+- [ ] **Step 6: Run the tests**
+
+Run: `uv run pytest tests/console -q`
+Expected: PASS.
+
+- [ ] **Step 7: Check it by hand**
+
+In a scratch repository, with `whyline` in Relay mode, type `run`. With no plans, the Plan form opens. Paste `- [ ] T-1: x`, Save. Guided Set up opens with that plan selected. Press Looks good (or Change, then Check). Start becomes enabled.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/whyline/console/relay_ops.py src/whyline/console/relay_screens.py src/whyline/console/tui.py tests/console/test_run_flow.py tests/console/test_relay_ops.py
+git commit -m "feat: Run walks through plan, roles, checks and start (RPF-16)"
+whyline note "Run is one guided path: plan (new or existing), roles summary with Looks good/Change, check, start" --because "users should not need to know Plan comes before Set up before Start" --rejected "Remove Plan and Set up buttons: they stay as shortcuts for experienced users" --rejected "Machine-wide default backup: the user chose per-repository backup (option B)" --file src/whyline/console/tui.py --actor <agent> --role implementer --task RPF-16
+```
+
+### Task 17: Release whyline 0.3.32
+
+Same steps as Task 7, with `0.3.31` → `0.3.32`, the tag `v0.3.32`, the commit `chore: release whyline 0.3.32 (RPF-17)`, and `docs/releases/v0.3.32.md`:
 
 ```markdown
 # whyline 0.3.32
@@ -3089,6 +3444,9 @@ picks which plan to run.
 - Plans are saved as `plans/<name>.plan.md`, so you can keep several.
   Set up starts with a Plan dropdown, and Start (or a typed `start`) needs
   a plan first.
+- **Run** (a button, or type `run` in Relay mode) walks you through it:
+  make a new plan or pick a saved one, confirm or change who implements,
+  tests, reviews and backs up, check, then start.
 
 Needs whyline-relay 0.2.29.
 

@@ -212,6 +212,39 @@ Console:
 - A typed `start` with no listed plan and no `plan.md` is refused with "No
   plan yet. Use Plan first." `resume` is unaffected.
 
+### 6a. Run: one guided path (added 2026-10-04)
+
+The user should not have to know that Plan comes before Set up, which comes
+before Start. A **Run** button in Relay mode, or typing `run` there, walks
+through all three in order. Plan and Set up stay as shortcuts.
+
+1. **Which plan.** With no saved plan, the transcript says "No plan yet --
+   let's make one." and the Plan form opens. Otherwise a small dialog
+   asks **Make a new plan** / **Use an existing plan** / Cancel.
+   - *Make a new plan* opens the Plan form (section 3). The plan job runs in
+     the main window (section 4). When the plan is approved, or a pasted
+     plan is saved, the flow continues to step 2 with that plan selected.
+     Cancelling, discarding or a failure ends the flow, with a line saying
+     so.
+   - *Use an existing plan* goes straight to step 2.
+2. **Who does what.** Set up opens in guided mode, titled "Run: check who
+   does what, then start", with the plan dropdown first.
+   - If this repository's config already assigns roles, they are shown as
+     one line, `Implementer: antigravity · Tester: claude · Reviewer: codex
+     · Backup: claude → codex`, with **Looks good** and **Change**.
+     *Change* shows the dropdowns and backup checkboxes. *Looks good* runs
+     the check straight away.
+   - With no roles configured yet, the dropdowns show directly.
+   - The backup chain stays per repository (`[backup] chain`, as today),
+     and applies to every role.
+3. **Ready check and Start.** This is Set up's existing Check (it saves the
+   roles and the plan, then runs the relay's preflight checks) and Start.
+   Start launches the run, and progress streams into the main window.
+
+Nothing about the repository changes in this flow. The console always works
+on the repository shown at the top right, and plans are listed from that
+repository only.
+
 ### 7. Error handling
 
 - A missing agent or timeout: an error event with the agent's own message
@@ -340,6 +373,10 @@ Console (pytest + Textual pilot, existing `tests/console` patterns):
 - Set up with no plans disables Check and Start and offers Make a plan.
   With two plans, the chosen one is written to the config.
 - A typed `start` with no plan is refused.
+- Run with no plans opens Plan. After the plan is approved, guided Set up
+  opens with that plan selected. Run with plans offers new or existing.
+- Guided Set up with roles configured shows the summary line. Looks good
+  runs the check, and Change reveals the dropdowns.
 - `relay_agents(root)` lists grok and antigravity when their binaries are on
   PATH, and leaves them out when they aren't.
 - A brainstorm that includes antigravity in an untrusted repository asks
