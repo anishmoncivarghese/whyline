@@ -19,7 +19,7 @@ publish.
   stubs to the new signature. Verify: uv run pytest tests/console -q, then
   uv run pytest -q, all passing.
 
-- [ ] RPF-6: Ask once per repository before trusting Antigravity
+- [x] RPF-6: Ask once per repository before trusting Antigravity
   Implement "Task 6: Ask once per repository before trusting Antigravity"
   from the plan: relay_ops.antigravity_state / trust_antigravity /
   decline_antigravity / forget_antigravity_decline, ConfirmScreen's
