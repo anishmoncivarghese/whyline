@@ -84,7 +84,7 @@ async def test_fields_are_prefilled_from_the_current_config(tmp_path):
 async def test_a_clean_check_saves_roles_and_enables_start(tmp_path, monkeypatch, ops):
     monkeypatch.setattr(relay_ops, "run_checks", _checks("ok", "warn"))
     app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test(size=(110, 40)) as pilot:
+    async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
         screen.query_one("#rs-implementer", tui.Select).value = "codex"
         await pilot.click("#rs-check")
@@ -93,7 +93,8 @@ async def test_a_clean_check_saves_roles_and_enables_start(tmp_path, monkeypatch
         )
         assert "warn  warn message" in _checks_text(screen)
         await pilot.click("#rs-start")
-        await pilot.pause()
+        # Slow CI runners need more than one frame for the dismiss to land.
+        await _wait_for(pilot, lambda: results, "the popup to close")
     assert ops == [
         ("codex", "codex", "codex", ["claude"]),
         ("plan", Path("/r/plans/new.plan.md")),
