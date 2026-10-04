@@ -4286,3 +4286,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 80ef25f3b4b74c7fb7f2f3ba55d6cd44 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T10:46:07.946Z"} -->
+
+## 2026-10-04 — Approve and release Part B (RPF-5, RPF-6) as whyline 0.3.31
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** RPF-7
+
+**Because:** diff matches the plan, trust helpers are stubbed in tests, full suite passes
+
+**Rejected:**
+
+- Block on the trust prompt appearing before the already-running check — cosmetic, rare, nothing breaks
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 135f0744c95243f48e5ffc5d3742ad6f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-04T11:40:02.472Z"} -->
