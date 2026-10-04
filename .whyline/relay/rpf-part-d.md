@@ -53,7 +53,7 @@ version or publish.
   and "Clear old run" instead of Resume for a paused run whose task is
   already ticked. Verify: uv run pytest -q.
 
-- [ ] RPF-16: Run, one guided path
+- [x] RPF-16: Run, one guided path
   Implement "Task 16: Run, one guided path" from the plan, including Step 5b:
   the Run button and typed "run", RunChoiceScreen, guided Set up with the
   roles summary (Looks good / Change), recommended roles from installed and
