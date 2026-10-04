@@ -101,7 +101,7 @@ git commit -m "docs: record agent CLI capabilities for Agents mode (AG-1)"
 
 ---
 
-## Phase 1: whyline 0.3.34 (Tasks 2–10)
+## Phase 1: whyline 0.3.36 (Tasks 2–10)
 
 ### Task 2: Agent definitions
 
@@ -2253,13 +2253,13 @@ git add src/whyline/console tests/console/test_new_agent.py
 git commit -m "feat: New agent form with a plain-language review (AG-9)"
 ```
 
-### Task 10: Release whyline 0.3.34 (human)
+### Task 10: Release whyline 0.3.36 (human)
 
-Same steps as the plan-flow plan's Task 7: bump to `0.3.34` in `pyproject.toml` and `src/whyline/__init__.py`, `uv lock`, write `docs/releases/v0.3.34.md`, run the suite with and without agent CLIs on `PATH`, push `main`, tag `v0.3.34`, watch the release workflow (all OSes), and confirm PyPI. The release notes: Agents mode (create, list, run now, history), repo and personal agents, main and backup CLIs, read-only by design, report files and `whyline agents`; scheduling comes in the next release.
+Same steps as the plan-flow plan's Task 7: bump to `0.3.36` in `pyproject.toml` and `src/whyline/__init__.py`, `uv lock`, write `docs/releases/v0.3.36.md`, run the suite with and without agent CLIs on `PATH`, push `main`, tag `v0.3.36`, watch the release workflow (all OSes), and confirm PyPI. The release notes: Agents mode (create, list, run now, history), repo and personal agents, main and backup CLIs, read-only by design, report files and `whyline agents`; scheduling comes in the next release.
 
 ---
 
-## Phase 2: whyline 0.3.35 (Tasks 11–17)
+## Phase 2: whyline 0.3.37 (Tasks 11–17)
 
 ### Task 11: Due-time logic (pure functions)
 
@@ -3384,9 +3384,9 @@ git add src/whyline/agents/mail.py src/whyline/cli.py docs/agents-mail-recipe.md
 git commit -m "feat: Mail.app rule recipe for event-triggered agents (AG-16)"
 ```
 
-### Task 17: Release whyline 0.3.35 (human)
+### Task 17: Release whyline 0.3.37 (human)
 
-Same steps as Task 10, with `0.3.35` and `docs/releases/v0.3.35.md`. The release notes cover:
+Same steps as Task 10, with `0.3.37` and `docs/releases/v0.3.37.md`. The release notes cover:
 - scheduling (daily, weekdays, every N hours) through one LaunchAgent that's turned on from the Agents tab;
 - catch-up after sleep (at most one run, stale ones recorded as missed);
 - folder-watch agents, and `whyline agents trigger` for Mail rules, Shortcuts and hooks;

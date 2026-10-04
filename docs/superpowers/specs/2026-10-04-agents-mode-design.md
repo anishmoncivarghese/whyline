@@ -373,12 +373,12 @@ A CLI enters `UNATTENDED_OK` only if it passes 1–5.
 This comes after the attachments work (whyline-relay 0.2.30, whyline
 0.3.33).
 
-1. whyline 0.3.34, **Phase 1**: definitions, `execute_once` with backups,
+1. whyline 0.3.36, **Phase 1**: definitions, `execute_once` with backups,
    run records, Run now, list, history, the CLI's `list/show/run/history/
    pause/resume/accept/delete`, and the Agents mode. No scheduler yet:
    agents with a time or folder trigger can be saved and run now, and the
    list shows "scheduler not available yet".
-2. whyline 0.3.35, **Phase 2**: the state store's due-time logic, `tick`,
+2. whyline 0.3.37, **Phase 2**: the state store's due-time logic, `tick`,
    folder watch, `trigger`, the scheduler plist on and off,
    backoff/pause/needs-attention, notifications and the Mail recipe.
 
