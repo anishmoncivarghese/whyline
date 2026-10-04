@@ -209,6 +209,7 @@ async def test_setup_screen_forgets_antigravity_decline_when_antigravity_saved(t
     monkeypatch.setattr(relay_ops, "save_roles", lambda root, *roles: saved_roles.append(roles))
     monkeypatch.setattr(relay_ops, "run_checks", lambda root, plan=None: [])
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
+    monkeypatch.setattr(relay_ops, "prepare_agents", lambda root, agents: [])
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:

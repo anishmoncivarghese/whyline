@@ -590,14 +590,14 @@ class RelaySetupScreen(ModalScreen):
         self.run_worker(in_thread, thread=True)
 
     def _check_failed(self, error: Exception, token: object) -> None:
-        if token is not self._token:
-            return
+        if token is not self._token or not self.is_attached:
+            return  # cancelled, re-checked, or the popup has closed
         self.query_one("#rs-checks", Static).update("")
         self._error(str(error) or error.__class__.__name__)
 
     def _show_checks(self, checks: list, running: str | None, token: object) -> None:
-        if token is not self._token:
-            return
+        if token is not self._token or not self.is_attached:
+            return  # cancelled, re-checked, or the popup has closed
         lines = []
         for check in checks:
             line = f"{check.status:<4}  {check.message}"

@@ -247,3 +247,26 @@ async def test_check_prepares_the_chosen_agents_before_checking(tmp_path, monkey
         await pilot.click("#rs-check")
         await _wait_for(pilot, lambda: ("check",) in order, "check")
     assert order[0] == ("prepare", ["claude", "codex"]) and order[-1] == ("check",)
+
+
+async def test_a_check_that_ends_after_the_popup_closed_is_ignored(tmp_path, monkeypatch):
+    import threading
+
+    release = threading.Event()
+
+    def slow_checks(root, plan=None):
+        release.wait(5)
+        raise RuntimeError("late failure")
+
+    monkeypatch.setattr(relay_ops, "run_checks", slow_checks)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        await pilot.click("#rs-check")
+        await pilot.pause()
+        screen.dismiss(None)  # the user cancels while the check is running
+        await pilot.pause()
+        release.set()
+        for _ in range(20):
+            await pilot.pause(0.05)
+    assert results == [None]  # and nothing crashed
