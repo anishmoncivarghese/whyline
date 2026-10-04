@@ -186,3 +186,20 @@ def test_clean_old_when_dir_missing_or_symlink(tmp_path):
     att_dir.symlink_to(target)
     assert att.clean_old(tmp_path) == []
 
+
+
+def test_ensure_ignored_commits_its_own_gitignore_change(repo):
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
+    (repo / "mine.txt").write_text("the user's, uncommitted\n")
+    att.ensure_ignored(repo)
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout
+    assert ".whyline/.gitignore" not in status  # committed, so a relay start isn't blocked
+    assert "mine.txt" in status  # the user's own files are never committed
+    last = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=repo, capture_output=True, text=True).stdout
+    assert last.strip() == "chore: ignore whyline attachments"
+    att.ensure_ignored(repo)  # a second call changes nothing and commits nothing
+    again = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=repo, capture_output=True, text=True).stdout
+    assert again == last

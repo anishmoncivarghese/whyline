@@ -90,6 +90,14 @@ def ensure_ignored(root: Path) -> None:
             if content and not content.endswith("\n"):
                 out.write("\n")
             out.write("attachments/\n")
+        # whyline's own file: commit just this line, or the next relay start
+        # refuses a dirty tree. Never anything else in the repository.
+        from whyline_relay import gitcheck
+
+        try:
+            gitcheck.commit_paths(root, [ignore], "chore: ignore whyline attachments")
+        except Exception:  # no git identity, not a repo yet: the ignore rule still works
+            pass
     probe = root / ".whyline" / "attachments" / "probe"
     checked = subprocess.run(
         ["git", "check-ignore", "-q", str(probe)], cwd=root, capture_output=True
