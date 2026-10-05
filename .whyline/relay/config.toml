@@ -4,10 +4,6 @@ max_rounds = 6
 timeout_minutes = 30
 branch_prefix = "relay/"
 
-[roles]
-implementer = "grok"
-reviewer = "codex"
-
 [agents.codex]
 command = ["codex", "exec", "-s", "workspace-write", "--color", "never"]
 
@@ -56,3 +52,38 @@ command = [
   "--rules", "Headless run: nobody can approve a prompt, and any shell command outside your allow list ends your whole turn. Run one plain command per shell call. Never use shell control flow (if, for, while, case), subshells, $(...), backticks, background &, or bash -c. Chain only with && or |, each part an allowed command. Prefer your read, search and edit tools to shell commands.",
   "-p"
 ]
+
+[roles]
+implementer = "grok"
+tester      = "antigravity"
+reviewer    = "codex"
+
+[pipeline]
+default_profile = "full"
+
+[pipeline.profiles]
+full = ["draft", "test", "review"]
+
+[pipeline.stages.draft]
+role   = "implementer"
+prompt = "implement"
+[pipeline.stages.draft.on]
+ready = "@next"
+
+[pipeline.stages.test]
+role       = "tester"
+prompt     = "test"
+max_visits = 5
+[pipeline.stages.test.on]
+passed = "@next"
+failed = "draft"
+
+[pipeline.stages.review]
+role   = "reviewer"
+prompt = "review"
+[pipeline.stages.review.on]
+approved = "@complete"
+rejected = "draft"
+
+[backup]
+chain = ["codex"]
