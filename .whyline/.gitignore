@@ -8,3 +8,4 @@ readside.log
 *.lock
 account.json
 model.json
+attachments/
