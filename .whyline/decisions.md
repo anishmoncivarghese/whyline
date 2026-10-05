@@ -5202,3 +5202,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 30de28861692461d8cadfec8345aed3b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T11:08:48.607Z"} -->
+
+## 2026-10-05 — Approve and release guided flow v2 console (FV2-7..11) as whyline 0.3.34
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** FV2-12
+
+**Because:** diff matches the plan; tests pass with and without agent CLIs and whyline; a real engine release pause rendered as a checklist, relabelled Resume and launched 'relay done' on typed done
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/plan_job.py
+
+<!-- whyline-event: 5f79ca625c674facbdf29219c04a8bb8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T11:23:11.352Z"} -->
