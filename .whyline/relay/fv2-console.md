@@ -14,7 +14,7 @@ Path, show them with .as_posix()), and must press buttons by widget
 than clicking by position or pausing one frame. Every popup's main button
 must stay visible at 80x24. Never push, tag, bump the version or publish.
 
-- [ ] FV2-7: relay_ops for specs, synthesis and release tasks
+- [x] FV2-7: relay_ops for specs, synthesis and release tasks
   Implement "Task 7" from the plan: draft/revise/resume/answer/discard/
   approve_spec, pending_spec, spec_questions_error, final_synthesis,
   revise_synthesis, draft_plan(spec=), release_task, save_release,
