@@ -21,7 +21,7 @@ must stay visible at 80x24. Never push, tag, bump the version or publish.
   release_role, and the plan marker's `spec:` field in with_marker/list_plans.
   Verify: uv run pytest -q.
 
-- [ ] FV2-8: plan_job stages: synthesis, spec, plan
+- [x] FV2-8: plan_job stages: synthesis, spec, plan
   Implement "Task 8" from the plan: Outcome.stage/text/topic/writer,
   PlanRequest.spec_first, run_request per source, run_synthesis_change,
   run_spec_from_synthesis, run_plan_from_spec, stage-aware run_revision and
