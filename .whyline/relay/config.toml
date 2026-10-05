@@ -57,6 +57,7 @@ command = [
 implementer = "grok"
 tester      = "antigravity"
 reviewer    = "codex"
+release = "claude"
 
 [pipeline]
 default_profile = "full"
