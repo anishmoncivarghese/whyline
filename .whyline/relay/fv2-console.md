@@ -39,7 +39,7 @@ must stay visible at 80x24. Never push, tag, bump the version or publish.
   message that keeps it, View full / View spec / View draft.
   Verify: uv run pytest -q.
 
-- [ ] FV2-11: Committer and Release in the Roles step; the release state
+- [x] FV2-11: Committer and Release in the Roles step; the release state
   Implement "Task 11" from the plan: "Committer: whyline (automatic)", the
   Release select (you / an agent) saved with save_release, the meaning line,
   and the release pause shown as a checklist with typed done/skip launching
