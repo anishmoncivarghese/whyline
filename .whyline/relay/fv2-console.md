@@ -27,7 +27,7 @@ must stay visible at 80x24. Never push, tag, bump the version or publish.
   run_spec_from_synthesis, run_plan_from_spec, stage-aware run_revision and
   run_answer, spec_summary and synthesis_text. Verify: uv run pytest -q.
 
-- [ ] FV2-9: Brainstorm-first Plan form; start asks first
+- [x] FV2-9: Brainstorm-first Plan form; start asks first
   Implement "Task 9" from the plan: sources "Brainstorm it" (default) /
   "I'll describe it" / "I have a plan already", the "Write a spec first"
   checkbox, Drafter/Reviewer shown for brainstorm and describe, and a typed
