@@ -1,3 +1,4 @@
+<!-- whyline-plan v1 | source: hand | drafted-by: claude | spec: docs/superpowers/specs/2026-10-05-console-context-bar-design.md | created: 2026-10-05T17:01:30+05:30 -->
 # Console context bar, repo setup and mode-specific controls (0.3.35)
 
 Each task is one task of `docs/superpowers/plans/2026-10-05-console-context-bar.md`
