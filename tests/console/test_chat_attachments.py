@@ -33,12 +33,19 @@ async def _chat(app, pilot, agent="codex"):
     await pilot.pause()
 
 
+async def _open_attach_menu(app, pilot):
+    app._main("#attach", tui.Button).press()  # by widget, not screen position
+    for _ in range(100):  # slow CI runners need more than one frame
+        if isinstance(app.screen, AttachMenuScreen):
+            return
+        await pilot.pause(0.05)
+    raise AssertionError("the Attach menu never opened")
+
+
 async def _attach_picked(app, pilot, paths, monkeypatch):
     monkeypatch.setattr(mac_input, "pick_files", lambda run=None: paths)
-    await pilot.click("#attach")
-    await pilot.pause()
-    assert isinstance(app.screen, AttachMenuScreen)
-    await pilot.click("#attach-pick")
+    await _open_attach_menu(app, pilot)
+    app.screen.query_one("#attach-pick", tui.Button).press()
     for _ in range(100):
         if app._pending.items:
             break
@@ -112,9 +119,8 @@ async def test_paste_screenshot_without_an_image_says_so(repo, monkeypatch):
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 40)) as pilot:
         await _chat(app, pilot)
-        await pilot.click("#attach")
-        await pilot.pause()
-        await pilot.click("#attach-paste")
+        await _open_attach_menu(app, pilot)
+        app.screen.query_one("#attach-paste", tui.Button).press()
         for _ in range(100):
             if any("The clipboard has no image" in l for l in _lines(app)):
                 break

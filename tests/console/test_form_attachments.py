@@ -119,7 +119,7 @@ async def test_relay_plan_screen_attaches_files_and_omits_refs(repo, monkeypatch
         with pytest.raises(NoMatches):
             screen.query_one("#rp-refs")
 
-        await pilot.click("#att-pick")
+        screen.query_one("#att-pick", tui.Button).press()  # by widget, not screen position
         for _ in range(100):
             if screen.query_one("#rp-attachments", AttachmentsField).pending.items:
                 break
@@ -127,8 +127,11 @@ async def test_relay_plan_screen_attaches_files_and_omits_refs(repo, monkeypatch
 
         screen.query_one("#rp-name", tui.Input).value = "Trading v1"
         screen.query_one("#rp-description").load_text("Build the PRD")
-        await pilot.click("#rp-go")
-        await pilot.pause()
+        screen.query_one("#rp-go", tui.Button).press()
+        for _ in range(100):  # slow CI runners need more than one frame
+            if results:
+                break
+            await pilot.pause(0.05)
 
     assert len(results) == 1
     req = results[0]
@@ -153,15 +156,18 @@ async def test_relay_plan_screen_warns_on_unverified_attachments(
         app.push_screen(screen, results.append)
         await pilot.pause()
 
-        await pilot.click("#att-pick")
+        screen.query_one("#att-pick", tui.Button).press()  # by widget, not screen position
         for _ in range(100):
             if screen.query_one("#rp-attachments", AttachmentsField).pending.items:
                 break
             await pilot.pause(0.05)
 
         screen.query_one("#rp-description").load_text("Build the PRD")
-        await pilot.click("#rp-go")
-        await pilot.pause()
+        screen.query_one("#rp-go", tui.Button).press()
+        for _ in range(100):  # slow CI runners need more than one frame
+            if isinstance(app.screen, tui.ConfirmScreen):
+                break
+            await pilot.pause(0.05)
 
         assert isinstance(app.screen, tui.ConfirmScreen)
         app.screen.query_one("#confirm", tui.Button).press()  # by widget: no click geometry on slow runners
