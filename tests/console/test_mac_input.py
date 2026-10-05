@@ -26,8 +26,8 @@ def test_available(monkeypatch):
 
 
 def test_pick_files_returns_the_chosen_paths():
-    run = lambda argv, **kw: _result(0, "/Users/a/x.png\n/Users/a/My Doc.pdf\n")
-    assert mac_input.pick_files(run=run) == [Path("/Users/a/x.png"), Path("/Users/a/My Doc.pdf")]
+    run = lambda argv, **kw: _result(0, "/picked/x.png\n/picked/My Doc.pdf\n")
+    assert mac_input.pick_files(run=run) == [Path("/picked/x.png"), Path("/picked/My Doc.pdf")]
 
 
 def test_cancelling_the_picker_returns_nothing():
