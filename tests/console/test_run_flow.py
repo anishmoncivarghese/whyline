@@ -35,6 +35,7 @@ def ops(monkeypatch):
     monkeypatch.setattr(relay_ops, "prepare_agents", lambda root, agents: [])
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
     monkeypatch.setattr(relay_ops, "save_roles", lambda *a: None)
+    monkeypatch.setattr(relay_ops, "save_release", lambda *a: None)
     monkeypatch.setattr(relay_ops, "select_plan", lambda *a: None)
     monkeypatch.setattr(relay_ops, "antigravity_state", lambda root: "trusted")
 
@@ -172,7 +173,7 @@ async def test_guided_setup_summarises_roles_and_looks_good_runs_the_check(tmp_p
         screen = app.screen
         summary = str(screen.query_one("#rs-summary", tui.Static).renderable)
         assert summary == (
-            "Implementer: antigravity · Tester: claude · Reviewer: codex · Backup: claude → codex"
+            "Implementer: antigravity · Tester: claude · Reviewer: codex · Backup: claude → codex · Release: you"
         )
         assert not screen.query_one("#rs-roles").display
         await pilot.click("#rs-looks-good")
@@ -223,7 +224,7 @@ async def test_with_no_roles_the_pickers_hold_the_recommendation(tmp_path, monke
         assert "Recommended for the agents you have" in str(
             screen.query_one("#rs-recommended", tui.Static).renderable)
         assert str(screen.query_one("#rs-meaning", tui.Static).renderable) == (
-            "codex writes the code → claude runs the tests → antigravity reviews and commits."
+            "codex writes the code → claude runs the tests → antigravity reviews; whyline commits; you do the release steps."
         )
 
 

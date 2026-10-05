@@ -431,6 +431,7 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelaySetupScreen Checkbox:focus { border: none; }
     RelaySetupScreen #rs-roles { height: auto; }
+    RelaySetupScreen #rs-committer { padding: 1 1 0 0; }
     RelaySetupScreen #rs-summary { width: 1fr; padding: 1 1 0 0; }
     RelaySetupScreen #rs-summary-row Button { margin-left: 1; }
     RelaySetupScreen #rs-meaning { color: $text-muted; padding: 1 0; }
@@ -483,6 +484,7 @@ class RelaySetupScreen(ModalScreen):
             self._recommended = {}
             self._unusable = []
 
+        self._release = relay_ops.release_role(root)
         self._summary = self._guided and self._configured
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
@@ -490,9 +492,10 @@ class RelaySetupScreen(ModalScreen):
     def _roles_line(self) -> str:
         r = self._configured_roles
         backup = " → ".join(r.get("backup", [])) or "none"
+        rel_label = "you" if self._release in ("human", "you") else self._release
         line = (
             f"Implementer: {r['implementer']} · Tester: {r['tester']} · "
-            f"Reviewer: {r['reviewer']} · Backup: {backup}"
+            f"Reviewer: {r['reviewer']} · Backup: {backup} · Release: {rel_label}"
         )
         if self._unusable:
             line += "   ⚠ " + ", ".join(f"{a} isn't logged in" for a in self._unusable)
@@ -559,6 +562,18 @@ class RelaySetupScreen(ModalScreen):
             Vertical(
                 Static("Recommended for the agents you have.", id="rs-recommended"),
                 *rows,
+                Horizontal(
+                    Static("Committer: whyline (automatic)", id="rs-committer"),
+                ),
+                Horizontal(
+                    Label("Release:", classes="field-label"),
+                    Select(
+                        [("you", "human")] + [(a, a) for a in self._agents],
+                        value=self._release if self._release in (["human"] + self._agents) else "human",
+                        allow_blank=False,
+                        id="rs-release",
+                    ),
+                ),
                 Label("Backup, used when an agent fails:"),
                 *backups,
                 Static("", id="rs-meaning"),
@@ -592,7 +607,11 @@ class RelaySetupScreen(ModalScreen):
 
     def _update_meaning(self) -> None:
         i, t, r, _ = self._chosen()
-        self.query_one("#rs-meaning", Static).update(relay_ops.role_meaning(i, t, r))
+        try:
+            rel = self.query_one("#rs-release", Select).value
+        except Exception:
+            rel = self._release
+        self.query_one("#rs-meaning", Static).update(relay_ops.role_meaning(i, t, r, rel))
 
     def _ready(self) -> None:
         self._filling = False
@@ -610,6 +629,11 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-start", Button).disabled = True
 
     def on_select_changed(self, event: "Select.Changed") -> None:
+        try:
+            if self.query("#rs-release"):
+                self._release = self.query_one("#rs-release", Select).value
+        except Exception:
+            pass
         self._invalidate()
         self._update_meaning()
 
@@ -649,14 +673,19 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-start", Button).disabled = True
         self.query_one("#rs-checks", Static).update("Checking…")
         root, chosen = self._root, self._chosen()
+        release = self.query_one("#rs-release", Select).value
         plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
 
         def in_thread() -> None:
             try:
-                if "antigravity" in (chosen[0], chosen[1], chosen[2], *chosen[3]):
+                if "antigravity" in (chosen[0], chosen[1], chosen[2], release, *chosen[3]):
                     relay_ops.forget_antigravity_decline(root)
                 relay_ops.save_roles(root, *chosen)
-                relay_ops.prepare_agents(root, [chosen[0], chosen[1], chosen[2], *chosen[3]])
+                relay_ops.save_release(root, release)
+                agents_to_prepare = [chosen[0], chosen[1], chosen[2], *chosen[3]]
+                if release != "human":
+                    agents_to_prepare.append(release)
+                relay_ops.prepare_agents(root, agents_to_prepare)
                 if plan is not None:
                     relay_ops.select_plan(root, plan)
                 checks = relay_ops.run_checks(root, plan)

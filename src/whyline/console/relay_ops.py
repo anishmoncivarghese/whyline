@@ -673,9 +673,15 @@ def usable_agents(root: Path, status: dict) -> list[str]:
     return [a for a in relay_agents(root) if status.get(a, {}).get("available")]
 
 
-def role_meaning(implementer: str, tester: str, reviewer: str) -> str:
-    return (f"{implementer} writes the code → {tester} runs the tests → "
-            f"{reviewer} reviews and commits.")
+def role_meaning(
+    implementer: str, tester: str, reviewer: str, release: str = "human"
+) -> str:
+    actor = "you" if release in ("human", "you") else release
+    verb = "do" if actor == "you" else "does"
+    return (
+        f"{implementer} writes the code → {tester} runs the tests → "
+        f"{reviewer} reviews; whyline commits; {actor} {verb} the release steps."
+    )
 
 
 

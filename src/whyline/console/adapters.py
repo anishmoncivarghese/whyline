@@ -20,6 +20,7 @@ _FAILURE_PHRASES = (
     ("no-handoff", "exited without handing off"),
     ("round-cap", "round cap"),
     ("blocked", "reported blocked:"),
+    ("release", "release task for you:"),
 )
 
 
@@ -179,7 +180,7 @@ def run_status(root: Path) -> SessionEvent:
     return SessionEvent(kind="pause", text="\n".join(lines))
 
 
-_PAUSE_PATTERN = re.compile(r"^Paused:", re.M)
+_PAUSE_PATTERN = re.compile(r"^(Paused:|release task for you:)", re.M)
 _COMPLETE_PATTERN = re.compile(r"^Plan complete", re.M)
 
 

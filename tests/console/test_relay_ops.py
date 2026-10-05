@@ -305,7 +305,13 @@ def test_recommend_roles(usable, expected):
 
 def test_role_meaning():
     assert relay_ops.role_meaning("antigravity", "claude", "codex") == (
-        "antigravity writes the code → claude runs the tests → codex reviews and commits."
+        "antigravity writes the code → claude runs the tests → codex reviews; whyline commits; you do the release steps."
+    )
+    assert relay_ops.role_meaning("codex", "claude", "claude", "human") == (
+        "codex writes the code → claude runs the tests → claude reviews; whyline commits; you do the release steps."
+    )
+    assert relay_ops.role_meaning("codex", "claude", "claude", "codex") == (
+        "codex writes the code → claude runs the tests → claude reviews; whyline commits; codex does the release steps."
     )
 
 

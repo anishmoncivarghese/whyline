@@ -10,6 +10,7 @@ layer, not a second implementation of the console's logic.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -419,6 +420,7 @@ class WhylineConsoleApp(App):
         self._relay = None  # the RelayProcess started by Start/Resume, if any
         self._relay_label = ""
         self._antigravity_ok = False
+        self._release_task: tuple[str, list[str]] | None = None
         self._plan_state = ""  # "", "working", "review", "answering"
         self._plan_request: plan_job.PlanRequest | None = None
         self._plan_outcome: plan_job.Outcome | None = None
@@ -464,6 +466,8 @@ class WhylineConsoleApp(App):
             suffix = f" · {stage} review"
         elif self._plan_state == "answering":
             suffix = " · answering"
+        elif getattr(self, "_release_task", None):
+            suffix = " · release"
         else:
             suffix = ""
         self.sub_title = f"mode: {mode}{suffix}"
@@ -479,6 +483,8 @@ class WhylineConsoleApp(App):
                 placeholder = 'Type "approve", or say what to change (Enter to send)'
         elif self._plan_state == "answering":
             placeholder = "Type your answers (Enter to send)"
+        elif getattr(self, "_release_task", None):
+            placeholder = 'Type "done" when finished, or "skip"'
         else:
             placeholder = self._placeholder(mode)
         self._main("#prompt", Input).placeholder = placeholder
@@ -513,9 +519,18 @@ class WhylineConsoleApp(App):
         except Exception:
             stale = None
         resume = self._main("#relay-resume", Button)
-        resume.label = "Clear old run" if stale else "Resume"
-        self._stale_pause = stale
-        resume.disabled = not paused or running
+        if getattr(self, "_release_task", None):
+            resume.label = "Release done…"
+            resume.disabled = running
+            self._stale_pause = None
+        elif stale:
+            resume.label = "Clear old run"
+            self._stale_pause = stale
+            resume.disabled = not paused or running
+        else:
+            resume.label = "Resume"
+            self._stale_pause = None
+            resume.disabled = not paused or running
 
     def _placeholder(self, mode: str) -> str:
         if mode == "chat":
@@ -609,7 +624,9 @@ class WhylineConsoleApp(App):
             self._open_relay_setup()
 
         elif button_id == "relay-resume":
-            if getattr(self, "_stale_pause", None):
+            if getattr(self, "_release_task", None):
+                self._send_with("done")
+            elif getattr(self, "_stale_pause", None):
                 task = self._stale_pause
                 relay_ops.clear_pause(self.session.root)
                 self.render_event(SessionEvent(
@@ -799,6 +816,9 @@ class WhylineConsoleApp(App):
         installed version."""
         self._dispatch_token = object()
         self._sent_attachments = []
+        if getattr(self, "_release_task", None):
+            self._release_task = None
+            self._sync_mode_indicator()
         if self._plan_state == "working":
             self._leave_plan()
             self._end_run_flow("Run stopped: no plan was saved.")
@@ -894,6 +914,13 @@ class WhylineConsoleApp(App):
             input_text = text
             attachments = ()
         self.render_event(SessionEvent(kind="input", text=input_text))
+        if getattr(self, "_release_task", None) and text.strip().lower() in ("done", "skip"):
+            cmd = text.strip().lower()
+            task_id, _ = self._release_task
+            self._release_task = None
+            self._sync_mode_indicator()
+            self._launch_relay([cmd, task_id])
+            return
         if self._plan_state in ("review", "answering") and not text.startswith("/"):
             self._plan_reply(text)
             return
@@ -1548,6 +1575,39 @@ class WhylineConsoleApp(App):
         if not self._busy_text:
             self._main("#thinking", Static).display = False
             self._main("#stop", Button).disabled = True
+        pause_text = ""
+        if "release task for you: " in text:
+            pause_text = text[text.find("release task for you: "):]
+        elif text.strip().startswith("Paused:"):
+            pause_text = text.strip().removeprefix("Paused:").strip()
+        else:
+            try:
+                from whyline_relay import state as relay_state
+                saved = relay_state.load(self.session.root)
+                if saved and saved.paused_reason:
+                    pause_text = saved.paused_reason
+            except Exception:
+                pass
+
+        if pause_text.startswith("release task for you: "):
+            task_info = relay_ops.release_task(self.session.root)
+            if task_info is None:
+                lines = pause_text.splitlines()
+                task_id = lines[0].removeprefix("release task for you:").strip()
+                checklist = [l.strip() for l in lines[1:] if l.strip()]
+                task_info = (task_id, checklist)
+            self._release_task = task_info
+            task_id, checklist = task_info
+            checklist_lines = [f"{task_id} is a release task for you:"]
+            for i, item in enumerate(checklist, 1):
+                clean = re.sub(r"^(\d+\.|\*|-)\s*", "", item)
+                checklist_lines.append(f"   {i}. {clean}")
+            checklist_lines.append('Type "done" when finished, or "skip".')
+            self.render_event(SessionEvent(kind="pause", text="\n".join(checklist_lines)))
+            self._sync_mode_indicator()
+            self._sync_relay_buttons()
+            return
+
         event = adapters.classify_relay_output(self.session.root, text, code)
         if event.kind == "pause":
             self.render_event(event)

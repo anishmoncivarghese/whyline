@@ -5167,3 +5167,38 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 20a42d9351eb405d83350de51f4d981c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:45:41.175Z"} -->
+
+## 2026-10-05 — Render release task pause checklist in transcript with release sub-state and fallback parsing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-11
+
+**Because:** keeps workflow in the main window transcript per spec while ensuring release tasks work even if state file is not persisted to disk
+
+**Rejected:**
+
+- modal popup — breaks linear transcript flow and prevents quick typing of done or skip
+- relying strictly on state.load — fails in unit tests or runner stubs that supply pause output directly
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: debe90da05024bda9aa9bb82f558a00a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T11:02:17.756Z"} -->
+
+## 2026-10-05 — Approve committer and release roles with release-task console state
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FV2-11
+
+**Because:** the setup saves the selected release role after roles, the meaning and summary match the plan, release pauses render and dispatch done or skip correctly, reset state before relaunch, and uv run pytest -q passed
+
+**Rejected:**
+
+- request changes — the reviewed state transitions and tests show no unsafe or clearly incorrect behavior
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 30de28861692461d8cadfec8345aed3b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T11:08:48.607Z"} -->

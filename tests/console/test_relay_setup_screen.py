@@ -34,6 +34,12 @@ def ops(monkeypatch):
         "save_roles",
         lambda root, i, t, r, b: saved.append((i, t, r, b)),
     )
+    monkeypatch.setattr(
+        relay_ops,
+        "save_release",
+        lambda root, value: saved.append(("release", value)),
+    )
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
     plans = [
         relay_ops.PlanInfo(Path("/r/plans/new.plan.md"), "new", "draft", "2026-10-04T10:00:00+05:30", 0, 3),
         relay_ops.PlanInfo(Path("/r/plans/old.plan.md"), "old", "paste", "2026-10-01T10:00:00+05:30", 2, 2),
@@ -76,6 +82,12 @@ async def test_fields_are_prefilled_from_the_current_config(tmp_path):
         screen, _ = await _open(app, pilot)
         assert screen.query_one("#rs-implementer", tui.Select).value == "claude"
         assert screen.query_one("#rs-tester", tui.Select).value == "codex"
+        assert screen.query_one("#rs-committer", tui.Static).renderable == "Committer: whyline (automatic)"
+        release = screen.query_one("#rs-release", tui.Select)
+        assert release.value == "human"
+        assert [prompt for prompt, _ in release._options if _ is not tui.Select.BLANK] == [
+            "you", "claude", "codex"
+        ]
         assert screen.query_one("#rs-backup-claude", tui.Checkbox).value
         assert not screen.query_one("#rs-backup-codex", tui.Checkbox).value
         assert screen.query_one("#rs-start", tui.Button).disabled
@@ -97,9 +109,25 @@ async def test_a_clean_check_saves_roles_and_enables_start(tmp_path, monkeypatch
         await _wait_for(pilot, lambda: results, "the popup to close")
     assert ops == [
         ("codex", "codex", "codex", ["claude"]),
+        ("release", "human"),
         ("plan", Path("/r/plans/new.plan.md")),
     ]
     assert results == ["start"]
+
+
+async def test_release_select_saves_chosen_agent(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rs-release", tui.Select).value = "codex"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        await pilot.click("#rs-start")
+        await _wait_for(pilot, lambda: results, "the popup to close")
+    assert ("release", "codex") in ops
 
 
 async def test_the_plan_dropdown_lists_plans_newest_first(tmp_path):
