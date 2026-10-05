@@ -547,7 +547,10 @@ class WhylineConsoleApp(App):
 
     def render_event(self, event: SessionEvent) -> None:
         self.session.record(event)
-        transcript = self._main("#transcript", RichLog)
+        try:
+            transcript = self._main("#transcript", RichLog)
+        except (NoMatches, IndexError):  # the console is closing; the event is still recorded
+            return
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
         # What you typed is set apart from replies, so the transcript reads
         # as a conversation rather than an unattributed log.
@@ -633,7 +636,11 @@ class WhylineConsoleApp(App):
         return "  ".join(f"{i.name} {statuses[i.id]}" for i in self._pending.items)
 
     def _refresh_tray(self) -> None:
-        self._main("#tray", AttachmentTray).show(self._pending.items, self._statuses())
+        try:
+            tray = self._main("#tray", AttachmentTray)
+        except (NoMatches, IndexError):  # the console is closing; a late worker has nothing to update
+            return
+        tray.show(self._pending.items, self._statuses())
 
     def on_attachment_tray_removed(self, message: AttachmentTray.Removed) -> None:
         self._pending.remove(message.attachment_id)

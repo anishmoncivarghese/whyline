@@ -118,7 +118,7 @@ async def test_drop_staging_error_renders_error_and_keeps_earlier_staged(repo, t
         await pilot.pause()
         for _ in range(100):
             lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
-            if any("second.png failed to stage" in l for l in lines):
+            if any("second.png failed to stage" in l for l in lines) and app.query_one("#tray").display:
                 break
             await pilot.pause(0.05)
         assert len(app._pending.items) == 1
