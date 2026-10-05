@@ -33,7 +33,7 @@ must stay visible at 80x24. Never push, tag, bump the version or publish.
   checkbox, Drafter/Reviewer shown for brainstorm and describe, and a typed
   `start` without --plan opening the Run flow. Verify: uv run pytest -q.
 
-- [ ] FV2-10: Synthesis and spec review in the main window
+- [x] FV2-10: Synthesis and spec review in the main window
   Implement "Task 10" from the plan: review by stage (synthesis -> spec ->
   plan), approve chaining, the spec saved before the plan job with a failure
   message that keeps it, View full / View spec / View draft.
