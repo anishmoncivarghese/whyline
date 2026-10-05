@@ -4965,3 +4965,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 054ac7ae072a4f449c288f686c0c9d34 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-04T19:34:46.948Z"} -->
+
+## 2026-10-05 — Release 0.3.33 after three clean CI runs; popups fit 80x24, late workers can't crash the console
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ATT-11
+
+**Because:** review and Windows CI found an off-screen Start button at 80x24, a worker updating a closed screen, and position-based test clicks; all fixed and CI passed three times in a row
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 2c80b0ebdd3e4980a9596c9ef04da773 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T03:44:25.014Z"} -->
