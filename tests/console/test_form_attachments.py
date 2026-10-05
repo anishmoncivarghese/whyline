@@ -71,6 +71,7 @@ def test_plan_requests_carry_attachments(tmp_path, monkeypatch):
         drafter="codex",
         reviewer="claude",
         attachments=(shot,),
+        spec_first=False,
     )
     plan_job.run_request(tmp_path, request, lambda line: None)
     assert calls == [[shot]]

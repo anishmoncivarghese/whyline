@@ -5012,3 +5012,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 63f30b506e854307a4dce647728306d3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T05:46:48.064Z"} -->
+
+## 2026-10-05 — Add stage, text, topic, and writer to Outcome with default stage='plan' and dispatch run_revision and run_answer by stage
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-8
+
+**Because:** keeps backward compatibility with existing plan calls while enabling synthesis and spec stages
+
+**Rejected:**
+
+- separate outcome classes for each stage — breaks existing main window handler patterns and typing
+
+**Files:** src/whyline/console/plan_job.py
+
+<!-- whyline-event: 7fb4e15cfd2341a48adfbdf1d93b4fe2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T05:56:11.168Z"} -->
+
+## 2026-10-05 — Approve staged synthesis, spec, and plan job orchestration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FV2-8
+
+**Because:** The implementation matches every FV2-8 source and stage contract, preserves existing direct-plan behavior behind spec_first=False, and the independent full suite passed
+
+**Rejected:**
+
+- Request changes — no functional, integration-contract, safety, or coverage defect was found in the reviewed scope
+
+**Files:** src/whyline/console/plan_job.py, tests/console/test_plan_job.py
+
+<!-- whyline-event: 3b85299060c44d189000566821777346 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T09:46:21.265Z"} -->
