@@ -23,7 +23,7 @@ def repo(tmp_path, monkeypatch):
 
 
 def _lines(app):
-    return [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 
 
 async def _chat(app, pilot, agent="codex"):
