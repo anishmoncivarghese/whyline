@@ -237,9 +237,12 @@ def repo_switch_warning(root: Path) -> str:
 def switch_repo(session: ConsoleSession, root: Path) -> SessionEvent:
     """Moves the whole console to `root`: command mode runs `whyline ...`
     against the working directory, so that changes too."""
+    from whyline import model
+
     os.chdir(root)
     session.root = root
     session.transcript.clear()
+    session.agent = model.resolve(root)[0]
     note = ""
     if session.mode == "relay" and not adapters.relay_is_configured(root):
         session.mode = "command"
@@ -376,6 +379,7 @@ def _model_event(session: ConsoleSession, text: str) -> SessionEvent:
     if len(parts) == 3:
         model.set_one(session.root, agent, parts[2])
     session.agent = agent
+    model.set_default_agent(session.root, agent)
     if agent == "antigravity":
         from whyline.console import relay_ops
 
@@ -412,7 +416,10 @@ def run(
         except editor.EditorUnavailable as error:
             print_fn(str(error))
             return
+    from whyline import model
+
     session = ConsoleSession(root=root)
+    session.agent = model.resolve(root)[0]
     print_fn("whyline console -- /help for commands, /exit to quit.")
     warning = home_repo_warning(root, Path.cwd())
     if warning:

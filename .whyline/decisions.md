@@ -5232,3 +5232,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ca954cfe750841fd9c63af6a9f83f445 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T20:36:02.951Z"} -->
+
+## 2026-10-05 — Global console defaults use paths.global_whyline_dir
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-1
+
+**Because:** Console tests already redirect that helper, and a direct Path.home() would read the real ~/.whyline/console.json and could change which agent the console starts on
+
+**Rejected:**
+
+- Path.home() as written in the plan — it bypasses the existing home isolation
+
+**Files:** src/whyline/model.py
+
+<!-- whyline-event: 1de561e7225f46c3a505b6de8f0a94ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:05:46.590Z"} -->
+
+## 2026-10-05 — Both consoles start on the resolved default agent
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-1
+
+**Because:** The keyboard REPL and the TUI are both a console start, and switching repo has to pick up the new repo's saved agent
+
+**Rejected:**
+
+- Only WhylineConsoleApp.__init__ — the keyboard session would keep starting with no agent
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 834fedb3e23a48e39e4a415ce8939846 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:05:49.299Z"} -->
+
+## 2026-10-05 — Default-agent tests make Path.home follow HOME
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-1
+
+**Because:** The plan points HOME at a temp directory, but pathlib ignores HOME on Windows and would read the real profile
+
+**Rejected:**
+
+- setenv HOME alone — Path.home() does not honor it on Windows
+
+**Files:** tests/test_model_defaults.py
+
+<!-- whyline-event: 55108b450bab445ebfb6a665995d3c6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:05:52.032Z"} -->
+
+## 2026-10-05 — Pass CB-1 default agent resolution, model command persistence, and console startup tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-1
+
+**Because:** All 863 tests pass (1 skipped as expected for textual check); test_model_defaults covers repo/global defaults, fallback hierarchy, round-tripping, /model persistence, and initial agent resolution in TUI and REPL switch
+
+**Files:** tests/test_model_defaults.py
+
+<!-- whyline-event: 6e4f967af023418dae1213976162223e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:13:14.578Z"} -->
+
+## 2026-10-05 — Approve CB-1 saved default agent persistence and console startup
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-1
+
+**Because:** The implementation matches the documented repo-global-claude resolution hierarchy, preserves defaults across model writes, starts and switches consoles on the resolved agent, and passes the full and focused test suites
+
+**Files:** src/whyline/model.py
+
+<!-- whyline-event: e52a53021a744c71ad9606c1232d30b3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:15:39.202Z"} -->

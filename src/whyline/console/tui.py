@@ -409,8 +409,11 @@ class WhylineConsoleApp(App):
     """
 
     def __init__(self, *, root: Path) -> None:
+        from whyline import model
+
         super().__init__()
         self.session = ConsoleSession(root=root)
+        self.session.agent = model.resolve(root)[0]
         self._dispatch_token: object | None = None
         self._exec_after: tuple[str, list[str]] | None = None
         self._login_fn = _run_login
