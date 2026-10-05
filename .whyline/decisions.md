@@ -5046,3 +5046,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3b85299060c44d189000566821777346 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T09:46:21.265Z"} -->
+
+## 2026-10-05 — Route typed start without arguments to _run_flow_start in _send_with
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-9
+
+**Because:** handles typed start entering the Run flow as specified without intercepting internal _launch_relay calls from setup completion or breaking existing process tests
+
+**Rejected:**
+
+- intercepting args == ['start'] inside _launch_relay — breaks _setup_done which launches the relay with ['start'] after setup and breaks existing unit tests directly invoking _launch_relay
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e6aeecae3e2142bc8291ce8534cdee1f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:01:30.076Z"} -->
+
+## 2026-10-05 — Move Drafter and Reviewer selects into a shared row shown for brainstorm and draft sources
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-9
+
+**Because:** enables both brainstorm and describe paths to specify the drafter and reviewer for downstream spec and plan stages while keeping them hidden for pasted plans
+
+**Rejected:**
+
+- separate drafter/reviewer widgets inside each group — duplicates select state and requires syncing values between them
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 9d51975a0871445cbdd98a19ed166e93 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:01:35.545Z"} -->
+
+## 2026-10-05 — Approve the brainstorm-first Plan form and guided bare-start routing
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FV2-9
+
+**Because:** The form defaults and labels match FV2-9, spec-first and planner-role values reach PlanRequest, bare typed start enters the guided Run flow without changing argument-bearing starts, and the full pytest suite passes
+
+**Rejected:**
+
+- request changes — no unsafe or clearly incorrect behavior was found in the diff or tests
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: a9ef8531aa5f49fda12ecb30e9cd6c26 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:07:22.452Z"} -->

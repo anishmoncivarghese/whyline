@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from whyline.console import relay_ops, tui
+from whyline.console.relay_screens import RelayPlanScreen, RunChoiceScreen
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
     pytest.mark.asyncio,
@@ -35,7 +36,7 @@ def fake_relay(monkeypatch):
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: ["x"])
 def _lines(app):
-    return [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 async def _relay_mode(app, pilot):
     app.session.mode = "relay"
     app._sync_mode_indicator()
@@ -139,7 +140,7 @@ async def test_quitting_after_relay_finishes_while_modal_open_exits_safely(tmp_p
         await pilot.pause()
 
 
-async def test_typed_start_without_any_plan_is_refused(tmp_path, monkeypatch):
+async def test_typed_start_without_any_plan_opens_plan_form(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -148,7 +149,30 @@ async def test_typed_start_without_any_plan_is_refused(tmp_path, monkeypatch):
         await pilot.press("enter")
         await pilot.pause()
         assert FakeProcess.instances == []
-        assert any("No plan yet. Use Plan first." in line for line in _lines(app))
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert any("No plan yet -- let's make one." in line for line in _lines(app))
+
+
+async def test_typed_start_with_plans_opens_run_choice_screen(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app.query_one("#prompt", tui.Input).value = "start"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert FakeProcess.instances == []
+        assert isinstance(app.screen, RunChoiceScreen)
+
+
+async def test_typed_start_with_plan_flag_launches_directly(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app.query_one("#prompt", tui.Input).value = "start --plan myplan.plan.md"
+        await pilot.press("enter")
+        await pilot.pause()
+        proc = FakeProcess.instances[-1]
+        assert proc.args == ["start", "--plan", "myplan.plan.md"]
 
 
 async def test_a_stale_paused_run_offers_clear_instead_of_resume(tmp_path, monkeypatch):

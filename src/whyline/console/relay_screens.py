@@ -19,9 +19,9 @@ from whyline.console.attachments_ui import AttachmentsField
 from whyline.console.plan_job import PlanRequest
 
 _SOURCES = [
-    ("Draft from a description", "draft"),
-    ("Paste a plan", "paste"),
-    ("From a brainstorm", "brainstorm"),
+    ("Brainstorm it", "brainstorm"),
+    ("I'll describe it", "draft"),
+    ("I have a plan already", "paste"),
 ]
 
 
@@ -72,7 +72,7 @@ class RelayPlanScreen(ModalScreen):
             ),
             Horizontal(
                 Label("Source:", classes="field-label"),
-                Select(_SOURCES, value="draft", allow_blank=False, id="rp-source"),
+                Select(_SOURCES, value="brainstorm", allow_blank=False, id="rp-source"),
             ),
             Vertical(
                 Label("Paste the plan (each task as `- [ ] ID: title`):"),
@@ -83,17 +83,23 @@ class RelayPlanScreen(ModalScreen):
                 Label("What should the plan build?"),
                 TextArea(id="rp-description"),
                 AttachmentsField(self._root, self.app._attach_session, id="rp-attachments"),
+                Checkbox("Write a spec first", value=True, id="rp-spec-first"),
+                id="rp-draft-group",
+            ),
+            Vertical(*self._brainstorm_widgets(), id="rp-brainstorm-group"),
+            Vertical(
                 Horizontal(
                     Label("Drafter:", classes="field-label"),
                     self._agent_select(drafter, "rp-drafter"),
+                    id="rp-drafter-row",
                 ),
                 Horizontal(
                     Label("Reviewer:", classes="field-label"),
                     self._agent_select(reviewer, "rp-reviewer"),
+                    id="rp-reviewer-row",
                 ),
-                id="rp-draft-group",
+                id="rp-roles-row",
             ),
-            Vertical(*self._brainstorm_widgets(), id="rp-brainstorm-group"),
             id="rp-form",
         )
         yield Vertical(
@@ -144,7 +150,7 @@ class RelayPlanScreen(ModalScreen):
         ]
 
     def on_mount(self) -> None:
-        self._show_source("draft")
+        self._show_source("brainstorm")
         self.query_one("#rp-writer-row").display = False
         pending = relay_ops.pending_draft(self._root)
         self.query_one("#rp-resume-draft").display = bool(pending)
@@ -180,6 +186,12 @@ class RelayPlanScreen(ModalScreen):
     def _show_source(self, source: str) -> None:
         for name in ("paste", "draft", "brainstorm"):
             self.query_one(f"#rp-{name}-group").display = name == source
+        roles_shown = source in ("draft", "brainstorm")
+        self.query_one("#rp-roles-row").display = roles_shown
+        self.query_one("#rp-drafter-row").display = roles_shown
+        self.query_one("#rp-reviewer-row").display = roles_shown
+        self.query_one("#rp-drafter").display = roles_shown
+        self.query_one("#rp-reviewer").display = roles_shown
         self.query_one("#rp-go", Button).label = "Save" if source == "paste" else "Make the plan"
 
     def on_select_changed(self, event: "Select.Changed") -> None:
@@ -295,6 +307,7 @@ class RelayPlanScreen(ModalScreen):
             self._error("Describe what the plan should build.")
             return None
         field = self.query_one("#rp-attachments", AttachmentsField)
+        spec_first = self.query_one("#rp-spec-first", Checkbox).value
         return PlanRequest(
             "draft",
             self._plan_name(description),
@@ -302,24 +315,35 @@ class RelayPlanScreen(ModalScreen):
             attachments=tuple(field.pending.paths()),
             drafter=self.query_one("#rp-drafter", Select).value,
             reviewer=self.query_one("#rp-reviewer", Select).value,
+            spec_first=spec_first,
         )
 
     def _brainstorm_request(self) -> PlanRequest | None:
         from whyline.console.tui import collect_brainstorm
 
         chosen = self.query_one("#rp-from", Select).value
+        drafter = self.query_one("#rp-drafter", Select).value
+        reviewer = self.query_one("#rp-reviewer", Select).value
         if chosen != "new":
             return PlanRequest(
                 "existing",
                 self._plan_name(chosen),
                 topic=chosen,
                 writer=self.query_one("#rp-writer", Select).value,
+                drafter=drafter,
+                reviewer=reviewer,
             )
         choice = collect_brainstorm(self.query_one)
         if isinstance(choice, str):
             self._error(choice)
             return None
-        return PlanRequest("brainstorm", self._plan_name(choice["topic"]), brainstorm=choice)
+        return PlanRequest(
+            "brainstorm",
+            self._plan_name(choice["topic"]),
+            brainstorm=choice,
+            drafter=drafter,
+            reviewer=reviewer,
+        )
 
     def _on_rp_resume_draft(self) -> None:
         pending = relay_ops.pending_draft(self._root) or "plan"

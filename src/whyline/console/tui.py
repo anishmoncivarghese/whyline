@@ -862,7 +862,7 @@ class WhylineConsoleApp(App):
         if self._plan_state in ("review", "answering") and not text.startswith("/"):
             self._plan_reply(text)
             return
-        if self.session.mode == "relay" and text.strip() == "run":
+        if self.session.mode == "relay" and (text.strip() == "run" or text.split() == ["start"]):
             self._run_flow_start()
             return
         first = text.split(maxsplit=1)[0]

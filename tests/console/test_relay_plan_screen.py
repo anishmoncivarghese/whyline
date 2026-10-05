@@ -108,13 +108,36 @@ async def test_only_the_chosen_sources_fields_show(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
-        assert screen.query_one("#rp-source", tui.Select).value == "draft"
-        assert screen.query_one("#rp-draft-group").display
+        source_select = screen.query_one("#rp-source", tui.Select)
+        assert source_select.value == "brainstorm"
+        expected_options = [
+            ("Brainstorm it", "brainstorm"),
+            ("I'll describe it", "draft"),
+            ("I have a plan already", "paste"),
+        ]
+        assert source_select._options == expected_options
+        assert screen.query_one("#rp-brainstorm-group").display
+        assert not screen.query_one("#rp-draft-group").display
         assert not screen.query_one("#rp-paste-group").display
-        screen.query_one("#rp-source", tui.Select).value = "paste"
+        assert screen.query_one("#rp-drafter").display
+        assert screen.query_one("#rp-reviewer").display
+
+        source_select.value = "draft"
+        await pilot.pause()
+        assert screen.query_one("#rp-draft-group").display
+        assert not screen.query_one("#rp-brainstorm-group").display
+        assert not screen.query_one("#rp-paste-group").display
+        assert screen.query_one("#rp-spec-first", tui.Checkbox).value is True
+        assert screen.query_one("#rp-drafter").display
+        assert screen.query_one("#rp-reviewer").display
+
+        source_select.value = "paste"
         await pilot.pause()
         assert screen.query_one("#rp-paste-group").display
         assert not screen.query_one("#rp-draft-group").display
+        assert not screen.query_one("#rp-brainstorm-group").display
+        assert not screen.query_one("#rp-drafter").display
+        assert not screen.query_one("#rp-reviewer").display
 
 
 async def test_plan_button_opens_the_popup_and_reports_the_saved_plan(tmp_path, monkeypatch):
@@ -150,6 +173,8 @@ async def test_draft_needs_a_description(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
         await pilot.click("#rp-go")
         await pilot.pause()
         assert "Describe what the plan should build" in _error_text(screen)
@@ -173,6 +198,8 @@ async def test_draft_dismisses_with_a_request_carrying_the_agents(tmp_path, monk
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
         screen.query_one("#rp-name", tui.Input).value = "Trading v1"
         screen.query_one("#rp-description").load_text("Build the PRD")
         screen.query_one("#rp-drafter", tui.Select).value = "grok"
@@ -180,7 +207,27 @@ async def test_draft_dismisses_with_a_request_carrying_the_agents(tmp_path, monk
         await pilot.pause()
     assert results == [
         plan_job.PlanRequest(
-            "draft", "Trading v1", description="Build the PRD", drafter="grok", reviewer="claude"
+            "draft", "Trading v1", description="Build the PRD", drafter="grok", reviewer="claude", spec_first=True
+        )
+    ]
+
+
+async def test_draft_spec_first_checkbox_controls_request(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
+        checkbox = screen.query_one("#rp-spec-first", tui.Checkbox)
+        assert checkbox.value is True
+        checkbox.value = False
+        screen.query_one("#rp-name", tui.Input).value = "Trading v1"
+        screen.query_one("#rp-description").load_text("Build the PRD")
+        await pilot.click("#rp-go")
+        await pilot.pause()
+    assert results == [
+        plan_job.PlanRequest(
+            "draft", "Trading v1", description="Build the PRD", drafter="codex", reviewer="claude", spec_first=False
         )
     ]
 
@@ -189,6 +236,8 @@ async def test_an_empty_name_comes_from_the_description(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
         screen.query_one("#rp-description").load_text("Build the trading platform")
         await pilot.click("#rp-go")
         await pilot.pause()
@@ -201,6 +250,8 @@ async def test_an_existing_plan_name_asks_before_replacing(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
         screen.query_one("#rp-name", tui.Input).value = "p"
         screen.query_one("#rp-description").load_text("x")
         await pilot.click("#rp-go")
@@ -220,10 +271,38 @@ async def test_an_existing_brainstorm_becomes_a_request(tmp_path, monkeypatch):
         await pilot.pause()
         screen.query_one("#rp-from", tui.Select).value = "topic-a"
         await pilot.pause()
+        screen.query_one("#rp-drafter", tui.Select).value = "grok"
         await pilot.click("#rp-go")
         await pilot.pause()
     assert results == [
-        plan_job.PlanRequest("existing", "topic-a", topic="topic-a", writer="claude")
+        plan_job.PlanRequest("existing", "topic-a", topic="topic-a", writer="claude", drafter="grok", reviewer="claude")
+    ]
+
+
+async def test_new_brainstorm_request_carries_drafter_and_reviewer(tmp_path, monkeypatch):
+    from whyline.console import tui as console_tui
+
+    choice = {
+        "topic": "Search indexing",
+        "models": ["claude"],
+        "writer": "claude",
+        "passes": 1,
+        "timeout": 30,
+        "attachments": (),
+    }
+    monkeypatch.setattr(console_tui, "collect_brainstorm", lambda query_fn: choice)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        assert screen.query_one("#rp-source", tui.Select).value == "brainstorm"
+        screen.query_one("#rp-drafter", tui.Select).value = "grok"
+        screen.query_one("#rp-reviewer", tui.Select).value = "codex"
+        await pilot.click("#rp-go")
+        await pilot.pause()
+    assert results == [
+        plan_job.PlanRequest(
+            "brainstorm", "Search indexing", brainstorm=choice, drafter="grok", reviewer="codex"
+        )
     ]
 
 
