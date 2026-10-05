@@ -28,6 +28,7 @@ class PlanInfo:
     created: str
     done: int
     total: int
+    spec: str = ""
 
 
 @dataclass(frozen=True)
@@ -80,14 +81,22 @@ def plan_path(root: Path, name: str) -> Path:
     return root / PLANS_DIR / f"{plan_slug(name)}.plan.md"
 
 
-def with_marker(text: str, *, source: str, drafted_by: str, now: datetime | None = None) -> str:
+def with_marker(
+    text: str,
+    *,
+    source: str,
+    drafted_by: str,
+    spec: str = "",
+    now: datetime | None = None,
+) -> str:
     created = (now or datetime.now().astimezone()).isoformat(timespec="seconds")
     lines = text.splitlines()
     if lines and lines[0].startswith(_MARKER):
         lines = lines[1:]
     body = "\n".join(lines).strip("\n")
+    spec_field = f" | spec: {spec}" if spec else ""
     return (
-        f"{_MARKER} | source: {source} | drafted-by: {drafted_by} | "
+        f"{_MARKER} | source: {source} | drafted-by: {drafted_by}{spec_field} | "
         f"created: {created} -->\n{body}\n"
     )
 
@@ -127,6 +136,7 @@ def list_plans(root: Path) -> list[PlanInfo]:
         found.append(PlanInfo(
             path, path.name.removesuffix(".plan.md"), fields.get("source", ""),
             fields.get("created", ""), *counts,
+            spec=fields.get("spec", ""),
         ))
     found.sort(key=lambda info: info.created, reverse=True)
     legacy = root / "plan.md"
@@ -139,13 +149,15 @@ def list_plans(root: Path) -> list[PlanInfo]:
 
 def _approve_marked(
     root: Path, text: str, *, name: str, source: str, drafted_by: str,
-    replace: bool, clear_checkpoint: bool = False,
+    replace: bool, clear_checkpoint: bool = False, spec: str = "",
 ) -> Path:
     from whyline_relay import config, planner
 
     staged = config.relay_dir(root) / "approved-plan.md"
     staged.parent.mkdir(parents=True, exist_ok=True)
-    staged.write_text(with_marker(text, source=source, drafted_by=drafted_by), encoding="utf-8")
+    staged.write_text(
+        with_marker(text, source=source, drafted_by=drafted_by, spec=spec), encoding="utf-8"
+    )
     try:
         return planner.approve(
             root, _settings(root), staged, drafted_by=drafted_by, replace=replace,
@@ -243,12 +255,18 @@ def _planner_draft(root: Path, path: Path) -> Draft:
 
 
 def draft_plan(
-    root: Path, description: str, attachments: Sequence[Path] = (), *, progress
+    root: Path,
+    description: str,
+    attachments: Sequence[Path] = (),
+    *,
+    progress,
+    spec: Path | None = None,
 ) -> Draft:
     from whyline_relay import planner
 
+    kwargs = {"spec": spec} if spec is not None else {}
     path = planner.draft(
-        root, _settings(root), description, attachments=attachments, print_fn=progress
+        root, _settings(root), description, attachments=attachments, print_fn=progress, **kwargs
     )
     return _planner_draft(root, path)
 
@@ -276,6 +294,82 @@ def discard_draft(root: Path, draft: Draft | None) -> None:
         planner.discard(root)
 
 
+def _spec_draft(root: Path, path: Path) -> Draft:
+    cfg = _settings(root).planner
+    return Draft(
+        path=path,
+        text=path.read_text(encoding="utf-8"),
+        drafted_by=f"{cfg.draft} (reviewed by {cfg.review})",
+        source="spec",
+    )
+
+
+def draft_spec(
+    root: Path,
+    request: str,
+    attachments: Sequence[Path] = (),
+    *,
+    progress,
+) -> Draft:
+    from whyline_relay import specs
+
+    path = specs.draft(
+        root, _settings(root), request, attachments=attachments, print_fn=progress
+    )
+    return _spec_draft(root, path)
+
+
+def pending_spec(root: Path) -> str | None:
+    from whyline_relay import specs
+
+    return specs.pending_description(root)
+
+
+def resume_spec(root: Path, *, progress) -> Draft:
+    from whyline_relay import specs
+
+    return _spec_draft(
+        root, specs.resume_draft(root, _settings(root), print_fn=progress)
+    )
+
+
+def revise_spec(root: Path, draft: Draft, feedback: str, *, progress) -> Draft:
+    from whyline_relay import specs
+
+    specs.revise(root, _settings(root), feedback, print_fn=progress)
+    return dc_replace(draft, text=draft.path.read_text(encoding="utf-8"))
+
+
+def answer_spec(root: Path, answers: str, *, progress) -> Draft:
+    from whyline_relay import specs
+
+    return _spec_draft(
+        root, specs.answer(root, _settings(root), answers, print_fn=progress)
+    )
+
+
+def discard_spec(root: Path) -> None:
+    from whyline_relay import specs
+
+    specs.discard(root)
+
+
+def approve_spec(
+    root: Path, draft: Draft | Path, name: str, *, replace: bool = False
+) -> Path:
+    from whyline_relay import specs
+
+    path = draft.path if isinstance(draft, Draft) else draft
+    return specs.approve(root, path, name=name, replace=replace)
+
+
+def spec_questions_error():
+    from whyline_relay import specs
+
+    return specs.SpecQuestions
+
+
+
 def _models(agent: str) -> list[tuple[str, str]]:
     return [(agent, BRAINSTORM_LABELS[agent])]
 
@@ -299,7 +393,9 @@ def revise_plan(root: Path, draft: Draft, feedback: str, *, progress) -> Draft:
     return dc_replace(draft, text=draft.path.read_text(encoding="utf-8"))
 
 
-def approve_plan(root: Path, draft: Draft, name: str, *, replace: bool = False) -> Path:
+def approve_plan(
+    root: Path, draft: Draft, name: str, *, replace: bool = False, spec: str = ""
+) -> Path:
     return _approve_marked(
         root,
         draft.path.read_text(encoding="utf-8"),
@@ -308,6 +404,7 @@ def approve_plan(root: Path, draft: Draft, name: str, *, replace: bool = False) 
         drafted_by=draft.drafted_by,
         replace=replace,
         clear_checkpoint=draft.source == "planner",
+        spec=spec,
     )
 
 
@@ -341,6 +438,44 @@ def plan_from_brainstorm(
         source="brainstorm",
         topic=topic,
         agent=agent,
+    )
+
+
+def final_synthesis(root: Path, topic: str) -> str:
+    from whyline_relay import brainstorm
+
+    return brainstorm.final_synthesis(root, topic)
+
+
+def revise_synthesis(
+    root: Path,
+    topic: str,
+    agent: str,
+    agents: Sequence[str | tuple[str, str]],
+    feedback: str,
+    *,
+    progress,
+    timeout_minutes: int | None = None,
+    attachments: Sequence[Path] = (),
+) -> None:
+    from whyline_relay import brainstorm
+
+    label = BRAINSTORM_LABELS.get(agent, agent)
+    progress(f"{label} is revising the synthesis")
+    models = [
+        item if isinstance(item, tuple) else (item, BRAINSTORM_LABELS.get(item, item))
+        for item in agents
+    ]
+    kwargs = {"timeout_seconds": timeout_minutes * 60} if timeout_minutes else {}
+    brainstorm.revise_synthesis(
+        root,
+        _settings(root),
+        agent,
+        models,
+        topic,
+        feedback,
+        attachments=attachments,
+        **kwargs,
     )
 
 
@@ -393,6 +528,20 @@ def save_roles(
     setup.write_roles(root, implementer, tester, reviewer, backup)
 
 
+def save_release(root: Path, value: str) -> None:
+    from whyline_relay import setup
+
+    setup.write_release(root, value)
+
+
+def release_role(root: Path) -> str:
+    try:
+        return _settings(root).release_role
+    except Exception:
+        return "human"
+
+
+
 def run_checks(root: Path, plan: Path | None = None) -> list[CheckLine]:
     from whyline_relay import preflight
 
@@ -425,6 +574,21 @@ def clear_pause(root: Path) -> None:
     from whyline_relay import state
 
     state.clear(root)
+
+
+def release_task(root: Path) -> tuple[str, list[str]] | None:
+    from whyline_relay import loop, state
+
+    saved = state.load(root)
+    if saved is None or not saved.paused_reason:
+        return None
+    if not saved.paused_reason.startswith(loop.RELEASE_PREFIX):
+        return None
+    lines = saved.paused_reason.splitlines()
+    task_id = lines[0].removeprefix(loop.RELEASE_PREFIX).strip() or (saved.task_id or "")
+    checklist = [line.strip() for line in lines[1:] if line.strip()]
+    return (task_id, checklist)
+
 
 
 

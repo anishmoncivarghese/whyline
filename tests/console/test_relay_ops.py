@@ -321,3 +321,139 @@ def test_prepare_agents_writes_and_commits_only_their_settings_files(repo):
     ]
     assert "mine.txt" in _git(repo, "status", "--porcelain")
     assert relay_ops.prepare_agents(repo, ["claude"]) == []  # never overwritten
+
+
+def test_approve_spec_writes_docs_specs(repo):
+    d = relay_ops.Draft(path=repo / "d.md", text="# S\n", drafted_by="codex", source="spec")
+    d.path.write_text("# S\n")
+    assert relay_ops.approve_spec(repo, d, "My Spec") == repo / "docs/specs/my-spec.md"
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["docs/specs/my-spec.md"]
+
+
+def test_marker_records_the_spec(repo):
+    text = relay_ops.with_marker("- [ ] T-1: x\n", source="draft", drafted_by="codex",
+                                 spec="docs/specs/s.md")
+    assert "| spec: docs/specs/s.md |" in text.splitlines()[0]
+    path = repo / "plans" / "p.plan.md"
+    path.parent.mkdir()
+    path.write_text(text)
+    assert relay_ops.list_plans(repo)[0].spec == "docs/specs/s.md"
+
+
+def test_release_task_reads_the_pause(repo):
+    from whyline_relay import state
+    state.save(repo, state.RelayState(
+        plan=str(repo / "plan.md"), branch="b", task_id="T-2", round=1, base_commit="",
+        paused_reason="release task for you: T-2\nBump the version.\nTag v1.0 and push.", log_path=""))
+    assert relay_ops.release_task(repo) == ("T-2", ["Bump the version.", "Tag v1.0 and push."])
+    assert relay_ops.release_task(repo / "empty") is None
+
+
+def test_release_task_ignores_non_release_pauses(repo):
+    from whyline_relay import state
+    state.save(repo, state.RelayState(
+        plan=str(repo / "plan.md"), branch="b", task_id="T-2", round=1, base_commit="",
+        paused_reason="blocked on review", log_path=""))
+    assert relay_ops.release_task(repo) is None
+
+
+def test_release_role_and_save_release(repo):
+    assert relay_ops.release_role(repo) == "human"
+    relay_ops.save_release(repo, "codex")
+    assert relay_ops.release_role(repo) == "codex"
+
+
+def test_draft_spec_and_spec_lifecycle(repo, monkeypatch):
+    from whyline_relay import specs
+
+    draft_path = repo / "draft-spec.md"
+    draft_path.write_text("# Spec\n")
+    calls = []
+    monkeypatch.setattr(
+        specs, "draft",
+        lambda root, settings, req, attachments=(), print_fn=None: calls.append(("draft", req, attachments)) or draft_path,
+    )
+    monkeypatch.setattr(
+        specs, "revise",
+        lambda root, settings, fb, print_fn=None: calls.append(("revise", fb)) or draft_path,
+    )
+    monkeypatch.setattr(
+        specs, "resume_draft",
+        lambda root, settings, print_fn=None: calls.append(("resume",)) or draft_path,
+    )
+    monkeypatch.setattr(
+        specs, "answer",
+        lambda root, settings, ans, print_fn=None: calls.append(("answer", ans)) or draft_path,
+    )
+    monkeypatch.setattr(
+        specs, "discard",
+        lambda root: calls.append(("discard",)),
+    )
+    monkeypatch.setattr(
+        specs, "pending_description",
+        lambda root: "pending req",
+    )
+
+    d = relay_ops.draft_spec(repo, "spec req", [repo / "ref.txt"], progress=lambda l: None)
+    assert d.source == "spec"
+    assert d.drafted_by == "codex (reviewed by claude)"
+    assert calls[0] == ("draft", "spec req", [repo / "ref.txt"])
+
+    draft_path.write_text("# Revised Spec\n")
+    revised = relay_ops.revise_spec(repo, d, "add section", progress=lambda l: None)
+    assert revised.text == "# Revised Spec\n"
+    assert calls[1] == ("revise", "add section")
+
+    resumed = relay_ops.resume_spec(repo, progress=lambda l: None)
+    assert resumed.source == "spec"
+    assert calls[2] == ("resume",)
+
+    answered = relay_ops.answer_spec(repo, "my answer", progress=lambda l: None)
+    assert answered.source == "spec"
+    assert calls[3] == ("answer", "my answer")
+
+    relay_ops.discard_spec(repo)
+    assert calls[4] == ("discard",)
+
+    assert relay_ops.pending_spec(repo) == "pending req"
+
+
+def test_spec_questions_error():
+    from whyline_relay import planner
+    assert relay_ops.spec_questions_error() is planner.PlanQuestions
+
+
+def test_draft_plan_passes_spec(repo, monkeypatch):
+    from whyline_relay import planner
+
+    seen = []
+    draft_path = repo / "plan.md"
+    draft_path.write_text("- [ ] T-1: task\n")
+    monkeypatch.setattr(
+        planner, "draft",
+        lambda root, settings, desc, attachments=(), print_fn=None, spec=None: seen.append(spec) or draft_path,
+    )
+    relay_ops.draft_plan(repo, "desc", progress=lambda l: None, spec=repo / "docs/specs/s.md")
+    assert seen == [repo / "docs/specs/s.md"]
+
+
+def test_final_synthesis_and_revise_synthesis(repo, monkeypatch):
+    from whyline_relay import brainstorm
+
+    monkeypatch.setattr(brainstorm, "final_synthesis", lambda root, topic: "agreed direction")
+    assert relay_ops.final_synthesis(repo, "topic") == "agreed direction"
+
+    revised = []
+    monkeypatch.setattr(
+        brainstorm, "revise_synthesis",
+        lambda root, settings, agent, models, topic, feedback, attachments=(), **kw: revised.append(
+            (agent, models, topic, feedback)
+        ),
+    )
+    relay_ops.revise_synthesis(
+        repo, "topic", "claude", ["claude", "codex"], "more details",
+        progress=lambda l: None,
+    )
+    assert revised == [
+        ("claude", [("claude", "Claude"), ("codex", "Codex")], "topic", "more details")
+    ]

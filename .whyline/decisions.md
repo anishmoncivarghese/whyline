@@ -4978,3 +4978,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2c80b0ebdd3e4980a9596c9ef04da773 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T03:44:25.014Z"} -->
+
+## 2026-10-05 — Add spec as defaulted final field on PlanInfo and accept Draft or Path in approve_spec
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-7
+
+**Because:** keeps backward compatibility with existing PlanInfo constructions while approve_spec flexibly unwraps draft objects or raw paths
+
+**Rejected:**
+
+- reorder PlanInfo positional fields — breaks existing unpackings and tests
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 79b651c832c5434ea66613bd8991ca83 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T05:43:02.802Z"} -->
+
+## 2026-10-05 — Approve relay_ops wrappers for specs, synthesis, release tasks, and spec markers
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FV2-7
+
+**Because:** Every requested FV2-7 interface matches the installed whyline-relay API, the tests cover the lifecycle and marker/release paths, and the full pytest suite passes
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: 63f30b506e854307a4dce647728306d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T05:46:48.064Z"} -->
