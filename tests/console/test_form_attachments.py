@@ -186,7 +186,7 @@ async def test_brainstorm_screen_attaches_and_warns(repo, monkeypatch, tmp_path_
         app.push_screen(screen, results.append)
         await pilot.pause()
 
-        await pilot.click("#att-pick")
+        screen.query_one("#att-pick", tui.Button).press()  # by widget, not screen position
         for _ in range(100):
             if screen.query_one("#bs-attachments", AttachmentsField).pending.items:
                 break
@@ -194,7 +194,7 @@ async def test_brainstorm_screen_attaches_and_warns(repo, monkeypatch, tmp_path_
 
         assert screen.query_one("#bs-attachments", AttachmentsField).pending.items
         screen.query_one("#bs-topic", tui.Input).value = "Brainstorming topic"
-        await pilot.click("#bs-start")
+        screen.query_one("#bs-start", tui.Button).press()  # by widget, not screen position
         for _ in range(100):  # slow CI runners need more than one frame
             if isinstance(app.screen, tui.ConfirmScreen):
                 break
