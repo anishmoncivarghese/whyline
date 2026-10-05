@@ -17,7 +17,7 @@ widget and wait for screens in a loop rather than click by position or pause
 one frame. Every popup's main button and the context bar must fit 80x24.
 Never push, tag, bump the version or publish.
 
-- [ ] CB-1: Saved default agent, per repo and global
+- [x] CB-1: Saved default agent, per repo and global
   Implement "Task 1" from the plan: model.default_agent / set_default_agent /
   global_path / load_global / save_global / resolve (repo, then global, then
   claude), /model saving the default, and the console starting on it.
