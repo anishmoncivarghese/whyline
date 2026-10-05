@@ -11,7 +11,13 @@ REQUEST = plan_job.PlanRequest("draft", "My Plan", description="x", drafter="cod
 
 
 def _lines(app):
-    return [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    try:
+        log = app.query_one("#transcript", tui.RichLog)
+    except Exception:
+        log = getattr(app, "_transcript", None)
+        if log is None:
+            raise
+    return [str(line) for line in log.lines]
 
 
 async def _wait_for(pilot, condition, what):
@@ -305,3 +311,294 @@ async def test_repo_switch_confirmed_during_answering_clears_plan_state(tmp_path
         assert app._plan_request is None
         assert app._plan_outcome is None
         assert not app.query_one("#plan-actions").display
+
+
+async def test_synthesis_approve_starts_the_spec_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome(
+        "draft", stage="synthesis", text="Use SQLite.", topic="t", writer="claude"))
+    started = []
+    monkeypatch.setattr(plan_job, "run_spec_from_synthesis",
+                        lambda root, req, out, p: started.append(out.topic) or plan_job.Outcome(
+                            "draft", _draft(tmp_path, "# Spec\n## Why\n"), stage="spec"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: app._plan_state == "review", "synthesis review")
+        assert "synthesis review" in app.sub_title
+        assert any("Use SQLite." in l for l in _lines(app))
+        await _type(app, pilot, "approve")
+        await _wait_for(pilot, lambda: started == ["t"], "spec job")
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+
+
+async def test_spec_approve_commits_then_plans_from_it(tmp_path, monkeypatch):
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    monkeypatch.setattr(relay_ops, "approve_spec", lambda root, d, name, replace=False: root / "docs/specs/my-plan.md")
+    planned = []
+    monkeypatch.setattr(plan_job, "run_plan_from_spec",
+                        lambda root, req, spec, p: planned.append(spec) or plan_job.Outcome("draft", _draft(tmp_path)))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await _type(app, pilot, "approve")
+        await _wait_for(pilot, lambda: "plan review" in app.sub_title, "plan review")
+    assert planned == [tmp_path / "docs/specs/my-plan.md"]
+    assert any("Saved docs/specs/my-plan.md" in l for l in _lines(app))
+
+
+async def test_plan_failure_after_spec_approval_keeps_the_spec(tmp_path, monkeypatch):
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    monkeypatch.setattr(relay_ops, "approve_spec", lambda root, d, name, replace=False: root / "docs/specs/my-plan.md")
+
+    def boom(root, req, spec, p):
+        raise RuntimeError("codex timed out")
+
+    monkeypatch.setattr(plan_job, "run_plan_from_spec", boom)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await _type(app, pilot, "approve")
+        await _wait_for(pilot, lambda: any("codex timed out" in l for l in _lines(app)), "failure")
+        failure = next(l for l in _lines(app) if "codex timed out" in l)
+    assert "docs/specs/my-plan.md is saved" in failure and "Resume draft" in failure
+
+
+async def test_view_buttons_and_screens_by_stage(tmp_path, monkeypatch):
+    from whyline.console.relay_screens import PlanDraftScreen
+
+    # Synthesis stage
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome(
+        "draft", stage="synthesis", text="Use SQLite.", topic="t", writer="claude"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: app._plan_state == "review", "synthesis review")
+        view_button = app.query_one("#plan-view", tui.Button)
+        assert str(view_button.label) == "View full"
+        await pilot.click("#plan-view")
+        await pilot.pause()
+        assert isinstance(app.screen, PlanDraftScreen)
+        assert app.screen._text == "Use SQLite."
+        await pilot.click("#pd-close")
+        await pilot.pause()
+
+    # Spec stage
+    spec_draft = _draft(tmp_path, "# Spec\n## Decisions\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: app._plan_state == "review", "spec review")
+        view_button = app.query_one("#plan-view", tui.Button)
+        assert str(view_button.label) == "View spec"
+        await pilot.click("#plan-view")
+        await pilot.pause()
+        assert isinstance(app.screen, PlanDraftScreen)
+        assert app.screen._text == "# Spec\n## Decisions\n"
+
+
+async def test_synthesis_change_request_calls_run_synthesis_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome(
+        "draft", stage="synthesis", text="Use SQLite.", topic="t", writer="claude"))
+    changed = []
+    monkeypatch.setattr(plan_job, "run_synthesis_change",
+                        lambda root, req, out, fb, p: changed.append(fb) or out)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: app._plan_state == "review", "synthesis review")
+        await _type(app, pilot, "prefer postgres")
+        await _wait_for(pilot, lambda: changed == ["prefer postgres"], "synthesis change")
+
+
+async def test_synthesis_questions_routed_as_change_request(tmp_path, monkeypatch):
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome(
+        "questions", stage="synthesis", text="Body", questions=("Postgres or SQLite?",), asker="claude", topic="t", writer="claude"))
+    changed = []
+    monkeypatch.setattr(plan_job, "run_synthesis_change",
+                        lambda root, req, out, fb, p: changed.append(fb) or plan_job.Outcome("draft", stage="synthesis", text="Use SQLite.", topic="t", writer="claude"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: app._plan_state == "answering", "synthesis answering")
+        await _type(app, pilot, "SQLite")
+        await _wait_for(pilot, lambda: changed, "synthesis answered")
+    assert "SQLite" in changed[0]
+
+
+async def test_spec_approval_passes_spec_to_approve_plan(tmp_path, monkeypatch):
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    plan_draft = _draft(tmp_path, "- [ ] T-1: task\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    monkeypatch.setattr(relay_ops, "approve_spec", lambda root, d, name, replace=False: root / "docs/specs/my-plan.md")
+    monkeypatch.setattr(plan_job, "run_plan_from_spec",
+                        lambda root, req, spec, p: plan_job.Outcome("draft", plan_draft, stage="plan"))
+    passed_spec = []
+    monkeypatch.setattr(relay_ops, "approve_plan",
+                        lambda root, d, name, replace=False, spec="": passed_spec.append(spec) or root / "plans/my-plan.plan.md")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await _type(app, pilot, "approve")
+        await _wait_for(pilot, lambda: "plan review" in app.sub_title, "plan review")
+        await _type(app, pilot, "approve")
+        await _wait_for(pilot, lambda: app._plan_state == "", "plan approved")
+    assert passed_spec == ["docs/specs/my-plan.md"]
+
+
+async def test_spec_exists_asks_for_confirmation(tmp_path, monkeypatch):
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    calls = []
+
+    class Exists(RuntimeError):
+        pass
+
+    def approve(root, d, name, replace=False):
+        calls.append(replace)
+        if not replace:
+            raise Exists()
+        return root / "docs/specs/my-plan.md"
+
+    monkeypatch.setattr(relay_ops, "plan_exists_error", lambda: Exists)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve)
+    monkeypatch.setattr(plan_job, "run_plan_from_spec", lambda root, req, s, p: plan_job.Outcome("draft", _draft(tmp_path)))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await pilot.click("#plan-approve")
+        await pilot.pause()
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        await pilot.click("#confirm")
+        await pilot.pause()
+        await _wait_for(pilot, lambda: "plan review" in app.sub_title, "plan review")
+    assert calls == [False, True]
+
+
+async def test_spec_discard_drops_spec_draft(tmp_path, monkeypatch):
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    dropped = []
+    monkeypatch.setattr(relay_ops, "discard_spec", lambda root: dropped.append(root))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await pilot.click("#plan-discard")
+        await pilot.pause()
+        assert app._plan_state == ""
+    assert len(dropped) == 1
+
+
+async def test_spec_change_request_calls_run_revision(tmp_path, monkeypatch):
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    revised = []
+    monkeypatch.setattr(plan_job, "run_revision",
+                        lambda root, out, fb, p: revised.append((getattr(out, "stage", None), fb)) or out)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await _type(app, pilot, "add section on testing")
+        await _wait_for(pilot, lambda: revised, "spec revision")
+    assert revised == [("spec", "add section on testing")]
+
+
+async def test_placeholders_by_stage(tmp_path, monkeypatch):
+    # Synthesis placeholder
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome(
+        "draft", stage="synthesis", text="Use SQLite.", topic="t", writer="claude"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "synthesis review" in app.sub_title, "synthesis review")
+        assert app.query_one("#prompt", tui.Input).placeholder == 'Type "approve" to write the spec, or say what to change'
+
+    # Spec placeholder
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        assert app.query_one("#prompt", tui.Input).placeholder == 'Type "approve" to save the spec and write the plan, or say what to change'
+
+    # Plan placeholder
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", _draft(tmp_path), stage="plan"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "plan review" in app.sub_title, "plan review")
+        assert app.query_one("#prompt", tui.Input).placeholder == 'Type "approve", or say what to change (Enter to send)'
+
+
+async def test_synthesis_discard_leaves_flow_and_preserves_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome(
+        "draft", stage="synthesis", text="Use SQLite.", topic="t", writer="claude"))
+    checkpoint = tmp_path / ".whyline" / "relay" / "plan-state.json"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint.write_text('{"description": "pending plan"}', encoding="utf-8")
+
+    discard_calls = []
+    monkeypatch.setattr(relay_ops, "discard_draft", lambda root, d: discard_calls.append(("draft", d)))
+    monkeypatch.setattr(relay_ops, "discard_spec", lambda root: discard_calls.append("spec"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(REQUEST)
+        await _wait_for(pilot, lambda: "synthesis review" in app.sub_title, "synthesis review")
+        await pilot.click("#plan-discard")
+        await pilot.pause()
+        assert app._plan_state == ""
+    assert discard_calls == []
+    assert checkpoint.exists()
+    assert checkpoint.read_text(encoding="utf-8") == '{"description": "pending plan"}'
+
+
+async def test_spec_exists_with_plan_request_replace_still_asks_for_confirmation(tmp_path, monkeypatch):
+    from dataclasses import replace as dc_replace
+
+    request_with_replace = dc_replace(REQUEST, replace=True)
+    spec_draft = _draft(tmp_path, "# Spec\n")
+    monkeypatch.setattr(plan_job, "run_request", lambda root, req, p: plan_job.Outcome("draft", spec_draft, stage="spec"))
+    calls = []
+
+    class Exists(RuntimeError):
+        pass
+
+    def approve(root, d, name, replace=False):
+        calls.append(replace)
+        if not replace:
+            raise Exists()
+        return root / "docs/specs/my-plan.md"
+
+    monkeypatch.setattr(relay_ops, "plan_exists_error", lambda: Exists)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve)
+    monkeypatch.setattr(plan_job, "run_plan_from_spec", lambda root, req, s, p: plan_job.Outcome("draft", _draft(tmp_path)))
+    plan_calls = []
+    monkeypatch.setattr(
+        relay_ops,
+        "approve_plan",
+        lambda root, d, name, replace=False, spec="": plan_calls.append(replace) or root / "plans/my-plan.plan.md",
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._start_plan_job(request_with_replace)
+        await _wait_for(pilot, lambda: "spec review" in app.sub_title, "spec review")
+        await pilot.click("#plan-approve")
+        await pilot.pause()
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        await pilot.click("#confirm")
+        await pilot.pause()
+        await _wait_for(pilot, lambda: "plan review" in app.sub_title, "plan review")
+        await pilot.click("#plan-approve")
+        await _wait_for(pilot, lambda: app._plan_state == "", "plan approved")
+    assert calls == [False, True]
+    assert plan_calls == [True]

@@ -422,6 +422,8 @@ class WhylineConsoleApp(App):
         self._plan_state = ""  # "", "working", "review", "answering"
         self._plan_request: plan_job.PlanRequest | None = None
         self._plan_outcome: plan_job.Outcome | None = None
+        self._approved_spec: Path | None = None
+        self._transcript: RichLog | None = None
         self._stale_pause: str | None = None
         self._run_flow = False
         self._pending = att.PendingAttachments()
@@ -457,15 +459,34 @@ class WhylineConsoleApp(App):
         """The subtitle alone was easy to miss, so the current mode is also
         the highlighted mode button and shapes the prompt's placeholder."""
         mode = self.session.mode
-        suffix = {"review": " · plan review", "answering": " · answering"}.get(self._plan_state, "")
+        stage = getattr(self._plan_outcome, "stage", "plan") if self._plan_outcome else "plan"
+        if self._plan_state == "review":
+            suffix = f" · {stage} review"
+        elif self._plan_state == "answering":
+            suffix = " · answering"
+        else:
+            suffix = ""
         self.sub_title = f"mode: {mode}{suffix}"
         for name in _MODES:
             button = self._main(f"#mode-{name}", Button)
             button.variant = "primary" if name == mode else "default"
-        self._main("#prompt", Input).placeholder = {
-            "review": 'Type "approve", or say what to change (Enter to send)',
-            "answering": "Type your answers (Enter to send)",
-        }.get(self._plan_state, self._placeholder(mode))
+        if self._plan_state == "review":
+            if stage == "synthesis":
+                placeholder = 'Type "approve" to write the spec, or say what to change'
+            elif stage == "spec":
+                placeholder = 'Type "approve" to save the spec and write the plan, or say what to change'
+            else:
+                placeholder = 'Type "approve", or say what to change (Enter to send)'
+        elif self._plan_state == "answering":
+            placeholder = "Type your answers (Enter to send)"
+        else:
+            placeholder = self._placeholder(mode)
+        self._main("#prompt", Input).placeholder = placeholder
+        self._main("#plan-view", Button).label = {
+            "synthesis": "View full",
+            "spec": "View spec",
+            "plan": "View draft",
+        }.get(stage, "View draft")
         # Who Chat talks to (and with what model) and which repository
         # everything runs against, always in view.
         self._main("#context", Static).update(
@@ -515,7 +536,8 @@ class WhylineConsoleApp(App):
             Static("", id="context"),
             id="modes",
         )
-        yield RichLog(id="transcript", wrap=True)
+        self._transcript = RichLog(id="transcript", wrap=True)
+        yield self._transcript
         yield Static("", id="thinking")
         yield Horizontal(
             Button("Approve", id="plan-approve", variant="success"),
@@ -554,7 +576,10 @@ class WhylineConsoleApp(App):
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
         # What you typed is set apart from replies, so the transcript reads
         # as a conversation rather than an unattributed log.
-        transcript.write(Text(line, style="bold cyan") if event.kind == "input" else line)
+        transcript.write(
+            Text(line, style="bold cyan") if event.kind == "input" else line,
+            expand=True,
+        )
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         button_id = event.button.id
@@ -597,8 +622,18 @@ class WhylineConsoleApp(App):
         elif button_id == "plan-view":
             from whyline.console.relay_screens import PlanDraftScreen
 
-            if self._plan_outcome and self._plan_outcome.draft:
-                self.push_screen(PlanDraftScreen(self._plan_outcome.draft.text))
+            if self._plan_outcome:
+                text = (
+                    self._plan_outcome.text
+                    if self._plan_outcome.stage == "synthesis"
+                    else (
+                        self._plan_outcome.draft.text
+                        if self._plan_outcome.draft
+                        else ""
+                    )
+                )
+                if text:
+                    self.push_screen(PlanDraftScreen(text))
         elif button_id == "plan-discard":
             self._discard_plan()
         elif button_id in ("model", "history", "help", "brainstorm"):
@@ -1154,6 +1189,7 @@ class WhylineConsoleApp(App):
                 return
             self._plan_request = request
             self._plan_outcome = None
+            self._approved_spec = None
             self.render_event(SessionEvent(
                 kind="output", text=f'Planning "{request.name}". Progress follows.'))
             root = self.session.root
@@ -1194,10 +1230,20 @@ class WhylineConsoleApp(App):
             return
         self._set_busy(False)
         self._set_plan_state("")
+        if self._approved_spec:
+            root = self.session.root
+            shown = (
+                self._approved_spec.relative_to(root)
+                if self._approved_spec.is_relative_to(root)
+                else self._approved_spec
+            ).as_posix()
+            kept = f"{shown} is saved; open Plan → Resume draft to continue the plan."
+        else:
+            kept = "Anything drafted so far is kept -- open Plan and choose Resume draft to try again."
+        self._leave_plan()
         self.render_event(SessionEvent(
             kind="error",
-            text=f"Planning stopped: {error or error.__class__.__name__}. Anything drafted "
-                 "so far is kept -- open Plan and choose Resume draft to try again.",
+            text=f"Planning stopped: {error or error.__class__.__name__}. {kept}",
         ))
         self._end_run_flow("Run stopped: no plan was saved.")
 
@@ -1211,27 +1257,122 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(kind="output", text=plan_job.questions_text(outcome)))
             self._set_plan_state("answering")
         else:
-            self.render_event(SessionEvent(
-                kind="output", text=plan_job.summary(outcome.draft, self._plan_request.name)))
+            name = self._plan_request.name if self._plan_request else "plan"
+            if outcome.stage == "synthesis":
+                text = plan_job.synthesis_text(outcome)
+            elif outcome.stage == "spec":
+                text = plan_job.spec_summary(outcome.draft, name)
+            else:
+                text = plan_job.summary(outcome.draft, name)
+            self.render_event(SessionEvent(kind="output", text=text))
             self._set_plan_state("review")
         self._main("#prompt", Input).focus()
 
     def _plan_reply(self, text: str) -> None:
         root, outcome = self.session.root, self._plan_outcome
+        if outcome is None:
+            return
         if self._plan_state == "review":
             if text.strip().lower() == "approve":
                 self._approve_plan()
                 return
-            self._run_plan(lambda progress: plan_job.run_revision(root, outcome.draft, text, progress))
+            if outcome.stage == "synthesis":
+                self._run_plan(
+                    lambda progress: plan_job.run_synthesis_change(
+                        root, self._plan_request, outcome, text, progress
+                    )
+                )
+                return
+            self._run_plan(
+                lambda progress: plan_job.run_revision(
+                    root, outcome, text, progress
+                )
+            )
+            return
+        if outcome.stage == "synthesis":
+            feedback = relay_ops.question_feedback(outcome.questions, text)
+            self._run_plan(
+                lambda progress: plan_job.run_synthesis_change(
+                    root, self._plan_request, outcome, feedback, progress
+                )
+            )
             return
         self._run_plan(lambda progress: plan_job.run_answer(root, outcome, text, progress))
 
     def _approve_plan(self, replace: bool = False) -> None:
         root, request = self.session.root, self._plan_request
-        draft = self._plan_outcome.draft
+        outcome = self._plan_outcome
+        if outcome is None or request is None:
+            return
+
+        if outcome.stage == "synthesis":
+            self._run_plan(
+                lambda progress: plan_job.run_spec_from_synthesis(
+                    root, request, outcome, progress
+                )
+            )
+            return
+
+        if outcome.stage == "spec":
+            draft = outcome.draft
+            try:
+                spec_path = relay_ops.approve_spec(
+                    root, draft, request.name, replace=replace
+                )
+            except relay_ops.plan_exists_error():
+                from whyline_relay import specs
+
+                target = root / "docs" / "specs" / f"{specs._slug(request.name)}.md"
+                shown = (
+                    target.relative_to(root) if target.is_relative_to(root) else target
+                ).as_posix()
+                self.push_screen(
+                    ConfirmScreen(f"{shown} already exists. Replace it?", "Replace"),
+                    lambda confirmed: confirmed and self._approve_plan(replace=True),
+                )
+                return
+            except ValueError as error:
+                where = f" The draft is still at {draft.path}." if draft else ""
+                self.render_event(
+                    SessionEvent(kind="error", text=f"{error}.{where}")
+                )
+                return
+            self._approved_spec = spec_path
+            shown = (
+                spec_path.relative_to(root)
+                if spec_path.is_relative_to(root)
+                else spec_path
+            ).as_posix()
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text=f"Saved {shown} and committed it. Writing the plan from it…",
+                )
+            )
+            self._run_plan(
+                lambda progress: plan_job.run_plan_from_spec(
+                    root, request, spec_path, progress
+                )
+            )
+            return
+
+        draft = outcome.draft
+        spec_str = ""
+        if self._approved_spec:
+            spec_str = (
+                self._approved_spec.relative_to(root)
+                if self._approved_spec.is_relative_to(root)
+                else self._approved_spec
+            ).as_posix()
         try:
-            path = relay_ops.approve_plan(root, draft, request.name,
-                                          replace=replace or request.replace)
+            kwargs = {"spec": spec_str} if spec_str else {}
+            path = relay_ops.approve_plan(
+                root,
+                draft,
+                request.name,
+                replace=replace or request.replace,
+                **kwargs,
+            )
         except relay_ops.plan_exists_error():
             shown = relay_ops.plan_path(root, request.name).relative_to(root).as_posix()
             self.push_screen(
@@ -1240,15 +1381,24 @@ class WhylineConsoleApp(App):
             )
             return
         except ValueError as error:  # plan.PlanError: the draft isn't usable yet
-            self.render_event(SessionEvent(
-                kind="error", text=f"{error}. The draft is still at {draft.path}."))
+            self.render_event(
+                SessionEvent(
+                    kind="error",
+                    text=f"{error}. The draft is still at {draft.path}.",
+                )
+            )
             return
         self._leave_plan()
         self._plan_saved(path)
 
     def _discard_plan(self) -> None:
         if self._plan_outcome is not None:
-            relay_ops.discard_draft(self.session.root, self._plan_outcome.draft)
+            if self._plan_outcome.stage == "synthesis":
+                pass
+            elif self._plan_outcome.stage == "spec" or getattr(self._plan_outcome.draft, "source", "") == "spec":
+                relay_ops.discard_spec(self.session.root)
+            else:
+                relay_ops.discard_draft(self.session.root, self._plan_outcome.draft)
         self._leave_plan()
         self.render_event(SessionEvent(kind="output", text="Draft discarded."))
         self._end_run_flow("Run stopped: no plan was saved.")
@@ -1256,6 +1406,7 @@ class WhylineConsoleApp(App):
     def _leave_plan(self) -> None:
         self._plan_request = None
         self._plan_outcome = None
+        self._approved_spec = None
         self._set_plan_state("")
 
     def action_leave_plan(self) -> None:

@@ -5097,3 +5097,73 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a9ef8531aa5f49fda12ecb30e9cd6c26 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:07:22.452Z"} -->
+
+## 2026-10-05 — Chain synthesis, spec, and plan review in the main window with stage-specific outcomes and approve handlers
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-10
+
+**Because:** keeps a unified main window workflow across synthesis review, spec review, and plan review while preserving approved specs on downstream plan failure
+
+**Rejected:**
+
+- modal popups for synthesis and spec review — breaks the main window transcript flow and chat-like feel
+- discarding approved spec on downstream plan failure — users would lose approved spec progress if plan generation fails or times out
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b5a233e32d2b4b71886fe4c44d380ae9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:22:49.198Z"} -->
+
+## 2026-10-05 — Request changes for unsafe synthesis discard and spec replacement reuse
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FV2-10
+
+**Because:** Synthesis has no planner draft, but _discard_plan sends its None draft to discard_draft, which clears the planner checkpoint; and request.replace confirms only the plan path yet is reused to overwrite the spec path without its own confirmation
+
+**Rejected:**
+
+- approve as-is — the full suite passes but does not cover either destructive edge case
+
+**Files:** src/whyline/console/tui.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: e821941b0d9e4d07a668ca641369f825 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:30:23.867Z"} -->
+
+## 2026-10-05 — Preserve planner checkpoints on synthesis discard and isolate spec replacement confirmation
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FV2-10
+
+**Because:** synthesis review has no planner draft so discarding it must not clear pending planner state, and request.replace is scoped to the plan path and must not silently overwrite existing specs
+
+**Rejected:**
+
+- calling discard_draft with None in synthesis — wipes unrelated planner checkpoints
+- reusing request.replace for approve_spec — silently overwrites docs/specs/<name>.md without spec-specific user confirmation
+
+**Files:** src/whyline/console/tui.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: 9402fd508ae04e278f18856474e341d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:38:36.043Z"} -->
+
+## 2026-10-05 — Approve stage-aware synthesis, spec, and plan review after round-two safety fixes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FV2-10
+
+**Because:** the workflow chains approvals correctly, preserves an unrelated planner checkpoint when synthesis is discarded, requires spec-specific overwrite confirmation, and the full suite passes
+
+**Rejected:**
+
+- request further changes — no unsafe or clearly incorrect behavior remains in the reviewed diff
+
+**Files:** src/whyline/console/tui.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: 20a42d9351eb405d83350de51f4d981c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T10:45:41.175Z"} -->
