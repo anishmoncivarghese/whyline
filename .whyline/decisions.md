@@ -5215,3 +5215,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5f79ca625c674facbdf29219c04a8bb8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T11:23:11.352Z"} -->
+
+## 2026-10-05 — agentdock relay: grok implements, codex reviews; grok command synced to the relay's new recipe (--rules, wider read-only allow list)
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** GROK-FIX
+
+**Because:** the user asked for a grok/codex pair for the context-bar plan; the repo's explicit [agents.grok] table overrides the recipe, so it must carry the same fix
+
+**Rejected:**
+
+- delete the [agents.grok] table to inherit the recipe — an older installed relay would then silently lose the rules
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: ca954cfe750841fd9c63af6a9f83f445 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T20:36:02.951Z"} -->
