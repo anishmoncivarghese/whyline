@@ -6206,3 +6206,176 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2e662db4c4bd491d983a5167dd9370f2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:19:17.953Z"} -->
+
+## 2026-10-06 — Show AgentRunCompleted on the timeline as agent, outcome and CLI
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** The generic timeline line only fills in decision, path or session. This event has none of those, so the line would be blank.
+
+**Rejected:**
+
+- Leave the blank generic line — a person would see only the type name
+
+**Files:** src/whyline/render.py
+
+<!-- whyline-event: cab8f7bb782b4eb49b661443bde1c6a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:26:48.662Z"} -->
+
+## 2026-10-06 — chmod run folders to 0700 and record files to 0600 after creating them
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** mkdir and open apply the process umask, and paths._private_dir already chmods so the mode does not depend on umask. The test requires the run folder to be exactly 0700.
+
+**Rejected:**
+
+- Trust the mode argument alone — a non-zero umask can leave the directory other than 0700
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: e96196abd9f04f2db08d76210558fd02 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:26:48.725Z"} -->
+
+## 2026-10-06 — Omit the definition hash from run metadata
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** finish receives a parsed AgentDef, which does not carry the file text. Hashing a re-render would not be the text the user accepted, and this task's record and tests do not include the field.
+
+**Rejected:**
+
+- Store definition_hash of render(defn) — a round-trip render is not the accepted file
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: 716474f94d7e459b842f68bca73e1d43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:26:48.777Z"} -->
+
+## 2026-10-06 — AG-3 fails metadata provenance and same-minute report preservation
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-3
+
+**Because:** The prescribed suites pass, but a realistic probe found metadata.json omits the design-required definition hash and a third successful run in the same minute overwrites the existing -HHMM report instead of preserving one report per successful run.
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: eb064bd253c14c0bb6786a99790e19c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:30:45.400Z"} -->
+
+## 2026-10-06 — Store the accepted definition file's hash in run metadata
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** metadata.json is the run's provenance, and definition_hash of the file on disk is the digest activations compare with accepted_hash. render() adds defaults the file omitted, so it is a different text. An unsaved parse has no file, so that case hashes the render and the field is still present.
+
+**Rejected:**
+
+- Always hash render(defn) — a round-trip render inserts defaults and is not the accepted file
+- Leave the field out — the design requires the definition hash in metadata.json
+
+**Supersedes:** 716474f9
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: 9186ce13c2cd4fb7abc616e2079854ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:37:24.614Z","supersedes":["716474f94d7e459b842f68bca73e1d43"]} -->
+
+## 2026-10-06 — Give each same-minute success its own report file
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** The spec's date file and -HHMM file are one name each. A third success in that minute was replacing the minute file. The next free name adds seconds, then a counter, and the file is created exclusively so an existing report is kept.
+
+**Rejected:**
+
+- Overwrite YYYY-MM-DD-HHMM.md — that drops the earlier success
+- Use only a numeric suffix on the minute name — seconds follow the spec's pattern of adding a more specific time before a counter
+
+**Files:** src/whyline/agents/records.py, tests/agents/test_records.py
+
+<!-- whyline-event: b30f735a964440b787f0cbce15f823c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:37:27.687Z"} -->
+
+## 2026-10-06 — AG-3 still misrecords definition provenance when the file changes during a run
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-3
+
+**Because:** The Agents suite and full suite pass, but a focused probe starts a run from one accepted definition, edits the file before finish, and shows metadata.json stores the later file hash rather than the definition that actually ran. Capture definition_hash in new_run and do not recompute it in finish.
+
+**Rejected:**
+
+- Pass based only on the green suite — metadata provenance is behavior required by the design and can become false during a normal multi-minute run
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: e42aa682f9294a038584f5d221cd2b74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:41:42.372Z"} -->
+
+## 2026-10-06 — Capture the definition hash when the run starts
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** finish was re-reading the definition file, so an edit during the run stored the later file hash in metadata instead of the definition that ran
+
+**Rejected:**
+
+- Recompute the hash in finish — that records the file as it stands when the run ends
+- Fill an empty hash in finish — a record without a start hash would still name the changed file
+
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/agents/records.py, tests/agents/test_records.py
+
+<!-- whyline-event: f43208e9e13c4f55926414512af3411a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:45:54.006Z"} -->
+
+## 2026-10-06 — AG-3 round 6 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-3
+
+**Because:** The Agents suite and full project suite pass; the focused regression proves metadata preserves the definition hash captured at new_run even when the file changes before finish, and report, permission, ledger privacy, listing, and timeline behaviors match the task contract
+
+**Rejected:**
+
+- Fail on the prior provenance defect — the new regression now demonstrates it is fixed at the run-start boundary
+
+**Files:** src/whyline/agents/records.py, tests/agents/test_records.py
+
+<!-- whyline-event: 1996d6046c02413997e342d5fd32eef3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:48:51.340Z"} -->
+
+## 2026-10-06 — AG-3 round 7 approved after diff and full-suite review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-3
+
+**Because:** The implementation satisfies the run-record, private artifact, report naming, definition provenance, ledger privacy, listing, and timeline requirements; uv run pytest -q exited 0 and git diff --check is clean
+
+**Rejected:**
+
+- Request further changes — no unsafe or clearly incorrect behavior remains in the task diff
+
+**Files:** src/whyline/agents/records.py, src/whyline/render.py, tests/agents/test_records.py, tests/test_staleness.py
+
+<!-- whyline-event: 4c3db589ab1c471cbf568d071991d6fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:52:02.513Z"} -->

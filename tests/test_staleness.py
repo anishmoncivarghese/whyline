@@ -384,3 +384,19 @@ def test_timeline_names_the_task_and_status_of_handoff_events():
     ])
     assert "Handoff         T-1: approved" in text
     assert "HandoffClosed   T-1: completed" in text
+
+
+def test_timeline_names_an_agent_run():
+    from whyline import render
+
+    text = render.timeline_text([
+        {
+            "ts": "2026-10-05T07:00:03.000Z",
+            "type": "AgentRunCompleted",
+            "agent": "digest",
+            "outcome": "succeeded",
+            "cli": "codex",
+            "run_id": "20261005-070003-digest-ab12",
+        },
+    ])
+    assert "AgentRunCompleted digest: succeeded via codex" in text
