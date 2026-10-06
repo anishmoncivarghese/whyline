@@ -27,6 +27,7 @@ try:
     from textual.widgets import (
         Button, Checkbox, Footer, Header, Input, Label, RichLog, Select, Static,
     )
+    from textual.widgets._select import SelectOverlay
 
     TUI_AVAILABLE = True
 except ImportError:
@@ -138,12 +139,17 @@ def _short_path(path: Path) -> str:
     return shown
 
 
+# The dropdown is narrow; /model keeps the full wording.
+_CB_SHORT_LABELS = {"installed (login not checked)": "login unchecked"}
+
+
 def _cb_options(status: dict) -> list[tuple[str, str]]:
     """Available agents first, then unavailable ones with a `!` value."""
     available: list[tuple[str, str]] = []
     unavailable: list[tuple[str, str]] = []
     for agent, info in status.items():
-        label = f"{agent} · {info.get('label', '')}"
+        detail = info.get("label", "")
+        label = f"{agent} · {_CB_SHORT_LABELS.get(detail, detail)}"
         if info.get("available"):
             available.append((label, agent))
         else:
@@ -468,7 +474,9 @@ class WhylineConsoleApp(App):
     RichLog#transcript { height: 1fr; }
     #modes, #input-row, #controls, #context-bar { height: auto; }
     #modes-label { width: auto; padding: 1 1 0 1; }
-    #cb-agent { width: 20; }
+    #cb-agent { width: 24; }
+    /* The open list may be wider than the box, so no agent wraps. */
+    #cb-agent > SelectOverlay { width: 36; }
     #cb-model { width: 18; }
     #cb-repo { width: 1fr; }
     #context-bar Label { padding: 1 0 0 1; }
@@ -747,7 +755,7 @@ class WhylineConsoleApp(App):
             self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
             self._main("#cb-model-label", Label).update("M" if narrow else "Model")
             self._main("#cb-repo-label", Label).update("R" if narrow else "Repo")
-            self._main("#cb-agent", Select).styles.width = 14 if narrow else 20
+            self._main("#cb-agent", Select).styles.width = 14 if narrow else 24
         except (NoMatches, IndexError):
             return
 

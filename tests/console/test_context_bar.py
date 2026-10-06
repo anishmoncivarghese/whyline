@@ -249,3 +249,32 @@ async def test_login_updates_an_agent_that_becomes_available(tmp_path, monkeypat
         assert "!grok" not in options
         assert app.query_one("#cb-model", tui.Input).value == "grok-4"
         assert not app.query_one("#cb-save", tui.Button).disabled
+
+
+async def test_the_agent_dropdown_shows_each_agent_on_one_line(tmp_path, monkeypatch):
+    from whyline import account
+
+    unchecked = {"available": True, "label": "installed (login not checked)", "hint": None}
+    monkeypatch.setattr(account, "agent_status", lambda root: {
+        "claude": {"available": True, "label": "pro", "hint": None},
+        "codex": {"available": True, "label": "plus", "hint": None},
+        "antigravity": dict(unchecked),
+        "grok": dict(unchecked),
+    })
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        select = app.query_one("#cb-agent", tui.Select)
+        labels = list(_option_map(select).values())
+        assert "antigravity · login unchecked" in labels
+        assert "grok · login unchecked" in labels
+        select.expanded = True
+        await pilot.pause()
+        overlay = select.query_one(tui.SelectOverlay)
+        for _ in range(20):
+            if overlay.region.width:
+                break
+            await pilot.pause(0.05)
+        longest = max(len(label) for label in labels)
+        # Room for the label plus the list's border, padding and scrollbar.
+        assert overlay.region.width >= longest + 6
+        assert overlay.region.height <= len(labels) + 2  # one line per agent
