@@ -5309,3 +5309,214 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e52a53021a744c71ad9606c1232d30b3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:15:39.202Z"} -->
+
+## 2026-10-05 — Agents stays unfinished only until whyline exists, or while setup left its pending marker
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** A missing claude-settings.json cannot mean not-ready: the plans retry test sets up with no agents and expects kind ready, and the spec treats a git root with .whyline as already set up
+
+**Rejected:**
+
+- always require claude-settings.json — an empty agent list would never become ready, and every existing whyline repo without that file would be offered setup
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: 2cf4d16639274b5e8ad0fd1bfc14464d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.309Z"} -->
+
+## 2026-10-05 — Setup asks prepare_agents not to commit, then makes one chore commit
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** The spec wants one first commit containing only the files setup created, including permission files
+
+**Rejected:**
+
+- let prepare_agents commit first — that is a second commit with a different message, ahead of the whyline files
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: a2fcc543cc93477db0ea6075d41d2431 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.350Z"} -->
+
+## 2026-10-05 — Drop gitignored paths before the setup commit
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** git add fails the whole command if any named path is ignored, and whyline init creates ledger.jsonl which .whyline/.gitignore excludes
+
+**Rejected:**
+
+- git add -f — that would commit ledger.jsonl, which whyline deliberately does not track
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: ffc47a1a36fd4bc6b99162ecec652338 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.392Z"} -->
+
+## 2026-10-05 — A setup commit with no git identity uses a temporary author overlay
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** Tests point HOME at an empty directory and CI has no global user.email, so git would refuse the commit
+
+**Rejected:**
+
+- git config user.email in the new repo — later commits by the user would keep whylines identity
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: 0a1f3f263fbb436ca6f55df7a80b8981 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.431Z"} -->
+
+## 2026-10-05 — Commit finished steps before raising SetupError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** The commit sits after the loop, so an agents-step failure would leave whylines files untracked and a retry skips whyline
+
+**Rejected:**
+
+- commit after every step on success — a clean setup would be two commits instead of the one the spec asks for
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: 6147bc562ad5470b8e944de3a51a07ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.469Z"} -->
+
+## 2026-10-05 — setup refuses the home folder and a nested path itself
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** git init in home or inside another repo is the mistake this task exists to prevent, and this module is what runs git init
+
+**Rejected:**
+
+- leave the refusal to the context bar — this module has no UI and must not depend on the caller
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: 68b3ce8bdcc34121995bfc689dbe9cd2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.508Z"} -->
+
+## 2026-10-05 — Repo-setup tests make Path.home follow HOME
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** The plan points HOME at a temp directory, but pathlib ignores HOME on Windows and would read the real profile
+
+**Rejected:**
+
+- setenv HOME alone — Path.home does not honor it on Windows
+
+**Files:** tests/console/test_repo_setup.py
+
+<!-- whyline-event: 51939c68d498476594c7d4285c05626b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:33:36.546Z"} -->
+
+## 2026-10-05 — Repo setup inspection, step-by-step setup, error handling, and commit filtering pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-2
+
+**Because:** Full test suite passes (869 passed, 1 skipped), verifying home and nested repo refusals, atomic step recovery, and ensuring user uncommitted files are preserved
+
+**Files:** tests/console/test_repo_setup.py
+
+<!-- whyline-event: c9e70c3642db4a90bc6e03bdde2b47fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:38:56.859Z"} -->
+
+## 2026-10-05 — Reject CB-2 because a partially failed whyline init is skipped on retry
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-2
+
+**Because:** setup writes the agents-pending marker before whyline init succeeds, while inspect treats any .whyline directory plus that marker as needing only agents; a failed init that leaves .whyline behind is therefore never retried, contrary to step-by-step resumption
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: c26f1a12c28f4325be287c32d0a4d8b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:41:49.466Z"} -->
+
+## 2026-10-05 — Leave whyline missing until init returns, even when .whyline exists
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** The agents marker was written before init, so a failed init that left .whyline was seen as agents-only and skipped on retry
+
+**Rejected:**
+
+- delete .whyline on failure — a crash would not clean it up, and that directory is also how an existing repo is recognized as already set up
+- treat a .whyline with no agents marker as unfinished — that is the same state as an existing whyline repo, which must stay ready
+
+**Files:** src/whyline/console/repo_setup.py, tests/console/test_repo_setup.py
+
+<!-- whyline-event: 41304b8f5ecd4706a2a2a1bd6120eb67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:48:18.203Z"} -->
+
+## 2026-10-05 — Retry of partially failed whyline init verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-2
+
+**Because:** A failed whyline init leaving .whyline retains the whyline phase marker so whyline is not skipped on retry, while agents failures retry only agents and existing repos remain ready; full test suite passes (870 passed, 1 skipped)
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: d121da1353314fbdae09764c4e86ff76 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:52:54.187Z"} -->
+
+## 2026-10-05 — Reject CB-2 because a partially completed agents step is skipped on retry
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-2
+
+**Because:** The agents phase marker means preparation has not completed, but inspect reports ready when claude-settings.json already exists; a preparation that writes that file and then raises, or an interruption before clearing the marker, skips agents on retry and can leave setup-created content uncommitted despite the step-by-step recovery requirement
+
+**Rejected:**
+
+- approve based on the passing suite — no test covers a partial agents step after its permission file is created
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: 8814643b130444f2968fb96bf2382853 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-05T21:55:55.431Z"} -->
+
+## 2026-10-06 — Raise relay max_rounds 6 -> 12 for the context bar plan and resume CB-2 rather than reset
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** CB-2
+
+**Because:** with a draft/test/review pipeline each stage is a round, so 6 rounds allowed only two review cycles; CB-2 made real progress (codex found a different retry defect each cycle) and grok's cancelled turns were resumed successfully
+
+**Rejected:**
+
+- reset CB-2 and redo — wastes correct, reviewed work
+- fix the defect by hand — the relay pair is what the user asked to exercise
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: dfc082ead08445fb86169951f2ec1c4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:02:20.660Z"} -->
