@@ -6032,3 +6032,177 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c68cc37a0fc84118936d4b6b625fd33b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T20:53:08.122Z"} -->
+
+## 2026-10-06 — Released the console Stop fix as whyline 0.3.35.1; re-tagged once after a Windows-only test failure that blocked publishing
+
+**Actor:** claude
+**Role:** releaser
+**Task:** CONSOLE-STOP
+
+**Because:** users were stuck with a relay they could not stop from the console; 0.3.36 is reserved for Agents mode; the first tag's Windows job failed on a POSIX-only test (Windows deliberately pauses after the turn), nothing was published, so the tag was moved to the fixed commit as with v0.3.32
+
+**Rejected:**
+
+- wait for 0.3.36 — leaves Stop broken for the whole Agents run
+
+**Files:** src/whyline/console/tui.py, tests/console/test_relay_process.py
+
+<!-- whyline-event: 4f56f8c8182f470b91a0038ba94888ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:13:49.997Z"} -->
+
+## 2026-10-06 — Agent dropdown: open list 36 columns wide (box 24), and 'installed (login not checked)' shortens to 'login unchecked' in the dropdown only
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CB-DROPDOWN
+
+**Because:** the user's dropdown wrapped antigravity and grok onto four lines each: Textual's SelectOverlay is as wide as the 20-column box; /model keeps the full wording where there is room
+
+**Rejected:**
+
+- only widen the box — costs Repo field width on every screen while the list is what wrapped
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8c24c7fe2ca440d3953eed057c7636a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:24:39.353Z"} -->
+
+## 2026-10-06 — Definition files keep the process umask; save() does not force mode 0o600
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-2
+
+**Because:** Task 2 specifies that writer, repo TOML is shared in git, and the spec's 0600 rule names state.sqlite3
+
+**Rejected:**
+
+- chmod 0o600 on save — would make repo agents owner-only and diverge from the task's writer
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 1e4472fd572e438696d2a124b0138ec0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:52:58.932Z"} -->
+
+## 2026-10-06 — AG-2 fails malformed trigger-table handling
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-2
+
+**Because:** A syntactically valid definition with a scalar trigger raises AttributeError during discover instead of becoming Broken, and false/list trigger values are silently accepted; focused and full suites pass but do not cover this behavior
+
+**Rejected:**
+
+- pass based only on the existing suite — discover's contract requires invalid definitions to be reported without aborting discovery
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: e010da6459f94d47b1148eb888134125 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:56:27.256Z"} -->
+
+## 2026-10-06 — Non-table trigger values raise DefinitionError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-2
+
+**Because:** A missing trigger is the default manual table, but false, 0, and empty lists were coerced into that default and strings or integers raised AttributeError, so discover aborted instead of returning Broken
+
+**Rejected:**
+
+- raw.get trigger or empty dict — falsy non-tables were accepted as manual and truthy ones aborted discovery
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 59a0f494f7cd4e169bef2c209f008efb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:02:13.693Z"} -->
+
+## 2026-10-06 — AG-2 passes Round 4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-2
+
+**Because:** The focused 25-test agent suite covers non-table trigger scalars, arrays, empty and omitted triggers, and discovery recovery; the full project suite also completed at 100% with exit 0 and one expected skip
+
+**Rejected:**
+
+- fail for repo-only malformed-discovery fixture — personal discovery calls the same _scan/load/parse path, so there is no separate behavior to invalidate
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: c70c192832754ca9a7d3b6fc5b4ec13d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:04:51.291Z"} -->
+
+## 2026-10-06 — AG-2 Round 5 rejects filename-based discovery ordering
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-2
+
+**Because:** discover promises repo agents first and personal agents second with each scope sorted by parsed agent name, but _scan sorts paths before loading, so filenames that differ from agent names produce the wrong order; the full suite passes because its discovery fixture does not distinguish filename order from name order
+
+**Rejected:**
+
+- approve on passing suite — the required ordering has a direct failing reproduction and lacks regression coverage
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: f64d64cf25af4e08804d37bb10e11a49 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:07:57.786Z"} -->
+
+## 2026-10-06 — Discovery sorts each scope by agent name and lists broken files first
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-2
+
+**Because:** discover promises repo agents then personal agents, each scope ordered by the parsed agent name. Sorting TOML paths first uses the filename, which can differ from that name. A broken file has no parsed name, so it leads its scope in filename order and the name-sorted agents follow.
+
+**Rejected:**
+
+- sort paths before load — a filename that differs from the agent name yields the wrong order
+- place broken files by filename stem among the names — a broken file has no agent name
+- put broken files after the name-sorted agents — also stable, but the plan's discovery checks already show the unreadable file before the valid agent
+
+**Test:** uv run pytest -q: exit 0, 100%, one skip
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: 17de22de17e448999a9eec140778eb4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:13:01.688Z"} -->
+
+## 2026-10-06 — AG-2 Round 7 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-2
+
+**Because:** The full project suite exited 0; all 26 agent tests passed; and 10 focused ordering and malformed-trigger regressions passed, confirming repo-first/personal-second discovery with parsed-name ordering and deterministic broken-file handling.
+
+**Rejected:**
+
+- fail on the previously reported ordering defect — the implementation now sorts valid definitions by parsed agent name with filename tie-breaking and regression coverage passes
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: ac0b7834079c49c0b4b8cc70f9c09cca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:16:16.149Z"} -->
+
+## 2026-10-06 — AG-2 Round 8 approved after code and test review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-2
+
+**Because:** The implementation matches Task 2 interfaces and safety constraints, malformed trigger values become Broken entries, discovery preserves repo-first and personal-second name ordering, and the independently run full suite passed with exit code 0.
+
+**Rejected:**
+
+- request changes — no unsafe or contract-breaking defect was found in the working-tree implementation or its regression coverage
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 2e662db4c4bd491d983a5167dd9370f2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:19:17.953Z"} -->
