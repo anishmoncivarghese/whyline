@@ -36,7 +36,7 @@ Never push, tag, bump the version or publish.
   confirmation, refusing a switch while a job runs, and the 80-column fit.
   Verify: uv run pytest -q.
 
-- [ ] CB-4: Retire Command mode; /<command> runs whyline anywhere
+- [x] CB-4: Retire Command mode; /<command> runs whyline anywhere
   Implement "Task 4" from the plan: modes chat / relay / agents (default
   chat), /<whyline subcommand> routed to run_whyline_command after the
   console's own slash commands, /route command explained, /help listing
