@@ -153,6 +153,7 @@ async def test_plan_button_opens_the_popup_and_reports_the_saved_plan(tmp_path, 
     async with app.run_test(size=(110, 40)) as pilot:
         app.session.mode = "relay"
         app._sync_mode_indicator()
+        await pilot.pause()  # shown buttons need a layout pass before a click
         await pilot.click("#relay-plan")
         await pilot.pause()
         assert isinstance(app.screen, RelayPlanScreen)

@@ -5920,3 +5920,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9ce40f914f614c4dbf6ceaa7c3e5cbe2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:12:01.397Z"} -->
+
+## 2026-10-06 — Hide Attach outside Chat and keep it disabled
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-5
+
+**Because:** The plan hides it with display, and test_attach_is_only_enabled_in_chat still asserts .disabled. Enable and disable rules stay where they are.
+
+**Rejected:**
+
+- display only — that test fails
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 84f077d2e24e4b199bd137c5de2af995 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:21:35.877Z"} -->
+
+## 2026-10-06 — Pause before clicking a button the mode sync just showed
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-5
+
+**Because:** Until the next layout a newly shown button still has region (0, 0), and Pilot.click there hits the header icon, which opens the command palette.
+
+**Rejected:**
+
+- screen._refresh_layout() inside _sync_mode_buttons — private Textual API, and on_mount can run before the screen has a size
+
+**Files:** tests/console/test_tui.py, tests/console/test_relay_plan_screen.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: f6601f183c4e4752b40d9a13a145a229 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:21:44.556Z"} -->
+
+## 2026-10-06 — Approved mode button partitioning, shared button ordering, and 80-column constraint verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-5
+
+**Because:** Full test suite and dedicated mode button tests pass; each mode displays only its configured buttons alongside shared buttons within 80 columns, and attach is visible and enabled only in chat mode
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 14328a1fc28a432da9072485dd75b60f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:26:14.443Z"} -->
+
+## 2026-10-06 — Approved mode-specific bottom-bar visibility and ordering
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-5
+
+**Because:** The implementation matches Task 5 exactly: Chat and Relay expose only their configured controls, Attach is Chat-only, shared buttons trail mode controls, the 80-column assertions pass, and the independent full suite completed successfully
+
+**Files:** src/whyline/console/tui.py, tests/console/test_mode_buttons.py
+
+<!-- whyline-event: f67a6037c67646dbaa7e57fbe98269a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:29:08.833Z"} -->

@@ -75,6 +75,13 @@ from whyline.console.session import ConsoleSession, SessionEvent
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
 _MODES = ("chat", "relay", "agents")
+# Agents widgets arrive with the Agents plan. Until then these ids match nothing.
+_MODE_BUTTONS = {
+    "chat": ("model", "brainstorm", "history"),
+    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume"),
+    "agents": ("agents-new", "agents-list", "agents-runs", "agents-scheduler"),
+}
+_SHARED_BUTTONS = ("stop", "help", "copy")
 _SLASH_HINT = "/status /timeline /note /decisions /handoff /model /repo /help"
 
 # Brainstorming makes one full agent turn per selected model and phase. Keep
@@ -573,6 +580,15 @@ class WhylineConsoleApp(App):
         self._main("#attach", Button).disabled = self.session.mode != "chat"
         self._refresh_tray()
         self._sync_relay_buttons()
+        self._sync_mode_buttons()
+
+    def _sync_mode_buttons(self) -> None:
+        """One place decides which bottom-bar buttons are on screen.
+        Enable and disable stay in _sync_relay_buttons and the stop path."""
+        wanted = set(_MODE_BUTTONS.get(self.session.mode, ())) | set(_SHARED_BUTTONS)
+        for button in self._main("#controls").query(Button):
+            button.display = button.id in wanted
+        self._main("#attach").display = self.session.mode == "chat"
 
     def _sync_relay_buttons(self) -> None:
         """Plan and Set up only make sense in Relay mode; Resume only when a
@@ -928,17 +944,18 @@ class WhylineConsoleApp(App):
             Button("Send", id="send", variant="success"),
             id="input-row",
         )
+        # Shared buttons stay last so each mode's own buttons lead the row.
         yield Horizontal(
             Button("Model", id="model"),
             Button("Brainstorm", id="brainstorm"),
             Button("History", id="history"),
-            Button("Stop", id="stop", disabled=True),
-            Button("Help", id="help"),
-            Button("Copy", id="copy"),
             Button("Run", id="relay-run", disabled=True),
             Button("Plan", id="relay-plan", disabled=True),
             Button("Set up", id="relay-setup", disabled=True),
             Button("Resume", id="relay-resume", disabled=True),
+            Button("Stop", id="stop", disabled=True),
+            Button("Help", id="help"),
+            Button("Copy", id="copy"),
             id="controls",
         )
         yield Footer()

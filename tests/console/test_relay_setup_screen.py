@@ -253,6 +253,7 @@ async def test_setup_button_starts_the_relay(tmp_path, monkeypatch):
     async with app.run_test(size=(110, 40)) as pilot:
         app.session.mode = "relay"
         app._sync_mode_indicator()
+        await pilot.pause()  # shown buttons need a layout pass before a click
         await pilot.click("#relay-setup")
         await pilot.pause()
         screen = app.screen

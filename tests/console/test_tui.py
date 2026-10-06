@@ -266,6 +266,7 @@ async def test_plan_refuses_in_the_home_repo(tmp_path, monkeypatch):
     async with app.run_test() as pilot:
         app.session.mode = "relay"
         app._sync_mode_indicator()
+        await pilot.pause()  # shown buttons need a layout pass before a click
         await pilot.click("#relay-plan")
         await pilot.pause()
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
