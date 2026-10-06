@@ -5997,3 +5997,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 63410723e1ae4ccd8fc4e40f225b37a0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T11:59:39.791Z"} -->
+
+## 2026-10-06 — Release the console context bar (CB-1..5) as whyline 0.3.35, requiring whyline-relay 0.2.32 (grok resume fix)
+
+**Actor:** claude
+**Role:** releaser
+**Task:** CB-RELEASE
+
+**Because:** all five tasks were implemented by grok and approved by codex; the suite passes against whyline-relay 0.2.32 from PyPI; the sdist gate is clean; the console release-prompt false positive is fixed with regression tests
+
+**Rejected:**
+
+- release 0.3.35 on relay 0.2.31 — the console's grok implementer and brainstorm would still lose cancelled turns
+
+**Files:** pyproject.toml, docs/releases/v0.3.35.md
+
+<!-- whyline-event: b048770c283940de9dddfe58cae9c016 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T20:31:41.813Z"} -->

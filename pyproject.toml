@@ -1,6 +1,6 @@
 [project]
 name = "whyline"
-version = "0.3.34"
+version = "0.3.35"
 description = "Records why your code exists, and tells the next agent."
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -35,7 +35,7 @@ classifiers = [
 # `uv tool install whyline` that left any of them out produced a console
 # whose Chat mode failed with "No module named 'whyline_relay'".
 dependencies = [
-    "whyline-relay>=0.2.31,<0.3",
+    "whyline-relay>=0.2.32,<0.3",
     "prompt_toolkit>=3.0,<4.0",
     "textual>=0.60,<1.0",
 ]
@@ -83,5 +83,5 @@ addopts = "-q"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.4.0",
-    "whyline-relay>=0.2.31,<0.3",
+    "whyline-relay>=0.2.32,<0.3",
 ]
