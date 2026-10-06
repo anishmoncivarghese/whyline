@@ -20,7 +20,7 @@ click by position or pause one frame. The bottom bar must fit 80 columns.
 No whyline-relay changes and no new dependencies.
 Never push, tag, bump the version or publish.
 
-- [ ] AG-2: Agent definitions
+- [x] AG-2: Agent definitions
   Implement "Task 2: Agent definitions" from the plan: the whyline.agents
   package and definitions.py (repo and personal TOML agents, names, ids,
   the small TOML writer). Verify: uv run pytest -q.
