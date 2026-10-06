@@ -1,6 +1,6 @@
 # whyline-relay configuration. Every key is optional.
 plan = "plans/console-context-bar.plan.md"
-max_rounds = 6
+max_rounds = 12
 timeout_minutes = 30
 branch_prefix = "relay/"
 
