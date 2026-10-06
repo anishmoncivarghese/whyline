@@ -29,7 +29,7 @@ Never push, tag, bump the version or publish.
   skips finished steps, and a first commit of only the files setup created.
   Verify: uv run pytest -q.
 
-- [ ] CB-3: The context bar
+- [x] CB-3: The context bar
   Implement "Task 3" from the plan: Agent / Model / Repo / all repos / Save,
   Save greyed until a change, unavailable agents snapping back with their
   hint, saving defaults, switching or setting up a repo with one
