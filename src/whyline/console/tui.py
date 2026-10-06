@@ -2004,12 +2004,20 @@ class WhylineConsoleApp(App):
         if not self._busy_text:
             self._main("#thinking", Static).display = False
             self._main("#stop", Button).disabled = True
+        # Only the relay's own final pause counts. Agents that print tui.py or
+        # a plan echo "release task for you: " into the run's output, so the
+        # marker anywhere else must never start a release task.
         pause_text = ""
-        if "release task for you: " in text:
-            pause_text = text[text.find("release task for you: "):]
-        elif text.strip().startswith("Paused:"):
-            pause_text = text.strip().removeprefix("Paused:").strip()
-        else:
+        lines = text.strip().splitlines()
+        for index in range(len(lines) - 1, -1, -1):
+            if lines[index].startswith("Paused:"):
+                pause_text = "\n".join(
+                    [lines[index].removeprefix("Paused:").strip(), *lines[index + 1:]]
+                ).strip()
+                break
+        if not pause_text and text.strip().startswith("release task for you: "):
+            pause_text = text.strip()
+        if not pause_text and code != 0:
             try:
                 from whyline_relay import state as relay_state
                 saved = relay_state.load(self.session.root)

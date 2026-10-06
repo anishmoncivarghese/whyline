@@ -138,3 +138,58 @@ async def test_pressing_resume_behaves_like_typing_done(tmp_path):
         proc2 = FakeProcess.instances[-1]
         assert proc2.args == ["done", "T-2"]
         assert any("done" in line for line in _lines(app))
+
+
+# An agent that prints tui.py or a plan echoes the release marker into the
+# run's output; only the relay's own final pause may start a release task.
+ECHOED_MARKER = (
+    'codex\n        if "release task for you: " in text:\n'
+    '            pause_text = text[text.find("release task for you: "):]\n'
+)
+
+
+async def test_a_completed_run_that_echoed_the_marker_is_not_a_release(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        proc = FakeProcess.instances[-1]
+        text = ECHOED_MARKER + "==> relay: ticked CB-5 in the plan\nPlan complete.\n"
+        await asyncio.to_thread(proc.finish, 0, text)
+        await pilot.pause()
+
+        lines = _lines(app)
+        assert not any('Type "done" when finished' in line for line in lines)
+        assert "· release" not in app.sub_title
+        assert app._release_task is None
+
+
+async def test_a_pause_after_an_echoed_marker_is_an_ordinary_pause(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        proc = FakeProcess.instances[-1]
+        text = ECHOED_MARKER + "\nPaused: CB-2 hit the 6-round cap\n"
+        await asyncio.to_thread(proc.finish, 3, text)
+        await pilot.pause()
+
+        assert app._release_task is None
+        assert "· release" not in app.sub_title
+
+
+async def test_the_relays_own_release_pause_still_starts_a_release(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        proc = FakeProcess.instances[-1]
+        text = ECHOED_MARKER + "\nPaused: " + RELEASE_PAUSE_TEXT
+        await asyncio.to_thread(proc.finish, 3, text)
+        await pilot.pause()
+
+        assert app._release_task is not None and app._release_task[0] == "T-2"
+        assert "· release" in app.sub_title

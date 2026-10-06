@@ -5980,3 +5980,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f67a6037c67646dbaa7e57fbe98269a8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:29:08.833Z"} -->
+
+## 2026-10-06 — Console treats a run as a release pause only from the relay's final 'Paused:' line (or output that starts with the marker), never from the marker anywhere in the output
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CB-RELEASE-FIX
+
+**Because:** after the context bar plan completed, the console asked for done/skip: agents had printed tui.py and the guided-flow plan, which contain 'release task for you: ', and the console matched it anywhere in the whole run output; it also took the first occurrence, so a real release pause after such an echo got a garbage task id
+
+**Rejected:**
+
+- rely on exit code alone — keeps the first-occurrence bug for genuine release pauses
+
+**Files:** src/whyline/console/tui.py, tests/console/test_release_state.py
+
+<!-- whyline-event: 63410723e1ae4ccd8fc4e40f225b37a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T11:59:39.791Z"} -->
