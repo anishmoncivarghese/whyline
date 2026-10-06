@@ -23,7 +23,7 @@ Never push, tag, bump the version or publish.
   claude), /model saving the default, and the console starting on it.
   Verify: uv run pytest -q.
 
-- [ ] CB-2: Inspecting and setting up a repo (no UI)
+- [x] CB-2: Inspecting and setting up a repo (no UI)
   Implement "Task 2" from the plan: repo_setup.inspect / describe / setup /
   SetupError, with home and nested-repo refusals, step-by-step setup that
   skips finished steps, and a first commit of only the files setup created.
