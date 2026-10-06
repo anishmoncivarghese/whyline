@@ -25,7 +25,7 @@ Never push, tag, bump the version or publish.
   package and definitions.py (repo and personal TOML agents, names, ids,
   the small TOML writer). Verify: uv run pytest -q.
 
-- [ ] AG-3: Run records, reports and ledger events
+- [x] AG-3: Run records, reports and ledger events
   Implement "Task 3: Run records, reports and ledger events" from the plan.
   Verify: uv run pytest -q.
 
