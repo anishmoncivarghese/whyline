@@ -49,7 +49,7 @@ _COMMAND_HELP = {
     "/login": "/login claude           sign in with the agent's own login, then re-check",
     "/brainstorm": "/brainstorm             several models research a topic, one writes it up",
     "/repo": "/repo ~/other-project   show or switch the repository (clears this transcript)",
-    "/route": "/route <mode>           switch to command, chat or relay",
+    "/route": "/route <mode>           switch to chat, relay or agents",
     "/status": "/status                 repo and relay status",
     "/handoff": "/handoff                the most recent handoff",
     "/stop": "/stop                   cancel the reply in flight",
@@ -57,17 +57,43 @@ _COMMAND_HELP = {
     "/help": "/help                   this help",
     "/exit": "/exit                   quit the console",
 }
-_HELP_TEXT = "\n".join(
-    [
+
+
+def whyline_subcommands() -> dict[str, str]:
+    """Name → one-line help, from the whyline CLI parser.
+
+    New subcommands show up here on their own. `help=` lives on the
+    subparsers action, not on the parser, whose description is usually empty.
+    """
+    import argparse
+
+    from whyline import cli
+
+    parser = cli.build_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            helps = {item.dest: item.help or "" for item in action._choices_actions}
+            return {
+                name: (choice.description or helps.get(name) or getattr(choice, "help", "") or "")
+                for name, choice in action.choices.items()
+            }
+    return {}
+
+
+def _help_text() -> str:
+    lines = [
         "Modes:",
-        "  Command  what you type runs as `whyline ...` (e.g. status, log)",
         "  Chat     talk to the active agent (see /model)",
         "  Relay    Plan makes plan.md, Set up picks roles and starts; or type\n"
         "           doctor, status, start, resume",
+        "  Agents   arrives in a later release",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),
+        "whyline commands (type them with /):",
     ]
-)
+    for name, help_text in whyline_subcommands().items():
+        lines.append(f"  /{name}  {help_text}")
+    return "\n".join(lines)
 
 
 def _print_event(event: SessionEvent, print_fn) -> None:
@@ -82,7 +108,7 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
     outside this function on purpose: each means something different per
     console (see the final-cutover design's FC4)."""
     if text == "/help":
-        return SessionEvent(kind="output", text=_HELP_TEXT)
+        return SessionEvent(kind="output", text=_help_text())
     if text == "/status":
         return adapters.run_status(session.root)
     if text == "/handoff":
@@ -95,8 +121,21 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
     if text.startswith("/route"):
         parts = text.split(maxsplit=1)
         chosen = parts[1].strip() if len(parts) == 2 else ""
-        if chosen not in ("chat", "relay", "command"):
-            return SessionEvent(kind="error", text="Usage: /route <chat|relay|command>")
+        if chosen == "command":
+            return SessionEvent(
+                kind="output",
+                text=(
+                    "Command mode is gone: type /<whyline command> from any mode, "
+                    "e.g. /timeline."
+                ),
+            )
+        if chosen == "agents":
+            # Agents mode is declared but not built yet. Stay where you are.
+            return SessionEvent(
+                kind="output", text="Agents mode arrives in a later release."
+            )
+        if chosen not in ("chat", "relay"):
+            return SessionEvent(kind="error", text="Usage: /route <chat|relay|agents>")
         if chosen == session.mode:
             return SessionEvent(kind="output", text=f"Already in {chosen} mode.")
         if chosen == "relay" and not adapters.relay_is_configured(session.root):
@@ -118,6 +157,14 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         return SessionEvent(kind="needs_brainstorm", text="")
     if text == "/repo" or text.startswith("/repo "):
         return _repo_event(session, text)
+    # Console commands above win, including /status over `whyline status`.
+    # /console is excluded: it would start another console inside this one.
+    if text.startswith("/"):
+        parts = text[1:].split()
+        if parts:
+            head, *rest = parts
+            if head in whyline_subcommands() and head != "console":
+                return adapters.run_whyline_command([head, *rest])
     return None
 
 
@@ -182,7 +229,11 @@ def unknown_command_text(text: str) -> str:
     if hint:
         arg = rest.strip() or "<agent>"
         return f"Unknown command {head} -- that's a `whyline relay chat` command; {hint.format(arg=arg)}."
-    return f"Unknown command {head}. /help lists what this console understands."
+    names = " ".join(f"/{name}" for name in whyline_subcommands())
+    return (
+        f"Unknown command {head}. /help lists what this console understands. "
+        f"whyline commands: {names}"
+    )
 
 
 def repo_label(root: Path) -> str:
@@ -235,8 +286,7 @@ def repo_switch_warning(root: Path) -> str:
 
 
 def switch_repo(session: ConsoleSession, root: Path) -> SessionEvent:
-    """Moves the whole console to `root`: command mode runs `whyline ...`
-    against the working directory, so that changes too."""
+    """Moves the whole console to `root` and clears the transcript."""
     from whyline import model
 
     os.chdir(root)
@@ -245,8 +295,8 @@ def switch_repo(session: ConsoleSession, root: Path) -> SessionEvent:
     session.agent = model.resolve(root)[0]
     note = ""
     if session.mode == "relay" and not adapters.relay_is_configured(root):
-        session.mode = "command"
-        note = " The relay isn't set up here, so you're in command mode."
+        session.mode = "chat"
+        note = " The relay isn't set up here, so you're in chat."
     return SessionEvent(kind="output", text=f"Now working in {repo_label(root)}.{note}")
 
 
@@ -440,7 +490,13 @@ def run(
         if text == "/stop":
             print_fn("Nothing in flight to stop.")
             continue
-        slash_event = handle_slash_command(session, text)
+        try:
+            slash_event = handle_slash_command(session, text)
+        except KeyboardInterrupt:
+            # /<command> used to run inside dispatch, whose Ctrl-C said
+            # "Cancelled." and left the console up. Keep that.
+            print_fn("Cancelled.")
+            continue
         if slash_event is not None:
             if slash_event.kind == "needs_setup":
                 print_fn(slash_event.text)
@@ -544,10 +600,15 @@ def dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent
 
 
 def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
+    # "command" never arrives here: ConsoleSession stores it as "chat".
+    if session.mode == "agents":
+        return SessionEvent(
+            kind="error",
+            text="Agents mode arrives in a later release.",
+            accepted=False,
+        )
     if session.mode in ("chat", "relay") and _is_home(session.root):
         return SessionEvent(kind="error", text=_HOME_REFUSAL, accepted=False)
-    if session.mode == "command":
-        return adapters.run_whyline_command(text.split())
     if session.mode == "chat":
         agent = session.agent or "claude"
         if attachments:

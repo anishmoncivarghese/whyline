@@ -82,12 +82,17 @@ def test_route_rejects_an_unknown_mode(tmp_path, monkeypatch):
 
 
 def test_command_mode_dispatches_to_run_whyline_command(tmp_path, monkeypatch):
+    """The old command-mode line `model status` is now `/timeline` from chat.
+
+    `/model` stays the console's own command, so this uses a whyline
+    subcommand the console does not own.
+    """
     from whyline.console import adapters
 
     monkeypatch.setattr(
         editor,
         "build_session",
-        lambda root: FakePromptSession(["model status", "/exit"]),
+        lambda root: FakePromptSession(["/timeline --limit 5", "/exit"]),
     )
     monkeypatch.setattr(
         adapters,
@@ -96,7 +101,7 @@ def test_command_mode_dispatches_to_run_whyline_command(tmp_path, monkeypatch):
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
-    assert any("ran ['model', 'status']" in line for line in lines)
+    assert any("ran ['timeline', '--limit', '5']" in line for line in lines)
 
 
 def test_ctrl_c_during_dispatch_is_caught_and_the_session_continues(
@@ -107,7 +112,7 @@ def test_ctrl_c_during_dispatch_is_caught_and_the_session_continues(
     monkeypatch.setattr(
         editor,
         "build_session",
-        lambda root: FakePromptSession(["model status", "/exit"]),
+        lambda root: FakePromptSession(["/timeline", "/exit"]),
     )
 
     def raising(argv):
@@ -320,19 +325,22 @@ def test_handoff_slash_command_dispatches_to_run_last_handoff(tmp_path, monkeypa
     assert any("the last handoff" in line for line in lines)
 
 
-def test_dispatch_is_public_and_routes_by_mode(tmp_path):
-    from whyline.console.repl import dispatch
+def test_dispatch_is_public_and_routes_by_mode(tmp_path, monkeypatch):
+    """Whyline commands run from chat as /<command>, not via a command mode."""
+    from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
     from whyline.console import adapters
-    session = ConsoleSession(root=tmp_path, mode="command")
+    session = ConsoleSession(root=tmp_path)
     called = []
-    original = adapters.run_whyline_command
-    adapters.run_whyline_command = lambda argv: called.append(argv) or original(argv)
-    try:
-        dispatch(session, "model status")
-    finally:
-        adapters.run_whyline_command = original
-    assert called == [["model", "status"]]
+    monkeypatch.setattr(
+        adapters,
+        "run_whyline_command",
+        lambda argv: called.append(argv) or SessionEvent(kind="output", text="ok"),
+    )
+    event = handle_slash_command(session, "/timeline --limit 5")
+    assert session.mode == "chat"
+    assert called == [["timeline", "--limit", "5"]]
+    assert event is not None and event.text == "ok"
 
 
 def test_handle_slash_command_help(tmp_path):
@@ -348,8 +356,9 @@ def test_help_explains_modes_and_what_each_command_does(tmp_path):
     from whyline.console.repl import SLASH_COMMANDS, handle_slash_command
     from whyline.console.session import ConsoleSession
     event = handle_slash_command(ConsoleSession(root=tmp_path), "/help")
-    for mode in ("Command", "Chat", "Relay"):
+    for mode in ("Chat", "Relay", "Agents"):
         assert mode in event.text
+    assert "Command  what you type" not in event.text
     # every command gets its own line with a description, not a bare list
     for command in SLASH_COMMANDS:
         line = next(l for l in event.text.splitlines() if l.strip().startswith(command))
@@ -396,11 +405,11 @@ def test_handle_slash_command_returns_none_for_ordinary_text(tmp_path):
 def test_handle_slash_command_route_relay_needs_setup(tmp_path):
     from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
-    session = ConsoleSession(root=tmp_path, mode="command")
+    session = ConsoleSession(root=tmp_path, mode="chat")
     event = handle_slash_command(session, "/route relay")
     assert event is not None
     assert event.kind == "needs_setup"
-    assert session.mode == "command"  # unchanged -- the handoff hasn't happened yet
+    assert session.mode == "chat"  # unchanged -- the handoff hasn't happened yet
 
 
 def test_handle_slash_command_route_relay_switches_when_configured(tmp_path):
@@ -409,7 +418,7 @@ def test_handle_slash_command_route_relay_switches_when_configured(tmp_path):
     config_dir = tmp_path / ".whyline" / "relay"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text("", encoding="utf-8")
-    session = ConsoleSession(root=tmp_path, mode="command")
+    session = ConsoleSession(root=tmp_path, mode="chat")
     event = handle_slash_command(session, "/route relay")
     assert event is not None
     assert event.kind != "needs_setup"
@@ -724,8 +733,8 @@ def test_switch_repo_moves_root_and_cwd_and_clears_the_transcript(tmp_path, monk
     assert Path(os.getcwd()).resolve() == other
     assert session.transcript == []
     # the relay isn't set up in the new repo, so relay mode would only fail
-    assert session.mode == "command"
-    assert "Now working in other" in event.text and "command mode" in event.text
+    assert session.mode == "chat"
+    assert "Now working in other" in event.text and "you're in chat" in event.text
 
 
 def test_parse_brainstorm_agents():
@@ -830,9 +839,16 @@ def test_chat_relay_and_brainstorm_refuse_to_run_in_the_home_directory_repo(tmp_
     session.mode = "relay"
     assert "home directory" in dispatch(session, "status").text
     assert "home directory" in handle_slash_command(session, "/brainstorm").text
-    # command mode still works there
-    session.mode = "command"
-    assert "home directory" not in dispatch(session, "--version").text
+    # a whyline command still runs there, typed as /<command>
+    seen = []
+    monkeypatch.setattr(
+        adapters,
+        "run_whyline_command",
+        lambda argv: seen.append(argv) or SessionEvent(kind="output", text="timeline ok"),
+    )
+    event = handle_slash_command(session, "/timeline")
+    assert seen == [["timeline"]]
+    assert "home directory" not in event.text
 
 
 def test_home_repo_warning_names_the_folder_you_started_in(tmp_path, monkeypatch):

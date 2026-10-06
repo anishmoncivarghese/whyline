@@ -5762,3 +5762,161 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9bc398b2c0e545468fcdea06f55c5abb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:35:48.473Z"} -->
+
+## 2026-10-06 — A stored mode of command is rewritten to chat on assignment
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-4
+
+**Because:** The spec says any saved or passed command mode maps to chat, and the mode button, paste handler, and placeholder all read session.mode directly.
+
+**Rejected:**
+
+- Normalizing only inside _dispatch — those other readers would still observe command.
+
+**Files:** src/whyline/console/session.py
+
+<!-- whyline-event: 74e6fde7fab84d919b587300db608999 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:52:14.410Z"} -->
+
+## 2026-10-06 — Migrated command-mode examples send /timeline, not /model status
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-4
+
+**Because:** Console slash commands run before whyline subcommands, so /model stays the console command and never reaches run_whyline_command.
+
+**Rejected:**
+
+- Keeping argv model status — that would require /model to fall through, which the /status review focus forbids for same-named commands.
+
+**Files:** tests/console/test_repl.py
+
+<!-- whyline-event: 93e8be2ad8b748b68d5caeedb86704a3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:52:17.502Z"} -->
+
+## 2026-10-06 — Ctrl-C during a slash whyline command prints Cancelled and stays in the console
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-4
+
+**Because:** Those commands used to run inside dispatch, which already caught KeyboardInterrupt.
+
+**Rejected:**
+
+- Letting the interrupt leave the REPL — /timeline would quit the console where model status used to cancel.
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 30ab6ef6840b4e13873950d8d4a2afd1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:52:21.226Z"} -->
+
+## 2026-10-06 — Switching repo out of an unconfigured relay drops to chat
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-4
+
+**Because:** Command mode is gone, and relay commands in a repo with no relay setup would only fail.
+
+**Rejected:**
+
+- Staying in relay — the old code left relay for that reason, and chat is the mode that replaced command.
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: c5f4b0513586404094e3d453538ded82 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:52:21.235Z"} -->
+
+## 2026-10-06 — Dispatch in agents mode returns the later-release line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-4
+
+**Because:** Agents mode is declared but empty, and the relay parser would treat ordinary text as an unknown relay command.
+
+**Rejected:**
+
+- Falling through to relay — that would make Agents a second Relay.
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: cfeadd1b94524c0089cae01ea90fcb52 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:52:24.318Z"} -->
+
+## 2026-10-06 — Approved Command mode retirement, slash whyline command routing, and mode migration
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-4
+
+**Because:** Full test suite and dedicated tests in test_slash_whyline.py pass; slash commands, /route explanations, /help listing, / hint, and mode default chat behave correctly
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: d2762e4c2f1740b7b2b84bdae1cd80b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:56:54.636Z"} -->
+
+## 2026-10-06 — Rejected CB-4 review because a supplemental pytest command was denied
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-4
+
+**Because:** The required full suite reached 100% without failures, but uv run pytest -q tests/console/test_slash_whyline.py was denied when uv could not initialize /Users/anish/.cache/uv; review instructions forbid approval after a denied test command
+
+**Rejected:**
+
+- Approve — explicitly prohibited after any denied test command
+
+**Files:** tests/console/test_slash_whyline.py
+
+<!-- whyline-event: 9b1bc5038e914f5f9e12ed231ea528ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:00:09.988Z"} -->
+
+## 2026-10-06 — Left CB-4 unchanged after the cache-permission rejection
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-4
+
+**Because:** The review found no code defect. uv run pytest -q exited 0 at 100 percent, 891 passed and 1 skipped, and uv run pytest -q tests/console/test_slash_whyline.py exited 0 with 9 passed. The denied command was uv initializing the user cache, an environment permission rather than a failing assertion.
+
+**Rejected:**
+
+- Rewriting slash routing — there was no failing behavior to fix
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: d605ed108c1a4b22a90c30bc7a059d00 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:06:04.445Z"} -->
+
+## 2026-10-06 — Verified Command mode retirement and slash whyline command routing pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-4
+
+**Because:** Full test suite (uv run pytest -q) and targeted console tests pass with 100% success; slash whyline execution, route explanations, help listing, and mode defaults behave correctly
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 6ab1f32e8ef04d42aaeb5b5d555012a5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:08:52.958Z"} -->
+
+## 2026-10-06 — Approved CB-4 Command mode retirement and slash whyline routing
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-4
+
+**Because:** The diff follows Task 4's parser-derived routing order, mode migration, help and hint requirements; coverage exercises precedence and TUI behavior; git diff --check passed; and uv run pytest -q completed at 100% with no failures
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 9ce40f914f614c4dbf6ceaa7c3e5cbe2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T06:12:01.397Z"} -->

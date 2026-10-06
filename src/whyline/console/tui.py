@@ -74,7 +74,8 @@ from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
-_MODES = ("command", "chat", "relay")
+_MODES = ("chat", "relay", "agents")
+_SLASH_HINT = "/status /timeline /note /decisions /handoff /model /repo /help"
 
 # Brainstorming makes one full agent turn per selected model and phase. Keep
 # the bound explicit in the UI so a single stalled provider cannot hold the
@@ -465,6 +466,7 @@ class WhylineConsoleApp(App):
     #cb-repo { width: 1fr; }
     #context-bar Label { padding: 1 0 0 1; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
+    #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
     """
@@ -501,12 +503,9 @@ class WhylineConsoleApp(App):
         self._cb_refreshing = False
 
     def on_mount(self) -> None:
-        """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
-        plus the mode it's silently defaulting to: unlike the REPL prompt
-        (which prints "(mode) > " before every line), the TUI had no
-        indicator at all, so typing ordinary conversation in the default
-        "command" mode looked like the console was just broken instead of
-        interpreting free text as a `whyline` CLI invocation."""
+        """Mirrors the plain REPL's own onboarding line (repl.py's `run`).
+        The subtitle and the highlighted mode button say which mode is
+        active; the console opens in Chat."""
         self.run_worker(lambda: att.clean_old(self.session.root), thread=True)
         self._sync_mode_indicator()
         self._cb_fit()
@@ -516,9 +515,10 @@ class WhylineConsoleApp(App):
             SessionEvent(
                 kind="output",
                 text=(
-                    "whyline console -- pick a mode above. Command runs what "
-                    "you type as `whyline ...`, Chat talks to an agent, Relay "
-                    "drives whyline-relay. Help explains the rest."
+                    "whyline console -- pick a mode above. Chat talks to an "
+                    "agent, Relay drives whyline-relay, and /timeline (or "
+                    "another whyline command after /) runs it from any mode. "
+                    "Help explains the rest."
                 ),
             )
         )
@@ -605,12 +605,12 @@ class WhylineConsoleApp(App):
             resume.disabled = not paused or running
 
     def _placeholder(self, mode: str) -> str:
-        if mode == "chat":
-            agent = self.session.agent or "claude"
-            return f"Message {agent}... (Enter to send)"
         if mode == "relay":
             return "Relay: run (guided), doctor, status, start, resume (Enter to run)"
-        return "whyline command, e.g. status or log (Enter to run)"
+        if mode == "agents":
+            return "Agents mode arrives in a later release."
+        agent = self.session.agent or "claude"
+        return f"Message {agent}... (Enter to send)"
 
     def _cb_saved_tuple(self) -> tuple[str, str, str]:
         from whyline import model
@@ -892,9 +892,9 @@ class WhylineConsoleApp(App):
         yield Header()
         yield Horizontal(
             Static("Mode:", id="modes-label"),
-            Button("Command", id="mode-command"),
             Button("Chat", id="mode-chat"),
             Button("Relay", id="mode-relay"),
+            Button("Agents", id="mode-agents"),
             id="modes",
         )
         from whyline import account
@@ -921,9 +921,10 @@ class WhylineConsoleApp(App):
             id="plan-actions",
         )
         yield AttachmentTray(id="tray")
+        yield Static("", id="slash-hint")
         yield Horizontal(
             PromptInput(id="prompt"),
-            Button("Attach", id="attach", disabled=True),
+            Button("Attach", id="attach"),
             Button("Send", id="send", variant="success"),
             id="input-row",
         )
@@ -1029,6 +1030,15 @@ class WhylineConsoleApp(App):
     def on_input_changed(self, event: "Input.Changed") -> None:
         if event.input.id in ("cb-model", "cb-repo"):
             self._cb_mark_save()
+            return
+        if event.input.id != "prompt":
+            return
+        hint = self._main("#slash-hint", Static)
+        if event.value == "/":
+            hint.update(_SLASH_HINT)
+            hint.display = True
+        else:
+            hint.display = False
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         if event.checkbox.id == "cb-global":

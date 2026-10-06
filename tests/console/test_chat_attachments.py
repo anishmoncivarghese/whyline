@@ -131,6 +131,10 @@ async def test_paste_screenshot_without_an_image_says_so(repo, monkeypatch):
 async def test_attach_is_only_enabled_in_chat(repo):
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(80, 24)) as pilot:
+        assert not app.query_one("#attach", tui.Button).disabled  # opens in chat
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
         assert app.query_one("#attach", tui.Button).disabled
         await _chat(app, pilot)
         assert not app.query_one("#attach", tui.Button).disabled

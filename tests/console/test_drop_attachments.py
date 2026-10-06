@@ -76,11 +76,12 @@ async def test_ordinary_text_is_never_offered_as_files(repo, tmp_path_factory):
 
 
 async def test_drop_in_command_mode_inserts_unchanged(repo, tmp_path_factory):
+    """A paste outside Chat is text. Relay stands in for the old command mode."""
     shot = tmp_path_factory.mktemp("drop") / "a.png"
     shot.write_bytes(b"\x89PNG")
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 40)) as pilot:
-        app.session.mode = "command"
+        app.session.mode = "relay"
         app._sync_mode_indicator()
         await pilot.pause()
         app.query_one("#prompt", tui.Input).post_message(events.Paste(str(shot)))

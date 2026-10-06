@@ -179,7 +179,7 @@ async def test_model_refresh_updates_an_agent_that_becomes_available(tmp_path, m
         app.query_one("#cb-model", tui.Input).value = "grok-4"
         app.query_one("#cb-global", tui.Checkbox).value = True
         await pilot.pause()
-        app.query_one("#prompt", tui.Input).value = "/route command"
+        app.query_one("#prompt", tui.Input).value = "/route chat"
         await pilot.click("#send")
         await pilot.pause()
         assert select.value == "!grok"
@@ -202,7 +202,7 @@ async def test_model_refresh_updates_an_agent_that_becomes_available(tmp_path, m
         assert not app.query_one("#cb-save", tui.Button).disabled
 
         await pilot.pause(0.3)
-        app.query_one("#prompt", tui.Input).value = "/route command"
+        app.query_one("#prompt", tui.Input).value = "/route chat"
         await pilot.click("#send")
         await pilot.pause()
         assert select.value == "grok"

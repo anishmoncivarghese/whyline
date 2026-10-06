@@ -30,7 +30,7 @@ def test_session_event_is_frozen():
 
 def test_console_session_defaults(tmp_path):
     session = ConsoleSession(root=tmp_path)
-    assert session.mode == "command"
+    assert session.mode == "chat"
     assert session.agent is None
     assert session.transcript == []
 

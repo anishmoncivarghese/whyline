@@ -20,7 +20,7 @@ async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
         assert app.query_one("#transcript") is not None
         assert app.query_one("#prompt") is not None
         for button_id in (
-            "send", "model", "mode-command", "mode-chat", "mode-relay",
+            "send", "model", "mode-chat", "mode-relay", "mode-agents",
             "history", "stop", "help", "copy",
             "relay-plan", "relay-setup", "relay-resume",
         ):
@@ -329,9 +329,10 @@ async def test_copy_button_with_no_transcript_does_not_touch_the_clipboard(tmp_p
 async def test_mount_shows_the_default_mode_and_an_onboarding_banner(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        assert app.sub_title == "mode: command"
+        assert app.session.mode == "chat"
+        assert app.sub_title == "mode: chat"
         transcript = app.query_one("#transcript", tui.RichLog)
-        assert any("Command runs" in str(line) for line in transcript.lines)
+        assert any("Chat talks" in str(line) for line in transcript.lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -405,13 +406,13 @@ async def test_placeholder_tells_you_what_to_type_for_the_current_mode(tmp_path,
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         prompt = app.query_one("#prompt", tui.Input)
-        assert "whyline" in prompt.placeholder
-        await pilot.click("#mode-chat")
-        await pilot.pause()
         assert "Message claude" in prompt.placeholder
         await pilot.click("#mode-relay")
         await pilot.pause()
         assert "relay" in prompt.placeholder.lower()
+        await pilot.click("#mode-chat")
+        await pilot.pause()
+        assert "Message claude" in prompt.placeholder
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -419,13 +420,14 @@ async def test_placeholder_tells_you_what_to_type_for_the_current_mode(tmp_path,
 async def test_active_mode_button_is_highlighted(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        assert app.query_one("#mode-command", tui.Button).variant == "primary"
-        assert app.query_one("#mode-chat", tui.Button).variant == "default"
-        await pilot.click("#mode-chat")
-        await pilot.pause()
         assert app.query_one("#mode-chat", tui.Button).variant == "primary"
-        assert app.query_one("#mode-command", tui.Button).variant == "default"
-        assert app.sub_title == "mode: chat"
+        assert app.query_one("#mode-relay", tui.Button).variant == "default"
+        assert app.query_one("#mode-agents", tui.Button).variant == "default"
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        assert app.query_one("#mode-relay", tui.Button).variant == "primary"
+        assert app.query_one("#mode-chat", tui.Button).variant == "default"
+        assert app.sub_title == "mode: relay"
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

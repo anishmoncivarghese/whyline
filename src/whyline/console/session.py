@@ -28,9 +28,16 @@ class SessionEvent:
 @dataclass
 class ConsoleSession:
     root: Path
-    mode: str = "command"  # "command" | "relay" | "chat"
+    mode: str = "chat"  # "chat" | "relay" | "agents"
     agent: str | None = None
     transcript: list[SessionEvent] = field(default_factory=list)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Command mode is gone. A leftover "command" is chat, including one
+        # passed in by an old caller after this object already exists.
+        if name == "mode" and value == "command":
+            value = "chat"
+        object.__setattr__(self, name, value)
 
     def record(self, event: SessionEvent) -> SessionEvent:
         self.transcript.append(event)

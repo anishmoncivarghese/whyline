@@ -1,0 +1,83 @@
+"""Slash commands run whyline subcommands from any mode. Command mode is gone."""
+import pytest
+
+from whyline.console import adapters, repl, tui
+from whyline.console.session import ConsoleSession, SessionEvent
+
+
+def test_whyline_subcommands_come_from_the_parser():
+    subs = repl.whyline_subcommands()
+    assert "timeline" in subs and "note" in subs and subs["note"]
+
+
+def test_slash_runs_a_whyline_command(tmp_path, monkeypatch):
+    ran = []
+    monkeypatch.setattr(
+        adapters, "run_whyline_command",
+        lambda argv: ran.append(argv) or SessionEvent(kind="output", text="ok"),
+    )
+    session = ConsoleSession(root=tmp_path)
+    assert session.mode == "chat"
+    event = repl.handle_slash_command(session, "/timeline --limit 5")
+    assert ran == [["timeline", "--limit", "5"]] and event.text == "ok"
+
+
+def test_console_commands_win_over_whyline_ones(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        adapters, "run_whyline_command",
+        lambda argv: (_ for _ in ()).throw(AssertionError),
+    )
+    event = repl.handle_slash_command(ConsoleSession(root=tmp_path), "/status")
+    assert event is not None  # the console's own /status
+
+
+def test_route_command_explains(tmp_path):
+    event = repl.handle_slash_command(ConsoleSession(root=tmp_path), "/route command")
+    assert "Command mode is gone" in event.text and "/timeline" in event.text
+
+
+def test_help_lists_whyline_commands(tmp_path):
+    text = repl.handle_slash_command(ConsoleSession(root=tmp_path), "/help").text
+    assert "whyline commands" in text and "/timeline" in text
+
+
+def test_route_agents_stays_put(tmp_path):
+    session = ConsoleSession(root=tmp_path, mode="relay")
+    event = repl.handle_slash_command(session, "/route agents")
+    assert event.text == "Agents mode arrives in a later release."
+    assert session.mode == "relay"
+
+
+def test_a_stored_command_mode_is_chat(tmp_path):
+    session = ConsoleSession(root=tmp_path, mode="command")
+    assert session.mode == "chat"
+    session.mode = "command"
+    assert session.mode == "chat"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_mode_buttons_are_chat_relay_and_agents_and_chat_is_the_default(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        ids = {button.id for button in app.query("#modes Button")}
+        assert ids == {"mode-chat", "mode-relay", "mode-agents"}
+        assert app.session.mode == "chat"
+        await pilot.pause()
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_a_lone_slash_shows_the_hint_and_the_next_key_hides_it(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        hint = app.query_one("#slash-hint", tui.Static)
+        assert hint.display is False
+        await pilot.click("#prompt")
+        await pilot.press("/")
+        await pilot.pause()
+        assert hint.display is True
+        assert "/timeline" in str(hint.render())
+        await pilot.press("t")
+        await pilot.pause()
+        assert hint.display is False
