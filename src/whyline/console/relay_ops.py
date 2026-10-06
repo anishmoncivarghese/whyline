@@ -686,17 +686,18 @@ def role_meaning(
 
 
 
-def prepare_agents(root: Path, agents: list[str]) -> list[Path]:
+def prepare_agents(root: Path, agents: list[str], *, commit: bool = True) -> list[Path]:
     """Writes the permission files the chosen agents' commands need (e.g.
     claude's .whyline/relay/claude-settings.json) when they're missing, and
-    commits only those files. Run never asks anyone to type `init`; an
+    commits only those files. Pass commit=False when the caller makes one
+    commit that includes them. Run never asks anyone to type `init`; an
     existing, possibly customised, file is never overwritten."""
     from whyline_relay import gitcheck, init
 
     created: list[Path] = []
     for agent in dict.fromkeys(agents):
         created += init.ensure_permission_files(root, agent)
-    if created:
+    if created and commit:
         gitcheck.commit_paths(root, created, "setup: generate agent permission settings")
     return created
 

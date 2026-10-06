@@ -329,6 +329,15 @@ def test_prepare_agents_writes_and_commits_only_their_settings_files(repo):
     assert relay_ops.prepare_agents(repo, ["claude"]) == []  # never overwritten
 
 
+def test_prepare_agents_can_leave_the_commit_to_the_caller(repo):
+    created = relay_ops.prepare_agents(repo, ["claude"], commit=False)
+    settings = repo / ".whyline" / "relay" / "claude-settings.json"
+    assert created == [settings] and settings.exists()
+    status = _git(repo, "status", "--porcelain", "--untracked-files=all")
+    assert ".whyline/relay/claude-settings.json" in status
+    assert _git(repo, "log", "-1", "--format=%s").strip() == "initial"
+
+
 def test_approve_spec_writes_docs_specs(repo):
     d = relay_ops.Draft(path=repo / "d.md", text="# S\n", drafted_by="codex", source="spec")
     d.path.write_text("# S\n")

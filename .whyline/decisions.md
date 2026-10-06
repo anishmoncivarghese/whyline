@@ -5520,3 +5520,86 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dfc082ead08445fb86169951f2ec1c4f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:02:20.660Z"} -->
+
+## 2026-10-06 — Repo setup keeps a pending record in the git dir (first unfinished step + every file setup wrote, across attempts) instead of phase markers and per-attempt file lists
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** CB-2 was rejected twice for one class of bug: a step that writes files and then fails left them invisible to the retry (prepare_agents never returns existing files, init's before/after diff already contains them), and inspect guessed completion from files on disk; reproduced both against grok's code, and the record fixes both with real whyline init
+
+**Rejected:**
+
+- patch each case (grok's per-round fixes) — each round exposed the next instance of the same bug
+- commit partial files on failure — still loses files a failed step wrote, and commits half-finished setup
+
+**Files:** src/whyline/console/repo_setup.py, tests/console/test_repo_setup.py
+
+<!-- whyline-event: 634f2c02c3434fef8abbe63263fcc1b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:10:14.362Z"} -->
+
+## 2026-10-06 — Treat a leftover whyline-agents-pending marker as unfinished even when claude-settings.json exists
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-2
+
+**Because:** Codex rejected inspect reporting ready after a partial agents write; retry then skipped agents and left setup files uncommitted
+
+**Rejected:**
+
+- treat claude-settings.json as agents-done — that is the defect
+- ignore the old one-line phase marker — a leftover agents marker would still look ready
+
+**Files:** src/whyline/console/repo_setup.py, tests/console/test_repo_setup.py
+
+<!-- whyline-event: b6025d6a9a9b44dca8b508eeef8ac162 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:24:55.885Z"} -->
+
+## 2026-10-06 — Repo setup inspect, describe, setup, retry tracking, and commit isolation verified against full test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-2
+
+**Because:** All 10 repo setup test cases pass including home/nested refusals, step skipping, retry on failure with legacy marker handling, and untracked file commit isolation; full test suite passed (375 console tests, 887 total tests)
+
+**Files:** src/whyline/console/repo_setup.py
+
+<!-- whyline-event: 38cefad8c5f2468d9bef8dde0fb65962 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:30:18.650Z"} -->
+
+## 2026-10-06 — Approve CB-2 repo inspection and setup implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-2
+
+**Because:** The implementation matches the requested interfaces and refusals, safely isolates setup-created files, preserves unfinished-step state across retries, and the full uv run pytest -q suite passed
+
+**Rejected:**
+
+- request changes — no unsafe or clearly incorrect behavior was found in the diff or focused commit-helper audit
+
+**Files:** src/whyline/console/repo_setup.py, src/whyline/console/relay_ops.py, tests/console/test_repo_setup.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: c05df54765584e97952594ac6891a976 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:34:12.228Z"} -->
+
+## 2026-10-06 — Moved CB-2's saved base commit from 8973fc5 to 481a642 instead of git reset, after the relay paused on HEAD moving
+
+**Actor:** claude
+**Role:** orchestrator
+**Task:** CB-2
+
+**Because:** HEAD moved only because of my own two commits made while CB-2 was paused (max_rounds 12, decision log), not a stage committing; codex had already approved CB-2
+
+**Rejected:**
+
+- git reset 8973fc5 as the pause suggested — would fold the max_rounds and decision-log commits into CB-2's feature commit
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: aceeeccfaa604d4088b12baefc2f42cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:40:47.465Z"} -->
