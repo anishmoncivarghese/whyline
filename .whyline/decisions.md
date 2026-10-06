@@ -5603,3 +5603,162 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: aceeeccfaa604d4088b12baefc2f42cd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T04:40:47.465Z"} -->
+
+## 2026-10-06 — Born the agent Select with the live status list
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-3
+
+**Because:** Textual 0.89 raises EmptySelectError for Select with no options and allow_blank False, which would crash compose
+
+**Rejected:**
+
+- empty Select as the plan sketches — the widget cannot be constructed
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 0e38ac98e0de47369b51fcd00ebc803d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:08:20.949Z"} -->
+
+## 2026-10-06 — Keep a model already typed when the agent menu change arrives late
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-3
+
+**Because:** Textual queues Select.Changed, so a model set in the same turn would be wiped if the handler always loaded the new agent's saved model
+
+**Rejected:**
+
+- always overwrite with the saved model — the save test sets gpt-5.6 before the message runs and would persist a blank name
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: cda16aed8c4f4ad494e26a944f6b3a1c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:08:21.002Z"} -->
+
+## 2026-10-06 — Ticking all repos enables Save on its own
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-3
+
+**Because:** The checkbox is not part of the saved agent, model and repo tuple, so the global default could not be written when those already match
+
+**Rejected:**
+
+- dirty only for agent, model and repo — all-repos would do nothing until a dummy edit
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3f7233c9de3d46d0b86748780919ce2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:08:21.058Z"} -->
+
+## 2026-10-06 — Refresh the context bar only when the saved tuple changes
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-3
+
+**Because:** Refreshing on every mode sync would wipe an unsaved edit whenever the transcript updates the mode indicator
+
+**Rejected:**
+
+- refresh on every sync — Save would snap back to disabled mid-edit
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3738485558344b80bdd7dca58d324198 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:08:21.124Z"} -->
+
+## 2026-10-06 — After setup, call switch_repo directly and do not cancel workers
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-3
+
+**Because:** The finish callback runs across the setup worker's thread bridge, and cancelling workers there can abort the switch the user just confirmed
+
+**Rejected:**
+
+- reuse the confirmed switch path's stop — it cancels the worker still delivering the callback
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8736c208911a45f3bb5063899fffc93c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:08:21.178Z"} -->
+
+## 2026-10-06 — Approved context bar widgets, state sync, repo switching/setup flow, and 80-column fit
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-3
+
+**Because:** Full test suite and dedicated context bar tests pass cleanly; all CB-3 behaviors verified
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: c810483008cf497889df283bc2adb24e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:14:53.404Z"} -->
+
+## 2026-10-06 — Rejected CB-3 until status-only agent refreshes update the context bar
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-3
+
+**Because:** The full suite passes, but /model refresh can change account.agent_status without changing the saved agent/model/repo tuple, so _sync_mode_indicator skips _cb_refresh and leaves unavailable Select values and labels stale; the context-bar tests use a constant status map and do not cover this required path
+
+**Rejected:**
+
+- approve as-is — Task 3 explicitly requires refreshing the bar after /model, including availability-only refreshes
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 2fb8b97b19734fd6a86455acc2c387b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:18:03.125Z"} -->
+
+## 2026-10-06 — Refresh agent options when status changes and keep a full reload for a new saved tuple
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CB-3
+
+**Because:** /model refresh and login change account.agent_status without changing the saved agent, model and repo, so a tuple check leaves !agent values and labels in place
+
+**Rejected:**
+
+- refresh the whole bar on every mode sync — an unsaved model or repo edit would be replaced whenever the transcript updates the mode indicator
+- refresh only inside the /model refresh branch — login rechecks status on a different path and would leave the same stale Select
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: a52c91c1c51b4bb08e8d569f43412cd8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:28:28.905Z"} -->
+
+## 2026-10-06 — Approved context bar widgets, state sync, repo switching/setup flow, and dynamic agent status updates
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CB-3
+
+**Because:** Full test suite and dedicated context bar tests pass cleanly, including status-only agent refresh after /model refresh and /login without clobbering edits
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 1235fbc25ccd4b4687ce4d62c3121db8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:32:02.123Z"} -->
+
+## 2026-10-06 — Approved context bar save, agent refresh, and repo setup integration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CB-3
+
+**Because:** The implementation satisfies CB-3's widget, dirty-state, unavailable-agent, default-save, guarded repo switch/setup, and 80-column requirements; focused tests cover the UI paths and the independent full suite passed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 9bc398b2c0e545468fcdea06f55c5abb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T05:35:48.473Z"} -->

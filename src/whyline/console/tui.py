@@ -45,6 +45,7 @@ from whyline.console import (
     mac_input,
     plan_job,
     relay_ops,
+    repo_setup,
 )
 from whyline.console.attachments_ui import (
     AttachMenuScreen,
@@ -61,12 +62,10 @@ from whyline.console.repl import (
     _run_login,
     after_login,
     busy_label,
-    context_label,
     dispatch,
     handle_slash_command,
     home_repo_warning,
     login_argv,
-    repo_label,
     repo_switch_warning,
     switch_repo,
     unknown_command_text,
@@ -109,6 +108,65 @@ def _system_copy(text: str) -> bool:
             return True
     return False
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _short_path(path: Path) -> str:
+    """`~/proj` when `path` is under the home directory, else a posix path."""
+    try:
+        resolved = Path(path).expanduser().resolve()
+    except OSError:
+        resolved = Path(path)
+    try:
+        home = Path.home().resolve()
+    except OSError:
+        return resolved.as_posix()
+    shown = resolved.as_posix()
+    home_s = home.as_posix()
+    if shown == home_s:
+        return "~"
+    prefix = home_s + "/"
+    if shown.startswith(prefix):
+        return "~/" + shown[len(prefix):]
+    return shown
+
+
+def _cb_options(status: dict) -> list[tuple[str, str]]:
+    """Available agents first, then unavailable ones with a `!` value."""
+    available: list[tuple[str, str]] = []
+    unavailable: list[tuple[str, str]] = []
+    for agent, info in status.items():
+        label = f"{agent} · {info.get('label', '')}"
+        if info.get("available"):
+            available.append((label, agent))
+        else:
+            unavailable.append((label, f"!{agent}"))
+    return available + unavailable
+
+
+def _cb_status_key(status: dict) -> tuple[tuple[str, bool, str], ...]:
+    """Availability and labels. The saved agent, model and repo are separate."""
+    key = []
+    for agent, info in status.items():
+        if not isinstance(info, dict):
+            info = {}
+        key.append((str(agent), bool(info.get("available")), str(info.get("label") or "")))
+    return tuple(key)
+
+
+def _cb_match_option(current: object, options: list[tuple[str, str]]) -> str:
+    """The same agent in `options`, keeping or dropping the unavailable `!`."""
+    values = [value for _label, value in options]
+    if isinstance(current, str):
+        name = current[1:] if current.startswith("!") else current
+        for candidate in (name, f"!{name}"):
+            if candidate in values:
+                return candidate
+    return options[0][1]
+
+
+def _model_rejected(value: str) -> bool:
+    """A model name has no spaces or quotes, the same rule the bar enforces."""
+    return any(ch.isspace() or ch in "\"'" for ch in value)
 
 
 class ConfirmScreen(ModalScreen):
@@ -400,9 +458,12 @@ class WhylineConsoleApp(App):
     DEFAULT_CSS = """
     Horizontal > Button { min-width: 6; width: auto; }
     RichLog#transcript { height: 1fr; }
-    #modes, #input-row, #controls { height: auto; }
+    #modes, #input-row, #controls, #context-bar { height: auto; }
     #modes-label { width: auto; padding: 1 1 0 1; }
-    #context { width: 1fr; padding: 1 1 0 1; text-align: right; color: $text-muted; }
+    #cb-agent { width: 20; }
+    #cb-model { width: 18; }
+    #cb-repo { width: 1fr; }
+    #context-bar Label { padding: 1 0 0 1; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
@@ -434,6 +495,10 @@ class WhylineConsoleApp(App):
         self._pending = att.PendingAttachments()
         self._attach_session = att.session_name()
         self._sent_attachments: list = []
+        self._cb_saved: tuple[str, str, str] | None = None
+        self._cb_agent_shown: str | None = None
+        self._cb_status_seen: tuple[tuple[str, bool, str], ...] | None = None
+        self._cb_refreshing = False
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`),
@@ -444,6 +509,7 @@ class WhylineConsoleApp(App):
         interpreting free text as a `whyline` CLI invocation."""
         self.run_worker(lambda: att.clean_old(self.session.root), thread=True)
         self._sync_mode_indicator()
+        self._cb_fit()
         self.set_interval(0.1, self._tick)
         self._main("#prompt", Input).focus()
         self.render_event(
@@ -496,11 +562,14 @@ class WhylineConsoleApp(App):
             "spec": "View spec",
             "plan": "View draft",
         }.get(stage, "View draft")
-        # Who Chat talks to (and with what model) and which repository
-        # everything runs against, always in view.
-        self._main("#context", Static).update(
-            f"{context_label(self.session)}   │   repo: {repo_label(self.session.root)}"
-        )
+        # A new saved agent or repo (/model, a switch, Run's setup) reloads
+        # the whole bar. Availability alone (/model refresh, a login) rewrites
+        # the agent list and leaves an unsaved edit where the user put it.
+        if not self._cb_refreshing:
+            if self._cb_saved != self._cb_saved_tuple():
+                self._cb_refresh()
+            else:
+                self._cb_refresh_status()
         self._main("#attach", Button).disabled = self.session.mode != "chat"
         self._refresh_tray()
         self._sync_relay_buttons()
@@ -543,6 +612,281 @@ class WhylineConsoleApp(App):
             return "Relay: run (guided), doctor, status, start, resume (Enter to run)"
         return "whyline command, e.g. status or log (Enter to run)"
 
+    def _cb_saved_tuple(self) -> tuple[str, str, str]:
+        from whyline import model
+
+        agent, model_name = model.resolve(self.session.root)
+        return (agent, model_name, _short_path(self.session.root))
+
+    def _cb_current(self) -> tuple[str, str, str]:
+        raw = self._main("#cb-agent", Select).value
+        if isinstance(raw, str) and raw.startswith("!"):
+            agent = raw[1:]
+        elif isinstance(raw, str):
+            agent = raw
+        else:
+            agent = ""
+        return (
+            agent,
+            self._main("#cb-model", Input).value,
+            self._main("#cb-repo", Input).value,
+        )
+
+    def _cb_dirty(self) -> bool:
+        if self._cb_saved is None:
+            return False
+        if self._cb_current() != self._cb_saved:
+            return True
+        # Ticked "all repos" is itself unsaved: otherwise the global default
+        # cannot be written while agent, model and repo already match.
+        try:
+            return bool(self._main("#cb-global", Checkbox).value)
+        except (NoMatches, IndexError):
+            return False
+
+    def _cb_mark_save(self) -> None:
+        try:
+            self._main("#cb-save", Button).disabled = not self._cb_dirty()
+        except (NoMatches, IndexError):
+            return
+
+    def _model_for(self, agent: str) -> str:
+        """This agent's model: the repo file, then the global file, then blank."""
+        from whyline import model
+
+        chosen = model.load(self.session.root).get(agent) or ""
+        if isinstance(chosen, str) and chosen:
+            return chosen
+        glob = model.load_global()
+        models = glob.get("models")
+        if isinstance(models, dict):
+            value = models.get(agent) or ""
+            if isinstance(value, str):
+                return value
+        return ""
+
+    def _cb_refresh(self) -> None:
+        from whyline import account
+
+        if self._cb_refreshing:
+            return
+        try:
+            select = self._main("#cb-agent", Select)
+            model_input = self._main("#cb-model", Input)
+            repo_input = self._main("#cb-repo", Input)
+        except (NoMatches, IndexError):
+            return
+        self._cb_refreshing = True
+        try:
+            status = account.agent_status(self.session.root)
+            options = _cb_options(status) or [("claude", "claude")]
+            agent, model_name, repo_text = self._cb_saved_tuple()
+            chosen = _cb_match_option(agent, options)
+            with self.prevent(Select.Changed, Input.Changed):
+                select.set_options(options)
+                if select.value != chosen:
+                    select.value = chosen
+                model_input.value = model_name
+                repo_input.value = repo_text
+            self._cb_agent_shown = agent
+            self._cb_saved = (agent, model_name, repo_text)
+            self._cb_status_seen = _cb_status_key(status)
+            self._cb_mark_save()
+        finally:
+            self._cb_refreshing = False
+
+    def _cb_refresh_status(self) -> None:
+        """Rewrite agent options after a status change, keeping unsaved edits."""
+        from whyline import account
+
+        if self._cb_refreshing:
+            return
+        try:
+            select = self._main("#cb-agent", Select)
+        except (NoMatches, IndexError):
+            return
+        status = account.agent_status(self.session.root)
+        key = _cb_status_key(status)
+        if key == self._cb_status_seen:
+            return
+        options = _cb_options(status) or [("claude", "claude")]
+        chosen = _cb_match_option(select.value, options)
+        self._cb_refreshing = True
+        try:
+            with self.prevent(Select.Changed):
+                select.set_options(options)
+                if select.value != chosen:
+                    select.value = chosen
+            self._cb_status_seen = key
+            self._cb_mark_save()
+        finally:
+            self._cb_refreshing = False
+
+    def _cb_fit(self) -> None:
+        """Below 100 columns the labels shrink so Save stays on screen."""
+        try:
+            narrow = self.size.width < 100
+            self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
+            self._main("#cb-model-label", Label).update("M" if narrow else "Model")
+            self._main("#cb-repo-label", Label).update("R" if narrow else "Repo")
+            self._main("#cb-agent", Select).styles.width = 14 if narrow else 20
+        except (NoMatches, IndexError):
+            return
+
+    def _cb_snap_back(self, name: str) -> None:
+        from whyline import account
+
+        info = account.agent_status(self.session.root).get(name) or {}
+        hint = info.get("hint") or ""
+        if hint:
+            self.render_event(SessionEvent(kind="output", text=hint))
+        select = self._main("#cb-agent", Select)
+        saved = self._cb_saved[0] if self._cb_saved else "claude"
+        legal = getattr(select, "_legal_values", ())
+        target = saved if saved in legal else f"!{saved}"
+        if target not in legal:
+            target = saved
+        if select.value != target:
+            with self.prevent(Select.Changed):
+                try:
+                    select.value = target
+                except Exception:
+                    return
+        self._cb_mark_save()
+
+    def _cb_save(self) -> None:
+        from whyline import model
+
+        if self._cb_saved is None:
+            return
+        agent, model_name, repo_text = self._cb_current()
+        saved_agent, saved_model, saved_repo = self._cb_saved
+        agent_changed = (agent, model_name) != (saved_agent, saved_model)
+        repo_changed = repo_text != saved_repo
+        global_too = bool(self._main("#cb-global", Checkbox).value)
+        if agent_changed or global_too:
+            if _model_rejected(model_name):
+                self.render_event(SessionEvent(
+                    kind="error", text="A model name has no spaces"))
+                return
+            if not agent:
+                return
+            model.set_default_agent(self.session.root, agent)
+            model.set_one(self.session.root, agent, model_name)
+            if global_too:
+                model.save_global(agent, model_name)
+            self.session.agent = agent
+            shown = model_name or "default model"
+            text = f"Default for this repo: {agent} · {shown}"
+            if global_too:
+                text += " (also for every repo without its own)"
+            self.render_event(SessionEvent(kind="output", text=text))
+            box = self._main("#cb-global", Checkbox)
+            if box.value:
+                box.value = False
+            self._cb_agent_shown = agent
+            self._cb_saved = (agent, model_name, saved_repo)
+        if not repo_text.strip():
+            # An empty path does nothing: put the current repo back.
+            self._cb_refresh()
+            return
+        if not repo_changed:
+            self._cb_mark_save()
+            self._sync_mode_indicator()
+            return
+        if self._relay_running() or self._plan_state or self._busy_text:
+            self.render_event(SessionEvent(
+                kind="error",
+                text="Finish or stop the current job before switching repo.",
+            ))
+            self._cb_refresh()
+            self._sync_mode_indicator()
+            return
+        try:
+            insp = repo_setup.inspect(Path(repo_text.strip()))
+        except OSError as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        if insp.kind == "home":
+            self.render_event(SessionEvent(kind="error", text=_HOME_REFUSAL))
+            self._cb_refresh()
+            return
+        if insp.kind == "nested":
+            outer = _short_path(insp.outer) if insp.outer is not None else ""
+            shown_path = _short_path(insp.path)
+            self.render_event(SessionEvent(
+                kind="error",
+                text=(
+                    f"{shown_path} is inside the repository {outer}. "
+                    f"Use {outer}, or pick a folder outside it."
+                ),
+            ))
+            return
+        if insp.kind == "ready" and insp.path == Path(self.session.root).resolve():
+            self._cb_refresh()
+            return
+        if insp.kind == "ready":
+            path = insp.path
+            self.push_screen(
+                ConfirmScreen(repo_switch_warning(path), f"Switch to {path.name}"),
+                lambda confirmed, target=path: self._switch_repo(target, confirmed),
+            )
+            return
+        self.push_screen(
+            ConfirmScreen(repo_setup.describe(insp), "Set up"),
+            lambda confirmed, inspection=insp: self._cb_setup_answered(inspection, confirmed),
+        )
+
+    def _cb_setup_answered(self, insp, confirmed: bool) -> None:
+        if not confirmed:
+            self._cb_refresh()
+            return
+        self._cb_run_setup(insp)
+
+    def _cb_run_setup(self, insp) -> None:
+        def work() -> None:
+            def progress(step: str) -> None:
+                self.call_from_thread(
+                    self.render_event,
+                    SessionEvent(kind="output", text=f"setup · {step}"),
+                )
+
+            try:
+                root = repo_setup.setup(
+                    insp,
+                    agents=relay_ops.relay_agents(root=None, which=shutil.which),
+                    progress=progress,
+                )
+            except repo_setup.SetupError as error:
+                self.call_from_thread(
+                    self.render_event,
+                    SessionEvent(kind="error", text=str(error)),
+                )
+                return
+            self.call_from_thread(self._cb_setup_finished, root, insp)
+
+        self.run_worker(work, thread=True)
+
+    def _cb_setup_finished(self, root: Path, insp) -> None:
+        # switch_repo directly: the user already confirmed. Don't cancel
+        # workers here; this callback runs on the setup worker's thread bridge.
+        self._pending.clear()
+        self._sent_attachments = []
+        self._attach_session = att.session_name()
+        self._warned_once = False
+        result = switch_repo(self.session, root)
+        try:
+            self._main("#transcript", RichLog).clear()
+        except (NoMatches, IndexError):
+            return
+        self.render_event(result)
+        self._sync_mode_indicator()
+        self.run_worker(lambda: att.clean_old(root), thread=True)
+        try:
+            installed = relay_ops.relay_agents(insp.path)
+        except Exception:
+            installed = []
+        self._with_antigravity("antigravity" in installed, lambda ok: None)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -551,8 +895,21 @@ class WhylineConsoleApp(App):
             Button("Command", id="mode-command"),
             Button("Chat", id="mode-chat"),
             Button("Relay", id="mode-relay"),
-            Static("", id="context"),
             id="modes",
+        )
+        from whyline import account
+
+        options = _cb_options(account.agent_status(self.session.root)) or [("claude", "claude")]
+        yield Horizontal(
+            Label("Agent", id="cb-agent-label"),
+            Select(options, allow_blank=False, id="cb-agent"),
+            Label("Model", id="cb-model-label"),
+            Input(placeholder="default", id="cb-model"),
+            Label("Repo", id="cb-repo-label"),
+            Input(id="cb-repo"),
+            Checkbox("all repos", id="cb-global"),
+            Button("Save", id="cb-save", disabled=True),
+            id="context-bar",
         )
         self._transcript = RichLog(id="transcript", wrap=True)
         yield self._transcript
@@ -601,7 +958,9 @@ class WhylineConsoleApp(App):
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         button_id = event.button.id
-        if button_id == "send":
+        if button_id == "cb-save":
+            self._cb_save()
+        elif button_id == "send":
             self._send()
         elif button_id == "attach":
             self._open_attach_menu()
@@ -664,6 +1023,43 @@ class WhylineConsoleApp(App):
         # input (the brainstorm topic) is that dialog's business.
         if event.input.id == "prompt":
             self._send()
+        elif event.input.id in ("cb-model", "cb-repo"):
+            self._cb_save()
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        if event.input.id in ("cb-model", "cb-repo"):
+            self._cb_mark_save()
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        if event.checkbox.id == "cb-global":
+            self._cb_mark_save()
+
+    def on_select_changed(self, event: "Select.Changed") -> None:
+        select = event.select
+        if select.id != "cb-agent":
+            return
+        # Textual queues Changed, so a refresh can move the value again
+        # before this message runs. Ignore that stale value.
+        if event.value != select.value:
+            return
+        value = event.value
+        if isinstance(value, str) and value.startswith("!"):
+            self._cb_snap_back(value[1:])
+            return
+        if isinstance(value, str):
+            shown = self._cb_agent_shown
+            field = self._main("#cb-model", Input)
+            # Keep a model the user already typed. Replace the field only
+            # when it still shows the previous agent's saved model, which is
+            # what a click on the selector does before the next keystroke.
+            if shown != value and (shown is None or field.value == self._model_for(shown)):
+                with self.prevent(Input.Changed):
+                    field.value = self._model_for(value)
+            self._cb_agent_shown = value
+        self._cb_mark_save()
+
+    def on_resize(self, event) -> None:
+        self._cb_fit()
 
     def _main(self, selector: str, expect_type=None):
         """Query the console's own screen, never whichever dialog is on top.
@@ -993,6 +1389,7 @@ class WhylineConsoleApp(App):
     def _switch_repo(self, target: Path, confirmed: bool) -> None:
         if not confirmed:
             self.render_event(SessionEvent(kind="output", text="Staying put."))
+            self._cb_refresh()
             return
         self._leave_plan()
         self._stop()  # a reply still pending belongs to the old repository
@@ -1104,6 +1501,8 @@ class WhylineConsoleApp(App):
         with self.suspend():
             code = self._login_fn(login_argv(agent))
         self.render_event(after_login(self.session, agent, code))
+        # Login rechecks every agent without changing the saved tuple.
+        self._sync_mode_indicator()
 
     def _dispatch_text(self, text: str, attachments=()) -> None:
         uses = self.session.mode == "chat" and (self.session.agent or "claude") == "antigravity"

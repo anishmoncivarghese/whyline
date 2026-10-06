@@ -550,13 +550,16 @@ async def test_context_label_shows_agent_model_and_repo(tmp_path, monkeypatch):
     model.set_one(tmp_path, "codex", "gpt-5")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(140, 30)) as pilot:
-        context = app.query_one("#context", tui.Static)
-        assert "claude · default model" in str(context.renderable)
-        assert f"repo: {tmp_path.name}" in str(context.renderable)
+        # The context bar replaced the old #context text. claude has no
+        # saved model yet, and this test leaves it unavailable.
+        assert app.query_one("#cb-agent", tui.Select).value == "!claude"
+        assert app.query_one("#cb-model", tui.Input).value == ""
+        assert tmp_path.name in app.query_one("#cb-repo", tui.Input).value
         app.query_one("#prompt", tui.Input).value = "/model codex"
         await pilot.click("#send")
         await pilot.pause()
-        assert "codex · gpt-5" in str(context.renderable)
+        assert app.query_one("#cb-agent", tui.Select).value == "codex"
+        assert app.query_one("#cb-model", tui.Input).value == "gpt-5"
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -644,7 +647,7 @@ async def test_repo_switch_asks_first_and_clears_the_transcript(tmp_path, monkey
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
         assert not any("Staying put" in line for line in lines)  # old text is gone
         assert any("Now working in other" in line for line in lines)
-        assert "repo: other" in str(app.query_one("#context", tui.Static).renderable)
+        assert "other" in app.query_one("#cb-repo", tui.Input).value
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
