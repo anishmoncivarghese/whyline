@@ -472,3 +472,27 @@ def test_final_synthesis_and_revise_synthesis(repo, monkeypatch):
     assert revised == [
         ("claude", [("claude", "Claude"), ("codex", "Codex")], "topic", "more details")
     ]
+
+
+def test_interrupt_live_run_signals_the_running_relay(tmp_path, monkeypatch):
+    import os
+    import signal
+    from types import SimpleNamespace
+
+    from whyline_relay import running
+
+    sent = []
+    monkeypatch.setattr(running, "live", lambda root: SimpleNamespace(pid=4242))
+    monkeypatch.setattr(os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    assert relay_ops.interrupt_live_run(tmp_path) is True
+    if os.name == "nt":  # no Ctrl+C for another process: pause after this turn
+        assert sent == [] and (tmp_path / ".whyline/relay/STOP").exists()
+    else:
+        assert sent == [(4242, signal.SIGINT)]
+
+
+def test_interrupt_live_run_with_nothing_running(tmp_path, monkeypatch):
+    from whyline_relay import running
+
+    monkeypatch.setattr(running, "live", lambda root: None)
+    assert relay_ops.interrupt_live_run(tmp_path) is False

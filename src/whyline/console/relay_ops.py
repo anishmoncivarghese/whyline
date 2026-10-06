@@ -599,6 +599,28 @@ def live_run(root: Path) -> str | None:
     return None if active is None else f"{active.task}, {active.agent}"
 
 
+def interrupt_live_run(root: Path) -> bool:
+    """Stops a relay running in this repo that another console (or a
+    terminal) started, as Ctrl+C would: the agent's turn ends and the run
+    pauses for Resume. False when no relay is running here."""
+    import os
+    import signal
+
+    from whyline.console.relay_process import stop_path
+    from whyline_relay import running
+
+    active = running.live(root)
+    if active is None:
+        return False
+    if os.name == "nt":
+        target = stop_path(root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+    else:
+        os.kill(active.pid, signal.SIGINT)
+    return True
+
+
 def paused_run(root: Path) -> bool:
     from whyline_relay import state
 

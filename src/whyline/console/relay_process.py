@@ -6,6 +6,7 @@ so closing the terminal doesn't take it down."""
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -84,6 +85,17 @@ class RelayProcess:
         target = stop_path(self.root)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("", encoding="utf-8")
+
+    def interrupt(self) -> None:
+        """Stops the relay now, like Ctrl+C: it ends the agent's turn and
+        saves a paused state that Resume carries on from. Windows has no
+        Ctrl+C for another process, so there it pauses after this turn."""
+        if not self.running():
+            return
+        if os.name == "nt":
+            self.request_stop()
+        else:
+            self._proc.send_signal(signal.SIGINT)
 
     def stop_following(self) -> None:
         """Stops reporting (the console is quitting); the relay keeps going."""

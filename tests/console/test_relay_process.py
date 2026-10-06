@@ -78,3 +78,21 @@ def test_relay_argv_runs_the_relay_cli_with_this_python(tmp_path):
     argv = relay_process.relay_argv(["start", "--only", "T3"], tmp_path)
     assert argv[0] == sys.executable
     assert argv[-5:] == ["start", "--only", "T3", "--repo", str(tmp_path)]
+
+
+def test_interrupt_stops_the_relay_like_ctrl_c(tmp_path):
+    exits, done = [], threading.Event()
+    proc = relay_process.RelayProcess(
+        tmp_path,
+        ["start"],
+        on_line=lambda line: None,
+        on_exit=lambda code, text: (exits.append(code), done.set()),
+        argv=[sys.executable, "-c",
+              "import time\nprint('working', flush=True)\ntime.sleep(30)\n"],
+        poll=0.05,
+    )
+    proc.start()
+    time.sleep(0.5)  # let the interpreter install its Ctrl+C handling
+    proc.interrupt()
+    assert done.wait(10)
+    assert exits[-1] != 0

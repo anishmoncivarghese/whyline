@@ -492,6 +492,7 @@ class WhylineConsoleApp(App):
         self._spin = 0
         self._relay = None  # the RelayProcess started by Start/Resume, if any
         self._relay_label = ""
+        self._external_relay: str | None = None  # a relay another console started
         self._antigravity_ok = False
         self._release_task: tuple[str, list[str]] | None = None
         self._plan_state = ""  # "", "working", "review", "answering"
@@ -517,6 +518,7 @@ class WhylineConsoleApp(App):
         self._sync_mode_indicator()
         self._cb_fit()
         self.set_interval(0.1, self._tick)
+        self.set_interval(1.0, self._watch_external_relay)
         self._main("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
@@ -983,15 +985,20 @@ class WhylineConsoleApp(App):
         elif button_id == "attach":
             self._open_attach_menu()
         elif button_id == "stop":
+            other = None if self._relay_running() else self._live_relay()
             if self._relay_running():
-                self._relay.request_stop()
-                self.render_event(SessionEvent(
-                    kind="output",
-                    text="Stop requested: the current agent finishes its turn, then the "
-                         "relay pauses. Resume carries on from there.",
-                ))
+                self._relay.interrupt()
+                shown = f" ({self._relay_label.removeprefix('relay: ')})" if self._relay_label else ""
+            elif other and relay_ops.interrupt_live_run(self.session.root):
+                shown = f" ({other})"
             else:
                 self._stop()
+                return
+            self.render_event(SessionEvent(
+                kind="output",
+                text=f"Stopping the relay{shown}: the current agent's turn is cut off "
+                     "and the run pauses. Resume carries on from there.",
+            ))
         elif button_id and button_id.startswith("mode-"):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
         elif button_id == "copy":
@@ -1256,7 +1263,9 @@ class WhylineConsoleApp(App):
         """Enables Stop and shows the thinking line ("⠋ claude is thinking…
         12s") while a reply is pending, so a slow agent doesn't look like a
         frozen console."""
-        self._main("#stop", Button).disabled = not busy and not self._relay_running()
+        self._main("#stop", Button).disabled = (
+            not busy and not self._relay_running() and not self._external_relay
+        )
         thinking = self._main("#thinking", Static)
         if busy:
             self._busy_text = label or busy_label(self.session)
@@ -1932,6 +1941,25 @@ class WhylineConsoleApp(App):
     def _relay_running(self) -> bool:
         return self._relay is not None and self._relay.running()
 
+    def _live_relay(self) -> str | None:
+        try:
+            return relay_ops.live_run(self.session.root)
+        except Exception:
+            return None
+
+    def _watch_external_relay(self) -> None:
+        """A relay outlives the console that started it. Keep Stop usable for
+        one started by another console or a terminal."""
+        live = None if self._relay_running() else self._live_relay()
+        if live == self._external_relay or not self.screen_stack:
+            return
+        self._external_relay = live
+        try:
+            stop = self._main("#stop", Button)
+        except NoMatches:
+            return
+        stop.disabled = not (self._busy_text or self._relay_running() or live)
+
     def _launch_relay(self, args: list[str]) -> None:
         """Start/Resume, from a button or typed. One relay at a time: ours,
         or one started elsewhere (a terminal) that running.live still sees."""
@@ -2069,7 +2097,7 @@ class WhylineConsoleApp(App):
             return
         if self._relay is not None:
             if choice == "stop":
-                self._relay.request_stop()
+                self._relay.interrupt()
             self._relay.stop_following()
         self.exit()
 

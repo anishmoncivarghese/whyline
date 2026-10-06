@@ -6014,3 +6014,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b048770c283940de9dddfe58cae9c016 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T20:31:41.813Z"} -->
+
+## 2026-10-06 — Console Stop interrupts the relay now (SIGINT, like Ctrl+C) and works for a relay another console started
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CONSOLE-STOP
+
+**Because:** the user pressed Stop and the relay kept running: a relay outlives the console that started it, so the new console had Stop disabled, and Stop only asked the relay to pause after the agent's turn (minutes); the relay already handles SIGINT by ending the agent's process group and saving a resumable paused state
+
+**Rejected:**
+
+- keep pause-after-turn as Stop — users expect Stop to stop; graceful pause stays available as /relay stop
+- kill the relay process — would orphan the agent and skip saving resumable state
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_ops.py, src/whyline/console/relay_process.py
+
+<!-- whyline-event: c68cc37a0fc84118936d4b6b625fd33b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T20:53:08.122Z"} -->

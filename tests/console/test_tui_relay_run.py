@@ -15,7 +15,7 @@ class FakeProcess:
         self.root, self.args = root, args
         self.on_line, self.on_exit = on_line, on_exit
         self.alive = False
-        self.stopped = self.unfollowed = False
+        self.stopped = self.unfollowed = self.interrupted = False
         FakeProcess.instances.append(self)
     def start(self):
         self.alive = True
@@ -23,6 +23,8 @@ class FakeProcess:
         return self.alive
     def request_stop(self):
         self.stopped = True
+    def interrupt(self):
+        self.interrupted = True
     def stop_following(self):
         self.unfollowed = True
     def finish(self, code, text):
@@ -59,7 +61,9 @@ async def test_typed_start_streams_lines_and_reports_completion(tmp_path):
         await pilot.pause()
         assert any("Relay finished." in line for line in _lines(app))
         assert app.query_one("#stop", tui.Button).disabled
-async def test_stop_asks_the_relay_to_pause_instead_of_killing_it(tmp_path):
+async def test_stop_interrupts_our_relay_now(tmp_path):
+    # Stop means stop: the relay is interrupted like Ctrl+C, which cuts the
+    # agent's turn off and saves a paused state that Resume carries on from.
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await _relay_mode(app, pilot)
@@ -67,8 +71,41 @@ async def test_stop_asks_the_relay_to_pause_instead_of_killing_it(tmp_path):
         await pilot.pause()
         await pilot.click("#stop")
         await pilot.pause()
-        assert FakeProcess.instances[-1].stopped
-        assert any("finishes its turn" in line for line in _lines(app))
+        proc = FakeProcess.instances[-1]
+        assert proc.interrupted and not proc.stopped
+        assert any("Stopping the relay" in line for line in _lines(app))
+
+
+async def test_stop_works_for_a_relay_another_console_started(tmp_path, monkeypatch):
+    # A relay outlives the console that started it. The next console must
+    # still see it and be able to stop it.
+    live = {"run": "AG-2, grok"}
+    interrupted = []
+    monkeypatch.setattr(relay_ops, "live_run", lambda root: live["run"])
+    monkeypatch.setattr(
+        relay_ops, "interrupt_live_run", lambda root: interrupted.append(root) or True
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        stop = app.query_one("#stop", tui.Button)
+        for _ in range(50):
+            if not stop.disabled:
+                break
+            await pilot.pause(0.05)
+        assert not stop.disabled
+        await pilot.click("#stop")
+        await pilot.pause()
+        assert interrupted == [tmp_path]
+        assert any("Stopping the relay (AG-2, grok)" in line for line in _lines(app))
+        live["run"] = None
+        for _ in range(50):
+            if stop.disabled:
+                break
+            await pilot.pause(0.05)
+        assert stop.disabled
+
+
 async def test_start_is_refused_while_another_relay_runs_here(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_ops, "live_run", lambda root: "T3, codex")
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -121,7 +158,7 @@ async def test_quitting_while_the_relay_runs_stop_choice(tmp_path):
         await pilot.click("#quit-stop")
         await pilot.pause()
     proc = FakeProcess.instances[-1]
-    assert proc.stopped and proc.unfollowed
+    assert proc.interrupted and proc.unfollowed
 @pytest.mark.parametrize("button_id", ["#quit-leave", "#quit-stop"])
 async def test_quitting_after_relay_finishes_while_modal_open_exits_safely(tmp_path, button_id):
     app = tui.WhylineConsoleApp(root=tmp_path)
