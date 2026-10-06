@@ -55,7 +55,7 @@ command = [
 
 [roles]
 implementer = "grok"
-tester      = "antigravity"
+tester      = "codex"
 reviewer    = "codex"
 release = "human"
 
@@ -87,4 +87,4 @@ approved = "@complete"
 rejected = "draft"
 
 [backup]
-chain = ["codex"]
+chain = []
