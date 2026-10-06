@@ -44,7 +44,7 @@ Never push, tag, bump the version or publish.
   Command mode to use /<command> instead, keeping what they check.
   Verify: uv run pytest -q.
 
-- [ ] CB-5: Each mode shows only its own buttons
+- [x] CB-5: Each mode shows only its own buttons
   Implement "Task 5" from the plan: _MODE_BUTTONS, _SHARED_BUTTONS,
   _sync_mode_buttons, Attach in Chat only, shared buttons last, every mode
   within 80 columns. Verify: uv run pytest -q.
