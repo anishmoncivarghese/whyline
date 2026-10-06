@@ -1,7 +1,11 @@
+import os
 import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from whyline.console import relay_process
 
@@ -80,6 +84,7 @@ def test_relay_argv_runs_the_relay_cli_with_this_python(tmp_path):
     assert argv[-5:] == ["start", "--only", "T3", "--repo", str(tmp_path)]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="no Ctrl+C for another process on Windows")
 def test_interrupt_stops_the_relay_like_ctrl_c(tmp_path):
     exits, done = [], threading.Event()
     proc = relay_process.RelayProcess(
@@ -96,3 +101,11 @@ def test_interrupt_stops_the_relay_like_ctrl_c(tmp_path):
     proc.interrupt()
     assert done.wait(10)
     assert exits[-1] != 0
+
+
+def test_interrupt_on_windows_pauses_after_this_turn(tmp_path, monkeypatch):
+    proc, lines, exits, done = _run(tmp_path)
+    monkeypatch.setattr(relay_process, "os", SimpleNamespace(name="nt"))
+    proc.interrupt()
+    assert relay_process.stop_path(tmp_path).exists()
+    assert done.wait(10)
