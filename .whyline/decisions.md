@@ -6876,3 +6876,156 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 89e1716b945a41269d23c0199d9c4390 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:14:03.989Z"} -->
+
+## 2026-10-07 — Slash lines in Agents mode stay slash commands
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Command mode is gone, so /help and /timeline have to work in Agents mode too
+
+**Rejected:**
+
+- sending every line to _agents_command — a slash line would show the agents usage instead of running
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 34065313dad147d4a099d7ed323bf7cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.876Z"} -->
+
+## 2026-10-07 — Pause, resume, accept and list resolve the agent through service.rows
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** The console list is rows(), and the typed line has to name that same row even when tests stub the list and there is no file on disk
+
+**Rejected:**
+
+- service.find first — find raises AgentNotFound before pause runs when the list is stubbed
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: cdcf570609e54ef4bb2a088023f5a346 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.909Z"} -->
+
+## 2026-10-07 — New agent button says the form comes in the next task
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Task 9 owns the form; this task only puts the button on the bar
+
+**Rejected:**
+
+- opening a half-built form now — the fields, review screen and save path are AG-9
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b0f9145115304845a5738a23a97bf14a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.939Z"} -->
+
+## 2026-10-07 — A mode click focuses the prompt
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Enter submits the prompt, and the click would otherwise leave focus on the mode button so typed agents commands never send
+
+**Rejected:**
+
+- leaving focus on the button — the pilot test and a person both press Enter next
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e9512a175bc0468f94911bc8786f8dc7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.969Z"} -->
+
+## 2026-10-07 — A missing final.md shows as (no answer) in the runs popup
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Highlighting a row reads final.md, and read_final raises when that run wrote no file
+
+**Rejected:**
+
+- letting read_final raise — the history popup would crash on a run that has metadata only
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: a59c6f69663a47e096be7f3c7c747d4c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.998Z"} -->
+
+## 2026-10-07 — Typed history opens RunsScreen in the TUI and prints lines in the keyboard REPL
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** The TUI already has a runs popup and the REPL has nowhere to put one
+
+**Rejected:**
+
+- printing history into the TUI transcript — the History button and history <name> would do different things
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: dee5988012154a1cb2bf61d23463af15 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:03.029Z"} -->
+
+## 2026-10-07 — Transcript assertions read the log before run_test returns
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** This Textual clears screen_stack when the app stops, so _main raises IndexError afterwards
+
+**Rejected:**
+
+- asserting after the with-block as the plan snippet does — the transcript is already gone
+
+**Files:** tests/console/test_agents_mode.py
+
+<!-- whyline-event: e6810d9cceab40ffb8a5e62b6bc15cc1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:03.059Z"} -->
+
+## 2026-10-07 — AG-8 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-8
+
+**Because:** The full suite and console suite pass, and the Agents mode exercises routing, mode-only controls and status, list/detail/history, streamed Run now output, typed commands, and error handling as specified
+
+**Rejected:**
+
+- Failing the task — no reproducible behavioral defect was found
+
+**Files:** tests/console/test_agents_mode.py
+
+<!-- whyline-event: 664604039ad04917bca47d2eb7c888cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:34:35.024Z"} -->
+
+## 2026-10-07 — Approve AG-8 Agents console mode
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-8
+
+**Because:** The diff implements the corrected Task 8 routing, controls, list/detail/history flows, streamed Run now, typed commands, and error handling; the plain uv run pytest -q suite completed at 100% with no failures and one expected skip
+
+**Rejected:**
+
+- Request changes — no reproducible task-scoped defect or unsafe behavior was found
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py, src/whyline/console/agents_screens.py, tests/console/test_agents_mode.py
+
+<!-- whyline-event: 1b6ceca92c8b4ea6af5bc43493015671 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:38:22.598Z"} -->

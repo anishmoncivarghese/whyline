@@ -59,11 +59,29 @@ def test_help_lists_whyline_commands(tmp_path):
     assert "whyline commands" in text and "/timeline" in text
 
 
-def test_route_agents_stays_put(tmp_path):
+def test_route_agents_switches_mode(tmp_path, monkeypatch):
+    from whyline.agents import definitions as d
+    from whyline.agents import service
+
     session = ConsoleSession(root=tmp_path, mode="relay")
     event = repl.handle_slash_command(session, "/route agents")
-    assert event.text == "Agents mode arrives in a later release."
-    assert session.mode == "relay"
+    assert event.text == "Mode is now agents."
+    assert session.mode == "agents"
+
+    defn = d.AgentDef(
+        name="digest", kind="repo", path=tmp_path / "digest.toml", root=tmp_path,
+        instructions="x", runner="claude",
+    )
+    row = service.Row(defn, "active", "succeeded", "", "", "weekdays at 07:00")
+    monkeypatch.setattr(service, "rows", lambda root: [row])
+    paused = []
+    monkeypatch.setattr(service, "pause", lambda name, root: paused.append(name) or None)
+    listed = repl.dispatch(session, "list")
+    assert "digest (repo)" in listed.text and "weekdays at 07:00" in listed.text
+    paused_event = repl.dispatch(session, "pause digest")
+    assert paused == ["digest"] and "paused" in paused_event.text
+    usage = repl.dispatch(session, "nope")
+    assert usage.kind == "error" and usage.text.startswith("Usage:")
 
 
 def test_a_stored_command_mode_is_chat(tmp_path):

@@ -58,6 +58,7 @@ from whyline.console.relay_process import RelayProcess
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
     _HOME_REFUSAL,
+    _agents_command as agents_command_event,
     _is_home,
     _run_login,
     after_login,
@@ -66,7 +67,9 @@ from whyline.console.repl import (
     handle_slash_command,
     home_repo_warning,
     login_argv,
+    named_row,
     repo_switch_warning,
+    run_result_text,
     switch_repo,
     unknown_command_text,
 )
@@ -473,6 +476,7 @@ class WhylineConsoleApp(App):
     #cb-repo { width: 1fr; }
     #context-bar Label { padding: 1 0 0 1; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
+    #agents-status { height: auto; padding: 0 1; color: $text-muted; display: none; }
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
@@ -509,6 +513,7 @@ class WhylineConsoleApp(App):
         self._cb_agent_shown: str | None = None
         self._cb_status_seen: tuple[tuple[str, bool, str], ...] | None = None
         self._cb_refreshing = False
+        self._agents_name: str | None = None
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`).
@@ -581,6 +586,8 @@ class WhylineConsoleApp(App):
                 self._cb_refresh_status()
         self._main("#attach", Button).disabled = self.session.mode != "chat"
         self._refresh_tray()
+        if mode == "agents":
+            self._refresh_agents_status()
         self._sync_relay_buttons()
         self._sync_mode_buttons()
 
@@ -591,6 +598,10 @@ class WhylineConsoleApp(App):
         for button in self._main("#controls").query(Button):
             button.display = button.id in wanted
         self._main("#attach").display = self.session.mode == "chat"
+        try:
+            self._main("#agents-status").display = self.session.mode == "agents"
+        except (NoMatches, IndexError):
+            return
 
     def _sync_relay_buttons(self) -> None:
         """Plan and Set up only make sense in Relay mode; Resume only when a
@@ -626,9 +637,199 @@ class WhylineConsoleApp(App):
         if mode == "relay":
             return "Relay: run (guided), doctor, status, start, resume (Enter to run)"
         if mode == "agents":
-            return "Agents mode arrives in a later release."
+            return "Agents: list, run <name>, history <name>, pause/resume/accept <name>"
         agent = self.session.agent or "claude"
         return f"Message {agent}... (Enter to send)"
+
+    def _refresh_agents_status(self) -> None:
+        from whyline.agents import service
+
+        try:
+            count = len(service.rows(self.session.root))
+            text = f"Scheduler: not available yet (comes in the next release) · {count} agents"
+        except Exception as error:
+            text = f"Scheduler: not available yet (comes in the next release) · {error}"
+        try:
+            self._main("#agents-status", Static).update(text)
+        except (NoMatches, IndexError):
+            return
+
+    def _open_new_agent(self, existing=None) -> None:
+        # Task 9 replaces this with the form.
+        self.render_event(SessionEvent(
+            kind="output", text="New agent: coming in the next task.",
+        ))
+
+    def _open_agents_list(self, follow: str = "detail") -> None:
+        from whyline.agents import service
+        from whyline.console.agents_screens import AgentsListScreen
+
+        try:
+            rows = service.rows(self.session.root)
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self.push_screen(AgentsListScreen(rows), lambda name: self._agent_picked(name, follow))
+
+    def _agent_picked(self, name: str | None, follow: str) -> None:
+        if not name:
+            return
+        self._agents_name = name
+        if follow == "history":
+            self._open_runs(name)
+        else:
+            self._open_detail(name)
+
+    def _open_agents_runs(self) -> None:
+        if self._agents_name:
+            self._open_runs(self._agents_name)
+        else:
+            self._open_agents_list(follow="history")
+
+    def _open_detail(self, name: str) -> None:
+        from whyline.agents import service
+        from whyline.console.agents_screens import AgentDetailScreen
+
+        try:
+            row = named_row(name, self.session.root)
+            text = service.describe(row.defn)
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self._agents_name = name
+        self.push_screen(
+            AgentDetailScreen(row, text),
+            lambda action: self._agent_action(name, action),
+        )
+
+    def _open_runs(self, name: str) -> None:
+        from whyline.agents import service
+        from whyline.console.agents_screens import RunsScreen
+
+        try:
+            row = named_row(name, self.session.root)
+            runs = service.history(name, self.session.root)
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self._agents_name = name
+        self.push_screen(RunsScreen(row.defn.label, runs))
+
+    def _agent_action(self, name: str, action: str | None) -> None:
+        from whyline.agents import service
+
+        if not action:
+            return
+        if action == "run":
+            self._agent_run(name)
+            return
+        if action == "history":
+            self._open_runs(name)
+            return
+        if action == "edit":
+            try:
+                existing = service.find(name, self.session.root)
+            except Exception as error:
+                self.render_event(SessionEvent(kind="error", text=str(error)))
+                return
+            self._open_new_agent(existing=existing)
+            return
+        if action == "delete":
+            self._confirm_delete_agent(name)
+            return
+        if action in ("pause", "resume", "accept"):
+            self.render_event(agents_command_event(self.session, f"{action} {name}"))
+            self._refresh_agents_status()
+
+    def _confirm_delete_agent(self, name: str) -> None:
+        from whyline.agents import service
+
+        try:
+            label = named_row(name, self.session.root).defn.label
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+
+        def confirmed(yes: bool) -> None:
+            if not yes:
+                return
+            try:
+                service.delete(name, self.session.root)
+            except Exception as error:
+                self.render_event(SessionEvent(kind="error", text=str(error)))
+                return
+            if self._agents_name == name:
+                self._agents_name = None
+            self.render_event(SessionEvent(kind="output", text=f"Deleted {label}."))
+            self._refresh_agents_status()
+
+        self.push_screen(
+            ConfirmScreen(
+                f"Delete {label}? Its schedule stops and its file is removed.",
+                "Delete",
+            ),
+            confirmed,
+        )
+
+    def _agents_command(self, text: str) -> None:
+        parts = text.split()
+        if len(parts) == 2 and parts[0] == "run":
+            self._agent_run(parts[1])
+            return
+        if len(parts) == 2 and parts[0] == "history":
+            self._open_runs(parts[1])
+            return
+        self.render_event(agents_command_event(self.session, text))
+        if parts and parts[0] in ("list", "pause", "resume", "accept"):
+            self._refresh_agents_status()
+
+    def _agent_run(self, name: str) -> None:
+        from whyline.agents import records, service
+
+        token = object()
+        self._dispatch_token = token
+        self._set_busy(True, f"agent {name}")
+        root = self.session.root
+
+        def in_thread() -> None:
+            def progress(line: str) -> None:
+                self.call_from_thread(self._agent_progress, line, token)
+
+            try:
+                rec = service.run_now(name, root, progress=progress)
+            except Exception as error:
+                self.call_from_thread(self._agent_failed, error, token)
+                return
+            final = ""
+            try:
+                final = records.read_final(rec.run_id)
+            except OSError:
+                final = ""
+            self.call_from_thread(self._agent_done, name, rec, final, token)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _agent_progress(self, line: str, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self.render_event(SessionEvent(kind="output", text=f"agent · {line}"))
+        self._busy_text = f"agent: {line}"
+
+    def _agent_failed(self, error: BaseException, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self.render_event(SessionEvent(kind="error", text=str(error)))
+
+    def _agent_done(self, name: str, rec, final: str, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self.render_event(SessionEvent(kind="output", text=run_result_text(name, rec)))
+        shown = (final or "").strip()
+        if shown:
+            self.render_event(SessionEvent(kind="output", text=shown))
+        self._refresh_agents_status()
 
     def _cb_saved_tuple(self) -> tuple[str, str, str]:
         from whyline import model
@@ -932,6 +1133,7 @@ class WhylineConsoleApp(App):
         self._transcript = RichLog(id="transcript", wrap=True)
         yield self._transcript
         yield Static("", id="thinking")
+        yield Static("", id="agents-status")
         yield Horizontal(
             Button("Approve", id="plan-approve", variant="success"),
             Button("View draft", id="plan-view"),
@@ -955,6 +1157,10 @@ class WhylineConsoleApp(App):
             Button("Plan", id="relay-plan", disabled=True),
             Button("Set up", id="relay-setup", disabled=True),
             Button("Resume", id="relay-resume", disabled=True),
+            Button("New", id="agents-new"),
+            Button("Agents", id="agents-list"),
+            Button("Runs", id="agents-runs"),
+            Button("Scheduler", id="agents-scheduler"),
             Button("Stop", id="stop", disabled=True),
             Button("Help", id="help"),
             Button("Copy", id="copy"),
@@ -1001,6 +1207,22 @@ class WhylineConsoleApp(App):
             ))
         elif button_id and button_id.startswith("mode-"):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
+            # Enter submits the prompt. A click would otherwise leave focus on the button.
+            try:
+                self._main("#prompt", Input).focus()
+            except (NoMatches, IndexError):
+                return
+        elif button_id == "agents-new":
+            self._open_new_agent()
+        elif button_id == "agents-list":
+            self._open_agents_list()
+        elif button_id == "agents-runs":
+            self._open_agents_runs()
+        elif button_id == "agents-scheduler":
+            self.render_event(SessionEvent(
+                kind="output",
+                text="Scheduling arrives in the next release; agents run with Run now meanwhile.",
+            ))
         elif button_id == "copy":
             self._copy_transcript()
         elif button_id == "relay-run":
@@ -1365,6 +1587,10 @@ class WhylineConsoleApp(App):
         first = text.split(maxsplit=1)[0]
         if self.session.mode == "relay" and first in ("start", "resume"):
             self._launch_relay(text.split())
+            return
+        # Slash commands stay available in every mode, including Agents.
+        if self.session.mode == "agents" and not text.startswith("/"):
+            self._agents_command(text)
             return
 
         if not self._handle_slash(text):
