@@ -34,7 +34,7 @@ Never push, tag, bump the version or publish.
   READ_ONLY settings, denial detectors and UNATTENDED_OK, exactly as
   docs/agents-capabilities.md records them. Verify: uv run pytest -q.
 
-- [ ] AG-5: The state store (activations)
+- [x] AG-5: The state store (activations)
   Implement "Task 5: The state store (activations)" from the plan, including
   a definition edited by git pull stopping until accepted again.
   Verify: uv run pytest -q.
