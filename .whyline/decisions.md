@@ -7148,3 +7148,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 33b8de7377b848f8bb800743f2be5dae -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:12:11.092Z"} -->
+
+## 2026-10-07 — Merge Agents mode phase 1 (AG-2..AG-9) and release it as whyline 0.3.36
+
+**Actor:** claude
+**Role:** releaser
+**Task:** AG-10
+
+**Because:** all eight tasks were implemented by grok and approved by codex; the merge with main's Stop and dropdown fixes was clean; the suite passes with and without agent CLIs on PATH (plan Task 10); the sdist gate is clean
+
+**Rejected:**
+
+- hold 0.3.36 until phase 2 — phase 1 is usable on its own (Run now), and the plan splits the releases
+
+**Files:** pyproject.toml, docs/releases/v0.3.36.md
+
+<!-- whyline-event: 2deeec2febd04faf9110b5b13e4fd475 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:27:44.356Z"} -->
