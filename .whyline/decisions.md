@@ -6619,3 +6619,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 07118bdf7c5d43cfb449194e010a8c2f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:40:29.069Z"} -->
+
+## 2026-10-07 — Apply the activation schema with execute(), not executescript
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** connect() uses autocommit so each claim commits on its own. Python 3.11 executescript always issues COMMIT first, and that raises when no transaction is open.
+
+**Rejected:**
+
+- executescript as in the plan snippet — it fails on Python 3.11 under isolation_level=None
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: c5d0b1ad179b444c984f88fe69e2262a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:29:32.305Z"} -->
+
+## 2026-10-07 — Quarantine the state store only when SQLite reports it is corrupt or not a database
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** A locked database and a disk error are also DatabaseError. Moving those aside would discard this Mac's acceptances. The connection is closed before the rename so the replace works on Windows, and a second copy in the same second gets a numeric suffix.
+
+**Rejected:**
+
+- except sqlite3.DatabaseError then always replace, as the plan snippet does — a busy or I/O error would throw the store away
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: 4f287a25ef8e4f52901664dde19d9137 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:29:35.872Z"} -->
+
+## 2026-10-07 — A corrupt state file is replaced with an empty store
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** The bytes are not a database, so there is no activation row to mark needs_review. The task test requires all_activations to be empty after connect.
+
+**Rejected:**
+
+- Mark every activation needs_review as the spec's corrupt-SQLite sentence says — those rows cannot be read out of a file that is not a database
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: 48e5356064ec496da184c276f2349e8c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:47:43.383Z"} -->
+
+## 2026-10-07 — needs_review stays until accept(), even when the file later matches the accepted hash
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** A definition edited by git pull must stop scheduled and paused runs until the user accepts it again. Resuming just because a later read matches the old hash would start those runs without that acceptance.
+
+**Rejected:**
+
+- Return active as soon as the hash matches — a revert would clear the stop on its own
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: cd958caf808a4c15af76d4bfb90daa23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:47:45.877Z"} -->
+
+## 2026-10-07 — AG-5 activation state store passes testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-5
+
+**Because:** All 7 focused state-store tests passed, including edited and paused definitions requiring re-acceptance, and the complete pytest suite exited successfully with one skip and no failures.
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: b36293af3b22493daf3fce46eabca221 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:37:12.647Z"} -->
+
+## 2026-10-07 — AG-5 activation state store approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-5
+
+**Because:** The implementation matches the planned activation schema and API, quarantines only confirmed corrupt SQLite files, keeps edited active or paused definitions in needs_review until accept(), and uv run pytest -q exited 0 with one skip and no failures.
+
+**Files:** src/whyline/agents/state.py, tests/agents/test_state.py
+
+<!-- whyline-event: bbc97b08d2d24b1f83196f8dbbf88338 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:40:42.829Z"} -->
