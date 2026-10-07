@@ -37,7 +37,7 @@ Never push, tag, bump the version or publish.
   wall-clock time, including at most one catch-up run and stale due times
   returned as missed. Verify: uv run pytest -q.
 
-- [ ] AG-12: The tick: claim once, catch up once, start runs
+- [x] AG-12: The tick: claim once, catch up once, start runs
   Implement "Task 12: The tick" from the plan: tick.py, the occurrence
   functions and accepted_at in state.py (with the ALTER TABLE for stores
   Phase 1 created), `whyline agents tick` and `whyline agents run
