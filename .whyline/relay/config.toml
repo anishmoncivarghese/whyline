@@ -55,9 +55,9 @@ command = [
 
 [roles]
 implementer = "grok"
-tester      = "antigravity"
+tester      = "codex"
 reviewer    = "codex"
-release = "claude"
+release = "human"
 
 [pipeline]
 default_profile = "full"
@@ -85,6 +85,3 @@ prompt = "review"
 [pipeline.stages.review.on]
 approved = "@complete"
 rejected = "draft"
-
-[backup]
-chain = ["codex"]

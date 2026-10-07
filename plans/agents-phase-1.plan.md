@@ -20,35 +20,35 @@ click by position or pause one frame. The bottom bar must fit 80 columns.
 No whyline-relay changes and no new dependencies.
 Never push, tag, bump the version or publish.
 
-- [ ] AG-2: Agent definitions
+- [x] AG-2: Agent definitions
   Implement "Task 2: Agent definitions" from the plan: the whyline.agents
   package and definitions.py (repo and personal TOML agents, names, ids,
   the small TOML writer). Verify: uv run pytest -q.
 
-- [ ] AG-3: Run records, reports and ledger events
+- [x] AG-3: Run records, reports and ledger events
   Implement "Task 3: Run records, reports and ledger events" from the plan.
   Verify: uv run pytest -q.
 
-- [ ] AG-4: CLI capabilities (from the spike)
+- [x] AG-4: CLI capabilities (from the spike)
   Implement "Task 4: CLI capabilities (from the spike)" from the plan:
   READ_ONLY settings, denial detectors and UNATTENDED_OK, exactly as
   docs/agents-capabilities.md records them. Verify: uv run pytest -q.
 
-- [ ] AG-5: The state store (activations)
+- [x] AG-5: The state store (activations)
   Implement "Task 5: The state store (activations)" from the plan, including
   a definition edited by git pull stopping until accepted again.
   Verify: uv run pytest -q.
 
-- [ ] AG-6: execute_once: prompt, read-only command, backups, outcome
+- [x] AG-6: execute_once: prompt, read-only command, backups, outcome
   Implement "Task 6: execute_once" from the plan. Backups only after
   usage_limit, login_needed or a missing CLI; exit code 0 alone never means
   success. Verify: uv run pytest -q.
 
-- [ ] AG-7: The service and whyline agents
+- [x] AG-7: The service and whyline agents
   Implement "Task 7: The service and `whyline agents …`" from the plan.
   Verify: uv run pytest -q.
 
-- [ ] AG-8: Agents mode in the console (list, detail, Run now, history)
+- [x] AG-8: Agents mode in the console (list, detail, Run now, history)
   Implement "Task 8" from the plan, with these corrections, because whyline
   0.3.35 already built part of its Step 4:
   - Command mode is gone. Keep `_MODES = ("chat", "relay", "agents")`; do not
@@ -67,6 +67,6 @@ Never push, tag, bump the version or publish.
     keep existing tests passing.
   Verify: uv run pytest -q.
 
-- [ ] AG-9: New agent form and Review
+- [x] AG-9: New agent form and Review
   Implement "Task 9: New agent form and Review" from the plan.
   Verify: uv run pytest -q.

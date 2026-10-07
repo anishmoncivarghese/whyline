@@ -86,7 +86,7 @@ def _help_text() -> str:
         "  Chat     talk to the active agent (see /model)",
         "  Relay    Plan makes plan.md, Set up picks roles and starts; or type\n"
         "           doctor, status, start, resume",
-        "  Agents   arrives in a later release",
+        "  Agents   list, run <name>, history <name>, pause/resume/accept <name>",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),
         "whyline commands (type them with /):",
@@ -129,12 +129,7 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
                     "e.g. /timeline."
                 ),
             )
-        if chosen == "agents":
-            # Agents mode is declared but not built yet. Stay where you are.
-            return SessionEvent(
-                kind="output", text="Agents mode arrives in a later release."
-            )
-        if chosen not in ("chat", "relay"):
+        if chosen not in ("chat", "relay", "agents"):
             return SessionEvent(kind="error", text="Usage: /route <chat|relay|agents>")
         if chosen == session.mode:
             return SessionEvent(kind="output", text=f"Already in {chosen} mode.")
@@ -163,6 +158,11 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         parts = text[1:].split()
         if parts:
             head, *rest = parts
+            # Bare /agents is still the relay-chat command (it lists chat
+            # agents). The saved-agents CLI always takes a subcommand, so
+            # only `/agents list` and the rest go through.
+            if head == "agents" and not rest:
+                return None
             if head in whyline_subcommands() and head != "console":
                 return adapters.run_whyline_command([head, *rest])
     return None
@@ -539,7 +539,112 @@ def busy_label(session: ConsoleSession) -> str:
         return f"{session.agent or 'claude'} is thinking"
     if session.mode == "relay":
         return "relay is working"
+    if session.mode == "agents":
+        return "agent is working"
     return "running"
+
+
+_AGENTS_USAGE = "Usage: list | run <name> | history <name> | pause|resume|accept <name>"
+
+
+def named_row(name: str, root: Path):
+    """The list row for `name`, which may be `digest` or `repo:digest`."""
+    from whyline.agents import definitions as d
+    from whyline.agents import service
+
+    kind = None
+    bare = name
+    if ":" in name:
+        kind, bare = name.split(":", 1)
+    matches = []
+    for row in service.rows(root):
+        defn = row.defn
+        if isinstance(defn, d.AgentDef) and defn.name == bare and (kind is None or defn.kind == kind):
+            matches.append(row)
+    if not matches:
+        raise service.AgentNotFound(f"No agent named {bare}")
+    if len(matches) > 1:
+        raise service.Ambiguous(
+            f"Both a repo and a personal agent are named {bare}: "
+            f"use repo:{bare} or personal:{bare}"
+        )
+    return matches[0]
+
+
+def run_result_text(name: str, rec) -> str:
+    """`<name>: <outcome> via <cli>`, plus a backup clause and any reason."""
+    text = f"{name}: {rec.outcome} via {rec.cli}"
+    backup = getattr(rec, "used_backup", None)
+    if backup:
+        because = backup.get("because", "") if isinstance(backup, dict) else str(backup)
+        text += f" (backup — {because})"
+    reason = getattr(rec, "reason", "") or ""
+    if reason:
+        text += f"\n{reason}"
+    return text
+
+
+def _list_line(row) -> str:
+    from whyline.agents import definitions as d
+
+    if isinstance(row.defn, d.Broken):
+        label = f"{row.defn.path.name} (broken)"
+    else:
+        label = row.defn.label
+    return f"{label}  {row.when}  {row.status}  {row.last_outcome}"
+
+
+def _agents_command(session: ConsoleSession, text: str) -> SessionEvent:
+    """Typed Agents commands. The TUI streams `run` and opens History itself."""
+    from whyline.agents import records, service
+
+    parts = text.split()
+    if parts == ["list"]:
+        try:
+            rows = service.rows(session.root)
+        except (service.AgentNotFound, service.Ambiguous, ValueError) as error:
+            return SessionEvent(kind="error", text=str(error))
+        if not rows:
+            return SessionEvent(kind="output", text="No agents yet.")
+        return SessionEvent(kind="output", text="\n".join(_list_line(row) for row in rows))
+    if len(parts) == 2 and parts[0] in ("run", "history", "pause", "resume", "accept"):
+        cmd, name = parts
+        try:
+            if cmd == "run":
+                rec = service.run_now(name, session.root)
+                shown = run_result_text(name, rec)
+                try:
+                    final = records.read_final(rec.run_id).strip()
+                except OSError:
+                    final = ""
+                if final:
+                    shown = f"{shown}\n{final}"
+                return SessionEvent(kind="output", text=shown)
+            if cmd == "history":
+                runs = service.history(name, session.root)
+                if not runs:
+                    label = named_row(name, session.root).defn.label
+                    return SessionEvent(kind="output", text=f"{label} has not run yet.")
+                lines = []
+                for run in runs:
+                    cli = run.cli + (" (backup)" if run.used_backup else "")
+                    when = run.started[:16].replace("T", " ")
+                    lines.append(f"{when}  {run.source}  {cli}  {run.outcome}")
+                return SessionEvent(kind="output", text="\n".join(lines))
+            label = named_row(name, session.root).defn.label
+            if cmd == "pause":
+                service.pause(name, session.root)
+                verb = "paused"
+            elif cmd == "resume":
+                service.resume(name, session.root)
+                verb = "resumed"
+            else:
+                service.accept(name, session.root)
+                verb = "accepted on this Mac"
+            return SessionEvent(kind="output", text=f"{label}: {verb}")
+        except (service.AgentNotFound, service.Ambiguous, ValueError) as error:
+            return SessionEvent(kind="error", text=str(error))
+    return SessionEvent(kind="error", text=_AGENTS_USAGE)
 
 
 def _ask(prompt_session, question: str) -> str | None:
@@ -602,11 +707,7 @@ def dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent
 def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
     # "command" never arrives here: ConsoleSession stores it as "chat".
     if session.mode == "agents":
-        return SessionEvent(
-            kind="error",
-            text="Agents mode arrives in a later release.",
-            accepted=False,
-        )
+        return _agents_command(session, text)
     if session.mode in ("chat", "relay") and _is_home(session.root):
         return SessionEvent(kind="error", text=_HOME_REFUSAL, accepted=False)
     if session.mode == "chat":

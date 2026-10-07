@@ -121,6 +121,10 @@ def timeline_text(events_: list[dict]) -> str:
             detail = f"{event.get('task', '')}: {event.get('status', '')}"
         if not detail and kind == "NoteAttached":
             detail = f"{str(event.get('note', ''))[:8]} -> {str(event.get('commit', ''))[:7]}"
+        if not detail and kind == "AgentRunCompleted":
+            detail = (
+                f"{event.get('agent', '')}: {event.get('outcome', '')} via {event.get('cli', '')}"
+            )
         lines.append(f"{stamp}  {kind:<15} {detail}")
     return "\n".join(lines)
 

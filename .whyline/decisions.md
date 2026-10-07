@@ -6032,3 +6032,1119 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c68cc37a0fc84118936d4b6b625fd33b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T20:53:08.122Z"} -->
+
+## 2026-10-06 — Released the console Stop fix as whyline 0.3.35.1; re-tagged once after a Windows-only test failure that blocked publishing
+
+**Actor:** claude
+**Role:** releaser
+**Task:** CONSOLE-STOP
+
+**Because:** users were stuck with a relay they could not stop from the console; 0.3.36 is reserved for Agents mode; the first tag's Windows job failed on a POSIX-only test (Windows deliberately pauses after the turn), nothing was published, so the tag was moved to the fixed commit as with v0.3.32
+
+**Rejected:**
+
+- wait for 0.3.36 — leaves Stop broken for the whole Agents run
+
+**Files:** src/whyline/console/tui.py, tests/console/test_relay_process.py
+
+<!-- whyline-event: 4f56f8c8182f470b91a0038ba94888ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:13:49.997Z"} -->
+
+## 2026-10-06 — Agent dropdown: open list 36 columns wide (box 24), and 'installed (login not checked)' shortens to 'login unchecked' in the dropdown only
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CB-DROPDOWN
+
+**Because:** the user's dropdown wrapped antigravity and grok onto four lines each: Textual's SelectOverlay is as wide as the 20-column box; /model keeps the full wording where there is room
+
+**Rejected:**
+
+- only widen the box — costs Repo field width on every screen while the list is what wrapped
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8c24c7fe2ca440d3953eed057c7636a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:24:39.353Z"} -->
+
+## 2026-10-06 — Definition files keep the process umask; save() does not force mode 0o600
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-2
+
+**Because:** Task 2 specifies that writer, repo TOML is shared in git, and the spec's 0600 rule names state.sqlite3
+
+**Rejected:**
+
+- chmod 0o600 on save — would make repo agents owner-only and diverge from the task's writer
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 1e4472fd572e438696d2a124b0138ec0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:52:58.932Z"} -->
+
+## 2026-10-06 — AG-2 fails malformed trigger-table handling
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-2
+
+**Because:** A syntactically valid definition with a scalar trigger raises AttributeError during discover instead of becoming Broken, and false/list trigger values are silently accepted; focused and full suites pass but do not cover this behavior
+
+**Rejected:**
+
+- pass based only on the existing suite — discover's contract requires invalid definitions to be reported without aborting discovery
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: e010da6459f94d47b1148eb888134125 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T21:56:27.256Z"} -->
+
+## 2026-10-06 — Non-table trigger values raise DefinitionError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-2
+
+**Because:** A missing trigger is the default manual table, but false, 0, and empty lists were coerced into that default and strings or integers raised AttributeError, so discover aborted instead of returning Broken
+
+**Rejected:**
+
+- raw.get trigger or empty dict — falsy non-tables were accepted as manual and truthy ones aborted discovery
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 59a0f494f7cd4e169bef2c209f008efb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:02:13.693Z"} -->
+
+## 2026-10-06 — AG-2 passes Round 4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-2
+
+**Because:** The focused 25-test agent suite covers non-table trigger scalars, arrays, empty and omitted triggers, and discovery recovery; the full project suite also completed at 100% with exit 0 and one expected skip
+
+**Rejected:**
+
+- fail for repo-only malformed-discovery fixture — personal discovery calls the same _scan/load/parse path, so there is no separate behavior to invalidate
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: c70c192832754ca9a7d3b6fc5b4ec13d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:04:51.291Z"} -->
+
+## 2026-10-06 — AG-2 Round 5 rejects filename-based discovery ordering
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-2
+
+**Because:** discover promises repo agents first and personal agents second with each scope sorted by parsed agent name, but _scan sorts paths before loading, so filenames that differ from agent names produce the wrong order; the full suite passes because its discovery fixture does not distinguish filename order from name order
+
+**Rejected:**
+
+- approve on passing suite — the required ordering has a direct failing reproduction and lacks regression coverage
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: f64d64cf25af4e08804d37bb10e11a49 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:07:57.786Z"} -->
+
+## 2026-10-06 — Discovery sorts each scope by agent name and lists broken files first
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-2
+
+**Because:** discover promises repo agents then personal agents, each scope ordered by the parsed agent name. Sorting TOML paths first uses the filename, which can differ from that name. A broken file has no parsed name, so it leads its scope in filename order and the name-sorted agents follow.
+
+**Rejected:**
+
+- sort paths before load — a filename that differs from the agent name yields the wrong order
+- place broken files by filename stem among the names — a broken file has no agent name
+- put broken files after the name-sorted agents — also stable, but the plan's discovery checks already show the unreadable file before the valid agent
+
+**Test:** uv run pytest -q: exit 0, 100%, one skip
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: 17de22de17e448999a9eec140778eb4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:13:01.688Z"} -->
+
+## 2026-10-06 — AG-2 Round 7 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-2
+
+**Because:** The full project suite exited 0; all 26 agent tests passed; and 10 focused ordering and malformed-trigger regressions passed, confirming repo-first/personal-second discovery with parsed-name ordering and deterministic broken-file handling.
+
+**Rejected:**
+
+- fail on the previously reported ordering defect — the implementation now sorts valid definitions by parsed agent name with filename tie-breaking and regression coverage passes
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: ac0b7834079c49c0b4b8cc70f9c09cca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:16:16.149Z"} -->
+
+## 2026-10-06 — AG-2 Round 8 approved after code and test review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-2
+
+**Because:** The implementation matches Task 2 interfaces and safety constraints, malformed trigger values become Broken entries, discovery preserves repo-first and personal-second name ordering, and the independently run full suite passed with exit code 0.
+
+**Rejected:**
+
+- request changes — no unsafe or contract-breaking defect was found in the working-tree implementation or its regression coverage
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 2e662db4c4bd491d983a5167dd9370f2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:19:17.953Z"} -->
+
+## 2026-10-06 — Show AgentRunCompleted on the timeline as agent, outcome and CLI
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** The generic timeline line only fills in decision, path or session. This event has none of those, so the line would be blank.
+
+**Rejected:**
+
+- Leave the blank generic line — a person would see only the type name
+
+**Files:** src/whyline/render.py
+
+<!-- whyline-event: cab8f7bb782b4eb49b661443bde1c6a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:26:48.662Z"} -->
+
+## 2026-10-06 — chmod run folders to 0700 and record files to 0600 after creating them
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** mkdir and open apply the process umask, and paths._private_dir already chmods so the mode does not depend on umask. The test requires the run folder to be exactly 0700.
+
+**Rejected:**
+
+- Trust the mode argument alone — a non-zero umask can leave the directory other than 0700
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: e96196abd9f04f2db08d76210558fd02 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:26:48.725Z"} -->
+
+## 2026-10-06 — Omit the definition hash from run metadata
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** finish receives a parsed AgentDef, which does not carry the file text. Hashing a re-render would not be the text the user accepted, and this task's record and tests do not include the field.
+
+**Rejected:**
+
+- Store definition_hash of render(defn) — a round-trip render is not the accepted file
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: 716474f94d7e459b842f68bca73e1d43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:26:48.777Z"} -->
+
+## 2026-10-06 — AG-3 fails metadata provenance and same-minute report preservation
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-3
+
+**Because:** The prescribed suites pass, but a realistic probe found metadata.json omits the design-required definition hash and a third successful run in the same minute overwrites the existing -HHMM report instead of preserving one report per successful run.
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: eb064bd253c14c0bb6786a99790e19c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:30:45.400Z"} -->
+
+## 2026-10-06 — Store the accepted definition file's hash in run metadata
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** metadata.json is the run's provenance, and definition_hash of the file on disk is the digest activations compare with accepted_hash. render() adds defaults the file omitted, so it is a different text. An unsaved parse has no file, so that case hashes the render and the field is still present.
+
+**Rejected:**
+
+- Always hash render(defn) — a round-trip render inserts defaults and is not the accepted file
+- Leave the field out — the design requires the definition hash in metadata.json
+
+**Supersedes:** 716474f9
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: 9186ce13c2cd4fb7abc616e2079854ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:37:24.614Z","supersedes":["716474f94d7e459b842f68bca73e1d43"]} -->
+
+## 2026-10-06 — Give each same-minute success its own report file
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** The spec's date file and -HHMM file are one name each. A third success in that minute was replacing the minute file. The next free name adds seconds, then a counter, and the file is created exclusively so an existing report is kept.
+
+**Rejected:**
+
+- Overwrite YYYY-MM-DD-HHMM.md — that drops the earlier success
+- Use only a numeric suffix on the minute name — seconds follow the spec's pattern of adding a more specific time before a counter
+
+**Files:** src/whyline/agents/records.py, tests/agents/test_records.py
+
+<!-- whyline-event: b30f735a964440b787f0cbce15f823c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:37:27.687Z"} -->
+
+## 2026-10-06 — AG-3 still misrecords definition provenance when the file changes during a run
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-3
+
+**Because:** The Agents suite and full suite pass, but a focused probe starts a run from one accepted definition, edits the file before finish, and shows metadata.json stores the later file hash rather than the definition that actually ran. Capture definition_hash in new_run and do not recompute it in finish.
+
+**Rejected:**
+
+- Pass based only on the green suite — metadata provenance is behavior required by the design and can become false during a normal multi-minute run
+
+**Files:** src/whyline/agents/records.py
+
+<!-- whyline-event: e42aa682f9294a038584f5d221cd2b74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:41:42.372Z"} -->
+
+## 2026-10-06 — Capture the definition hash when the run starts
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-3
+
+**Because:** finish was re-reading the definition file, so an edit during the run stored the later file hash in metadata instead of the definition that ran
+
+**Rejected:**
+
+- Recompute the hash in finish — that records the file as it stands when the run ends
+- Fill an empty hash in finish — a record without a start hash would still name the changed file
+
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/agents/records.py, tests/agents/test_records.py
+
+<!-- whyline-event: f43208e9e13c4f55926414512af3411a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:45:54.006Z"} -->
+
+## 2026-10-06 — AG-3 round 6 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-3
+
+**Because:** The Agents suite and full project suite pass; the focused regression proves metadata preserves the definition hash captured at new_run even when the file changes before finish, and report, permission, ledger privacy, listing, and timeline behaviors match the task contract
+
+**Rejected:**
+
+- Fail on the prior provenance defect — the new regression now demonstrates it is fixed at the run-start boundary
+
+**Files:** src/whyline/agents/records.py, tests/agents/test_records.py
+
+<!-- whyline-event: 1996d6046c02413997e342d5fd32eef3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:48:51.340Z"} -->
+
+## 2026-10-06 — AG-3 round 7 approved after diff and full-suite review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-3
+
+**Because:** The implementation satisfies the run-record, private artifact, report naming, definition provenance, ledger privacy, listing, and timeline requirements; uv run pytest -q exited 0 and git diff --check is clean
+
+**Rejected:**
+
+- Request further changes — no unsafe or clearly incorrect behavior remains in the task diff
+
+**Files:** src/whyline/agents/records.py, src/whyline/render.py, tests/agents/test_records.py, tests/test_staleness.py
+
+<!-- whyline-event: 4c3db589ab1c471cbf568d071991d6fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:52:02.513Z"} -->
+
+## 2026-10-07 — Grok read-only is deny rules; antigravity cannot run
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** The spike showed grok --permission-mode plan and agy --mode plan both wrote a file, while dropping write allows and adding --deny Edit --deny Write blocked grok's write
+
+**Rejected:**
+
+- Treat either plan mode as read-only — the spike recorded those runs as not usable
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 95eaaab1094a416aa669025acb53bba4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:26:45.232Z"} -->
+
+## 2026-10-07 — Codex has no denial detector; Claude and Grok keep theirs
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** Codex only said it could not create the file, which the spike called unreliable. Claude's signal is a non-empty permission_denials list and Grok's is stopReason cancelled
+
+**Rejected:**
+
+- Drop Claude's detector because plan mode leaves the list empty — an empty list is already not a denial, and a non-empty list is still the signal the spike named
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: c968d73f33c448eb94407d501464e014 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:26:45.268Z"} -->
+
+## 2026-10-07 — Keep the plan's login-marker superset
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** The spike phrases are already lowercased substrings (not logged in, not signed in, 401, unauthorized), and Task 6's fixture Please log in / auth login needs the extra phrases
+
+**Rejected:**
+
+- Only the three spike sentences — that tuple would miss Task 6's login fixture
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: fc4858d63db7481d9cb95cb9cf9d1e08 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:26:45.297Z"} -->
+
+## 2026-10-07 — AG-4 fails malformed read-only flag handling despite passing suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The focused capability tests, all agent tests, and full suite pass, but read_only_command raises IndexError for ['codex', 'exec', '-s'] and ['claude', '--permission-mode']; configured built-in commands accept arbitrary non-empty argv and the planned runner does not catch capability rewrite exceptions, so malformed configuration crashes instead of failing closed
+
+**Rejected:**
+
+- Pass based only on prescribed fixtures — that would accept a reproducible crash on reachable configured commands
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 875b22ab629b45da8093c59d23e84e72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:30:25.106Z"} -->
+
+## 2026-10-07 — A trailing Codex -s returns None; a trailing Claude --permission-mode is completed with plan
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** Codex read-only replaces an existing sandbox value, so a missing value cannot be rewritten. Claude plan mode is a known token, so completing the flag still yields a valid argv.
+
+**Rejected:**
+
+- Append read-only after a bare -s — that invents a sandbox mode the command never set, and the review asked Codex to fail closed
+- Return None for a trailing Claude flag — the review asked for a valid plan-mode argv, and plan is the mode the spike verified
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 04bb8413829f4602bf9aa944c5d12e2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:34:47.756Z"} -->
+
+## 2026-10-07 — AG-4 still permits later writable mode flags
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The focused tests and full suite pass, but read_only_command rewrites only the first Codex -s or Claude --permission-mode occurrence; later danger-full-access or acceptEdits flags remain and can override read-only, while a missing value followed by another flag consumes that unrelated flag
+
+**Rejected:**
+
+- Pass on the green suite — duplicate and adjacent configured flags are accepted by relay config and violate the capability layer's read-only guarantee
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 67da5a05a38e4988ab5184c07711c49e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:38:03.862Z"} -->
+
+## 2026-10-07 — Every Codex sandbox value is rewritten to read-only
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** The last -s or --sandbox value wins, including the attached = form, so a later danger-full-access would undo the first rewrite. A following flag is not a value, and that command returns None, the same as a trailing -s. --add-dir names an extra writable directory, so that grant is removed.
+
+**Rejected:**
+
+- Rewrite only the first -s — the last sandbox mode wins and danger-full-access stays
+- Reject every repeated -s — a repeated flag with real values can still be forced read-only
+- Leave --add-dir in place — its help text says the directory is writable alongside the workspace
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 9dae359496a94677b182c349767107cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:48:41.599Z"} -->
+
+## 2026-10-07 — Codex commands that cancel the sandbox are refused
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** --dangerously-bypass-approvals-and-sandbox skips sandboxing and --approve-for-me runs approvals in the workspace-write sandbox. Neither flag has a mode value that can be replaced with read-only.
+
+**Rejected:**
+
+- Strip those flags and keep the rewritten -s — the bypass exists to cancel that sandbox, and a command with no -s still cannot be given one
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 7f5152e9636d44fbb1e23e07ea3d7ac5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:48:44.750Z"} -->
+
+## 2026-10-07 — Every Claude permission mode becomes plan and skip-permissions is dropped
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** A later --permission-mode acceptEdits overrides the first, and --dangerously-skip-permissions bypasses the mode. When the next token is itself a flag, plan is inserted and that flag stays.
+
+**Rejected:**
+
+- Return None when the next token is a flag — a trailing --permission-mode is completed with plan, the mode the spike verified
+- Leave --dangerously-skip-permissions in place — it skips the permission check that plan mode enforces
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: f5ae31d92a0c4a1f80603289632fd739 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:48:47.713Z"} -->
+
+## 2026-10-07 — AG-4 still preserves attached Grok write allows
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The focused 16-test suite and full project suite pass, but Grok 1.0.41 accepts --allow=RULE and read_only_command leaves --allow=Edit, --allow=Write, and write-capable Bash rules such as --allow=Bash(mkdir:*) intact; the latter is not covered by the appended Edit and Write denies, contrary to the spike requirement to drop write allows
+
+**Rejected:**
+
+- Pass on the green suites — that would permit a supported Grok argv spelling to retain an explicit write grant
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: caa299e8753645a3a169c33f2d98ba53 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:52:48.735Z"} -->
+
+## 2026-10-07 — Grok read-only keeps no permission grant at all (every --allow/--allowedTools spelling and --always-approve removed), forces --permission-mode dontAsk, and adds --deny Edit/Write
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** AG-4's plan prescribed a blocklist of six write allows; codex as tester found --allow=Edit surviving, and Bash(python3:*)/Bash(uv run:*) in the relay's grok command write through a shell; verified with real grok 1.0.41 runs that the new command blocks edit-tool and python3 writes while cat, git log and the read tool still work
+
+**Rejected:**
+
+- extend the blocklist with attached forms — still keeps shell grants that write
+- keep read-only Bash allows like cat — grok's built-in read-only list already covers them under dontAsk
+
+**Files:** src/whyline/agents/capabilities.py, tests/agents/test_capabilities.py
+
+<!-- whyline-event: e0ff89809a7e4d998d0dbb5e503d674e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T05:43:25.111Z"} -->
+
+## 2026-10-07 — Grok read-only drops --allow=RULE, --tools, --yolo and --dangerously-skip-permissions
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** Grok 1.0.41 accepts the attached --allow=RULE form, --tools is the canonical spelling of --allowedTools, and --yolo and --dangerously-skip-permissions alias --always-approve. That mode auto-approves Bash writes, which --deny Edit/Write does not cover. dontAsk with no grant left still runs cat, git log and the read tool.
+
+**Rejected:**
+
+- Extend only the six-name write blocklist — Bash(python3:*) and the always-approve aliases would still grant writes
+- Force --sandbox read-only — the spike's verified grok argv is dontAsk with the write grants removed, and the sandbox does not approve a tool call
+
+**Files:** src/whyline/agents/capabilities.py, tests/agents/test_capabilities.py
+
+<!-- whyline-event: 36400c19105844a4a3a9c599fd9c6c31 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:34:18.897Z"} -->
+
+## 2026-10-07 — AG-4 passes Round 2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The capability tests, full agents suite, and full project suite all pass; read-only transformations remove known write grants and bypasses while preserving documented denial detection and unattended eligibility
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 0931832417964da097a54d4a1e0e22b3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:37:42.176Z"} -->
+
+## 2026-10-07 — AG-4 Round 3 approved after hardened capability review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-4
+
+**Because:** The read-only transforms match the spike intent and fail closed against known Codex, Claude, and Grok write-grant bypasses; denial, login, and unattended capability tables are correct; focused tests cover the safety cases; and the independent plain full suite passed
+
+**Rejected:**
+
+- Request changes — no correctness, coverage, or safety defect was found
+
+**Files:** src/whyline/agents/capabilities.py, tests/agents/test_capabilities.py
+
+<!-- whyline-event: 07118bdf7c5d43cfb449194e010a8c2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:40:29.069Z"} -->
+
+## 2026-10-07 — Apply the activation schema with execute(), not executescript
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** connect() uses autocommit so each claim commits on its own. Python 3.11 executescript always issues COMMIT first, and that raises when no transaction is open.
+
+**Rejected:**
+
+- executescript as in the plan snippet — it fails on Python 3.11 under isolation_level=None
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: c5d0b1ad179b444c984f88fe69e2262a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:29:32.305Z"} -->
+
+## 2026-10-07 — Quarantine the state store only when SQLite reports it is corrupt or not a database
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** A locked database and a disk error are also DatabaseError. Moving those aside would discard this Mac's acceptances. The connection is closed before the rename so the replace works on Windows, and a second copy in the same second gets a numeric suffix.
+
+**Rejected:**
+
+- except sqlite3.DatabaseError then always replace, as the plan snippet does — a busy or I/O error would throw the store away
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: 4f287a25ef8e4f52901664dde19d9137 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:29:35.872Z"} -->
+
+## 2026-10-07 — A corrupt state file is replaced with an empty store
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** The bytes are not a database, so there is no activation row to mark needs_review. The task test requires all_activations to be empty after connect.
+
+**Rejected:**
+
+- Mark every activation needs_review as the spec's corrupt-SQLite sentence says — those rows cannot be read out of a file that is not a database
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: 48e5356064ec496da184c276f2349e8c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:47:43.383Z"} -->
+
+## 2026-10-07 — needs_review stays until accept(), even when the file later matches the accepted hash
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-5
+
+**Because:** A definition edited by git pull must stop scheduled and paused runs until the user accepts it again. Resuming just because a later read matches the old hash would start those runs without that acceptance.
+
+**Rejected:**
+
+- Return active as soon as the hash matches — a revert would clear the stop on its own
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: cd958caf808a4c15af76d4bfb90daa23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T08:47:45.877Z"} -->
+
+## 2026-10-07 — AG-5 activation state store passes testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-5
+
+**Because:** All 7 focused state-store tests passed, including edited and paused definitions requiring re-acceptance, and the complete pytest suite exited successfully with one skip and no failures.
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: b36293af3b22493daf3fce46eabca221 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:37:12.647Z"} -->
+
+## 2026-10-07 — AG-5 activation state store approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-5
+
+**Because:** The implementation matches the planned activation schema and API, quarantines only confirmed corrupt SQLite files, keeps edited active or paused definitions in needs_review until accept(), and uv run pytest -q exited 0 with one skip and no failures.
+
+**Files:** src/whyline/agents/state.py, tests/agents/test_state.py
+
+<!-- whyline-event: bbc97b08d2d24b1f83196f8dbbf88338 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:40:42.829Z"} -->
+
+## 2026-10-07 — Backups only after usage_limit, login_needed, or a missing CLI
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** A tool crash or timeout is the work failing, not the CLI being unavailable. Switching would hide that behind a second CLI.
+
+**Rejected:**
+
+- Fall back on any non-success — a crash would look like a backup run
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 59e2809de6b149a4bcb4279f6c8ee59b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:01.005Z"} -->
+
+## 2026-10-07 — Exit code 0 with empty output is classified as a failure
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** The exit code alone never means success; with no output a denial detector has nothing to read.
+
+**Rejected:**
+
+- Treat any 0 as succeeded unless denied — an empty capture would look like a quiet success
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 0b383f17ad1f4e6983a8327dc37e73ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:05.338Z"} -->
+
+## 2026-10-07 — Skip the main CLI while using_backup_until is in the future
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** The usage-limit test requires the 09:00 run to go straight to Codex rather than hitting the limit again.
+
+**Rejected:**
+
+- Probe the main CLI each run in case the limit lifted early — that would spend the remaining window on a CLI already known to be limited
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 81cb5b638c9a41a798f92a47dabf8362 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:08.419Z"} -->
+
+## 2026-10-07 — Persist using_backup_until only when an activation already exists
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** accept() creates the row; a scheduled agent is already accepted. execute_once should not accept a definition as a side effect of a usage limit.
+
+**Rejected:**
+
+- Insert an activation from execute_once so the skip survives — that would mark the agent accepted without the user accepting it
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 81900335a7f54425a54359d387075013 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:11.538Z"} -->
+
+## 2026-10-07 — AG-6 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-6
+
+**Because:** The agents suite and full project suite passed, and direct classification checks confirmed that empty exit-zero output and ordinary failures do not become success or trigger unavailable classifications.
+
+**Rejected:**
+
+- Fail AG-6 — no specified behavior failed in the exercised prompt, read-only command, backup, denial, timeout, reset, and outcome paths
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_runner.py
+
+<!-- whyline-event: 9ab09e93e7d74c84a27d716072f7e8e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:51:46.350Z"} -->
+
+## 2026-10-07 — Approve AG-6 execute_once implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-6
+
+**Because:** The implementation matches the Task 6 prompt, read-only command, constrained backup, outcome, denial, timeout, and reset behavior; its planned tests are substantive and the required plain full suite passed.
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found within AG-6 scope
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_runner.py
+
+<!-- whyline-event: c9cf2e4bb58649649034de57b7d06fc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:56:10.395Z"} -->
+
+## 2026-10-07 — Bare /agents in the console stays the relay-chat hint
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-7
+
+**Because:** People already type /agents for relay chat agent list, and the console test requires that hint. The saved-agents CLI always takes a subcommand, so /agents list still runs it.
+
+**Rejected:**
+
+- Run bare whyline agents from /agents — argparse usage replaces the hint
+- Drop agents from slash passthrough entirely — /agents list would also look unknown
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 6f60e7ccc43148ec8e3235b439f68ca6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:06:10.507Z"} -->
+
+## 2026-10-07 — whyline agents resolves the repo with paths.find_repo_root
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-7
+
+**Because:** Outside a repository the command must still list personal agents. find_repo_root returns None. _require_repo raises SystemExit and would abort that case.
+
+**Rejected:**
+
+- Catch SystemExit from _require_repo — that helper is a hard stop for commands that cannot run without a repo
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 10b734530e2d44f5beb910ab88acfbb3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:06:10.564Z"} -->
+
+## 2026-10-07 — AG-7 service and agents CLI pass Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-7
+
+**Because:** The focused agents suite and full project suite passed, and isolated black-box checks verified discovery, show, accept, pause, resume, history, guarded deletion, confirmed deletion, and personal-agent listing outside a repository
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py
+
+<!-- whyline-event: d82c061192a54598ae48e300e3b4bfc0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:09:54.222Z"} -->
+
+## 2026-10-07 — Approved AG-7 service and agents CLI in Round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-7
+
+**Because:** The implementation matches Task 7's service and Phase 1 CLI interfaces, focused tests passed, git diff --check passed, and the required plain uv run pytest -q suite completed successfully with one skip
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py, tests/agents/test_service.py, tests/agents/test_cli_agents.py
+
+<!-- whyline-event: 89e1716b945a41269d23c0199d9c4390 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:14:03.989Z"} -->
+
+## 2026-10-07 — Slash lines in Agents mode stay slash commands
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Command mode is gone, so /help and /timeline have to work in Agents mode too
+
+**Rejected:**
+
+- sending every line to _agents_command — a slash line would show the agents usage instead of running
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 34065313dad147d4a099d7ed323bf7cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.876Z"} -->
+
+## 2026-10-07 — Pause, resume, accept and list resolve the agent through service.rows
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** The console list is rows(), and the typed line has to name that same row even when tests stub the list and there is no file on disk
+
+**Rejected:**
+
+- service.find first — find raises AgentNotFound before pause runs when the list is stubbed
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: cdcf570609e54ef4bb2a088023f5a346 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.909Z"} -->
+
+## 2026-10-07 — New agent button says the form comes in the next task
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Task 9 owns the form; this task only puts the button on the bar
+
+**Rejected:**
+
+- opening a half-built form now — the fields, review screen and save path are AG-9
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b0f9145115304845a5738a23a97bf14a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.939Z"} -->
+
+## 2026-10-07 — A mode click focuses the prompt
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Enter submits the prompt, and the click would otherwise leave focus on the mode button so typed agents commands never send
+
+**Rejected:**
+
+- leaving focus on the button — the pilot test and a person both press Enter next
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e9512a175bc0468f94911bc8786f8dc7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.969Z"} -->
+
+## 2026-10-07 — A missing final.md shows as (no answer) in the runs popup
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** Highlighting a row reads final.md, and read_final raises when that run wrote no file
+
+**Rejected:**
+
+- letting read_final raise — the history popup would crash on a run that has metadata only
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: a59c6f69663a47e096be7f3c7c747d4c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:02.998Z"} -->
+
+## 2026-10-07 — Typed history opens RunsScreen in the TUI and prints lines in the keyboard REPL
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** The TUI already has a runs popup and the REPL has nowhere to put one
+
+**Rejected:**
+
+- printing history into the TUI transcript — the History button and history <name> would do different things
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: dee5988012154a1cb2bf61d23463af15 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:03.029Z"} -->
+
+## 2026-10-07 — Transcript assertions read the log before run_test returns
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-8
+
+**Because:** This Textual clears screen_stack when the app stops, so _main raises IndexError afterwards
+
+**Rejected:**
+
+- asserting after the with-block as the plan snippet does — the transcript is already gone
+
+**Files:** tests/console/test_agents_mode.py
+
+<!-- whyline-event: e6810d9cceab40ffb8a5e62b6bc15cc1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:30:03.059Z"} -->
+
+## 2026-10-07 — AG-8 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-8
+
+**Because:** The full suite and console suite pass, and the Agents mode exercises routing, mode-only controls and status, list/detail/history, streamed Run now output, typed commands, and error handling as specified
+
+**Rejected:**
+
+- Failing the task — no reproducible behavioral defect was found
+
+**Files:** tests/console/test_agents_mode.py
+
+<!-- whyline-event: 664604039ad04917bca47d2eb7c888cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:34:35.024Z"} -->
+
+## 2026-10-07 — Approve AG-8 Agents console mode
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-8
+
+**Because:** The diff implements the corrected Task 8 routing, controls, list/detail/history flows, streamed Run now, typed commands, and error handling; the plain uv run pytest -q suite completed at 100% with no failures and one expected skip
+
+**Rejected:**
+
+- Request changes — no reproducible task-scoped defect or unsafe behavior was found
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py, src/whyline/console/agents_screens.py, tests/console/test_agents_mode.py
+
+<!-- whyline-event: 1b6ceca92c8b4ea6af5bc43493015671 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:38:22.598Z"} -->
+
+## 2026-10-07 — Edit saves over the opened agent file when the name and kind are unchanged
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** The file that was opened is the definition being edited, even when its filename is not the agent name
+
+**Rejected:**
+
+- always write name.toml — the original file would remain and could collide with another agent
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 352a7c9a61e546dba097292a63d6f971 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.569Z"} -->
+
+## 2026-10-07 — The folder picker stores the first directory, or the parent of the first picked file
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** pick_files uses choose file, which returns files rather than folders
+
+**Rejected:**
+
+- accept only directories — the macOS picker would never fill the field
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 3eb543302b514c09b05e95704fa67cb4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.600Z"} -->
+
+## 2026-10-07 — Repo sources must be inside the repository; a folder trigger may sit outside it
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** A repo source is shared in git and parse rejects paths outside the repo, while a watch folder is a path on this Mac
+
+**Rejected:**
+
+- store every picked path as a tilde path — repo sources would no longer be portable
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 798d016c5cae4b07b0675a28abf10ef7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.630Z"} -->
+
+## 2026-10-07 — The name stays read-only whenever the form is opened with an existing definition
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** Review Back reopens the form through the same existing argument as Edit
+
+**Rejected:**
+
+- lock the name only when the file is already on disk — Back could then rename an agent the review had already checked
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b4f8ef2d98ec476c96585459bfb1c97c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.660Z"} -->
+
+## 2026-10-07 — Editing keeps min_gap_minutes from the opened definition
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** The form has no control for it, and the default is 10 only for a new agent
+
+**Rejected:**
+
+- always write 10 — an edit would reset a custom gap
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b1044fe55e84498b9b5688dd63b62396 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.690Z"} -->
+
+## 2026-10-07 — AG-9 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-9
+
+**Because:** The focused AG-9 tests, console suite, and full project suite pass; the form validates before review, saves and activates definitions, preserves review-back/edit values, handles sources and triggers, and exposes unsupported unattended CLIs as specified
+
+**Rejected:**
+
+- Failing the task — no reproducible behavioral defect was found
+
+**Files:** tests/console/test_new_agent.py
+
+<!-- whyline-event: 693da8cd5f2c4939b46c1dd6a2cd19f2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:08:44.800Z"} -->
+
+## 2026-10-07 — Approve AG-9 new agent form and review flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-9
+
+**Because:** The diff implements the Task 9 form, validation, source and trigger handling, edit prefill, plain-language review, save and activation wiring; the required plain uv run pytest -q suite completed at 100% with no failures and one expected skip
+
+**Rejected:**
+
+- Request changes — no reproducible task-scoped defect or unsafe behavior was found
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/tui.py, tests/console/test_new_agent.py
+
+<!-- whyline-event: 33b8de7377b848f8bb800743f2be5dae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:12:11.092Z"} -->
