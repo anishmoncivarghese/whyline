@@ -56,7 +56,7 @@ Never push, tag, bump the version or publish.
   service.run_now calling it with notify=False. Notifications go through a
   stubbed sender in tests. Verify: uv run pytest -q.
 
-- [ ] AG-15: The scheduler on and off, and the console's scheduler controls
+- [x] AG-15: The scheduler on and off, and the console's scheduler controls
   Implement "Task 15" from the plan: launchd.py, `whyline agents scheduler
   on|off|status`, and the console's #agents-scheduler button and
   #agents-status line. Replace Phase 1's placeholders in tui.py ("Scheduler:
