@@ -6713,3 +6713,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bbc97b08d2d24b1f83196f8dbbf88338 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:40:42.829Z"} -->
+
+## 2026-10-07 — Backups only after usage_limit, login_needed, or a missing CLI
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** A tool crash or timeout is the work failing, not the CLI being unavailable. Switching would hide that behind a second CLI.
+
+**Rejected:**
+
+- Fall back on any non-success — a crash would look like a backup run
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 59e2809de6b149a4bcb4279f6c8ee59b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:01.005Z"} -->
+
+## 2026-10-07 — Exit code 0 with empty output is classified as a failure
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** The exit code alone never means success; with no output a denial detector has nothing to read.
+
+**Rejected:**
+
+- Treat any 0 as succeeded unless denied — an empty capture would look like a quiet success
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 0b383f17ad1f4e6983a8327dc37e73ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:05.338Z"} -->
+
+## 2026-10-07 — Skip the main CLI while using_backup_until is in the future
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** The usage-limit test requires the 09:00 run to go straight to Codex rather than hitting the limit again.
+
+**Rejected:**
+
+- Probe the main CLI each run in case the limit lifted early — that would spend the remaining window on a CLI already known to be limited
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 81cb5b638c9a41a798f92a47dabf8362 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:08.419Z"} -->
+
+## 2026-10-07 — Persist using_backup_until only when an activation already exists
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-6
+
+**Because:** accept() creates the row; a scheduled agent is already accepted. execute_once should not accept a definition as a side effect of a usage limit.
+
+**Rejected:**
+
+- Insert an activation from execute_once so the skip survives — that would mark the agent accepted without the user accepting it
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 81900335a7f54425a54359d387075013 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:48:11.538Z"} -->
+
+## 2026-10-07 — AG-6 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-6
+
+**Because:** The agents suite and full project suite passed, and direct classification checks confirmed that empty exit-zero output and ordinary failures do not become success or trigger unavailable classifications.
+
+**Rejected:**
+
+- Fail AG-6 — no specified behavior failed in the exercised prompt, read-only command, backup, denial, timeout, reset, and outcome paths
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_runner.py
+
+<!-- whyline-event: 9ab09e93e7d74c84a27d716072f7e8e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:51:46.350Z"} -->
+
+## 2026-10-07 — Approve AG-6 execute_once implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-6
+
+**Because:** The implementation matches the Task 6 prompt, read-only command, constrained backup, outcome, denial, timeout, and reset behavior; its planned tests are substantive and the required plain full suite passed.
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found within AG-6 scope
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_runner.py
+
+<!-- whyline-event: c9cf2e4bb58649649034de57b7d06fc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:56:10.395Z"} -->
