@@ -1,3 +1,4 @@
+import os
 import json
 from datetime import datetime
 
@@ -15,7 +16,9 @@ def _agent(repo, report=""):
 def test_new_run_creates_a_private_folder(repo):
     rec, folder = records.new_run(_agent(repo), source="manual", now=NOW)
     assert rec.run_id.startswith("20261005-070003-digest-") and len(rec.run_id.split("-")[-1]) == 4
-    assert folder.is_dir() and (folder.stat().st_mode & 0o777) == 0o700
+    assert folder.is_dir()
+    if os.name != "nt":  # Windows has no POSIX permission bits
+        assert (folder.stat().st_mode & 0o777) == 0o700
 
 
 def test_finish_writes_metadata_final_report_and_ledger(repo, home):

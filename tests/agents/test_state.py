@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 import pytest
@@ -16,7 +17,8 @@ def test_accept_then_get(repo, home):
     conn = state.connect()
     act = state.accept(conn, _agent(repo))
     assert act.status == "active" and state.get(conn, act.agent_id).accepted_hash == act.accepted_hash
-    assert (state.paths.state_path().stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":  # Windows has no POSIX permission bits
+        assert (state.paths.state_path().stat().st_mode & 0o777) == 0o600
 
 
 def test_an_edited_definition_needs_review_until_accepted_again(repo, home):
@@ -96,4 +98,5 @@ def test_a_corrupt_store_is_set_aside(home):
     assert state.all_activations(conn) == []
     aside = [p for p in path.parent.iterdir() if p.name.startswith("state.sqlite3.corrupt-")]
     assert aside and aside[0].read_bytes() == b"not a database"
-    assert (path.stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":  # Windows has no POSIX permission bits
+        assert (path.stat().st_mode & 0o777) == 0o600
