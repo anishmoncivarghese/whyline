@@ -37,6 +37,22 @@ def test_save_new_accepts_and_describe_reads_like_the_spec(repo, home):
     )
 
 
+def test_run_now_reaches_needs_attention_without_notifying(repo, home, monkeypatch):
+    _write(repo / ".whyline/agents", "a")
+    service.accept("a", repo)
+    sent = []
+    monkeypatch.setattr("whyline_relay.notify.send", lambda title, message: sent.append(message))
+
+    class Fail:
+        exit_code, output = 1, "boom"
+
+    for _ in range(3):
+        service.run_now("a", repo, run_fn=lambda *a, **k: Fail())
+    act = state.get(state.connect(), service.find("a", repo).agent_id)
+    assert act.status == "needs_attention" and act.consecutive_failures == 3
+    assert sent == []
+
+
 def test_rows_run_now_history_pause(repo, home):
     _write(repo / ".whyline/agents", "a")
     service.accept("a", repo)

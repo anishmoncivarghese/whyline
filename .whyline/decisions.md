@@ -7575,3 +7575,132 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 16f33e48132e42b1ad33e4fc65d4813e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:14:35.020Z"} -->
+
+## 2026-10-07 — the notifier loads only after the activation is saved
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-14
+
+**Because:** A failure to import or send must not skip the streak, backoff, or pause. Run now passes notify=False, so it never loads the desktop notifier.
+
+**Rejected:**
+
+- import whyline_relay at the top of finish — an ImportError would leave the activation unchanged
+
+**Files:** src/whyline/agents/after.py
+
+<!-- whyline-event: d2dff46aca5b4664beb4719e72aa0514 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:25:28.537Z"} -->
+
+## 2026-10-07 — an impossible until clock falls back to three hours
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-14
+
+**Because:** until 99:99 matches the reset pattern, and datetime.replace would raise before the activation is saved.
+
+**Rejected:**
+
+- letting replace raise, as the plan snippet does — the streak and backoff would be lost
+
+**Files:** src/whyline/agents/after.py
+
+<!-- whyline-event: 8f2de380c704467e800c8753eca825b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:25:28.572Z"} -->
+
+## 2026-10-07 — after.finish does not recompute next_due_at
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-14
+
+**Because:** The tick already writes the next due time, and Task 14 tests cover last_run_at, the streak, backoff, pause, and notifications.
+
+**Rejected:**
+
+- setting next_due_at in finish — the design spec names it, but the plan finish does not, and a manual run has no due time to advance
+
+**Files:** src/whyline/agents/after.py
+
+<!-- whyline-event: 0e5257ba087d48369d8954da7ef26603 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:25:28.602Z"} -->
+
+## 2026-10-07 — a notification failure is swallowed and not written to scheduler.log
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-14
+
+**Because:** The plan treats a notifier error as non-fatal, and the tests only require that the activation still updates.
+
+**Rejected:**
+
+- appending the error to scheduler.log — the design spec says a notify failure is logged, but nothing in this task reads that line
+
+**Files:** src/whyline/agents/after.py
+
+<!-- whyline-event: e4076521b8af4901804f9a92d4b95d41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:25:28.632Z"} -->
+
+## 2026-10-07 — tick test fakes carry an empty outcome
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-14
+
+**Because:** run_occurrence now calls after.finish, and the old fake only had run_id. An empty outcome stores last_run_at and builds no message, so the suite does not post a desktop notification.
+
+**Rejected:**
+
+- outcome succeeded — finish would call the real notifier during the suite
+- leaving the fake unchanged — finish raises AttributeError on outcome
+
+**Files:** tests/agents/test_tick.py
+
+<!-- whyline-event: 67e17de73319437cb24c43069ae6b8f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:25:28.662Z"} -->
+
+## 2026-10-07 — a service test drives three Run now failures through the real notifier
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-14
+
+**Because:** The plan after tests pass their own send function, so they never exercise notify=False. Three failures must reach needs_attention and must not call whyline_relay.notify.send.
+
+**Rejected:**
+
+- relying only on the plan after tests — they cannot see that Run now skips notification
+
+**Files:** tests/agents/test_service.py
+
+<!-- whyline-event: a82ec3d9df3c4add85595a780c8920d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:25:28.693Z"} -->
+
+## 2026-10-07 — AG-14 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-14
+
+**Because:** The full pytest suite completed successfully with one skip, and all 27 focused after, service, and tick tests passed, covering backoff, pause, needs-attention transitions, notifications, and run-now notification suppression.
+
+**Files:** src/whyline/agents/after.py, src/whyline/agents/service.py
+
+<!-- whyline-event: bede972aa607408b84b506128d2a4ec5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:29:55.737Z"} -->
+
+## 2026-10-07 — AG-14 is approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-14
+
+**Because:** The implementation matches Task 14, the tests genuinely cover backoff, login pause, failure streaks, notification behavior, and Run now suppression, and the independently run plain full suite exited 0 with one expected skip.
+
+**Files:** src/whyline/agents/after.py
+
+<!-- whyline-event: 991264b5e49a4eab833a56f634f0aab6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:33:28.251Z"} -->

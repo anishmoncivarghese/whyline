@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from whyline.agents import definitions as d, records, runner, state
+from whyline.agents import after, definitions as d, records, runner, state
 
 
 class AgentNotFound(LookupError):
@@ -95,7 +95,12 @@ def delete(name: str, repo_root: Path | None) -> None:
 
 
 def run_now(name: str, repo_root: Path | None, *, progress=None, run_fn=None) -> records.RunRecord:
-    return runner.execute_once(find(name, repo_root), source="manual", progress=progress, run_fn=run_fn)
+    defn = find(name, repo_root)
+    record = runner.execute_once(defn, source="manual", progress=progress, run_fn=run_fn)
+    # A manual run counts toward the streak, backoff and pause. It does not
+    # notify: the person who pressed Run now is already watching the result.
+    after.finish(state.connect(), defn, record, notify=False)
+    return record
 
 
 def history(name: str, repo_root: Path | None, n: int = 20) -> list[records.RunRecord]:

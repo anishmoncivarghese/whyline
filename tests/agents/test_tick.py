@@ -173,7 +173,9 @@ def _runner_calls(monkeypatch):
 
     def execute_once(defn, **kwargs):
         calls.append((defn, kwargs))
-        return SimpleNamespace(run_id="run-1")
+        # run_occurrence now calls after.finish. An empty outcome stores the
+        # time and builds no message, so these tests do not notify.
+        return SimpleNamespace(run_id="run-1", outcome="")
 
     monkeypatch.setattr("whyline.agents.runner.execute_once", execute_once)
     return calls
