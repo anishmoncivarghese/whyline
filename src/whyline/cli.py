@@ -504,6 +504,11 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     )
     trigger.add_argument("name")
     trigger.add_argument("--file", action="append", default=[])
+    scheduler = sub.add_parser("scheduler", help="Turn the agents scheduler on or off")
+    scheduler_sub = scheduler.add_subparsers(dest="scheduler_command", required=True)
+    scheduler_sub.add_parser("on", help="Check for due agents every 2 minutes, and at login")
+    scheduler_sub.add_parser("off", help="Stop scheduled and folder agents")
+    scheduler_sub.add_parser("status", help="Whether the scheduler is loaded, and when it last ran")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1555,9 +1560,39 @@ def _cmd_agents_run_occurrence(occurrence_id: int) -> int:
     return EXIT_OK if record.outcome.startswith("succeeded") else EXIT_ERROR
 
 
+def _cmd_agents_scheduler(args: argparse.Namespace) -> int:
+    from whyline.agents import launchd
+
+    if not launchd.supported():
+        # status answers the question; on and off are the actions that cannot run.
+        stream = sys.stdout if args.scheduler_command == "status" else sys.stderr
+        print(launchd.NEEDS_MACOS, file=stream)
+        return EXIT_OK if args.scheduler_command == "status" else EXIT_ERROR
+    try:
+        if args.scheduler_command == "on":
+            launchd.turn_on()
+            print("Scheduler on: whyline checks for due agents every 2 minutes, and at login.")
+            return EXIT_OK
+        if args.scheduler_command == "off":
+            launchd.turn_off()
+            print("Scheduler off.")
+            return EXIT_OK
+        info = launchd.status()
+    except (RuntimeError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    where = info.plist.as_posix() if info.plist else "none"
+    last = info.last_tick or "never"
+    state = "loaded" if info.loaded else "not loaded"
+    print(f"Scheduler {state}. Plist: {where}. Last tick: {last}.")
+    return EXIT_OK
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
+    if args.agents_command == "scheduler":
+        return _cmd_agents_scheduler(args)
     root = _repo_root_or_none()
     try:
         if args.agents_command == "list":

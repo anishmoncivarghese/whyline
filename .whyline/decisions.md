@@ -7704,3 +7704,138 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 991264b5e49a4eab833a56f634f0aab6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:33:28.251Z"} -->
+
+## 2026-10-07 — The scheduler line names the earliest active agent and its service.rows next_due
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-15
+
+**Because:** The plan says the next run comes from service.rows, and next_due is already YYYY-MM-DD HH:MM
+
+**Rejected:**
+
+- a relative phrase such as 07 — 00 tomorrow: rows do not carry that wording
+- changing the button label to Scheduler on/off — the Agents bar fits 80 columns as Scheduler
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 461d95ee441542bda032a2e4484423f6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:38:31.840Z"} -->
+
+## 2026-10-07 — launchd.supported is the macOS gate; scheduler status exits 0 off macOS while on and off exit 1
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-15
+
+**Because:** The console and the CLI share one check, and a status query should answer with the same sentence the console shows
+
+**Rejected:**
+
+- patching sys.platform in the UI tests — Textual reads it for input handling
+- exiting 1 for scheduler status off macOS — status is a question and the sentence is the answer
+
+**Files:** src/whyline/agents/launchd.py, src/whyline/cli.py
+
+<!-- whyline-event: f59da72d303b44e982fb159eab15933b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:38:31.897Z"} -->
+
+## 2026-10-07 — Console tests stub launchd so Agents mode never calls launchctl
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-15
+
+**Because:** Refreshing the status line calls launchd.status, which runs launchctl and creates the agents home directory
+
+**Rejected:**
+
+- pointing HOME at tmp_path for every console test — a missed stub would still bootstrap the developer LaunchAgent
+
+**Files:** tests/console/conftest.py
+
+<!-- whyline-event: 5a1f2d1f48934899886173070e03b69a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:38:31.951Z"} -->
+
+## 2026-10-07 — Plist paths use as_posix and the launchd domain tolerates a missing getuid
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-15
+
+**Because:** The plan tests compare slash paths and call turn_on on Windows, where str(Path) uses backslashes and os.getuid is absent
+
+**Rejected:**
+
+- skipping the launchd tests on Windows — the suite has to pass there
+
+**Files:** src/whyline/agents/launchd.py
+
+<!-- whyline-event: a6064948f412492fa9ce1f0840df8510 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:38:32.004Z"} -->
+
+## 2026-10-07 — turn_off deletes the plist even when bootout returns non-zero
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-15
+
+**Because:** bootout returns non-zero when the agent is not loaded, which is a normal way to turn it off
+
+**Rejected:**
+
+- failing the command on any bootout error — turning off a scheduler that was never loaded would then fail
+
+**Files:** src/whyline/agents/launchd.py
+
+<!-- whyline-event: d42f0497ddf84eadaa73cfaf1d3fecc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:38:32.057Z"} -->
+
+## 2026-10-07 — whyline agents scheduler does not need a git repository, and status is one sentence
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-15
+
+**Because:** The LaunchAgent is per user, and the plan asks status to print loaded or not, the plist path, and the last tick
+
+**Rejected:**
+
+- requiring whyline init first — turning the scheduler on from a home directory would then fail
+- JSON status — the other whyline agents commands print plain lines
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: b90a95ad156c43b49be147667d40c63d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:38:32.110Z"} -->
+
+## 2026-10-07 — AG-15 passes scheduler and console behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-15
+
+**Because:** The complete pytest suite exited 0 with one expected skip, and all 15 focused launchd and agents-console tests passed
+
+**Files:** src/whyline/agents/launchd.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 1467e1440e5045d4bf517f7a8b1f7566 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:41:35.110Z"} -->
+
+## 2026-10-07 — AG-15 scheduler and console controls are approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-15
+
+**Because:** The implementation matches the Task 15 launchd, CLI, and console requirements; the full pytest suite exits 0 and all 15 focused scheduler tests pass
+
+**Rejected:**
+
+- requesting changes — diff inspection and behavioral tests found no unsafe or clearly incorrect behavior
+
+**Files:** src/whyline/agents/launchd.py
+
+<!-- whyline-event: fc0364027abb451bbdcd58fe473559bc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:45:09.081Z"} -->

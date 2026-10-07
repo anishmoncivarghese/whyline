@@ -443,6 +443,28 @@ class PromptInput(Input):
             self.post_message(self.Dropped(event.text, paths))
 
 
+def _next_scheduled(rows) -> str:
+    """The earliest active agent's next run, for the scheduler status line.
+
+    `next_due` is already `YYYY-MM-DD HH:MM` from service.rows, so the
+    string order is the time order. Paused and manual agents are not next.
+    """
+    chosen: tuple[str, str] | None = None
+    for row in rows:
+        if row.status != "active" or not row.next_due:
+            continue
+        label = getattr(row.defn, "label", "")
+        if not label:
+            continue
+        candidate = (row.next_due, label)
+        if chosen is None or candidate < chosen:
+            chosen = candidate
+    if chosen is None:
+        return ""
+    when, label = chosen
+    return f"{label} {when}"
+
+
 class WhylineConsoleApp(App):
     """The mouse-enabled console. Every widget dispatches through the same
     ConsoleSession/dispatch() path the keyboard REPL already uses."""
@@ -650,13 +672,24 @@ class WhylineConsoleApp(App):
         return f"Message {agent}... (Enter to send)"
 
     def _refresh_agents_status(self) -> None:
-        from whyline.agents import service
+        from whyline.agents import launchd, service
 
+        mac = launchd.supported()
         try:
-            count = len(service.rows(self.session.root))
-            text = f"Scheduler: not available yet (comes in the next release) · {count} agents"
-        except Exception as error:
-            text = f"Scheduler: not available yet (comes in the next release) · {error}"
+            self._main("#agents-scheduler", Button).disabled = not mac
+        except (NoMatches, IndexError):
+            pass
+        if not mac:
+            text = launchd.NEEDS_MACOS
+        elif self._scheduler_on():
+            try:
+                nxt = _next_scheduled(service.rows(self.session.root))
+            except Exception as error:
+                text = f"Scheduler: on · {error}"
+            else:
+                text = f"Scheduler: on · next: {nxt}" if nxt else "Scheduler: on"
+        else:
+            text = "Scheduler: off — turn it on to run agents on a schedule"
         try:
             self._main("#agents-status", Static).update(text)
         except (NoMatches, IndexError):
@@ -703,8 +736,47 @@ class WhylineConsoleApp(App):
         )
 
     def _scheduler_on(self) -> bool:
-        # Phase 2 (Task 15) replaces this with launchd.status().loaded.
-        return False
+        from whyline.agents import launchd
+
+        if not launchd.supported():
+            return False
+        try:
+            return bool(launchd.status().loaded)
+        except Exception:
+            return False
+
+    def _toggle_scheduler(self) -> None:
+        from whyline.agents import launchd
+
+        if not launchd.supported():
+            return
+        if self._scheduler_on():
+            self.push_screen(
+                ConfirmScreen(
+                    "Turn the scheduler off? Scheduled and folder agents stop until you turn it on again.",
+                    "Turn off",
+                ),
+                self._scheduler_turned_off,
+            )
+            return
+        try:
+            launchd.turn_on()
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self._refresh_agents_status()
+
+    def _scheduler_turned_off(self, yes: bool) -> None:
+        if not yes:
+            return
+        from whyline.agents import launchd
+
+        try:
+            launchd.turn_off()
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self._refresh_agents_status()
 
     def _open_agents_list(self, follow: str = "detail") -> None:
         from whyline.agents import service
@@ -1265,10 +1337,7 @@ class WhylineConsoleApp(App):
         elif button_id == "agents-runs":
             self._open_agents_runs()
         elif button_id == "agents-scheduler":
-            self.render_event(SessionEvent(
-                kind="output",
-                text="Scheduling arrives in the next release; agents run with Run now meanwhile.",
-            ))
+            self._toggle_scheduler()
         elif button_id == "copy":
             self._copy_transcript()
         elif button_id == "relay-run":

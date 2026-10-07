@@ -38,7 +38,8 @@ async def test_agents_mode_shows_its_own_bar_within_80_columns(tmp_path, agent_r
             widget = app.query_one(button)
             assert widget.display and widget.region.right <= 80
         assert not app.query_one("#relay-plan").display
-        assert "Scheduler" in str(app.query_one("#agents-status").renderable)
+        status = str(app.query_one("#agents-status").renderable)
+        assert status.startswith("Scheduler:") or status.startswith("Scheduling needs macOS")
 
 
 async def test_list_then_detail_then_run_now_streams_and_reports(tmp_path, agent_rows, monkeypatch):
