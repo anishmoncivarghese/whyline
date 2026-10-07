@@ -7182,3 +7182,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: edb294b3dc0d407b9b0488828067b704 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:41:10.292Z"} -->
+
+## 2026-10-07 — Agents phase 2 relay plan: AG-11..AG-16 from the plan, Task 16 Step 3 left to a person, plus AG-18 for the empty agents-list message
+
+**Actor:** claude
+**Role:** planner
+**Task:** AGENTS-P2
+
+**Because:** phase 1's built interfaces match what phase 2 consumes; Task 15 replaces phase 1's scheduler placeholders; the live Mail check needs a real mailbox; AG-18 is a small gap found after 0.3.36
+
+**Rejected:**
+
+- fold the empty-list message into AG-15 — unrelated to the scheduler, and a reviewer judges each task against its own text
+
+**Files:** plans/agents-phase-2.plan.md
+
+<!-- whyline-event: 09acb1f21b10449093a664de8889e084 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:43:46.504Z"} -->
