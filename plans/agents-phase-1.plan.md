@@ -48,7 +48,7 @@ Never push, tag, bump the version or publish.
   Implement "Task 7: The service and `whyline agents …`" from the plan.
   Verify: uv run pytest -q.
 
-- [ ] AG-8: Agents mode in the console (list, detail, Run now, history)
+- [x] AG-8: Agents mode in the console (list, detail, Run now, history)
   Implement "Task 8" from the plan, with these corrections, because whyline
   0.3.35 already built part of its Step 4:
   - Command mode is gone. Keep `_MODES = ("chat", "relay", "agents")`; do not
