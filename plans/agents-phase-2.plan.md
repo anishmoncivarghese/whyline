@@ -31,7 +31,7 @@ loop rather than click by position or pause one frame. The bottom bar must
 fit 80 columns. No whyline-relay changes and no new dependencies.
 Never push, tag, bump the version or publish.
 
-- [ ] AG-11: Due-time logic (pure functions)
+- [x] AG-11: Due-time logic (pure functions)
   Implement "Task 11: Due-time logic (pure functions)" from the plan:
   schedule.py with due_times, freshness, plan_tick and next_due, in local
   wall-clock time, including at most one catch-up run and stale due times
