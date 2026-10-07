@@ -7259,3 +7259,258 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 529abf36fc5b4b6d8e629824a18b87cd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:12:16.901Z"} -->
+
+## 2026-10-07 — Missed due times count only the rows inserted this tick
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** The same stale times stay due until the run finishes, and the unique key already keeps one missed row
+
+**Rejected:**
+
+- Add len(stale) on every tick — the scheduler log would repeat those misses every 120 seconds
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 897df841f2b142839138d458ef6ef76e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:38:46.614Z"} -->
+
+## 2026-10-07 — Add accepted_at by altering Phase 1 stores after a PRAGMA check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** Phase 1 opens the database with two CREATE statements, not executescript, so existing files need ALTER TABLE
+
+**Rejected:**
+
+- Catch every OperationalError from ALTER — a locked or missing table would look like a successful migration
+
+**Files:** src/whyline/agents/state.py
+
+<!-- whyline-event: 92a4c56764fe4bd09b15538ca9d002aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:38:46.673Z"} -->
+
+## 2026-10-07 — Detach a started run with a new process group on Windows
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** start_new_session raises ValueError on Windows and the tick must be able to start a run there
+
+**Rejected:**
+
+- Call start_new_session on every platform — Windows would crash before the run starts
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: db9b46f73513423b97459005a6d896dd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:38:46.727Z"} -->
+
+## 2026-10-07 — A quiet tick touches scheduler.log instead of printing
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** Launchd treats that file's mtime as the last tick, and a tick that starts nothing writes no stdout
+
+**Rejected:**
+
+- Print a line every tick — the log would grow with empty heartbeats, and the plan says to stay quiet
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 631fe52e3d8d48369683e1ea6eb970fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:38:46.779Z"} -->
+
+## 2026-10-07 — Skip folder checks and after.finish until those modules exist
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** Phase 1 can already save a folder agent, and a missing Task 13 or 14 module must not wedge every later run
+
+**Rejected:**
+
+- Import them unconditionally — ImportError would abort the tick, and a crashed run would stay running and block that agent
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: e8d6527b7dd94be48160efcceddf7da5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:38:46.833Z"} -->
+
+## 2026-10-07 — AG-12 fails queued-definition approval recheck
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-12
+
+**Because:** The focused Agents tests and full suite pass, but a capacity probe queued a third due occurrence, edited that agent definition, freed one slot, and the next tick both marked the activation needs_review and started the queued occurrence; _start_waiting must not start claimed work whose activation is no longer active with a matching accepted hash
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 09f78baf14c6408981b3cfacc882806c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:44:27.684Z"} -->
+
+## 2026-10-07 — Re-check acceptance before starting a queued claim, and leave the row claimed
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** A definition can change while the occurrence waits for a slot; the next tick must not start it, but a later accept should still be able to run that due time
+
+**Rejected:**
+
+- Trust the review loop alone — _start_waiting never read its result, so a freed slot started the queued occurrence
+- Mark the queued occurrence missed — the unique agent-and-due-time key would block claiming it again after accept
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: 2515ff94e224409da100b72bb392c12a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:51:05.981Z"} -->
+
+## 2026-10-07 — AG-12 passes Round 4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-12
+
+**Because:** The 118-test Agents suite and full 1030-test suite pass; the simultaneous tick claim test and queued-definition approval recheck regression both pass
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: 093c2f16fb9c4bfaa5407ccddf828382 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:54:39.261Z"} -->
+
+## 2026-10-07 — AG-12 Round 5 rejects the detached execution acceptance race
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-12
+
+**Because:** run_occurrence reloads and executes the definition without checking that the activation is still active and its hash is still accepted, so an edit or pause after spawn can run unapproved work; the full suite reaches 100% but does not exercise run_occurrence
+
+**Rejected:**
+
+- Approve based on the tick-side check — the spawned child runs later and independently, so that check does not cover the execution boundary
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: 76be9d31835c46dcb40ed32232b744d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:58:31.268Z"} -->
+
+## 2026-10-07 — Re-check acceptance in run_occurrence and return the row to claimed
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** Spawn returns before the child runs, so an edit or a pause can land before execute_once. check_hash on the freshly loaded definition runs the runner only when the activation is still active and the file still matches the accepted hash. The row returns to claimed so a later accept can run that due time.
+
+**Rejected:**
+
+- Trust the tick-side check — the child runs later, so that check does not cover execute_once
+- Mark the occurrence done or missed — the unique agent-and-due-time key would block a later accept from running that due time
+- Leave the occurrence running — it would hold a concurrency slot, and the next tick only starts claimed rows
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: f55d4c21260f4ac1890c961dcdd60d67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:08:08.759Z"} -->
+
+## 2026-10-07 — AG-12 passes Round 7 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-12
+
+**Because:** The 120-test Agents suite and full repository suite pass; focused verification confirms simultaneous ticks claim once, post-spawn edits or pauses cannot execute unaccepted work, old stores gain accepted_at, and --occurrence parsing works
+
+**Files:** src/whyline/agents/state.py, src/whyline/agents/tick.py, src/whyline/cli.py, tests/agents/test_tick.py
+
+<!-- whyline-event: f21f8f9925dc430bae9c2c38a64f7d03 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:11:16.841Z"} -->
+
+## 2026-10-07 — AG-12 Round 8 rejects queued runs bypassing backoff
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-12
+
+**Because:** The plain full pytest suite passes, but a direct probe shows _start_waiting starts an existing claimed occurrence while its activation has a future backoff_until; the tick contract requires backed-off activations to remain stopped, and the current test covers only an agent with no queued claim
+
+**Rejected:**
+
+- Approve based on the green suite — the queued-claim path is not covered and demonstrably violates backoff
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: 9dbaf6255df544c7b6c98df9e27a0d5d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:14:56.384Z"} -->
+
+## 2026-10-07 — One gate (_runnable) decides whether an agent may start: definition loads, matches the accepted hash, status active, backoff over; new claims, queued claims and the detached run all use it
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** AG-12 hit the draft cap after three rejections that were each a different check missing in a different start path (acceptance at queued start, acceptance at execution, backoff at queued start); run_occurrence also skipped backoff; a parametrized test now pins that every blocker stops both paths
+
+**Rejected:**
+
+- add the backoff check to _start_waiting only — leaves run_occurrence open and the next missing check for the next round
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: f6ae7b1214c8417a9f30fd9bbf8d19e0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:23:10.581Z"} -->
+
+## 2026-10-07 — _start_waiting continues past a blocked queued claim so a later runnable agent can use a free slot
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-12
+
+**Because:** Backoff, pause and needs_review must leave the occurrence claimed without occupying the scan; a later accepted claim should start if a run slot is free
+
+**Rejected:**
+
+- break the waiting scan at the first blocked claim — a backed-off agent at the front would starve every later agent
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_tick.py
+
+<!-- whyline-event: a1f6a5895fac4179b37b656d3cc1c34f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:48:25.118Z"} -->
+
+## 2026-10-07 — AG-12 tester round 2 passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-12
+
+**Because:** The full suite and prescribed agents suite passed, and 20 focused repetitions verified single claiming under simultaneous ticks plus queued-claim backoff, pause, needs-review, and later-agent fairness behavior
+
+**Files:** src/whyline/agents/tick.py, src/whyline/agents/state.py, tests/agents/test_tick.py
+
+<!-- whyline-event: b97756b74f7b492199f50ebf6cdc992f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:52:42.517Z"} -->
+
+## 2026-10-07 — AG-12 Round 3 review approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-12
+
+**Because:** The implementation fulfills Task 12 with unique occurrence claims, one catch-up, guarded queued and detached starts, accepted_at migration, and the requested CLI commands; the independently run plain full suite passed and the diff is clean
+
+**Files:** src/whyline/agents/tick.py, src/whyline/agents/state.py, src/whyline/cli.py, tests/agents/test_tick.py
+
+<!-- whyline-event: 76b351119ac240848e2ba528865a2768 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:56:37.821Z"} -->

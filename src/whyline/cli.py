@@ -481,9 +481,12 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("agents", help="Saved agents: list, run, history, schedule")
     sub = parser.add_subparsers(dest="agents_command", required=True)
     sub.add_parser("list", help="Every repo and personal agent")
+    sub.add_parser("tick", help="Run due agents (called by the scheduler)")
+    run = sub.add_parser("run", help="Run an agent now")
+    run.add_argument("name", nargs="?")
+    run.add_argument("--occurrence", type=int)
     for name, text in (
         ("show", "One agent's definition and status"),
-        ("run", "Run an agent now"),
         ("pause", "Stop its schedule and triggers"),
         ("resume", "Start them again"),
         ("accept", "Accept its current definition on this Mac"),
@@ -1513,6 +1516,39 @@ def relay_install_hint() -> str:
     )
 
 
+def _cmd_agents_tick() -> int:
+    from whyline.agents import paths as agent_paths
+    from whyline.agents import tick
+
+    report = tick.run_tick()
+    parts = []
+    if report.started:
+        parts.append(f"started {len(report.started)}")
+    if report.missed:
+        parts.append(f"missed {report.missed}")
+    if report.reviewed:
+        parts.append("needs review: " + ", ".join(report.reviewed))
+    if parts:
+        print(datetime.datetime.now().isoformat(timespec="seconds"), "tick", ", ".join(parts))
+    else:
+        # A quiet tick writes no stdout. launchd's last-tick time is this file's mtime.
+        (agent_paths.home() / "scheduler.log").touch()
+    return EXIT_OK
+
+
+def _cmd_agents_run_occurrence(occurrence_id: int) -> int:
+    from whyline.agents import records
+    from whyline.agents import tick
+
+    record = tick.run_occurrence(occurrence_id)
+    if record is None:
+        print(f"occurrence {occurrence_id} did not run", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"{record.outcome}: {record.reason}" if record.reason else record.outcome)
+    print(records.read_final(record.run_id), end="")
+    return EXIT_OK if record.outcome.startswith("succeeded") else EXIT_ERROR
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1523,12 +1559,19 @@ def cmd_agents(args: argparse.Namespace) -> int:
                 label = row.defn.label if isinstance(row.defn, d.AgentDef) else f"{row.defn.path.name} (broken)"
                 print(f"{label:<32} {row.when:<28} {row.status:<14} {row.last_outcome}")
             return EXIT_OK
+        if args.agents_command == "tick":
+            return _cmd_agents_tick()
         if args.agents_command == "show":
             defn = service.find(args.name, root)
             print(d.render(defn), end="")
             print(service.describe(defn))
             return EXIT_OK
         if args.agents_command == "run":
+            if getattr(args, "occurrence", None) is not None:
+                return _cmd_agents_run_occurrence(args.occurrence)
+            if not args.name:
+                print("Run needs an agent name, or --occurrence ID.", file=sys.stderr)
+                return EXIT_USAGE
             record = service.run_now(args.name, root, progress=lambda line: print(f"· {line}"))
             print(f"{record.outcome}: {record.reason}" if record.reason else record.outcome)
             print(records.read_final(record.run_id), end="")

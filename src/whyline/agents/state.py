@@ -7,6 +7,7 @@ import os
 import sqlite3
 import time
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime
 from pathlib import Path
 
 from whyline.agents import definitions, paths
@@ -17,7 +18,8 @@ _SCHEMA = (
     """
     CREATE TABLE IF NOT EXISTS activations (
       agent_id TEXT PRIMARY KEY, kind TEXT, root TEXT, def_path TEXT, accepted_hash TEXT,
-      status TEXT, paused_reason TEXT DEFAULT '', last_run_at TEXT DEFAULT '',
+      status TEXT, paused_reason TEXT DEFAULT '', accepted_at TEXT DEFAULT '',
+      last_run_at TEXT DEFAULT '',
       next_due_at TEXT DEFAULT '', consecutive_failures INTEGER DEFAULT 0,
       backoff_until TEXT DEFAULT '', using_backup_until TEXT DEFAULT '',
       folder_snapshot TEXT DEFAULT ''
@@ -46,6 +48,7 @@ class Activation:
     accepted_hash: str
     status: str
     paused_reason: str = ""
+    accepted_at: str = ""
     last_run_at: str = ""
     next_due_at: str = ""
     consecutive_failures: int = 0
@@ -122,7 +125,15 @@ def connect() -> sqlite3.Connection:
         path.chmod(0o600)
     if conn is None:
         raise sqlite3.DatabaseError("could not open the state store")
+    _ensure_accepted_at(conn)
     return conn
+
+
+def _ensure_accepted_at(conn: sqlite3.Connection) -> None:
+    """Stores created in Phase 1 have no accepted_at column."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(activations)")}
+    if "accepted_at" not in columns:
+        conn.execute("ALTER TABLE activations ADD COLUMN accepted_at TEXT DEFAULT ''")
 
 
 def _activation(row: sqlite3.Row) -> Activation:
@@ -150,6 +161,7 @@ def accept(conn: sqlite3.Connection, defn) -> Activation:
         defn.agent_id, defn.kind, str(defn.root), str(defn.path), "", "active"
     )
     act.accepted_hash, act.status, act.paused_reason = _hash(defn), "active", ""
+    act.accepted_at = datetime.now().isoformat(timespec="seconds")
     act.def_path, act.root = str(defn.path), str(defn.root)
     values = asdict(act)
     cols = ", ".join(values)
@@ -205,3 +217,54 @@ def status_of(conn: sqlite3.Connection, defn) -> str:
     """Stored status. This does not re-read the file; check_hash does."""
     act = get(conn, defn.agent_id)
     return "not accepted" if act is None else act.status
+
+
+def claim(conn: sqlite3.Connection, agent_id: str, due_at: str, source: str,
+          payload_dir: str = "") -> int | None:
+    """Insert one occurrence. None when this agent and due time are already claimed."""
+    try:
+        cur = conn.execute(
+            "INSERT INTO occurrences (agent_id, due_at, source, payload_dir, status) "
+            "VALUES (?, ?, ?, ?, 'claimed')",
+            (agent_id, due_at, source, payload_dir),
+        )
+    except sqlite3.IntegrityError:
+        return None
+    return cur.lastrowid
+
+
+def record_missed(conn: sqlite3.Connection, agent_id: str, due_ats) -> int:
+    """Record each stale due time once. Returns how many rows this call inserted."""
+    inserted = 0
+    for due in due_ats:
+        try:
+            conn.execute(
+                "INSERT INTO occurrences (agent_id, due_at, source, status) "
+                "VALUES (?, ?, 'schedule', 'missed')",
+                (agent_id, due),
+            )
+        except sqlite3.IntegrityError:
+            continue
+        inserted += 1
+    return inserted
+
+
+def occurrence(conn: sqlite3.Connection, occurrence_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM occurrences WHERE id=?", (occurrence_id,)).fetchone()
+
+
+def set_occurrence(conn: sqlite3.Connection, occurrence_id: int, **changes) -> None:
+    sets = ", ".join(f"{name}=?" for name in changes)
+    conn.execute(
+        f"UPDATE occurrences SET {sets} WHERE id=?",
+        (*changes.values(), occurrence_id),
+    )
+
+
+def running_count(conn: sqlite3.Connection, agent_id: str | None = None) -> int:
+    sql = "SELECT count(*) FROM occurrences WHERE status IN ('claimed','running')"
+    args: tuple = ()
+    if agent_id:
+        sql += " AND agent_id=?"
+        args = (agent_id,)
+    return conn.execute(sql, args).fetchone()[0]
