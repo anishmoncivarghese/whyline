@@ -67,6 +67,6 @@ Never push, tag, bump the version or publish.
     keep existing tests passing.
   Verify: uv run pytest -q.
 
-- [ ] AG-9: New agent form and Review
+- [x] AG-9: New agent form and Review
   Implement "Task 9: New agent form and Review" from the plan.
   Verify: uv run pytest -q.
