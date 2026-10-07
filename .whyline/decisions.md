@@ -7839,3 +7839,119 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fc0364027abb451bbdcd58fe473559bc -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:45:09.081Z"} -->
+
+## 2026-10-07 — Mail script writes the message with AppleScript open for access, not a shell heredoc
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-16
+
+**Because:** An email body is untrusted and can contain a heredoc delimiter line, which would end the command and run the rest as shell
+
+**Rejected:**
+
+- quoted heredoc — the plan's WHYLINE_EOF delimiter is not safe against a message that contains that line
+
+**Files:** src/whyline/agents/mail.py
+
+<!-- whyline-event: 5d1320a3fb124cf79d4ec04dc0be6a7f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:55:07.878Z"} -->
+
+## 2026-10-07 — whyline agents mail-script refuses on non-macOS, while mail.install still writes the file
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-16
+
+**Because:** Mail rules exist only on macOS, and the plan's install test must pass on Linux and Windows with HOME pointed at a temp directory
+
+**Rejected:**
+
+- platform check inside install — the given test would fail off macOS
+
+**Files:** src/whyline/cli.py, src/whyline/agents/mail.py
+
+<!-- whyline-event: fb3ed83e4fc94ae7a7945185a5e7c841 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:55:11.688Z"} -->
+
+## 2026-10-07 — mail-script accepts only an agent name from the definition grammar
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-16
+
+**Because:** The name becomes a filename under Application Scripts and an unquoted token in the shell command
+
+**Rejected:**
+
+- any string the user passes — a name containing .. would leave the Mail scripts folder
+
+**Files:** src/whyline/agents/mail.py
+
+<!-- whyline-event: 64cef14d72854ab19f574f0168f189e3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T20:55:15.276Z"} -->
+
+## 2026-10-07 — AG-16 fails testing because the generated Mail command does not shell-quote the whyline executable path
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-16
+
+**Because:** script_text with /Applications/Whyline Tools/bin/whyline emits that path verbatim, so the Mail rule asks the shell to run /Applications/Whyline instead of the captured executable; focused and full pytest suites pass but do not cover this valid path
+
+**Rejected:**
+
+- pass based only on pytest — the command must work for any executable path returned by shutil.which, including paths with spaces
+
+**Files:** src/whyline/agents/mail.py
+
+<!-- whyline-event: 84d7b8b1ef7b4505b4302ee92fce3854 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:01:53.250Z"} -->
+
+## 2026-10-07 — Mail script shell-quotes the whyline executable inside the AppleScript string
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-16
+
+**Because:** shutil.which can return a path with spaces or an apostrophe. The path has to be one shell word, and the quotes shlex emits have to be escaped so they do not end the do shell script string.
+
+**Rejected:**
+
+- insert the path raw — /Applications/Whyline Tools/bin/whyline makes the shell run /Applications/Whyline
+- shlex.quote with no AppleScript escape — an apostrophe becomes double quotes that terminate the AppleScript string
+
+**Files:** src/whyline/agents/mail.py
+
+<!-- whyline-event: f5c71513c8094faebcb410a7a19f880b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:09:06.845Z"} -->
+
+## 2026-10-07 — AG-16 Mail recipe passes round 4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-16
+
+**Because:** The focused Mail suite and full project suite pass, and the generated command for a whyline path containing both an apostrophe and a space compiles as an AppleScript string and decodes to valid POSIX shell quoting.
+
+**Rejected:**
+
+- Fail on the full-script osacompile result — this restricted process cannot compile even a minimal do shell script statement because Standard Additions is unavailable, while the task-specific quoted string compiles successfully and the live Mail check is explicitly deferred.
+
+**Files:** src/whyline/agents/mail.py, tests/agents/test_mail.py
+
+<!-- whyline-event: f46be4f6793f4084be9c698b46a90b49 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:13:38.634Z"} -->
+
+## 2026-10-07 — AG-16 Mail recipe is approved in round 5
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-16
+
+**Because:** The implementation matches Steps 1, 2 and 4, safely writes untrusted email data outside the shell, validates names, quotes executable paths, documents setup and troubleshooting, and the plain full pytest suite passes
+
+**Files:** docs/agents-mail-recipe.md, src/whyline/agents/mail.py, src/whyline/cli.py, tests/agents/test_mail.py
+
+<!-- whyline-event: affc6c5fa3ee4982aadb0083aef2db22 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:17:28.639Z"} -->

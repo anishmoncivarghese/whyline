@@ -504,6 +504,11 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     )
     trigger.add_argument("name")
     trigger.add_argument("--file", action="append", default=[])
+    mail_script = sub.add_parser(
+        "mail-script",
+        help="Install the Mail.app rule script for an agent",
+    )
+    mail_script.add_argument("name")
     scheduler = sub.add_parser("scheduler", help="Turn the agents scheduler on or off")
     scheduler_sub = scheduler.add_subparsers(dest="scheduler_command", required=True)
     scheduler_sub.add_parser("on", help="Check for due agents every 2 minutes, and at login")
@@ -1588,11 +1593,28 @@ def _cmd_agents_scheduler(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_agents_mail_script(args: argparse.Namespace) -> int:
+    from whyline.agents import mail
+
+    if not mail.supported():
+        print(mail.NEEDS_MACOS, file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        path = mail.install(args.name)
+    except (RuntimeError, OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(path.as_posix())
+    return EXIT_OK
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
     if args.agents_command == "scheduler":
         return _cmd_agents_scheduler(args)
+    if args.agents_command == "mail-script":
+        return _cmd_agents_mail_script(args)
     root = _repo_root_or_none()
     try:
         if args.agents_command == "list":
