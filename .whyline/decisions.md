@@ -7165,3 +7165,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2deeec2febd04faf9110b5b13e4fd475 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:27:44.356Z"} -->
+
+## 2026-10-07 — Re-tagged v0.3.36 after Windows-only failures: agent permission-bit tests now check POSIX only
+
+**Actor:** claude
+**Role:** releaser
+**Task:** AG-10
+
+**Because:** Windows has no POSIX permission bits, so 0o700/0o600 assertions always fail there; the first tag published nothing, so the tag moved to the fixed commit as with v0.3.32 and v0.3.35.1
+
+**Rejected:**
+
+- drop the permission checks — they guard the plan's private-folder rule on macOS and Linux
+
+**Files:** tests/agents/test_records.py, tests/agents/test_state.py
+
+<!-- whyline-event: edb294b3dc0d407b9b0488828067b704 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:41:10.292Z"} -->
