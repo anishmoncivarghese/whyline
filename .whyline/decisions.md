@@ -7199,3 +7199,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 09acb1f21b10449093a664de8889e084 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:43:46.504Z"} -->
+
+## 2026-10-07 — every-N-hours due times stay on a same-day midnight grid
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-11
+
+**Because:** the plan and the New agent form say every 5 hours is 00:00, 05:00, 10:00 each day, including values that do not divide 24
+
+**Rejected:**
+
+- a rolling interval across midnight — the next day would start at 01:00, which the form help text does not describe
+
+**Files:** src/whyline/agents/schedule.py
+
+<!-- whyline-event: 961a6be29111432e81e53aae5fbc8c0f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:04:28.669Z"} -->
+
+## 2026-10-07 — a tick runs only the latest due time inside the freshness window
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-11
+
+**Because:** a machine asleep for two days should catch up once, and older due times are returned for the tick to record as missed
+
+**Rejected:**
+
+- running every skipped day — that would start one run per missed day after wake
+
+**Files:** src/whyline/agents/schedule.py
+
+<!-- whyline-event: 24b0bfc45a804269a49e8889ce4521cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:04:31.701Z"} -->
+
+## 2026-10-07 — AG-11 due-time behavior passes testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-11
+
+**Because:** The seven schedule tests, independent window/freshness/midnight-grid probes, and the full pytest suite all passed
+
+**Files:** src/whyline/agents/schedule.py
+
+<!-- whyline-event: be67a9ddfded4e3b8139dd70a6a073b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:09:26.979Z"} -->
+
+## 2026-10-07 — AG-11 due-time logic approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-11
+
+**Because:** The implementation matches the specified local wall-clock, half-open window, freshness, catch-up, stale-missed, and next-due behavior; all seven focused cases are covered and the plain full pytest command exited 0
+
+**Files:** src/whyline/agents/schedule.py
+
+<!-- whyline-event: 529abf36fc5b4b6d8e629824a18b87cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T17:12:16.901Z"} -->
