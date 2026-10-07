@@ -6379,3 +6379,243 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4c3db589ab1c471cbf568d071991d6fb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-06T22:52:02.513Z"} -->
+
+## 2026-10-07 — Grok read-only is deny rules; antigravity cannot run
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** The spike showed grok --permission-mode plan and agy --mode plan both wrote a file, while dropping write allows and adding --deny Edit --deny Write blocked grok's write
+
+**Rejected:**
+
+- Treat either plan mode as read-only — the spike recorded those runs as not usable
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 95eaaab1094a416aa669025acb53bba4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:26:45.232Z"} -->
+
+## 2026-10-07 — Codex has no denial detector; Claude and Grok keep theirs
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** Codex only said it could not create the file, which the spike called unreliable. Claude's signal is a non-empty permission_denials list and Grok's is stopReason cancelled
+
+**Rejected:**
+
+- Drop Claude's detector because plan mode leaves the list empty — an empty list is already not a denial, and a non-empty list is still the signal the spike named
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: c968d73f33c448eb94407d501464e014 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:26:45.268Z"} -->
+
+## 2026-10-07 — Keep the plan's login-marker superset
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** The spike phrases are already lowercased substrings (not logged in, not signed in, 401, unauthorized), and Task 6's fixture Please log in / auth login needs the extra phrases
+
+**Rejected:**
+
+- Only the three spike sentences — that tuple would miss Task 6's login fixture
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: fc4858d63db7481d9cb95cb9cf9d1e08 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:26:45.297Z"} -->
+
+## 2026-10-07 — AG-4 fails malformed read-only flag handling despite passing suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The focused capability tests, all agent tests, and full suite pass, but read_only_command raises IndexError for ['codex', 'exec', '-s'] and ['claude', '--permission-mode']; configured built-in commands accept arbitrary non-empty argv and the planned runner does not catch capability rewrite exceptions, so malformed configuration crashes instead of failing closed
+
+**Rejected:**
+
+- Pass based only on prescribed fixtures — that would accept a reproducible crash on reachable configured commands
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 875b22ab629b45da8093c59d23e84e72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:30:25.106Z"} -->
+
+## 2026-10-07 — A trailing Codex -s returns None; a trailing Claude --permission-mode is completed with plan
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** Codex read-only replaces an existing sandbox value, so a missing value cannot be rewritten. Claude plan mode is a known token, so completing the flag still yields a valid argv.
+
+**Rejected:**
+
+- Append read-only after a bare -s — that invents a sandbox mode the command never set, and the review asked Codex to fail closed
+- Return None for a trailing Claude flag — the review asked for a valid plan-mode argv, and plan is the mode the spike verified
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 04bb8413829f4602bf9aa944c5d12e2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:34:47.756Z"} -->
+
+## 2026-10-07 — AG-4 still permits later writable mode flags
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The focused tests and full suite pass, but read_only_command rewrites only the first Codex -s or Claude --permission-mode occurrence; later danger-full-access or acceptEdits flags remain and can override read-only, while a missing value followed by another flag consumes that unrelated flag
+
+**Rejected:**
+
+- Pass on the green suite — duplicate and adjacent configured flags are accepted by relay config and violate the capability layer's read-only guarantee
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 67da5a05a38e4988ab5184c07711c49e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:38:03.862Z"} -->
+
+## 2026-10-07 — Every Codex sandbox value is rewritten to read-only
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** The last -s or --sandbox value wins, including the attached = form, so a later danger-full-access would undo the first rewrite. A following flag is not a value, and that command returns None, the same as a trailing -s. --add-dir names an extra writable directory, so that grant is removed.
+
+**Rejected:**
+
+- Rewrite only the first -s — the last sandbox mode wins and danger-full-access stays
+- Reject every repeated -s — a repeated flag with real values can still be forced read-only
+- Leave --add-dir in place — its help text says the directory is writable alongside the workspace
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 9dae359496a94677b182c349767107cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:48:41.599Z"} -->
+
+## 2026-10-07 — Codex commands that cancel the sandbox are refused
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** --dangerously-bypass-approvals-and-sandbox skips sandboxing and --approve-for-me runs approvals in the workspace-write sandbox. Neither flag has a mode value that can be replaced with read-only.
+
+**Rejected:**
+
+- Strip those flags and keep the rewritten -s — the bypass exists to cancel that sandbox, and a command with no -s still cannot be given one
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 7f5152e9636d44fbb1e23e07ea3d7ac5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:48:44.750Z"} -->
+
+## 2026-10-07 — Every Claude permission mode becomes plan and skip-permissions is dropped
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** A later --permission-mode acceptEdits overrides the first, and --dangerously-skip-permissions bypasses the mode. When the next token is itself a flag, plan is inserted and that flag stays.
+
+**Rejected:**
+
+- Return None when the next token is a flag — a trailing --permission-mode is completed with plan, the mode the spike verified
+- Leave --dangerously-skip-permissions in place — it skips the permission check that plan mode enforces
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: f5ae31d92a0c4a1f80603289632fd739 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:48:47.713Z"} -->
+
+## 2026-10-07 — AG-4 still preserves attached Grok write allows
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The focused 16-test suite and full project suite pass, but Grok 1.0.41 accepts --allow=RULE and read_only_command leaves --allow=Edit, --allow=Write, and write-capable Bash rules such as --allow=Bash(mkdir:*) intact; the latter is not covered by the appended Edit and Write denies, contrary to the spike requirement to drop write allows
+
+**Rejected:**
+
+- Pass on the green suites — that would permit a supported Grok argv spelling to retain an explicit write grant
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: caa299e8753645a3a169c33f2d98ba53 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T04:52:48.735Z"} -->
+
+## 2026-10-07 — Grok read-only keeps no permission grant at all (every --allow/--allowedTools spelling and --always-approve removed), forces --permission-mode dontAsk, and adds --deny Edit/Write
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** AG-4's plan prescribed a blocklist of six write allows; codex as tester found --allow=Edit surviving, and Bash(python3:*)/Bash(uv run:*) in the relay's grok command write through a shell; verified with real grok 1.0.41 runs that the new command blocks edit-tool and python3 writes while cat, git log and the read tool still work
+
+**Rejected:**
+
+- extend the blocklist with attached forms — still keeps shell grants that write
+- keep read-only Bash allows like cat — grok's built-in read-only list already covers them under dontAsk
+
+**Files:** src/whyline/agents/capabilities.py, tests/agents/test_capabilities.py
+
+<!-- whyline-event: e0ff89809a7e4d998d0dbb5e503d674e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T05:43:25.111Z"} -->
+
+## 2026-10-07 — Grok read-only drops --allow=RULE, --tools, --yolo and --dangerously-skip-permissions
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-4
+
+**Because:** Grok 1.0.41 accepts the attached --allow=RULE form, --tools is the canonical spelling of --allowedTools, and --yolo and --dangerously-skip-permissions alias --always-approve. That mode auto-approves Bash writes, which --deny Edit/Write does not cover. dontAsk with no grant left still runs cat, git log and the read tool.
+
+**Rejected:**
+
+- Extend only the six-name write blocklist — Bash(python3:*) and the always-approve aliases would still grant writes
+- Force --sandbox read-only — the spike's verified grok argv is dontAsk with the write grants removed, and the sandbox does not approve a tool call
+
+**Files:** src/whyline/agents/capabilities.py, tests/agents/test_capabilities.py
+
+<!-- whyline-event: 36400c19105844a4a3a9c599fd9c6c31 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:34:18.897Z"} -->
+
+## 2026-10-07 — AG-4 passes Round 2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-4
+
+**Because:** The capability tests, full agents suite, and full project suite all pass; read-only transformations remove known write grants and bypasses while preserving documented denial detection and unattended eligibility
+
+**Files:** src/whyline/agents/capabilities.py
+
+<!-- whyline-event: 0931832417964da097a54d4a1e0e22b3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:37:42.176Z"} -->
+
+## 2026-10-07 — AG-4 Round 3 approved after hardened capability review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-4
+
+**Because:** The read-only transforms match the spike intent and fail closed against known Codex, Claude, and Grok write-grant bypasses; denial, login, and unattended capability tables are correct; focused tests cover the safety cases; and the independent plain full suite passed
+
+**Rejected:**
+
+- Request changes — no correctness, coverage, or safety defect was found
+
+**Files:** src/whyline/agents/capabilities.py, tests/agents/test_capabilities.py
+
+<!-- whyline-event: 07118bdf7c5d43cfb449194e010a8c2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T06:40:29.069Z"} -->
