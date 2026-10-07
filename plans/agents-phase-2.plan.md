@@ -44,7 +44,7 @@ Never push, tag, bump the version or publish.
   --occurrence ID`. Two ticks at the same moment must run each due
   occurrence once (the unique claim). Verify: uv run pytest -q.
 
-- [ ] AG-13: Folder watch and whyline agents trigger
+- [x] AG-13: Folder watch and whyline agents trigger
   Implement "Task 13: Folder watch and `whyline agents trigger`" from the
   plan: folders.py, service.trigger with TooSoon, and `whyline agents
   trigger <name> [--file PATH ...]` (exit code 3 for TooSoon). A folder
