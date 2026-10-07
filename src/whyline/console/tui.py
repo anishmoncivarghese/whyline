@@ -655,10 +655,48 @@ class WhylineConsoleApp(App):
             return
 
     def _open_new_agent(self, existing=None) -> None:
-        # Task 9 replaces this with the form.
-        self.render_event(SessionEvent(
-            kind="output", text="New agent: coming in the next task.",
-        ))
+        from whyline import account
+        from whyline.console.agents_screens import NewAgentScreen
+
+        self.push_screen(
+            NewAgentScreen(
+                self.session.root,
+                account.agent_status(self.session.root),
+                existing=existing,
+            ),
+            self._new_agent_done,
+        )
+
+    def _new_agent_done(self, defn) -> None:
+        if defn is None:
+            return
+        from whyline.agents import service
+        from whyline.console.agents_screens import ReviewScreen
+
+        def decided(choice) -> None:
+            if choice == "save":
+                try:
+                    service.save_new(defn)
+                except Exception as error:
+                    self.render_event(SessionEvent(kind="error", text=str(error)))
+                    return
+                shown = defn.path.as_posix().replace(str(Path.home()), "~")
+                self.render_event(SessionEvent(
+                    kind="output",
+                    text=f"Saved {defn.label} ({shown}) and accepted it on this Mac.",
+                ))
+                self._refresh_agents_status()
+            else:
+                self._open_new_agent(existing=defn)
+
+        self.push_screen(
+            ReviewScreen(defn, service.describe(defn), self._scheduler_on()),
+            decided,
+        )
+
+    def _scheduler_on(self) -> bool:
+        # Phase 2 (Task 15) replaces this with launchd.status().loaded.
+        return False
 
     def _open_agents_list(self, follow: str = "detail") -> None:
         from whyline.agents import service

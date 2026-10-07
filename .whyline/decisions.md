@@ -7029,3 +7029,122 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1b6ceca92c8b4ea6af5bc43493015671 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:38:22.598Z"} -->
+
+## 2026-10-07 — Edit saves over the opened agent file when the name and kind are unchanged
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** The file that was opened is the definition being edited, even when its filename is not the agent name
+
+**Rejected:**
+
+- always write name.toml — the original file would remain and could collide with another agent
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 352a7c9a61e546dba097292a63d6f971 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.569Z"} -->
+
+## 2026-10-07 — The folder picker stores the first directory, or the parent of the first picked file
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** pick_files uses choose file, which returns files rather than folders
+
+**Rejected:**
+
+- accept only directories — the macOS picker would never fill the field
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 3eb543302b514c09b05e95704fa67cb4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.600Z"} -->
+
+## 2026-10-07 — Repo sources must be inside the repository; a folder trigger may sit outside it
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** A repo source is shared in git and parse rejects paths outside the repo, while a watch folder is a path on this Mac
+
+**Rejected:**
+
+- store every picked path as a tilde path — repo sources would no longer be portable
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 798d016c5cae4b07b0675a28abf10ef7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.630Z"} -->
+
+## 2026-10-07 — The name stays read-only whenever the form is opened with an existing definition
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** Review Back reopens the form through the same existing argument as Edit
+
+**Rejected:**
+
+- lock the name only when the file is already on disk — Back could then rename an agent the review had already checked
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b4f8ef2d98ec476c96585459bfb1c97c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.660Z"} -->
+
+## 2026-10-07 — Editing keeps min_gap_minutes from the opened definition
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-9
+
+**Because:** The form has no control for it, and the default is 10 only for a new agent
+
+**Rejected:**
+
+- always write 10 — an edit would reset a custom gap
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b1044fe55e84498b9b5688dd63b62396 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:04:21.690Z"} -->
+
+## 2026-10-07 — AG-9 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-9
+
+**Because:** The focused AG-9 tests, console suite, and full project suite pass; the form validates before review, saves and activates definitions, preserves review-back/edit values, handles sources and triggers, and exposes unsupported unattended CLIs as specified
+
+**Rejected:**
+
+- Failing the task — no reproducible behavioral defect was found
+
+**Files:** tests/console/test_new_agent.py
+
+<!-- whyline-event: 693da8cd5f2c4939b46c1dd6a2cd19f2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:08:44.800Z"} -->
+
+## 2026-10-07 — Approve AG-9 new agent form and review flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-9
+
+**Because:** The diff implements the Task 9 form, validation, source and trigger handling, edit prefill, plain-language review, save and activation wiring; the required plain uv run pytest -q suite completed at 100% with no failures and one expected skip
+
+**Rejected:**
+
+- Request changes — no reproducible task-scoped defect or unsafe behavior was found
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/tui.py, tests/console/test_new_agent.py
+
+<!-- whyline-event: 33b8de7377b848f8bb800743f2be5dae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T16:12:11.092Z"} -->
