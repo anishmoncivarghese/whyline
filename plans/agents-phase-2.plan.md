@@ -66,7 +66,7 @@ Never push, tag, bump the version or publish.
   needs macOS for now; agents still run with Run now."
   Verify: uv run pytest -q.
 
-- [ ] AG-16: The Mail recipe
+- [x] AG-16: The Mail recipe
   Implement Steps 1, 2 and 4 of "Task 16: The Mail recipe" from the plan:
   docs/agents-mail-recipe.md, mail.py and `whyline agents mail-script
   <name>`. Skip Step 3 (the live Mail check): it is done by a person before
