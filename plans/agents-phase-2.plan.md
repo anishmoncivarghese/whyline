@@ -72,7 +72,7 @@ Never push, tag, bump the version or publish.
   <name>`. Skip Step 3 (the live Mail check): it is done by a person before
   the 0.3.37 release. Verify: uv run pytest -q.
 
-- [ ] AG-18: An empty agents list says so
+- [x] AG-18: An empty agents list says so
   Not in the plan; found after the 0.3.36 release. With no agents,
   `whyline agents list` prints nothing and exits 0. Make it print one line,
   "No agents yet. Create one with New in the console's Agents tab.", and
