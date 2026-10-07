@@ -102,6 +102,40 @@ def history(name: str, repo_root: Path | None, n: int = 20) -> list[records.RunR
     return records.list_runs(find(name, repo_root).agent_id, limit=n)
 
 
+class TooSoon(RuntimeError):
+    def __init__(self, next_allowed):
+        super().__init__(f"Too soon: the next run is allowed at {next_allowed:%H:%M}")
+        self.next_allowed = next_allowed
+
+
+def trigger(name, repo_root, files=(), *, now=None, spawn=None) -> int:
+    from datetime import datetime, timedelta
+
+    from whyline.agents import capabilities, folders, tick
+
+    now = now or datetime.now().replace(microsecond=0)
+    defn = find(name, repo_root)
+    conn = state.connect()
+    status = state.check_hash(conn, defn)
+    if status != "active":
+        raise ValueError(f"{defn.label} is {status.replace('_', ' ')}; it can't be triggered")
+    if not any(capabilities.can_run_unattended(c) for c in (defn.runner, *defn.backup)):
+        raise ValueError(f"{defn.label} has no CLI cleared for unattended runs")
+    act = state.get(conn, defn.agent_id)
+    if act.last_run_at:
+        allowed = datetime.fromisoformat(act.last_run_at) + timedelta(minutes=defn.trigger.min_gap_minutes)
+        if now < allowed:
+            raise TooSoon(allowed)
+    target = folders.payload_dir(defn.name, now)
+    folders.copy_into(target, files)
+    occurrence = state.claim(conn, defn.agent_id, now.isoformat(), "trigger", str(target))
+    if occurrence is None:
+        raise TooSoon(now + timedelta(seconds=1))
+    state.set_occurrence(conn, occurrence, status="running")
+    (spawn or tick._spawn)(occurrence)
+    return occurrence
+
+
 def describe(defn: d.AgentDef) -> str:
     t = defn.trigger
     when = {

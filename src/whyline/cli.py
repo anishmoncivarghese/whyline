@@ -498,6 +498,12 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     delete = sub.add_parser("delete", help="Delete the agent and its schedule")
     delete.add_argument("name")
     delete.add_argument("--yes", action="store_true")
+    trigger = sub.add_parser(
+        "trigger",
+        help="Run an agent now as an event (for Mail rules, Shortcuts, hooks)",
+    )
+    trigger.add_argument("name")
+    trigger.add_argument("--file", action="append", default=[])
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1585,6 +1591,15 @@ def cmd_agents(args: argparse.Namespace) -> int:
                 print("This deletes the agent and its schedule. Re-run with --yes.", file=sys.stderr)
                 return EXIT_USAGE
             service.delete(args.name, root)
+            return EXIT_OK
+        if args.agents_command == "trigger":
+            try:
+                service.trigger(args.name, root, args.file or [])
+            except service.TooSoon as error:
+                print(str(error), file=sys.stderr)
+                # Spec exit 3: the gap has not passed. Same number as
+                # EXIT_UNINITIALISED; the stderr line is how a caller tells them apart.
+                return 3
             return EXIT_OK
         getattr(service, args.agents_command)(args.name, root)
         return EXIT_OK

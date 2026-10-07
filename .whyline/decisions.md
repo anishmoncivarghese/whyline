@@ -7514,3 +7514,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 76b351119ac240848e2ba528865a2768 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T18:56:37.821Z"} -->
+
+## 2026-10-07 — agents trigger exits 3 when the minimum gap has not passed
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-13
+
+**Because:** The agents spec says a too-soon trigger prints the next allowed time and exits 3, so a Mail rule can tell a gap from a failed run.
+
+**Rejected:**
+
+- exit 1 — a rule that retries on any failure would keep firing during the gap
+- a new exit code — the spec names 3, which is already EXIT_UNINITIALISED; stderr text tells them apart
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: f640ff1081e343d48b7199915cb77548 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:08:30.012Z"} -->
+
+## 2026-10-07 — the folder gap test closes the first occurrence before the next start
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-13
+
+**Because:** The tick starts at most one run per agent. The plan's spawn stub leaves the first occurrence running, so the post-gap tick is skipped as busy and the plan's assertion cannot pass.
+
+**Rejected:**
+
+- starting a second folder run while the first is still running — the spec caps an agent at one run, and a still-running row waits for a later tick
+
+**Files:** tests/agents/test_folders_and_trigger.py
+
+<!-- whyline-event: 1785e974a7264887a006eec38eb7e7aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:08:34.299Z"} -->
+
+## 2026-10-07 — AG-13 passes Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-13
+
+**Because:** The full repository suite exited 0, and all 8 focused tests passed, including a 30-file burst producing one occurrence, payload copying, minimum-gap deferral, busy-run deferral, inactive-agent rejection, and CLI exit 3 for TooSoon
+
+**Files:** src/whyline/agents/folders.py, src/whyline/agents/service.py, src/whyline/cli.py, tests/agents/test_folders_and_trigger.py
+
+<!-- whyline-event: 8d5658539acb4dfd8695bbb6b709ce4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:11:29.406Z"} -->
+
+## 2026-10-07 — AG-13 Round 3 review approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-13
+
+**Because:** The implementation matches Task 13's folder-watch and explicit-trigger interfaces; focused tests genuinely cover regular-file snapshots, a 30-file single occurrence, deferred gap and busy behavior, payload copying, inactive rejection, repeated --file forwarding, and TooSoon exit 3, while the independently run plain full suite exited 0 with one skip and no failures
+
+**Files:** src/whyline/agents/folders.py, src/whyline/agents/service.py, src/whyline/cli.py, tests/agents/test_folders_and_trigger.py
+
+<!-- whyline-event: 16f33e48132e42b1ad33e4fc65d4813e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T19:14:35.020Z"} -->
