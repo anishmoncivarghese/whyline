@@ -15,6 +15,9 @@ class Ambiguous(LookupError):
     pass
 
 
+NO_AGENTS = "No agents yet. Create one with New in the console's Agents tab."
+
+
 @dataclass
 class Row:
     defn: object  # AgentDef | Broken

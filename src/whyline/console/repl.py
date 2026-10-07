@@ -605,7 +605,7 @@ def _agents_command(session: ConsoleSession, text: str) -> SessionEvent:
         except (service.AgentNotFound, service.Ambiguous, ValueError) as error:
             return SessionEvent(kind="error", text=str(error))
         if not rows:
-            return SessionEvent(kind="output", text="No agents yet.")
+            return SessionEvent(kind="output", text=service.NO_AGENTS)
         return SessionEvent(kind="output", text="\n".join(_list_line(row) for row in rows))
     if len(parts) == 2 and parts[0] in ("run", "history", "pause", "resume", "accept"):
         cmd, name = parts

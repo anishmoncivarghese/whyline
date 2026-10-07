@@ -13,6 +13,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
 from whyline.agents import capabilities, definitions as d, paths, records
+from whyline.agents.service import NO_AGENTS
 
 _CSS = """
 {name} {{ align: center middle; }}
@@ -40,25 +41,27 @@ class AgentsListScreen(ModalScreen):
         self._rows = rows
 
     def compose(self) -> ComposeResult:
-        table = DataTable(id="al-table", cursor_type="row")
-        table.add_columns("Agent", "CLI", "When", "Next", "Last", "Status")
-        for row in self._rows:
-            if isinstance(row.defn, d.Broken):
+        body: list = [Label("Agents" if self._rows else NO_AGENTS)]
+        if self._rows:
+            table = DataTable(id="al-table", cursor_type="row")
+            table.add_columns("Agent", "CLI", "When", "Next", "Last", "Status")
+            for row in self._rows:
+                if isinstance(row.defn, d.Broken):
+                    table.add_row(
+                        f"{row.defn.path.name} (broken)", "", row.when, "", "", "needs review",
+                        key=f"broken:{row.defn.path.name}",
+                    )
+                    continue
+                cli = row.defn.runner + (f" → {', '.join(row.defn.backup)}" if row.defn.backup else "")
                 table.add_row(
-                    f"{row.defn.path.name} (broken)", "", row.when, "", "", "needs review",
-                    key=f"broken:{row.defn.path.name}",
+                    row.defn.label, cli, row.when, row.next_due or "—",
+                    row.last_outcome or "—", row.status, key=f"{row.defn.kind}:{row.defn.name}",
                 )
-                continue
-            cli = row.defn.runner + (f" → {', '.join(row.defn.backup)}" if row.defn.backup else "")
-            table.add_row(
-                row.defn.label, cli, row.when, row.next_due or "—",
-                row.last_outcome or "—", row.status, key=f"{row.defn.kind}:{row.defn.name}",
-            )
-        yield Vertical(
-            Label("Agents" if self._rows else "No agents yet. Press New to make one."),
-            table,
+            body.append(table)
+        body.append(
             Horizontal(Button("Open", id="al-open", variant="primary"), Button("Close", id="al-close")),
         )
+        yield Vertical(*body)
 
     def _chosen(self) -> str | None:
         if not self._rows:

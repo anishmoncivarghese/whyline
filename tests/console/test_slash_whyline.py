@@ -59,6 +59,16 @@ def test_help_lists_whyline_commands(tmp_path):
     assert "whyline commands" in text and "/timeline" in text
 
 
+def test_list_in_agents_mode_when_there_are_none_says_how_to_create_one(tmp_path, monkeypatch):
+    from whyline.agents import service
+
+    monkeypatch.setattr(service, "rows", lambda root: [])
+    session = ConsoleSession(root=tmp_path, mode="agents")
+    event = repl.dispatch(session, "list")
+    assert event.kind == "output"
+    assert event.text == "No agents yet. Create one with New in the console's Agents tab."
+
+
 def test_route_agents_switches_mode(tmp_path, monkeypatch):
     from whyline.agents import definitions as d
     from whyline.agents import service

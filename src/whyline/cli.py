@@ -1618,7 +1618,11 @@ def cmd_agents(args: argparse.Namespace) -> int:
     root = _repo_root_or_none()
     try:
         if args.agents_command == "list":
-            for row in service.rows(root):
+            found = service.rows(root)
+            if not found:
+                print(service.NO_AGENTS)
+                return EXIT_OK
+            for row in found:
                 label = row.defn.label if isinstance(row.defn, d.AgentDef) else f"{row.defn.path.name} (broken)"
                 print(f"{label:<32} {row.when:<28} {row.status:<14} {row.last_outcome}")
             return EXIT_OK

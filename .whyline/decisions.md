@@ -7955,3 +7955,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: affc6c5fa3ee4982aadb0083aef2db22 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:17:28.639Z"} -->
+
+## 2026-10-07 — Share one empty-agents sentence from service.NO_AGENTS
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-18
+
+**Because:** The CLI, the Agents list, and typed list must say the same sentence, so one constant is the source.
+
+**Rejected:**
+
+- Copy the sentence in cli.py, repl.py, and agents_screens.py — a later edit would update one surface and leave the others.
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py, src/whyline/console/repl.py, src/whyline/console/agents_screens.py
+
+<!-- whyline-event: a2e096395ad84c68a653762d372f38d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:24:31.066Z"} -->
+
+## 2026-10-07 — Omit the Agents table when there are no agents
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-18
+
+**Because:** An empty DataTable is the blank list this task replaces; the sentence is the whole empty state. Open and Close stay, and Open still dismisses with no selection.
+
+**Rejected:**
+
+- Keep the empty table under the new sentence — the task says the screen should say the sentence instead of showing an empty list.
+- Drop the Open button too — it already dismisses with nothing selected, and removing it changes the popup for no extra information.
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: db8337c916634698ba3a05b25e18c120 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:24:31.121Z"} -->
+
+## 2026-10-07 — AG-18 passes tester round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-18
+
+**Because:** The focused CLI and console tests passed, and the complete pytest suite exited 0 with one skip and no failures; the empty list message, CLI exit code, typed Agents-mode output, and populated-list regression behavior are covered.
+
+**Files:** tests/agents/test_cli_agents.py, tests/console/test_agents_mode.py, tests/console/test_slash_whyline.py
+
+<!-- whyline-event: 9f4d5198ad4744cdba8851075a76c015 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:27:06.459Z"} -->
+
+## 2026-10-07 — AG-18 approved in reviewer round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-18
+
+**Because:** The shared exact empty-state sentence is emitted by the CLI, console popup, and typed Agents-mode list; the CLI still exits 0, the popup omits the empty table, regression coverage remains, and uv run pytest -q exited 0.
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py, src/whyline/console/agents_screens.py, src/whyline/console/repl.py, tests/agents/test_cli_agents.py, tests/console/test_agents_mode.py, tests/console/test_slash_whyline.py
+
+<!-- whyline-event: 9dbe4614e6c642bb91526fd7827b3267 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:32:10.563Z"} -->

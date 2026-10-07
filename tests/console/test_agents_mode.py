@@ -1,8 +1,11 @@
 import pytest
+from textual.css.query import NoMatches
 
 from whyline.agents import definitions as d, records, service
 from whyline.console import tui
 from whyline.console.agents_screens import AgentDetailScreen, AgentsListScreen
+
+NO_AGENTS = "No agents yet. Create one with New in the console's Agents tab."
 
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
@@ -40,6 +43,20 @@ async def test_agents_mode_shows_its_own_bar_within_80_columns(tmp_path, agent_r
         assert not app.query_one("#relay-plan").display
         status = str(app.query_one("#agents-status").renderable)
         assert status.startswith("Scheduler:") or status.startswith("Scheduling needs macOS")
+
+
+async def test_an_empty_agents_list_says_how_to_create_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "rows", lambda root: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await _agents_mode(app, pilot)
+        await pilot.click("#agents-list")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, AgentsListScreen)
+        assert str(screen.query_one(tui.Label).renderable) == NO_AGENTS
+        with pytest.raises(NoMatches):
+            screen.query_one("#al-table")
 
 
 async def test_list_then_detail_then_run_now_streams_and_reports(tmp_path, agent_rows, monkeypatch):
