@@ -6815,3 +6815,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c9cf2e4bb58649649034de57b7d06fc8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T12:56:10.395Z"} -->
+
+## 2026-10-07 — Bare /agents in the console stays the relay-chat hint
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-7
+
+**Because:** People already type /agents for relay chat agent list, and the console test requires that hint. The saved-agents CLI always takes a subcommand, so /agents list still runs it.
+
+**Rejected:**
+
+- Run bare whyline agents from /agents — argparse usage replaces the hint
+- Drop agents from slash passthrough entirely — /agents list would also look unknown
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 6f60e7ccc43148ec8e3235b439f68ca6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:06:10.507Z"} -->
+
+## 2026-10-07 — whyline agents resolves the repo with paths.find_repo_root
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AG-7
+
+**Because:** Outside a repository the command must still list personal agents. find_repo_root returns None. _require_repo raises SystemExit and would abort that case.
+
+**Rejected:**
+
+- Catch SystemExit from _require_repo — that helper is a hard stop for commands that cannot run without a repo
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 10b734530e2d44f5beb910ab88acfbb3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:06:10.564Z"} -->
+
+## 2026-10-07 — AG-7 service and agents CLI pass Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AG-7
+
+**Because:** The focused agents suite and full project suite passed, and isolated black-box checks verified discovery, show, accept, pause, resume, history, guarded deletion, confirmed deletion, and personal-agent listing outside a repository
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py
+
+<!-- whyline-event: d82c061192a54598ae48e300e3b4bfc0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:09:54.222Z"} -->
+
+## 2026-10-07 — Approved AG-7 service and agents CLI in Round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AG-7
+
+**Because:** The implementation matches Task 7's service and Phase 1 CLI interfaces, focused tests passed, git diff --check passed, and the required plain uv run pytest -q suite completed successfully with one skip
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py, tests/agents/test_service.py, tests/agents/test_cli_agents.py
+
+<!-- whyline-event: 89e1716b945a41269d23c0199d9c4390 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-07T13:14:03.989Z"} -->

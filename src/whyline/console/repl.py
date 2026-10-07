@@ -163,6 +163,11 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         parts = text[1:].split()
         if parts:
             head, *rest = parts
+            # Bare /agents is still the relay-chat command (it lists chat
+            # agents). The saved-agents CLI always takes a subcommand, so
+            # only `/agents list` and the rest go through.
+            if head == "agents" and not rest:
+                return None
             if head in whyline_subcommands() and head != "console":
                 return adapters.run_whyline_command([head, *rest])
     return None

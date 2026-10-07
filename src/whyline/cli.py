@@ -477,6 +477,26 @@ def _add_console(subparsers: "argparse._SubParsersAction") -> None:
     )
 
 
+def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser("agents", help="Saved agents: list, run, history, schedule")
+    sub = parser.add_subparsers(dest="agents_command", required=True)
+    sub.add_parser("list", help="Every repo and personal agent")
+    for name, text in (
+        ("show", "One agent's definition and status"),
+        ("run", "Run an agent now"),
+        ("pause", "Stop its schedule and triggers"),
+        ("resume", "Start them again"),
+        ("accept", "Accept its current definition on this Mac"),
+    ):
+        sub.add_parser(name, help=text).add_argument("name")
+    hist = sub.add_parser("history", help="Its recent runs")
+    hist.add_argument("name")
+    hist.add_argument("-n", type=int, default=20)
+    delete = sub.add_parser("delete", help="Delete the agent and its schedule")
+    delete.add_argument("name")
+    delete.add_argument("--yes", action="store_true")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -504,6 +524,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_account(subparsers)
     _add_model(subparsers)
     _add_console(subparsers)
+    _add_agents(subparsers)
     return parser
 
 
@@ -522,6 +543,11 @@ def _require_repo() -> Path:
         print("Not inside a git repository.", file=sys.stderr)
         raise SystemExit(EXIT_ERROR)
     return root
+
+
+def _repo_root_or_none() -> Path | None:
+    """Git top-level of the current directory, or None outside a repository."""
+    return paths.find_repo_root()
 
 
 def cmd_explain(args: argparse.Namespace) -> int:
@@ -1487,6 +1513,43 @@ def relay_install_hint() -> str:
     )
 
 
+def cmd_agents(args: argparse.Namespace) -> int:
+    from whyline.agents import definitions as d, records, service
+
+    root = _repo_root_or_none()
+    try:
+        if args.agents_command == "list":
+            for row in service.rows(root):
+                label = row.defn.label if isinstance(row.defn, d.AgentDef) else f"{row.defn.path.name} (broken)"
+                print(f"{label:<32} {row.when:<28} {row.status:<14} {row.last_outcome}")
+            return EXIT_OK
+        if args.agents_command == "show":
+            defn = service.find(args.name, root)
+            print(d.render(defn), end="")
+            print(service.describe(defn))
+            return EXIT_OK
+        if args.agents_command == "run":
+            record = service.run_now(args.name, root, progress=lambda line: print(f"· {line}"))
+            print(f"{record.outcome}: {record.reason}" if record.reason else record.outcome)
+            print(records.read_final(record.run_id), end="")
+            return EXIT_OK if record.outcome.startswith("succeeded") else EXIT_ERROR
+        if args.agents_command == "history":
+            for r in service.history(args.name, root, args.n):
+                print(f"{r.started[:16].replace('T', ' ')}  {r.source:<9} {r.cli:<12} {r.outcome}")
+            return EXIT_OK
+        if args.agents_command == "delete":
+            if not args.yes:
+                print("This deletes the agent and its schedule. Re-run with --yes.", file=sys.stderr)
+                return EXIT_USAGE
+            service.delete(args.name, root)
+            return EXIT_OK
+        getattr(service, args.agents_command)(args.name, root)
+        return EXIT_OK
+    except (service.AgentNotFound, service.Ambiguous, ValueError) as error:
+        print(str(error).strip("'\""), file=sys.stderr)
+        return EXIT_ERROR
+
+
 def cmd_relay(args: argparse.Namespace) -> int:
     try:
         from whyline_relay import cli as relay_cli
@@ -1519,6 +1582,7 @@ COMMANDS = {
     "account": cmd_account,
     "model": cmd_model,
     "console": cmd_console,
+    "agents": cmd_agents,
 }
 
 

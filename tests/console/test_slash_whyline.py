@@ -10,6 +10,24 @@ def test_whyline_subcommands_come_from_the_parser():
     assert "timeline" in subs and "note" in subs and subs["note"]
 
 
+def test_bare_agents_stays_the_relay_chat_hint(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        adapters, "run_whyline_command",
+        lambda argv: (_ for _ in ()).throw(AssertionError("bare /agents must not run")),
+    )
+    assert repl.handle_slash_command(ConsoleSession(root=tmp_path), "/agents") is None
+
+
+def test_agents_with_a_subcommand_runs(tmp_path, monkeypatch):
+    ran = []
+    monkeypatch.setattr(
+        adapters, "run_whyline_command",
+        lambda argv: ran.append(argv) or SessionEvent(kind="output", text="ok"),
+    )
+    event = repl.handle_slash_command(ConsoleSession(root=tmp_path), "/agents list")
+    assert ran == [["agents", "list"]] and event.text == "ok"
+
+
 def test_slash_runs_a_whyline_command(tmp_path, monkeypatch):
     ran = []
     monkeypatch.setattr(
