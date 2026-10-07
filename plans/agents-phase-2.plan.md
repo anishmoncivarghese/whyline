@@ -51,7 +51,7 @@ Never push, tag, bump the version or publish.
   that receives 30 files in one minute starts one run, not 30.
   Verify: uv run pytest -q.
 
-- [ ] AG-14: After a run: backoff, pause, needs attention, notifications
+- [x] AG-14: After a run: backoff, pause, needs attention, notifications
   Implement "Task 14: After a run" from the plan: after.finish, and
   service.run_now calling it with notify=False. Notifications go through a
   stubbed sender in tests. Verify: uv run pytest -q.
