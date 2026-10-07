@@ -44,7 +44,7 @@ Never push, tag, bump the version or publish.
   usage_limit, login_needed or a missing CLI; exit code 0 alone never means
   success. Verify: uv run pytest -q.
 
-- [ ] AG-7: The service and whyline agents
+- [x] AG-7: The service and whyline agents
   Implement "Task 7: The service and `whyline agents …`" from the plan.
   Verify: uv run pytest -q.
 
