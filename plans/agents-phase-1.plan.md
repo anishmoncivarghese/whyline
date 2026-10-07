@@ -29,7 +29,7 @@ Never push, tag, bump the version or publish.
   Implement "Task 3: Run records, reports and ledger events" from the plan.
   Verify: uv run pytest -q.
 
-- [ ] AG-4: CLI capabilities (from the spike)
+- [x] AG-4: CLI capabilities (from the spike)
   Implement "Task 4: CLI capabilities (from the spike)" from the plan:
   READ_ONLY settings, denial detectors and UNATTENDED_OK, exactly as
   docs/agents-capabilities.md records them. Verify: uv run pytest -q.
