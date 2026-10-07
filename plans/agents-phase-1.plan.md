@@ -39,7 +39,7 @@ Never push, tag, bump the version or publish.
   a definition edited by git pull stopping until accepted again.
   Verify: uv run pytest -q.
 
-- [ ] AG-6: execute_once: prompt, read-only command, backups, outcome
+- [x] AG-6: execute_once: prompt, read-only command, backups, outcome
   Implement "Task 6: execute_once" from the plan. Backups only after
   usage_limit, login_needed or a missing CLI; exit code 0 alone never means
   success. Verify: uv run pytest -q.
