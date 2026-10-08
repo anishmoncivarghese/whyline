@@ -8696,3 +8696,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 30b585e905c04de3a6f4c340b37536c8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T21:18:44.260Z"} -->
+
+## 2026-10-08 — Turning the scheduler on or off prints what it means for every agent (scheduled with next run, won't-run reasons, manual count, Mac on and logged in), and the button shows its state
+
+**Actor:** claude
+**Role:** implementer
+**Task:** DL-LIVE
+
+**Because:** the user pressed Scheduler, saw nothing but a status-line change, pressed again and was asked to turn it off; the switch needs to confirm itself and say which agents will run and when
+
+**Files:** src/whyline/agents/service.py, src/whyline/console/tui.py, src/whyline/cli.py
+
+<!-- whyline-event: 4464bd57091d4a19b5b303987943369d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T21:40:16.514Z"} -->

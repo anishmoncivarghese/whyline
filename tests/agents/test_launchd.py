@@ -98,17 +98,14 @@ def test_scheduler_cli_on_off_and_status(monkeypatch, capsys):
     assert cli.main(["agents", "scheduler", "status"]) == 0
     assert capsys.readouterr().out == "Scheduler not loaded. Plist: none. Last tick: never.\n"
     assert cli.main(["agents", "scheduler", "on"]) == 0
-    assert (
-        capsys.readouterr().out
-        == "Scheduler on: whyline checks for due agents every 2 minutes, and at login.\n"
-    )
+    assert capsys.readouterr().out.startswith("Scheduler on, but no agent has a schedule yet.")
     assert cli.main(["agents", "scheduler", "status"]) == 0
     assert capsys.readouterr().out == (
         "Scheduler loaded. Plist: /opt/LaunchAgents/com.whyline.agents.plist. "
         "Last tick: 2026-10-08T09:00.\n"
     )
     assert cli.main(["agents", "scheduler", "off"]) == 0
-    assert capsys.readouterr().out == "Scheduler off.\n"
+    assert capsys.readouterr().out.startswith("Scheduler off. Scheduled and folder agents")
     # The log stays after the plist is removed, so the last tick is still known.
     assert cli.main(["agents", "scheduler", "status"]) == 0
     assert capsys.readouterr().out == (

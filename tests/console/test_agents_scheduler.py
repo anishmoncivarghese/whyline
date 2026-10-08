@@ -142,3 +142,39 @@ async def test_scheduler_is_disabled_off_macos(tmp_path, monkeypatch):
         assert str(app._main("#agents-status").renderable) == (
             "Scheduling needs macOS for now; agents still run with Run now."
         )
+
+
+async def test_turning_the_scheduler_on_and_off_says_what_happens(tmp_path, monkeypatch):
+    loaded = {"on": False}
+    from dataclasses import replace
+
+    daily = replace(_defn(tmp_path, "soon"), trigger=d.Trigger(kind="daily", at="07:00"))
+    rows = [service.Row(daily, "active", "", "", "", "daily at 07:00")]
+    monkeypatch.setattr(service, "rows", lambda root: rows)
+    monkeypatch.setattr(launchd, "supported", lambda: True)
+    monkeypatch.setattr(launchd, "status", lambda run=None: launchd.Status(loaded["on"], None, ""))
+    monkeypatch.setattr(launchd, "turn_on", lambda run=None: loaded.update(on=True) or Path("x.plist"))
+    monkeypatch.setattr(launchd, "turn_off", lambda run=None: loaded.update(on=False))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-agents")
+        await pilot.pause()
+        scheduler = app._main("#agents-scheduler", tui.Button)
+        assert str(scheduler.label) == "Scheduler: off"
+        assert scheduler.region.right <= 80
+        scheduler.press()
+        await _until(pilot, lambda: loaded["on"], "turned on")
+
+        def lines():
+            return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
+
+        await _until(pilot, lambda: any("Scheduler on." in line for line in lines()), "on message")
+        assert any("Scheduled agents (1):" in line for line in lines())
+        assert any("this Mac on and you logged in" in line for line in lines())
+        assert str(scheduler.label) == "Scheduler: on" and scheduler.region.right <= 80
+        scheduler.press()
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm")
+        app.screen.query_one("#confirm", tui.Button).press()
+        await _until(pilot, lambda: not loaded["on"], "turned off")
+        await _until(pilot, lambda: any("Scheduler off." in line for line in lines()), "off message")
+        assert str(scheduler.label) == "Scheduler: off"

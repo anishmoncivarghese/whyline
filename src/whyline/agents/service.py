@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from whyline.agents import after, definitions as d, records, runner, state
@@ -181,3 +182,55 @@ def describe(defn: d.AgentDef) -> str:
     text += " It can't change files. Results go to history, a notification"
     text += f", and {defn.report_folder}/<date>.md." if defn.report_folder else "."
     return text
+
+
+_SCHEDULED = ("daily", "weekdays", "every", "folder")
+_WONT_RUN = {
+    "paused": "you resume it",
+    "needs_review": "you accept its changes",
+    "needs_attention": "you resume it after checking its failures",
+    "not accepted": "you accept it",
+}
+
+
+def _schedule_words(t: d.Trigger) -> str:
+    return {
+        "daily": f"every day at {t.at}",
+        "weekdays": f"every weekday at {t.at}",
+        "every": f"every {t.every_hours} hours",
+        "folder": f"when files appear in {t.folder}",
+    }[t.kind]
+
+
+def scheduler_summary(found: list[Row], *, on: bool, now: datetime | None = None) -> str:
+    """What turning the scheduler on or off means for this Mac's agents.
+    Shared by the console's Scheduler button and `whyline agents scheduler`."""
+    from whyline.agents import schedule
+
+    if not on:
+        return ("Scheduler off. Scheduled and folder agents won't run until you turn it back "
+                "on. Run now still works.")
+    now = now or datetime.now()
+    agents = [row for row in found if isinstance(row.defn, d.AgentDef)]
+    scheduled = [row for row in agents if row.defn.trigger.kind in _SCHEDULED]
+    manual = [row for row in agents if row.defn.trigger.kind == "manual"]
+    if not scheduled:
+        return ("Scheduler on, but no agent has a schedule yet. Set When in an agent's Edit "
+                "to schedule it.")
+    lines = ["Scheduler on. whyline checks for due agents every 2 minutes, even when the "
+             "console is closed.", f"Scheduled agents ({len(scheduled)}):"]
+    for row in scheduled:
+        defn = row.defn
+        if row.status in _WONT_RUN:
+            tail = f"won't run until {_WONT_RUN[row.status]}"
+        elif defn.trigger.kind == "folder":
+            tail = "watching the folder"
+        else:
+            due = schedule.next_due(defn.trigger, now=now)
+            tail = f"next: {due:%a %d %b, %H:%M}" if due else "next: —"
+        lines.append(f"• {defn.label} — {_schedule_words(defn.trigger)} · {tail}")
+    if manual:
+        lines.append(f"Manual agents ({len(manual)}) run only when you start them.")
+    lines.append("Runs need this Mac on and you logged in. If it's asleep or off at a scheduled "
+                 "time, that agent runs once when it wakes or you log in.")
+    return "\n".join(lines)

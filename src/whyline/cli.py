@@ -1591,13 +1591,16 @@ def _cmd_agents_scheduler(args: argparse.Namespace) -> int:
         print(launchd.NEEDS_MACOS, file=stream)
         return EXIT_OK if args.scheduler_command == "status" else EXIT_ERROR
     try:
-        if args.scheduler_command == "on":
-            launchd.turn_on()
-            print("Scheduler on: whyline checks for due agents every 2 minutes, and at login.")
-            return EXIT_OK
-        if args.scheduler_command == "off":
-            launchd.turn_off()
-            print("Scheduler off.")
+        if args.scheduler_command in ("on", "off"):
+            from whyline.agents import service
+
+            on = args.scheduler_command == "on"
+            launchd.turn_on() if on else launchd.turn_off()
+            try:
+                found = service.rows(_repo_root_or_none())
+            except Exception:
+                found = []
+            print(service.scheduler_summary(found, on=on))
             return EXIT_OK
         info = launchd.status()
     except (RuntimeError, OSError) as error:

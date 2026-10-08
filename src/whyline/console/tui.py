@@ -703,9 +703,14 @@ class WhylineConsoleApp(App):
             self._main("#agents-scheduler", Button).disabled = not mac
         except (NoMatches, IndexError):
             pass
+        on = mac and self._scheduler_on()
+        try:
+            self._main("#agents-scheduler", Button).label = "Scheduler: on" if on else "Scheduler: off"
+        except (NoMatches, IndexError):
+            pass
         if not mac:
             text = launchd.NEEDS_MACOS
-        elif self._scheduler_on():
+        elif on:
             try:
                 nxt = _next_scheduled(service.rows(self.session.root))
             except Exception as error:
@@ -807,7 +812,18 @@ class WhylineConsoleApp(App):
         except Exception as error:
             self.render_event(SessionEvent(kind="error", text=str(error)))
             return
+        self._scheduler_said(on=True)
         self._refresh_agents_status()
+
+    def _scheduler_said(self, *, on: bool) -> None:
+        """Say plainly what the switch just did, for every agent on this Mac."""
+        from whyline.agents import service
+
+        try:
+            text = service.scheduler_summary(service.rows(self.session.root), on=on)
+        except Exception:
+            text = service.scheduler_summary([], on=on) if not on else "Scheduler on."
+        self.render_event(SessionEvent(kind="output", text=text))
 
     def _scheduler_turned_off(self, yes: bool) -> None:
         if not yes:
@@ -819,6 +835,7 @@ class WhylineConsoleApp(App):
         except Exception as error:
             self.render_event(SessionEvent(kind="error", text=str(error)))
             return
+        self._scheduler_said(on=False)
         self._refresh_agents_status()
 
     def _open_agents_list(self, follow: str = "detail") -> None:
