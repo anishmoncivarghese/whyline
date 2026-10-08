@@ -8678,3 +8678,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 57793f2526fb4a2895846af420ede3b2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T20:49:26.479Z"} -->
+
+## 2026-10-08 — Word attachments are written by whyline.agents.docx (stdlib WordprocessingML with real tables, landscape A3 for wide tables, content-weighted column widths) instead of macOS textutil
+
+**Actor:** claude
+**Role:** implementer
+**Task:** DL-LIVE
+
+**Because:** the live check showed textutil's .docx contains no tables at all (each cell became its own line); textutil keeps tables only in RTF/ODT, which phones preview poorly; the stdlib writer also makes Word attachments work off macOS
+
+**Rejected:**
+
+- python-docx — a compiled dependency (lxml) and tables still built by hand
+- attach RTF or ODT — poor previews in Telegram and on phones
+
+**Files:** src/whyline/agents/docx.py, src/whyline/agents/convert.py
+
+<!-- whyline-event: 30b585e905c04de3a6f4c340b37536c8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T21:18:44.260Z"} -->

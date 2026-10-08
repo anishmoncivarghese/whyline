@@ -14,34 +14,22 @@ def test_to_html_keeps_a_wide_table():
     assert "border-collapse" in html and "<meta charset='utf-8'>" in html
 
 
-def test_to_docx_calls_textutil(tmp_path):
+def test_to_docx_keeps_the_table(tmp_path):
+    # Found in the live check: textutil's .docx had no tables at all.
+    import zipfile
+
     report = tmp_path / "final.md"
     report.write_text(WIDE, encoding="utf-8")
     out = tmp_path / "jobs-2026-10-09.docx"
-    calls = []
-
-    def run(argv, **kwargs):
-        calls.append(argv)
-        Path(argv[-1]).write_bytes(b"PK")
-        class R: returncode = 0
-        return R()
-
-    assert convert.to_docx(report, out, run=run, which=lambda name: "/usr/bin/textutil") == out
-    assert calls[0][:3] == ["textutil", "-convert", "docx"] and calls[0][-2:] == ["-output", str(out)]
-    assert not out.with_suffix(".html").exists()  # the temporary page is removed
+    assert convert.to_docx(report, out) == out
+    document = zipfile.ZipFile(out).read("word/document.xml").decode("utf-8")
+    assert document.count("<w:tbl>") == 1 and document.count("<w:gridCol") == 17
 
 
-def test_to_docx_without_textutil_or_on_failure(tmp_path):
-    report = tmp_path / "final.md"
-    report.write_text("hi", encoding="utf-8")
+def test_to_docx_returns_none_when_the_report_is_missing(tmp_path):
     out = tmp_path / "x.docx"
-    assert convert.to_docx(report, out, which=lambda name: None) is None
-
-    def failing(argv, **kwargs):
-        class R: returncode = 1
-        return R()
-
-    assert convert.to_docx(report, out, run=failing, which=lambda name: "/usr/bin/textutil") is None
+    assert convert.to_docx(tmp_path / "missing.md", out) is None
+    assert not out.exists()
 
 
 def test_summary_stops_at_the_first_table():

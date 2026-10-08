@@ -1,12 +1,9 @@
 """A report as an attachment (deliveries spec 4) and its summary (spec 5).
 
-Markdown → HTML with the `markdown` package, then HTML → Word with macOS
-`textutil`. Without textutil (Linux, Windows) the caller attaches the
-Markdown instead."""
+HTML comes from the `markdown` package. Word files come from
+whyline.agents.docx, which keeps tables (macOS `textutil` drops them)."""
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 
 import markdown
@@ -27,23 +24,16 @@ def to_html(text: str) -> str:
     )
 
 
-def to_docx(report_md: Path, out: Path, *, run=subprocess.run, which=shutil.which) -> Path | None:
-    if which("textutil") is None:
-        return None
-    page = out.with_suffix(".html")
-    page.write_text(to_html(report_md.read_text(encoding="utf-8")), encoding="utf-8")
+def to_docx(report_md: Path, out: Path) -> Path | None:
+    """The report as Word, with real tables (whyline.agents.docx). None when
+    the report can't be read or written; the caller attaches Markdown."""
+    from whyline.agents import docx
+
     try:
-        result = run(
-            ["textutil", "-convert", "docx", str(page), "-output", str(out)],
-            capture_output=True, text=True, timeout=120,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        return docx.write(report_md.read_text(encoding="utf-8"), out)
+    except Exception:
+        out.unlink(missing_ok=True)
         return None
-    finally:
-        page.unlink(missing_ok=True)
-    if result.returncode != 0 or not out.is_file():
-        return None
-    return out
 
 
 def summary(text: str, limit: int = 1000) -> str:
