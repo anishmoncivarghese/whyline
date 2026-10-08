@@ -29,7 +29,7 @@ Never push, tag, bump the version or publish.
   RunRecord.deliveries with records.run_folder/load/save_metadata, and
   service.delete removing the agent's deliveries. Verify: uv run pytest -q.
 
-- [ ] DL-2: Word attachment and summary
+- [x] DL-2: Word attachment and summary
   Implement "Task 2" from the plan: the markdown dependency, convert.py
   (to_html, to_docx through textutil, summary up to the first table).
   Verify: uv run pytest -q.
