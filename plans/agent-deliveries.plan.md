@@ -45,7 +45,7 @@ Never push, tag, bump the version or publish.
   subject, body and attachment passed to osascript as arguments, never
   spliced into the script. Verify: uv run pytest -q.
 
-- [ ] DL-5: Delivering after a run, the command, test sends and resend
+- [x] DL-5: Delivering after a run, the command, test sends and resend
   Implement "Task 5" from the plan: deliver.py (after_run, the advanced
   command, send_test, status_text, describe), the hook in after.finish that
   never raises, and service.resend. Verify: uv run pytest -q.
