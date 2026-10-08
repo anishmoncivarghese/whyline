@@ -8627,3 +8627,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 94dbc52f95484e2789f008c3a5ac7ee3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:50:12.215Z"} -->
+
+## 2026-10-08 — Telegram setup screen drops late worker results after it closes, names the bot and links to it, and explains an empty chat list; the form's empty Telegram list says why
+
+**Actor:** claude
+**Role:** implementer
+**Task:** DL-LIVE
+
+**Because:** the user crashed the console (NoActiveAppError) by going back from Set up Telegram while the 3-second chat check was in flight; the bot had received no message, so the list was empty and Send test silently did nothing
+
+**Rejected:**
+
+- only catch the exception in the worker — the screen would still be updated after close by the other workers
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 01929e2944b24242b6296d453ee3c815 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T20:23:01.110Z"} -->

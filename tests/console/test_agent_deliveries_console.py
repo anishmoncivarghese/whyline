@@ -91,3 +91,60 @@ async def test_runs_show_delivery_status_and_resend(tmp_path, monkeypatch):
         assert "telegram ✗" in str(table.get_row_at(0)[-1])
         app.screen.query_one("#rs-resend", tui.Button).press()
         await _until(pilot, lambda: resent == ["r1"], "resend called")
+
+
+async def test_closing_setup_while_a_check_is_running_does_not_crash(tmp_path, fake_telegram, monkeypatch):
+    # Reported: Done while the 3-second chat check was in flight crashed the
+    # console (NoActiveAppError) when the check finished after the screen closed.
+    import threading
+
+    release, started = threading.Event(), threading.Event()
+
+    def slow_find(token):
+        started.set()
+        release.wait(5)
+        return {}
+
+    monkeypatch.setattr(telegram, "find_chats", slow_find)
+    fake_telegram["token"] = "123:secret"
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        result = []
+        app.push_screen(TelegramSetupScreen(), result.append)
+        await _until(pilot, lambda: started.is_set(), "check running")
+        app.screen.query_one("#tg-done", tui.Button).press()
+        await _until(pilot, lambda: result, "dismissed")
+        release.set()
+        for _ in range(20):
+            await pilot.pause(0.05)
+        assert app.is_running  # the late result is dropped, not applied to a closed screen
+
+
+async def test_connected_with_no_chats_says_how_to_reach_the_bot(tmp_path, fake_telegram, monkeypatch):
+    monkeypatch.setattr(telegram, "find_chats", lambda token: {})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.push_screen(TelegramSetupScreen())
+        await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup shown")
+        screen = app.screen
+        screen.query_one("#tg-token", tui.Input).value = "123:secret"
+        screen.query_one("#tg-check", tui.Button).press()
+        await _until(pilot, lambda: "t.me/JobsBot" in str(screen.query_one("#tg-chats").renderable),
+                     "guidance shown")
+        text = str(screen.query_one("#tg-chats").renderable)
+        assert "@JobsBot" in text and "Start" in text
+        screen.query_one("#tg-test", tui.Button).press()
+        await _until(pilot, lambda: "No chat yet" in str(screen.query_one("#tg-bot").renderable),
+                     "test explains")
+        assert screen.query_one("#tg-open-bot", tui.Button).display
+
+
+async def test_an_existing_bot_is_named_when_the_screen_opens(tmp_path, fake_telegram, monkeypatch):
+    monkeypatch.setattr(telegram, "find_chats", lambda token: {})
+    fake_telegram["token"] = "123:secret"
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.push_screen(TelegramSetupScreen())
+        await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup shown")
+        await _until(pilot, lambda: "@JobsBot" in str(app.screen.query_one("#tg-bot").renderable),
+                     "bot named")

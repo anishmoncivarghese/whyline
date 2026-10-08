@@ -240,3 +240,47 @@ async def test_send_test_shows_each_result(tmp_path, monkeypatch):
         await _until(pilot, lambda: "telegram ✗" in str(app.screen.query_one("#na-test-result").renderable),
                      "results shown")
         assert "email ✓" in str(app.screen.query_one("#na-test-result").renderable)
+
+
+async def test_set_up_telegram_from_the_form_and_back_does_not_crash(tmp_path, monkeypatch):
+    # Reported: opening Set up Telegram from the agent form, then going back
+    # while its chat check was still running, crashed the console.
+    import threading
+
+    from whyline.console.agents_screens import TelegramSetupScreen
+
+    release, started = threading.Event(), threading.Event()
+    chats = {}
+
+    def slow_find(token):
+        started.set()
+        release.wait(5)
+        return {-200: "Govt Jobs (group)"}
+
+    monkeypatch.setattr(telegram, "token_get", lambda: "123:secret")
+    monkeypatch.setattr(telegram, "check_token", lambda token: "@JobsBot")
+    monkeypatch.setattr(telegram, "find_chats", slow_find)
+    monkeypatch.setattr(telegram, "remember_chats", lambda found: chats.update(found) or dict(chats))
+    monkeypatch.setattr(telegram, "known_chats", lambda: dict(chats))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await _open_form(app, pilot)
+        form = app.screen
+        assert "no chats yet" in str(form.query_one("#na-telegram", tui.Select)._options[0][0])
+        form.query_one("#na-telegram-setup", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup open")
+        await _until(pilot, lambda: started.is_set(), "chat check running")
+        app.screen.query_one("#tg-done", tui.Button).press()
+        await _until(pilot, lambda: app.screen is form, "back to the form")
+        release.set()
+        for _ in range(20):
+            await pilot.pause(0.05)
+        assert app.is_running and app.screen is form
+        # Reopening finds the chat the bot got in the meantime.
+        form.query_one("#na-telegram-setup", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup open again")
+        await _until(pilot, lambda: "Govt Jobs" in str(app.screen.query_one("#tg-chats").renderable),
+                     "chat found")
+        app.screen.query_one("#tg-done", tui.Button).press()
+        await _until(pilot, lambda: app.screen is form, "back again")
+        assert form.query_one("#na-telegram", tui.Select).value == -200

@@ -192,9 +192,17 @@ class RunsScreen(ModalScreen):
         self.dismiss(None)
 
 
+def _chat_options(chats: dict[int, str]) -> list[tuple[str, int]]:
+    """The agent form's Telegram list. With no chats yet, the empty choice
+    says why, since whyline only lists chats the bot has had a message in."""
+    none = "None" if chats else "None (no chats yet; use Set up Telegram…)"
+    return [(none, 0)] + [(label, cid) for cid, label in chats.items()]
+
+
 class TelegramSetupScreen(ModalScreen):
     """One-time Telegram set-up (deliveries spec 9). Dismisses with the
-    chats known afterwards. Network calls run in worker threads."""
+    chats known afterwards. Network calls run in worker threads; their
+    results are dropped once the screen has closed."""
 
     DEFAULT_CSS = _CSS.format(name="TelegramSetupScreen") + """
     TelegramSetupScreen Static { height: auto; }
@@ -204,18 +212,23 @@ class TelegramSetupScreen(ModalScreen):
     def __init__(self) -> None:
         super().__init__()
         self._token: str | None = None
+        self._bot = ""
         self._poller = None
+        self._closed = False
 
     def compose(self) -> ComposeResult:
         yield Vertical(
             Label("Set up Telegram (once per Mac)"),
-            Static("1. In Telegram, open @BotFather, send /newbot, choose a name, copy the token.",
+            Static("1. In Telegram, open @BotFather, send /newbot, choose a name, copy the token. "
+                   "No Telegram app on this Mac? Use your phone, or web.telegram.org/k/#@BotFather.",
                    markup=False),
-            Horizontal(Button("Open BotFather", id="tg-open")),
+            Horizontal(Button("Open BotFather", id="tg-open"),
+                       Button("Open my bot", id="tg-open-bot")),
             Horizontal(Input(placeholder="2. Paste the bot token", password=True, id="tg-token"),
                        Button("Check", id="tg-check")),
             Static("", id="tg-bot", markup=False),
-            Static("3. Send any message to your bot, or add it to a group.", markup=False),
+            Static("3. Send any message to your bot, or add it to a group and send a message there.",
+                   markup=False),
             Static("", id="tg-chats", markup=False),
             Horizontal(Select([], prompt="Chat to test", id="tg-chat"),
                        Button("Send test message", id="tg-test"),
@@ -225,21 +238,79 @@ class TelegramSetupScreen(ModalScreen):
     def on_mount(self) -> None:
         from whyline.agents import telegram
 
+        self.query_one("#tg-open-bot", Button).display = False
         self._token = telegram.token_get()
         if self._token:
             self.query_one("#tg-bot", Static).update(
                 "A bot is already set up on this Mac. Paste a new token only to replace it.")
+            self._name_bot(self._token)
             self._start_polling()
         self._show_chats(telegram.known_chats())
 
+    def on_unmount(self) -> None:
+        self._closed = True
+        if self._poller is not None:
+            self._poller.stop()
+
+    # Worker threads report back through here, on the app's thread. A late
+    # result for a closed screen is dropped instead of touching dead widgets.
+    def _later(self, app, callback, *args) -> None:
+        def apply() -> None:
+            if self._closed:
+                return
+            try:
+                callback(*args)
+            except NoMatches:
+                pass
+
+        try:
+            app.call_from_thread(apply)
+        except RuntimeError:
+            pass  # the app itself has stopped
+
+    def _set_bot(self, bot: str, text: str) -> None:
+        self._bot = bot
+        self.query_one("#tg-bot", Static).update(text)
+        self.query_one("#tg-open-bot", Button).display = bool(bot)
+        self._show_chats(self._known())
+
+    def _known(self) -> dict[int, str]:
+        from whyline.agents import telegram
+
+        return telegram.known_chats()
+
+    def _waiting_text(self) -> str:
+        if not self._bot:
+            return "Waiting for a message…"
+        name = self._bot.lstrip("@")
+        return (f"No messages yet. In Telegram, open {self._bot} (https://t.me/{name}) and tap "
+                "Start or send hi, or add it to a group and send a message there. "
+                "Chats appear here within a few seconds.")
+
     def _show_chats(self, chats: dict[int, str]) -> None:
         self.query_one("#tg-chats", Static).update(
-            "Found: " + ", ".join(chats.values()) if chats else "Waiting for a message…")
+            "Found: " + ", ".join(chats.values()) if chats else self._waiting_text())
         select = self.query_one("#tg-chat", Select)
         current = select.value
         select.set_options([(label, cid) for cid, label in chats.items()])
         if chats:
             select.value = current if current in chats else next(iter(chats))
+
+    def _name_bot(self, token: str) -> None:
+        app = self.app
+
+        def work() -> None:
+            from whyline.agents import telegram
+
+            try:
+                bot = telegram.check_token(token)
+            except Exception as error:
+                self._later(app, self.query_one("#tg-bot", Static).update,
+                            telegram.redact(str(error), token))
+                return
+            self._later(app, self._set_bot, bot, f"Connected to {bot}.")
+
+        app.run_worker(work, thread=True)
 
     def _start_polling(self) -> None:
         if self._poller is None:
@@ -248,8 +319,9 @@ class TelegramSetupScreen(ModalScreen):
 
     def _poll(self) -> None:
         token = self._token
-        if not token:
+        if not token or self._closed:
             return
+        app = self.app
 
         def work() -> None:
             from whyline.agents import telegram
@@ -258,15 +330,17 @@ class TelegramSetupScreen(ModalScreen):
                 chats = telegram.remember_chats(telegram.find_chats(token))
             except Exception:
                 return
-            self.app.call_from_thread(self._show_chats, chats)
+            self._later(app, self._show_chats, chats)
 
-        self.app.run_worker(work, thread=True, exclusive=True, group="tg-poll")
+        app.run_worker(work, thread=True, exclusive=True, group="tg-poll")
 
     def _check(self) -> None:
         token = self.query_one("#tg-token", Input).value.strip()
         if not token:
+            self.query_one("#tg-bot", Static).update("Paste the token BotFather gave you first.")
             return
         self.query_one("#tg-bot", Static).update("Checking…")
+        app = self.app
 
         def work() -> None:
             from whyline.agents import telegram
@@ -275,52 +349,62 @@ class TelegramSetupScreen(ModalScreen):
                 bot = telegram.check_token(token)
                 telegram.token_set(token)
             except Exception as error:
-                text = telegram.redact(str(error), token)
-                self.app.call_from_thread(self.query_one("#tg-bot", Static).update, text)
+                self._later(app, self.query_one("#tg-bot", Static).update,
+                            telegram.redact(str(error), token))
                 return
 
             def done() -> None:
                 self._token = token
-                self.query_one("#tg-bot", Static).update(f"Connected to {bot}. Saved on this Mac.")
+                self._set_bot(bot, f"Connected to {bot}. Saved on this Mac.")
                 self._start_polling()
 
-            self.app.call_from_thread(done)
+            self._later(app, done)
 
-        self.app.run_worker(work, thread=True)
+        app.run_worker(work, thread=True)
 
     def _test(self) -> None:
         chat = self.query_one("#tg-chat", Select).value
         token = self._token
-        if not token or not isinstance(chat, int):
+        status = self.query_one("#tg-bot", Static)
+        if not token:
+            status.update("Connect a bot first: paste its token and press Check.")
             return
+        if not isinstance(chat, int):
+            bot = self._bot or "your bot"
+            status.update(f"No chat yet: send a message to {bot} first; it appears here "
+                          "within a few seconds.")
+            return
+        status.update("Sending…")
+        app = self.app
 
         def work() -> None:
             from whyline.agents import telegram
 
             try:
                 telegram.send_message(token, chat, "Test from whyline: Telegram is set up.")
-                text = "Test message sent."
+                text = "Test message sent. Check Telegram."
             except Exception as error:
                 text = telegram.redact(str(error), token)
-            self.app.call_from_thread(self.query_one("#tg-bot", Static).update, text)
+            self._later(app, self.query_one("#tg-bot", Static).update, text)
 
-        self.app.run_worker(work, thread=True)
+        app.run_worker(work, thread=True)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
         button_id = event.button.id
         if button_id == "tg-open":
             webbrowser.open("https://t.me/BotFather")
+        elif button_id == "tg-open-bot" and self._bot:
+            webbrowser.open(f"https://t.me/{self._bot.lstrip('@')}")
         elif button_id == "tg-check":
             self._check()
         elif button_id == "tg-test":
             self._test()
         elif button_id == "tg-done":
-            from whyline.agents import telegram
-
+            self._closed = True
             if self._poller is not None:
                 self._poller.stop()
-            self.dismiss(telegram.known_chats())
+            self.dismiss(self._known())
 
 
 def _q(value: str) -> str:
@@ -438,7 +522,7 @@ class NewAgentScreen(ModalScreen):
         from whyline.agents import telegram
 
         chats = telegram.known_chats()
-        chat_options = [("None", 0)] + [(label, cid) for cid, label in chats.items()]
+        chat_options = _chat_options(chats)
         chat_value = existing_delivery.telegram_chat if existing_delivery.telegram_chat in chats else 0
         kind = existing.kind if existing else "repo"
         when = existing.trigger.kind if existing else "manual"
@@ -890,7 +974,7 @@ class NewAgentScreen(ModalScreen):
                 return
             select = self.query_one("#na-telegram", Select)
             current = select.value
-            select.set_options([("None", 0)] + [(label, cid) for cid, label in chats.items()])
+            select.set_options(_chat_options(chats))
             select.value = current if current in chats else (next(iter(chats)) if chats else 0)
 
         self.app.push_screen(TelegramSetupScreen(), done)
