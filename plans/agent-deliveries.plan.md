@@ -60,7 +60,7 @@ Never push, tag, bump the version or publish.
   and Resend button in RunsScreen, and _agent_resend in tui.py.
   Verify: uv run pytest -q.
 
-- [ ] DL-8: Console Deliver to section, Review sentence and Send test
+- [x] DL-8: Console Deliver to section, Review sentence and Send test
   Implement "Task 8" from the plan: the Deliver to fields in the agent form,
   AgentForm, Send test, Set up Telegram from the form, saving deliveries with
   the agent (and moving them when an agent is renamed), the Review sentence,
