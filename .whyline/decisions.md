@@ -8336,3 +8336,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6abcadd47d98455abf309946ec1fb2d8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:36:39.333Z"} -->
+
+## 2026-10-08 — deliver --command uses dest delivery_command
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-6
+
+**Because:** argparse copies the deliver subparser namespace onto the top-level one, whose dest command is already the subcommand name agents
+
+**Rejected:**
+
+- dest command as the plan wrote it — the flag default None overwrites args.command, so main never dispatches deliver
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 54eb9d74ca77452ea0fed74f34140342 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:50:17.614Z"} -->
+
+## 2026-10-08 — import getpass and dataclasses inside the handlers
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-6
+
+**Because:** whyline.cli must stay under the 60-module import budget in test_perf; a module-level dataclasses import raised the count to 75
+
+**Rejected:**
+
+- module-level imports as Task 6 wrote them — they fail test_importing_whyline_pulls_in_few_modules
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: cdd85eebf62b4336b405876d84a3dd8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:50:21.611Z"} -->
+
+## 2026-10-08 — DL-6 passes tester round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-6
+
+**Because:** The focused CLI suite passed all 7 tests and the full project suite completed at 100% with exit 0, covering deliver, resend, Telegram setup/chats, command parsing, and history delivery status
+
+**Files:** src/whyline/cli.py, tests/agents/test_cli_deliver.py
+
+<!-- whyline-event: d135895fcaf84414a3e9a6f3c007b7d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:53:29.390Z"} -->
+
+## 2026-10-08 — DL-6 approved in reviewer round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-6
+
+**Because:** The CLI exposes deliver, resend, Telegram setup and chats, preserves top-level dispatch for the delivery --command flag, and appends per-run delivery status; the focused tests exercise the new behavior and uv run pytest -q completed at 100% with exit 0.
+
+**Files:** src/whyline/cli.py, tests/agents/test_cli_deliver.py
+
+<!-- whyline-event: 912ad5ceb6b64ed299d1404c13b03603 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:56:31.105Z"} -->

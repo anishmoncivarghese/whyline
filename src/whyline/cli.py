@@ -509,6 +509,23 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
         help="Install the Mail.app rule script for an agent",
     )
     mail_script.add_argument("name")
+    deliver = sub.add_parser("deliver", help="Where an agent's results are sent on this Mac")
+    deliver.add_argument("name")
+    deliver.add_argument("--email", help="comma-separated addresses; empty string clears")
+    deliver.add_argument("--subject")
+    deliver.add_argument("--telegram", help="a known chat's label or id; 'none' clears")
+    deliver.add_argument("--attach", choices=("docx", "md"))
+    deliver.add_argument("--on-failure", dest="on_failure", choices=("alert", "silent"))
+    deliver.add_argument("--command", dest="delivery_command")
+    deliver.add_argument("--clear", action="store_true", help="remove all deliveries")
+    deliver.add_argument("--test", action="store_true", help="send a test now")
+    resend = sub.add_parser("resend", help="Send a run's result again")
+    resend.add_argument("name")
+    resend.add_argument("--run", dest="run_id")
+    telegram_parser = sub.add_parser("telegram", help="Set up Telegram delivery on this Mac")
+    telegram_sub = telegram_parser.add_subparsers(dest="telegram_command", required=True)
+    telegram_sub.add_parser("setup", help="Connect a bot (one-time) and find your chats")
+    telegram_sub.add_parser("chats", help="Chats whyline can send to")
     scheduler = sub.add_parser("scheduler", help="Turn the agents scheduler on or off")
     scheduler_sub = scheduler.add_subparsers(dest="scheduler_command", required=True)
     scheduler_sub.add_parser("on", help="Check for due agents every 2 minutes, and at login")
@@ -1608,6 +1625,122 @@ def _cmd_agents_mail_script(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _delivery_lines(results: list[dict]) -> str:
+    return "  ".join(
+        f"{r['to']} {'✓' if r['ok'] else '✗'}" + ("" if r["ok"] or not r["detail"] else f" {r['detail']}")
+        for r in results
+    )
+
+
+def _cmd_agents_deliver(args, root) -> int:
+    from dataclasses import replace
+
+    from whyline.agents import deliver, deliveries as dl, service, telegram
+
+    defn = service.find(args.name, root)
+    current = dl.get(defn.agent_id) or dl.Delivery()
+    if args.clear:
+        dl.remove(defn.agent_id)
+        print(f"{defn.label}: no deliveries.")
+        return EXIT_OK
+    changes = {}
+    if args.email is not None:
+        changes["email"] = dl.parse_emails(args.email)
+    if args.subject is not None:
+        changes["subject"] = args.subject
+    if args.attach:
+        changes["attach"] = args.attach
+    if args.on_failure:
+        changes["on_failure"] = args.on_failure
+    if args.delivery_command is not None:
+        changes["command"] = args.delivery_command
+    known = telegram.known_chats()
+    if args.telegram is not None:
+        wanted = args.telegram.strip()
+        if wanted.lower() in ("", "none"):
+            changes.update(telegram_chat=0, telegram_label="")
+        else:
+            match = [(cid, label) for cid, label in known.items()
+                     if wanted in (label, str(cid))]
+            if not match:
+                print(f"error: no known Telegram chat '{wanted}'; run `whyline agents telegram setup` "
+                      "(Telegram setup) first", file=sys.stderr)
+                return EXIT_ERROR
+            changes.update(telegram_chat=match[0][0], telegram_label=match[0][1])
+    if changes:
+        updated = replace(current, **changes)
+        try:
+            dl.save(defn.agent_id, updated, known_chats=set(known))
+        except dl.DeliveryError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return EXIT_ERROR
+        current = updated
+    if args.test:
+        results = deliver.send_test(defn.label, current, cwd=defn.root)
+        print(_delivery_lines(results) or "Nothing to test: no deliveries set.")
+        return EXIT_OK if all(r["ok"] for r in results) else EXIT_ERROR
+    if current.empty:
+        print(f"{defn.label}: no deliveries.")
+        return EXIT_OK
+    print(f"{defn.label}")
+    print(f"  Email to       {', '.join(current.email) or '—'}")
+    print(f"  Subject        {current.subject or defn.label}")
+    print(f"  Telegram       {current.telegram_label or '—'}")
+    print(f"  Attach as      {current.attach}")
+    print(f"  If a run fails {current.on_failure}")
+    print(f"  Command        {current.command or '—'}")
+    return EXIT_OK
+
+
+def _cmd_agents_resend(args, root) -> int:
+    from whyline.agents import service
+
+    results = service.resend(args.name, root, args.run_id)
+    print(_delivery_lines(results) or "Nothing was sent: no deliveries set.")
+    return EXIT_OK if all(r["ok"] for r in results) else EXIT_ERROR
+
+
+def _cmd_agents_telegram(args, *, input_fn=input, getpass_fn=None) -> int:
+    import getpass
+
+    from whyline.agents import telegram
+
+    if getpass_fn is None:
+        getpass_fn = getpass.getpass
+    if args.telegram_command == "chats":
+        chats = telegram.known_chats()
+        if not chats:
+            print("No Telegram chats yet. Run: whyline agents telegram setup")
+        for cid, label in chats.items():
+            print(f"{label}  ({cid})")
+        return EXIT_OK
+    print("1. In Telegram, open @BotFather (https://t.me/BotFather), send /newbot,")
+    print("   choose a name, and copy the token it gives you.")
+    token = getpass_fn("2. Paste the bot token (hidden): ").strip()
+    try:
+        bot = telegram.check_token(token)
+        telegram.token_set(token)
+    except telegram.TelegramError as error:
+        print(f"error: {telegram.redact(str(error), token)}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"   Connected to {bot}. The token is saved on this Mac.")
+    while True:
+        input_fn(f"3. Send any message to {bot}, or add it to a group, then press Enter. ")
+        try:
+            chats = telegram.remember_chats(telegram.find_chats(token))
+        except telegram.TelegramError as error:
+            print(f"error: {telegram.redact(str(error), token)}", file=sys.stderr)
+            return EXIT_ERROR
+        if chats:
+            print("   Chats found:")
+            for cid, label in chats.items():
+                print(f"   - {label}")
+            print("4. Done. Choose a chat for an agent with:")
+            print('   whyline agents deliver <name> --telegram "<chat>"')
+            return EXIT_OK
+        print("   No messages yet. Send one to the bot and try again.")
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1615,6 +1748,8 @@ def cmd_agents(args: argparse.Namespace) -> int:
         return _cmd_agents_scheduler(args)
     if args.agents_command == "mail-script":
         return _cmd_agents_mail_script(args)
+    if args.agents_command == "telegram":
+        return _cmd_agents_telegram(args)
     root = _repo_root_or_none()
     try:
         if args.agents_command == "list":
@@ -1643,9 +1778,17 @@ def cmd_agents(args: argparse.Namespace) -> int:
             print(f"{record.outcome}: {record.reason}" if record.reason else record.outcome)
             print(records.read_final(record.run_id), end="")
             return EXIT_OK if record.outcome.startswith("succeeded") else EXIT_ERROR
+        if args.agents_command == "deliver":
+            return _cmd_agents_deliver(args, root)
+        if args.agents_command == "resend":
+            return _cmd_agents_resend(args, root)
         if args.agents_command == "history":
+            from whyline.agents import deliver
+
             for r in service.history(args.name, root, args.n):
-                print(f"{r.started[:16].replace('T', ' ')}  {r.source:<9} {r.cli:<12} {r.outcome}")
+                status = deliver.status_text(r)
+                line = f"{r.started[:16].replace('T', ' ')}  {r.source:<9} {r.cli:<12} {r.outcome}"
+                print(f"{line}  {status}" if status else line)
             return EXIT_OK
         if args.agents_command == "delete":
             if not args.yes:
