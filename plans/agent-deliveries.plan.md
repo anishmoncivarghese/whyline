@@ -55,7 +55,7 @@ Never push, tag, bump the version or publish.
   telegram setup|chats, and delivery status in whyline agents history.
   Verify: uv run pytest -q.
 
-- [ ] DL-7: Console Telegram setup screen and Runs delivery status
+- [x] DL-7: Console Telegram setup screen and Runs delivery status
   Implement "Task 7" from the plan: TelegramSetupScreen, the Delivered column
   and Resend button in RunsScreen, and _agent_resend in tui.py.
   Verify: uv run pytest -q.
