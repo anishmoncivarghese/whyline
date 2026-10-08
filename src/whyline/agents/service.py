@@ -116,6 +116,20 @@ def history(name: str, repo_root: Path | None, n: int = 20) -> list[records.RunR
     return records.list_runs(find(name, repo_root).agent_id, limit=n)
 
 
+def resend(name: str, repo_root: Path | None, run_id: str | None = None) -> list[dict]:
+    from whyline.agents import deliver
+
+    defn = find(name, repo_root)
+    if run_id:
+        record = records.load(run_id)
+    else:
+        latest = records.list_runs(defn.agent_id, limit=1)
+        record = latest[0] if latest else None
+    if record is None or record.agent_id != defn.agent_id:
+        raise AgentNotFound(f"no run of {defn.label} to resend")
+    return deliver.after_run(defn, record)
+
+
 class TooSoon(RuntimeError):
     def __init__(self, next_allowed):
         super().__init__(f"Too soon: the next run is allowed at {next_allowed:%H:%M}")

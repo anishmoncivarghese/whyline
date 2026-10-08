@@ -8310,3 +8310,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 936f1e67bd3b44279a379991527e6e11 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:23:41.190Z"} -->
+
+## 2026-10-08 — DL-5 passes behavioral testing in round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-5
+
+**Because:** All 12 focused delivery tests passed, all 209 agents tests passed, and the full uv run pytest -q suite exited 0 with one skip and no failures; the exercised cases cover success and failure delivery, destination isolation, command execution, finish-hook safety, resend, test sends, persisted statuses, and unchanged run outcomes.
+
+**Files:** src/whyline/agents/deliver.py, src/whyline/agents/after.py, src/whyline/agents/service.py, tests/agents/test_deliver.py
+
+<!-- whyline-event: b28bafc6a0fa4bd4a80fb887c345dfc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:33:45.510Z"} -->
+
+## 2026-10-08 — DL-5 approved in reviewer round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-5
+
+**Because:** The implementation matches Task 5's delivery, command, test-send, status, finish-hook, and resend contracts; the 12 focused cases genuinely cover the acceptance paths, and the independently run plain full suite uv run pytest -q exited 0 with one skip and no failures.
+
+**Files:** src/whyline/agents/deliver.py, src/whyline/agents/after.py, src/whyline/agents/service.py, tests/agents/test_deliver.py
+
+<!-- whyline-event: 6abcadd47d98455abf309946ec1fb2d8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:36:39.333Z"} -->

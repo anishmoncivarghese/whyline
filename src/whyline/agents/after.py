@@ -91,5 +91,14 @@ def finish(conn, defn, record, *, now=None, notify=True, send=None) -> None:
             changes.update(status="needs_attention", paused_reason=f"{failures} failures in a row")
             messages.append(f"needs attention — {failures} failures in a row; paused")
         state.update(conn, defn.agent_id, **changes)
+    try:
+        from whyline.agents import deliver
+
+        delivered = deliver.after_run(defn, record)
+    except Exception:  # delivery must never break the run's bookkeeping
+        delivered = []
+    for item in delivered:
+        if not item.get("ok"):
+            messages.append(f"{item.get('to')} delivery failed — {item.get('detail')}")
     if notify:
         _notify(title, messages, send)
