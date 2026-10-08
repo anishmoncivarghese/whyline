@@ -8067,3 +8067,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8f4873feeeff4c7c858feb3bffda6da4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T04:23:59.328Z"} -->
+
+## 2026-10-08 — Agent runs drop a --settings file that doesn't exist in the agent's folder; Agents mode gains typed edit/delete (delete always confirms) and a hint on the list
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AG-FIX
+
+**Because:** every personal Claude agent failed with 'Settings file not found': the relay's Claude command names .whyline/relay/claude-settings.json relative to the run folder; read-only comes from --permission-mode plan, and a real run without the file searched the web; the user couldn't find Edit/Delete one level down in the detail screen
+
+**Rejected:**
+
+- write a claude-settings.json into the agent's folder — puts whyline files into the user's folder for a setting read-only runs don't need
+
+**Files:** src/whyline/agents/runner.py, src/whyline/console/tui.py, src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 7e0787bd3a524f07a57dbf2759237389 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T05:35:53.345Z"} -->

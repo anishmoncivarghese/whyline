@@ -667,7 +667,7 @@ class WhylineConsoleApp(App):
         if mode == "relay":
             return "Relay: run (guided), doctor, status, start, resume (Enter to run)"
         if mode == "agents":
-            return "Agents: list, run <name>, history <name>, pause/resume/accept <name>"
+            return "Agents: list, run <name>, edit <name>, delete <name>, history <name>, pause/resume/accept <name>"
         agent = self.session.agent or "claude"
         return f"Message {agent}... (Enter to send)"
 
@@ -896,6 +896,12 @@ class WhylineConsoleApp(App):
             return
         if len(parts) == 2 and parts[0] == "history":
             self._open_runs(parts[1])
+            return
+        if len(parts) == 2 and parts[0] == "edit":
+            self._agent_action(parts[1], "edit")
+            return
+        if len(parts) == 2 and parts[0] == "delete":
+            self._confirm_delete_agent(parts[1])  # always asks first
             return
         self.render_event(agents_command_event(self.session, text))
         if parts and parts[0] in ("list", "pause", "resume", "accept"):

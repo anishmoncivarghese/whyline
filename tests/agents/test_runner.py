@@ -160,3 +160,44 @@ def test_codex_without_an_answer_file_falls_back_to_its_output(repo):
     run_fn, _ = _script(Result(0, "The summary.\n"))
     record = runner.execute_once(agent, source="manual", now=NOW, run_fn=run_fn)
     assert records.read_final(record.run_id).strip() == "The summary."
+
+
+def _claude_argv(defn):
+    seen = []
+
+    def run_fn(command, prompt, **kwargs):
+        seen.append(list(command))
+        return Result(0, json.dumps({"type": "result", "result": "ok", "permission_denials": []}))
+
+    record = runner.execute_once(defn, source="manual", now=NOW, run_fn=run_fn)
+    return record, seen[0]
+
+
+def test_a_personal_claude_agent_runs_without_a_missing_settings_file(tmp_path, home):
+    # Claude's command names .whyline/relay/claude-settings.json, relative to
+    # the folder it runs in. A personal agent's folder has none, and claude
+    # refuses to start ("Settings file not found"). Drop the flag instead.
+    work = tmp_path / "JobScan"
+    work.mkdir()
+    folder = home / ".whyline/agents"
+    folder.mkdir(parents=True)
+    (folder / "p.toml").write_text(
+        f'name="p"\ninstructions="Scan."\nrunner="claude"\nworkdir={json.dumps(str(work))}\n'
+    )
+    defn = d.load(folder / "p.toml", kind="personal")
+    record, argv = _claude_argv(defn)
+    assert record.outcome == "succeeded"
+    assert not any(a == "--settings" or a.startswith("--settings=") for a in argv)
+    assert argv[argv.index("--permission-mode") + 1] == "plan"
+
+
+def test_a_repo_claude_agent_keeps_its_settings_file(repo):
+    settings = repo / ".whyline/relay/claude-settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text("{}")
+    path = repo / ".whyline/agents/r.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('name="r"\ninstructions="Scan."\nrunner="claude"')
+    defn = d.load(path, kind="repo", repo_root=repo)
+    _, argv = _claude_argv(defn)
+    assert argv[argv.index("--settings") + 1] == ".whyline/relay/claude-settings.json"

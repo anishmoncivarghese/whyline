@@ -121,3 +121,60 @@ async def test_unknown_agent_is_an_error_line(tmp_path, agent_rows, monkeypatch)
         lines = _lines(app)
     # The app's screen is gone once run_test returns, so the transcript is read above.
     assert any("No agent named ghost" in l for l in lines)
+
+
+async def _until(pilot, condition, what):
+    for _ in range(400):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
+
+
+async def _type(app, pilot, text):
+    app._main("#prompt", tui.Input).value = text
+    app._send()
+    await pilot.pause()
+
+
+async def test_typed_delete_asks_first_and_cancel_keeps_the_agent(tmp_path, agent_rows, monkeypatch):
+    deleted = []
+    monkeypatch.setattr(service, "delete", lambda name, root: deleted.append(name))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _agents_mode(app, pilot)
+        await _type(app, pilot, "delete digest")
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown")
+        assert "Delete" in app.screen._message and "digest" in app.screen._message
+        app.screen.query_one("#cancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, tui.ConfirmScreen), "confirm closed")
+        assert deleted == []
+
+        await _type(app, pilot, "delete digest")
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown again")
+        app.screen.query_one("#confirm", tui.Button).press()
+        await _until(pilot, lambda: deleted == ["digest"], "deleted after confirming")
+
+
+async def test_typed_edit_opens_the_form_with_the_agent(tmp_path, agent_rows, monkeypatch):
+    opened = []
+    monkeypatch.setattr(service, "find", lambda name, root: agent_rows.defn)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        monkeypatch.setattr(app, "_open_new_agent", lambda existing=None: opened.append(existing))
+        await _agents_mode(app, pilot)
+        await _type(app, pilot, "edit digest")
+        await _until(pilot, lambda: opened, "edit form opened")
+        assert opened[0].name == "digest"
+
+
+async def test_agents_mode_says_where_edit_and_delete_are(tmp_path, agent_rows):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _agents_mode(app, pilot)
+        assert "edit <name>" in app._main("#prompt", tui.Input).placeholder
+        assert "delete <name>" in app._main("#prompt", tui.Input).placeholder
+        app._main("#agents-list", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, AgentsListScreen), "list shown")
+        text = " ".join(str(label.renderable) for label in app.screen.query(tui.Label))
+        assert "edit or delete" in text

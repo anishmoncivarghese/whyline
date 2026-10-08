@@ -73,6 +73,30 @@ def _classify(cli: str, code: int | None, raw: str, error: BaseException | None)
     return ("succeeded_with_denials", "") if capabilities.denied(cli, raw) else ("succeeded", "")
 
 
+def _without_missing_settings(command: list[str], root: Path) -> list[str]:
+    """Claude's relay command names .whyline/relay/claude-settings.json,
+    relative to the folder it runs in. A personal agent's folder (or a repo
+    the relay never set up) has none, and claude refuses to start with
+    "Settings file not found". Read-only comes from --permission-mode plan,
+    not that file, so drop a --settings that points nowhere."""
+    out: list[str] = []
+    index = 0
+    while index < len(command):
+        token = command[index]
+        if token == "--settings" and index + 1 < len(command):
+            value, width = command[index + 1], 2
+        elif token.startswith("--settings="):
+            value, width = token.split("=", 1)[1], 1
+        else:
+            out.append(token)
+            index += 1
+            continue
+        if (root / Path(value).expanduser()).is_file():
+            out.extend(command[index:index + width])
+        index += width
+    return out
+
+
 def _command(defn, cli: str) -> list[str] | None:
     from whyline_relay import chat, config
 
@@ -80,7 +104,8 @@ def _command(defn, cli: str) -> list[str] | None:
         base = chat.resolve_command(config.load(defn.root), cli)
     except Exception:
         return None
-    return capabilities.read_only_command(cli, base)
+    command = capabilities.read_only_command(cli, base)
+    return None if command is None else _without_missing_settings(command, defn.root)
 
 
 def _adapter(defn, cli: str):

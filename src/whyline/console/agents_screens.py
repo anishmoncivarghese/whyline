@@ -43,6 +43,8 @@ class AgentsListScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         body: list = [Label("Agents" if self._rows else NO_AGENTS)]
         if self._rows:
+            body.append(Label("Open an agent to run, edit or delete it.", id="al-hint"))
+        if self._rows:
             table = DataTable(id="al-table", cursor_type="row")
             table.add_columns("Agent", "CLI", "When", "Next", "Last", "Status")
             for row in self._rows:

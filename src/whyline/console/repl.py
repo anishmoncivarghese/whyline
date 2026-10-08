@@ -86,7 +86,7 @@ def _help_text() -> str:
         "  Chat     talk to the active agent (see /model)",
         "  Relay    Plan makes plan.md, Set up picks roles and starts; or type\n"
         "           doctor, status, start, resume",
-        "  Agents   list, run <name>, history <name>, pause/resume/accept <name>",
+        "  Agents   list, run/edit/delete/history <name>, pause/resume/accept <name>",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),
         "whyline commands (type them with /):",
@@ -544,7 +544,10 @@ def busy_label(session: ConsoleSession) -> str:
     return "running"
 
 
-_AGENTS_USAGE = "Usage: list | run <name> | history <name> | pause|resume|accept <name>"
+_AGENTS_USAGE = (
+    "Usage: list | run <name> | edit <name> | delete <name> | history <name> | "
+    "pause|resume|accept <name>"
+)
 
 
 def named_row(name: str, root: Path):
