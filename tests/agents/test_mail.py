@@ -28,9 +28,9 @@ def test_an_executable_path_with_spaces_is_one_shell_word():
 def test_an_executable_path_with_an_apostrophe_stays_in_the_applescript_string():
     # shlex.quote turns an apostrophe into '"'"', and those double quotes
     # would end the AppleScript string unless they are escaped.
-    text = mail.script_text("inbox-triage", "/Users/o'brien/bin/whyline")
+    text = mail.script_text("inbox-triage", "/opt/o'brien/bin/whyline")
     assert (
-        "\"'/Users/o'\\\"'\\\"'brien/bin/whyline' "
+        "\"'/opt/o'\\\"'\\\"'brien/bin/whyline' "
         "agents trigger inbox-triage --file \""
     ) in text
 

@@ -8016,3 +8016,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9dbe4614e6c642bb91526fd7827b3267 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-07T21:32:10.563Z"} -->
+
+## 2026-10-08 — Release Agents mode phase 2 (AG-11..AG-16, AG-18) as whyline 0.3.37 before the live Mail and scheduler checks, which run against the installed release
+
+**Actor:** claude
+**Role:** releaser
+**Task:** AG-17
+
+**Because:** the user chose to publish and then check with the installed version; the suite passes with and without agent CLIs; a /Users/ path in a mail quoting test would have failed CI's sdist gate and was changed to /opt/
+
+**Rejected:**
+
+- hold the release for the live checks — the user asked to publish first and verify on the real install
+
+**Files:** pyproject.toml, docs/releases/v0.3.37.md, tests/agents/test_mail.py
+
+<!-- whyline-event: ea60c77530b24b63a6dd48594b5f3490 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T03:48:18.434Z"} -->
