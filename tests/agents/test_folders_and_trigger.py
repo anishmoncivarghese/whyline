@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 
 import pytest
@@ -11,7 +12,7 @@ def _folder_agent(repo, home, gap=10):
     path = repo / ".whyline/agents/w.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f'name="w"\ninstructions="x"\nrunner="claude"\n[trigger]\nkind="folder"\n'
-                    f'folder="{watched}"\nmin_gap_minutes={gap}')
+                    f'folder={json.dumps(str(watched))}\nmin_gap_minutes={gap}')  # escapes Windows backslashes
     defn = d.load(path, kind="repo", repo_root=repo)
     state.accept(state.connect(), defn)
     return defn, watched
