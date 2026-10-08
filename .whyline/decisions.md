@@ -8163,3 +8163,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 003f53b1335e4c17b86b5ceee1ebe78d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:46:29.568Z"} -->
+
+## 2026-10-08 — Word attachments are HTML from markdown, then macOS textutil; the summary stops before the first table or fence
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-2
+
+**Because:** The deliveries plan allows one new dependency, markdown, and textutil is the macOS converter the spec already names. A report that is only a table falls back to its own text so the caption is never empty.
+
+**Rejected:**
+
+- python-docx — a second dependency, and the tests pin the textutil arguments and a None result when textutil is missing or fails.
+
+**Files:** src/whyline/agents/convert.py
+
+<!-- whyline-event: 13d80afeb4de49f08cd07ad92492ac7e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:51:49.554Z"} -->
+
+## 2026-10-08 — DL-2 passes functional testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-2
+
+**Because:** The six focused conversion tests passed and the complete pytest suite exited 0 with one expected skip, covering markdown HTML conversion, textutil DOCX behavior, and summary truncation.
+
+**Files:** src/whyline/agents/convert.py
+
+<!-- whyline-event: 6d22b751f95a460c9da7291db85eb1b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:54:39.286Z"} -->
+
+## 2026-10-08 — Approve DL-2 Word attachment conversion and summary behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-2
+
+**Because:** The implementation matches the specified markdown HTML conversion, textutil DOCX fallback and cleanup, and first-table/fence summary rules; its six focused tests cover the required behavior, and the full pytest suite passed.
+
+**Files:** src/whyline/agents/convert.py
+
+<!-- whyline-event: 47e360f3153d4e379ebfd0fa00f9160a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:57:15.266Z"} -->
