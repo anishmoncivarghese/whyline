@@ -8267,3 +8267,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e53a304e5d634755bda9ebb56a51f7cb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:11:35.972Z"} -->
+
+## 2026-10-08 — Pass Mail recipients, subject, body and attachment paths as osascript arguments, with the script a fixed constant
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-4
+
+**Because:** A quote or apostrophe in an address or subject is parsed as AppleScript if it is written into the script text
+
+**Rejected:**
+
+- Interpolating quoted values into the script — AppleScript quoting does not keep o'brien@example.com and a quoted subject as data
+
+**Files:** src/whyline/agents/mail_send.py
+
+<!-- whyline-event: 4c80d55745c24252978a2f04fca503ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:16:56.432Z"} -->
+
+## 2026-10-08 — DL-4 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-4
+
+**Because:** All 5 mail_send tests passed, including separate argv handling for quoted recipients and subjects plus specified error mapping; the full pytest suite exited 0 with one expected skip
+
+**Files:** src/whyline/agents/mail_send.py
+
+<!-- whyline-event: e7d469be6b444b228317bca20c016107 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:21:06.728Z"} -->
+
+## 2026-10-08 — Approve DL-4 Mail delivery implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-4
+
+**Because:** The fixed AppleScript receives subject, body, recipient count, every recipient, and every attachment path only through osascript argv; focused tests cover quote-bearing data and required errors, and the full uv run pytest -q suite exited 0 with one expected skip
+
+**Files:** src/whyline/agents/mail_send.py
+
+<!-- whyline-event: 936f1e67bd3b44279a379991527e6e11 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:23:41.190Z"} -->
