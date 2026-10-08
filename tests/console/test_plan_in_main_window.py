@@ -21,7 +21,9 @@ def _lines(app):
 
 
 async def _wait_for(pilot, condition, what):
-    for _ in range(100):
+    # Up to 20 s: slow CI machines (Windows) took longer than 5 s to approve.
+    # A passing condition returns at once, so this costs nothing when fast.
+    for _ in range(400):
         if condition():
             return
         await pilot.pause(0.05)

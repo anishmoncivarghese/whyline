@@ -61,42 +61,50 @@ async def test_scheduler_button_turns_on_and_confirms_off(tmp_path, monkeypatch)
         assert str(app._main("#agents-status").renderable) == (
             "Scheduler: off — turn it on to run agents on a schedule"
         )
-        assert await pilot.click("#agents-scheduler")
-        await pilot.pause()
-        assert calls["on"] == 1
-        assert str(app._main("#agents-status").renderable) == (
-            "Scheduler: on · next: soon (repo) 2026-10-08 07:00"
+        scheduler = app._main("#agents-scheduler", tui.Button)
+        assert scheduler.region.height > 0 and scheduler.region.right <= 80
+        scheduler.press()
+        await _until(pilot, lambda: calls["on"] == 1, "scheduler turned on")
+        await _until(
+            pilot,
+            lambda: str(app._main("#agents-status").renderable)
+            == "Scheduler: on · next: soon (repo) 2026-10-08 07:00",
+            "status says on",
         )
-        # A button ignores a second click while its 0.2s press effect is on.
-        await pilot.pause(0.3)
-        assert await pilot.click("#agents-scheduler")
-        for _ in range(20):
-            if isinstance(app.screen, tui.ConfirmScreen):
-                break
-            await pilot.pause(0.05)
-        assert isinstance(app.screen, tui.ConfirmScreen)
+
+        scheduler.press()
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown")
         assert app.screen._message == (
             "Turn the scheduler off? Scheduled and folder agents stop until you turn it on again."
         )
         assert calls["off"] == 0
         confirm = app.screen.query_one("#confirm")
         assert confirm.region.height > 0 and confirm.region.bottom <= 24
-        await pilot.click("#cancel")
-        await pilot.pause()
+        app.screen.query_one("#cancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, tui.ConfirmScreen), "confirm closed")
         assert calls["off"] == 0
         assert str(app._main("#agents-status").renderable).startswith("Scheduler: on")
-        await pilot.pause(0.3)
-        assert await pilot.click("#agents-scheduler")
-        for _ in range(20):
-            if isinstance(app.screen, tui.ConfirmScreen):
-                break
-            await pilot.pause(0.05)
-        await pilot.click("#confirm")
-        await pilot.pause()
-        assert calls["off"] == 1
-        assert str(app._main("#agents-status").renderable) == (
-            "Scheduler: off — turn it on to run agents on a schedule"
+
+        scheduler.press()
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown again")
+        app.screen.query_one("#confirm", tui.Button).press()
+        await _until(pilot, lambda: calls["off"] == 1, "scheduler turned off")
+        await _until(
+            pilot,
+            lambda: str(app._main("#agents-status").renderable)
+            == "Scheduler: off — turn it on to run agents on a schedule",
+            "status says off",
         )
+
+
+async def _until(pilot, condition, what):
+    """Waits for the app instead of a fixed pause: slow CI machines (Windows)
+    need longer, and a met condition returns at once."""
+    for _ in range(400):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
 
 
 async def test_scheduler_button_shows_turn_on_failure(tmp_path, monkeypatch):
