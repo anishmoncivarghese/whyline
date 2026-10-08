@@ -38,7 +38,7 @@ def _is_mac(mac: bool | None) -> bool:
 
 
 def _token_file() -> Path:
-    return paths.home() / "telegram-token"
+    return paths.settings_file("telegram-token")
 
 
 def _write_private(target: Path, text: str) -> None:
@@ -161,7 +161,7 @@ def find_chats(token: str, *, http=None, sleep=time.sleep) -> dict[int, str]:
 
 
 def _chats_file() -> Path:
-    return paths.home() / "telegram-chats.toml"
+    return paths.settings_file("telegram-chats.toml")
 
 
 def known_chats() -> dict[int, str]:

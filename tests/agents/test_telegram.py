@@ -45,7 +45,7 @@ def test_known_chats_are_remembered_privately(home):
     }
     assert tg.known_chats() == {11: "Anish V (private)", -100: "Family jobs (group)"}
     if os.name != "nt":
-        path = home / ".whyline/agents/telegram-chats.toml"
+        path = home / ".whyline/agents/settings/telegram-chats.toml"
         assert (path.stat().st_mode & 0o777) == 0o600
 
 
@@ -103,4 +103,4 @@ def test_token_file_off_mac(home):
     tg.token_set(TOKEN, mac=False)
     assert tg.token_get(mac=False) == TOKEN
     if os.name != "nt":
-        assert ((home / ".whyline/agents/telegram-token").stat().st_mode & 0o777) == 0o600
+        assert ((home / ".whyline/agents/settings/telegram-token").stat().st_mode & 0o777) == 0o600

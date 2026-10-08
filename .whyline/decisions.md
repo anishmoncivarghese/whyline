@@ -8644,3 +8644,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 01929e2944b24242b6296d453ee3c815 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T20:23:01.110Z"} -->
+
+## 2026-10-08 — whyline's delivery and Telegram settings live in ~/.whyline/agents/settings/, migrated once from the agents folder unless the old file is an agent definition; a broken agent entry explains itself and offers Delete file with confirmation
+
+**Actor:** claude
+**Role:** implementer
+**Task:** DL-LIVE
+
+**Because:** deliveries.toml and telegram-chats.toml sat beside personal agents, so discovery listed telegram-chats.toml as a broken agent the user could neither open nor delete, and an agent named deliveries or telegram-chats would have collided with the settings
+
+**Rejected:**
+
+- skip known names when scanning — an agent with that name would still overwrite the settings
+
+**Files:** src/whyline/agents/paths.py, src/whyline/console/agents_screens.py
+
+<!-- whyline-event: e93fdd696f9747ca9f80e6f2be2a3092 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T20:36:40.515Z"} -->

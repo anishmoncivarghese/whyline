@@ -68,25 +68,64 @@ class AgentsListScreen(ModalScreen):
                     row.last_outcome or "—", row.status, key=f"{row.defn.kind}:{row.defn.name}",
                 )
             body.append(table)
+        body.append(Static("", id="al-broken", markup=False))
         body.append(
-            Horizontal(Button("Open", id="al-open", variant="primary"), Button("Close", id="al-close")),
+            Horizontal(
+                Button("Open", id="al-open", variant="primary"),
+                Button("Delete file…", id="al-delete-broken", variant="error"),
+                Button("Close", id="al-close"),
+            ),
         )
         yield Vertical(*body)
 
-    def _chosen(self) -> str | None:
+    def on_mount(self) -> None:
+        self.query_one("#al-broken", Static).display = False
+        self.query_one("#al-delete-broken", Button).display = False
+
+    def _key(self) -> str | None:
         if not self._rows:
             return None
-        key = _row_key(self.query_one("#al-table", DataTable))
-        if key is None or key.startswith("broken:"):
+        return _row_key(self.query_one("#al-table", DataTable))
+
+    def _broken(self, key: str | None):
+        if not key or not key.startswith("broken:"):
             return None
-        return key
+        name = key.removeprefix("broken:")
+        for row in self._rows:
+            if isinstance(row.defn, d.Broken) and row.defn.path.name == name:
+                return row.defn
+        return None
+
+    def _chosen(self) -> str | None:
+        key = self._key()
+        return None if key is None or key.startswith("broken:") else key
+
+    def _open(self) -> None:
+        broken = self._broken(self._key())
+        if broken is None:
+            self.dismiss(self._chosen())
+            return
+        # A file that isn't a valid agent can't be opened; say why, and offer
+        # to remove it (whyline asks before deleting anything).
+        self._broken_path = broken.path
+        notice = self.query_one("#al-broken", Static)
+        notice.update(f"{broken.path.name} isn't a valid agent: {broken.error}. "
+                      f"File: {_tilde(broken.path)}. Fix the file, or delete it.")
+        notice.display = True
+        self.query_one("#al-delete-broken", Button).display = True
 
     def on_data_table_row_selected(self, event) -> None:
-        self.dismiss(self._chosen())
+        self._open()
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
-        self.dismiss(self._chosen() if event.button.id == "al-open" else None)
+        if event.button.id == "al-open":
+            self._open()
+        elif event.button.id == "al-delete-broken":
+            if getattr(self, "_broken_path", None):
+                self.dismiss(f"delete-file:{self._broken_path}")
+        elif event.button.id == "al-close":
+            self.dismiss(None)
 
 
 class AgentDetailScreen(ModalScreen):

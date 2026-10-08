@@ -178,3 +178,33 @@ async def test_agents_mode_says_where_edit_and_delete_are(tmp_path, agent_rows):
         await _until(pilot, lambda: isinstance(app.screen, AgentsListScreen), "list shown")
         text = " ".join(str(label.renderable) for label in app.screen.query(tui.Label))
         assert "edit or delete" in text
+
+
+async def test_opening_a_broken_entry_explains_it_and_can_delete_it(tmp_path, monkeypatch):
+    broken_file = tmp_path / "oops.toml"
+    broken_file.write_text("not = [valid", encoding="utf-8")
+    broken = d.Broken(path=broken_file, kind="personal", error="not valid TOML")
+    row = service.Row(broken, "needs_review", "", "", "", "not valid TOML")
+    monkeypatch.setattr(service, "rows", lambda root: [row])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _agents_mode(app, pilot)
+        app._main("#agents-list", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, AgentsListScreen), "list shown")
+        app.screen.query_one("#al-open", tui.Button).press()
+        await _until(pilot, lambda: "isn't a valid agent" in str(app.screen.query_one("#al-broken").renderable),
+                     "explained")
+        assert "not valid TOML" in str(app.screen.query_one("#al-broken").renderable)
+        app.screen.query_one("#al-delete-broken", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "asks first")
+        app.screen.query_one("#cancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, tui.ConfirmScreen), "cancelled")
+        assert broken_file.exists()
+        app._main("#agents-list", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, AgentsListScreen), "list again")
+        app.screen.query_one("#al-open", tui.Button).press()
+        await _until(pilot, lambda: app.screen.query_one("#al-delete-broken").display, "delete offered")
+        app.screen.query_one("#al-delete-broken", tui.Button).press()
+        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "asks again")
+        app.screen.query_one("#confirm", tui.Button).press()
+        await _until(pilot, lambda: not broken_file.exists(), "file deleted")

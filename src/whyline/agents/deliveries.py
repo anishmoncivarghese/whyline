@@ -37,7 +37,7 @@ class Delivery:
 
 
 def path() -> Path:
-    return paths.home() / "deliveries.toml"
+    return paths.settings_file("deliveries.toml")
 
 
 def parse_emails(text: str) -> tuple[str, ...]:

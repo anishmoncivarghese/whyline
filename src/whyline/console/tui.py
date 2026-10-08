@@ -835,6 +835,9 @@ class WhylineConsoleApp(App):
     def _agent_picked(self, name: str | None, follow: str) -> None:
         if not name:
             return
+        if name.startswith("delete-file:"):
+            self._confirm_delete_file(Path(name.removeprefix("delete-file:")))
+            return
         self._agents_name = name
         if follow == "history":
             self._open_runs(name)
@@ -920,6 +923,27 @@ class WhylineConsoleApp(App):
         if action in ("pause", "resume", "accept"):
             self.render_event(agents_command_event(self.session, f"{action} {name}"))
             self._refresh_agents_status()
+
+    def _confirm_delete_file(self, path: Path) -> None:
+        """A broken agent file: not a valid agent, so delete_agent can't
+        find it. Ask, then remove only that file."""
+        shown = path.as_posix().replace(Path.home().as_posix(), "~", 1)
+
+        def confirmed(yes: bool) -> None:
+            if not yes:
+                return
+            try:
+                path.unlink()
+            except OSError as error:
+                self.render_event(SessionEvent(kind="error", text=str(error)))
+                return
+            self.render_event(SessionEvent(kind="output", text=f"Deleted {shown}."))
+            self._refresh_agents_status()
+
+        self.push_screen(
+            ConfirmScreen(f"Delete {shown}? It isn't a valid agent, so nothing runs from it.", "Delete"),
+            confirmed,
+        )
 
     def _confirm_delete_agent(self, name: str) -> None:
         from whyline.agents import service
