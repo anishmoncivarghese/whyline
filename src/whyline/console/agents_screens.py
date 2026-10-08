@@ -307,6 +307,25 @@ class TelegramSetupScreen(ModalScreen):
         except RuntimeError:
             pass  # the app itself has stopped
 
+    def _status_later(self, app, text: str) -> None:
+        """Set the status line from a worker thread. The widget is looked up
+        on the app's thread, and only while this screen is still open."""
+        self._later(app, lambda: self.query_one("#tg-bot", Static).update(text))
+
+    def _work(self, app, body, token: str | None):
+        """Wrap a worker so nothing it raises reaches Textual: an uncaught
+        worker error stops the console and its report prints local variables,
+        including the bot token."""
+        def run() -> None:
+            from whyline.agents import telegram
+
+            try:
+                body()
+            except Exception as error:
+                self._status_later(app, telegram.redact(str(error), token) or "Something went wrong.")
+
+        return run
+
     def _set_bot(self, bot: str, text: str) -> None:
         self._bot = bot
         self.query_one("#tg-bot", Static).update(text)
@@ -344,12 +363,12 @@ class TelegramSetupScreen(ModalScreen):
             try:
                 bot = telegram.check_token(token)
             except Exception as error:
-                self._later(app, self.query_one("#tg-bot", Static).update,
+                self._status_later(app,
                             telegram.redact(str(error), token))
                 return
             self._later(app, self._set_bot, bot, f"Connected to {bot}.")
 
-        app.run_worker(work, thread=True)
+        app.run_worker(self._work(app, work, token), thread=True)
 
     def _start_polling(self) -> None:
         if self._poller is None:
@@ -371,7 +390,7 @@ class TelegramSetupScreen(ModalScreen):
                 return
             self._later(app, self._show_chats, chats)
 
-        app.run_worker(work, thread=True, exclusive=True, group="tg-poll")
+        app.run_worker(self._work(app, work, token), thread=True, exclusive=True, group="tg-poll")
 
     def _check(self) -> None:
         token = self.query_one("#tg-token", Input).value.strip()
@@ -388,7 +407,7 @@ class TelegramSetupScreen(ModalScreen):
                 bot = telegram.check_token(token)
                 telegram.token_set(token)
             except Exception as error:
-                self._later(app, self.query_one("#tg-bot", Static).update,
+                self._status_later(app,
                             telegram.redact(str(error), token))
                 return
 
@@ -399,7 +418,7 @@ class TelegramSetupScreen(ModalScreen):
 
             self._later(app, done)
 
-        app.run_worker(work, thread=True)
+        app.run_worker(self._work(app, work, token), thread=True)
 
     def _test(self) -> None:
         chat = self.query_one("#tg-chat", Select).value
@@ -424,9 +443,9 @@ class TelegramSetupScreen(ModalScreen):
                 text = "Test message sent. Check Telegram."
             except Exception as error:
                 text = telegram.redact(str(error), token)
-            self._later(app, self.query_one("#tg-bot", Static).update, text)
+            self._status_later(app, text)
 
-        app.run_worker(work, thread=True)
+        app.run_worker(self._work(app, work, token), thread=True)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()

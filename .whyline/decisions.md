@@ -8661,3 +8661,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e93fdd696f9747ca9f80e6f2be2a3092 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T20:36:40.515Z"} -->
+
+## 2026-10-08 — Telegram setup workers update the screen only through helpers that look widgets up on the app thread while the screen is open, and are wrapped so no worker error reaches Textual
+
+**Actor:** claude
+**Role:** implementer
+**Task:** DL-LIVE
+
+**Because:** the user's console crashed after Send test message then Done (NoMatches '#tg-bot' looked up in the worker thread after close), and Textual's crash report printed the bot token from the worker's locals
+
+**Rejected:**
+
+- remove Send test message — the send worked; only the report-back was unsafe, and the test is useful right after connecting
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 57793f2526fb4a2895846af420ede3b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T20:49:26.479Z"} -->

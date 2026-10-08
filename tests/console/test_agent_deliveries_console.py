@@ -148,3 +148,62 @@ async def test_an_existing_bot_is_named_when_the_screen_opens(tmp_path, fake_tel
         await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup shown")
         await _until(pilot, lambda: "@JobsBot" in str(app.screen.query_one("#tg-bot").renderable),
                      "bot named")
+
+
+@pytest.mark.parametrize("action", ["test", "check"])
+async def test_closing_setup_while_sending_or_checking_does_not_crash(tmp_path, fake_telegram, monkeypatch, action):
+    # Reported: Send test message, then Done before the reply came back,
+    # crashed the console (NoMatches '#tg-bot') and the crash report printed
+    # the bot token. Every background action must report back safely.
+    import threading
+
+    release, started = threading.Event(), threading.Event()
+
+    def slow(*args, **kwargs):
+        started.set()
+        release.wait(5)
+        return "@JobsBot"
+
+    fake_telegram["token"] = "123:secret"
+    fake_telegram["chats"].update({11: "Anish V (private)"})
+    if action == "test":
+        monkeypatch.setattr(telegram, "send_message", slow)
+    else:
+        monkeypatch.setattr(telegram, "check_token", slow)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        result = []
+        app.push_screen(TelegramSetupScreen(), result.append)
+        await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup shown")
+        screen = app.screen
+        if action == "test":
+            await _until(pilot, lambda: isinstance(screen.query_one("#tg-chat", tui.Select).value, int),
+                         "chat listed")
+            screen.query_one("#tg-test", tui.Button).press()
+        else:
+            screen.query_one("#tg-token", tui.Input).value = "456:other"
+            screen.query_one("#tg-check", tui.Button).press()
+        await _until(pilot, lambda: started.is_set(), "running")
+        screen.query_one("#tg-done", tui.Button).press()
+        await _until(pilot, lambda: result, "dismissed")
+        release.set()
+        for _ in range(20):
+            await pilot.pause(0.05)
+        assert app.is_running
+
+
+async def test_a_failing_background_action_never_crashes_the_console(tmp_path, fake_telegram, monkeypatch):
+    def boom(*args, **kwargs):
+        raise ValueError("unexpected")
+
+    fake_telegram["token"] = "123:secret"
+    monkeypatch.setattr(telegram, "find_chats", boom)
+    monkeypatch.setattr(telegram, "remember_chats", boom)
+    monkeypatch.setattr(telegram, "check_token", boom)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.push_screen(TelegramSetupScreen())
+        await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "setup shown")
+        for _ in range(40):
+            await pilot.pause(0.05)
+        assert app.is_running
