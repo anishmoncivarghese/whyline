@@ -69,6 +69,7 @@ One table per agent, keyed by agent id:
 email = ["anish@example.com", "her@example.com"]
 telegram_chat = -1001234567890        # numeric chat id; 0 or absent = none
 telegram_label = "Family jobs (group)"
+subject = "Daily government job vacancies"   # optional; empty = the agent's label
 attach = "docx"                       # "docx" | "md"
 on_failure = "alert"                  # "alert" | "silent"
 command = ""                          # advanced; empty = none
@@ -78,7 +79,7 @@ The file is created `0600` (its folder is already `0700`). An agent with no
 table has no deliveries, exactly as today. Deleting an agent removes its
 table. A repo agent pulled onto another Mac starts with none.
 
-Validation on save: each email address has one `@` and no spaces or commas;
+Validation on save: `subject` is one line of at most 120 characters; each email address has one `@` and no spaces or commas;
 `attach` and `on_failure` are one of their values; `telegram_chat` is an
 integer that appears in this Mac's known chats (section 3).
 
@@ -117,8 +118,8 @@ dependency besides `markdown`.
   received a message in, as `(chat_id, label)`; labels are the person's
   name `(private)` or the group title `(group)`. Known chats are saved in
   `~/.whyline/agents/telegram-chats.toml` (`0600`).
-- **Send:** `sendDocument` with the attachment and the summary as its
-  caption (at most 1,024 characters), or `sendMessage` for an alert. Plain
+- **Send:** `sendDocument` with the attachment and, as its caption, the
+  subject line followed by the summary (at most 1,024 characters), or `sendMessage` for an alert. Plain
   text only: no `parse_mode`, so nothing in a report is read as formatting.
 - **Errors:** 401 → "the bot token was rejected; run Telegram setup again";
   400/403 for the chat → "the bot can't reach <label>"; a network error or
@@ -155,8 +156,10 @@ spliced into the script text), a new outgoing message is created with
 `visible:false`, each attachment is added, then a 3-second delay and
 `send`.
 
-- Subject: `"<agent label> — <YYYY-MM-DD>"`; alerts:
-  `"<agent label> failed — <YYYY-MM-DD>"`.
+- Subject: `"<subject> — <YYYY-MM-DD>"`; alerts:
+  `"<subject> failed — <YYYY-MM-DD>"`. `<subject>` is the agent's
+  `subject` setting, or its label when that is empty. The date is the run's
+  start date. Example: `Daily government job vacancies — 2026-10-09`.
 - Body: the summary, then "Sent by whyline from <Mac name>."
 - Errors are mapped to plain messages: macOS automation permission denied
   (error −1743) → "allow whyline to control Mail in System Settings →
@@ -197,6 +200,8 @@ spliced into the script text), a new outgoing message is created with
 **New/Edit agent form** gains a "Deliver to" section after Report:
 
 - **Email to:** text field, comma-separated.
+- **Subject:** text field, optional, placeholder "the agent's name"; the
+  run date is added to it.
 - **Telegram:** a Select of this Mac's known chats plus "None", and a
   **Set up Telegram…** button.
 - **Attach as:** Word (.docx) / Markdown (.md).
@@ -228,8 +233,8 @@ every 3 seconds while open); **Send test message** to a chosen chat and
   read without echo).
 - `whyline agents telegram chats`: list known chats.
 - `whyline agents deliver <name>`: show the agent's delivery settings.
-- `whyline agents deliver <name> [--email a@x,b@y] [--telegram "<label or
-  chat id>"] [--attach docx|md] [--on-failure alert|silent]
+- `whyline agents deliver <name> [--email a@x,b@y] [--subject "<text>"]
+  [--telegram "<label or chat id>"] [--attach docx|md] [--on-failure alert|silent]
   [--command "<cmd>"] [--clear]`: change them.
 - `whyline agents deliver <name> --test`: send a test.
 - `whyline agents resend <name> [--run <run-id>]`.
