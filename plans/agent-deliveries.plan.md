@@ -23,7 +23,7 @@ click by position or pause a fixed time. Console screens fit 80x24.
 The only new dependency is markdown>=3.5,<4. No whyline-relay changes.
 Never push, tag, bump the version or publish.
 
-- [ ] DL-1: Delivery settings store and run-record field
+- [x] DL-1: Delivery settings store and run-record field
   Implement "Task 1" from the plan: deliveries.py (Delivery, validation,
   ~/.whyline/agents/deliveries.toml at 0600, keyed by agent id),
   RunRecord.deliveries with records.run_folder/load/save_metadata, and
