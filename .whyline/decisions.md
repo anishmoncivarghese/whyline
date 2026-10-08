@@ -8103,3 +8103,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 82fb058a9a804b17aaaa976db69c7ba3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T06:24:54.629Z"} -->
+
+## 2026-10-08 — Agent deliveries plan: eight relay tasks (DL-1..DL-8) built bottom-up — settings store, Word/summary, Telegram, Mail, after-run delivery, CLI, two console tasks — then a human release with a live email+Telegram check
+
+**Actor:** claude
+**Role:** planner
+**Task:** DELIVER
+
+**Because:** each task has its own test cycle a reviewer can reject independently; the modules depend only on earlier tasks' named interfaces; the console form comes last because it uses every other piece
+
+**Rejected:**
+
+- one console task for setup screen and form — a reviewer could reject one while approving the other
+
+**Files:** docs/superpowers/plans/2026-10-08-agent-deliveries.md, plans/agent-deliveries.plan.md
+
+<!-- whyline-event: d4bd07458ddd4033a6ff815b30c81bb9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:33:31.460Z"} -->
