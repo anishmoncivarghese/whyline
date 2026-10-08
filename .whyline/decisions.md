@@ -8033,3 +8033,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ea60c77530b24b63a6dd48594b5f3490 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T03:48:18.434Z"} -->
+
+## 2026-10-08 — v0.3.37 re-tagged twice for Windows-only test failures before publishing; tests now wait on conditions and escape paths in hand-written TOML
+
+**Actor:** claude
+**Role:** releaser
+**Task:** AG-17
+
+**Because:** first run: a folder-agent test wrote a raw Windows path into TOML (backslash escapes); second run: the scheduler test clicked Confirm before the popup appeared and the spec test gave approval only 5 s; nothing was published either time, and whyline's own TOML writer already escapes paths
+
+**Rejected:**
+
+- skip those tests on Windows — they cover Windows behaviour that does work
+
+**Files:** tests/agents/test_folders_and_trigger.py, tests/console/test_agents_scheduler.py, tests/console/test_plan_in_main_window.py
+
+<!-- whyline-event: f5b0dc7a981541f1b45459922b8a467e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T04:12:08.255Z"} -->
+
+## 2026-10-08 — Agent runs pass -o <run folder>/answer.txt to CLIs whose relay adapter uses an output file (Codex) and take the answer from it
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AG-LIVE
+
+**Because:** the 0.3.37 live scheduler check saved Codex's whole 29-line session as the answer (history, Runs and the notification would show it): the relay's Codex adapter returns raw output and expects -o, which relay chat passes and the agents runner did not; verified with a real codex run
+
+**Rejected:**
+
+- parse the answer out of Codex's transcript — its layout is not a stable format, and -o is the CLI's own last-message output
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_runner.py
+
+<!-- whyline-event: 8f4873feeeff4c7c858feb3bffda6da4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T04:23:59.328Z"} -->

@@ -83,11 +83,27 @@ def _command(defn, cli: str) -> list[str] | None:
     return capabilities.read_only_command(cli, base)
 
 
-def _answer(defn, cli: str, raw: str) -> str:
+def _adapter(defn, cli: str):
     from whyline_relay import config
 
     try:
-        return config.adapter_for(config.load(defn.root), cli).extract_response(raw)
+        return config.adapter_for(config.load(defn.root), cli)
+    except Exception:
+        return None
+
+
+def _answer(defn, cli: str, raw: str, answer_file: Path | None = None) -> str:
+    """The agent's reply. A CLI whose adapter uses an output file (Codex)
+    prints its whole session and writes only the last message to -o."""
+    if answer_file is not None and answer_file.is_file():
+        text = answer_file.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            return text
+    adapter = _adapter(defn, cli)
+    if adapter is None:
+        return raw
+    try:
+        return adapter.extract_response(raw)
     except Exception:
         return raw
 
@@ -129,6 +145,12 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
             record.attempts.append({"cli": cli, "outcome": "skipped",
                                     "reason": "no verified read-only setting"})
             continue
+        answer_file = None
+        adapter = _adapter(defn, cli)
+        if adapter is not None and adapter.uses_output_file:
+            # Codex: the last message goes to this file, as in relay chat.
+            answer_file = folder / "answer.txt"
+            argv = [*argv, "-o", str(answer_file)]
         progress(f"{cli} is working")
         old_env = {k: os.environ.get(k) for k in ("GIT_TERMINAL_PROMPT", "SSH_AUTH_SOCK")}
         os.environ.update(env_note)
@@ -161,7 +183,7 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
             continue
         record.outcome, record.reason = outcome, reason
         if outcome.startswith("succeeded"):
-            final = _answer(defn, cli, raw)
+            final = _answer(defn, cli, raw, answer_file)
         if cli != defn.runner:
             because = unavailable[0] if unavailable else (record.attempts[0]["reason"] if record.attempts else "")
             record.used_backup = {"cli": cli, "because": because}

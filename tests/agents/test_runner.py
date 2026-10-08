@@ -118,3 +118,45 @@ def test_unattended_runs_skip_clis_not_cleared(repo, monkeypatch):
 ])
 def test_parse_reset(text, expected):
     assert runner.parse_reset(text, NOW) == expected
+
+
+TRANSCRIPT = (
+    "OpenAI Codex v0.155.1\n--------\nworkdir: /repo\nsandbox: read-only\n--------\n"
+    "user\nSummarise.\ncodex\nThe summary.\ntokens used\n4,208\nThe summary.\n"
+)
+
+
+def test_codex_answer_is_its_last_message_not_the_transcript(repo):
+    # Found by the 0.3.37 live check: Codex prints its whole session, and its
+    # adapter expects the caller to pass -o <file> for the last message, as
+    # relay chat does. The run's answer must be that message alone.
+    path = repo / ".whyline/agents/c.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('name="c"\ninstructions="Summarise."\nrunner="codex"')
+    agent = d.load(path, kind="repo", repo_root=repo)
+    seen = []
+
+    def run_fn(command, prompt, **kwargs):
+        seen.append(list(command))
+        out = command[command.index("-o") + 1]
+        from pathlib import Path
+        Path(out).write_text("The summary.\n", encoding="utf-8")
+        return Result(0, TRANSCRIPT)
+
+    record = runner.execute_once(agent, source="manual", now=NOW, run_fn=run_fn)
+    assert record.outcome == "succeeded"
+    assert records.read_final(record.run_id).strip() == "The summary."
+    command = seen[0]
+    assert command[command.index("-s") + 1] == "read-only"  # still read-only
+    from pathlib import Path
+    assert Path(command[command.index("-o") + 1]).parent.name == record.run_id
+
+
+def test_codex_without_an_answer_file_falls_back_to_its_output(repo):
+    path = repo / ".whyline/agents/c.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('name="c"\ninstructions="Summarise."\nrunner="codex"')
+    agent = d.load(path, kind="repo", repo_root=repo)
+    run_fn, _ = _script(Result(0, "The summary.\n"))
+    record = runner.execute_once(agent, source="manual", now=NOW, run_fn=run_fn)
+    assert records.read_final(record.run_id).strip() == "The summary."
