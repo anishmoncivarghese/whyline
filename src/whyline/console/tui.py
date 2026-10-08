@@ -443,6 +443,29 @@ class PromptInput(Input):
             self.post_message(self.Dropped(event.text, paths))
 
 
+def _retire_replaced_agent(repo_root: Path | None, agent_id: str, keep: Path) -> None:
+    """Drop the definition and activation a rename left behind.
+
+    Run folders stay under the old id. They are history, not a second agent.
+    """
+    from whyline.agents import definitions as d, state
+
+    try:
+        keep_resolved = keep.resolve()
+    except OSError:
+        keep_resolved = keep
+    for item in d.discover(repo_root):
+        if not isinstance(item, d.AgentDef) or item.agent_id != agent_id:
+            continue
+        try:
+            same = item.path.resolve() == keep_resolved
+        except OSError:
+            same = item.path == keep
+        if not same:
+            item.path.unlink(missing_ok=True)
+    state.remove(state.connect(), agent_id)
+
+
 def _next_scheduled(rows) -> str:
     """The earliest active agent's next run, for the scheduler status line.
 
@@ -544,6 +567,7 @@ class WhylineConsoleApp(App):
         self._cb_status_seen: tuple[tuple[str, bool, str], ...] | None = None
         self._cb_refreshing = False
         self._agents_name: str | None = None
+        self._editing_agent_id: str | None = None
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`).
@@ -695,43 +719,62 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             return
 
-    def _open_new_agent(self, existing=None) -> None:
+    def _open_new_agent(self, existing=None, delivery=None, *, editing_id=None,
+                        lock_name: bool = False) -> None:
         from whyline import account
         from whyline.console.agents_screens import NewAgentScreen
 
+        if editing_id is None:
+            editing_id = existing.agent_id if existing is not None else None
+        self._editing_agent_id = editing_id
         self.push_screen(
-            NewAgentScreen(
-                self.session.root,
-                account.agent_status(self.session.root),
-                existing=existing,
-            ),
+            NewAgentScreen(self.session.root, account.agent_status(self.session.root),
+                           existing=existing, delivery=delivery, lock_name=lock_name),
             self._new_agent_done,
         )
 
-    def _new_agent_done(self, defn) -> None:
-        if defn is None:
+    def _new_agent_done(self, form) -> None:
+        if form is None:
             return
-        from whyline.agents import service
-        from whyline.console.agents_screens import ReviewScreen
+        from whyline.agents import deliver, deliveries, service, telegram
+        from whyline.console import agents_screens
+
+        defn, delivery = form.defn, form.delivery
+        old_id = getattr(self, "_editing_agent_id", None)
 
         def decided(choice) -> None:
-            if choice == "save":
-                try:
-                    service.save_new(defn)
-                except Exception as error:
-                    self.render_event(SessionEvent(kind="error", text=str(error)))
-                    return
-                shown = defn.path.as_posix().replace(str(Path.home()), "~")
-                self.render_event(SessionEvent(
-                    kind="output",
-                    text=f"Saved {defn.label} ({shown}) and accepted it on this Mac.",
-                ))
-                self._refresh_agents_status()
-            else:
-                self._open_new_agent(existing=defn)
+            if choice != "save":
+                # Back: reopen the form with everything that was typed,
+                # still editing the agent that was opened.
+                self._open_new_agent(
+                    existing=defn, delivery=delivery, editing_id=old_id, lock_name=True,
+                )
+                return
+            try:
+                service.save_new(defn)
+                deliveries.save(defn.agent_id, delivery, known_chats=set(telegram.known_chats()))
+                if old_id and old_id != defn.agent_id:
+                    # The new name is a new file. Retire the original so it
+                    # does not stay accepted and runnable beside the new one.
+                    _retire_replaced_agent(self.session.root, old_id, defn.path)
+                    deliveries.remove(old_id)
+            except Exception as error:
+                self.render_event(SessionEvent(kind="error", text=str(error)))
+                return
+            shown = defn.path.as_posix().replace(str(Path.home()), "~")
+            self.render_event(SessionEvent(
+                kind="output",
+                text=f"Saved {defn.label} ({shown}) and accepted it on this Mac.",
+            ))
+            self._editing_agent_id = None
+            self._refresh_agents_status()
 
+        text = service.describe(defn)
+        extra = deliver.describe(delivery)
+        if extra:
+            text = text.rstrip() + " " + extra
         self.push_screen(
-            ReviewScreen(defn, service.describe(defn), self._scheduler_on()),
+            agents_screens.ReviewScreen(defn, text, self._scheduler_on()),
             decided,
         )
 

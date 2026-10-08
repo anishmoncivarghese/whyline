@@ -8439,3 +8439,191 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 67e62968b98f4c05a8eeeb50361a77ba -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:16:21.582Z"} -->
+
+## 2026-10-08 — Delivery form tests wait until the field is mounted
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** Textual push_screen makes the screen current before compose finishes, so a check for the screen type alone queried widgets that were not there yet
+
+**Rejected:**
+
+- isinstance screen check — it returned before na-email and rv-save existed
+
+**Files:** tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 0e6cd93bd73f4997b287d4ab765d62b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:33:20.225Z"} -->
+
+## 2026-10-08 — Existing new-agent click tests use a 100-row terminal
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** The Deliver to section makes the form taller than 60 rows, and pilot.click rejects a Review button outside the visible screen
+
+**Rejected:**
+
+- compacting the new rows — they should match the rest of the form
+- switching those tests to Button.press — they were written to click, and a taller window keeps that
+
+**Files:** tests/console/test_new_agent.py
+
+<!-- whyline-event: 70672b0bcd424066b2c969722071c820 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:33:22.902Z"} -->
+
+## 2026-10-08 — Telegram select takes the leftover width and the test result can wrap
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** The row also has a Set up Telegram button, and a one-line Static would clip a failed Send test detail
+
+**Rejected:**
+
+- leaving both at Textual defaults — the button can be clipped and the result stays one line tall
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 3dc4adc6b4b141f99189a0a60dc29551 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:33:27.292Z"} -->
+
+## 2026-10-08 — DL-8 fails round 2 testing because Edit cannot rename an agent
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-8
+
+**Because:** The task review focus requires an agent renamed through Edit to retain and move delivery settings, but NewAgentScreen disables #na-name whenever existing is set; the migration test bypasses the UI by setting _editing_agent_id and supplying a separately parsed renamed definition, so the required user path is unreachable even though focused and full suites pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 68ee7f04f8924d798d77c63f4b406699 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:05:13.881Z"} -->
+
+## 2026-10-08 — Edit can rename an agent; Review Back keeps that name locked
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** Delivery settings must follow a rename done in the Edit form, and Back reopens the same form with the name Review already checked
+
+**Rejected:**
+
+- leave #na-name disabled whenever existing is set — Edit could not rename
+- leave the name editable after Back — the reviewed name could change before Save
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 0a014513518b488c849d87749e0b62fd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:28:07.933Z"} -->
+
+## 2026-10-08 — Renaming an agent moves its delivery entry and leaves the old definition file
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** The task moves the delivery table when the agent id changes; removing the TOML would also drop acceptance and run history, which this task does not specify
+
+**Rejected:**
+
+- delete the old file on save — that is a definition rename beyond the delivery move
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3de29bc04d134dd4b71dca273d078b99 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:28:12.243Z"} -->
+
+## 2026-10-08 — The edit-rename test waits until the attachment Select shows its saved value
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** Textual leaves Select.value blank until the widget mounts, and the screen can be current before that
+
+**Rejected:**
+
+- assert as soon as #na-name exists — the Select is still blank and the check fails when the suite is busy
+
+**Files:** tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 144d429a8ebb41c5af809072b8ec6c50 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:28:15.594Z"} -->
+
+## 2026-10-08 — DL-8 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-8
+
+**Because:** The full pytest suite exited 0 with one skip, all 10 focused agent-form tests passed, and a direct form smoke test opened Telegram setup and selected the returned chat
+
+**Files:** tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 85ce8e1462144dac8848e2cfa8d5ff39 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:31:55.695Z"} -->
+
+## 2026-10-08 — DL-8 rejected because Edit rename duplicates the agent
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-8
+
+**Because:** The form now enables renaming, but save_new writes the renamed definition to a new path while the original definition file and activation remain; the old and new agents are both discoverable/accepted even though only the delivery table moves. The full uv run pytest -q suite exits 0, so the current tests miss this user-visible duplicate-agent behavior.
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/tui.py, tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 31fa1d2b6a244e88a87b636de8ed272d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:36:01.868Z"} -->
+
+## 2026-10-08 — Renaming an agent deletes the old definition and activation
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-8
+
+**Because:** Edit writes the new name to a new TOML and save_new accepts that id, so the original file and its activation stayed runnable
+
+**Rejected:**
+
+- leave the old file and only move deliveries — both agents stay discoverable and accepted
+- re-key the old activation onto the new id — save_new already accepts the new definition
+- delete run history with the activation — past runs are not a second runnable agent
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8bd1719ab4d9496f834192ae438d398d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:44:02.631Z"} -->
+
+## 2026-10-08 — DL-8 passes Round 7 tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-8
+
+**Because:** The required full uv run pytest -q suite exited 0 with one skip; all 10 focused agent-form tests passed; and the rename regression verifies the old definition, activation, and delivery are removed while the renamed agent remains active with its delivery and Back-preserved fields
+
+**Files:** tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 3dd9e53953a34d99a75d00ae9dc508a6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:46:57.107Z"} -->
+
+## 2026-10-08 — DL-8 Round 8 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-8
+
+**Because:** The Deliver to form, AgentForm result, Review sentence, Send test, Telegram setup entry point, delivery persistence, Back preservation, and rename cleanup are implemented; the regression proves the old definition, activation, and delivery are removed while the renamed agent remains active, and uv run pytest -q exits 0 with one expected skip
+
+**Files:** src/whyline/console/tui.py, tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 94dbc52f95484e2789f008c3a5ac7ee3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T13:50:12.215Z"} -->

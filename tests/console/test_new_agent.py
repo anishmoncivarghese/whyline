@@ -28,7 +28,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
     src.mkdir(parents=True)
     monkeypatch.setattr(mac_input, "pick_files", lambda run=None: [src])
     app = tui.WhylineConsoleApp(root=tmp_path / "repo")
-    async with app.run_test(size=(120, 60)) as pilot:
+    async with app.run_test(size=(120, 100)) as pilot:
         app.push_screen(NewAgentScreen(tmp_path / "repo", STATUS), app._new_agent_done)
         await pilot.pause()
         s = app.screen
@@ -59,7 +59,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
 
 async def test_invalid_input_shows_the_reason_and_stays(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test(size=(120, 60)) as pilot:
+    async with app.run_test(size=(120, 100)) as pilot:
         app.push_screen(NewAgentScreen(tmp_path, STATUS), app._new_agent_done)
         await pilot.pause()
         app.screen.query_one("#na-name", tui.Input).value = "Bad Name"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -13,8 +14,14 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.agents import capabilities, definitions as d, paths, records
+from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records
 from whyline.agents.service import NO_AGENTS
+
+
+@dataclass(frozen=True)
+class AgentForm:
+    defn: d.AgentDef
+    delivery: dl.Delivery
 
 _CSS = """
 {name} {{ align: center middle; }}
@@ -368,7 +375,7 @@ _EVERY_HELP = "Every N hours starts at midnight: 00:00, 05:00, 10:00, …"
 
 
 class NewAgentScreen(ModalScreen):
-    """Collects one agent. Dismisses with a validated AgentDef, or None."""
+    """Collects one agent. Dismisses with an AgentForm, or None."""
 
     DEFAULT_CSS = """
     NewAgentScreen { align: center middle; }
@@ -383,6 +390,8 @@ class NewAgentScreen(ModalScreen):
     NewAgentScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; width: auto; }
     NewAgentScreen Checkbox:focus { border: none; }
     NewAgentScreen #na-error { color: $error; height: auto; }
+    NewAgentScreen #na-telegram { width: 1fr; }
+    NewAgentScreen #na-test-result { height: auto; width: 1fr; }
     NewAgentScreen #na-sources-list, NewAgentScreen #na-every-help {
         height: auto; color: $text-muted;
     }
@@ -390,11 +399,17 @@ class NewAgentScreen(ModalScreen):
     NewAgentScreen Button { margin-right: 1; }
     """
 
-    def __init__(self, root, status, existing: d.AgentDef | None = None) -> None:
+    def __init__(self, root, status, existing: d.AgentDef | None = None,
+                 delivery: dl.Delivery | None = None, *,
+                 lock_name: bool | None = None) -> None:
         super().__init__()
         self._root = Path(root)
         self._status = status if isinstance(status, dict) else {}
         self._existing = existing
+        self._delivery_in = delivery
+        # Edit passes False. Review's Back passes True so the reviewed name
+        # stays put. Callers that omit it keep the name read-only on an edit.
+        self._lock_name = existing is not None if lock_name is None else lock_name
         self._sources: list[str] = list(existing.sources) if existing else []
         self._picking = False
 
@@ -415,6 +430,16 @@ class NewAgentScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         existing = self._existing
+        try:
+            existing_delivery = self._delivery_in or (
+                dl.get(existing.agent_id) if existing else None) or dl.Delivery()
+        except dl.DeliveryError:
+            existing_delivery = dl.Delivery()
+        from whyline.agents import telegram
+
+        chats = telegram.known_chats()
+        chat_options = [("None", 0)] + [(label, cid) for cid, label in chats.items()]
+        chat_value = existing_delivery.telegram_chat if existing_delivery.telegram_chat in chats else 0
         kind = existing.kind if existing else "repo"
         when = existing.trigger.kind if existing else "manual"
         runnable = self._runnable()
@@ -484,7 +509,7 @@ class NewAgentScreen(ModalScreen):
                     existing.name if existing else "",
                     placeholder="research-digest",
                     id="na-name",
-                    disabled=existing is not None,
+                    disabled=self._lock_name,
                 ),
             ),
             Label("Instructions"),
@@ -535,6 +560,40 @@ class NewAgentScreen(ModalScreen):
                     placeholder="15",
                 ),
             ),
+            Label("Deliver to"),
+            HorizontalGroup(
+                Label("Email to", classes="field-label"),
+                Input(", ".join(existing_delivery.email), id="na-email",
+                      placeholder="optional; comma-separated"),
+            ),
+            HorizontalGroup(
+                Label("Subject", classes="field-label"),
+                Input(existing_delivery.subject, id="na-subject", placeholder="the agent's name"),
+            ),
+            HorizontalGroup(
+                Label("Telegram", classes="field-label"),
+                Select(chat_options, value=chat_value, allow_blank=False, id="na-telegram"),
+                Button("Set up Telegram…", id="na-telegram-setup"),
+            ),
+            HorizontalGroup(
+                Label("Attach as", classes="field-label"),
+                Select([("Word (.docx)", "docx"), ("Markdown (.md)", "md")],
+                       value=existing_delivery.attach, allow_blank=False, id="na-attach"),
+            ),
+            HorizontalGroup(
+                Label("If a run fails", classes="field-label"),
+                Select([("Send a short alert", "alert"), ("Stay silent", "silent")],
+                       value=existing_delivery.on_failure, allow_blank=False, id="na-on-failure"),
+            ),
+            HorizontalGroup(
+                Label("After each run", classes="field-label"),
+                Input(existing_delivery.command, id="na-command",
+                      placeholder="advanced: a command; runs on this Mac only"),
+            ),
+            HorizontalGroup(
+                Button("Send test", id="na-send-test"),
+                Static("", id="na-test-result", markup=False),
+            ),
             Static("", id="na-error", markup=False),
             HorizontalGroup(
                 Button("Review", id="na-next", variant="primary"),
@@ -567,6 +626,10 @@ class NewAgentScreen(ModalScreen):
             self.dismiss(None)
         elif button_id == "na-next":
             self._submit()
+        elif button_id == "na-send-test":
+            self._send_test()
+        elif button_id == "na-telegram-setup":
+            self._telegram_setup()
         elif button_id == "na-add-sources":
             self._pick("sources")
         elif button_id == "na-clear-sources":
@@ -772,7 +835,65 @@ class NewAgentScreen(ModalScreen):
         if self._name_taken(defn):
             self._show_error(f"an agent named {defn.name} already exists")
             return
-        self.dismiss(defn)
+        try:
+            delivery = self._delivery()
+            from whyline.agents import telegram
+
+            dl.validate(delivery, set(telegram.known_chats()))
+        except dl.DeliveryError as error:
+            self._show_error(str(error))
+            return
+        self.dismiss(AgentForm(defn, delivery))
+
+    def _delivery(self) -> dl.Delivery:
+        from whyline.agents import telegram
+
+        chat = self.query_one("#na-telegram", Select).value
+        chat = chat if isinstance(chat, int) else 0
+        return dl.Delivery(
+            email=dl.parse_emails(self.query_one("#na-email", Input).value),
+            subject=self.query_one("#na-subject", Input).value.strip(),
+            telegram_chat=chat,
+            telegram_label=telegram.known_chats().get(chat, "") if chat else "",
+            attach=self._choice("#na-attach") or "docx",
+            on_failure=self._choice("#na-on-failure") or "alert",
+            command=self.query_one("#na-command", Input).value.strip(),
+        )
+
+    def _send_test(self) -> None:
+        from whyline.agents import deliver
+
+        try:
+            delivery = self._delivery()
+            dl.validate(delivery)
+        except dl.DeliveryError as error:
+            self.query_one("#na-test-result", Static).update(str(error))
+            return
+        label = (self.query_one("#na-name", Input).value.strip() or "this agent")
+        self.query_one("#na-test-result", Static).update("Sending…")
+
+        def work() -> None:
+            try:
+                results = deliver.send_test(label, delivery)
+                text = "  ".join(f"{r['to']} {'✓' if r['ok'] else '✗'}"
+                                 + ("" if r["ok"] else f" {r['detail']}") for r in results)
+                text = text or "Nothing to test: choose an email, Telegram chat or command."
+            except Exception as error:
+                text = str(error)
+            self.app.call_from_thread(self.query_one("#na-test-result", Static).update, text)
+
+        self.app.run_worker(work, thread=True)
+
+    def _telegram_setup(self) -> None:
+        def done(chats) -> None:
+            if not isinstance(chats, dict):
+                return
+            select = self.query_one("#na-telegram", Select)
+            current = select.value
+            select.set_options([("None", 0)] + [(label, cid) for cid, label in chats.items()])
+            select.value = current if current in chats else (next(iter(chats)) if chats else 0)
+
+        self.app.push_screen(TelegramSetupScreen(), done)
 
 
 class ReviewScreen(ModalScreen):
