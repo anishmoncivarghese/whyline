@@ -40,7 +40,7 @@ Never push, tag, bump the version or publish.
   plain text, one retry on a network error, the token redacted from every
   error). Verify: uv run pytest -q.
 
-- [ ] DL-4: Email through Mail
+- [x] DL-4: Email through Mail
   Implement "Task 4" from the plan: mail_send.py, with every recipient,
   subject, body and attachment passed to osascript as arguments, never
   spliced into the script. Verify: uv run pytest -q.
