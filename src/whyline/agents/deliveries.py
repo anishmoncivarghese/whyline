@@ -41,7 +41,8 @@ def path() -> Path:
 
 
 def parse_emails(text: str) -> tuple[str, ...]:
-    return tuple(part.strip() for part in text.split(",") if part.strip())
+    """Addresses separated by commas or semicolons (mail apps use both)."""
+    return tuple(part.strip() for part in text.replace(";", ",").split(",") if part.strip())
 
 
 def _is_address(text: str) -> bool:

@@ -88,3 +88,8 @@ def test_run_record_keeps_deliveries(home, tmp_path):
     record.deliveries = [{"to": "email", "ok": True, "detail": ""}]
     records.save_metadata(record)
     assert records.load(record.run_id).deliveries == record.deliveries
+
+
+def test_parse_emails_accepts_commas_and_semicolons():
+    assert dl.parse_emails("a@example.com; b@example.com, c@example.com;") == (
+        "a@example.com", "b@example.com", "c@example.com")

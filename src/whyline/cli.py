@@ -511,7 +511,7 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     mail_script.add_argument("name")
     deliver = sub.add_parser("deliver", help="Where an agent's results are sent on this Mac")
     deliver.add_argument("name")
-    deliver.add_argument("--email", help="comma-separated addresses; empty string clears")
+    deliver.add_argument("--email", help="addresses separated by commas or semicolons; an empty string clears")
     deliver.add_argument("--subject")
     deliver.add_argument("--telegram", help="a known chat's label or id; 'none' clears")
     deliver.add_argument("--attach", choices=("docx", "md"))

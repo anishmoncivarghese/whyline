@@ -715,7 +715,7 @@ class NewAgentScreen(ModalScreen):
             HorizontalGroup(
                 Label("Email to", classes="field-label"),
                 Input(", ".join(existing_delivery.email), id="na-email",
-                      placeholder="optional; comma-separated"),
+                      placeholder="optional, e.g. you@example.com, other@example.com"),
             ),
             HorizontalGroup(
                 Label("Subject", classes="field-label"),
