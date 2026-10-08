@@ -8084,3 +8084,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7e0787bd3a524f07a57dbf2759237389 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T05:35:53.345Z"} -->
+
+## 2026-10-08 — Agent deliveries design: email via Mail and Telegram built in, plus an after-run command; settings per Mac in deliveries.toml, Telegram token in the Keychain, Word via markdown+textutil
+
+**Actor:** claude
+**Role:** designer
+**Task:** DELIVER
+
+**Because:** the user wants results delivered automatically when creating an agent; per-Mac settings keep recipients out of committed repo files and stop git pull from running commands; the agent stays read-only and whyline sends after the run
+
+**Rejected:**
+
+- external automation services (Zapier/IFTTT) — accounts, cost, and reports with personal data pass through a third party
+- PDF attachments — macOS has no built-in converter; needs a browser engine
+- WhatsApp in v1 — no simple official route for a personal number
+
+**Files:** docs/superpowers/specs/2026-10-08-agent-deliveries-design.md
+
+<!-- whyline-event: 82fb058a9a804b17aaaa976db69c7ba3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T06:24:54.629Z"} -->
