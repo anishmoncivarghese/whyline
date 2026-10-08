@@ -8206,3 +8206,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 47e360f3153d4e379ebfd0fa00f9160a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:57:15.266Z"} -->
+
+## 2026-10-08 — Network failures raise a fixed message and drop the URLError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-3
+
+**Because:** urllib's error text includes the request URL, which contains the bot token; after one retry the caller hears no connection to Telegram
+
+**Rejected:**
+
+- chain the URLError as the cause — formatters would still print the token
+- redact and re-raise the URLError text — the token can show up encoded, and the spec's wording is the fixed sentence
+
+**Files:** src/whyline/agents/telegram.py
+
+<!-- whyline-event: e61b748c6dda4a729170def1cd465b0f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:03:52.624Z"} -->
+
+## 2026-10-08 — Write the Telegram token and chats files in place at mode 0600
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-3
+
+**Because:** Task 3's client writes the private file directly, and a missing or unreadable chats file is already treated as no known chats
+
+**Rejected:**
+
+- temp file plus os.replace like deliveries.py — the tests only require mode 0600 and a round trip, and a half-written chats file reads back as empty
+
+**Files:** src/whyline/agents/telegram.py
+
+<!-- whyline-event: 90ce56387e5144b688dc24e01291ff04 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:03:57.228Z"} -->
+
+## 2026-10-08 — DL-3 passes functional testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-3
+
+**Because:** The Telegram-specific suite and full project suite pass, and direct probes verified JSON/plain-text requests, multipart upload framing, timeout behavior, HTTPError fallback, and token redaction
+
+**Files:** src/whyline/agents/telegram.py
+
+<!-- whyline-event: aaa53879d3de4d76bbeb1db28194a0a4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:08:18.789Z"} -->
+
+## 2026-10-08 — Approve DL-3 Telegram delivery implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-3
+
+**Because:** The implementation matches the specified interfaces and behavior, the tests meaningfully cover token storage, getMe, chat discovery and persistence, plain-text sends, bounded retry handling, reachability errors, and token redaction, and the independently run full suite passed
+
+**Files:** src/whyline/agents/telegram.py
+
+<!-- whyline-event: e53a304e5d634755bda9ebb56a51f7cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:11:35.972Z"} -->
