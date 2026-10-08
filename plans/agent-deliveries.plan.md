@@ -50,7 +50,7 @@ Never push, tag, bump the version or publish.
   command, send_test, status_text, describe), the hook in after.finish that
   never raises, and service.resend. Verify: uv run pytest -q.
 
-- [ ] DL-6: The CLI
+- [x] DL-6: The CLI
   Implement "Task 6" from the plan: whyline agents deliver, resend and
   telegram setup|chats, and delivery status in whyline agents history.
   Verify: uv run pytest -q.
