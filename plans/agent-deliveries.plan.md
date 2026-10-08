@@ -34,7 +34,7 @@ Never push, tag, bump the version or publish.
   (to_html, to_docx through textutil, summary up to the first table).
   Verify: uv run pytest -q.
 
-- [ ] DL-3: Telegram
+- [x] DL-3: Telegram
   Implement "Task 3" from the plan: telegram.py (token in the Keychain or a
   0600 file, getMe, chat discovery, known chats, sendDocument/sendMessage as
   plain text, one retry on a network error, the token redacted from every
