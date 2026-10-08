@@ -8396,3 +8396,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 912ad5ceb6b64ed299d1404c13b03603 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T10:56:31.105Z"} -->
+
+## 2026-10-08 — Console delivery tests pause before each check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-7
+
+**Because:** push_screen makes the screen current before Textual mounts its widgets, so an immediate query_one raises NoMatches
+
+**Rejected:**
+
+- assert on screen type immediately — the screen is current before compose finishes
+
+**Files:** tests/console/test_agent_deliveries_console.py
+
+<!-- whyline-event: 6624c0cc57e94cd284735c021d3da183 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:07:25.557Z"} -->
+
+## 2026-10-08 — DL-7 passed tester round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-7
+
+**Because:** Telegram setup, delivery status, and Runs resend tests pass; the console suite and full suite exit 0, and an isolated app-worker probe verified _agent_resend success and error reporting
+
+**Files:** tests/console/test_agent_deliveries_console.py
+
+<!-- whyline-event: 2322f2e1632845e399e6bedabca302df -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:13:17.721Z"} -->
+
+## 2026-10-08 — DL-7 approved in reviewer round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-7
+
+**Because:** The Telegram setup screen, Runs delivery column and resend wiring match the task interfaces; focused tests cover the interactive behavior, the app worker follows the service contract, git diff --check is clean, and uv run pytest -q exited 0
+
+**Files:** tests/console/test_agent_deliveries_console.py
+
+<!-- whyline-event: 67e62968b98f4c05a8eeeb50361a77ba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T11:16:21.582Z"} -->

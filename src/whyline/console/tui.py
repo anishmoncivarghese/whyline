@@ -831,7 +831,26 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(kind="error", text=str(error)))
             return
         self._agents_name = name
-        self.push_screen(RunsScreen(row.defn.label, runs))
+        self.push_screen(RunsScreen(
+            row.defn.label, runs, on_resend=lambda run_id: self._agent_resend(name, run_id)))
+
+    def _agent_resend(self, name: str, run_id: str) -> None:
+        from whyline.agents import service
+
+        root = self.session.root
+
+        def work() -> None:
+            try:
+                results = service.resend(name, root, run_id)
+                text = "  ".join(
+                    f"{r['to']} {'✓' if r['ok'] else '✗'}" + ("" if r["ok"] else f" {r['detail']}")
+                    for r in results) or "Nothing was sent: no deliveries set."
+                event = SessionEvent(kind="output", text=f"{name}: resent — {text}")
+            except Exception as error:
+                event = SessionEvent(kind="error", text=str(error))
+            self.call_from_thread(self.render_event, event)
+
+        self.run_worker(work, thread=True)
 
     def _agent_action(self, name: str, action: str | None) -> None:
         from whyline.agents import service

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import webbrowser
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -119,21 +120,28 @@ class AgentDetailScreen(ModalScreen):
 class RunsScreen(ModalScreen):
     DEFAULT_CSS = _CSS.format(name="RunsScreen") + "RunsScreen VerticalScroll { height: 20; }"
 
-    def __init__(self, label: str, runs) -> None:
+    def __init__(self, label: str, runs, on_resend=None) -> None:
         super().__init__()
-        self._label, self._runs = label, runs
+        self._label, self._runs, self._on_resend = label, runs, on_resend
 
     def compose(self) -> ComposeResult:
+        from whyline.agents import deliver
+
         table = DataTable(id="rs-runs", cursor_type="row")
-        table.add_columns("When", "Trigger", "CLI", "Outcome")
+        table.add_columns("When", "Trigger", "CLI", "Outcome", "Delivered")
         for run in self._runs:
             cli = run.cli + (" (backup)" if run.used_backup else "")
-            table.add_row(run.started[:16].replace("T", " "), run.source, cli, run.outcome, key=run.run_id)
+            table.add_row(run.started[:16].replace("T", " "), run.source, cli, run.outcome,
+                          deliver.status_text(run), key=run.run_id)
+        buttons = [Button("Show log", id="rs-log")]
+        if self._on_resend is not None:
+            buttons.append(Button("Resend", id="rs-resend"))
+        buttons.append(Button("Close", id="rs-close"))
         yield Vertical(
             Label(f"Runs of {self._label}" if self._runs else f"{self._label} has not run yet."),
             table,
             VerticalScroll(Static("", id="rs-text", markup=False)),
-            Horizontal(Button("Show log", id="rs-log"), Button("Close", id="rs-close")),
+            Horizontal(*buttons),
         )
 
     def _selected(self) -> str | None:
@@ -159,6 +167,12 @@ class RunsScreen(ModalScreen):
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
+        if event.button.id == "rs-resend":
+            run_id = self._selected()
+            if run_id and self._on_resend is not None:
+                self._on_resend(run_id)
+                self._show("Resending…")
+            return
         if event.button.id == "rs-log":
             run_id = self._selected()
             if run_id:
@@ -169,6 +183,137 @@ class RunsScreen(ModalScreen):
                 self._show(text)
             return
         self.dismiss(None)
+
+
+class TelegramSetupScreen(ModalScreen):
+    """One-time Telegram set-up (deliveries spec 9). Dismisses with the
+    chats known afterwards. Network calls run in worker threads."""
+
+    DEFAULT_CSS = _CSS.format(name="TelegramSetupScreen") + """
+    TelegramSetupScreen Static { height: auto; }
+    TelegramSetupScreen Input { width: 1fr; }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._token: str | None = None
+        self._poller = None
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Set up Telegram (once per Mac)"),
+            Static("1. In Telegram, open @BotFather, send /newbot, choose a name, copy the token.",
+                   markup=False),
+            Horizontal(Button("Open BotFather", id="tg-open")),
+            Horizontal(Input(placeholder="2. Paste the bot token", password=True, id="tg-token"),
+                       Button("Check", id="tg-check")),
+            Static("", id="tg-bot", markup=False),
+            Static("3. Send any message to your bot, or add it to a group.", markup=False),
+            Static("", id="tg-chats", markup=False),
+            Horizontal(Select([], prompt="Chat to test", id="tg-chat"),
+                       Button("Send test message", id="tg-test"),
+                       Button("Done", id="tg-done", variant="primary")),
+        )
+
+    def on_mount(self) -> None:
+        from whyline.agents import telegram
+
+        self._token = telegram.token_get()
+        if self._token:
+            self.query_one("#tg-bot", Static).update(
+                "A bot is already set up on this Mac. Paste a new token only to replace it.")
+            self._start_polling()
+        self._show_chats(telegram.known_chats())
+
+    def _show_chats(self, chats: dict[int, str]) -> None:
+        self.query_one("#tg-chats", Static).update(
+            "Found: " + ", ".join(chats.values()) if chats else "Waiting for a message…")
+        select = self.query_one("#tg-chat", Select)
+        current = select.value
+        select.set_options([(label, cid) for cid, label in chats.items()])
+        if chats:
+            select.value = current if current in chats else next(iter(chats))
+
+    def _start_polling(self) -> None:
+        if self._poller is None:
+            self._poll()
+            self._poller = self.set_interval(3, self._poll)
+
+    def _poll(self) -> None:
+        token = self._token
+        if not token:
+            return
+
+        def work() -> None:
+            from whyline.agents import telegram
+
+            try:
+                chats = telegram.remember_chats(telegram.find_chats(token))
+            except Exception:
+                return
+            self.app.call_from_thread(self._show_chats, chats)
+
+        self.app.run_worker(work, thread=True, exclusive=True, group="tg-poll")
+
+    def _check(self) -> None:
+        token = self.query_one("#tg-token", Input).value.strip()
+        if not token:
+            return
+        self.query_one("#tg-bot", Static).update("Checking…")
+
+        def work() -> None:
+            from whyline.agents import telegram
+
+            try:
+                bot = telegram.check_token(token)
+                telegram.token_set(token)
+            except Exception as error:
+                text = telegram.redact(str(error), token)
+                self.app.call_from_thread(self.query_one("#tg-bot", Static).update, text)
+                return
+
+            def done() -> None:
+                self._token = token
+                self.query_one("#tg-bot", Static).update(f"Connected to {bot}. Saved on this Mac.")
+                self._start_polling()
+
+            self.app.call_from_thread(done)
+
+        self.app.run_worker(work, thread=True)
+
+    def _test(self) -> None:
+        chat = self.query_one("#tg-chat", Select).value
+        token = self._token
+        if not token or not isinstance(chat, int):
+            return
+
+        def work() -> None:
+            from whyline.agents import telegram
+
+            try:
+                telegram.send_message(token, chat, "Test from whyline: Telegram is set up.")
+                text = "Test message sent."
+            except Exception as error:
+                text = telegram.redact(str(error), token)
+            self.app.call_from_thread(self.query_one("#tg-bot", Static).update, text)
+
+        self.app.run_worker(work, thread=True)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id
+        if button_id == "tg-open":
+            webbrowser.open("https://t.me/BotFather")
+        elif button_id == "tg-check":
+            self._check()
+        elif button_id == "tg-test":
+            self._test()
+        elif button_id == "tg-done":
+            from whyline.agents import telegram
+
+            if self._poller is not None:
+                self._poller.stop()
+            self.dismiss(telegram.known_chats())
 
 
 def _q(value: str) -> str:
