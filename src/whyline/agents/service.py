@@ -95,6 +95,12 @@ def delete(name: str, repo_root: Path | None) -> None:
     defn = find(name, repo_root)
     defn.path.unlink(missing_ok=True)
     state.remove(state.connect(), defn.agent_id)
+    from whyline.agents import deliveries
+
+    try:
+        deliveries.remove(defn.agent_id)
+    except deliveries.DeliveryError:
+        pass  # an unreadable file is reported where it is edited, not here
 
 
 def run_now(name: str, repo_root: Path | None, *, progress=None, run_fn=None) -> records.RunRecord:

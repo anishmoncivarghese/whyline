@@ -8120,3 +8120,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d4bd07458ddd4033a6ff815b30c81bb9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:33:31.460Z"} -->
+
+## 2026-10-08 — Leave deliveries.toml in the personal-agent scan
+
+**Actor:** grok
+**Role:** implementer
+**Task:** DL-1
+
+**Because:** Task 1 only adds the store, the run-record field, and delete cleanup. find skips Broken entries, so delete still removes the right table.
+
+**Rejected:**
+
+- Skip deliveries.toml in definitions._scan — outside this task files, and telegram-chats.toml lands in the same folder later
+
+**Files:** src/whyline/agents/deliveries.py
+
+<!-- whyline-event: 09954ba86d914e4ab83c51bdb7ac2322 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:40:47.979Z"} -->
+
+## 2026-10-08 — DL-1 passes behavioral testing in round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** DL-1
+
+**Because:** All 16 focused delivery-store tests passed and the full pytest suite completed with one skip and no failures, covering persistence permissions, validation, run metadata delivery fields, and agent-delete cleanup.
+
+**Files:** src/whyline/agents/deliveries.py, src/whyline/agents/records.py, src/whyline/agents/service.py, tests/agents/test_deliveries.py
+
+<!-- whyline-event: 71f6e0d296054563bb740ecb79dfbd71 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:43:43.447Z"} -->
+
+## 2026-10-08 — DL-1 approved in reviewer round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** DL-1
+
+**Because:** The working-tree implementation matches Task 1's specified Delivery store, validation, private 0600 persistence, run-record helpers, and delete cleanup; the focused tests exercise the acceptance cases, and the plain full suite uv run pytest -q exited 0 with one skip and no failures.
+
+**Files:** src/whyline/agents/deliveries.py, src/whyline/agents/records.py, src/whyline/agents/service.py, tests/agents/test_deliveries.py
+
+<!-- whyline-event: 003f53b1335e4c17b86b5ceee1ebe78d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T09:46:29.568Z"} -->

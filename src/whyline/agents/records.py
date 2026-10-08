@@ -33,6 +33,7 @@ class RunRecord:
     due_at: str = ""
     attempts: list = field(default_factory=list)
     definition_hash: str = ""
+    deliveries: list = field(default_factory=list)
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -114,6 +115,22 @@ def finish(record: RunRecord, folder: Path, *, final_text: str, defn) -> RunReco
             outcome=record.outcome, cli=record.cli, source=record.source,
         ))
     return record
+
+
+def run_folder(run_id: str) -> Path:
+    return paths.runs_dir() / run_id
+
+
+def load(run_id: str) -> RunRecord | None:
+    return _load(run_folder(run_id))
+
+
+def save_metadata(record: RunRecord) -> None:
+    """Rewrite a finished run's metadata, e.g. after its deliveries."""
+    _write_private(
+        run_folder(record.run_id) / "metadata.json",
+        json.dumps(asdict(record), indent=2, default=str),
+    )
 
 
 def _load(folder: Path) -> RunRecord | None:
