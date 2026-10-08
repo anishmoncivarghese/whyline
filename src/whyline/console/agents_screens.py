@@ -174,7 +174,7 @@ class RunsScreen(ModalScreen):
         from whyline.agents import deliver
 
         table = DataTable(id="rs-runs", cursor_type="row")
-        table.add_columns("When", "Trigger", "CLI", "Outcome", "Delivered")
+        self._columns = table.add_columns("When", "Trigger", "CLI", "Outcome", "Delivered")
         for run in self._runs:
             cli = run.cli + (" (backup)" if run.used_backup else "")
             table.add_row(run.started[:16].replace("T", " "), run.source, cli, run.outcome,
@@ -200,6 +200,15 @@ class RunsScreen(ModalScreen):
             self.query_one("#rs-text", Static).update(text)
         except NoMatches:
             return
+
+    def resend_done(self, run_id: str, text: str, status: str) -> None:
+        """Called on the app thread when a resend finishes: show the result
+        here and refresh that run's Delivered cell."""
+        self._show(f"Resent: {text}")
+        try:
+            self.query_one("#rs-runs", DataTable).update_cell(run_id, self._columns[-1], status)
+        except Exception:
+            pass  # the row or screen is gone; the transcript still has the result
 
     def on_data_table_row_highlighted(self, event) -> None:
         run_id = self._selected()

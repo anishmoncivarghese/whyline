@@ -207,3 +207,31 @@ async def test_a_failing_background_action_never_crashes_the_console(tmp_path, f
         for _ in range(40):
             await pilot.pause(0.05)
         assert app.is_running
+
+
+async def test_resend_reports_back_in_the_runs_view(tmp_path, monkeypatch):
+    # Reported: after Resend the Runs view stayed on "Resending…" and the
+    # Delivered column stayed empty; the result only reached the transcript.
+    from whyline.agents import service as svc
+
+    run = SimpleNamespace(run_id="r1", started="2026-10-08T10:57:00", source="manual", cli="codex",
+                          used_backup=None, outcome="succeeded", deliveries=[])
+    defn = SimpleNamespace(label="govt-job-search (personal)")
+    monkeypatch.setattr(svc, "find", lambda name, root: defn)
+    monkeypatch.setattr(svc, "resend", lambda name, root, run_id=None:
+                        [{"to": "telegram", "ok": True, "detail": ""}])
+    monkeypatch.setattr("whyline.console.tui.named_row",
+                        lambda name, root: SimpleNamespace(defn=defn), raising=False)
+    monkeypatch.setattr(svc, "history", lambda name, root, n=20: [run])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app._open_runs("personal:govt-job-search")
+        await _until(pilot, lambda: isinstance(app.screen, RunsScreen), "runs shown")
+        app.screen.query_one("#rs-resend", tui.Button).press()
+        await _until(pilot, lambda: "Resent: telegram ✓" in str(app.screen.query_one("#rs-text").renderable),
+                     "result shown in the view")
+        table = app.screen.query_one("#rs-runs")
+        assert "delivered: telegram ✓" in str(table.get_row_at(0)[-1])
+        lines = [str(line) for line in app._main("#transcript", tui.RichLog).lines]
+        assert any("govt-job-search (personal): resent — telegram ✓" in line for line in lines)
+        assert not any("personal:govt-job-search: resent" in line for line in lines)

@@ -877,24 +877,45 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(kind="error", text=str(error)))
             return
         self._agents_name = name
-        self.push_screen(RunsScreen(
-            row.defn.label, runs, on_resend=lambda run_id: self._agent_resend(name, run_id)))
+        holder: dict = {}
+        screen = RunsScreen(
+            row.defn.label, runs,
+            on_resend=lambda run_id: self._agent_resend(name, run_id, holder.get("screen")))
+        holder["screen"] = screen
+        self.push_screen(screen)
 
-    def _agent_resend(self, name: str, run_id: str) -> None:
-        from whyline.agents import service
+    def _agent_resend(self, name: str, run_id: str, screen=None) -> None:
+        from whyline.agents import deliver, records, service
 
         root = self.session.root
 
         def work() -> None:
+            status = ""
+            try:
+                label = service.find(name, root).label
+            except Exception:
+                label = name
             try:
                 results = service.resend(name, root, run_id)
                 text = "  ".join(
                     f"{r['to']} {'✓' if r['ok'] else '✗'}" + ("" if r["ok"] else f" {r['detail']}")
                     for r in results) or "Nothing was sent: no deliveries set."
-                event = SessionEvent(kind="output", text=f"{name}: resent — {text}")
+                record = records.load(run_id)
+                if record is not None:
+                    status = deliver.status_text(record)
+                elif results:
+                    status = "delivered: " + text
+                event = SessionEvent(kind="output", text=f"{label}: resent — {text}")
             except Exception as error:
-                event = SessionEvent(kind="error", text=str(error))
-            self.call_from_thread(self.render_event, event)
+                text = str(error)
+                event = SessionEvent(kind="error", text=f"{label}: resend failed — {text}")
+
+            def apply() -> None:
+                self.render_event(event)
+                if screen is not None and screen.is_attached:
+                    screen.resend_done(run_id, text, status)
+
+            self.call_from_thread(apply)
 
         self.run_worker(work, thread=True)
 
