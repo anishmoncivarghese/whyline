@@ -8709,3 +8709,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4464bd57091d4a19b5b303987943369d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T21:40:16.514Z"} -->
+
+## 2026-10-08 — Email delivery starts Mail first if it isn't running and retries once after 5 s on Mail-not-ready errors (-609, -600), with a plain message if it still fails
+
+**Actor:** claude
+**Role:** implementer
+**Task:** DL-LIVE
+
+**Because:** the live check's first email failed with 'Connection is invalid (-609)' while Mail was starting and the Automation permission prompt was up; Telegram in the same run succeeded
+
+**Rejected:**
+
+- retry any Mail error — permission (-1743) and no-account errors need the user, not a retry
+
+**Files:** src/whyline/agents/mail_send.py
+
+<!-- whyline-event: 5550599617464afbaee90272dfc55c58 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-08T21:55:34.030Z"} -->

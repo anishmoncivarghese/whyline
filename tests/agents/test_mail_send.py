@@ -51,3 +51,35 @@ def test_other_errors_use_the_first_line():
 def test_not_on_macos():
     with pytest.raises(mail_send.MailError, match="needs the Mail app on macOS"):
         mail_send.send(["a@example.com"], "s", "b", [], system=lambda: "Linux")
+
+
+def test_mail_not_ready_is_retried_once(tmp_path):
+    # Found in the live check: the first send failed with "Connection is
+    # invalid (-609)" while Mail was starting / asking for permission.
+    calls, slept = [], []
+    outcomes = [(1, "execution error: Mail got an error: Connection is invalid. (-609)"), (0, "")]
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        code, err = outcomes[len(calls) - 1]
+
+        class R:
+            returncode = code
+            stderr = err
+        return R()
+
+    mail_send.send(["a@example.com"], "s", "b", [], run=run, system=lambda: "Darwin",
+                   sleep=slept.append)
+    assert len(calls) == 2 and slept == [5]
+
+
+def test_mail_still_not_ready_says_so_plainly():
+    run, calls = runner(1, "execution error: Mail got an error: Connection is invalid. (-609)")
+    with pytest.raises(mail_send.MailError, match="Mail wasn't ready"):
+        mail_send.send(["a@example.com"], "s", "b", [], run=run, system=lambda: "Darwin",
+                       sleep=lambda s: None)
+    assert len(calls) == 2
+
+
+def test_the_script_starts_mail_before_writing():
+    assert "is not running" in mail_send.SCRIPT and "launch" in mail_send.SCRIPT
