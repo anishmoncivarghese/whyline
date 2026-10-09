@@ -25,9 +25,11 @@ Only `decisions.md` is committed. The other three are gitignored. Stale ownershi
 
 ## Credentials
 
-`whyline run` replaces itself with the vendor CLI via `exec`. The vendor CLI authenticates itself. whyline does not add permission-bypass flags, and it does not forward or proxy a vendor token.
+whyline has no API key of its own. `whyline run` replaces itself with the vendor CLI via `exec`, so the work runs on the subscription that CLI is already signed in to: Claude, ChatGPT for Codex, Grok, or Antigravity. You choose the agent and, with `whyline model set` or `/model` in the console, the model for this repository. The vendor CLI accepts or refuses that model.
 
-`whyline account detect` is the exception to "never opens an auth file." For Codex it reads `~/.codex/auth.json` and decodes the plan name out of the local id token. For Claude it runs `claude auth status`. The stored result is the plan name (`~/.whyline/account.json` on the machine, `.whyline/account.json` in the repo, both gitignored). The raw token is not written back.
+`account status` shows the plan name for Claude and Codex when those logins are subscriptions. Grok and Antigravity are reported as installed or missing. A CLI signed in with its own API key still launches. whyline does not ask for that key, does not add permission-bypass flags, and does not forward or proxy a vendor token.
+
+For Codex, `account detect` reads `~/.codex/auth.json` and decodes the plan name out of the local id token. For Claude it runs `claude auth status`. The stored result is the plan name (`~/.whyline/account.json` on the machine, `.whyline/account.json` in the repo, both gitignored). The raw token is not written back.
 
 ## What stays in your hands
 

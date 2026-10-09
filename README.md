@@ -4,7 +4,9 @@ Records why your code exists, and tells the next agent.
 
 Claude Code, Codex, Grok, and Antigravity can work in the same repository. The agent that finishes writes what it chose and what it rejected. The next agent starts from that record.
 
-Free, Apache-2.0, and local. There is no whyline account, no telemetry, and no paid tier. `whyline run` launches the vendor's own CLI, so each agent stays on the subscription you already pay for.
+Free, Apache-2.0, and local. There is no whyline account, no telemetry, and no paid tier.
+
+whyline has no API key of its own, and it adds no bill. `whyline run` starts the CLI you already signed in to, on that vendor's subscription: Claude, ChatGPT for Codex, Grok, or Antigravity. Run the one you have. `whyline account status` shows the Claude and Codex plan that is signed in. `whyline model set <agent> <model>`, or `/model` in the console, picks the model for this repository.
 
 ```
 $ whyline explain src/whyline/runner.py:46
@@ -109,7 +111,7 @@ The console (`whyline`, or `whyline console`) is a full-screen app with Command,
 
 `whyline agents` saves a prompt you can run again, on a schedule, or when Mail receives a matching message. An unattended run is read-only. The result can go out by Mail or Telegram. The scheduler and the Mail rule are macOS. The Mail setup is [docs/agents-mail-recipe.md](docs/agents-mail-recipe.md).
 
-`whyline model set <agent> <model>` chooses the model for this repository. `whyline account detect` reads which Claude and Codex plan is signed in. It stores the plan name. It does not store the token, and it does not send the token anywhere.
+`whyline account detect` refreshes the Claude and Codex plan names. Grok and Antigravity are reported as installed or missing, because those CLIs do not expose a plan check. The stored value is the plan name. The token is not stored and is not sent anywhere. A CLI that is already signed in with its own API key still launches; whyline never asks for that key.
 
 ## Limits
 

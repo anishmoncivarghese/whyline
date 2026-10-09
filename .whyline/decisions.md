@@ -8744,3 +8744,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ef3755a2b0164a3d8b34b5248e061771 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:27:11.146Z"} -->
+
+## 2026-10-09 — Say on the README that whyline bills nothing and runs on the CLI's existing subscription
+
+**Actor:** grok
+**Role:** implementer
+**Task:** README-REFRESH
+
+**Because:** Readers were left to infer that there is no API key and no second meter. The first screen now says run uses the subscription already signed in to Claude, Codex, Grok, or Antigravity, and that account status plus model set is how you pick the one you have.
+
+**Rejected:**
+
+- Claim whyline refuses API-key logins — a CLI already signed in with its own key still launches, and whyline never asks for that key
+- List Pro, Max, Plus, and Team as if whyline offered those plans — account status prints the plan name the vendor CLI reports
+
+**Files:** README.md, docs/recording.md
+
+<!-- whyline-event: f59cfac70a8941329009bb062cc1f255 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:32:30.027Z"} -->
