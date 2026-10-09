@@ -8762,3 +8762,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f59cfac70a8941329009bb062cc1f255 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:32:30.027Z"} -->
+
+## 2026-10-09 — Design Job Search as a source-agnostic agent with deterministic Excel export
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-SEARCH-BRAINSTORM
+
+**Because:** LinkedIn officially supports rich job filters and alerts but its User Agreement prohibits scraping; permitted alerts and career-site feeds can be normalized, deduplicated, scored, and scheduled without risking account access, while deterministic JSON-to-XLSX generation makes the result reliable
+
+**Rejected:**
+
+- Automated LinkedIn browser scraping — brittle, risks account restrictions, and conflicts with LinkedIn's stated prohibition on scraping
+- LLM writes the workbook directly — harder to validate and can produce malformed or inconsistent files
+
+**Files:** docs/superpowers/specs/2026-10-04-agents-mode-design.md
+
+<!-- whyline-event: d81bbd7d876a45a8ab56f4adffd616a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T19:50:55.655Z"} -->
