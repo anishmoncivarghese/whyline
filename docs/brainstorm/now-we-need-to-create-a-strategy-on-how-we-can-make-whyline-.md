@@ -734,180 +734,195 @@ By executing this staged, karma-resilient distribution engine, Whyline will esta
 
 ## Grok
 
-# Making Whyline known
+# Retained handoffs, then a public story
 
-Independent pass, 2026-10-10. Audience for this note: the maintainer. Karma on hand: Hacker News 3, Reddit 8.
+Revised combined-review pass, 2026-10-10. Audience: the maintainer. Karma on hand: Hacker News 3, Reddit 8.
 
-The goal worth pursuing is that a developer who already runs two coding-agent CLIs on one repository can find Whyline, install it, and trust it. "Everyone knows the name" is a different goal, and this product is a poor fit for it. The category of agent memory and agent orchestration is crowded. GitHub's daily trending conversation in late September 2026 was already full of those tools. Whyline's own README says the tool does not orchestrate, does not assign roles, and does not supervise. Public copy should sound like that README.
+## The strategy
 
-## What is actually true, and therefore safe to say
+The goal is a developer who already runs Claude Code and Codex on one long-lived repository, installs Whyline, and uses it for a second handoff because the first one saved them from re-briefing. Fame for the bare name is a worse goal. The category around it is crowded, and the bare name is already taken.
 
-The public project is real and installable.
+Lead sentence, on every public surface:
 
-- Repository: <https://github.com/anishmoncivarghese/whyline> (on the order of 515 commits; Apache-2.0).
-- Package: `whyline` 0.3.37.1 on PyPI, uploaded 2026-10-08. `pip install whyline` resolves. The README's install line is `uv tool install whyline`. Both are valid because the package publishes a `whyline` console script. `uvx` is the wrong default: it does not leave a durable binary for hooks.
-- The demo that survives a skeptical reader is `whyline explain path:line`, which prints the decision, the reason, the rejected alternative, and a confidence line. The second demo is an explicit handoff: `whyline run` attaches history, because an agent remembering to read is unreliable.
-- The published measurement in `m0/RESULTS.md` and the README is small and already caveated. Write side: 19 decisions across 14 commits, one repository, one operator, three days (2026-08-14 to 2026-08-17); every decision had a because and a rejected alternative; Codex was not reminded. Read side: Claude Code called `whyline brief` near the start of 3 of 7 sessions it owned, 43 percent, below a threshold of 50 percent that was fixed before collection. Codex reads were observed without a session denominator, so they are not a rate. A dispatched agent recorded nothing, because it follows the dispatcher prompt rather than `AGENTS.md`. Reviewer-voiced decisions were a known gap; the README says the later wording change is not cleanly measured.
-- `phase0/STATUS.md`, updated 2026-08-09, still lists recruitment and ten measured sessions as unfinished. The recruitment message in `phase0/recruitment-message.md` is already written and is privacy-safe. If sessions happened after that status file, use them. The file as it stands does not show an external user.
+> The next coding agent should not start blind.
 
-Three facts will be weaponised if the launch copy is sloppy, so they belong in the first comment of any thread.
+Proof sentence, once they are looking:
 
-1. The 43 percent figure has a denominator of seven sessions and one operator. The honest use of it is "we set a bar, missed it, and routed handoff through `whyline run`." A graphic that drops the denominator becomes the story, and the story becomes a correction.
-2. Codex mechanical hooks are unverified. The README says `init` writes `.codex/hooks.json` and that no Codex hook event has been observed. Codex did record decisions through the instruction file. Those are different claims. The first commenter who runs `whyline status` will see the difference.
-3. The name is already taken in two ways that this audience knows. Amy Ko and Brad Myers's Whyline (CHI 2004, CMU) is a debugger for "why did" and "why didn't" questions about program output; the Java archive is still public at `amyjko/whyline`. Separately, npm has had `@malindar/whyline` since May 2026 ("Git remembers what changed. Whyline remembers why.") and `@sal-sovereign-ai-labs/whyline` since September 2026. The PyPI name `whyline` is this project. The bare word is not. Every public page needs one disambiguation sentence: a git-committed decision log and handoff for coding-agent CLIs, unrelated to the 2004 debugger and unrelated to the npm packages.
+> Git records what changed. Whyline records the decision, the rejected alternative, and can explain why a line exists.
 
-Windows is unverified. The relay spends the user's subscription quota and is off unless asked. Shipping several releases a day (0.3.30 through 0.3.37.1 between 4 and 8 October 2026) means a launch week needs a pinned version. A reader who installs "latest" during a thread and hits a same-day break will say so in the thread.
+That order matters. The switch is the weekly pain. `whyline explain` is the moment a handoff file does not reproduce. "Agent memory," a zero-bill campaign, and the measurement are support for that pair. Four parallel narratives split a solo maintainer into four launches.
 
-## The karma constraint, as the sites actually enforce it
+The first screen of the README already has the right shape: a decision record, an explicit handoff, `explain`, and a limits list. Match it. Leave the console, the scheduler, chat, and the relay off the first screen of every launch asset. The relay is real. It stays off until `whyline init --relay`, it assigns an implementer and a reviewer, and it spends the subscription quota of the CLIs it starts. Deny that and a careful reader will catch it. Lead with it and the project is filed under orchestration.
 
-Karma 3 and karma 8 are a constraint on two broadcast forums. They are not a constraint on distribution.
+Karma 3 and karma 8 delay two broadcast posts. They do not delay design partners, the demo, the essay, in-tool discovery, or editors.
 
-### Hacker News
+## Where the other proposals diverge
 
-Primary pages, read 2026-10-10:
+Taken into this plan: one beachhead, the lead sentence above, posts staggered by days, a retention gate before Show HN, design partners recruited in private, a six-hour weekly budget, and install lines a stranger can run without adopting uv. Homebrew can wait until someone will bump a formula on purpose.
 
-- Guidelines: <https://news.ycombinator.com/newsguidelines.html>
-- Show HN: <https://news.ycombinator.com/showhn.html>
-- The restriction notice: <https://news.ycombinator.com/showlim>
+Refused:
 
-`showlim` says Show HN is temporarily restricted because of a massive influx, mostly from people who are not yet familiar with the site, and that the way through is to become a contributor and then post an occasional Show HN. There is no published number. Daniel Gackle has described it as not a checklist. An account at karma 3 has almost no history, so a Show HN submission is likely to be refused with some variant of "temporarily restricting Show HN" or "your account isn't able to submit this site." Public threads through spring and summer 2026 show that emailing `hn@ycombinator.com` to be let through sometimes gets a reply and sometimes sits. One moderator comment said a genuine self-made project can be mailed in. That is a moderation mailbox, not a promotion channel.
+- A 72-hour comment sprint scored by a karma number. Comments where you have a fact to add are participation. A quota of comments, aimed at clearing a filter, is farming even when the text is technical. "50–150 karma in 48 hours" is not a rule of Reddit. History in karma-farm subreddits is a ban footprint. There is no target karma.
+- A proxy Show HN from an account above some karma line. The maker owns the submission and the afternoon of replies. A person who uses the tool may write about it on their own. Setting that up is a different act.
+- Asking `hn@ycombinator.com` for the second-chance pool, or describing that mailbox as a way onto the front page. Moderators pull overlooked posts. They do not take applications. If the account cannot submit at all, one short note is enough: the account appears restricted, here is the URL, what do you recommend. Then wait.
+- A same-day Hacker News, Reddit, and X push, and any plan that treats "50–80 stars in a day" or "150–250 stars in a day" as the mechanism. Those figures are not a published GitHub contract. Steering several audiences at the repository together, so a trending page trips, has the shape of vote coordination. It also leaves no day to repair what the first thread found. Trending is a side effect of a real discussion.
+- A list of creators to tag, and a thread written in advance for them. One note is reasonable when the artifact matches work that person already does in public.
+- Pasting a title, first comment, or thread that a model wrote. Hacker News forbids generated and AI-edited text. This file may hold an outline. The maintainer writes the words that get submitted.
+- Posts about the Textual console, a stdlib core, or a Python architecture tour. Those audiences are not people whose second agent started blank.
+- Pull requests scattered across awesome lists. `hesreallyhim/awesome-claude-code` takes a human submission through its issue form, wants the project older than 14 days with later commits, and wants one line with no pitch and no emoji. This repository meets the age rule. A generic Python or CLI list selects the wrong readers.
+- A VS Code CodeLens, or any new editor surface, inside these 90 days. That is a new product. It waits until strangers are already handing off twice.
+- Public targets for stars, a download count, a front-page rank, or a trending slot. PyPI totals mix in mirrors and CI. Stars with no second handoff are a reason to downgrade that channel.
 
-Rules that matter for this launch:
+One timing disagreement with the stricter of the two plans. The measurement essay does not wait for five retained users. Its evidence is already in `m0/RESULTS.md`. It waits until a stranger can install a pinned release and the pages they will hit agree with that file. Show HN, and the editor notes, wait for the retention gate.
 
-- Using the site primarily for promotion is against the guidelines. Occasional posts of one's own work are allowed.
-- "Don't post generated text or AI-edited text. HN is for conversation between humans." The same page bans automated posting. A model-written Show HN, including a light edit of one, is a rule break. The posts in this plan have to be written by the maintainer, in the maintainer's sentences.
-- Soliciting votes or comments is banned, and the penalty people report attaches to the submission and the domain. Friends told to star, upvote, or "go comment" are the pattern the software looks for.
-- Deleting and reposting is banned. A story that received significant attention is a duplicate for about a year. A story that received none can be tried again in small number, later, with a real reason.
-- Show HN is for something people can run. Blog posts, signup pages, and newsletters are ordinary submissions, not Show HN. A major version bump is generally not a Show HN.
-- The second-chance pool is moderators and reviewers pulling overlooked stories back. It is not an application. Public discussion of the pool treats "please second-chance my post" as the wrong email. Email `hn@ycombinator.com` when a post was killed by mistake.
+## Beachhead and wording
 
-A secondary write-up of an open Show HN dataset (about 208,000 posts) put the median post at 2 points, one of them the author's, and about 4 percent of posts above 30. Treat that as orientation, not as an official statistic. A quiet Show HN is the common outcome. It is not evidence the project failed, and it is not a reason to repost the next morning.
+Solo developers and small teams who run Claude Code and Codex in the same repository, switch because of the task or the quota or the context window, and have seen the second agent redo or undo a decision. They already live in git. They will try a local Apache-2.0 tool.
 
-### Reddit
+The beachhead sentence names those two CLIs. The docs keep the truth that `whyline run` also starts Grok and Antigravity. Leave for later: single-agent throwaway tasks, inbound Slack or Jira, and anyone looking for a swarm.
 
-Reddit has no single karma gate. Each subreddit's AutoModerator is its own law, often unpublished. Guides in 2026 commonly tell founders to reach on the order of 200 comment karma before promotional posts, because many large subs filter new or low-karma accounts silently. Karma 8 will fail a lot of those filters. A burst of generic answers in unrelated subs is the pattern called karma farming, and it draws bans.
+Qualifier, repeated until it is dull:
 
-Subreddit rules, from public rule text reviewed by third parties in May–July 2026. Re-read the live rules the day of posting. They move.
+> Whyline for coding agents — git-native decision handoffs for Claude Code and Codex.
 
-- r/programming (millions of members) forbids product promotion and "I made this" demos. A technical write-up of something difficult or educational is allowed. A GitHub link with a feature list is not. This is the only large programming sub that fits, and only for the measurement essay.
-- r/SideProject allows sharing your own work, usually with disclosure in the title or first line. It is a reasonable place for a feedback post. It is a weak place to become known. Launch posts are the default content there, so a bare link sinks.
-- The sitewide culture people cite is roughly 90 percent ordinary participation and 10 percent mention of one's own work. Cross-posting the same text the same day is the spam shape.
+Disambiguation, on the README, PyPI, the demo repository, and any post: a git-committed decision log for coding-agent CLIs. Unrelated to Amy Ko and Brad Myers's Whyline debugger (CHI 2004, public archive `amyjko/whyline`). Unrelated to the npm packages `@malindar/whyline` and `@sal-sovereign-ai-labs/whyline`. The PyPI name `whyline` is this project. The bare word is not.
 
-Answer people who describe the blank-second-agent problem. Mention the tool in a reply when it is the direct answer, with a disclosure. Build karma as a side effect of that. There is no honest weekend sprint from 8 to "safe."
+Order of the message:
 
-### Lobsters
+1. The next agent starts blind.
+2. Decisions, rejected alternatives, tests, and risks live in Markdown git already stores.
+3. `whyline explain path:line` shows why that line exists.
+4. Local, Apache-2.0, no account, no telemetry, no second bill. `run` uses the subscription already signed in.
+5. Instruction-file reads are best effort. `whyline run` carries the handoff.
 
-<https://lobste.rs/about>, read 2026-10-10. Invite-only. New accounts are green for 70 days and cannot submit a domain the site has not seen, with GitHub among the domains that already exist. Self-promotion should stay under about a quarter of one's stories and comments. The `show` tag is one of the tags new users cannot use. This is a month-two channel at the earliest, after an invite, and only once ordinary comments outnumber the Whyline post.
+When someone says a commit message or a `HANDOFF.md` is enough, the concrete difference is the rejected alternative, the token-bounded packet, and explain-by-line. When someone says this is an orchestrator, the concrete difference is that the record does not assign work, and the relay does nothing until they turn it on.
 
-## Where attention can come from without karma
+## Claims safe to publish
 
-Ranked by fit to a local Python CLI whose user already has Claude Code and Codex installed.
+Source of record: `m0/RESULTS.md`. The public summary `docs/measurement.md` has drifted, and the two have to match before either URL is posted. The summary omits the superseded 75 percent figure and the analyser bug that credited a Codex read to a Claude session. It also still says the reviewer-wording change is unmeasured, while `RESULTS.md` records two later reviewer-voiced entries whose cause is confounded with reviewers moving into the repository. Reconcile the summary to the results file. Do not soften the results file to match the summary.
 
-1. **Inside the tools.** In 2026, Claude Code and Codex discover utilities through plugins, skills, and curated lists. `hesreallyhim/awesome-claude-code` (the list people treat as the curated one) takes recommendations through its web issue form, not a pull request, asks for human submitters, wants the resource older than 14 days with commits after the first day, and wants a one-line description with no pitch and no emoji. This repository qualifies on age. A one-line entry plus a small skill that tells the agent the exact `whyline note` / `whyline sync` commands is how the target user meets the tool while already working. The skill text has to repeat the README's honesty: reads are best-effort, `whyline run` is the reliable handoff. A plugin that pretends the 43 percent problem is solved will be caught.
+Write side. One repository, one operator, 14–17 August 2026. Fourteen non-trivial commits, nineteen decisions, each with a because and a rejected alternative. Codex was not reminded. Claude recorded 6 decisions on 4 changes (150 percent). Codex recorded 13 on 10 (130 percent). The rate passes 100 percent because one commit often holds more than one decision. The precommitted bar was 60 percent on Claude and at least one Codex firing. That bar was cleared. It is a property of an agent that owns its session. A dispatched agent recorded nothing, because it follows the dispatcher prompt rather than `AGENTS.md`.
 
-2. **A human-written measurement essay, submitted as a normal story.** The interesting claim is the negative result and the product change it caused. Write side cleared a precommitted bar. Read side missed a precommitted bar. The tool therefore pushes context with `whyline run` instead of hoping `AGENTS.md` is read. That is a curiosity post. It can go to Hacker News as an ordinary link once the account can submit links, and to r/programming as a write-up if the live rules still allow that. The tool link sits at the bottom, once. Show HN of the repository comes later, and only if `showlim` lets the account through.
+Read side. Claude Code ran `whyline brief` near the start of 3 of 7 sessions it owned, 43 percent, below a 50 percent bar fixed before collection. Codex was observed reading and has no session denominator, so that observation is not a rate. Earlier 67, 75, and 50 percent figures are superseded.
 
-3. **Replies to the pain, in public.** Search for people describing a second agent starting blank, or a reviewer losing the reason a change was made. Answer the specific case. One terminal recording is enough. A launch-day mention blast is the thing to skip.
+Publish the sentence "we set bars, the write side cleared, the read side missed, and the handoff moved to `whyline run`." Keep the denominators in the same paragraph as the percentages. A graphic of "43%" or of "130–150%" without those definitions becomes the correction.
 
-4. **Newsletters that accept a tool or a link by email, after the essay exists so an editor can see a discussion.**
-   - Console.dev: `hello@console.dev`. They review developer tools and say they do not do sponsored reviews. They want something a person can try. Pitch the essay and the install line.
-   - PyCoder's Weekly: Python CLI, project-link submission. Expect a listing at most.
-   - Changelog News has a submit form and has historically turned away tutorials and commercial product posts. The essay is the closer fit. A directory roundup dated 2026-10-07 reported the newest issue it could see was from April 2026, so confirm the publication is actually shipping the week you write.
+Hooks, in the README's own words. Claude Code's hooks have been observed. Codex and Antigravity hooks are installed and reported separately by `whyline status`. Until a real Codex event arrives, status stays configured and never observed. Grok has no hook. Decision logging through the instruction file and a hook event are different claims.
 
-5. **Terminal Trove** (<https://terminaltrove.com/submit/>). Criteria include an image preview (PNG, GIF, or MP4) and per-platform install commands, and the form asks that the tool exist in the package repositories you name. macOS and Linux are the honest platforms. A 20-second recording of `explain` and a handoff is the asset. Homebrew can be one of the install lines once a formula exists. The directory is a catalogue, not a launch.
+`phase0/STATUS.md`, updated 9 August 2026, still lists recruitment and ten measured sessions as unfinished. The m0 run is the maintainer's repository. The privacy-safe recruitment note already exists. Use it. Ten formal sessions remain the research plan. Five public users are the distribution plan.
 
-6. **Five external users, then a second essay.** The phase0 screener already describes the person: an agent CLI at least three days a week, two or more coding-agent products recently, synthetic or their own non-confidential repo. Five people who keep a `decisions.md` for two weeks are the proof a podcast or a follow-up post needs. The Changelog guest/topic form (`changelog.com/request`) is the right podcast pitch, and only after one of those people will be named or quoted. Ten formal sessions remain the research plan in `phase0/STATUS.md`. Five public users are the distribution plan. They are allowed to be a subset.
+Pin one release for any public week. `0.3.30` through `0.3.37.1` shipped between 4 and 8 October 2026. macOS and Linux are tested in CI. Windows is not. `uvx` does not leave a durable binary for hooks. The lines to publish are `pipx install whyline` and `uv tool install whyline`, then `whyline init`.
 
-7. **Homebrew, pipx, and a pinned release.** Add `pipx install whyline` beside the uv line before any post. Many readers will not install uv to try a CLI. A Homebrew formula is a trust signal and a Terminal Trove checkbox. Cut it against one chosen version during launch week, then bump on purpose. Daily 0.3.x publishes and a formula fight each other.
+## The package, built once
 
-Lower priority, in this order: DevHunt (a dev-tool launch board; fine as a listing, weak as a plan), a personal post on DEV or a similar blog under the maintainer's name, Lobsters after an invite and a comment history. Product Hunt reaches a broader audience and converts poorly for a terminal tool; a listing months later is optional. AlternativeTo fits products that replace a named product. Whyline does not. Paid slots on TLDR and similar newsletters are a later decision, after a stranger has kept the tool. Coordinated star pushes, "share with your network" posts, and outreach to aggregators that scrape GitHub trending are omitted on purpose. Trending is a consequence of a real thread. Language-specific trending pages have included repositories with only a handful of new stars on quiet days, so there is no star count to buy, and a count you organise is the HN penalty case.
+1. A silent terminal recording, 20 to 45 seconds. One decision with a rejected alternative, a handoff, the next agent starting from that handoff, then `whyline explain` on the line. Real output, captions, no tour.
+2. A demo repository with a committed decision. `whyline explain` runs with no agent login. The handoff commands are on the page for people who already have the CLIs. Show HN asks that visitors be able to try the thing.
+3. Both install commands smoked on clean macOS and Linux, through init, one note, a sync, a handoff, and an explain. Homebrew stays off this list.
+4. README first screen: qualifier, disambiguation, the recording, three commands and the output they produce, platforms, demo link, 3 of 7, the hook sentence, one place to ask for help. A short comparison with a hand-written handoff file, commit messages, ADRs, transcripts, and a generic memory store.
+5. Essay materials a stranger can re-read: task, commit range, bars fixed beforehand, and the scoring notes. A later comparison of repeated briefing, missed constraints, and recall of rejected alternatives needs its own precommitted rubric and its raw artifacts. Do not claim token savings. Vendor token totals are not one unit, which `phase0` already says.
+
+## Channels that ignore karma
+
+1. Five design partners, chosen because they already switch agents in public. The existing recruitment note. Watch the first install. Ask what the second handoff contained. Do not ask for a star.
+2. GitHub and PyPI, corrected before any thread points at them. That includes the measurement-page reconciliation.
+3. A skill or plugin whose verbs are note, sync, handoff, and explain. The listing text repeats the limit on unprompted reads. Submit the one-line description through the awesome-claude-code issue form.
+4. The essay, on a site the maintainer controls, so later posts have a stable URL.
+5. Editors, each on their own day, after the essay and the pinned release exist. Console.dev at `hello@console.dev` reviews tools and does not sell reviews. PyCoder's Weekly takes a project link. Changelog News only if a current issue is actually shipping; a directory roundup on 7 October 2026 still showed April as the newest visible issue, so check the week you write. Terminal Trove wants an image and install commands for packages you really publish. Name pipx and uv. Name Homebrew only after a formula exists.
+6. Replies under a specific post about a second agent starting blank, or about a line whose reason was lost. One recording. No mention blast.
+7. Later, and only after an invite plus a history that is mostly other people's work: Lobsters. New accounts are limited for 70 days, and they cannot use the show tag. Product Hunt and paid newsletter slots wait until a stranger has kept the tool. AlternativeTo fits a replacement for a named product, which this is not.
+
+## Hacker News and Reddit
+
+Primary pages, read 2026-10-10: the guidelines, Show HN, and `showlim`. Show HN is temporarily restricted for people the site does not yet know. There is no published karma threshold. An account at 3 should expect to be told it cannot submit Show HN. The notice describes ordinary contribution as the way through. Promotion as the main use of the account is against the guidelines. An occasional post of one's own work is allowed. Solicited votes and solicited comments attach to the submission and the domain. Deleting and reposting is not a tactic. A quiet Show HN is the common result. Secondary write-ups of an open dataset put the median at 2 points, one of them the author's. That figure is orientation, not an official statistic. The post stays up.
+
+For several weeks, comment on threads about git history, ADRs, local tools, or measurement methodology when a concrete detail is missing. No link, and no "I built." Stop on a day whose only motive is the karma count. A pile of useful comments is not a quota to hit.
+
+Then two posts, handwritten, in this order:
+
+1. The essay, as an ordinary story. The title stays close to the essay's title. The guidelines ask submitters to crop gratuitous numbers, so "43%" stays in the body with its denominator.
+2. Show HN, after the retention gate, and only if the account is allowed to submit one. Title shape: `Show HN: Whyline – why a line of code exists, for the next coding agent`. The first comment covers both install lines, the demo repository, what the record refuses to do, the relay's off-by-default status, 3 of 7, the name collision, and the hook status. Weekday morning, US time, afternoon kept clear. That timing is custom. If the post sits at one or two points, leave it. A later submission has to be a different artifact, after a long gap.
+
+Reddit has no site-wide number. Each subreddit's AutoModerator is its own, often unpublished, rule. Karma 8 fails a lot of large filters. Re-read the live rules on the day.
+
+Two communities. One the maintainer would read about Claude Code or Codex with or without this product. And `r/programming` only while its live rules still ban product demos and still allow a technical write-up of something difficult. The measurement essay can fit that exception. A feature list cannot. `r/SideProject` will accept a disclosed feedback post and will not make the tool known.
+
+During those weeks, answer the blank-second-agent question when it is actually asked. Link Whyline only as the direct answer, with authorship in the same comment, once. The standalone post, if the rules allow one, opens with "I built the tool this measures." Wait several days before a second community, and change the wording from what the first thread objected to. One note to the moderators if AutoModerator removes a post. No repost.
 
 ## Ninety days
 
-Assume the week of 2026-10-13 as week 1. Slip the public posts if the external users or the pinned release slip. Do not slip them in order to "catch a news cycle."
+The week of 13 October 2026 is week 1. Move a public post when the pinned release or the install path slips. Leave the calendar alone when the motive is a news cycle.
 
-### Weeks 1–2. Become postable, and make the trial short
+Weeks 1–2. No post whose subject is Whyline. Freeze a release. Smoke both install commands. Reconcile `docs/measurement.md` with `m0/RESULTS.md`. Put the qualifier, the disambiguation, pipx, the platforms, 3 of 7, and the hook sentence on the first screen. Publish the demo repository and cut the recording. Send the recruitment note to five to ten people. Start the comment practice. Write down the baseline: outside users, stranger issues, stars, PyPI downloads, mentions.
 
-No post whose subject is Whyline.
+Essay gate: a stranger can install the pinned version and run `explain` on the demo, and every public page they will reach tells the same story as `m0/RESULTS.md`. Failed outside installs stop the essay until the install works. Five retained users are not this gate.
 
-- Freeze a release. Smoke `pipx install whyline` and `uv tool install whyline` on a clean machine. `whyline init` in a fresh git repo, then `whyline explain` on a line that has a recorded decision.
-- Put three things on the README's first screen: the Ko / npm disambiguation sentence, the pipx line, and a still or GIF of `explain`. State macOS and Linux. State that Codex decision logging was observed and Codex hook events were not.
-- Publish a tiny demo repository a stranger can clone and run `whyline explain` in, with a committed `decisions.md` and no agent login required. Show HN's guideline is that people should be able to try the thing without a signup. An agent subscription is a signup-shaped barrier. `explain` on a fixture avoids it.
-- Send the existing recruitment message to developers who already use two agent CLIs. Target five conversations, not a public call for users.
-- Hacker News, four days a week: comments on threads about git history, ADRs, measurement, or coding agents, where you have a concrete thing to add. No link. No "I built." Stop any day the only reason to comment is the karma number.
-- Reddit: read the live rules of two subs, then do the same kind of commenting. A Claude-or-Codex community and one programming community is enough. Leave if the rules restrict new accounts.
+Week 3. The essay, in the maintainer's sentences. The belief about instruction files. The bars written down first. The write-side rates with the reason they exceed 100 percent. The 3 of 7 result. The dispatched-agent miss. The move to `whyline run`. One repository link at the end. Ordinary HN story if the account can submit. Otherwise the single factual email, then a wait. The next day, one Reddit community whose rules allow the write-up. Fold real corrections into the README. No other outlet that day.
 
-Exit test: the account can submit an ordinary link, or you know from a real attempt that it cannot. You also have the demo repo and the GIF.
+Weeks 4–5. Answer the thread. Fix the three failures people actually hit. Keep onboarding partners. Run the before/after comparison only with a rubric fixed beforehand. Do not submit Show HN. Do not delete the essay submission.
 
-### Week 3. The essay
+Show HN and editor gate: five outside users have completed one useful handoff, and at least three of them have completed a second within 14 days, because they said so. A committed `decisions.md` in a public repository you do not own counts as evidence. A star does not. If the second handoff is missing, stop and ask those users. Another announcement does not repair a one-time tool.
 
-Write it yourself. Outline, so the post is yours:
+Week 6, only with that gate open and a permitted Show HN account. One Show HN. The question to readers is narrow: what is missing from decision, rejected alternative, tests, and open risk. On later days of that week, Terminal Trove, then the awesome-claude-code form. Console.dev and PyCoder's Weekly go out after the thread has produced a README correction. None of those notes is a request to vote on the thread.
 
-- What you believed an instruction file would do.
-- The bar you wrote down before collecting (60 percent write-side on Claude, at least one Codex firing, 50 percent unprompted reads).
-- What happened, with the denominators and the single-operator limit in the same paragraph as the percentages.
-- The dispatched-agent miss, in a sentence.
-- What you changed: `whyline run` carries the packet; instruction-file reads stay a fallback.
-- One link to the repository and the install line, after the result.
+Weeks 7–8. Narrow the in-tool listing to the four verbs. Publish one workflow a partner allowed you to describe. Hold one office hour. Open two bounded contribution issues. On a social network, reply under posts that describe this problem. With no audience there, skip the launch thread. Tag nobody from a list.
 
-Submit the essay URL to Hacker News as a normal story, title close to the essay's own title, no "you won't believe," no number stuffed in for effect. The guidelines ask submitters to crop gratuitous numbers. If the account cannot submit, mail `hn@ycombinator.com` a short note that the account appears restricted, with the URL, and ask what they want you to do. Then wait.
+Weeks 9–12. A second essay only when outside use produced a fact worth reading: what those users recorded, whether a rejected alternative prevented a repeat, where reviewer notes still vanished, what the precommitted comparison showed. That piece is the Changelog pitch. Without that use, skip the launch. Verify a Codex hook event, or close the reviewer-recording gap, before adding a Homebrew formula.
 
-The next day, post a different wording in the one Reddit community whose rules allow a technical write-up. First line: you built the tool the essay measures. Stay for the afternoon. Fold corrections into the README. Do not post the essay anywhere else that day.
+## The week
 
-### Weeks 4–5. Only the thread
+About six hours.
 
-Answer comments. Change the README where a comment found a real hole, especially the Codex hook sentence and the sample-size sentence. Collect the five users if they have not started. Do not submit the repository as Show HN in these two weeks. Do not delete the essay submission if it sits at the bottom of `/newest`.
+- 90 minutes for replies and support.
+- 90 minutes for one partner install or conversation.
+- Two hours on the demo, the essay, or the comparison.
+- One hour of comments that are not about Whyline.
+- 30 minutes for a single editor or partner note.
+- 30 minutes on the gate, and on whether the next post still deserves to exist.
 
-### Week 6. Show HN, if the account is allowed to
+## Whether it worked
 
-Title shape: `Show HN: Whyline – why a line of code exists, for the next coding agent`.
+No telemetry. The product promise forbids adding it for a chart.
 
-The first comment, written by hand before you submit, covers: `pipx` and `uv` install, `whyline init`, the demo repo, what the tool refuses to do, the 3-of-7 read result, the 2004 Whyline disambiguation, and the Codex hook status. Submit on a weekday morning US time, and keep the afternoon clear. That timing is custom, not a rule.
+North star: outside users who report two useful handoffs in the same repository within 30 days. Public decision files are a lower bound, because private repos and uncommitted trials stay invisible.
 
-If the post sits at one or two points, leave it. That is the ordinary result. A later submission has to be a different artifact, such as the external-user essay, and only after a long gap.
+Internal checks, never copied into a launch post:
 
-The same week, if the GIF and the pinned install lines exist: Terminal Trove, the awesome-claude-code issue form, Console.dev, PyCoder's Weekly. Each gets its own short note. None of them get the Show HN thread as a voting link.
+| Check | Decision |
+| --- | --- |
+| Stranger can install and run `explain` on the demo | Essay may go out |
+| Five outside first handoffs, three of them repeated within 14 days | Show HN and editors may go out |
+| Twenty outside first handoffs by day 90 | Keep this distribution pace |
+| Ten second handoffs within 14 days by day 90 | The habit is real |
+| Five stranger issues or pull requests, or five permissioned notes | Enough for the second essay |
+| Two earned mentions | An essay thread, an editor, or a stranger's own post |
 
-### Weeks 7–8. In-tool install path
+A Show HN at 2 points plus one editor mention is a success when the handoff counts are real. A star spike with no second handoff is a failed channel.
 
-Ship the small skill or plugin if it is not already in the README's init path. The distribution win is `claude plugin` / a marketplace line / a skill file a person can copy, pointing at the same `whyline` binary. Keep the surface area to note, sync, explain, and handoff. Leave the console, the scheduler, and the relay out of the first screen of that listing. They are real; they are how a newcomer files Whyline under "another orchestrator."
+Stop rules. Visits and no installs: the first screen or the install line is wrong. Installs and no first handoff: init and the demo are still too long. A first handoff and no second: stop posting and talk to those users. Stars and no reports: ignore the stars. Readers describe an orchestrator or a memory product: cut the first screen again. Readers say a markdown file would do: show the rejected alternative and `explain`, and change the product if that demonstration fails.
 
-Reply on X or whatever network you actually use, only under posts that describe this problem. If you have no audience there, this item is replies, not a launch thread.
+## The next ten working days
 
-### Weeks 9–12. The second story, or silence
-
-Write again only if at least a few people who are not you have a `decisions.md` with rejected alternatives in it. The post is what they recorded and whether reviewer notes showed up. That is the piece that can be remembered. Pitch Changelog with that piece.
-
-If the external use did not happen, do not invent a second launch. Keep commenting, ship the reviewer-recording gap or the Codex hook verification, and put the Homebrew formula up when you are willing to maintain the bump.
-
-## Copy rules for every channel
-
-- Disambiguate the name in the first screen.
-- Give the denominator beside 43 percent.
-- Say `whyline run` is the reliable handoff.
-- Say Codex hooks are unverified until a `status` line shows otherwise.
-- Install lines are `pipx install whyline` and `uv tool install whyline`, then `whyline init`.
-- The maintainer's own sentences. A model may outline. A model does not draft the text that gets pasted onto Hacker News.
-- One channel per day when the post is about your own work.
-
-## How to tell whether it worked
-
-There is no telemetry, on purpose. Public traces are the metric.
-
-- Day 30: five repositories you do not own contain a Whyline `decisions.md`, or five people have told you they ran `init` and kept it. Issues or pull requests from strangers count. Stars do not, by themselves.
-- Day 90: one of these happened: an HN thread with a technical disagreement in it, a newsletter mention, or a stranger's public write-up. A Show HN at 2 points plus a Console.dev listing is a success. A star spike with no external `decisions.md` is not.
-- PyPI download charts are a weak check on top of those, because CI and mirrors inflate them.
+1. Choose one release and smoke it on macOS and Linux.
+2. Add `pipx install whyline` beside the uv line.
+3. Reconcile `docs/measurement.md` with `m0/RESULTS.md`.
+4. Put the qualifier, the name sentence, platforms, 3 of 7, and the hook sentence on the first screen.
+5. Cut the terminal recording.
+6. Publish the demo repository.
+7. Send five recruitment notes.
+8. Comment where you have a fact. No links.
+9. Outline the essay. Leave the sentences for later, in your own words.
+10. Record today's outside-user count. Do not announce a Show HN date. That post waits on the retention gate.
 
 ## Sources
 
-- Whyline README, `m0/RESULTS.md`, `phase0/STATUS.md`, `phase0/recruitment-message.md`, `pyproject.toml` (this repository, version 0.3.37.1).
-- PyPI project page for `whyline` 0.3.37.1, uploaded 2026-10-08: <https://pypi.org/project/whyline/>
+- This repository: README (relay off until `init --relay`; limits list; version work in `pyproject.toml` at 0.3.37.1), `m0/RESULTS.md`, `docs/measurement.md`, `phase0/STATUS.md` updated 2026-08-09, `phase0/recruitment-message.md`.
+- PyPI `whyline` 0.3.37.1, uploaded 2026-10-08.
 - Hacker News guidelines, Show HN guidelines, and `showlim`, read 2026-10-10.
-- Lobsters about page, read 2026-10-10: <https://lobste.rs/about>
-- `hesreallyhim/awesome-claude-code` contributing rules: age, human submission, issue form, one-line description.
-- Terminal Trove submit form: <https://terminaltrove.com/submit/>
-- Console.dev accepts tool suggestions at `hello@console.dev` and does not sell reviews (directory roundups, 2026).
-- r/programming's public rule against product and "I made this" posts, and the exception for technical write-ups, as quoted by rule trackers from the subreddit's rules in May–July 2026. Confirm on the subreddit before posting.
-- Amy Ko, "The Whyline," CHI 2004 / CMU, and the public Java archive `amyjko/whyline`.
-- npm packages using the same name: `@malindar/whyline` (May 2026), `@sal-sovereign-ai-labs/whyline` (September 2026).
-- Show HN median and the "about 4 percent above 30 points" figure: secondary summary of an open dataset of Show HN posts, not an HN official statistic.
+- Lobsters about page, read 2026-10-10.
+- `hesreallyhim/awesome-claude-code` contributing rules: age, human submitter, issue form, one line, no pitch.
+- Terminal Trove submit form.
+- Console.dev suggestions at `hello@console.dev`; reviews are not sold.
+- r/programming's ban on product posts and "I made this" demos, with room for a technical write-up, as quoted from the subreddit rules by trackers in May–July 2026. Confirm on the day.
+- Amy Ko and Brad Myers, the Whyline, CHI 2004, archive `amyjko/whyline`.
+- npm `@malindar/whyline` (May 2026) and `@sal-sovereign-ai-labs/whyline` (September 2026).
+- Show HN median near 2 points: a secondary summary of an open dataset, not an HN statistic.
