@@ -1,336 +1,123 @@
 # whyline
 
-Use Claude Code and Codex on the same project without either one starting blind.
+Records why your code exists, and tells the next agent.
+
+Claude Code, Codex, Grok, and Antigravity can work in the same repository. The agent that finishes writes what it chose and what it rejected. The next agent starts from that record.
+
+Free, Apache-2.0, and local. There is no whyline account, no telemetry, and no paid tier. `whyline run` launches the vendor's own CLI, so each agent stays on the subscription you already pay for.
 
 ```
-$ whyline explain src/tsconfig/resolve.ts:41
+$ whyline explain src/whyline/runner.py:46
 
-Decision          Treat only canonical in-repo workspace package exports as internal
-Because           node_modules must be readable for resolution but never indexed
-Rejected          classify any resolvable node_modules target as internal
-                  indexes third-party declarations and violates FR-005
+src/whyline/runner.py:46
+
+Last touched by   anish
+Commit            bc677e4  ·  2026-08-17
+
+Decision          Resolve runner injection points at call time, not in the signature
+Because           default arguments bind at import time, so monkeypatching runner.shutil.which had no effect and a test exec'd the real codex binary, replacing the pytest process
+Rejected          patch the default argument tuple in tests
+                  couples every test to CPython internals
+
 Confidence        High — a recorded decision matches the commit for this line.
+                  one recorded decision matches the commit that wrote this line
 ```
 
-Free, Apache-2.0, local-only. No accounts, no telemetry, no paid tier, ever.
+That output is from this repository. An empty record produces an empty answer. `explain` says when it is guessing.
 
-## The problem this solves
+## Install
 
-Claude Code and Codex are good at different things. You might want Claude to plan
-a feature and write the tests, then Codex to review the diff — or the reverse.
-That combination is genuinely useful, and today it is genuinely painful: the
-second agent starts from nothing. It has no idea what the first one concluded,
-what it tried, or what it deliberately ruled out. So you re-explain, or paste, or
-just give up and use one agent for everything.
-
-whyline fixes that with a decision record both agents write to and read from. The
-one that finishes leaves behind what it decided and what it rejected; the one that
-starts picks it up. Neither has to be told twice.
-
-**On the subscriptions you already pay for.** whyline never touches a credential.
-It launches the vendor's own CLI with `exec`, so Claude Code authenticates as
-Claude Code and Codex authenticates as Codex. No API keys, no per-token billing,
-nothing metered on top of what you already have.
-
-And because the record is committed to your repository as plain Markdown, it
-outlives the session. Six months later, `whyline explain` still answers why a line
-of code exists — which is the same mechanism, read at a longer horizon.
-
-## Install globally, initialise per project
-
-**Once per machine:**
+Once per machine:
 
 ```bash
 uv tool install whyline
 ```
 
-That one command is everything: the relay and the full-screen console come
-with it, so there are no extras to remember. (Already installed an older
-version with extras? `uv tool install --reinstall whyline` brings it in line;
-the old `whyline[relay]`, `[console]` and `[ui]` names still work but add
-nothing.)
-
-**Once per repository:**
+Once per Git repository:
 
 ```bash
 cd your-project && whyline init
 ```
 
-The executable is global; do **not** reinstall it inside every directory.
-`whyline init` is per Git repository (and per worktree/checkout): it creates the
-project-local `.whyline/` state, adds shared instructions, and installs both
-Claude Code and Codex project hooks. This separation is intentional — decisions
-and active work from one project must never bleed into another.
+Python 3.11 or newer, and git. The executable is global. `init` is per repository, including each worktree, so one project's decisions never bleed into another.
 
-Codex requires explicit trust for non-managed project hooks. After `init`, open
-`/hooks` once in Codex and approve the Whyline definitions — they list as
-`Installed 1, Active 0` until you do, and an untrusted hook cannot run. `whyline
-status` will say “configured but never observed” until a real event arrives; it
-does not mistake a JSON file for a working hook.
+`init` creates `.whyline/`, offers to add a short instruction to `AGENTS.md` and `CLAUDE.md`, and offers to install the Claude Code and Codex hooks. Pressing Enter accepts. `--yes` accepts both without asking. Re-run `init` any time; it upgrades the instruction block in place and leaves the rest of those files alone.
 
-**Trust applies to events that have not happened yet.** The session you approve
-from has already passed its `SessionStart`, so restart Codex once afterwards if
-you want that event recorded. Everything else — prompts, tool calls, session end
-— starts recording immediately, so `status` flips to “observed” on your next
-prompt either way.
+Codex runs a project hook only after you open `/hooks` and approve it. Until a real event arrives, `whyline status` says configured but never observed. If the `agy` binary is on your `PATH`, or the repository already has `.agents/`, `init` also installs the Antigravity hook. Grok has no hook. It still picks up the instruction in `AGENTS.md`.
 
-`init` asks before touching `AGENTS.md`, `CLAUDE.md` and the hook files, and
-pressing Enter accepts — running the command is the consent. Answer `n`, or pass
-`--no-instructions` / `--no-hooks`, to skip either part; `--yes` accepts both
-without asking, for scripts. Whatever block `init` replaces is copied to
-`.whyline/AGENTS.md.bak` first.
+Typing `whyline` with no arguments opens the console.
 
-Python 3.11+, plus `git`. The decision log, hooks and every command other than
-the console and relay use only the standard library; the three dependencies
-(`whyline-relay`, `prompt_toolkit`, `textual`) are there for the console and
-the relay.
+## What gets written down
 
-Re-run `whyline init` any time; it upgrades an outdated instruction block in place
-and leaves everything you wrote around it untouched.
+| Path | What it is | Committed? |
+|---|---|---|
+| `.whyline/decisions.md` | The choice, the reason, the rejected alternatives, who made it, and which files it touches | Yes |
+| `.whyline/active-handoff.json` | The current task, status, tests, and risks | No |
+| `.whyline/ownership.json` | Advisory claims on a task or file | No |
+| `.whyline/ledger.jsonl` | Sessions, prompts, and file touches | No |
 
-## Automated mode (optional)
+`decisions.md` stays readable after you uninstall whyline. `whyline sync` packs the active handoff, git state, claims, and the relevant decisions into about 1,200 tokens, and leaves raw prompt text out. The full layout is in [docs/recording.md](docs/recording.md).
 
-Everything above is manual: you switch between an agent's terminal and the next. There is also [whyline-relay](https://github.com/anishmoncivarghese/whyline-relay), installed with whyline, that does the switching for you. Give it a Markdown plan and it runs each task through Codex (implements) and Claude (reviews and commits), routing on whyline's own handoff record, and stops when something needs a human. It launches agents unattended and spends your subscription quota, so although it is installed, it is never set up in a repository or run unless you ask.
+## Hand a task to the next agent
+
+You decide who implements and who reviews. whyline carries the record across.
 
 ```bash
-whyline init --relay                  # normal setup, then the relay's own setup
-whyline relay plan-format             # how to write a plan (and a prompt for an AI that drafts one)
-whyline relay doctor                  # checks whyline, both agent logins, the plan and the tree
-whyline relay start                   # run the plan
-whyline relay status                  # is it running, or where did it pause
-```
-
-`whyline init` asks whether to set the relay up, and the default is no: `--yes` alone does not opt in, `--relay` does, and `--no-relay` skips the question. You can add it to a repository later with `whyline relay init` and take it out again with `whyline relay remove`.
-
-The command is `whyline relay <command>`; there is no separate `whyline-relay` command on your PATH, and whyline never needs one. If you want it anyway, install the relay on its own too: `uv tool install whyline-relay`. The relay's README covers plans, phases, permissions, what it costs and how to read a pause.
-
-## Then just work
-
-Open Claude Code or Codex and build as you normally would. Two things can happen
-without you doing anything:
-
-- each vendor's **hook** records sessions, prompts and explicit file edits;
-- your **agent** records its own decisions and rejected alternatives, because it
-  read the instruction `init` added.
-
-Automatic reading is best-effort, not guaranteed. Use `whyline run` for a handoff
-that must reach the next agent, or run `whyline sync` explicitly after opening a
-vendor CLI directly.
-
-## Switching agents — the thing this exists for
-
-There are two ways to do it. Both work. They fail differently, so pick with your
-eyes open.
-
-### Pattern 1 — two terminals (recommended)
-
-Each agent gets its own session. You decide who does what by which tab you type in.
-
-```bash
-# tab 1 — implementation, with context attached reliably
 cd your-project
 whyline claim WL-42 --actor codex --role implementer --file src/cache.py
 whyline run codex "implement bounded cache invalidation" --task-id WL-42
 
-# when implementation is ready
 whyline handoff WL-42 --from codex --to claude --status ready-for-review \
   --summary "bounded invalidation implemented" \
   --file src/cache.py --test "pytest -q: passed" \
   --risk "large repositories not benchmarked"
 
-# tab 2 — review, with the same project context attached
-cd your-project
 whyline run claude "review and commit the cache change" --task-id WL-42
 ```
 
-You are the switch; whyline is the relay. `run` attaches the history directly,
-so it does not depend on an agent remembering to call `brief`. You can still open
-`codex` and `claude` directly, but automatic reads from the repository instruction
-were measured at only 43%, so that path is best-effort rather than guaranteed.
+`run` works with `claude`, `codex`, `grok`, and `antigravity`. Run it from your shell. It replaces the current process, so launching it from inside another agent's tool call leaves the new agent with no terminal.
 
-`claim` is advisory. If both agents claim the same task or file, Whyline warns in
-`claim`, `sync`, and `status`; it never locks a file or blocks either agent. This
-is how two terminals can coordinate without Whyline becoming an orchestrator.
+`claim` warns when two agents claim the same task or file. It does not lock anything.
 
-> Run `run` from your shell, not from inside an agent session. It replaces the
-> current process with the agent (`exec`), so launching it from within another
-> agent's tool call gives the new agent no terminal and it will fail.
-
-### Pattern 2 — dispatch from inside a session
-
-Ask the agent you are already talking to to call the other one:
-
-> get codex to review the caching change
-
-Claude runs `codex exec …` and the result comes back into your current
-conversation. Convenient for a one-shot second opinion, with three limitations:
-
-- **A dispatched agent follows its dispatcher's prompt, not `AGENTS.md`.** In one
-  observed run, an orchestrated task recorded **no** decisions, while the same
-  agent leading its own session on the next task recorded two and read the history
-  unprompted. If provenance matters for a piece of work, let the agent own its
-  session.
-- **It is one shot.** The dispatched agent has no terminal, so it cannot ask you a
-  clarifying question or iterate — it answers once and exits.
-- **It does not work in reverse.** Codex cannot launch Claude, because Claude Code
-  writes session state outside the workspace and Codex's sandbox blocks that. Do
-  not disable the sandbox to force it; use a second terminal.
-
-### Either way
-
-**Codex cannot commit.** Its sandbox blocks writes to `.git`, so it will implement,
-test and report, then stop. You or Claude makes the commit. That is a fixed cost of
-the sandbox, not a whyline limitation.
-
-Everything else is optional:
+Codex's sandbox cannot write `.git`. Codex implements, tests, and stops. You or another agent makes the commit.
 
 ```bash
-whyline sync --task WL-42        # active handoff + Git + ownership + decisions
-whyline brief --file src/a.py    # decisions-only, relevant and token-bounded
-whyline explain src/a.py:14      # why does this line exist?
+whyline sync                         # handoff, git state, claims, relevant decisions
+whyline brief --file src/a.py        # decisions for the next agent, token-bounded
+whyline explain src/a.py:14          # why this line exists
 whyline note "chose X" --because "Y" --rejected "Z: too slow" \
   --file src/a.py --actor codex --role implementer --task WL-42
-whyline release WL-42 --actor codex
-whyline timeline --file src/a.py
-whyline status                   # is recording actually live?
+whyline status                       # is recording actually live?
 ```
 
-## What context Whyline keeps
+## Optional: run a plan
 
-Whyline does not preserve either vendor's hidden conversation. It keeps a small,
-explicit relay that both can read:
+[whyline-relay](https://github.com/anishmoncivarghese/whyline-relay) ships with whyline and stays off until you set it up. You give it a Markdown plan. It runs each task through an implementer and a reviewer, routes on the handoff record, and stops when a person needs to decide. It spends the subscription quota of the CLIs it launches.
 
-- `.whyline/decisions.md` — committed durable decisions, rationale, rejected
-  options, actor, role, task, and affected files;
-- `.whyline/active-handoff.json` — local current task, from/to agent, status,
-  changed files, tests/results, risks/questions, and base/current commit;
-- `.whyline/ownership.json` — local advisory task/file claims;
-- `.whyline/ledger.jsonl` — local mechanical events and prompt text.
+```bash
+whyline init --relay       # also fine later: whyline relay init
+whyline relay doctor
+whyline relay start
+whyline relay status
+```
 
-Only `decisions.md` is committed. The other three are checkout-local and
-gitignored, because stale ownership, a dirty tree, and raw prompts should not
-travel to another clone. `sync` combines the active handoff, current Git state,
-claims, and task/file-relevant decisions into one nonce-fenced packet. Its
-default budget is about 1,200 tokens; raw prompt text is never included.
+`--yes` on `init` does not turn the relay on. `--relay` does.
 
-## What whyline does not do
+## Also in the box
 
-Worth being explicit, because the name of the category invites the wrong guess.
+The console (`whyline`, or `whyline console`) is a full-screen app with Command, Chat, and Relay. Chat talks to whichever of the four CLIs is installed and signed in. `/model` lists them.
 
-- **It does not orchestrate.** It never runs both agents, never runs them in
-  parallel, and never decides which one should act.
-- **It does not assign roles.** It records roles such as implementer or reviewer,
-  but you decide them in the command or prompt.
-- **It does not supervise.** `run` hands your terminal over and gets out of the
-  way. Nothing is captured, parsed or wrapped, so no vendor changing its output
-  format can break it.
-- **It does not touch your credentials.** Each vendor's own CLI authenticates
-  itself, which is why your existing subscriptions just work.
+`whyline agents` saves a prompt you can run again, on a schedule, or when Mail receives a matching message. An unattended run is read-only. The result can go out by Mail or Telegram. The scheduler and the Mail rule are macOS. The Mail setup is [docs/agents-mail-recipe.md](docs/agents-mail-recipe.md).
 
-## How it works
+`whyline model set <agent> <model>` chooses the model for this repository. `whyline account detect` reads which Claude and Codex plan is signed in. It stores the plan name. It does not store the token, and it does not send the token anywhere.
 
-Three layers feed one ledger:
+## Limits
 
-1. **git** resolves a line to a commit via `git blame`. Works before whyline has
-   recorded anything.
-2. **A hook** silently records sessions, instructions and explicit file edits. It
-   can never fail your session — every path exits 0. **Verified against Claude
-   Code only.** `init` also writes a project-local `.codex/hooks.json`, but no
-   Codex hook event has been observed yet, so treat Codex mechanical capture as
-   untested rather than working: run `whyline status`, which reports each vendor
-   separately and will say `configured but never observed` until one arrives.
-3. **Your agent** records the reasoning. `whyline init` adds an `AGENTS.md`
-   instruction asking agents to log decisions and rejected alternatives. This is
-   the only layer that captures *why*.
-
-`.whyline/decisions.md` is committed and readable with Whyline uninstalled.
-The operational records and ledger are gitignored.
-
-## Does the third layer actually work?
-
-It was the design's one unproven assumption, so it was measured before the
-features depending on it were built. Over three days across two agents on a real
-project, 19 decisions were recorded across 14 commits — Claude Code 150% of its
-non-trivial changes against a 60% gate, Codex 130% against a separate "at least
-one firing" gate. Every one carried a rationale and a concrete rejected
-alternative. Codex was never reminded.
-
-**That rate holds when an agent works directly, and not when it is dispatched.**
-A later orchestrated task in the same repository recorded nothing at all, because
-a dispatched agent follows its dispatcher's prompt rather than `AGENTS.md`. The
-figure above is therefore a property of direct work, not a general one — which is
-the reason Pattern 1 above is the recommended shape.
-
-The read side was measured separately, because writing a record nobody consults
-is worthless. Claude Code ran `whyline brief` unprompted near the start of 3 of 7
-sessions it owned — **43%**, below the 50% threshold fixed before collection.
-The result is therefore **unreliable**: use `run` when the handoff must happen,
-and treat repository-instruction reads as a useful fallback. Codex was observed
-calling `brief` nine times, but no reliable Codex session denominator was
-available, so that count is not presented as a rate. Earlier 67% and 50% figures
-were superseded as the sample grew.
-
-**One gap is known and unfixed: reviewers record less than implementers.** Across
-five tasks on one project, the agent *implementing* recorded every time, while
-not one ruling by the agent *reviewing* reached the record — those went to a
-tracker that was not committed, and died on clone. 0.1.3 widened the instruction
-to name reviewers explicitly. Whether that works is not yet measured, and at
-least two other causes are plausible, including that a reviewer working from a
-different repository never loads the project's `AGENTS.md` at all.
-
-Full method and caveats: [`m0/RESULTS.md`](m0/RESULTS.md).
-
-## Honest limitations
-
-- **Switching agents is a relay, not a shared conversation.** Vendor CLIs are
-  separate processes with separate context windows. `sync` hands the next agent
-  explicit state; it cannot continue the previous hidden conversation.
-- **`explain` reports confidence and will say when it does not know.** An empty
-  ledger produces an honest empty answer, not a guess. File-level `explain` never
-  claims high confidence, because without a line there is no blamed commit.
-- **`run` supports Claude Code, Codex, Antigravity (`agy`), and Grok (`grok`, "Grok Build")** — Gemini CLI itself is dead (its free personal tier was withdrawn); Antigravity is Google's actual working successor and is not the same binary or invocation.
-- **Typing `whyline` with no arguments opens the console** inside a repository: a full-screen, mouse-enabled app with a Command / Chat / Relay mode switch at the top. Command runs what you type as `whyline ...` (e.g. `status`, `sync`); Chat talks to the active agent (`/model claude opus` picks one; `/model` alone lists all four with whether each is installed and logged in, its plan and its model, and how to fix one that isn't available; `/model refresh` re-checks; `/login claude` runs that agent's own login and re-checks, so whyline never sees your credentials); Relay drives `doctor`, `status`, `start` and `resume`. The top row always shows the active agent and model and the repository you're in; `/repo ~/other-project` switches repositories (after a warning, since it clears the transcript and starts a fresh chat context). The Brainstorm button (or `/brainstorm`) has several models research a topic independently, review each other's work, and one of them write it up in `docs/brainstorm/`. While an agent is working, a spinner line says so. Help in the console explains the rest. Outside a repository it asks "Chat or relay?" instead: Chat leads into `whyline relay chat`, and Relay into `whyline relay setup`, a guided wizard that assigns implementer/tester/reviewer roles to a plan and runs `doctor`'s own checks before offering to start it.
-- **Ownership is advisory.** Whyline warns about overlapping writes but provides
-  no lock, scheduler, merge engine, or worktree isolation.
-- **A fresh clone loses operational state, deliberately.** It retains committed
-  decisions, so `brief`, `status`, and `explain` still work; those entries carry
-  day precision and therefore never justify high-confidence temporal attribution.
-- **macOS and Linux are verified; Windows is not.** CI passes on `ubuntu-latest`
-  and `macos-latest` across Python 3.11 and 3.13. Windows via WSL is untested — a
-  plausible claim, not an observation.
-
-### Choosing a model: `whyline account` and `whyline model`
-
-`whyline account detect` checks which plan/tier `codex` and `claude` are actually authenticated under (Claude Pro/Max/Team, ChatGPT Plus/Pro/Team) — not just whether they're logged in. It runs once per machine (cached in `~/.whyline/account.json`) and asks you to confirm it once per repo (`.whyline/account.json`, gitignored — this is personal plan/billing info, never committed). `whyline account status` shows what's on file.
-
-`whyline model` lets you pick a model per agent for this repo (`.whyline/model.json`, also gitignored), showing the detected plan as context. `whyline model set <agent> <model>` sets one non-interactively; `whyline model status` shows the current choices. `whyline run` uses whatever's set automatically — no flag needed. Nothing is validated against a list of real model names; a wrong choice just fails at the agent's own invocation time.
-
-**Antigravity's model can be set here too, and `whyline run antigravity` is fully safe with it** — that command hands the terminal to a human, so nothing here is affected by Antigravity's own headless-mode limitations. Those limitations *do* apply if you separately, deliberately configure Antigravity as a whyline-relay role via its documented [generic-adapter recipe](https://github.com/anishmoncivarghese/whyline-relay#using-antigravity-agy-today-via-the-generic-adapter) — `whyline model` will remind you of this when you set Antigravity's model, but never blocks it, since the interactive `whyline run` use is completely unaffected.
-
-## Credentials
-
-whyline never reads, stores, forwards or proxies a vendor token. `run` replaces
-itself with the vendor's own CLI via `exec`, which does its own authentication.
-Your subscription works because the official CLI is what talks to the vendor.
-Permission-bypass flags are never added.
-
-## Performance
-
-Measured on an M-series Mac from the 0.2.0 worktree, median of seven runs:
-
-| Command | Total |
-|---|---:|
-| `brief` | 47 ms |
-| `sync` | 92 ms |
-| `timeline` | 43 ms |
-| `status` | 63 ms |
-| `explain` | 94 ms |
-
-All remain below the 200 ms interactive target. `sync` asks Git for branch,
-commit, and changed paths; `explain` shells out to `git blame`.
-
-On a 50,000-event, 6.5 MB ledger `explain` takes ~159 ms against a 1 s target —
-which is why there is no SQLite index.
+- A handoff is the explicit record. It is a separate session from the previous agent's hidden conversation.
+- Agents record decisions when they own the session. Unprompted, Claude Code ran the brief near the start of 3 of 7 sessions (43%). Use `whyline run` or `whyline sync` when the handoff has to happen. The method and the reviewer gap are in [docs/measurement.md](docs/measurement.md).
+- Claude Code's hooks have been observed in real use. Codex and Antigravity hooks are installed and reported separately by `whyline status`. Grok has no hook.
+- macOS and Linux are tested in CI. Windows is not.
+- Timings measured on the 0.2.0 worktree are in [docs/performance.md](docs/performance.md).
 
 ## Licence
 

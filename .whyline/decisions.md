@@ -8726,3 +8726,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5550599617464afbaee90272dfc55c58 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-08T21:55:34.030Z"} -->
+
+## 2026-10-09 — Rewrite the README around the line-level decision record
+
+**Actor:** grok
+**Role:** implementer
+**Task:** README-REFRESH
+
+**Because:** The GitHub page still opened on Claude and Codex only, then said whyline never runs both agents, while the relay and the console do. The thing a stranger can verify in one command is explain on a real line, with the rejected alternative still in the committed record.
+
+**Rejected:**
+
+- Leave the 43% measurement and the 0.2.0 timings on the landing page — they are the proof, and they are also the first thing a new reader has to get through
+- Lead with the console, relay, and scheduled agents — that reads as a general agent platform and hides the decision record
+
+**Files:** README.md, docs/recording.md, docs/measurement.md, docs/performance.md
+
+<!-- whyline-event: ef3755a2b0164a3d8b34b5248e061771 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:27:11.146Z"} -->
