@@ -1,5 +1,46 @@
 # Brainstorm: In chat therr is hardocded limit of 300s after which its timeout, relay has configurable and same wityh brainstoprm, I want an option to remove the limit first or put o[tion on top  somewhere kimnd of a drop down like agent where its drop down , user can select say timeout 15, 30 , 45 or no limit, simiallry in relay dezfult is 30 mins here its self we can remove the limit as well. Think about it
 
+## Final Synthesis
+
+Add configurable timeouts to Chat, Brainstorm, and Relay while preserving their intentionally different defaults: **5 minutes for Chat, 15 minutes per Brainstorm attempt, and 30 minutes per Relay turn**. Treat every timeout as a limit for one provider process attempt, not the whole visible turn or brainstorm; failovers, Grok resumes, review passes, and synthesis each receive the selected budget again.
+
+### Product behavior
+
+- **Chat:** add a `Timeout` select beside Agent in the top context bar with `5m`, `15m`, `30m`, `45m`, `60m`, and eventually `none`. The choice is captured when Send starts, disabled while the turn runs, and applies to the next Chat dispatch. It is session-only in the first release, does not dirty Save, and never writes Relay config. Add `/timeout`, `/timeout 30`, and `/timeout none` for keyboard parity. Keep the control and Save reachable at 80 columns by using abbreviated labels and narrower closed controls with wider overlays.
+- **Brainstorm:** add `none` to its existing dialog and keyboard prompt, but keep its independent 15-minute default. Do not inherit the Chat selection. The chosen value applies separately to research, review, and synthesis attempts and remains stored with the topic.
+- **Relay:** keep the 30-minute repository default. Support `timeout_minutes = 0`, `--timeout 0`, and optionally `--timeout none` as explicit unlimited forms, reject negatives, and warn once that an unattended hung process has no automatic cutoff. Store the effective timeout on `RelayState`/`PlanState` so pause and Resume preserve one-shot overrides; do not write a one-shot CLI value back to `config.toml`.
+- **Scheduled Agents:** make no change. Their existing 1–240 minute validation remains finite.
+
+### Safety gate for `none`
+
+Ship finite Chat choices first if desired, but do not expose `none` anywhere until Stop authoritatively cancels the running process. Today the TUI cancels result presentation while the vendor CLI can continue running, spending tokens and modifying the workspace. The runner must accept a per-dispatch cancellation event, terminate the entire process group with `SIGTERM`, escalate to `SIGKILL` after the existing grace period, reap the child, and raise a distinct `AgentCancelled` before any commit path runs. Chat failover, Grok resume, and Brainstorm model loops must check cancellation before starting another attempt. Timeout, cancellation, Ctrl+C, and normal completion should share idempotent cleanup so close races cannot leak threads or double-signal the process group.
+
+### Timeout contract and persistence
+
+At the lowest runner layer, a positive integer arms the watchdog, `None` means no watchdog is created, and zero or negative values are rejected before spawning. The 30-second silence heartbeat remains active for uncapped runs; `none` removes only the kill timer, not provider-side limits or progress reporting.
+
+Do not redefine existing higher-level `None` values as unlimited. In the current code, `None` also means omitted Chat timeout, invalid Brainstorm input, missing/corrupt Brainstorm metadata, or a fallback to a finite default. Introduce an explicit `NO_LIMIT` sentinel at those layers and convert it to runner-level `None` only at the final boundary. For Brainstorm persistence, write explicit unlimited as JSON `null`, but distinguish that from a missing or unreadable file, which must still fall back to 15 minutes. Audit falsey checks so Relay `0` and Brainstorm unlimited are forwarded rather than silently becoming Chat's 300-second fallback.
+
+### Delivery order
+
+1. In `whyline-relay`, add cancellation, process-group cleanup, `AgentCancelled`, optional-watchdog behavior, and checks that suppress failover, resumes, and later Brainstorm models. Keep all defaults finite.
+2. Thread explicit finite/unlimited values through Chat, Brainstorm, Relay, persistence, and Relay resume state. Add tests for cancel-before-start, cancellation during execution, timeout/cancel/completion races, SIGTERM-resistant children, exception cleanup, and suppression of subsequent attempts.
+3. Release the new relay version and raise the console dependency floor. Until then, the Chat UI may ship only the finite `5m`–`60m` choices because older relay code interprets `None` as the 300-second default.
+4. Expose `none` in Chat, Brainstorm, and Relay; add the 80-column layout and isolation tests; document per-attempt semantics and the unchanged Scheduled Agents constraint.
+
+### Acceptance criteria
+
+- Existing users retain the 5m/15m/30m defaults unless they explicitly choose another value.
+- Finite selections reach every provider attempt unchanged and still kill and reap the complete process group on expiry.
+- `none` creates no watchdog, retains heartbeat output, and never produces a fabricated timeout.
+- Stop kills and reaps the active Chat or Brainstorm child, prevents commits and later attempts, and reports cancellation only after cleanup finishes.
+- Missing or corrupt Brainstorm state means 15 minutes; explicit JSON `null` alone means unlimited.
+- Relay unlimited survives pause/Resume, while one-shot overrides do not mutate repository config.
+- Chat timeout changes do not dirty Save, affect Brainstorm defaults, or alter Relay policy.
+- Both the timeout selector and Save remain usable at 80 columns, and Scheduled Agents still reject unlimited.
+
+**Recommendation:** ship the finite Chat selector immediately against the current relay contract, then ship honest unlimited operation only as one coordinated release containing authoritative Stop cancellation, the explicit sentinel migration, and Relay run-state persistence.
+
 ## Codex
 
 # Configurable timeouts without weakening Stop
