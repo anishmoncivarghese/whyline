@@ -225,8 +225,11 @@ class RunsScreen(ModalScreen):
         if event.button.id == "rs-resend":
             run_id = self._selected()
             if run_id and self._on_resend is not None:
-                self._on_resend(run_id)
                 self._show("Resending…")
+                # A fast delivery can report back immediately.  Put the
+                # progress state on screen before starting it so the stale
+                # text cannot overwrite the completed result.
+                self._on_resend(run_id)
             return
         if event.button.id == "rs-log":
             run_id = self._selected()

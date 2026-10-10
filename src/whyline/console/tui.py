@@ -751,8 +751,13 @@ class WhylineConsoleApp(App):
         def decided(choice) -> None:
             if choice != "save":
                 # Back: reopen the form with everything that was typed,
-                # still editing the agent that was opened.
-                self._open_new_agent(
+                # still editing the agent that was opened.  Wait until the
+                # dismissed review screen has completed a refresh before
+                # mounting another Select-heavy modal; mounting it directly
+                # from the dismissal callback can race Textual's child mounts
+                # on slower Windows runners.
+                self.call_after_refresh(
+                    self._open_new_agent,
                     existing=defn, delivery=delivery, editing_id=old_id, lock_name=True,
                 )
                 return

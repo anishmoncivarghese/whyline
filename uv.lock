@@ -223,7 +223,7 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.3.38"
+version = "0.3.38.1"
 source = { editable = "." }
 dependencies = [
     { name = "markdown" },

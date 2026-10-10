@@ -9809,3 +9809,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3e4b8e3ddf0e4b39bfa2aaf3775c2dd4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T13:45:00.237Z"} -->
+
+## 2026-10-10 — Defer reopening the agent form until after review dismissal refresh
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL-CI
+
+**Because:** Textual can mount a Select watcher before its internal children exist when a new modal is pushed directly from the previous modal's dismissal callback, which repeatedly failed Windows CI
+
+**Rejected:**
+
+- Retry or skip the Windows test — hides a real production race in a user-visible Back action
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 6a5478c715b84a828306c107831844e9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T13:58:19.207Z"} -->
+
+## 2026-10-10 — Publish the corrected build as 0.3.38.1
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL-CI
+
+**Because:** The public v0.3.38 tag failed its Windows Python 3.13 release gate before PyPI publication; a patch version preserves the failed tag and avoids rewriting public Git history
+
+**Rejected:**
+
+- Force-move v0.3.38 — rewrites an already pushed public tag
+
+**Files:** pyproject.toml, docs/releases/v0.3.38.1.md
+
+<!-- whyline-event: 2b07a64b2fac4324905d3668820932ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T13:59:03.768Z"} -->
+
+## 2026-10-10 — Show resend progress before starting the delivery worker
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL-CI
+
+**Because:** A fast resend can finish before the click handler writes its progress state, letting Resending overwrite the completed result in the Runs view
+
+**Rejected:**
+
+- Relax the UI assertion — the stale progress state is user-visible and the result must remain visible
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 865444a4e44144d0b4ead73f4a63453e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:06:00.615Z"} -->
