@@ -201,12 +201,14 @@ async def test_model_slash_command_forgets_antigravity_decline(tmp_path, trust, 
 
 async def test_setup_screen_forgets_antigravity_decline_when_antigravity_saved(tmp_path, trust, monkeypatch):
     saved_roles = []
+    saved_releases = []
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["antigravity", "claude"])
     monkeypatch.setattr(
         relay_ops, "current_roles",
         lambda root: {"implementer": "antigravity", "tester": "claude", "reviewer": "claude", "backup": []},
     )
     monkeypatch.setattr(relay_ops, "save_roles", lambda root, *roles: saved_roles.append(roles))
+    monkeypatch.setattr(relay_ops, "save_release", lambda root, release: saved_releases.append(release))
     monkeypatch.setattr(relay_ops, "run_checks", lambda root, plan=None: [])
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
     monkeypatch.setattr(relay_ops, "prepare_agents", lambda root, agents: [])
@@ -215,14 +217,19 @@ async def test_setup_screen_forgets_antigravity_decline_when_antigravity_saved(t
     async with app.run_test(size=(110, 40)) as pilot:
         screen = RelaySetupScreen(tmp_path)
         app.push_screen(screen)
-        await pilot.pause()
-        await pilot.click("#rs-check")
         for _ in range(50):
-            if saved_roles:
+            if not screen._filling and screen.is_mounted and screen.query("#rs-check") and screen.query_one(
+                "#rs-check", tui.Button
+            ).is_mounted:
                 break
             await pilot.pause(0.05)
+        assert screen.query_one("#rs-check", tui.Button).is_mounted
+        screen.query_one("#rs-check", tui.Button).press()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
     assert trust["forgot"] == 1
     assert len(saved_roles) == 1
+    assert saved_releases == ["human"]
 
 
 async def test_confirm_screen_cancel_label():
@@ -271,4 +278,3 @@ async def test_trust_fails_renders_error_and_proceeds_without(tmp_path, trust, m
         await pilot.pause()
         assert seen == [False]
         assert any("settings.json is broken" in line for line in _lines(app))
-

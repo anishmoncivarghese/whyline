@@ -196,7 +196,11 @@ async def test_opening_a_broken_entry_explains_it_and_can_delete_it(tmp_path, mo
                      "explained")
         assert "not valid TOML" in str(app.screen.query_one("#al-broken").renderable)
         app.screen.query_one("#al-delete-broken", tui.Button).press()
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "asks first")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen) and app.screen.query("#cancel"),
+            "asks first",
+        )
         app.screen.query_one("#cancel", tui.Button).press()
         await _until(pilot, lambda: not isinstance(app.screen, tui.ConfirmScreen), "cancelled")
         assert broken_file.exists()
@@ -205,6 +209,10 @@ async def test_opening_a_broken_entry_explains_it_and_can_delete_it(tmp_path, mo
         app.screen.query_one("#al-open", tui.Button).press()
         await _until(pilot, lambda: app.screen.query_one("#al-delete-broken").display, "delete offered")
         app.screen.query_one("#al-delete-broken", tui.Button).press()
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "asks again")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen) and app.screen.query("#confirm"),
+            "asks again",
+        )
         app.screen.query_one("#confirm", tui.Button).press()
         await _until(pilot, lambda: not broken_file.exists(), "file deleted")

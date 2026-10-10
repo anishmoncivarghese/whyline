@@ -9949,3 +9949,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fcf285893f3e4691a829157df0aeed61 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T16:39:47.185Z"} -->
+
+## 2026-10-10 — Guard setup worker callbacks during popup teardown and release as 0.3.38.4
+
+**Actor:** codex
+**Role:** implementer
+**Task:** release-0.3.38.4
+
+**Because:** The 0.3.38.3 release matrix showed a screen can remain attached after its children are removed; callbacks must tolerate NoMatches, and modal tests must wait for mounted controls and completed workers
+
+**Rejected:**
+
+- Move the existing tag — v0.3.38.3 is public release history and remains immutable
+- Rerun unchanged — the teardown traceback identifies a real lifecycle defect
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_antigravity_trust.py, tests/console/test_agents_mode.py, pyproject.toml
+
+<!-- whyline-event: 4a9035f3ac26458fa1e13687c28302fe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T16:57:28.958Z"} -->

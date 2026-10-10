@@ -11,6 +11,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static, TextArea
 
@@ -700,8 +701,11 @@ class RelaySetupScreen(ModalScreen):
     def _check_failed(self, error: Exception, token: object) -> None:
         if token is not self._token or not self.is_attached:
             return  # cancelled, re-checked, or the popup has closed
-        self.query_one("#rs-checks", Static).update("")
-        self._error(str(error) or error.__class__.__name__)
+        try:
+            self.query_one("#rs-checks", Static).update("")
+            self._error(str(error) or error.__class__.__name__)
+        except NoMatches:
+            return  # the popup's children were removed during teardown
 
     def _show_checks(self, checks: list, running: str | None, token: object) -> None:
         if token is not self._token or not self.is_attached:
@@ -714,7 +718,10 @@ class RelaySetupScreen(ModalScreen):
             lines.append(line)
         failures = sum(check.status == "FAIL" for check in checks)
         lines.append("All checks passed." if failures == 0 else f"{failures} problem(s) found.")
-        self.query_one("#rs-checks", Static).update("\n".join(lines))
-        if running:
-            self._error(f"A relay is already running here ({running}).")
-        self.query_one("#rs-start", Button).disabled = failures > 0 or bool(running)
+        try:
+            self.query_one("#rs-checks", Static).update("\n".join(lines))
+            if running:
+                self._error(f"A relay is already running here ({running}).")
+            self.query_one("#rs-start", Button).disabled = failures > 0 or bool(running)
+        except NoMatches:
+            return  # the popup's children were removed during teardown
