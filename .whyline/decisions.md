@@ -9791,3 +9791,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8f8059d2e9f548c3bfcf9ceab2c5f47d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T13:32:04.419Z"} -->
+
+## 2026-10-10 — Release accumulated Agent Deliveries work as whyline 0.3.38
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL
+
+**Because:** The completed delivery plan explicitly assigns 0.3.38 and local main contains its implementation plus the post-plan cleanup; the newer unimplemented backup and Auto plan must move its release placeholders to 0.3.39 through 0.3.41
+
+**Rejected:**
+
+- Publish current main as 0.3.37.2 — 34 commits include substantial delivery features, not a patch-only change
+- Use 0.3.38 for the future backup release — PyPI versions are immutable and the older completed delivery plan already owns it
+
+**Files:** pyproject.toml, docs/releases/v0.3.38.md, plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 3e4b8e3ddf0e4b39bfa2aaf3775c2dd4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T13:45:00.237Z"} -->

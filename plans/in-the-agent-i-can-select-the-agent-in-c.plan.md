@@ -78,10 +78,10 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Extend `tests/console/test_relay_setup_screen.py`. Cover: the editor round-trips `grok, claude` rather than the sorted agent list; Check still writes roles and that chain; the guided summary shows `Backup: grok → claude`. Extend `tests/console/test_new_agent.py` so the scheduled-agent backup checkbox still writes that form's own `backup` list and does not call `relay_ops.save_backup`.
   Verify with `uv run pytest -q tests/console/test_relay_setup_screen.py tests/console/test_new_agent.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] BAR-7: Publish whyline 0.3.38
+- [ ] BAR-7: Publish whyline 0.3.39
   relay-profile: release
-  In this whyline checkout, bump `pyproject.toml` from `0.3.37.1` to `0.3.38`. The `whyline-relay` floor is already `>=0.2.34,<0.3` from `BAR-1`. Do not add the Auto source. Write `docs/releases/v0.3.38.md` in the same shape as `docs/releases/v0.3.37.1.md`: the bar shows this repo's backup chain, Save commits only `config.toml`, a sticky failover reads as `using {agent}` while Agent shows the saved primary, and Set up edits the chain in order. Needs whyline-relay 0.2.34.
-  Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.38`, push, and publish to PyPI the same way `v0.3.37.1` was published. Confirm `uv tool upgrade whyline` installs `0.3.38`.
+  In this whyline checkout, bump `pyproject.toml` from `0.3.38` to `0.3.39`. The `whyline-relay` floor is already `>=0.2.34,<0.3` from `BAR-1`. Do not add the Auto source. Write `docs/releases/v0.3.39.md` in the same shape as `docs/releases/v0.3.38.md`: the bar shows this repo's backup chain, Save commits only `config.toml`, a sticky failover reads as `using {agent}` while Agent shows the saved primary, and Set up edits the chain in order. Needs whyline-relay 0.2.34.
+  Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.39`, push, and publish to PyPI the same way `v0.3.38` was published. Confirm `uv tool upgrade whyline` installs `0.3.39`.
 
 ## Console, Auto form and read-only Check
 
@@ -121,10 +121,10 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Tests: editing the topic after a clean Check clears `#rp-checks` and the stored fingerprint; changing only the porcelain makes a recomputed fingerprint differ from the stored one; the read-only worker tests from the spec's Check list still leave `git status` unchanged when driven from the button.
   Verify with `uv run pytest -q tests/console/test_relay_plan_screen.py tests/console/test_relay_ops.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] AUT-6: Publish whyline 0.3.39
+- [ ] AUT-6: Publish whyline 0.3.40
   relay-profile: release
-  In this whyline checkout, bump `pyproject.toml` from `0.3.38` to `0.3.39`. Keep the `whyline-relay` floor at `>=0.2.34,<0.3`. Do not add `auto_run`'s phase runner and do not show Run. Write `docs/releases/v0.3.39.md` in the same shape as `docs/releases/v0.3.38.md`: Auto collects the research, planning, execution, backup, timeout, attachment, and release choices; Check writes nothing under the repository; Trust it and Not now finish before the worker; a passing Check cannot start work. Needs whyline-relay 0.2.34.
-  Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.39`, push, and publish to PyPI the same way `v0.3.38` was published. Confirm the installed console's Plan screen has no `#rp-run`.
+  In this whyline checkout, bump `pyproject.toml` from `0.3.39` to `0.3.40`. Keep the `whyline-relay` floor at `>=0.2.34,<0.3`. Do not add `auto_run`'s phase runner and do not show Run. Write `docs/releases/v0.3.40.md` in the same shape as `docs/releases/v0.3.39.md`: Auto collects the research, planning, execution, backup, timeout, attachment, and release choices; Check writes nothing under the repository; Trust it and Not now finish before the worker; a passing Check cannot start work. Needs whyline-relay 0.2.34.
+  Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.40`, push, and publish to PyPI the same way `v0.3.39` was published. Confirm the installed console's Plan screen has no `#rp-run`.
 
 ## Relay package, unattended synthesis (`/Users/anish/whyline-relay`)
 
@@ -179,7 +179,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Tests: editing the topic after a clean Check disables Run; a new untracked file makes Run refuse with the out-of-date line; the 80×24 popup fit test includes Check, Run, and Cancel reachable; a fake end-to-end dismiss calls `run_auto` once; the bottom-bar Run button still opens Plan when no plan exists. Describe, brainstorm, and paste still build the same `PlanRequest`.
   Verify with `uv run pytest -q tests/console/test_relay_plan_screen.py tests/console/test_plan_job.py tests/console/test_auto_run.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] RUN-8: Publish whyline 0.3.40
+- [ ] RUN-8: Publish whyline 0.3.41
   relay-profile: release
-  In this whyline checkout, bump `pyproject.toml` from `0.3.39` to `0.3.40`. The floor is already `>=0.2.35,<0.3` from `RUN-3`. Write `docs/releases/v0.3.40.md` in the same shape as `docs/releases/v0.3.39.md`: Run stays off until this form and this repo state pass Check; a clean run starts the relay only after the generated plan passes full preflight; a real failure pauses with the artifacts kept; Stop and Resume do not commit the same artifact twice; the three existing sources still end in Set up. Needs whyline-relay 0.2.35. This release does not turn on the Chat `none` menu by itself.
-  The gate is the scratch-repo suite already added in `RUN-4` through `RUN-7`: a clean run, failover in research, an open question, a stale fingerprint, a slug clash, a failed second preflight, console close during planning, and Stop/Resume that does not commit the same artifact twice. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.40`, push, and publish to PyPI the same way `v0.3.39` was published. Confirm `uv tool upgrade whyline` installs `0.3.40`.
+  In this whyline checkout, bump `pyproject.toml` from `0.3.40` to `0.3.41`. The floor is already `>=0.2.35,<0.3` from `RUN-3`. Write `docs/releases/v0.3.41.md` in the same shape as `docs/releases/v0.3.40.md`: Run stays off until this form and this repo state pass Check; a clean run starts the relay only after the generated plan passes full preflight; a real failure pauses with the artifacts kept; Stop and Resume do not commit the same artifact twice; the three existing sources still end in Set up. Needs whyline-relay 0.2.35. This release does not turn on the Chat `none` menu by itself.
+  The gate is the scratch-repo suite already added in `RUN-4` through `RUN-7`: a clean run, failover in research, an open question, a stale fingerprint, a slug clash, a failed second preflight, console close during planning, and Stop/Resume that does not commit the same artifact twice. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.41`, push, and publish to PyPI the same way `v0.3.40` was published. Confirm `uv tool upgrade whyline` installs `0.3.41`.
