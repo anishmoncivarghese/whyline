@@ -9860,3 +9860,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 865444a4e44144d0b4ead73f4a63453e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:06:00.615Z"} -->
+
+## 2026-10-10 — Use a timer boundary for the Review-to-form transition and release 0.3.38.2
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL-CI
+
+**Because:** Windows Python 3.13 reproduced Textual's Select child-mount race after call_after_refresh, so the new modal must wait for a real event-loop turn; v0.3.38.1 was already public and failed before PyPI publication
+
+**Rejected:**
+
+- Force-move v0.3.38.1 — rewrites a public failed tag
+- Disable the Windows test — hides a user-visible modal crash
+
+**Files:** src/whyline/console/tui.py, pyproject.toml
+
+<!-- whyline-event: 62c699c0cf134718b61a6d56ca530ab9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:24:00.453Z"} -->

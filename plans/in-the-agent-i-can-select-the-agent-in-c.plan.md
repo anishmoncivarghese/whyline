@@ -80,8 +80,8 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 - [ ] BAR-7: Publish whyline 0.3.39
   relay-profile: release
-  In this whyline checkout, bump `pyproject.toml` from `0.3.38.1` to `0.3.39`. The `whyline-relay` floor is already `>=0.2.34,<0.3` from `BAR-1`. Do not add the Auto source. Write `docs/releases/v0.3.39.md` in the same shape as `docs/releases/v0.3.38.1.md`: the bar shows this repo's backup chain, Save commits only `config.toml`, a sticky failover reads as `using {agent}` while Agent shows the saved primary, and Set up edits the chain in order. Needs whyline-relay 0.2.34.
-  Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.39`, push, and publish to PyPI the same way `v0.3.38.1` was published. Confirm `uv tool upgrade whyline` installs `0.3.39`.
+  In this whyline checkout, bump `pyproject.toml` from `0.3.38.2` to `0.3.39`. The `whyline-relay` floor is already `>=0.2.34,<0.3` from `BAR-1`. Do not add the Auto source. Write `docs/releases/v0.3.39.md` in the same shape as `docs/releases/v0.3.38.2.md`: the bar shows this repo's backup chain, Save commits only `config.toml`, a sticky failover reads as `using {agent}` while Agent shows the saved primary, and Set up edits the chain in order. Needs whyline-relay 0.2.34.
+  Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.39`, push, and publish to PyPI the same way `v0.3.38.2` was published. Confirm `uv tool upgrade whyline` installs `0.3.39`.
 
 ## Console, Auto form and read-only Check
 
