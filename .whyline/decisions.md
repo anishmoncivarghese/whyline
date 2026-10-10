@@ -9914,3 +9914,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c68fe9fefead46e089ca36a26063bcc5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:44:35.686Z"} -->
+
+## 2026-10-10 — Exercise the real form-review-back lifecycle in the delivery regression
+
+**Actor:** codex
+**Role:** implementer
+**Task:** release-0.3.38.3
+
+**Because:** Directly invoking the completion callback created an impossible overlapping modal mount and exposed a Textual Select scheduler race on Windows 3.13
+
+**Rejected:**
+
+- Add more sleeps — timing delays do not model the supported UI lifecycle and had already failed in CI
+
+**Files:** tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 5f64efc2d93d4d31bf2e6e3426d06d22 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:58:41.148Z"} -->
