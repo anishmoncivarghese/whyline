@@ -145,6 +145,16 @@ async def test_review_back_reopens_the_form_with_the_delivery(tmp_path):
                    kind="personal", path=tmp_path / "jobs.toml")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 40)) as pilot:
+        # This test calls a private completion callback directly.  Wait until
+        # the base console is actually mounted first; a user cannot finish an
+        # agent form before that point, and pushing two modals during the base
+        # mount races Textual's Select child mounts on Windows.
+        await _until(
+            pilot,
+            lambda: app.screen.is_mounted and bool(app.screen.query("#transcript")),
+            "console mounted",
+        )
+        await pilot.pause()
         app._new_agent_done(AgentForm(defn, dl.Delivery(email=("a@example.com",), subject="Daily")))
         await _until(pilot, lambda: app.screen.query("#rv-back"), "review shown")
         app.screen.query_one("#rv-back", tui.Button).press()

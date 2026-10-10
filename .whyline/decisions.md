@@ -9878,3 +9878,39 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 62c699c0cf134718b61a6d56ca530ab9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:24:00.453Z"} -->
+
+## 2026-10-10 — Synchronize the review-back test with the mounted console and release 0.3.38.3
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL-CI
+
+**Because:** The identical commit passed both Windows jobs on main but failed the tag run because the test invoked a private form-completion callback before the base console mounted; that impossible user sequence raced Textual internals, while delaying production code did not remove the flake
+
+**Rejected:**
+
+- Keep adding production delays — two delay strategies did not make the unsynchronized test deterministic
+- Retry failed release jobs until green — would conceal a non-hermetic test
+
+**Files:** tests/console/test_new_agent_deliveries.py, src/whyline/console/tui.py, pyproject.toml
+
+<!-- whyline-event: 8004fe425a844b40817e75c9dcb60c82 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:39:33.922Z"} -->
+
+## 2026-10-10 — Move the console dependency from Textual 0.89 to the tested 1.x line
+
+**Actor:** codex
+**Role:** release
+**Task:** PPF-REL-CI
+
+**Because:** Textual 0.89.1 intermittently dispatches Select Mount before its composed children exist on Windows; Textual 1.0.0 passed the failing transition 20 consecutive times and the complete 1179-test Whyline suite
+
+**Rejected:**
+
+- Add more UI delays — the failure is inside Textual's own Select mount and survived both refresh and timer boundaries
+- Jump to current Textual 8.x — unnecessarily broad for a release repair when 1.0.0 is compatible and fixes the defect
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: c68fe9fefead46e089ca36a26063bcc5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:44:35.686Z"} -->

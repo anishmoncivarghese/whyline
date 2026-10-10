@@ -751,20 +751,9 @@ class WhylineConsoleApp(App):
         def decided(choice) -> None:
             if choice != "save":
                 # Back: reopen the form with everything that was typed,
-                # still editing the agent that was opened.  Give Textual's
-                # modal stack one event-loop turn to finish dismantling the
-                # review before mounting another Select-heavy screen.  A
-                # refresh callback alone is too early on slower Windows
-                # runners: Select can receive Mount before its own composed
-                # children are attached.
-                self.set_timer(
-                    0.05,
-                    lambda: self._open_new_agent(
-                        existing=defn,
-                        delivery=delivery,
-                        editing_id=old_id,
-                        lock_name=True,
-                    ),
+                # still editing the agent that was opened.
+                self._open_new_agent(
+                    existing=defn, delivery=delivery, editing_id=old_id, lock_name=True,
                 )
                 return
             try:

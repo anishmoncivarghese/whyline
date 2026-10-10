@@ -1,6 +1,6 @@
 [project]
 name = "whyline"
-version = "0.3.38.2"
+version = "0.3.38.3"
 description = "Records why your code exists, and tells the next agent."
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -37,7 +37,7 @@ classifiers = [
 dependencies = [
     "whyline-relay>=0.2.32.1,<0.3",
     "prompt_toolkit>=3.0,<4.0",
-    "textual>=0.60,<1.0",
+    "textual>=1.0,<2.0",
     "markdown>=3.5,<4",
 ]
 
