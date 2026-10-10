@@ -1,5 +1,70 @@
 # Brainstorm: In the agent I can select the agent in chat etc, which I can select in top, similarly there should be an option to slect the back up agent as well or its autimatic, but whe its automtic people cant see but if its simialr to on top then people can see what is the back up, and click save. Another big thing I want In Plan now like we are doing it here now additional I want the Auto Mode, where now you automaticllay do the brain storming, specs, Plan and set up etc and run the plan without any interuption, here so when source is selected as Auto mode , then simialrly user can select the models , review passes, final write uo by , per agent timeout , attachment, drafter and reviewe, then it also do the things done in set up that is select the implementer, tester, reviwer etc simialr to set up this only comes in plan when the Auto mode is selectedc . and instead of make plan it shows check first, which checks ifalll modelsa re conencted , no issues nothing commited simialr what we do it set up so taht user knows there are some error which he can resolve. and once check passed run appears. Now in source otehr than AUto mode, if its Brainstome, i will describe plan etc, then its the sam e set up that we have now , make the plana dn then go to the set up mode.
 
+## Final Synthesis
+
+Implement the request as two connected features built on the existing relay configuration and plan runner: a visible repository backup selector in the top bar, and an opt-in Auto source in Plan that checks one complete workflow and then runs it through implementation.
+
+### 1. Make the shared backup chain visible
+
+Add a compact **Backup** control beside Agent. It edits the repository's existing ordered `[backup].chain`, which is shared by Chat, brainstorm, planning, and relay roles; do not create a separate Chat-only backup setting.
+
+- Show the actual configured order, such as `codex → grok`, with a compact `codex +1` state when space is tight.
+- Offer **Automatic**, **None**, each usable agent, and **Manage chain…**. Automatic must always reveal its resolution, such as `Automatic · codex → grok` or `Automatic · none`.
+- If a chain already exists, Automatic preserves it. If it is empty, stage all logged-in agents except the current primary in the existing preference order. Do not use `recommend_roles`, because it reserves agents for execution roles and would incorrectly remove them from chat failover.
+- Selecting an agent moves it to the front while retaining the rest; None clears the chain. Upgrade Set up to use the same explicitly ordered editor.
+- Keep configured and effective state distinct: Agent continues to show the saved primary, while an active sticky failover appears as `using codex`, with an action to reset the override.
+- Add narrow relay APIs such as `read_backup` and `write_backup` so Save preserves roles, planner settings, timeout, pipeline, and custom agents and commits only `config.toml`. The chain remains repository-specific even when **all repos** is selected; that option continues to affect only the global default agent and model.
+- Preserve the non-wrapping top bar at 80 columns, including the planned timeout control. If a separate Backup field cannot fit, expose it from Agent and show a short suffix such as `claude · bak codex`.
+
+Changing the chain should be refused while a chat turn, planning job, or relay run is active. Saving a new chain must not silently clear an active failover override.
+
+### 2. Add Auto as a fourth Plan source
+
+Add **Auto — brainstorm to implementation** alongside Brainstorm, description, and pasted plan. Only Auto shows the combined research, planning, and execution configuration:
+
+- topic/name, research agents and resolved models, review passes, final synthesis writer, attachments, and per-agent timeout;
+- spec/plan drafter and reviewer;
+- implementer, tester, execution reviewer, release role, and ordered shared backup chain;
+- a read-only `Committer: whyline (automatic)` line and a plain-language workflow summary.
+
+Auto should always produce and review a spec because the usual human approval stops are removed. The existing sources remain unchanged: they still make or save a plan, retain their review stops, and then proceed to Set up.
+
+### 3. Make Check read-only and bind Run to exactly what passed
+
+Auto replaces **Make the plan** with **Check**, **Run**, and **Cancel**. Check performs no model calls, creates no artifact, writes no role or permission files, and makes no commit. Run stays disabled until Check has zero failures; warnings remain non-blocking. Any relevant form edit invalidates the result immediately.
+
+Check should report grouped results for Repository, Agents and logins, Inputs, Planning, Execution, and Concurrency. It must verify the clean Git state, no active incompatible job, safe commands, Antigravity trust, all selected agents and roles, attachment delivery, valid review/timeout values, artifact-name collisions, required prompts, and a parseable candidate configuration. Existing targets may be replaced only through an explicit option that defaults off.
+
+Store a fingerprint covering the full form, ordered chain and attachments, file identity or hashes, resolved agents/models, login-relevant state, repository HEAD, and working-tree status. Run recomputes it and fails closed if anything has changed. Check should also preview exactly what Run will persist, including roles, chain, planner settings, and relay timeout.
+
+Use the existing planless preflight for repository and saved-config checks plus a candidate-workflow validator for the unsaved Auto selections. Since no generated plan exists yet, this first check cannot authorize implementation by itself.
+
+### 4. Run one immutable, resumable workflow
+
+After the fingerprint matches, Run submits one immutable `AutoRunRequest` and uses the existing foreground plan job:
+
+1. Acquire the workflow lock and atomically persist the selected planner/execution roles, release role, backup chain, and timeout.
+2. Run brainstorm passes and final synthesis.
+3. Draft and model-review the spec, automatically accepting only a valid approved result.
+4. Draft and model-review the plan, automatically accepting only an approved plan that passes the plan parser.
+5. Select that plan and run the ordinary plan-aware relay preflight.
+6. Start implementation through the existing relay launcher only when this second preflight has no failures.
+
+Persist phase, request fingerprint, artifact paths/hashes, and last successful check in ignored relay state. Stop terminates the active model process group but leaves completed artifacts resumable. Resume continues from the last valid phase without repeating paid model work or commits. The console should stream phase labels such as `auto · research 2/4 · codex`, `auto · spec review`, `auto · final preflight`, and then normal relay progress.
+
+For the first release, planning may remain in the foreground: closing the console stops the planning subprocess and preserves a resumable checkpoint, while the existing relay behavior takes over after launch. A durable background coordinator can be added later if continuing with the console closed becomes a firm requirement.
+
+“Without interruption” means skipping routine synthesis, spec, and plan approval clicks. It does not mean guessing through unresolved product questions, ignoring exhausted review loops, bypassing a dirty tree, overwriting artifacts, or starting after stale validation. Those conditions pause with the artifacts retained and a concrete Resume, Change settings, Replace, or Cancel action. Runtime agent failures use the visible saved chain and always report which agent actually ran.
+
+### Delivery order and acceptance
+
+1. Ship the shared backup APIs, top-bar control, ordered Set up editor, override status/reset, and narrow-layout behavior.
+2. Add shared form components, `AutoRunRequest`, Auto source, read-only candidate Check, and fingerprint invalidation.
+3. Add the resumable Auto sequence, automatic second preflight, Stop/Resume, and existing relay handoff.
+4. Harden with scratch-repository tests for a clean end-to-end run, stale state, dirty tree, unavailable agents, attachment limitations, name collisions, open questions, exhausted reviews/backups, final-preflight failure, failover in both planning and implementation, console closure, and idempotent resume.
+
+The feature is complete when users can always see and edit the real fallback order, Auto exposes every role and research choice on one screen, Run cannot start from stale or unchecked state, a clean workflow reaches implementation without routine approval prompts, failures pause safely with resumable artifacts, and all three existing Plan sources retain their current Set up flow.
+
 ## Codex
 
 # Visible backups and an end-to-end Auto plan mode
