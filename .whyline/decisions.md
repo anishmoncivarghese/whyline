@@ -9985,3 +9985,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2700b896f4514a139054722131dae28e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T17:11:56.881Z"} -->
+
+## 2026-10-10 — Validate backup edits on a scratch root outside the repo
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-1
+
+**Because:** config.load has to parse the prospective file, and a scratch file inside the repo would be a dirty path
+
+**Rejected:**
+
+- always the default temp directory — a repository that contains TMPDIR would nest that scratch file inside itself
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 02592519cfde4e67850755ea0fb5b4a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T17:47:10.622Z"} -->
+
+## 2026-10-10 — read_backup and write_backup satisfy all chain and validation contracts
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAK-1
+
+**Because:** All 29 tests in tests/test_setup.py and all 864 tests in the whyline-relay test suite pass cleanly
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 9553509c280b4d199fd8b3214de30714 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T17:58:31.821Z"} -->
+
+## 2026-10-10 — Approve backup-chain read/write implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAK-1
+
+**Because:** The diff matches BAK-1, preserves non-backup config content through the existing editor, validates before writing, scopes commits to config.toml, and both required test suites passed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 9c6848b0439b47f3a0b6c4a9c94a5aa2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:05:33.604Z"} -->
