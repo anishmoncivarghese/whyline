@@ -8,9 +8,9 @@
 
 Build these as two related improvements around one principle: configuration should be visible before work starts, and the same checked configuration should be the one that runs.
 
-1. Add a compact, repository-specific **Backup** control beside the existing top-bar Agent control. It must display the real configured fallback chain and, when failover is active, the agent actually being used. Do not describe a hidden choice as “automatic.” If Whyline recommends a backup, show the concrete suggestion and require Save.
+1. Add a compact, repository-specific **Backup** control beside the existing top-bar Agent control. It must display the real configured fallback chain and, when failover is active, the agent actually being used. Include an **Automatic** choice, but always resolve it visibly—for example, `Automatic · codex → grok`—so “automatic” never means “hidden.” Save uses the existing top-bar Save button.
 2. Add **Auto mode** as a fourth Plan source. Auto mode owns the complete workflow configuration—brainstorm, planning, execution roles, backup chain, and release—and replaces “Make the plan” with **Check** and **Run**. Run stays disabled until the exact current form has passed Check.
-3. Execute Auto as a durable relay workflow, not as a long chain of Textual callbacks. It should run brainstorm → synthesis → spec → plan → final preflight → implementation without routine human approval screens. It should pause only for a real failure or unresolved question, retain its checkpoint, and offer Resume.
+3. Execute Auto through the existing plan-job machinery and then hand off to the ordinary relay launcher: brainstorm → synthesis → spec → plan → final preflight → implementation, with routine approval screens skipped. It should pause only for a real failure or unresolved question and retain enough phase state to resume. A separate background coordinator can follow later if users need the planning stages to survive closing the console; it should not block the first release.
 
 This preserves the current manual paths. “Brainstorm it,” “I’ll describe it,” and “I have a plan already” still create a plan and then go to the existing Set up flow. Auto is an explicit opt-in for users who want the whole sequence.
 
@@ -38,15 +38,16 @@ The compact state can render as:
 
 `Agent [claude ▾]  Backup [codex ▾] +1  Model [default]  Repo […]  [Save]`
 
-The first fallback stays directly selectable like Agent. If the chain has more entries, `+1` or `+2` opens a small chain editor with ordered rows and Move up/Move down/Remove actions. A final “Manage chain…” option in the Select is another workable Textual pattern. Selecting a different first backup should move it to the front while retaining the remaining chain; choosing None should explicitly clear the whole chain. That avoids silently destroying an existing multi-hop chain.
+The first fallback stays directly selectable like Agent. If the chain has more entries, show `+1` or `+2`; “Manage chain…” opens the existing Set up chain controls, upgraded to make order explicit. Selecting a named backup moves it to the front while retaining the remaining chain. Choosing None explicitly clears the whole chain. This gives the top bar the simple one-choice interaction the user asked for without inventing a second backup store.
 
 The dropdown should contain:
 
-- `None — no fallback`
+- `Automatic · <resolved chain>`;
+- `None — no fallback`;
 - each installed/configured agent, with login/availability in the label;
 - `Manage chain…` when ordering more than one fallback.
 
-Do not use a bare `Automatic` value. Today the engine does not secretly choose an arbitrary backup; it walks the saved chain. For a repository without a chain, Whyline may prefill a visible staged value such as `Suggested: codex (not saved)`. Save then writes that concrete agent. The suggestion should exclude the current primary where practical and should come from the existing usable-agent/recommendation logic.
+Automatic is a selection policy, not an unnamed runtime guess. When a saved chain exists it preserves that chain and displays its resolved names. When no chain exists, it uses the existing `recommend_roles`/usable-agent logic to stage an ordered chain, excluding the current primary where practical; the label must still show the names, including `Automatic · none` when nothing is usable. Save materializes that resolved chain. Re-selecting Automatic must not reorder a chain the user already arranged in Set up.
 
 ### Show configured versus effective agent
 
@@ -59,7 +60,7 @@ Do not replace the primary Agent selection with the effective backup, because th
 
 ### Persistence and safety
 
-Extend the context bar’s saved/current tuple and dirty tracking to include the backup chain. Save should persist Agent/model and backup together from the user’s perspective. In the relay package, expose a narrow public `setup.write_backup(root, chain)` function instead of making the console call private TOML helpers or `write_roles`. It must preserve roles, pipeline, custom agents, timeout, and planner settings and commit only the config file.
+Extend the context bar’s saved/current tuple and dirty tracking to include the backup chain. Save should persist Agent/model and backup together from the user’s perspective. Backup remains repository-scoped even when “all repos” is checked; the UI should say so rather than implying that a shared relay chain will be written globally. In the relay package, expose narrow public `read_backup`/`write_backup` functions instead of making the console call private TOML helpers or `write_roles`. They must preserve roles, pipeline, custom agents, timeout, and planner settings and commit only the config file.
 
 Changing backup while a chat turn, planning job, or relay run is active should be refused with the same “finish or stop the current job” behavior used for repository switching. Existing active overrides should not be silently cleared by changing the configured chain; show a reset action instead.
 
@@ -119,7 +120,7 @@ Check output should be grouped so fixes are obvious: Repository, Agents and logi
 
 ## 3. What Auto Check must verify
 
-Auto’s first Check cannot call existing `preflight.run` unchanged because there is no generated plan yet. Add a structured candidate-workflow preflight which accepts the proposed request/config without first writing it.
+Auto’s first Check cannot rely on existing `preflight.run` alone because there is no generated plan yet and doctor does not know every selected brainstorm agent. Reuse `preflight.run(root)` without a plan for the repository, login, command-safety, role, and clean-tree checks, then add a structured candidate-workflow layer for the staged form values. This preserves the same diagnostics users already see in Set up while covering fields doctor cannot inspect.
 
 It should verify:
 
@@ -135,13 +136,13 @@ It should verify:
 - the role/pipeline and prompt templates needed for implement/test/review exist;
 - the candidate config can be parsed and all selected names are valid.
 
-The workflow’s own operational state must never make this check fail. Store Auto request/checkpoint state in an ignored relay-state file (for example `.whyline/relay/auto-run.json`, added to the relay gitignore), not as an untracked file that dirties the repository. Generated brainstorm, spec, plan, and config artifacts remain normal tracked and committed outputs. Unrelated user changes must still fail the clean-tree check.
+The workflow’s own operational state must never make this check fail. Store Auto request/phase state in an ignored relay-state file, not as an untracked file that dirties the repository. Generated brainstorm, spec, plan, and config artifacts remain normal tracked and committed outputs. Unrelated user changes must still fail the clean-tree check. The first release only needs enough state to resume within/reopen the normal plan flow; full daemon-style recovery is a later hardening step.
 
 Because the plan does not exist yet, Auto also needs a second, automatic preflight after plan approval. That pass calls the ordinary plan-aware relay preflight against the generated plan. A failure there stops before implementation; it must never start merely because the earlier candidate check passed.
 
 ## 4. Auto execution semantics
 
-The Auto Run button should launch one durable coordinator owned by `whyline-relay`, while the console streams its progress through the existing relay subprocess mechanism. A TUI-only callback chain would die when the console exits and would make Stop/resume unreliable.
+The Auto Run button should submit one immutable `AutoRunRequest` to the existing plan job, stream the current `plan · …` progress in the console, and launch the relay through the existing subprocess path after final preflight. This is the smallest architecture that reuses today’s tested brainstorm/spec/plan and relay boundaries. Persist phase/artifact metadata so Stop or a recoverable failure can resume without repeating completed model work; background survival after closing the console is not required for the first version.
 
 Suggested phases are:
 
@@ -181,7 +182,7 @@ Use a single immutable request rather than several loosely coupled dictionaries.
 - timeout policy;
 - schema version.
 
-The console should only collect/render this request and display structured `Check`/progress events. The relay package should own validation, persistence, checkpoints, artifact transitions, resume, and cancellation. This keeps terminal and future non-TUI callers able to use the same workflow and avoids embedding business rules in widget handlers.
+The console should collect/render this request, let the existing plan job orchestrate the foreground phases, and display structured `Check`/progress events. Reusable relay/plan helpers should own validation, persistence, artifact transitions, and cancellation so business rules do not live in widget handlers and a future background coordinator can reuse the same contract.
 
 Factor shared widgets and collectors for:
 
@@ -201,7 +202,7 @@ That prevents Auto and Set up from drifting. `RelaySetupScreen` and the top bar 
 - **Spec or plan review exhausts its visit cap:** pause with the draft path and review reason.
 - **A target artifact already exists:** fail Check unless the user explicitly enabled Replace; never ask midway through an otherwise unattended run.
 - **Final preflight fails:** do not start implementation; show fixes and keep the completed artifacts.
-- **Console closes:** coordinator continues like a relay run; reopening the console shows its live phase and enables Stop.
+- **Console closes during planning:** warn before exit or stop the active planning subprocess while preserving the last committed phase; reopening can resume from that phase. Once the relay has launched, its existing process behavior applies.
 - **User edits Auto fields after Check:** invalidate immediately and require Check again.
 
 ## Implementation order
@@ -222,16 +223,16 @@ This is independently useful and makes failover understandable before Auto depen
 - Add read-only candidate preflight and fingerprint invalidation.
 - Test every field dependency, unavailable agent, dirty tree, active run, attachments, trust, warnings, stale checks, and 80x24 reachability.
 
-### Phase C: durable coordinator
+### Phase C: Auto runner and relay handoff
 
-- Add the relay engine command/API, ignored checkpoint, structured progress, Stop, and Resume.
+- Extend the existing plan job with Auto sequencing, ignored phase state, structured progress, Stop, and Resume.
 - Reuse current brainstorm, spec, planner, approval, plan validation, config, and full preflight primitives.
 - Add the automatic second preflight and hand off into ordinary relay start.
 - Test phase recovery and idempotence by stopping after each boundary and resuming without duplicating commits or model turns.
 
 ### Phase D: end-to-end hardening
 
-- Scratch-repository tests for a clean full run, a failover during brainstorm, a failover during implementation, an unresolved question, a stale check, an artifact collision, final-preflight failure, closing/reopening the console, and Stop/Resume.
+- Scratch-repository tests for a clean full run, a failover during brainstorm, a failover during implementation, an unresolved question, a stale check, an artifact collision, final-preflight failure, closing the console during planning, and Stop/Resume.
 - Ensure every generated commit is narrowly scoped and the repository is clean at the point implementation begins.
 
 ## Acceptance criteria
@@ -244,12 +245,13 @@ This is independently useful and makes failover understandable before Auto depen
 - A clean Auto run needs no synthesis/spec/plan approval clicks and proceeds into implementation.
 - The generated plan is subjected to ordinary plan-aware preflight before implementation starts.
 - Genuine ambiguity or failure pauses safely with a resumable checkpoint and a concrete fix.
-- Closing the console does not abandon the workflow; Stop actually terminates the active agent process.
+- Stop terminates the active planning agent and preserves completed artifacts; after relay launch, existing relay Stop behavior remains authoritative.
 - Existing manual Plan and Set up flows behave unchanged.
 
-## One product choice to settle before implementation
+## Product choices to settle before implementation
 
-Decide whether Auto is allowed to overwrite an existing brainstorm/spec/plan when the user ticks an explicit Replace option, or whether it always requires a new name. The safer default is no overwrite, caught during Check. Everything else can be derived from existing behavior and the recommendation above.
+1. Whether Auto may overwrite an existing brainstorm/spec/plan behind an explicit Replace option. The safer default is no overwrite, caught during Check.
+2. Whether closing the console during the planning phases should cancel-and-resume later or promote Auto planning to a background relay-owned process. Start with cancel-and-resume unless background continuation is already a firm requirement.
 
 ## Grok
 
