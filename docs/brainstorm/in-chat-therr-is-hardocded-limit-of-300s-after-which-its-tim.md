@@ -2,111 +2,86 @@
 
 ## Codex
 
-# Configurable agent-turn timeouts
+# Configurable timeouts without weakening Stop
 
-## Recommendation
+## Revised recommendation
 
-Replace Chat's hidden five-minute cutoff with a visible per-agent-turn timeout control, and support the same explicit **No limit** choice in Chat, Brainstorm, and Relay. Keep finite defaults: **30 minutes for Chat and Relay, 15 minutes for Brainstorm**. “No limit” should mean no automatic deadline, not an unstoppable process: the user must always be able to press Stop and actually terminate the agent process group.
+Add a compact timeout selector to Chat's top context bar with **5m, 15m, 30m, 45m, 60m, and No limit**. Preserve the existing **5-minute Chat default**; the request is for choice, not an implicit behavior change. Keep Brainstorm's 15-minute and Relay's 30-minute defaults, while adding No limit to each surface separately.
 
-Do not implement No limit as an enormous number. Make unlimited a real value in the process API, and first fix cancellation so Stop kills the underlying process. Otherwise an unlimited Chat or Brainstorm can remain alive invisibly after the UI says it stopped.
+The important prerequisite is unchanged: **No limit must not ship until Stop actually terminates the active agent process group**. Today the TUI's Chat/Brainstorm Stop path cancels presentation of the result but not the worker thread or vendor CLI. With the watchdog removed, a supposedly stopped job could continue spending tokens, changing files, committing, entering failover, or advancing to another brainstorm model.
 
-## What exists now
+## Current behavior and the real boundary
 
-- Chat is hard-coded in `whyline_relay.chat` as `CHAT_TIMEOUT_SECONDS = 300`. The console adapter calls `chat.run_turn()` without its optional `timeout_seconds`, so every Chat turn is killed after five minutes.
-- The engine is already close to supporting a console choice: `chat.run_turn(..., timeout_seconds=...)` forwards an override to the agent call.
-- The lowest-level runner, `whyline_relay.agents.run`, still requires an integer and unconditionally starts a `threading.Timer`. It cannot currently express unlimited execution.
-- Relay reads `timeout_minutes` from `.whyline/relay/config.toml`, defaults to 30 minutes, and supports a finite `start --timeout MIN` override. There is no No limit representation.
-- Brainstorm already has a visible 15/30/45/60-minute dropdown and passes that duration through every phase. It has no No limit option.
-- The TUI's Stop behavior differs by mode. Relay interruption sends SIGINT to the relay, whose runner terminates the child process group. Chat and Brainstorm run inside a Textual worker thread; cancelling that worker only suppresses the eventual UI result. It does not interrupt the Python thread or kill the agent child. The existing finite timeout eventually cleans it up; No limit would remove that last safety net.
+- Chat's `CHAT_TIMEOUT_SECONDS = 300` is used whenever the console omits `timeout_seconds`; the adapter currently omits it.
+- Relay persists an integer `timeout_minutes`, defaults to 30, and accepts a finite `--timeout` override.
+- Brainstorm already exposes 15/30/45/60 minutes and defaults to 15. Its value is a cap for each research, review, or synthesis agent invocation, not for the whole brainstorm.
+- `agents.run` owns the common watchdog. It launches a separate process group and unconditionally arms a `threading.Timer`, so it is also the right layer for both genuine unlimited operation and authoritative cancellation.
+- Scheduled Agents mode uses the same runner but is unattended and validates 1–240 minutes. Leave it finite and out of this feature.
 
-This is therefore a two-repository change. `whyline-relay` owns process supervision and timeout semantics; `whyline` owns the console controls and preference UX.
+The displayed timeout should be documented as **per agent attempt**. Failover and Grok resume behavior can cause one visible turn to contain multiple attempts, each receiving the same limit. Changing that into a whole-turn wall-clock budget would be a separate behavioral change.
 
-## Product design
+## Product behavior
 
 ### Chat
 
-Add a compact **Timeout** select to the top context bar beside Agent, visible in Chat mode:
+Place `Timeout [5m ▾]` beside Agent in the context bar. The selector should apply immediately to the next Send and should not dirty or depend on the existing Agent/Model/Repo Save button. Capture its value when dispatch begins and disable it while the turn is running so a mid-turn change is not mistaken for altering an already-armed watchdog.
 
-`Timeout [30 min ▾]`
+The selector is a Chat run preference, not Relay policy. It must never rewrite `.whyline/relay/config.toml`. Session-only behavior is sufficient for the first release; if it is persisted, put it in console/user preferences and fall back to 5m for missing or invalid data. A casual `No limit` Chat choice must not uncap a future unattended Relay.
 
-Options should be:
+Add keyboard parity with `/timeout`, `/timeout 30`, and `/timeout none`. `/timeout` reports the effective choice. Keep `5m` in the menu even though the request names 15/30/45, because removing it silently raises the current default.
 
-- 5 minutes
-- 15 minutes
-- 30 minutes
-- 45 minutes
-- 60 minutes
-- No limit
-
-Thirty minutes is a better default than five for coding-agent work and matches Relay, while preserving five minutes as an option for quick questions. The label or help text should say **per agent turn** so users do not mistake it for a whole-session limit. For No limit, show concise explanatory copy such as “Runs until the agent finishes or you press Stop.”
-
-Capture the selected value when Send is pressed. Disable the selector while that turn is running, because changing it cannot alter a watchdog that has already started. Re-enable it when the turn finishes or is stopped.
-
-Remember the user's last Chat choice in the existing personal console preferences, rather than committing it to the repository. Timeout tolerance is primarily a user/machine preference, while Relay's unattended policy belongs to the repository. Use an unambiguous serialized value such as `"unlimited"`; do not use zero, which is easy to interpret as an immediate timeout. Missing or invalid data should fall back to 30 minutes.
-
-The 80-column layout is already deliberately tight and tested. At narrow widths shorten `Timeout` to `T`, give its select a compact width, and let Repo surrender space. Add an 80-column regression test proving Save remains reachable.
-
-The keyboard console should have parity through a command such as `/timeout 30` and `/timeout none`; `/timeout` alone reports the current choice. This also gives a precise, scriptable alternative when the full-screen select is unavailable.
+The context bar already has an 80-column invariant. In narrow mode abbreviate the label to `T` or hide only the label, shrink the agent/model fields, and use a narrow closed select with a wider overlay. Extend the existing layout test to prove both the timeout control and Save remain reachable at 80 columns.
 
 ### Brainstorm
 
-Extend the existing dropdown to include **No limit**. Keep 15 minutes as its default because a brainstorm runs many agent turns and a finite per-agent bound prevents one provider from holding the entire multi-phase job indefinitely.
+Add **No limit** to the existing dialog and text prompt, but keep the 15-minute default. The choice applies independently to every research, review, and synthesis invocation. Stop must kill the current process and prevent failover, resumes, or the next model from starting.
 
-No limit applies separately to each research, review, and synthesis turn. The UI should state this. Brainstorm Stop must terminate the currently running agent before this option ships; merely discarding the result is insufficient.
+Brainstorm persistence needs three distinct states: missing/unset, a finite number, and explicit unlimited. Store unlimited as JSON `null` and use a sentinel for missing data; otherwise a missing timeout file can accidentally change from today's 300-second fallback to unlimited.
 
 ### Relay
 
-Keep Relay's 30-minute default. Add **Per-agent timeout** to the guided Run/Set up screen, using the same choices plus No limit. Persist the selection in relay configuration so Resume uses the same policy; a start-only command-line override can otherwise silently revert after a pause.
+Keep the repository's 30-minute default. Add No limit to the guided Relay setup/run control and to CLI/config parsing. Because the existing field is numeric, `timeout_minutes = 0` is a reasonable canonical config spelling; accept `--timeout 0` and optionally `--timeout none`, reject negatives, then normalize to `None` before calling the runner. Print a concise warning that a hung unattended turn has no automatic cutoff.
 
-Also accept an explicit CLI/config representation, preferably:
-
-- `whyline relay start --timeout 45`
-- `whyline relay start --timeout none`
-- `timeout_minutes = 45`
-- `timeout_minutes = "none"`
-
-Normalize these at the configuration boundary to `int | None`. The UI can display `None` as No limit. Relay is often unattended, so selecting No limit should show an inline caution, not a blocking confirmation: “No automatic cutoff; this run waits until the agent finishes or you stop it.” Heartbeats and elapsed time should continue normally.
-
-Do not put one global timeout selector across all modes. Chat, Brainstorm, and Relay have different risk and persistence semantics. Reusing the same option labels and internal value contract provides consistency without letting a casual Chat preference silently change an unattended Relay.
+Persist Relay's effective choice in Relay state/config so pause and Resume do not silently restore 30 minutes. Do not reuse the Chat selector as a global timeout control: the three modes deliberately have different defaults and persistence risk.
 
 ## Engine contract
 
-Use one meaning throughout the engine:
+At the lowest layer:
 
-- positive integer seconds: install an automatic watchdog;
-- `None`: install no watchdog;
-- zero or negative: reject at validation boundaries.
+- positive integer seconds arms the watchdog;
+- `None` means no watchdog is created;
+- zero or negative values are rejected before spawning the child.
 
-At present `chat.run_turn(timeout_seconds=None)` means “use the five-minute default,” which conflicts with the desired meaning of `None`. Remove that ambiguity. For example, make the omitted Chat default an integer (`timeout_seconds=1800`) and reserve explicit `None` for unlimited, or use a private sentinel to distinguish omitted from explicitly unlimited. A sentinel is safer if backward compatibility matters for third-party callers.
+Do not rely on `Timer(None)`, `Timer(0)`, or an enormous fake duration. Unlimited should mean no timer exists.
 
-Update `agents.run` so it creates, starts, cancels, and joins a watchdog only for a finite timeout. Do not approximate unlimited with a multi-year timer; that produces misleading errors and can hit platform timer limits.
+At higher layers, do not immediately redefine every existing `None`. `chat.run_turn(timeout_seconds=None)` currently means “use 300 seconds,” and Brainstorm also uses missing `None` values as fallback signals. Introduce an omitted-value or `NO_LIMIT` sentinel, migrate every caller explicitly, and only then consider simplifying the public signature. This prevents missing Brainstorm metadata or a falsey Relay value from silently becoming unlimited.
 
-Add a real cancellation channel to the runner, such as a thread-safe event watched by a small cancellation thread. When signalled, it should terminate the same process group used by timeout handling, escalate to SIGKILL after the existing grace period, reap the child, and raise a distinct `AgentCancelled` outcome rather than `AgentTimeout`. On Windows, use the runner's existing platform-safe termination path. Timeout, manual cancellation, Ctrl+C, and normal completion must converge on one idempotent cleanup routine so races do not double-signal or leak threads.
+Add a per-dispatch cancellation event/handle to `agents.run`. When set, it should reuse the existing process-group termination path, escalate after the grace period, reap the child, and report a distinct `AgentCancelled` result. Timeout, cancellation, Ctrl+C, and normal completion should converge on idempotent cleanup so close races cannot double-signal or leak watchdog/cancellation threads.
 
-The console should create one cancellation token per Chat/Brainstorm job and pass it all the way to `agents.run`. Stop sets the token, waits for or observes cleanup, and only then reports the job stopped. Continue invalidating the dispatch token as a defense against late UI callbacks, but do not treat that as process cancellation.
+The TUI holds one cancellation handle for the active dispatch. Stop sets it and still invalidates the dispatch token as protection against late rendering. Chat failover and Grok resume loops, plus Brainstorm's model loop, must check cancellation before starting another attempt. Stop should not claim completion until child cleanup is observed.
 
-## Delivery sequence
+## Delivery order
 
-1. **Fix process supervision in whyline-relay.** Add unlimited timeout semantics, real cancellation, idempotent cleanup, and tests. Keep the public default behavior finite during this step.
-2. **Thread the value through relay workflows.** Update Chat, Brainstorm, Relay config, CLI parsing, start/resume state, and every agent-run call. Publish a new `whyline-relay` release.
-3. **Add whyline console UX.** Raise the dependency floor, add the Chat context-bar selector and `/timeout`, add No limit to Brainstorm, and add Relay's setting to the guided screen.
-4. **Document and release.** Explain that all values are per agent turn, defaults remain finite, and Stop remains available under No limit. Mention that provider-side limits and subscription limits still apply even when Whyline's own deadline is disabled.
+1. Add cancellation and optional-watchdog semantics in `whyline-relay`, with race and process-tree tests. Keep all existing defaults finite.
+2. Thread explicit finite/unlimited values through Chat, Brainstorm, Relay, failover, and resume paths. Preserve missing-versus-unlimited distinctions and publish a relay release.
+3. Raise the console dependency floor, then add the Chat selector and `/timeout`, Brainstorm's No limit option, and Relay's own setting. The console must not show No limit against an older relay package that interprets it as the 300-second default.
+4. Document that limits are per attempt, provider-side limits still apply, and scheduled Agents remain finite.
 
 ## Acceptance criteria
 
-- A Chat turn can run beyond 300 seconds when 15, 30, 45, 60, or No limit is selected.
-- Finite choices terminate the whole child process group at the selected duration and report the actual duration.
-- No limit creates no watchdog timer and never emits an artificial timeout.
-- Stop during an unlimited Chat or Brainstorm kills and reaps the actual agent process; no hidden child or worker remains.
-- Relay No limit survives pause, console exit, and Resume; finite overrides also resume with the same effective value.
-- Chat's preference survives console restart, while changing it does not alter Relay or Brainstorm defaults.
-- Existing malformed preference/config files fall back safely with a clear message.
-- The Chat context bar and open selector remain usable at 80 columns.
-- Automated tests cover completion-versus-cancel and timeout-versus-cancel races, a child that ignores SIGTERM, Windows fallback behavior, failover attempts, and cleanup after exceptions.
+- Existing users still get 5m Chat, 15m Brainstorm, and 30m Relay unless they choose otherwise.
+- Every finite Chat option reaches every provider attempt as the selected number of seconds and kills/reaps the full process group at expiry.
+- No limit creates no watchdog and never reports a fabricated timeout.
+- TUI Stop kills and reaps Chat/Brainstorm children, prevents subsequent attempts, and reports cancellation rather than timeout.
+- Relay's No limit survives pause/Resume; `0` never becomes an immediate timer or falls back to Chat's 300 seconds.
+- Missing Brainstorm timeout state stays distinct from explicit unlimited.
+- Chat timeout changes do not dirty Save or alter Relay/Brainstorm defaults.
+- The context bar still fits at 80 columns.
+- Tests cover completion-versus-cancel and timeout-versus-cancel races, SIGTERM-resistant children, exception cleanup, failover/resume suppression, and the existing scheduled-Agent validation.
 
 ## Decision
 
-Ship the dropdowns and No limit, but gate them on genuine cancellation. The strongest version of this feature is not simply “replace 300 with a larger number”; it is a consistent supervision model in which automatic deadlines are user-configurable, unlimited is honest, and manual Stop always remains authoritative.
+Ship configurable finite values and honest No limit, with current defaults preserved. The implementation gate is authoritative cancellation: removing the watchdog before Stop controls the process would turn a usability improvement into an invisible runaway-process bug.
 
 ## Antigravity
 
