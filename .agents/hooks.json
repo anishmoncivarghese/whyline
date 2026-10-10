@@ -1,0 +1,27 @@
+{
+  "whyline": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "whyline-hook --agent antigravity --event PreInvocation"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "whyline-hook --agent antigravity --event PostToolUse"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "whyline-hook --agent antigravity --event Stop"
+      }
+    ]
+  }
+}

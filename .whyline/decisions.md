@@ -8780,3 +8780,113 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d81bbd7d876a45a8ab56f4adffd616a2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-09T19:50:55.655Z"} -->
+
+## 2026-10-09 — Position Whyline as git-native decision provenance and stage distribution behind repeat-user proof
+
+**Actor:** codex
+**Role:** researcher
+**Task:** WHYLINE-GROWTH-BRAINSTORM
+
+**Because:** Generic coding-agent memory and handoff is already crowded; Whyline is more differentiated by rejected alternatives, file and commit linkage, explicit handoff evidence, and line-level explanation, while retained external use gives community launches credible proof
+
+**Rejected:**
+
+- Launch the same promotional link broadly now — low community reputation, weak channel fit, and no external retention proof would produce low-quality attention
+- Market Whyline as a general AI agent platform — the console, relay, chat, and delivery breadth obscures the sharp Claude-to-Codex handoff wedge
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: e65942bd76424f5bb1a48474ea950ba2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:22:02.354Z"} -->
+
+## 2026-10-09 — Design independent growth playbook centering on Git blame 2.0 and empirical data while solving low-karma bottlenecks
+
+**Actor:** antigravity
+**Role:** researcher
+**Task:** WHYLINE-GROWTH-BRAINSTORM
+
+**Because:** Low karma triggers automated spam suppression; empirical data on 43 percent AGENTS.md read rate and Git blame line-level explain provide viral wedge to hit GitHub Trending without paid ad spend
+
+**Rejected:**
+
+- Direct promotional link dumping on Reddit and HN — immediate AutoMod removal, account flagging, and domain burn
+- Positioning as generic agent orchestration platform — saturated market with severe developer fatigue
+
+**Files:** .whyline/relay/brainstorm-tmp/antigravity.md
+
+<!-- whyline-event: 53573ffd19264acc98d130dbd13ffda8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:24:53.278Z"} -->
+
+## 2026-10-09 — Distribute Whyline via a human-written measurement essay and in-tool installs, with karma as a participation constraint
+
+**Actor:** grok
+**Role:** researcher
+**Task:** WHYLINE-GROWTH-BRAINSTORM
+
+**Because:** Show HN is restricted for unfamiliar accounts, Reddit removes product posts, and the only public evidence is a single-operator sample whose 43 percent figure is easy to overclaim
+
+**Rejected:**
+
+- Karma sprint then a coordinated launch — thresholds are unpublished and vote rings penalize the domain
+- Lead with GitHub trending and the relay — trending is not a submit form, and the relay sits in an orchestration category the README says the tool is not
+
+**Files:** .whyline/relay/brainstorm-tmp/grok.md
+
+<!-- whyline-event: a2cd2bff2b544d9b812a37f6221f2382 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:29:53.989Z"} -->
+
+## 2026-10-09 — Sequence growth around retained handoffs rather than karma or launch-day visibility
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WHYLINE-GROWTH-COMBINED-REVIEW-1
+
+**Because:** The combined review showed that the strongest defensible wedge is agent switching backed by git-native decision provenance, while low-karma broadcast tactics and trending targets are unreliable and risk community trust
+
+**Rejected:**
+
+- Coordinated HN, Reddit, and X launch — overloads a solo maintainer and prevents feedback from improving later posts
+- Karma sprint or proxy submission — optimizes around unpublished gates and can resemble manipulation
+- GitHub Trending and star targets — vanity outcomes do not establish retained use
+
+**Files:** docs/brainstorm/now-we-need-to-create-a-strategy-on-how-we-can-make-whyline-.md
+
+<!-- whyline-event: 9671639fa5cd4df7bce864b094b68be0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T21:31:44.451Z"} -->
+
+## 2026-10-09 — Gate the measurement essay on a pinned honest install, and gate Show HN on a repeated outside handoff
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** WHYLINE-GROWTH-BRAINSTORM
+
+**Because:** The essay's evidence is the existing single-operator measurement; a product launch still needs strangers who hand off twice
+
+**Rejected:**
+
+- Karma sprint, proxy Show HN, and a same-day push toward GitHub Trending — those are written to beat filters and look like coordination
+- Holding the measurement essay until five retained users — Show HN is the post that needs outside retention
+- Claiming the README forbids orchestration — the current README documents an opt-in relay that assigns roles and spends quota
+
+**Files:** docs/brainstorm/now-we-need-to-create-a-strategy-on-how-we-can-make-whyline-.md
+
+<!-- whyline-event: 2c265078cf16425c9b8cd6c8e6879811 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T22:08:47.877Z"} -->
+
+## 2026-10-09 — Adopt retention-gated evidence-led distribution as Whyline's final growth strategy
+
+**Actor:** codex
+**Role:** synthesizer
+**Task:** WHYLINE-GROWTH-BRAINSTORM
+
+**Because:** The strongest shared plan is to own one narrow cross-agent handoff problem, prove repeat use with outside repositories, and stagger evidence-based outreach so feedback improves each later channel
+
+**Rejected:**
+
+- Karma sprint, proxy submission, coordinated launch burst, and GitHub Trending targets — these optimize platform mechanics and vanity metrics instead of retained use
+- VS Code and broader orchestration expansion during the first 90 days — these add product surface before the core handoff habit is validated
+
+**Files:** docs/brainstorm/now-we-need-to-create-a-strategy-on-how-we-can-make-whyline-.md
+
+<!-- whyline-event: 3359e853a3a74db0990d0827ed1fa103 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-09T22:12:38.402Z"} -->
