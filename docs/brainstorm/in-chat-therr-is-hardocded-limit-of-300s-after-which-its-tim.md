@@ -262,159 +262,132 @@ Because `whyline-relay` is a separate package dependency, rollout must be sequen
 
 # Timeouts for chat, relay, and brainstorm
 
-Independent pass on this request: the chat turn dies at a hardcoded 300 seconds, relay and brainstorm already expose a timeout, and the console should let someone pick 15, 30, or 45 minutes, or no limit, from a top dropdown like the agent menu. Relay's own 30 minute default should be removable in the same way.
+Chat gets a timeout menu on the top context bar: 5m, 15m, 30m, 45m, 60m, and none. Brainstorm and relay each gain none on the controls they already have. Defaults stay 5 minutes for chat, 15 for brainstorm, and 30 for relay. The number is the limit of one agent process, so failover and a Grok resume each spend it again. None stays off the menu until Stop kills that process group, reaps it, and refuses the next attempt.
 
-The limits are real, they do not share one setting, and "no limit" is not safe to turn on until Stop actually kills the child. A finite dropdown can be wired through the API that already exists. Unlimited cannot.
+## What the tree does now
 
-## What each surface does today
+Chat is 300 seconds because the console never passes a timeout. `CHAT_TIMEOUT_SECONDS` is 300, and `_execute_agent_call` substitutes it whenever `timeout_seconds` is omitted. `adapters.run_chat_turn` omits it. `run_turn` already forwards an explicit integer through failover, so the finite menu needs no runner change.
 
-### Chat is fixed at 5 minutes, and `None` already means that
+Grok can spend that budget more than once. A headless turn whose payload says `stopReason` `"cancelled"` — a permission-policy cancellation, not a timeout — is resumed up to `RESUMES = 2` extra times, and each call to `agents.run` receives the same `timeout_seconds`. The loop in `chat.py` already breaks when `exit_code != 0`, so a SIGKILL usually stops it. A SIGTERM that still exits 0 with a cancelled payload looks resumable. The loop has to check the cancel event before `resume_command`.
 
-`whyline_relay/chat.py` sets `CHAT_TIMEOUT_SECONDS = 300`. `_execute_agent_call` passes that value whenever the caller omits `timeout_seconds`:
+Relay stores an integer `timeout_minutes`, default 30. `start --timeout` is `type=int` and replaces it for that process only (`cmd_start` uses `if args.timeout is not None`, so `0` would be applied). `cmd_resume` loads config again and has no `--timeout` flag. `RelayState` and `PlanState` do not store a timeout, so a one-shot override disappears on Resume. `0` is not unlimited today: `threading.Timer(0, ...)` fires on its next turn, a negative interval makes `Event.wait` raise `ValueError`, and `relay_ops.plan_from_brainstorm` / `revise_synthesis` forward the timeout only when `timeout_minutes` is truthy. `0` is dropped, and chat turns the omission into 300 seconds.
 
-```python
-timeout_seconds=(
-    CHAT_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
-),
-```
+Brainstorm's menu is `(15, 30, 45, 60)`, default 15, on `#bs-timeout` and in `parse_timeout_selection`. The keyboard console does not ask; `run_brainstorm` defaults to 15. The value is per attempt. Pass zero, each review, and synthesis are separate processes. It is stored as integer seconds in `.whyline/relay/brainstorm-tmp/.timeout-<slug>.json`.
 
-So `None` is the default, not "unlimited". The chat REPL design (`docs/superpowers/specs/2026-09-26-chat-repl-design.md`) says this was deliberate and temporary: shorter than the relay because a person is waiting, "not user-configurable in v1 — YAGNI until someone hits it." Long turns now hit it. The constant is the thing to replace.
+`agents.run` requires an `int`, starts the child in its own session, and always calls `watchdog.start()`. The timer SIGTERMs the group and SIGKILLs it `KILL_GRACE_SECONDS` (5) later, then raises `AgentTimeout`. The `BaseException` path does the same kill and re-raises, which is how Ctrl+C in the keyboard console stops a foreground child. A silence heartbeat (`HEARTBEAT_SECONDS = 30`) starts separately whenever `echo=True`, including chat. It prints "still running" after output has been quiet for that long. It does not kill the child.
 
-The console never passes a timeout. `adapters.run_chat_turn` calls `chat.run_turn` with agent, prompt, and attachments only. Every TUI chat turn and every keyboard-console chat turn therefore gets 300 seconds. `run_turn` already accepts `timeout_seconds` and forwards it through failover, so 15, 30, or 45 minutes can be selected from the console without changing the runner. Only "no limit" needs a new runner contract.
+Scheduled Agents uses the same runner and rejects timeouts outside 1–240 minutes. That check stays.
 
-Grok may spend that budget more than once. A cancelled headless Grok turn is resumed up to `RESUMES = 2` extra times (`adapters/grok.py`), and each attempt calls `agents.run` with the same `timeout_seconds`. A 5 minute selection can occupy the console for about 15 minutes of Grok resumes before it is reported as a timeout. The dropdown should be described as the limit of one process attempt.
+Stop on a chat or brainstorm turn does not reach the kill. `_stop` replaces `_dispatch_token` and calls `worker.cancel()`. The worker runs on, and the token only drops the rendered result. The child pid stays inside `agents.run`. If the watchdog is removed first, Stop looks idle while the vendor CLI keeps running, and a normal return from `run` still reaches `commit_all` (or `commit_paths` for brainstorm) at the bottom of `_execute_agent_call`.
 
-### Relay is 30 minutes, stored, and overridable
+## None is already taken
 
-`whyline_relay/config.py` defaults `timeout_minutes` to 30. `config.load` does `int(raw.get("timeout_minutes", 30))` and does not check the range. `whyline relay start --timeout MIN` (`cli.py`) replaces that integer for one invocation. `loop.py` always does `timeout_seconds=settings.timeout_minutes * 60` for each agent turn.
+`None` cannot become the spelling of unlimited. These sites already use it:
 
-`0` and negatives are not a hidden unlimited mode:
-
-- `threading.Timer(0, ...)` runs the callback on its next chance, so the agent is killed immediately.
-- A negative interval makes `threading.Event.wait` raise `ValueError`.
-- `relay_ops.plan_from_brainstorm` and `revise_synthesis` only forward the timeout when `timeout_minutes` is truthy. `0` is dropped, the brainstorm helper then passes `None`, and chat turns that into 300 seconds.
-
-The relay default should stay 30 minutes. Unattended runs are why that number exists. Removing the cap is an explicit choice on top of it.
-
-### Brainstorm already has a menu, and it is not the chat menu
-
-Two copies of the same list:
-
-- Console: `BRAINSTORM_TIMEOUT_OPTIONS = (15, 30, 45, 60)` in `src/whyline/console/tui.py`, default 15, widget `#bs-timeout`. `collect_brainstorm` rejects anything else.
-- Relay's own prompt: `TIMEOUT_OPTIONS = (15, 30, 45, 60)` and `DEFAULT_TIMEOUT_MINUTES = 15` in `whyline_relay/brainstorm.py`. `parse_timeout_selection` accepts those minutes or menu numbers 1–4.
-
-The keyboard console does not ask. `_brainstorm_prompts` in `repl.py` calls `adapters.run_brainstorm` without `timeout_minutes`, and that function's default is 15.
-
-The comment above the console tuple says the bound exists so one stalled provider cannot hold the console for the whole multi-model run. A brainstorm is sequential: pass zero, then each review pass, then synthesis. Four models and one review pass is nine process attempts. The menu is a per-attempt cap, not a cap on the whole brainstorm.
-
-Chosen values are written to `.whyline/relay/brainstorm-tmp/.timeout-<slug>.json` as integer seconds. `_load_timeout` does `int(...)`. `_save_timeout` does `timeout_seconds // 60`. If the file is missing, `run_pass_zero` leaves `timeout_seconds` as `None`, and its docstring says the turn then keeps chat's current limit, which is 300 seconds. A stored "no limit" that fails `int()` takes the same path. Unlimited has to be a real stored value, or a resumed brainstorm silently becomes a 5 minute turn.
-
-### One watchdog, four callers
-
-`whyline_relay/agents.py` `run()` starts the child in its own session (`start_new_session=True`) and arms `threading.Timer(timeout_seconds, kill_group)`. On fire, the timer SIGTERMs the process group and SIGKILLs it `KILL_GRACE_SECONDS` (5) later, then raises `AgentTimeout`. The same kill runs if the parent is unwound by `BaseException`, which is how Ctrl+C stops a foreground turn: the child is in another session, so SIGINT never reaches it unless this handler runs.
-
-Scheduled Agents mode is a fourth caller and should stay out of this control. `src/whyline/agents/definitions.py` requires `timeout_minutes` between 1 and 240, default 15, and `src/whyline/agents/runner.py` passes `defn.timeout_minutes * 60` into the same `run()`. Those jobs are unattended. A hung nightly agent with no watchdog never releases its lock. Leave that validator as it is.
-
-## Stop does not mean the same thing in every mode
-
-The Stop button in `tui.py` (`on_button_pressed`, around the `stop` id):
-
-- A relay this console started gets `RelayProcess.interrupt()`, which sends SIGINT to the relay process. `agents.run` catches that as `BaseException` and kills the agent process group. The run pauses and Resume continues it.
-- A relay started somewhere else gets `relay_ops.interrupt_live_run`, same SIGINT, or a `STOP` file on Windows. The `STOP` file is only noticed between turns. The in-turn kill is the signal.
-- Anything else, including chat and brainstorm, calls `_stop()`.
-
-`_stop` replaces `_dispatch_token`, calls `worker.cancel()`, and clears the busy flag. Its own comment says the worker still runs to completion because Python cannot interrupt it, and the token check only drops the result so `render_event` is not called. `worker.cancel()` does not see the child. The child pid lives on the stack inside `agents.run`, in the `whyline-relay` package, and the console never receives it.
-
-Consequences if the watchdog is removed first:
-
-- Stop makes the transcript look idle while Claude, Codex, Grok, or Antigravity keeps running, spending the session and holding the repo.
-- The turn still commits when it finishes. Chat commits the whole dirty tree (`commit_all`) unless the caller passed `commit_paths`. Brainstorm commits its owned paths as each model returns. The user sees those commits after Stop.
-- A brainstorm continues into the next model. `_brainstorm_in_thread` is one worker for the whole sequence. Dropping the token does not break the loop.
-- Failover can still start the backup agent after the user pressed Stop.
-- The keyboard console is in better shape for a single turn. Dispatch is synchronous, Ctrl+C enters `agents.run`'s `BaseException` handler, and the group is killed. `/stop` there only prints "Nothing in flight to stop." because nothing is in the background. Keyboard brainstorm is also on the main thread, so Ctrl+C aborts the sequence (`except Exception` in `run_pass_zero` does not swallow `KeyboardInterrupt`). The TUI has no equivalent.
-
-Relay "no limit" is a different risk. The console can already cut off the current agent. A relay started from a terminal and then left alone cannot. The 30 minute timer is the only hang protection for that run. Keep it as the default, and say so when a run is started with the cap off.
-
-## `None` must not be reused
-
-Three layers already use "missing" for three different defaults:
-
-| Call | Omitted timeout means |
+| Site | `None` means |
 | --- | --- |
-| `agents.run` | Required `int`. `None` is not part of the contract. `Timer`'s wait happens to treat `None` as "wait until cancelled", which would skip the kill only by accident of `Event.wait`, and the type and the error string both assume a number. |
-| `chat.run_turn` / `_execute_agent_call` | `None` becomes 300 seconds. |
-| `brainstorm.run_pass_zero` and the review/synthesis helpers | `None` loads the per-topic file, and a missing file stays `None`, which chat turns into 300 seconds. |
-| `relay_ops` plan/revise helpers | `timeout_minutes` of `0` or `None` omits the argument, so the same 300 second fallback applies. |
+| `chat.run_turn` / `_execute_agent_call` | 300 seconds |
+| `run_pass_zero` and the review/synthesis helpers | load the topic file; a missing file stays `None`, which chat turns into 300 seconds |
+| `_load_timeout` | a missing file, corrupt JSON, and `"timeout_seconds": null` all return `None`, because `int(None)` is caught |
+| `parse_timeout_selection` | invalid input. Empty input returns the 15 minute default, not `None` |
+| `ask_brainstorm_setup` | the prompt loops `while timeout_seconds is None` |
+| `chat.py` `/brainstorm` | replaces `None` with `DEFAULT_TIMEOUT_SECONDS` (15 minutes), then divides by 60 for the status line |
+| `setup.py` | `if timeout_seconds is not None` drops it, so the caller default applies |
+| `relay_ops` plan/revise | a falsey `timeout_minutes`, including `0`, is omitted and becomes 300 seconds |
+| `agents.run` | not part of the contract. `Timer(None)` would sit forever only because `Event.wait(None)` blocks until cancelled |
 
-If `chat.run_turn(..., timeout_seconds=None)` starts meaning unlimited, every brainstorm path that forgets the file, and every plan synthesis that passes a false timeout, becomes an unbounded turn. That is the wrong migration.
+Unlimited is a sentinel, `chat.NO_LIMIT`, and it is not `None`. Callers pass the sentinel through. The conversion to "do not start the timer" happens inside `agents.run`, at the `watchdog.start()` call. Converting any earlier makes `setup.py` drop it, and makes `/brainstorm` announce 15 minutes and run for 15 minutes.
 
-Recommended contract:
+`parse_timeout_selection` returns the sentinel for `none`, `no limit`, `unlimited`, and `0`. Its `None` stays "ask again". The `/brainstorm` status line prints `no limit` for the sentinel and does not divide it by 60.
 
-- `agents.run` takes `timeout_seconds: int | None`. `None` does not start the timer. `<= 0` raises `ValueError` in the parent, before any child is spawned. The success path is unchanged. The timeout error string stays `"exceeded {n}s"` and is only raised when a timer was armed.
-- Add `AgentCancelled`, raised on the same SIGTERM-then-SIGKILL path when a cancel event fires. The console can say "Stopped." `AgentTimeout` stays the wording for a real cap.
-- `chat.run_turn` keeps `None` as "use `CHAT_TIMEOUT_SECONDS`" until every caller passes an explicit value. Add a single sentinel, for example `chat.NO_LIMIT`, that is not `None`, and pass `timeout_seconds=None` into `run_fn` only for that sentinel. Finite integers pass through as they do now.
-- Do not encode unlimited as a huge integer. It still fires, the message claims the agent "exceeded" a number the user never chose, and some platforms reject very large timer intervals.
+A missing or unreadable brainstorm timeout file means 15 minutes, `DEFAULT_TIMEOUT_SECONDS`. It does not inherit the chat menu, and it does not become unlimited. The 300 second result today is only chat's omitted-argument fallback. Explicit unlimited is stored JSON `null`, and `_load_timeout` returns the sentinel for that payload, on a path that does not share the `except` used for corrupt files.
 
-Relay config can use `0` as the human-facing spelling, because TOML and `--timeout` are integers and the user asked to remove the limit on the setting they already have. Translate `0` to "do not arm the timer" inside `cmd_start` / the loop, after validation. Reject negatives with `ConfigError`. Fix the two `if timeout_minutes` sites so `0` is forwarded as `NO_LIMIT` rather than dropped. Default remains 30. `--timeout 0` is the one-shot form. Print one line when a relay run actually starts with no cap: Stop or Ctrl+C is the only thing that ends a hung agent.
+## Runner contract
 
-Brainstorm's JSON should store `{"timeout_seconds": null}` for no limit. `_load_timeout` returns `None` for that payload and a missing file stays "unset". Callers must distinguish the two. `_save_timeout` must accept null. `parse_timeout_selection` should accept `none`, `no limit`, `unlimited`, and `0`.
+`agents.run` takes `timeout_seconds: int | None` and an optional `threading.Event`.
 
-## The dropdown
+- A positive integer arms the existing watchdog.
+- `None` skips `watchdog.start()` and does not create a timer. The silence heartbeat still starts when `echo=True`.
+- Zero and negative values raise `ValueError` before the child is spawned.
+- The cancel event runs the existing SIGTERM-then-SIGKILL path and raises `AgentCancelled`. `AgentTimeout` stays the wording for a real cap, including `"exceeded {n}s"`.
+- The `finally` block that already cancels both timers and joins the heartbeat also stops the cancel listener. Timeout, cancel, Ctrl+C, and a normal exit share that cleanup, so a timer firing as Stop is pressed does not leave a thread behind.
+- `AgentCancelled` propagates out of `_execute_agent_call` before `commit_all` / `commit_paths`. A killed turn that returns a `RunResult` would still be committed.
 
-Put a Textual `Select` in `#context-bar`, the same row as `#cb-agent`, because that is the control the request points at. Suggested id `#cb-timeout`.
+The console holds one event for the active dispatch. `_stop` sets it, then bumps the token so a late result cannot render. The transcript says the turn is stopping during the grace period, and says Stopped only after `process.wait` returns. Failover, the Grok resume loop, and the brainstorm model loop check the event before the next attempt. Models that already committed stay committed; the transcript says the run was cut off from this model onward.
 
-Options, short enough for an 80-column terminal:
+Provider CLIs can still end a turn on their own. This removes whyline's watchdog only.
 
-- `5m` — current chat behavior, the initial value
-- `15m`
-- `30m`
-- `45m`
-- `60m` — brainstorm already offers this; dropping it would be a regression for that dialog
-- `none` — no watchdog
+## Chat menu
 
-The request lists 15, 30, 45, and no limit as examples. Starting the list at 15 would also raise today's default from 5 minutes to 15. Keep 5 minutes as the default so an unchanged console behaves as it does now.
+`#cb-timeout` is a Textual `Select` on `#context-bar`, beside Agent.
 
-Behavior, which should differ from the agent menu:
+- `5m` is the initial value, and it is today's behavior
+- `15m`, `30m`, `45m`, `60m`
+- `none`, the sentinel
 
-- Apply on change. The agent menu dirties Save and writes `.whyline/model.json` only when Save is pressed. A timeout chosen and then forgotten until after Send would still die at 300 seconds. This control is a run parameter, not a repo default, so it must not toggle `#cb-save` and must not be part of `_cb_current` / `_cb_saved`.
-- Persist immediately per repo, in a file that relay config does not read. Something like `.whyline/chat-timeout.json` with `{"seconds": 300}` or `{"seconds": null}` is enough. Reload it on repo switch. A chat selection of `none` must not write `timeout_minutes = 0` into `.whyline/relay/config.toml`.
-- Scope it to chat. In Relay mode the bar can show the relay's configured minutes as a separate label, or a relay-only override that becomes `--timeout` for the next `start` in this console. It should not rewrite the toml. Chat's 5 minute preference and the relay's 30 minute policy are different numbers on purpose.
-- Add `/timeout` for the keyboard console and for a narrow terminal: `/timeout`, `/timeout 30`, `/timeout none`. `/stop` in the keyboard REPL can stay as it is; Ctrl+C is already the kill. The TUI slash hint (`_SLASH_HINT`) should mention `/timeout`.
+The closed label is `none`. The word `None` reads as an empty selection and collides with the fallbacks above.
 
-Layout is the part most likely to break. The context-bar spec and `tests/console/test_context_bar.py::test_the_bar_fits_80_columns` require `#cb-save` to end at or before column 80. Below 100 columns, `_cb_fit` already shrinks labels to `A`, `M`, and `R`. Widths that do not shrink: agent select 14, model input 18, the "all repos" checkbox, Save. The repo field is the only `1fr`. A new select of width 10 plus a label probably pushes Save past 80.
+Dispatch captures the value when Send starts. The select is disabled while that turn runs. It does not dirty `#cb-save`, and it is not part of `_cb_current` / `_cb_saved`. Save still means agent, model, and repo. The menu never writes `.whyline/relay/config.toml`.
 
-Fit it by shrinking, not by hiding the control at the width people actually use (the spec calls 80 the standard). Drop the model input to 12 and the narrow agent select to 10, use a label `T` under 110 columns and no label under 90, and give `#cb-timeout` a width of about 8 with a wider overlay, the same pattern as `#cb-agent > SelectOverlay`. Extend the 80-column test to cover the new widget. If Save still overflows, the checkbox label is the next thing to shorten. Do not ship the dropdown on a row that fails that test.
+The first release keeps the choice in session memory. A later file, if one is added, is a console preference, and missing or invalid data falls back to 5 minutes.
 
-Brainstorm keeps its own field inside the dialog. A brainstorm is many attempts, and the dialog comment is right that the bound should stay visible there. Add `("No limit", None)` or a dedicated sentinel to `BRAINSTORM_TIMEOUT_OPTIONS`, and initialize `#bs-timeout` from the bar when the bar's value is one of those options. The relay text prompt and `parse_timeout_selection` grow the same choice. The keyboard console should ask the same question, defaulting to the persisted chat value, instead of silently using 15.
+`/timeout` prints the effective choice. `/timeout 30` and `/timeout none` set it. Add `/timeout` to `_SLASH_HINT`. Keyboard `/stop` can stay as it is; Ctrl+C already enters the `BaseException` kill on a foreground turn.
 
-## Order of work
+`_cb_fit` switches labels to `A`, `M`, and `R` below 100 columns. The agent select is 24, or 14 when narrow. The model input is 18 and does not shrink. `#cb-repo` is the only `1fr`. `test_the_bar_fits_80_columns` only asserts `#cb-save`'s right edge. Make room inside that helper: a `T` label under the same 100-column break, a narrower model field, and a narrow closed select with a wider overlay, the same pattern as `#cb-agent > SelectOverlay`. Keep the control visible at 80 columns. Extend the test so `#cb-timeout` and `#cb-save` both end at or before column 80, and take the widths from that measurement.
 
-The watchdog is the only thing that ends a TUI chat or brainstorm child. Ship the kill path before `none` does anything.
+In Relay mode the bar does not stand in for relay policy. Relay's number lives on its own screen and in its config.
 
-1. **Cancellation handle in `whyline-relay`.** `agents.run` takes an optional `threading.Event`. When it is set, run the existing `kill_group` path and raise `AgentCancelled`. Plumb the event through `chat.run_turn` and the brainstorm runners. The console holds one event for the active dispatch token. `_stop` sets it, then still bumps the token so a late result cannot render. Between brainstorm models, check the event and do not start the next one. Models that already committed stay committed; the transcript should say that Stop cut off the run from this model onward. This is useful even while the cap is still 300 seconds, because Stop currently lies.
+## Brainstorm
 
-2. **Finite chat choices in the console only.** After step 1, or in parallel if `none` stays disabled, pass an explicit `timeout_seconds` from the bar through `run_chat_turn`. 15, 30, 45, and 60 minutes work against today's `whyline-relay`. The package floor in `pyproject.toml` is `whyline-relay>=0.2.32,<0.3`. Unlimited and the cancel event are a relay release; the console cannot invent them by passing `None`.
+Add `none` to `#bs-timeout`, to `ask_brainstorm_setup`, and to the keyboard prompt, which today skips the question and uses 15. All three still open on 15 minutes, or on the last brainstorm choice stored for that topic.
 
-3. **Unlimited, relay `0`, and brainstorm `none`.** Land these in the same relay release as the cancel event. Gate the `none` option in the console on a relay version that understands the sentinel. Until then the option can be absent, not present-and-ignored. Ignoring it would look like a successful selection and then die at 300 seconds.
+The dialog does not copy `#cb-timeout`. Chat's `5m` or `none` would change the per-attempt cap of a multi-model run from a different control. Stop during a brainstorm kills the current group and does not start the next model.
 
-4. **Leave Agents-mode definitions alone.** Same runner, different product. Positive 1–240 stays required.
+`_save_timeout` writes `{"timeout_seconds": null}` for the sentinel. It does not evaluate `timeout_seconds // 60` on that value.
+
+## Relay
+
+The config default stays 30 minutes. `timeout_minutes = 0` means unlimited. `--timeout 0` is the one-shot form. `--timeout none` needs a custom argparse type, because the flag is `type=int` today. Negatives are a `ConfigError`. After `config.load`, `0` means skip the timer. The two truthy checks in `relay_ops` forward the sentinel.
+
+`cmd_start` will carry `0` into settings. `cmd_resume` will not, unless the effective value is on the run. Write it onto `RelayState` and `PlanState` at start, and have resume read that field. A one-shot override stays out of `config.toml`. A permanent change is an edit in relay setup or in the toml.
+
+`RelaySetupScreen` sets roles, plan, release, and backup. It has no timeout field. Add one there, default 30, including none. That screen may write relay config. The chat menu may not.
+
+A run that starts with no cap prints one line: a hung agent ends only by Stop or Ctrl+C.
+
+Scheduled Agents stay on the 1–240 check. `timeout_minutes = 0` there remains a `DefinitionError`.
+
+## Order
+
+1. Cancellation and the optional watchdog in `whyline-relay`, with the sentinel carried through chat, failover, Grok resume, and brainstorm. Defaults stay finite. Tests cover cancel-before-start, cancel-during-run, timeout racing cancel, a child that ignores SIGTERM, exception cleanup, and resume/failover suppression.
+2. Finite chat choices in the console against the current floor, `whyline-relay>=0.2.32,<0.3`. Pass an explicit `timeout_seconds`. Offer `5m` through `60m`. Leave `none` off the widget. On today's package, `None` still means 300 seconds, so a visible `none` would look selected and then die at the old cap.
+3. Unlimited, relay `0`, brainstorm `null`, and the run-state field, in that same relay release. Raise the console floor, then show `none`.
+4. Leave Agents-mode definitions alone.
 
 ## What I would not do
 
-- Only edit `CHAT_TIMEOUT_SECONDS` to 900 or 1800. The next long turn hits the new constant, and there is still no per-turn choice.
-- One global number for chat, relay, and brainstorm. The interactive default is 5 minutes, the brainstorm default is 15, the relay default is 30. The bar remembers a chat preference. Relay keeps `config.toml`. Brainstorm shows the per-attempt cap in its own dialog and may default from the bar.
-- Make `none` the default. The request is for an option to remove the limit.
-- Rely on `Timer(None)` as the implementation of unlimited. Skip the `watchdog.start()` call.
-- Let the chat bar write relay config. A person who picks `none` while chatting would otherwise uncapped the next unattended relay run.
-- Treat scheduled Agents `timeout_minutes = 0` as legal while doing this. That cap protects jobs with nobody at the keyboard.
+- Raise `CHAT_TIMEOUT_SECONDS` and stop there.
+- Use one number for chat, relay, and brainstorm.
+- Make `none` the default.
+- Let the chat menu write relay config, or let `--timeout 0` write it either.
+- Persist the chat selection in the first release.
+- Copy the chat menu into the brainstorm dialog.
+- Treat missing brainstorm state, invalid menu input, or a falsey relay value as unlimited.
+- Implement unlimited as `Timer(None)`, `Timer(0)`, or a huge interval.
+- Turn off the silence heartbeat. Unlimited skips `watchdog.start()` only.
+- Treat scheduled Agents `timeout_minutes = 0` as legal.
 
-## Verification when this is implemented
+## Verification
 
-- A chat turn with `5m` still fails at 300 seconds through `AgentTimeout`, and the console text stays the current "try again, or /model another agent."
-- `15m`, `30m`, `45m`, and `60m` are the integers `run_turn` receives. Failover and each Grok resume receive the same integer.
-- `none` calls `agents.run` with no timer. A process that exits on its own still returns a normal `RunResult`. A process that ignores the work is killed only by Stop.
-- Stop during chat and during the second model of a brainstorm SIGTERMs the group, SIGKILLs after 5 seconds if needed, renders a cancelled result, and does not start another model. The keyboard Ctrl+C path still kills the group.
-- Relay `timeout_minutes = 30` is unchanged for existing toml. `timeout_minutes = 0` and `--timeout 0` skip the timer and print the one-line warning. A negative value is a config error. `timeout_minutes = 0` used by plan synthesis does not collapse to 300 seconds.
-- Brainstorm persistence round-trips null. A missing file does not become unlimited.
-- `#cb-save`'s right edge is still at or before column 80, and changing the timeout does not enable Save.
+- `5m` still raises `AgentTimeout` at 300 seconds, with the current console wording.
+- `15m`, `30m`, `45m`, and `60m` arrive as those integers, including on failover and on each Grok resume.
+- `none` starts no watchdog. A process that exits on its own returns a normal result. A process that hangs dies only by Stop. The silence heartbeat still prints.
+- Stop during chat, and during a later brainstorm model, SIGTERMs the group, SIGKILLs after 5 seconds if it is still alive, waits until the child is reaped, raises `AgentCancelled`, does not commit that attempt, and does not start another one.
+- Existing relay toml at 30 minutes is unchanged. `0` and `--timeout none` skip the timer, warn once, and survive pause/Resume through run state. A negative value is a config error. Plan synthesis with `0` does not become 300 seconds.
+- Brainstorm `null` round-trips as the sentinel. A missing or corrupt file runs at 15 minutes.
+- Changing the chat timeout does not enable Save. At 80 columns, `#cb-timeout` and `#cb-save` both end at or before column 80.
 - Agents-mode toml with `timeout_minutes = 0` is still a `DefinitionError`.
+
+## Decision
+
+Ship the finite chat menu on the current relay. Ship none only together with the cancel handle, the sentinel, and relay run-state. Keep the three defaults in three stores: session memory for chat, the topic file for brainstorm, and config plus the run record for relay.
