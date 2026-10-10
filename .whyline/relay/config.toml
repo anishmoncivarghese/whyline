@@ -89,3 +89,6 @@ rejected = "draft"
 [planner]
 draft = "grok"
 review = "codex"
+
+[backup]
+chain = ["claude"]
