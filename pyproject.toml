@@ -37,7 +37,7 @@ classifiers = [
 dependencies = [
     "whyline-relay>=0.2.32.1,<0.3",
     "prompt_toolkit>=3.0,<4.0",
-    "textual>=1.0,<2.0",
+    "textual>=2.1.2,<3.0",
     "markdown>=3.5,<4",
 ]
 

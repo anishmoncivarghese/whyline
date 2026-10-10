@@ -226,7 +226,16 @@ async def test_resend_reports_back_in_the_runs_view(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 30)) as pilot:
         app._open_runs("personal:govt-job-search")
-        await _until(pilot, lambda: isinstance(app.screen, RunsScreen), "runs shown")
+        await _until(
+            pilot,
+            lambda: (
+                isinstance(app.screen, RunsScreen)
+                and app.screen.is_mounted
+                and app.screen.query("#rs-resend")
+                and app.screen.query_one("#rs-resend", tui.Button).is_mounted
+            ),
+            "runs shown",
+        )
         app.screen.query_one("#rs-resend", tui.Button).press()
         await _until(pilot, lambda: "Resent: telegram ✓" in str(app.screen.query_one("#rs-text").renderable),
                      "result shown in the view")

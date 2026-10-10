@@ -9931,3 +9931,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5f64efc2d93d4d31bf2e6e3426d06d22 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T14:58:41.148Z"} -->
+
+## 2026-10-10 — Move the console runtime to Textual 2.1.2
+
+**Actor:** codex
+**Role:** implementer
+**Task:** release-0.3.38.3
+
+**Because:** Textual 1.0 still races nested widget mounts across Windows and Linux; 2.1.2 passed the full 1,179-test compatibility suite and repeated regression stress runs
+
+**Rejected:**
+
+- Keep adding timing waits — two independent widget races showed the defect is in the old runtime
+- Adopt Textual 8.x — it removes APIs used by the current console and requires a broader migration
+
+**Files:** pyproject.toml, uv.lock, tests/console/test_agent_deliveries_console.py
+
+<!-- whyline-event: fcf285893f3e4691a829157df0aeed61 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T16:39:47.185Z"} -->
