@@ -8890,3 +8890,352 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3359e853a3a74db0990d0827ed1fa103 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-09T22:12:38.402Z"} -->
+
+## 2026-10-10 — Gate unlimited agent turns on real process cancellation
+
+**Actor:** codex
+**Role:** researcher
+**Task:** CHAT-TIMEOUT-BRAINSTORM
+
+**Because:** Chat and Brainstorm Stop currently suppress late UI results without terminating their child processes, so removing the watchdog first could leave an agent running forever; a shared int-or-None timeout contract plus authoritative cancellation makes No limit safe across Chat, Brainstorm, and Relay
+
+**Rejected:**
+
+- Only raise Chat's 300-second constant — it preserves a hidden arbitrary cutoff and does not satisfy per-turn choice
+- Represent No limit with a huge timer — it is semantically false, can hit platform timer limits, and produces misleading timeout errors
+- Use one global timeout across every mode — Chat preferences and unattended Relay policy have different defaults and persistence needs
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: 6ba960ae3a3f4cd69fb9356198ca2f01 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T07:42:45.319Z"} -->
+
+## 2026-10-10 — Add top-bar timeout dropdown and support unlimited turns gated on authoritative Stop cancellation
+
+**Actor:** antigravity
+**Role:** researcher
+**Task:** CHAT-TIMEOUT-BRAINSTORM
+
+**Because:** Complex agent analysis in Chat exceeds 300s, but removing the watchdog without real process killing would leave background processes running indefinitely on Stop; pairing a context-bar dropdown with child process group termination makes No limit safe
+
+**Rejected:**
+
+- Hardcode a higher constant like 900s — still arbitrary and fails per-turn choice
+- Allow No limit without fixing Stop — background child processes would silently burn tokens forever after Stop is clicked
+- Config-only TOML setting — poor UX for interactive chat turns
+
+**Files:** .whyline/relay/brainstorm-tmp/antigravity.md
+
+<!-- whyline-event: 6f58a69607c449209556be8b40229309 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T07:50:01.207Z"} -->
+
+## 2026-10-10 — Gate chat and relay no-limit on a real Stop kill, and keep the 5 minute chat default in a top-bar select
+
+**Actor:** grok
+**Role:** researcher
+**Task:** CHAT-TIMEOUT-BRAINSTORM
+
+**Because:** Chat None already means the hardcoded 300s, TUI Stop only drops the dispatch token, and relay's 30 minute watchdog is the hang backstop for unattended runs; a separate sentinel plus child-process cancellation makes No limit safe without collapsing omitted timeouts into unlimited
+
+**Rejected:**
+
+- Reuse chat timeout None as unlimited — omitted brainstorm timeouts and a missing per-topic file already fall through to 300s
+- Encode no limit as a huge timer — Timer(0) kills immediately, a negative wait raises, and a huge value still reports a fake exceeded-Ns error
+- One shared dropdown written into relay config.toml — chat's interactive default is 5 minutes and the relay's unattended default is 30
+- Only raise CHAT_TIMEOUT_SECONDS — the request is a per-turn choice including no limit
+
+**Files:** .whyline/relay/brainstorm-tmp/grok.md
+
+<!-- whyline-event: 9e662d3110e84e29a3845f613e3d3556 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T07:56:20.434Z"} -->
+
+## 2026-10-10 — Preserve existing mode defaults and gate No limit on authoritative cancellation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CHAT-TIMEOUT-BRAINSTORM-REVIEW-1
+
+**Because:** Cross-review showed that Chat, Brainstorm, and Relay intentionally default to 5, 15, and 30 minutes, while TUI Stop currently only suppresses results; a per-attempt selector can add choice safely only after process-group cancellation also blocks failover, resumes, and later brainstorm models
+
+**Rejected:**
+
+- Raise Chat default to 30 minutes — changes existing behavior beyond the request for a selectable timeout
+- Persist Chat timeout through the Agent Save or relay config — couples an interactive run preference to repo and unattended relay policy
+- Redefine existing None values as unlimited immediately — missing brainstorm state and omitted chat arguments currently use None as a finite fallback
+
+**Files:** docs/brainstorm/in-chat-therr-is-hardocded-limit-of-300s-after-which-its-tim.md
+
+<!-- whyline-event: 97373c53d6cf4b8da2a5286bc5baa786 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T07:58:45.588Z"} -->
+
+## 2026-10-10 — Harmonize timeout architecture on authoritative Stop cancellation, distinct mode defaults, and isolated chat selection
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** CHAT-TIMEOUT-BRAINSTORM-REVIEW-1
+
+**Because:** Cross-review confirms that No limit without process-group cancellation causes runaway token and workspace leaks, while collapsing Chat, Brainstorm, and Relay timeouts into a single setting would break distinct interactive vs unattended operational defaults
+
+**Rejected:**
+
+- Persist Chat timeout into .whyline/relay/config.toml — would dangerously uncap or alter future unattended relay runs from a transient interactive choice
+- Reuse None as unlimited immediately — silently turns omitted chat arguments and missing brainstorm metadata into unlimited runs
+- Raise Chat default to 15m+ — modifies existing behavior instead of providing user-controlled options
+
+**Files:** docs/brainstorm/in-chat-therr-is-hardocded-limit-of-300s-after-which-its-tim.md
+
+<!-- whyline-event: da3a52b1519b4c659ee9b388814de063 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:01:39.715Z"} -->
+
+## 2026-10-10 — Keep three timeout defaults and gate none on cancellation plus run-state
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CHAT-TIMEOUT-BRAINSTORM-REVIEW-1
+
+**Because:** None already means a different finite fallback at chat, brainstorm parse, load, and relay resume, so unlimited needs a sentinel; a one-shot relay override is dropped on resume because RelayState does not store it
+
+**Rejected:**
+
+- Persist the chat timeout in the first release — session memory is enough and a new file becomes a second source of truth
+- Copy the chat menu into the brainstorm dialog — chat 5m or none would change the 15 minute per-attempt default
+- Write --timeout 0 back into config.toml — a one-shot would uncap later unattended runs; resume should read the effective value from run state
+- Show none before the relay release — today's None still means 300 seconds
+
+**Files:** docs/brainstorm/in-chat-therr-is-hardocded-limit-of-300s-after-which-its-tim.md
+
+<!-- whyline-event: 7a34cb91df6a45cca0d7561689aac3cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:11:49.444Z"} -->
+
+## 2026-10-10 — Synthesize timeout design with finite-first rollout and cancellation-gated unlimited mode
+
+**Actor:** codex
+**Role:** synthesizer
+**Task:** CHAT-TIMEOUT-BRAINSTORM-FINAL-SYNTHESIS
+
+**Because:** All three reviews agree that defaults must remain mode-specific and that unlimited is unsafe until Stop kills and reaps the process group; synthesis also preserves missing-versus-unlimited semantics and Relay resume behavior
+
+**Rejected:**
+
+- Expose no limit immediately — older relay behavior maps omitted or None values to the 300-second fallback and TUI Stop does not terminate the child
+- Share one timeout across Chat, Brainstorm, and Relay — the modes have different defaults, persistence scopes, and unattended risk
+- Inherit Chat timeout in Brainstorm — a transient interactive choice should not replace Brainstorm's independent 15-minute per-attempt default
+
+**Files:** docs/brainstorm/in-chat-therr-is-hardocded-limit-of-300s-after-which-its-tim.md
+
+<!-- whyline-event: 323ec9ffd989427397ca730f3109dd73 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:12:59.501Z"} -->
+
+## 2026-10-10 — Ship the finite Chat timeout menu before none
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Explicit positive seconds already flow through chat.run_turn, while None still means 300 seconds and TUI Stop does not kill the child
+
+**Rejected:**
+
+- Show none on the current relay — it would look selected and still die at 300 seconds, and Stop would leave the CLI running
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 233249c32b0448498fb786e2bf9764d7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:28:17.408Z"} -->
+
+## 2026-10-10 — Keep the Chat timeout in session memory, off Save and out of relay config
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Chat, Brainstorm, and Relay have different defaults, and an unattended Relay must not inherit an interactive none
+
+**Rejected:**
+
+- Persist the Chat choice in the first release — a new file would be a second source of truth
+- Let the Chat menu write config.toml — a Chat none would uncap later unattended runs
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: b1740bad5d4c4449942aea24bdc47df1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:28:24.078Z"} -->
+
+## 2026-10-10 — Keep Brainstorm's 15-minute default independent of the Chat selection
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** A Chat 5m or none would change the per-attempt cap of a multi-model run from a different control
+
+**Rejected:**
+
+- Copy the Chat menu into the Brainstorm dialog — the modes are chosen separately and missing topic state must stay 15 minutes
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: fc5298db959e4e63a4131baf32d4fe23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:28:24.109Z"} -->
+
+## 2026-10-10 — Spell Relay unlimited as timeout_minutes = 0 and store it on run state
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Resume reloads config and would otherwise drop a one-shot override or turn 0 into Chat's 300-second fallback
+
+**Rejected:**
+
+- Write --timeout 0 back to config.toml — a one-shot would uncap later unattended runs
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 69b2313f8de84c63b3c255fada9c6760 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:28:24.140Z"} -->
+
+## 2026-10-10 — Make the STOP file cancel the in-flight relay agent
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** whyline relay stop only prevents the next task, so a hung unlimited turn would never end
+
+**Rejected:**
+
+- Leave STOP as wait-for-the-agent-to-finish — with no watchdog that wait does not return
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: c0f828364bd8458bbe4e93243e56b99c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:28:24.172Z"} -->
+
+## 2026-10-10 — Convert NO_LIMIT to runner None only at the agents.run call
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** None already means a finite fallback in Chat, Brainstorm load, and setup, so an earlier conversion would uncap missing data
+
+**Rejected:**
+
+- Use Timer(None) or Timer(0) for unlimited — Timer(0) fires immediately and Timer(None) is not an explicit no-timer contract
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: c97f35795d0c48d39d7ecdb4198b6d7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:28:24.204Z"} -->
+
+## 2026-10-10 — Approve configurable per-attempt timeout spec as complete and internally consistent
+
+**Actor:** codex
+**Role:** review
+**Task:** __spec__
+
+**Because:** All required sections are present; the design matches the Final Synthesis, contains no placeholders, resolves finite versus unlimited semantics and cancellation ordering consistently, and is specific enough to derive implementation work and tests
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 8a9454af85a54244b34455dbc0c41f5e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:30:26.225Z"} -->
+
+## 2026-10-10 — Keep the finite Chat menu on whyline-relay 0.2.32 and withhold none until 0.2.33
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** chat.run_turn already forwards a positive integer, and none is unsafe until cancel, the sentinel, and run-state exist
+
+**Rejected:**
+
+- Ship none in the same console change as the finite menu — Stop would leave the vendor CLI running and a normal return would still commit
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: f4e6c4609d1d44eea3d05e937e13336f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:44:04.140Z"} -->
+
+## 2026-10-10 — Number the relay release 0.2.33
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** the whyline-relay pyproject is 0.2.32 and the spec says the next 0.2.x, still under 0.3
+
+**Rejected:**
+
+- Open 0.3 — the console floor stays below 0.3
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 1a477bbac55a4105bfdcd323e5b86f4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:44:04.174Z"} -->
+
+## 2026-10-10 — Put relay-package tasks in the whyline-relay checkout and console tasks in agentdock
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** they are separate git repositories and this relay commits the checkout it was started in
+
+**Rejected:**
+
+- Vendor the relay changes into agentdock — the console imports the published package
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 6e5023845c56478d83880ff44909b16f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:44:04.205Z"} -->
+
+## 2026-10-10 — Change the whyline relay stop success print to say the current agent was stopped
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** the help text now says the current agent is stopped, and the old print said it finishes
+
+**Rejected:**
+
+- Leave the print unchanged — it would describe the removed wait-for-the-agent behavior
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: a293f7163ff4416b8c8daa7fcab21730 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:44:04.237Z"} -->
+
+## 2026-10-10 — write_timeout_minutes writes an unquoted integer instead of calling _set_top_level
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** _set_top_level quotes strings and a quoted timeout_minutes fails config.load
+
+**Rejected:**
+
+- Reuse _set_top_level — that helper always wraps the value in quotes
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 53dba3404caa46878de41784fa6b5e31 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:44:04.268Z"} -->
+
+## 2026-10-10 — Approved the drafted timeout plan structure
+
+**Actor:** codex
+**Role:** review
+**Task:** __plan__
+
+**Because:** The documented parser accepts all 18 uniquely identified tasks, each task has substantive indented detail, no placeholder text appears, and the publish/tag task RTO-8 includes relay-profile: release
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 168d039aef0e400eb09a701c93311f5e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:45:11.907Z"} -->
