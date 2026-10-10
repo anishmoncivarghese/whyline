@@ -9,7 +9,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 ## Relay package, backup APIs (`/Users/anish/whyline-relay`)
 
-- [ ] BAK-1: Read and write only the backup chain
+- [x] BAK-1: Read and write only the backup chain
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/setup.py`. Leave this whyline checkout untouched.
   Add `read_backup(root) -> list[str]`. It returns `config.load(root).backup_chain`. A missing config file returns `[]`, which is what `config.load` already does. `ConfigError` and `OSError` propagate. Do not catch them and do not return `[]` for a bad name or a broken file.
   Add `write_backup(root, chain, *, commit: bool = True) -> Path`. Copy `chain`, drop empty strings, and refuse a name `config.load` would reject before any write. Validate by parsing the prospective text through `config.load` on a temporary root outside the repository; on `ConfigError` leave the repository file untouched and raise that error. Then replace only the `[backup]` table through the existing `_set_backup` and `_write_config`. An empty chain removes the table. A missing file plus an empty chain creates nothing and does not commit. Roles, `[planner]`, `[pipeline]`, `[agents]`, `timeout_minutes`, `plan`, `max_rounds`, and `branch_prefix` stay byte-for-byte except for that table edit. With `commit=True` the message is `setup: backup chain codex, grok`, joining the stored names with `, `, or `setup: backup chain none` when the chain is empty. `gitcheck.commit_paths` commits that one path. Unstaged edits already inside `config.toml` ride along, because the writer reads the whole file. Every other dirty path stays unstaged. `commit=False` writes and does not commit.
