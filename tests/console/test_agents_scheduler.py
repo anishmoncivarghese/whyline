@@ -73,7 +73,13 @@ async def test_scheduler_button_turns_on_and_confirms_off(tmp_path, monkeypatch)
         )
 
         scheduler.press()
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen)
+            and app.screen.query("#confirm")
+            and app.screen.query_one("#confirm", tui.Button).region.height > 0,
+            "laid-out confirm shown",
+        )
         assert app.screen._message == (
             "Turn the scheduler off? Scheduled and folder agents stop until you turn it on again."
         )
@@ -86,7 +92,11 @@ async def test_scheduler_button_turns_on_and_confirms_off(tmp_path, monkeypatch)
         assert str(app._main("#agents-status").renderable).startswith("Scheduler: on")
 
         scheduler.press()
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown again")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen) and app.screen.query("#confirm"),
+            "confirm shown again",
+        )
         app.screen.query_one("#confirm", tui.Button).press()
         await _until(pilot, lambda: calls["off"] == 1, "scheduler turned off")
         await _until(
@@ -173,7 +183,11 @@ async def test_turning_the_scheduler_on_and_off_says_what_happens(tmp_path, monk
         assert any("this Mac on and you logged in" in line for line in lines())
         assert str(scheduler.label) == "Scheduler: on" and scheduler.region.right <= 80
         scheduler.press()
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen) and app.screen.query("#confirm"),
+            "confirm",
+        )
         app.screen.query_one("#confirm", tui.Button).press()
         await _until(pilot, lambda: not loaded["on"], "turned off")
         await _until(pilot, lambda: any("Scheduler off." in line for line in lines()), "off message")

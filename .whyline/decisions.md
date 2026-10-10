@@ -9967,3 +9967,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4a9035f3ac26458fa1e13687c28302fe -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T16:57:28.958Z"} -->
+
+## 2026-10-10 — Wait for modal controls to mount and lay out in console tests
+
+**Actor:** codex
+**Role:** implementer
+**Task:** release-0.3.38.4
+
+**Because:** Textual 2 can expose a pushed ConfirmScreen before its composed buttons have nonzero regions, which made macOS CI assert during the transition rather than against rendered UI
+
+**Rejected:**
+
+- Add a fixed sleep — timing would remain runner-dependent
+- Change ConfirmScreen production behavior — the modal renders correctly and only the test sampled it too early
+
+**Files:** tests/console/test_agents_scheduler.py, tests/console/test_agents_mode.py
+
+<!-- whyline-event: 2700b896f4514a139054722131dae28e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T17:11:56.881Z"} -->

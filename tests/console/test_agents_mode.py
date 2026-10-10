@@ -144,14 +144,22 @@ async def test_typed_delete_asks_first_and_cancel_keeps_the_agent(tmp_path, agen
     async with app.run_test(size=(80, 24)) as pilot:
         await _agents_mode(app, pilot)
         await _type(app, pilot, "delete digest")
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen) and app.screen.query("#cancel"),
+            "confirm shown",
+        )
         assert "Delete" in app.screen._message and "digest" in app.screen._message
         app.screen.query_one("#cancel", tui.Button).press()
         await _until(pilot, lambda: not isinstance(app.screen, tui.ConfirmScreen), "confirm closed")
         assert deleted == []
 
         await _type(app, pilot, "delete digest")
-        await _until(pilot, lambda: isinstance(app.screen, tui.ConfirmScreen), "confirm shown again")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, tui.ConfirmScreen) and app.screen.query("#confirm"),
+            "confirm shown again",
+        )
         app.screen.query_one("#confirm", tui.Button).press()
         await _until(pilot, lambda: deleted == ["digest"], "deleted after confirming")
 
