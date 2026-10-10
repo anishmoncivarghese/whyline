@@ -1,5 +1,5 @@
 # whyline-relay configuration. Every key is optional.
-plan = "plans/agents-phase-1.plan.md"
+plan = "plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md"
 max_rounds = 12
 timeout_minutes = 30
 branch_prefix = "relay/"
