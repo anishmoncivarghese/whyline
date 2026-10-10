@@ -10028,3 +10028,130 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9c6848b0439b47f3a0b6c4a9c94a5aa2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:05:33.604Z"} -->
+
+## 2026-10-10 — Wizard backup example uses known agents
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-2
+
+**Because:** write_roles now validates the chain through write_backup, so aider and backup2 are rejected before the table is written
+
+**Rejected:**
+
+- leave the old names — the suite would fail on ConfigError
+
+**Files:** /Users/anish/whyline-relay/tests/test_setup.py
+
+<!-- whyline-event: c6bcda2d2a324b04b41ecda8b11bffc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:16:55.004Z"} -->
+
+## 2026-10-10 — Write role text before write_backup
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-2
+
+**Because:** write_backup edits the config file on disk, and a pipeline config still holds the previous backup table until that call replaces it
+
+**Rejected:**
+
+- call write_backup before writing roles — the following role write would keep or drop the chain
+- skip write_backup when backup is omitted — the default empty chain must still clear the table
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 1e28383a84844c3ab19cbe8c81abb4fc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:16:55.004Z"} -->
+
+## 2026-10-10 — Route write_roles through write_backup verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAK-2
+
+**Because:** Full test suite and targeted tests pass; write_roles replaces backup table via write_backup without duplication and commits expected paths
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 5f9c5d0d5ff04135b69b257390a58b3c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:33:59.032Z"} -->
+
+## 2026-10-10 — Reject BAK-2 until setup tests are hermetic
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAK-2
+
+**Because:** The write_roles and write_backup tests pass, but both required plain pytest commands invoke a real Grok process from test_choose_plan_source_brainstorm_declined_at_availability_check when Grok is installed, so neither required suite completes reliably
+
+**Rejected:**
+
+- approve based on focused tests — the review instructions require clean targeted and full-suite runs
+
+**Files:** /Users/anish/whyline-relay/tests/test_setup.py
+
+<!-- whyline-event: 172fcf487c1f4f80b1b81db0f44c77eb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:40:47.347Z"} -->
+
+## 2026-10-10 — Drop Grok from the availability-decline settings
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-2
+
+**Because:** Recipes always install a Grok command, so model 4 stayed configured and pytest launched the real binary whenever Grok was on PATH
+
+**Rejected:**
+
+- Empty recipes.RECIPES — that also removes Antigravity and is wider than the model this test selects
+- Only stub run_fn — the decline answer would miss the availability prompt, so the test would stop covering that branch
+
+**Files:** /Users/anish/whyline-relay/tests/test_setup.py
+
+<!-- whyline-event: bbf6ede169804dbe80c617cb02f201d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:48:57.972Z"} -->
+
+## 2026-10-10 — Save a See files spec and Grok Plan for Enhancement, and do not build the pane yet
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SEE-FILES
+
+**Because:** The console can follow a file only after the write hits disk. The spec picks that over parsing four CLI streams or building a VS Code extension, and the plan stays a review document until the spec is accepted.
+
+**Rejected:**
+
+- Parse each agent's tool stream — chat.run_turn returns only the finished turn, and each CLI's event format is a separate project
+- Build a VS Code extension — the request is a split of the terminal console that is already open
+
+**Files:** docs/superpowers/specs/2026-10-11-console-see-files-design.md, docs/superpowers/plans/2026-10-11-grok-plan-for-enhancement-see-files.md
+
+<!-- whyline-event: d1fcf8c2a6a544ceb9a95a46e7bf1434 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:51:17.685Z"} -->
+
+## 2026-10-10 — Routing write_roles through write_backup verified with hermetic tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAK-2
+
+**Because:** Both targeted setup suites (40 passed) and the full pytest suite (869 passed) pass cleanly; write_roles delegates to write_backup without table duplication and commits expected paths
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: e880261a0c904b128be16b0f174c74fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:53:46.039Z"} -->
+
+## 2026-10-10 — Approve BAK-2 write_roles backup delegation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAK-2
+
+**Because:** write_roles preserves its signature, delegates every supplied or default-empty chain to write_backup with commit disabled, avoids duplicate backup tables, commits only the config and test prompt, and both required plain pytest suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: f45e4605215044ab88a639890ed5c463 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:56:38.397Z"} -->
