@@ -85,3 +85,7 @@ prompt = "review"
 [pipeline.stages.review.on]
 approved = "@complete"
 rejected = "draft"
+
+[planner]
+draft = "grok"
+review = "codex"
