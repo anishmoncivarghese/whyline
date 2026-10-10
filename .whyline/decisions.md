@@ -9239,3 +9239,290 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 168d039aef0e400eb09a701c93311f5e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T08:45:11.907Z"} -->
+
+## 2026-10-10 — Recommend visible shared backups and a durable preflighted Auto workflow
+
+**Actor:** codex
+**Role:** research
+**Task:** __brainstorm__
+
+**Because:** The existing engine already has one repository backup chain and plan/setup primitives, while an uninterrupted brainstorm-to-relay run needs checked immutable inputs, a second plan-aware preflight, persistence, cancellation, and resume beyond TUI callbacks
+
+**Rejected:**
+
+- Add a hidden automatic backup — users still cannot see the actual fallback and it duplicates the explicit shared chain
+- Chain existing Plan screen callbacks only — the workflow would be lost when the console exits and would not have reliable Stop or Resume semantics
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: 94a508bc140d4e96a0f2b8e15d77450d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T09:15:37.158Z"} -->
+
+## 2026-10-10 — Recommend visible context-bar backup selector and upfront-checked uninterrupted Auto Plan mode
+
+**Actor:** antigravity
+**Role:** research
+**Task:** __brainstorm__
+
+**Because:** Surfacing backup in the context bar provides immediate failover visibility and repository/global save controls, while upfront-checked Auto Mode unifies brainstorm, spec, plan, and setup into an uninterrupted run guarded against dirty Git states and authentication errors
+
+**Rejected:**
+
+- Keep backup selection hidden in setup/config files — leaves users unaware of active failover targets during chat or relay
+- Check preflight only after planning in Auto Mode — risks wasting significant compute and time drafting plans only to fail on dirty trees or unauthenticated models
+
+**Files:** .whyline/relay/brainstorm-tmp/antigravity.md
+
+<!-- whyline-event: f684eb2580694a4fb2c9f2cd32d1e1b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T09:22:33.466Z"} -->
+
+## 2026-10-10 — Show the chat backup on the context bar, and add a preflighted Auto plan source
+
+**Actor:** grok
+**Role:** research
+**Task:** __brainstorm__
+
+**Because:** The top bar already names the chat agent and saves it, while the shared backup chain is only visible inside Set up, and an unattended brainstorm-to-relay run has to pass the same doctor check before any model is spent
+
+**Rejected:**
+
+- Hidden automatic backup — an empty or recommended chain never appears on the bar, so a rate limit still ends with no named fallback
+- Run Auto before the doctor check — a dirty tree or a logged-out model is only discovered after brainstorm, spec, and plan have already been drafted
+
+**Files:** .whyline/relay/brainstorm-tmp/grok.md
+
+<!-- whyline-event: 84bbfd2f39a345dab41f49ec1cb0e9c9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T09:41:41.309Z"} -->
+
+## 2026-10-10 — Revise Auto-plan and visible-backup recommendation after combined review
+
+**Actor:** codex
+**Role:** review
+**Task:** __brainstorm__
+
+**Because:** The combined pass clarified that Automatic should be an explicit visible policy resolved to concrete fallback names, and that the existing foreground plan job can deliver uninterrupted approvals before a normal relay handoff without requiring a new daemon in the first release
+
+**Rejected:**
+
+- Hide automatic fallback resolution — users still cannot tell which agent will take over
+- Require a durable background coordinator in the first release — it expands scope beyond the requested no-approval workflow despite reusable plan and relay machinery already existing
+
+**Files:** docs/brainstorm/in-the-agent-i-can-select-the-agent-in-chat-etc-which-i-can-.md
+
+<!-- whyline-event: a0670f8c00744e66a27f01e9569c97ea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T09:43:19.843Z"} -->
+
+## 2026-10-10 — Revise visible backup and Auto plan after the combined pass
+
+**Actor:** grok
+**Role:** review
+**Task:** __brainstorm__
+
+**Because:** Automatic must display the resolved chain, Auto Check must stay read-only so Cancel does not commit roles, and the first run can reuse the plan job plus the existing relay start
+
+**Rejected:**
+
+- Stage an empty Automatic chain with recommend_roles — that helper assigns implementer, tester, and reviewer first and would hide those agents from chat failover
+- Save roles inside Auto Check the way Set up does — Cancel after Check would already have committed role files and the relay timeout
+- Offer Write a spec first as an Auto toggle — Auto removes the human reviews the spec stands in for
+- Write the backup chain when all repos is ticked — all repos is the global default agent and model, and the chain is one list per repo
+- Require a background coordinator in the first release — the plan job already runs the foreground phases and can hand off to the relay
+
+**Test:** git diff -U0: first hunk starts at line 258 inside the Grok section; the Codex section is unchanged
+
+**Files:** docs/brainstorm/in-the-agent-i-can-select-the-agent-in-chat-etc-which-i-can-.md
+
+<!-- whyline-event: aef783ceda06405eb36ca4701b0d3b8b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T09:51:04.548Z"} -->
+
+## 2026-10-10 — Synthesize visible backup and Auto Plan into one checked workflow
+
+**Actor:** grok
+**Role:** synthesis
+**Task:** __brainstorm__
+
+**Because:** Both reviews converge on one repository-scoped visible fallback chain and an Auto request whose read-only candidate check is fingerprinted, persisted only on Run, and followed by ordinary plan-aware preflight before relay start
+
+**Rejected:**
+
+- Create a separate chat backup setting — the existing shared chain already governs chat, brainstorm, and relay behavior
+- Let Auto Check save roles or artifacts — cancelling after a check must leave the repository unchanged
+- Require a background coordinator for the first release — the existing resumable foreground plan job and relay handoff satisfy the initial uninterrupted workflow
+
+**Files:** docs/brainstorm/in-the-agent-i-can-select-the-agent-in-chat-etc-which-i-can-.md
+
+<!-- whyline-event: ecaf6b47af2d4a0084a30ca0b2fc3c6c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T09:52:11.553Z"} -->
+
+## 2026-10-10 — Stage an empty Automatic backup from logged-in agents except the primary
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** The bar must show a real chain, and recommend_roles spends agents on implementer, tester, and reviewer before it fills backup
+
+**Rejected:**
+
+- Use recommend_roles for the empty chain — it would hide the tester and the reviewer from chat failover
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: f411bc589fe845eea650370851cb3c3f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:09.889Z"} -->
+
+## 2026-10-10 — Keep Auto Check read-only and persist only on Run
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Cancel after Check must leave the repository unchanged, unlike Set up where Start has no later persist step
+
+**Rejected:**
+
+- Save roles inside Check the way Set up does — Cancel would already have committed role files and the relay timeout
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: b6f652fc88804b1fb4382870932d0517 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:09.926Z"} -->
+
+## 2026-10-10 — Judge the Auto form with preflight scope repository plus a candidate layer
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** preflight.run with no plan still fails a missing saved plan and a logged-out saved role, which the form is about to replace
+
+**Rejected:**
+
+- Call preflight.run(root) unchanged — Run could never start on a repo that has no plan yet
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 2d4653922e944ff8a7bf70e9f38fc023 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:09.962Z"} -->
+
+## 2026-10-10 — Run the first Auto release in the foreground plan job
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** The plan job already sequences brainstorm, spec, and plan, and can hand off to the existing relay start
+
+**Rejected:**
+
+- Require a background coordinator in the first release — closing the console can stop the planning child and keep a checkpoint
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 1ee3cfdbc4454d3ea734c76a6f12ca58 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:09.999Z"} -->
+
+## 2026-10-10 — Write the resolved backup names and leave a sticky failover in place
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Automatic is a staging policy, and clearing chat-active-agents.json on Save would hide a switch the user did not reset
+
+**Rejected:**
+
+- Store the word automatic in config.toml — Resume and Chat would not know which names to walk
+- Clear the override when the chain changes — the bar would show the saved primary while the chat was still on the backup
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 347ba7473ab444c5aa630b3bd78474c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:20.641Z"} -->
+
+## 2026-10-10 — Ignore auto-run state and the chat override file via RELAY_IGNORE
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** ensure_relay_gitignore writes once, so a new gitignore line would not reach existing repos, and a sticky override must not fail the clean-tree check
+
+**Rejected:**
+
+- Put the phase file only in brainstorm-tmp — resume is not a brainstorm temp and the chat override would stay visible to git status
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: fafa7dc8cbdf41219c495cbaff62276f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:20.697Z"} -->
+
+## 2026-10-10 — Let Auto Run write timeout_minutes and keep the Chat control out of config
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Spec, plan, and the relay read the relay timeout, while a Chat none must not uncap later unattended runs
+
+**Rejected:**
+
+- Leave the relay timeout untouched — the spec and the relay would keep 30 minutes after the user picked 15 or no limit for this run
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 349173f135774fc6ad20bdce0cd8f8e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:20.747Z"} -->
+
+## 2026-10-10 — Fail path-only images in Auto Check unless the form already allows them
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** An unattended run cannot stop for the Continue dialog after the models have started
+
+**Rejected:**
+
+- Warn and continue — the user would not see that some agents received paths only
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 81b7d47054604ab3bc3b4c7efe651ccd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:20.784Z"} -->
+
+## 2026-10-10 — Always write a spec on Auto and hide Backup below 80 columns
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Auto removes the human reviews the spec stands in for, and the bar must keep Save on one row beside the timeout select
+
+**Rejected:**
+
+- Offer Write a spec first on Auto — the approval stop that checkbox serves is gone
+- Wrap the context bar — the bar design and the timeout plan both require one non-wrapping row
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 069166c52a2d4411b91e54db8e87700a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:20.830Z"} -->
+
+## 2026-10-10 — Keep decision history; ignore chat failover runtime state
+
+**Actor:** codex
+**Role:** review
+**Task:** __status__
+
+**Because:** The decision log is append-only shared project history, while chat-active-agents.json records a machine-local sticky failover from antigravity to claude and must remain usable without entering commits
+
+**Rejected:**
+
+- Commit chat-active-agents.json — it would share transient rate-limit state across clones
+- Delete chat-active-agents.json immediately — it would silently reset the current chat failover
+
+**Files:** .whyline/decisions.md, .whyline/relay/.gitignore
+
+<!-- whyline-event: 4e3867b865cd4786aca5a2e535e992a3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:47.179Z"} -->

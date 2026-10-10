@@ -4,3 +4,4 @@ STOP
 running.json
 chat.json
 chat-history.jsonl
+chat-active-agents.json
