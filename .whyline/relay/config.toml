@@ -56,7 +56,7 @@ command = [
 [roles]
 implementer = "grok"
 tester      = "antigravity"
-reviewer    = "antigravity"
+reviewer    = "codex"
 release = "human"
 
 [pipeline]
