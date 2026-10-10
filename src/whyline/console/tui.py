@@ -556,6 +556,7 @@ class WhylineConsoleApp(App):
         self._plan_request: plan_job.PlanRequest | None = None
         self._plan_outcome: plan_job.Outcome | None = None
         self._approved_spec: Path | None = None
+        self._setup_plan_hint: Path | None = None
         self._transcript: RichLog | None = None
         self._stale_pause: str | None = None
         self._run_flow = False
@@ -1475,7 +1476,7 @@ class WhylineConsoleApp(App):
         elif button_id == "relay-plan":
             self._open_relay_plan()
         elif button_id == "relay-setup":
-            self._open_relay_setup()
+            self._open_relay_setup(plan=self._setup_plan_hint)
 
         elif button_id == "relay-resume":
             if getattr(self, "_release_task", None):
@@ -2096,6 +2097,7 @@ class WhylineConsoleApp(App):
     def _plan_saved(self, path: Path | None) -> None:
         if path is None:
             return
+        self._setup_plan_hint = path
         shown = (path.relative_to(self.session.root) if path.is_relative_to(self.session.root) else path).as_posix()
         self.render_event(
             SessionEvent(
@@ -2137,6 +2139,7 @@ class WhylineConsoleApp(App):
         self._with_antigravity("antigravity" in agents, proceed)
 
     def _run_plan(self, work) -> None:
+        root = self.session.root
         token = object()
         self._dispatch_token = token
         self._set_plan_state("working")
@@ -2146,9 +2149,18 @@ class WhylineConsoleApp(App):
             def progress(line: str) -> None:
                 self.call_from_thread(self._plan_progress, line, token)
 
+            outcome = None
+            error = None
             try:
                 outcome = work(progress)
-            except Exception as error:  # agent missing, timeout, relay pause...
+            except Exception as caught:  # agent missing, timeout, relay pause...
+                error = caught
+            try:
+                relay_ops.clear_live_run(root)
+            except Exception as cleanup_error:
+                if error is None:
+                    error = cleanup_error
+            if error is not None:
                 self.call_from_thread(self._plan_failed, error, token)
                 return
             self.call_from_thread(self._plan_done, outcome, token)

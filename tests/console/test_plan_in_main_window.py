@@ -59,6 +59,8 @@ async def test_progress_streams_then_review_then_approve(tmp_path, monkeypatch):
         return plan_job.Outcome("draft", _draft(tmp_path))
 
     monkeypatch.setattr(plan_job, "run_request", run)
+    cleared = []
+    monkeypatch.setattr(relay_ops, "clear_live_run", lambda root: cleared.append(root))
     approved = []
     monkeypatch.setattr(relay_ops, "approve_plan",
                         lambda root, d, name, replace=False: approved.append(name)
@@ -67,6 +69,7 @@ async def test_progress_streams_then_review_then_approve(tmp_path, monkeypatch):
     async with app.run_test(size=(110, 40)) as pilot:
         app._start_plan_job(REQUEST)
         await _wait_for(pilot, lambda: app._plan_state == "review", "review state")
+        assert cleared == [tmp_path]
         assert any("plan · codex is drafting the plan" in l for l in _lines(app))
         assert any("1 tasks" in l or "T-1: build it" in l for l in _lines(app))
         assert app.query_one("#plan-actions").display
@@ -127,11 +130,14 @@ async def test_a_failure_is_reported_and_leaves_the_state(tmp_path, monkeypatch)
         raise RuntimeError("codex timed out")
 
     monkeypatch.setattr(plan_job, "run_request", fail)
+    cleared = []
+    monkeypatch.setattr(relay_ops, "clear_live_run", lambda root: cleared.append(root))
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         app._start_plan_job(REQUEST)
         await _wait_for(pilot, lambda: any("codex timed out" in l for l in _lines(app)), "error")
         assert app._plan_state == ""
+        assert cleared == [tmp_path]
 
 
 async def test_discard_drops_the_draft(tmp_path, monkeypatch):

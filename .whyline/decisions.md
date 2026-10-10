@@ -9526,3 +9526,268 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4e3867b865cd4786aca5a2e535e992a3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:01:47.179Z"} -->
+
+## 2026-10-10 — Revise the spec to reconcile read-only Auto Check with Antigravity trust writes
+
+**Actor:** codex
+**Role:** review
+**Task:** __spec__
+
+**Because:** The Decisions and Releases sections say Check leaves the repository unchanged, while Design explicitly calls trust_antigravity or decline_antigravity and the latter writes a gitignored repository marker; the implementation and tests cannot satisfy both contracts as written.
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 766a3b46580e4f5f87d6beddebaf16c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:02:59.651Z"} -->
+
+## 2026-10-10 — Parse the Auto candidate config outside the repository
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** The Check worker must not create a path under the repo, including a temp file it intends to delete
+
+**Rejected:**
+
+- A temp copy under .whyline/relay — a crash mid-check would leave a file, so the read-only guarantee would depend on the worker returning
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 1b806a1e896548ffaeec1f89bb9d451c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:10:39.146Z"} -->
+
+## 2026-10-10 — Resolve Antigravity trust before Auto Check and keep the worker read-only
+
+**Actor:** grok
+**Role:** draft
+**Task:** __spec__
+
+**Because:** Check must leave the repository and the settings file unchanged, while Trust it and Not now are real writes, so those writes stay on the dialog that gates the worker
+
+**Rejected:**
+
+- Let Check call trust or decline and narrow the guarantee to tracked files — Cancel could not mean the repo was untouched, and a gitignored marker would still appear inside a read-only check
+- Fail ask inside Check and send the user to the Model menu — the brainstorm already puts the existing trust question on this form
+- Treat Escape as Not now, matching the brainstorm callback — backing out of Check would write the decline marker
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 4c991df6851d444eb0f007602fb92f02 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:10:39.146Z"} -->
+
+## 2026-10-10 — Approve the round-four spec as complete and internally consistent
+
+**Actor:** codex
+**Role:** review
+**Task:** __spec__
+
+**Because:** All required sections are present, no placeholder text remains, the pre-worker Antigravity trust dialog and read-only Check worker have one consistent mutation contract across Decisions, Design, Error handling, Testing, and Releases, and the APIs, state transitions, failure behavior, tests, and delivery slices are specific enough to plan from.
+
+**Files:** .whyline/relay/draft-spec.md
+
+<!-- whyline-event: 7af6670ba8834cc59a7c2f6e269b44ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:11:30.278Z"} -->
+
+## 2026-10-10 — Put relay-package tasks in the whyline-relay checkout and console tasks in agentdock
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** they are separate git repositories and this relay commits the checkout it was started in
+
+**Rejected:**
+
+- Vendor the relay changes into agentdock — the console imports the published package
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 572b70b8f8f94d96b62bab6e4a7d7558 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:05.524Z"} -->
+
+## 2026-10-10 — Number the backup relay 0.2.34 and the runner relay 0.2.35
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** pyproject is 0.2.32 and the approved timeout plan already claims 0.2.33, which this backup release does not implement
+
+**Rejected:**
+
+- Reuse 0.2.33 — two release tasks would publish the same tag
+- Open 0.3 — the console floor stays below 0.3
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 747654209e3b40078bff66ffae9472fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:10.758Z"} -->
+
+## 2026-10-10 — Number the console releases 0.3.38, 0.3.39, and 0.3.40
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** whyline is 0.3.37.1 and the spec ships the bar, the read-only Check, and the runner as three releases
+
+**Rejected:**
+
+- Ship Run in 0.3.38 — a passing Check must not be able to start work until the runner release
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: bb3a8b95f6d84ebd8a1365e953ca06cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:14.928Z"} -->
+
+## 2026-10-10 — Keep all three releases in one draft plan
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** the relay approves a single draft-plan.md and the release tasks are the gates between the bar, Check, and the runner
+
+**Rejected:**
+
+- Three plan files — this stage can only hand off the one draft the relay asked for
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: da1b88594a664e799ec58f75d7ad629e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:20.651Z"} -->
+
+## 2026-10-10 — Keep write_roles clearing an omitted backup chain
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** the parameter default is an empty tuple and today's _set_backup of that value removes the table
+
+**Rejected:**
+
+- Skip write_backup when the caller omits the argument — a sentinel would change the CLI wizard
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: aec4b05224b24f64aebde298bdad9c23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:20.658Z"} -->
+
+## 2026-10-10 — Stage an empty Automatic chain from the saved primary
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** Agent still means the saved repo default, and the chain is a separate dirty field
+
+**Rejected:**
+
+- Exclude the unsaved Agent selection — Save could omit an agent the file does not yet use as primary
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 96cfe86acd764422ab1ee4692ce62d8b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:29.169Z"} -->
+
+## 2026-10-10 — Leave Run off the Auto form until the runner release
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** release 2 must not be able to start work from a passing Check
+
+**Rejected:**
+
+- Mount Run disabled in 0.3.39 — the footer for that release is Check and Cancel
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: fa6aa547026a41f2b7cb31236b35ef94 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:29.169Z"} -->
+
+## 2026-10-10 — write_timeout_minutes writes an unquoted integer when this plan has to add it
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** _set_top_level quotes strings and a quoted timeout_minutes fails config.load
+
+**Rejected:**
+
+- Reuse _set_top_level — that helper always wraps the value in quotes
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 3953f0f092f44a2ab062893064945ef2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:33.767Z"} -->
+
+## 2026-10-10 — Do not implement cancel_event in the 0.2.35 release
+
+**Actor:** grok
+**Role:** draft
+**Task:** __plan__
+
+**Because:** the timeout plan owns the watchdog and 0.2.35 is tagged only when that parameter is already importable
+
+**Rejected:**
+
+- Copy the watchdog into RUN-1 — this spec depends on it and does not add the Chat none menu
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: f762c9355e034aa19c5df23cf284eadc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:24:33.782Z"} -->
+
+## 2026-10-10 — Approve the draft plan structure
+
+**Actor:** codex
+**Role:** review
+**Task:** __plan__
+
+**Because:** The documented parser accepts all 26 tasks; every task has a unique present ID and substantive detail; no placeholder text appears; and all five publish tasks carry relay-profile: release
+
+**Files:** .whyline/relay/draft-plan.md
+
+<!-- whyline-event: 6cc90b07b62c4acbab75128b5b9de98a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:26:02.726Z"} -->
+
+## 2026-10-10 — Classify the post-plan relay as a stale in-process live marker
+
+**Actor:** codex
+**Role:** diagnosis
+**Task:** __status__
+
+**Because:** The marker names __plan__ round 2 and PID 90460, the PID is the Whyline console itself with no child agent process, the plan and spec were committed, and planner draft paths call loop.run_agent/start_turn without the run_plan finally that clears running.json
+
+**Rejected:**
+
+- Treat Stop as proof of an active implementation relay — the button is enabled from running.live seeing the console-owned marker
+- Press Stop now — it would signal the console PID rather than a child relay
+
+**Files:** src/whyline/console/plan_job.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 72cdbd1e9b274b38ad8cd2221a7a49b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T11:38:06.821Z"} -->
+
+## 2026-10-10 — Keep post-plan cleanup compatible and plan selection ephemeral
+
+**Actor:** codex
+**Role:** implementer
+**Task:** PPF-3
+
+**Because:** whyline still supports relay 0.2.32, so the console safely clears its own planning marker and commits leftover planning history; remembering the saved plan in memory selects it in Set up without persisting a choice before Check
+
+**Rejected:**
+
+- Require an unreleased relay version immediately — reserved 0.2.33 and 0.2.34 releases must not be displaced
+- Write the new plan into config at approval time — cancelling Set up should not persist that selection
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 8f8059d2e9f548c3bfcf9ceab2c5f47d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T13:32:04.419Z"} -->

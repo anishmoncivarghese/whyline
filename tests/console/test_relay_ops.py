@@ -145,6 +145,32 @@ def test_live_run_names_the_task_and_agent(repo, monkeypatch):
     assert relay_ops.live_run(repo) is None
 
 
+def test_clear_live_run_delegates_to_the_owner_safe_relay_clear(repo, monkeypatch):
+    from whyline_relay import running
+
+    cleared = []
+    monkeypatch.setattr(running, "clear", lambda root: cleared.append(root))
+    relay_ops.clear_live_run(repo)
+    assert cleared == [repo]
+
+
+def test_commit_planning_decisions_commits_only_changed_history(repo):
+    decisions = repo / ".whyline" / "decisions.md"
+    decisions.parent.mkdir(parents=True)
+    decisions.write_text("# Decisions\n")
+    _git(repo, "add", ".whyline/decisions.md")
+    _git(repo, "commit", "-qm", "seed decisions")
+    decisions.write_text("# Decisions\n\n## Planned the fix\n")
+    (repo / "unrelated.txt").write_text("leave me alone\n")
+
+    assert relay_ops.commit_planning_decisions(repo) is True
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        ".whyline/decisions.md"
+    ]
+    assert "unrelated.txt" in _git(repo, "status", "--porcelain")
+    assert relay_ops.commit_planning_decisions(repo) is False
+
+
 def test_classify_relay_output_keeps_run_relay_oneshot_behaviour(tmp_path):
     assert (
         adapters.classify_relay_output(tmp_path, "Plan complete: 2 task(s)\n", 0).kind

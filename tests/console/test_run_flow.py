@@ -99,6 +99,30 @@ async def test_a_saved_plan_continues_to_guided_setup_with_it_selected(tmp_path,
         assert app.screen.query_one("#rs-plan", tui.Select).value == str(saved.path)
 
 
+async def test_standalone_plan_save_hints_manual_setup_to_the_new_plan(tmp_path, monkeypatch):
+    saved = relay_ops.PlanInfo(
+        tmp_path / "plans" / "new.plan.md",
+        "new",
+        "draft",
+        "2026-10-10T18:00:00+05:30",
+        0,
+        2,
+    )
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [saved, PLAN])
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: PLAN.path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        await _relay(app, pilot)
+        app._plan_saved(saved.path)
+        await pilot.pause()
+        assert not isinstance(app.screen, RelaySetupScreen)
+
+        await pilot.click("#relay-setup")
+        await pilot.pause()
+        assert isinstance(app.screen, RelaySetupScreen)
+        assert app.screen.query_one("#rs-plan", tui.Select).value == str(saved.path)
+
+
 async def test_cancelling_the_plan_form_ends_the_run(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:

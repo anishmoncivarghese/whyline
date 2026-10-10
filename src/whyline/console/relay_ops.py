@@ -159,10 +159,12 @@ def _approve_marked(
         with_marker(text, source=source, drafted_by=drafted_by, spec=spec), encoding="utf-8"
     )
     try:
-        return planner.approve(
+        target = planner.approve(
             root, _settings(root), staged, drafted_by=drafted_by, replace=replace,
             clear_checkpoint=clear_checkpoint, target=plan_path(root, name),
         )
+        commit_planning_decisions(root)
+        return target
     finally:
         staged.unlink(missing_ok=True)
 
@@ -360,7 +362,9 @@ def approve_spec(
     from whyline_relay import specs
 
     path = draft.path if isinstance(draft, Draft) else draft
-    return specs.approve(root, path, name=name, replace=replace)
+    target = specs.approve(root, path, name=name, replace=replace)
+    commit_planning_decisions(root)
+    return target
 
 
 def spec_questions_error():
@@ -597,6 +601,24 @@ def live_run(root: Path) -> str | None:
 
     active = running.live(root)
     return None if active is None else f"{active.task}, {active.agent}"
+
+
+def clear_live_run(root: Path) -> None:
+    """Release an in-process planning marker owned by this console process."""
+    from whyline_relay import running
+
+    running.clear(root)
+
+
+def commit_planning_decisions(root: Path) -> bool:
+    """Commit planner-written history left dirty by older relay releases."""
+    from whyline_relay import gitcheck
+
+    return gitcheck.commit_paths(
+        root,
+        [root / ".whyline" / "decisions.md"],
+        "chore: record planning decisions",
+    )
 
 
 def interrupt_live_run(root: Path) -> bool:
