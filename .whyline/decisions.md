@@ -11664,3 +11664,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a53a16d6cac94bdf90455bf5e90761bb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T19:31:11.976Z"} -->
+
+## 2026-10-11 — Ship whyline-relay 0.2.34.1 (Windows liveness without Ctrl+C) before whyline 0.3.40 and lock whyline to it
+
+**Actor:** claude
+**Role:** releaser
+**Task:** AUT-6
+
+**Because:** Windows CI for 0.3.40 was interrupted: whyline-relay's pid_is_alive used os.kill(pid, 0), which is CTRL_C_EVENT on Windows, and an AUT-4 test checked a marker holding its own pid. Windows now uses OpenProcess/GetExitCodeProcess, verified by a new Windows CI job; the lock moves to 0.2.34.1 while the floor stays >=0.2.34 as AUT-6 requires
+
+**Rejected:**
+
+- Skip the test on Windows — hides a bug that interrupts real Windows users' consoles and agents
+- Wait for 0.2.35 (RUN-2) — 0.3.40 could not pass Windows CI until then
+
+**Files:** uv.lock, /Users/anish/whyline-relay/src/whyline_relay/running.py
+
+<!-- whyline-event: 27c4c74ea0fb4899bf461687e71aa08d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T19:55:27.974Z"} -->

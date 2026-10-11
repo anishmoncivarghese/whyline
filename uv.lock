@@ -257,9 +257,9 @@ dev = [
 
 [[package]]
 name = "whyline-relay"
-version = "0.2.34"
+version = "0.2.34.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ce/8b/0c1433021ad2cb9436e64c15d7a1f1894a12906198d9314d3832331e4c9b/whyline_relay-0.2.34.tar.gz", hash = "sha256:ada3fe5a6e117c49a6c557c55e634c540ea63c6091af3493dad5512f74c40c66", size = 231790, upload-time = "2026-10-11T10:49:40.617Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/06/825b64d27992c30c1af3546fc712308e3c2edafc2de603003b379c90afb2/whyline_relay-0.2.34.1.tar.gz", hash = "sha256:b5d7b5a1ee69618860f09cc15c298566bb6f7eb6e968128db7f4c7b173b5e956", size = 232667, upload-time = "2026-10-11T19:47:52.246Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/57/891d298c62f9942126b1175bf10de4e7b6fa434ea37be2d6b166dfea25bb/whyline_relay-0.2.34-py3-none-any.whl", hash = "sha256:b5f4752368c8ea6b584cebf16753ce1655c53b2abecec5bf93d8a46302f98b09", size = 128669, upload-time = "2026-10-11T10:49:39.376Z" },
+    { url = "https://files.pythonhosted.org/packages/33/f2/5603963580a946f9317c6c271a05493ed0b0b3dced4b91cca8e1da645bdd/whyline_relay-0.2.34.1-py3-none-any.whl", hash = "sha256:7f3b92edab01541d154bb1e6fa5d4a0cd4e8450342c85e82b32c620f13c6748d", size = 129143, upload-time = "2026-10-11T19:47:51.037Z" },
 ]
