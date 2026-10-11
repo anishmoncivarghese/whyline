@@ -10441,3 +10441,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0a411deab084473f9df6e667a0203a67 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:40:10.281Z"} -->
+
+## 2026-10-11 — Release whyline-relay 0.2.34 from main with BAK-1..4, relay-repo and the no-cd footer
+
+**Actor:** claude
+**Role:** releaser
+**Task:** BAK-5
+
+**Because:** BAK-5 asked for 0.2.34 covering the backup APIs, repository preflight, RELAY_IGNORE lines and resume's decision-log commit; relay-repo and the footer fix were already on the branch, so the notes cover them too. Release gates (suite, sdist path/folder scan, wheel install) were run locally first because a PyPI upload cannot be withdrawn
+
+**Rejected:**
+
+- Leave relay-repo out of the notes — it ships in the wheel either way, and agentdock's plan now depends on it
+- Keep the README example path /Users/me/other-repo — the release workflow refuses an sdist containing /Users/ paths
+
+**Files:** /Users/anish/whyline-relay/docs/releases/v0.2.34.md
+
+<!-- whyline-event: bf46e696914a4889bfbd8a780d5ab65f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:47:11.924Z"} -->
