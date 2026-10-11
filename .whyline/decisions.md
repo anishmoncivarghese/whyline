@@ -11105,3 +11105,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c5a81397a0f34ca7923fa3f7447e9e4e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:54:04.659Z"} -->
+
+## 2026-10-11 — Fix BAR backup-editor tests to press modal controls and wait for outcomes, then move the unpublished v0.3.39 tag
+
+**Actor:** claude
+**Role:** releaser
+**Task:** BAR-7
+
+**Because:** Windows/Python 3.11 CI clicked BackupChainScreen buttons while the pushed modal was still laying out, so clicks missed (editor stayed open, override stayed set); render-waits alone were not enough and reproduced the miss locally. The first v0.3.39 tag published nothing (publish skipped, PyPI 404, no GitHub release), so retagging kept the plan's version numbers
+
+**Rejected:**
+
+- Release 0.3.39.1 — every later task's version text assumes 0.3.39
+- Fixed sleeps — runner-dependent
+- Change production modal code — the console behaves correctly; only the tests sampled too early
+
+**Files:** tests/console/test_context_bar.py
+
+<!-- whyline-event: 0b10bb01b0394ec5a6e9898e77ab0c77 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:34:21.864Z"} -->
