@@ -11313,3 +11313,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f3e531f9c0624a4d8bac66834ec2f1e5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:30:16.568Z"} -->
+
+## 2026-10-11 — Only exact True trusts and exact False declines
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-3
+
+**Because:** Escape dismisses None, and a truthiness check would treat that dismiss as Not now
+
+**Rejected:**
+
+- copy _with_antigravity's if-trusted else-decline — None would call decline_antigravity
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 73b377abc7384c2598de9fa45b5b6bcb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:49:29.907Z"} -->
+
+## 2026-10-11 — Spy Check's worker as a no-op method
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-3
+
+**Because:** AUT-5 replaces the body, and these tests need a spy that does not write
+
+**Rejected:**
+
+- run_worker of an empty function — that still starts a thread before AUT-5
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 6e752e948476431189fba46837a3a8ba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:49:29.940Z"} -->
+
+## 2026-10-11 — Show writer failures on #rp-checks and hide it while empty
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-3
+
+**Because:** Escape must leave that widget empty, and a permanent row would push Check off 80x24
+
+**Rejected:**
+
+- #rp-error — that line is form validation, and the task names #rp-checks
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 0b26f37f2c0245aebde3da9fbdc91200 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:49:29.971Z"} -->
+
+## 2026-10-11 — AUT-3 passed: Antigravity trust dialog gates Check worker correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AUT-3
+
+**Because:** Trust question intercepts Check when Antigravity is named and state is ask; Trust it, Not now, Escape, and error paths behave as specified; focused and full test suites pass
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: e311ebecf4164150a5a3e6f3e6f047d9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:54:42.257Z"} -->
+
+## 2026-10-11 — AUT-3 approved: Check gates its worker on explicit Antigravity trust resolution
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AUT-3
+
+**Because:** The prompt matches the existing Antigravity trust UI, exact True and False results invoke the correct writer, Escape and other dismissals are write-free, writer failures surface one FAIL line without starting or fingerprinting, settled and unnamed states bypass writers, and both required test suites pass
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 626339890b9044faa2f46ccd60a6c644 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:59:12.737Z"} -->

@@ -1,8 +1,10 @@
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from whyline.console import plan_job, relay_ops, tui
+from whyline.console import auto_run, plan_job, relay_ops, tui
 from whyline.console.chain_editor import OrderedChain
 from whyline.console.relay_screens import PlanDraftScreen, RelayPlanScreen
 
@@ -32,11 +34,122 @@ def quiet_ops(monkeypatch):
     monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "claude"))
 
 
-async def _open(app, pilot):
+# Antigravity's checkbox starts checked, so the research set names it.
+NAMED = {
+    agent: {"available": True, "label": "ok"}
+    for agent in ("claude", "codex", "antigravity", "grok")
+}
+
+
+async def _open(app, pilot, status=None):
     results = []
-    app.push_screen(RelayPlanScreen(app.session.root, STATUS, "claude"), results.append)
+    app.push_screen(RelayPlanScreen(app.session.root, status or STATUS, "claude"), results.append)
     await pilot.pause()
     return app.screen, results
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=root, check=True, capture_output=True, text=True
+    ).stdout
+
+
+def _repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q", "-b", "main")
+    _git(path, "config", "user.email", "t@example.com")
+    _git(path, "config", "user.name", "T")
+    (path / "README.md").write_text("x\n", encoding="utf-8")
+    _git(path, "add", "-A")
+    _git(path, "commit", "-qm", "initial")
+    return path
+
+
+def _repo_paths(root: Path) -> set[str]:
+    found = set()
+    for path in root.rglob("*"):
+        relative = path.relative_to(root)
+        if relative.parts and relative.parts[0] == ".git":
+            continue
+        suffix = "/" if path.is_dir() else ""
+        found.add(relative.as_posix() + suffix)
+    return found
+
+
+def _settings(monkeypatch, directory: Path) -> Path:
+    """Point Antigravity's settings at a file outside the repository."""
+    from whyline_relay import antigravity
+
+    path = directory / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"trustedWorkspaces": [], "permissions": {"allow": []}}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(antigravity, "settings_path", lambda: path)
+    return path
+
+
+def _ignore_decline(repo: Path) -> None:
+    exclude = repo / ".git" / "info" / "exclude"
+    line = ".whyline/relay/antigravity-declined"
+    text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if line in text.splitlines():
+        return
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    with exclude.open("a", encoding="utf-8") as handle:
+        if text and not text.endswith("\n"):
+            handle.write("\n")
+        handle.write(line + "\n")
+
+
+def _spy_worker(monkeypatch) -> list:
+    started = []
+    monkeypatch.setattr(RelayPlanScreen, "_start_check_worker", lambda self: started.append(True))
+    return started
+
+
+def _spy_writers(monkeypatch) -> dict:
+    calls = {"trust": 0, "decline": 0, "forget": 0}
+
+    def trust(root):
+        calls["trust"] += 1
+
+    def decline(root):
+        calls["decline"] += 1
+
+    def forget(root):
+        calls["forget"] += 1
+
+    monkeypatch.setattr(relay_ops, "trust_antigravity", trust)
+    monkeypatch.setattr(relay_ops, "decline_antigravity", decline)
+    monkeypatch.setattr(relay_ops, "forget_antigravity_decline", forget)
+    return calls
+
+
+def _spy_ignore(monkeypatch) -> list:
+    from whyline_relay import gitcheck
+
+    calls = []
+    monkeypatch.setattr(gitcheck, "ensure_relay_ignored", lambda root: calls.append(root))
+    return calls
+
+
+def _trust_message(root: Path) -> str:
+    from whyline_relay import antigravity
+
+    return (
+        "Antigravity can only read and edit files in folders listed in "
+        f"{antigravity.settings_path()}, a setting for the whole machine. Add "
+        f"{root} to it, and allow Antigravity's file and command tools?"
+    )
+
+
+async def _open_auto(app, pilot, status=None):
+    screen, results = await _open(app, pilot, status)
+    screen.query_one("#rp-source", tui.Select).value = "auto"
+    await pilot.pause()
+    return screen, results
 
 
 def _error_text(screen):
@@ -545,3 +658,261 @@ async def test_auto_check_and_cancel_fit_on_80x24(tmp_path):
         assert _fits(screen.query_one("#rp-check"))
         assert _fits(screen.query_one("#rp-cancel"))
         assert not screen.query("#rp-run")
+
+
+async def test_check_asks_before_the_worker_when_antigravity_is_unresolved(tmp_path, monkeypatch):
+    repo = _repo(tmp_path / "repo")
+    _settings(monkeypatch, tmp_path / "gemini")
+    started = _spy_worker(monkeypatch)
+    ignored = _spy_ignore(monkeypatch)
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        dialog = app.screen
+        assert isinstance(dialog, tui.ConfirmScreen)
+        assert type(dialog) is not tui.ConfirmScreen
+        assert dialog.__class__.__dict__["BINDINGS"] == [("escape", "dismiss(None)", "Dismiss")]
+        assert dialog._message == _trust_message(repo)
+        assert str(dialog.query_one("#confirm", tui.Button).label) == "Trust it"
+        assert str(dialog.query_one("#cancel", tui.Button).label) == "Not now"
+        assert started == []
+        assert ignored == []
+        assert str(screen.query_one("#rp-checks", tui.Static).renderable) == ""
+
+
+async def test_escape_writes_nothing_and_skips_the_worker(tmp_path, monkeypatch):
+    repo = _repo(tmp_path / "repo")
+    settings = _settings(monkeypatch, tmp_path / "gemini")
+    started = _spy_worker(monkeypatch)
+    writers = _spy_writers(monkeypatch)
+    before_paths = _repo_paths(repo)
+    before_settings = settings.read_text(encoding="utf-8")
+    head = _git(repo, "rev-parse", "HEAD")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert results == []
+        assert str(screen.query_one("#rp-checks", tui.Static).renderable) == ""
+        assert "-empty" in screen.query_one("#rp-checks").classes
+    assert started == []
+    assert writers == {"trust": 0, "decline": 0, "forget": 0}
+    assert _repo_paths(repo) == before_paths
+    assert settings.read_text(encoding="utf-8") == before_settings
+    assert _git(repo, "rev-parse", "HEAD") == head
+    assert getattr(screen, "_check_fingerprint", None) is None
+
+
+async def test_a_non_true_dismiss_does_not_decline(tmp_path, monkeypatch):
+    repo = _repo(tmp_path / "repo")
+    _settings(monkeypatch, tmp_path / "gemini")
+    started = _spy_worker(monkeypatch)
+    writers = _spy_writers(monkeypatch)
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        app.screen.dismiss("later")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert str(screen.query_one("#rp-checks", tui.Static).renderable) == ""
+    assert started == []
+    assert writers == {"trust": 0, "decline": 0, "forget": 0}
+
+
+async def test_trust_it_updates_settings_outside_the_repo_then_cancel_leaves_them(tmp_path, monkeypatch):
+    from whyline_relay import antigravity
+
+    repo = _repo(tmp_path / "repo")
+    settings = _settings(monkeypatch, tmp_path / "gemini")
+    started = _spy_worker(monkeypatch)
+    ignored = _spy_ignore(monkeypatch)
+    before_paths = _repo_paths(repo)
+    before_settings = settings.read_text(encoding="utf-8")
+    head = _git(repo, "rev-parse", "HEAD")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        assert started == []
+        await pilot.click("#confirm")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert started == [True]
+        assert ignored == []
+        assert _repo_paths(repo) == before_paths
+        assert not settings.resolve().is_relative_to(repo.resolve())
+        updated = settings.read_text(encoding="utf-8")
+        assert updated != before_settings
+        assert str(repo.resolve()) in json.loads(updated)["trustedWorkspaces"]
+        assert relay_ops.antigravity_state(repo) == "trusted"
+        await pilot.click("#rp-cancel")
+        await pilot.pause()
+    assert results == [None]
+    assert settings.read_text(encoding="utf-8") == updated
+    assert relay_ops.antigravity_state(repo) == "trusted"
+    assert antigravity.is_trusted(repo)
+    assert _repo_paths(repo) == before_paths
+    assert _git(repo, "rev-parse", "HEAD") == head
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+async def test_not_now_adds_only_the_decline_marker_and_cancel_leaves_it(tmp_path, monkeypatch):
+    repo = _repo(tmp_path / "repo")
+    settings = _settings(monkeypatch, tmp_path / "gemini")
+    _ignore_decline(repo)
+    started = _spy_worker(monkeypatch)
+    ignored = _spy_ignore(monkeypatch)
+    before_paths = _repo_paths(repo)
+    before_settings = settings.read_text(encoding="utf-8")
+    before_exclude = (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    before_status = _git(repo, "status", "--porcelain")
+    head = _git(repo, "rev-parse", "HEAD")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        assert started == []
+        await pilot.click("#cancel")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        marker = repo / ".whyline" / "relay" / "antigravity-declined"
+        assert marker.is_file()
+        assert started == [True]
+        assert ignored == []
+        added = _repo_paths(repo) - before_paths
+        assert added == {
+            ".whyline/",
+            ".whyline/relay/",
+            ".whyline/relay/antigravity-declined",
+        }
+        assert marker.read_text(encoding="utf-8") == (
+            "The user chose not to trust this repository for Antigravity.\n"
+        )
+        assert settings.read_text(encoding="utf-8") == before_settings
+        assert (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8") == before_exclude
+        assert _git(repo, "status", "--porcelain") == before_status
+        assert str(screen.query_one("#rp-checks", tui.Static).renderable) == ""
+        await pilot.click("#rp-cancel")
+        await pilot.pause()
+    assert results == [None]
+    assert marker.is_file()
+    assert settings.read_text(encoding="utf-8") == before_settings
+    assert _git(repo, "rev-parse", "HEAD") == head
+    assert _git(repo, "status", "--porcelain") == before_status
+
+
+@pytest.mark.parametrize("state", ["trusted", "declined", "unnamed"])
+async def test_settled_or_unnamed_antigravity_does_not_rewrite_trust(tmp_path, monkeypatch, state):
+    repo = _repo(tmp_path / "repo")
+    settings = _settings(monkeypatch, tmp_path / "gemini")
+    if state == "trusted":
+        payload = {
+            "trustedWorkspaces": [str(repo.resolve())],
+            "permissions": {"allow": []},
+        }
+        settings.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    marker = repo / ".whyline" / "relay" / "antigravity-declined"
+    if state == "declined":
+        marker.parent.mkdir(parents=True)
+        marker.write_text("already\n", encoding="utf-8")
+    started = _spy_worker(monkeypatch)
+    writers = _spy_writers(monkeypatch)
+    before_settings = settings.read_text(encoding="utf-8")
+    status = STATUS if state == "unnamed" else NAMED
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await _open_auto(app, pilot, status)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert not isinstance(app.screen, tui.ConfirmScreen)
+    assert started == [True]
+    assert writers == {"trust": 0, "decline": 0, "forget": 0}
+    assert settings.read_text(encoding="utf-8") == before_settings
+    if state == "declined":
+        assert marker.read_text(encoding="utf-8") == "already\n"
+    else:
+        assert not marker.exists()
+
+
+async def test_trust_failure_is_one_fail_line_and_skips_the_worker(tmp_path, monkeypatch):
+    repo = _repo(tmp_path / "repo")
+    settings = _settings(monkeypatch, tmp_path / "gemini")
+    started = _spy_worker(monkeypatch)
+    declines = []
+
+    def fail_trust(root):
+        raise RuntimeError("settings.json is broken")
+
+    monkeypatch.setattr(relay_ops, "trust_antigravity", fail_trust)
+    monkeypatch.setattr(relay_ops, "decline_antigravity", lambda root: declines.append(root))
+
+    def refuse_fingerprint(*args, **kwargs):
+        raise AssertionError("fingerprint")
+
+    monkeypatch.setattr(auto_run, "fingerprint", refuse_fingerprint)
+    before_paths = _repo_paths(repo)
+    before_settings = settings.read_text(encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        await pilot.click("#confirm")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert str(screen.query_one("#rp-checks", tui.Static).renderable) == "FAIL  settings.json is broken"
+        assert "-empty" not in screen.query_one("#rp-checks").classes
+    assert started == []
+    assert declines == []
+    assert _repo_paths(repo) == before_paths
+    assert settings.read_text(encoding="utf-8") == before_settings
+    assert getattr(screen, "_check_fingerprint", None) is None
+
+
+async def test_decline_failure_is_one_fail_line_and_skips_the_worker(tmp_path, monkeypatch):
+    repo = _repo(tmp_path / "repo")
+    settings = _settings(monkeypatch, tmp_path / "gemini")
+    started = _spy_worker(monkeypatch)
+    trusts = []
+
+    def fail_decline(root):
+        raise RuntimeError("could not write the marker")
+
+    monkeypatch.setattr(relay_ops, "decline_antigravity", fail_decline)
+    monkeypatch.setattr(relay_ops, "trust_antigravity", lambda root: trusts.append(root))
+    monkeypatch.setattr(
+        auto_run,
+        "fingerprint",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fingerprint")),
+    )
+    before_paths = _repo_paths(repo)
+    before_settings = settings.read_text(encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        await pilot.click("#cancel")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        assert str(screen.query_one("#rp-checks", tui.Static).renderable) == (
+            "FAIL  could not write the marker"
+        )
+    assert started == []
+    assert trusts == []
+    assert _repo_paths(repo) == before_paths
+    assert settings.read_text(encoding="utf-8") == before_settings
+    assert not (repo / ".whyline" / "relay" / "antigravity-declined").exists()
+    assert getattr(screen, "_check_fingerprint", None) is None

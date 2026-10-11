@@ -19,6 +19,7 @@ from whyline.console import relay_ops
 from whyline.console.attachments_ui import AttachmentsField
 from whyline.console.chain_editor import OrderedChain
 from whyline.console.plan_job import PlanRequest
+from whyline.console.tui import ConfirmScreen
 
 _SOURCES = [
     ("Brainstorm it", "brainstorm"),
@@ -46,6 +47,12 @@ class _PlanChain(OrderedChain):
             screen._refresh_auto_summary()
 
 
+class _AntigravityTrustScreen(ConfirmScreen):
+    """Check's trust question. Escape dismisses None, which is not Not now."""
+
+    BINDINGS = [("escape", "dismiss(None)", "Dismiss")]
+
+
 class RelayPlanScreen(ModalScreen):
     """Collects what to plan, then dismisses with a PlanRequest; the main
     window runs it, shows progress and the draft, and asks the questions.
@@ -71,6 +78,8 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen #rp-committer, RelayPlanScreen #rp-auto-summary { height: auto; }
     RelayPlanScreen #rp-error { color: $error; height: auto; }
     RelayPlanScreen #rp-error.-empty { display: none; }
+    RelayPlanScreen #rp-checks { height: auto; }
+    RelayPlanScreen #rp-checks.-empty { display: none; }
     RelayPlanScreen #rp-buttons { margin-top: 1; }
     RelayPlanScreen #rp-buttons Button { margin-right: 1; }
     """
@@ -138,6 +147,7 @@ class RelayPlanScreen(ModalScreen):
         yield Vertical(
             form,
             Static("", id="rp-error", classes="-empty"),
+            Static("", id="rp-checks", classes="-empty", markup=False),
             Horizontal(
                 check,
                 Button("Make the plan", id="rp-go", variant="success"),
@@ -456,7 +466,57 @@ class RelayPlanScreen(ModalScreen):
         self.dismiss(None)
 
     def _on_rp_check(self) -> None:
-        """Visible before AUT-5. That task starts the read-only worker."""
+        """Ask first when a named agent is Antigravity and this repo is `ask`.
+
+        The worker is a no-op until AUT-5. Tests spy on `_start_check_worker`.
+        """
+        from whyline.console.auto_run import named_agents
+
+        named = "antigravity" in named_agents(self._auto_view())
+        if named and relay_ops.antigravity_state(self._root) == "ask":
+            self._ask_antigravity_trust()
+            return
+        self._start_check_worker()
+
+    def _ask_antigravity_trust(self) -> None:
+        """Same wording as `_with_antigravity`. That helper is unchanged."""
+        from whyline_relay import antigravity
+
+        message = (
+            "Antigravity can only read and edit files in folders listed in "
+            f"{antigravity.settings_path()}, a setting for the whole machine. Add "
+            f"{self._root} to it, and allow Antigravity's file and command tools?"
+        )
+
+        def answered(trusted: bool | None) -> None:
+            # True trusts, False declines. None (Escape) and any other dismiss
+            # write nothing: Not now is the only decline.
+            if trusted is True:
+                writer = relay_ops.trust_antigravity
+            elif trusted is False:
+                writer = relay_ops.decline_antigravity
+            else:
+                return
+            try:
+                writer(self._root)
+            except Exception as error:
+                self._show_check_failure(error)
+                return
+            self._start_check_worker()
+
+        self.app.push_screen(
+            _AntigravityTrustScreen(message, "Trust it", "Not now"),
+            answered,
+        )
+
+    def _show_check_failure(self, error: Exception) -> None:
+        """One FAIL line. No fingerprint, and the worker does not start."""
+        checks = self.query_one("#rp-checks", Static)
+        checks.update(f"FAIL  {error}")
+        checks.remove_class("-empty")
+
+    def _start_check_worker(self) -> None:
+        """No-op until AUT-5 fills in the read-only check."""
         return
 
     def _on_rp_go(self) -> None:
