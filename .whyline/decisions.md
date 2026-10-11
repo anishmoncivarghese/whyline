@@ -10392,3 +10392,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5444913af46b4949aeaa1ddf1c13713a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:26:26.561Z"} -->
+
+## 2026-10-11 — Remove cd from the relay footer and give Grok read-only git -C access to whyline-relay
+
+**Actor:** claude
+**Role:** operator
+**Task:** BAK-4
+
+**Because:** Headless Grok ends its whole turn on any command outside its allow list; the footer told agents to cd, which cancelled BAK-4's draft. The footer now says agents already start in the relay repo and shows uv run --directory / git -C forms; the fix is on whyline-relay fix/relay-footer (3c85d03) so it does not move the in-progress BAK-4 task's HEAD
+
+**Rejected:**
+
+- Allow Bash(git -C — *): deny rules match by prefix, so git -C <repo> push would slip past the git push deny
+- Allow cd — chained cd && commands widen what a single allow rule covers
+- Commit the footer fix on the relay branch now — it would move HEAD under the paused BAK-4 task and pause the relay
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: 523581f81eed4b6d8648f85cb5ab5ec9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:29:45.006Z"} -->
