@@ -124,7 +124,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Tests: editing the topic after a clean Check clears `#rp-checks` and the stored fingerprint; changing only the porcelain makes a recomputed fingerprint differ from the stored one; the read-only worker tests from the spec's Check list still leave `git status` unchanged when driven from the button.
   Verify with `uv run pytest -q tests/console/test_relay_plan_screen.py tests/console/test_relay_ops.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] AUT-6: Publish whyline 0.3.40
+- [x] AUT-6: Publish whyline 0.3.40
   relay-profile: release
   In this whyline checkout, bump `pyproject.toml` from `0.3.39` to `0.3.40`. Keep the `whyline-relay` floor at `>=0.2.34,<0.3`. Do not add `auto_run`'s phase runner and do not show Run. Write `docs/releases/v0.3.40.md` in the same shape as `docs/releases/v0.3.39.md`: Auto collects the research, planning, execution, backup, timeout, attachment, and release choices; Check writes nothing under the repository; Trust it and Not now finish before the worker; a passing Check cannot start work. Needs whyline-relay 0.2.34.
   Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.40`, push, and publish to PyPI the same way `v0.3.39` was published. Confirm the installed console's Plan screen has no `#rp-run`.
