@@ -498,6 +498,12 @@ def relay_agents(root: Path | None = None, which=shutil.which) -> list[str]:
     return sorted(name for name in names if which(chat.agent_binary(name)))
 
 
+def read_backup(root: Path) -> list[str]:
+    from whyline_relay import setup
+
+    return setup.read_backup(root)
+
+
 def current_roles(root: Path) -> dict:
     from whyline_relay import config
 
@@ -505,7 +511,6 @@ def current_roles(root: Path) -> dict:
     # config says, and the ready check is what flags a missing agent.
     agents = relay_agents(root, which=lambda binary: binary)
     roles = dict(_DEFAULT_ROLES)
-    backup: list[str] = []
     path = config.config_path(root)
     if path.exists():
         try:
@@ -516,12 +521,16 @@ def current_roles(root: Path) -> dict:
             value = (raw.get("roles") or {}).get(key)
             if value in agents:
                 roles[key] = value
-        backup = [
-            name
-            for name in (raw.get("backup") or {}).get("chain", [])
-            if name in agents
-        ]
+    # A missing file is an empty chain. ConfigError from a bad name or a
+    # broken file propagates; it is not reported as an empty chain.
+    backup = [name for name in read_backup(root) if name in agents]
     return {**roles, "backup": backup}
+
+
+def save_backup(root: Path, chain: list[str]) -> None:
+    from whyline_relay import setup
+
+    setup.write_backup(root, chain)
 
 
 def save_roles(
@@ -695,6 +704,17 @@ _PREFERENCE = {
     "tester": ("claude", "codex", "grok", "antigravity"),
     "reviewer": ("claude", "codex", "grok", "antigravity"),
 }
+
+
+def staged_backup(primary: str, usable: list[str]) -> list[str]:
+    """Usable names except the primary, in implementer preference order.
+
+    A name that is not in that preference tuple keeps its place in `usable`,
+    after every preferred name.
+    """
+    rest = [name for name in usable if name != primary]
+    preferred = [name for name in _PREFERENCE["implementer"] if name in rest]
+    return preferred + [name for name in rest if name not in _PREFERENCE["implementer"]]
 
 
 def recommend_roles(usable: list[str]) -> dict:

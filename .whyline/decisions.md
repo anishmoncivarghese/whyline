@@ -10459,3 +10459,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bf46e696914a4889bfbd8a780d5ab65f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:47:11.924Z"} -->
+
+## 2026-10-11 — staged_backup keeps names outside the preference tuple in usable order
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-1
+
+**Because:** The spec orders preferred agents by the implementer tuple, then any other usable name, and does not define an order for that tail. recommend_roles already keeps leftover names in the order of usable.
+
+**Rejected:**
+
+- Sort the tail alphabetically — usable order is the only order the caller supplied
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: d81331631f904479b69ca9674386d225 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:59:27.986Z"} -->
+
+## 2026-10-11 — Verify backup chain wrapper, bounds update, and ConfigError propagation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-1
+
+**Because:** All 49 relay_ops tests and the full test suite passed with 0 failures
+
+**Files:** tests/console/test_relay_ops.py
+
+<!-- whyline-event: 2ddcacba59c74569a44a2718508b1b32 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:03:27.058Z"} -->
+
+## 2026-10-11 — Approve BAR-1 backup-chain wrappers and relay 0.2.34 upgrade
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-1
+
+**Because:** The diff implements the requested wrappers and ordering, preserves ConfigError propagation, updates both dependency bounds and lock resolution, and both required test suites pass
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py, pyproject.toml, uv.lock
+
+<!-- whyline-event: 6f3ebaa68dbb44e6a2ddd268601340f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:06:47.952Z"} -->

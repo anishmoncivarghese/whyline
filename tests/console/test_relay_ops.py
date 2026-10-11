@@ -189,6 +189,37 @@ def test_current_roles_keep_configured_agents_that_are_not_installed(repo, monke
     }
 
 
+def test_read_backup_missing_file_is_empty(repo):
+    assert relay_ops.read_backup(repo) == []
+
+
+def test_save_backup_round_trips_and_commits_only_config(repo):
+    relay_ops.save_backup(repo, ["grok", "claude"])
+    assert relay_ops.read_backup(repo) == ["grok", "claude"]
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        ".whyline/relay/config.toml"
+    ]
+
+
+def test_staged_backup_drops_the_primary_in_preference_order():
+    assert relay_ops.staged_backup("codex", ["codex", "claude", "grok"]) == ["claude", "grok"]
+    assert relay_ops.staged_backup("codex", ["zzz", "grok", "claude", "codex"]) == [
+        "claude", "grok", "zzz",
+    ]
+
+
+def test_current_roles_does_not_swallow_read_backup_config_error(repo):
+    from whyline_relay import config
+
+    path = config.config_path(repo)
+    path.parent.mkdir(parents=True)
+    path.write_text('[backup]\nchain = ["not-an-agent"]\n', encoding="utf-8")
+    with pytest.raises(config.ConfigError):
+        relay_ops.read_backup(repo)
+    with pytest.raises(config.ConfigError):
+        relay_ops.current_roles(repo)
+
+
 def test_list_plans_reads_markers_counts_and_the_legacy_plan(repo):
     plans = repo / "plans"
     plans.mkdir()
