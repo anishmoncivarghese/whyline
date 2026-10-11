@@ -11074,3 +11074,34 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bf087bb99a6d419c9e3e11e3d9d5022e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:49:10.577Z"} -->
+
+## 2026-10-11 — Add See files as FIL-1..4 (whyline 0.3.43) at the end of the plan, converted from the superpowers draft
+
+**Actor:** claude
+**Role:** planner
+**Task:** FIL
+
+**Because:** User chose end of plan; appending avoids renumbering AUT/RUN/REC releases. The draft's step checkboxes would parse as duplicate relay task ids, and its gaps were fixed in the task text: --untracked-files=all, first view diffs against HEAD, one _apply_follow signature, real Textual pin, no agent commits, follow the relay-repo task repo, stacked split below 120 columns, context-bar widths measured on the console column
+
+**Rejected:**
+
+- Insert after BAR-7 — shifts every later version number in task text and release-note paths
+- Run it as a second relay — same checkout and branch
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 75278e12cf694e0ab0165e2869f589ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:54:04.628Z"} -->
+
+## 2026-10-11 — Release whyline 0.3.39 from main for BAR-7
+
+**Actor:** claude
+**Role:** releaser
+**Task:** BAR-7
+
+**Because:** BAR-1..6 shipped the shared backup chain on the bar, the ordered editor, sticky failover reset and narrow layouts; notes also cover the Relay-mode resume-prefix fix (cf88fc2) that rides in this release. Release gates (suite, sdist scan, wheel + console/ui extras) were run locally before tagging
+
+**Files:** docs/releases/v0.3.39.md
+
+<!-- whyline-event: c5a81397a0f34ca7923fa3f7447e9e4e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:54:04.659Z"} -->
