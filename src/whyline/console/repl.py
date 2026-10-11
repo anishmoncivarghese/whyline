@@ -31,6 +31,8 @@ SLASH_COMMANDS = (
     "/login",
     "/brainstorm",
     "/repo",
+    "/backups",
+    "/reset-backup",
     "/route",
     "/status",
     "/handoff",
@@ -49,6 +51,8 @@ _COMMAND_HELP = {
     "/login": "/login claude           sign in with the agent's own login, then re-check",
     "/brainstorm": "/brainstorm             several models research a topic, one writes it up",
     "/repo": "/repo ~/other-project   show or switch the repository (clears this transcript)",
+    "/backups": "/backups               shared fallback chain, and any sticky failover",
+    "/reset-backup": "/reset-backup          back to the saved chat agent; the chain stays",
     "/route": "/route <mode>           switch to chat, relay or agents",
     "/status": "/status                 repo and relay status",
     "/handoff": "/handoff                the most recent handoff",
@@ -101,12 +105,13 @@ def _print_event(event: SessionEvent, print_fn) -> None:
 
 
 def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | None:
-    """Handles /help, /status, /handoff, /history, /route, /model
-    uniformly for both console flavors. Returns the event to render, or
-    None if `text` isn't one of these at all -- the caller should fall
-    through to ordinary dispatch() in that case. /exit and /stop stay
-    outside this function on purpose: each means something different per
-    console (see the final-cutover design's FC4)."""
+    """Handles /help, /status, /handoff, /history, /route, /model,
+    /backups, and /reset-backup uniformly for both console flavors.
+    Returns the event to render, or None if `text` isn't one of these at
+    all -- the caller should fall through to ordinary dispatch() in that
+    case. /exit and /stop stay outside this function on purpose: each
+    means something different per console (see the final-cutover design's
+    FC4)."""
     if text == "/help":
         return SessionEvent(kind="output", text=_help_text())
     if text == "/status":
@@ -152,6 +157,10 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         return SessionEvent(kind="needs_brainstorm", text="")
     if text == "/repo" or text.startswith("/repo "):
         return _repo_event(session, text)
+    if text.strip() == "/backups":
+        return backups_event(session)
+    if text.strip() == "/reset-backup":
+        return reset_backup_event(session)
     # Console commands above win, including /status over `whyline status`.
     # /console is excluded: it would start another console inside this one.
     if text.startswith("/"):
@@ -214,13 +223,92 @@ _RELAY_CHAT_HINTS = {
     "/default": "here, /model {arg} makes it the chat agent",
     "/history": "here, /history shows this session",
     "/clear": "start a new console session to clear it",
-    "/backups": "run `whyline relay chat` for backup overrides",
-    "/reset-backup": "run `whyline relay chat` for backup overrides",
     "/claude": "here, /model claude switches to it",
     "/codex": "here, /model codex switches to it",
     "/agy": "here, /model antigravity switches to it",
     "/grok": "here, /model grok switches to it",
 }
+
+
+# Reset is blocked by the same jobs as a chain edit. The transcript reuses
+# that refusal word for word, including from the Backup select's Save path.
+RESET_BUSY_TEXT = "Finish or stop the current job before changing the backup chain."
+
+
+def backup_chain_sentence(chain: list[str] | tuple[str, ...]) -> str:
+    """The line Save writes after a chain commit. /backups prints the same words."""
+    shown = " → ".join(chain) if chain else "none"
+    return f"Backup for this repo: {shown} (chat, brainstorm, and the relay)."
+
+
+def reset_failover_text(primary: str, chain: list[str] | tuple[str, ...]) -> str:
+    shown = " → ".join(chain) if chain else "none"
+    return f"Back to {primary}. The chain is still {shown}."
+
+
+def clear_chat_override(root: Path, primary: str) -> None:
+    """Drop one chat override. The chain and active-roles.json stay."""
+    from whyline_relay import failover
+
+    failover.clear_overrides(
+        root, role=primary, storage_path=failover.chat_path(root),
+    )
+
+
+def _saved_primary(root: Path) -> str:
+    from whyline import model
+
+    return model.resolve(root)[0]
+
+
+def _failover_effective(root: Path, primary: str) -> str:
+    from whyline_relay import failover
+
+    try:
+        return failover.resolve_chat_agent(root, primary)
+    except (OSError, ValueError):
+        return primary
+
+
+def backups_event(session: ConsoleSession) -> SessionEvent:
+    from whyline.console import relay_ops
+    from whyline_relay import config as relay_config
+
+    root = session.root
+    try:
+        chain = relay_ops.read_backup(root)
+    except (relay_config.ConfigError, OSError) as error:
+        return SessionEvent(kind="error", text=str(error))
+    primary = _saved_primary(root)
+    lines = [backup_chain_sentence(chain)]
+    effective = _failover_effective(root, primary)
+    if effective != primary:
+        lines.append(f"Using {effective} for {primary} until reset.")
+    return SessionEvent(kind="output", text="\n".join(lines))
+
+
+def reset_backup_event(session: ConsoleSession) -> SessionEvent:
+    """Same clear as the Backup row: the saved primary's chat override only."""
+    from whyline.console import relay_ops
+    from whyline_relay import config as relay_config
+
+    root = session.root
+    try:
+        live = relay_ops.live_run(root) is not None
+    except (OSError, ValueError):
+        live = True
+    if live:
+        return SessionEvent(kind="error", text=RESET_BUSY_TEXT)
+    primary = _saved_primary(root)
+    try:
+        chain = relay_ops.read_backup(root)
+    except (relay_config.ConfigError, OSError) as error:
+        return SessionEvent(kind="error", text=str(error))
+    try:
+        clear_chat_override(root, primary)
+    except OSError as error:
+        return SessionEvent(kind="error", text=str(error))
+    return SessionEvent(kind="output", text=reset_failover_text(primary, chain))
 
 
 def unknown_command_text(text: str) -> str:

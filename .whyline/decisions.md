@@ -10810,3 +10810,145 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: baf0230961ab4c949be22d643412818f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:49:53.743Z"} -->
+
+## 2026-10-11 — Busy Reset keeps its own refusal sentence
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-4
+
+**Because:** Reset does not change the chain. BAR-3 rejected the chain-change sentence for that reason and the reviewer approved it. The design spec names only the Back to primary line.
+
+**Rejected:**
+
+- Reuse the chain-change refusal — that sentence says the chain is changing, which Reset does not do
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 07ebf125e03246078a92abdbd46ba3e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:21:19.292Z"} -->
+
+## 2026-10-11 — Narrow the agent select while the failover label is showing
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-4
+
+**Because:** using codex is about twelve columns. At the wide agent width Save started at column 121 on a 120-column row. Width 14 is the width the bar already uses below 100 columns.
+
+**Rejected:**
+
+- Leave the agent box at 24 — Save was completely off screen
+- Shrink the backup select — BAR-5 owns that width
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 75fe40d76bc74e8782ca94b9e4d8c678 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:21:25.014Z"} -->
+
+## 2026-10-11 — Place the failover label immediately after Agent
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-4
+
+**Because:** The label names the agent actually answering for the saved primary, and the narrow-row task keeps it visible when the Backup controls are hidden.
+
+**Rejected:**
+
+- Place it beside Backup — using codex would sit next to the chain head and read as part of the chain
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8111dcaf1cd84873b05b5fb44e8585ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:21:30.835Z"} -->
+
+## 2026-10-11 — /reset-backup clears only the saved primary
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-4
+
+**Because:** The Reset row calls clear_overrides with the saved primary from model.resolve. A second chat override and active-roles.json stay.
+
+**Rejected:**
+
+- Honor a named agent argument — that would clear a different key than the Reset row
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: dd45c4a7849440aab4d35c6b670f9037 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:23:19.842Z"} -->
+
+## 2026-10-11 — BAR-4 implementation verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-4
+
+**Because:** Sticky failover label #cb-failover, Reset action, /backups, and /reset-backup behave as specified and pass focused and full test suites without regressions
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: bc84bc0ef27342eea3f876a33fc05968 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:29:15.769Z"} -->
+
+## 2026-10-11 — BAR-4 needs the mandated shared busy-refusal sentence
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-4
+
+**Because:** Reset is correctly blocked for all busy sources and tests pass, but RESET_BUSY_TEXT and its assertions say 'before resetting failover' instead of reusing the existing refused-chain-change sentence required by the task
+
+**Rejected:**
+
+- Approve based on green tests — the tests assert behavior that contradicts the explicit transcript requirement
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py, tests/console/test_context_bar.py, tests/console/test_repl.py
+
+<!-- whyline-event: ba367a7c4daa4c3fb7160bfdb4987a8a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:32:58.381Z"} -->
+
+## 2026-10-11 — Reset busy refusal reuses the chain-change sentence
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-4
+
+**Because:** The task requires the reset transcript to use the same sentence as a refused chain change, so Save and reset share RESET_BUSY_TEXT
+
+**Rejected:**
+
+- A distinct before-resetting-failover sentence — the review rejected it because the tests then locked in wording the task forbids
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py, tests/console/test_context_bar.py, tests/console/test_repl.py
+
+<!-- whyline-event: e7ad2faf388b4206bf9fded3ed5e98ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:38:53.813Z"} -->
+
+## 2026-10-11 — BAR-4 shared busy-refusal sentence and sticky failover behavior verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-4
+
+**Because:** Reset and Save share RESET_BUSY_TEXT, live relay blocks reset without writing, sticky failover label and /backups /reset-backup behave as specified, and all tests pass
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 2774c4cdf1594578a5de40678f3692d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:44:01.321Z"} -->
+
+## 2026-10-11 — BAR-4 sticky failover and scoped reset approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-4
+
+**Because:** The diff implements the conditional using label, shared reset behavior and refusal text, real slash commands, and preserves the backup chain and active roles; focused and full test suites pass
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py, tests/console/test_context_bar.py, tests/console/test_repl.py
+
+<!-- whyline-event: da289d4566f345e9ab9288dc5dd7147c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:47:41.785Z"} -->

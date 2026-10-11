@@ -62,6 +62,11 @@ def _backup_closed(select) -> str:
     return content.plain if hasattr(content, "plain") else str(content)
 
 
+def _plain(widget) -> str:
+    content = widget.renderable
+    return content.plain if hasattr(content, "plain") else str(content)
+
+
 def _lines(app):
     return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 
@@ -325,6 +330,7 @@ async def test_saved_chain_shows_the_head_until_it_changes(tmp_path, monkeypatch
         assert app.query_one("#cb-backup-label", tui.Label).tooltip == (
             "Shared fallback: chat, brainstorm, and the relay"
         )
+        assert not app.query_one("#cb-failover", tui.Label).display
         select.value = "none"
         await pilot.pause()
         assert _backup_closed(select) == "None"
@@ -603,6 +609,8 @@ async def test_reset_restores_the_selection_and_clears_the_chat_override(tmp_pat
         select = app.query_one("#cb-backup", tui.Select)
         prompts = _option_map(select)
         assert prompts["reset"] == "Reset failover (back to claude)"
+        assert _plain(app.query_one("#cb-failover", tui.Label)) == "using codex"
+        assert app.query_one("#cb-failover", tui.Label).display
         assert select.value == "codex"
         select.value = "reset"
         await pilot.pause()
@@ -615,6 +623,7 @@ async def test_reset_restores_the_selection_and_clears_the_chat_override(tmp_pat
             "Back to claude. The chain is still codex → grok." in line
             for line in _lines(app)
         )
+        assert not app.query_one("#cb-failover", tui.Label).display
     assert failover.resolve_chat_agent(root, "claude") == "claude"
     assert failover.resolve_chat_agent(root, "codex") == "grok"
     assert role.read_text(encoding="utf-8") == '{"implementer": {"agent": "grok"}}\n'
@@ -640,6 +649,7 @@ async def test_editor_reset_clears_the_chat_override_and_stays_open(tmp_path, mo
         await pilot.pause()
         assert isinstance(app.screen, BackupChainScreen)
         assert failover.resolve_chat_agent(root, "claude") == "claude"
+        assert not app._main("#cb-failover", tui.Label).display
         assert any(
             "Back to claude. The chain is still codex → grok." in line
             for line in _lines(app)
@@ -664,19 +674,58 @@ async def test_reset_while_a_relay_is_live_leaves_the_override(tmp_path, monkeyp
     root = _repo(tmp_path)
     relay_ops.save_backup(root, ["codex", "grok"])
     _chat_override(root, "claude", "codex")
+    chat = failover.chat_path(root)
+    before = chat.read_bytes()
+    config = (root / ".whyline" / "relay" / "config.toml").read_bytes()
     monkeypatch.setattr(relay_ops, "live_run", lambda repo: "BAR-3, codex")
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         select = app.query_one("#cb-backup", tui.Select)
         assert "reset" in _option_map(select)
+        assert _plain(app.query_one("#cb-failover", tui.Label)) == "using codex"
         select.value = "reset"
         await pilot.pause()
         assert select.value == "codex"
         assert "reset" in _option_map(select)
+        assert _plain(app.query_one("#cb-failover", tui.Label)) == "using codex"
         assert app.query_one("#cb-save", tui.Button).disabled
         assert any(
-            "Finish or stop the current job before resetting failover." in line
+            "Finish or stop the current job before changing the backup chain." in line
             for line in _lines(app)
         )
+    assert chat.read_bytes() == before
+    assert (root / ".whyline" / "relay" / "config.toml").read_bytes() == config
     assert failover.resolve_chat_agent(root, "claude") == "codex"
     assert relay_ops.read_backup(root) == ["codex", "grok"]
+
+
+async def test_save_keeps_a_sticky_override_and_shows_using(tmp_path, monkeypatch):
+    from whyline import model
+    from whyline_relay import failover
+    from whyline.console import relay_ops
+
+    _installed(monkeypatch, ["claude", "codex", "grok"])
+    root = _repo(tmp_path)
+    relay_ops.save_backup(root, ["codex", "grok"])
+    _chat_override(root, "claude", "codex")
+    chat = failover.chat_path(root)
+    before = chat.read_text(encoding="utf-8")
+    role = _role_line(root)
+    role_before = role.read_text(encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(120, 40)) as pilot:
+        label = app.query_one("#cb-failover", tui.Label)
+        assert label.display
+        assert _plain(label) == "using codex"
+        assert app.query_one("#cb-save").region.right <= 120
+        app.query_one("#cb-model", tui.Input).value = "opus"
+        await pilot.pause()
+        await pilot.click("#cb-save")
+        await pilot.pause()
+        assert app.query_one("#cb-failover", tui.Label).display
+        assert _plain(app.query_one("#cb-failover", tui.Label)) == "using codex"
+        assert app.query_one("#cb-save", tui.Button).disabled
+    assert chat.read_text(encoding="utf-8") == before
+    assert role.read_text(encoding="utf-8") == role_before
+    assert relay_ops.read_backup(root) == ["codex", "grok"]
+    assert model.resolve(root) == ("claude", "opus")

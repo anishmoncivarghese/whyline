@@ -868,6 +868,92 @@ def test_unknown_commands_are_explained_not_sent_to_the_agent():
     assert "/model" in unknown_command_text("/agents")
     assert "/model codex" in unknown_command_text("/default codex")
     assert "/help" in unknown_command_text("/frobnicate")
+    assert "whyline relay chat" not in unknown_command_text("/backups")
+    assert "whyline relay chat" not in unknown_command_text("/reset-backup")
+
+
+def _chat_override(root, role: str, agent: str) -> None:
+    from whyline_relay import failover
+
+    failover.write_override(
+        root,
+        role,
+        failover.ActiveOverride(agent, role, "rate-limit", "2026-10-11T00:00:00Z"),
+        storage_path=failover.chat_path(root),
+    )
+
+
+def test_backups_prints_the_chain_and_the_using_line(tmp_path):
+    from whyline.console import relay_ops
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import failover
+
+    config = tmp_path / ".whyline" / "relay" / "config.toml"
+    config.write_text('[backup]\nchain = ["codex", "grok"]\n', encoding="utf-8")
+    session = ConsoleSession(root=tmp_path)
+    plain = handle_slash_command(session, "/backups")
+    assert plain is not None and plain.kind == "output"
+    assert plain.text == "Backup for this repo: codex → grok (chat, brainstorm, and the relay)."
+    assert "Using " not in plain.text
+    assert "whyline relay chat" not in plain.text
+    _chat_override(tmp_path, "claude", "codex")
+    event = handle_slash_command(session, "/backups")
+    assert event is not None and event.kind == "output"
+    assert event.text == (
+        "Backup for this repo: codex → grok (chat, brainstorm, and the relay).\n"
+        "Using codex for claude until reset."
+    )
+    assert "whyline relay chat" not in event.text
+    assert failover.resolve_chat_agent(tmp_path, "claude") == "codex"
+    assert relay_ops.read_backup(tmp_path) == ["codex", "grok"]
+
+
+def test_reset_backup_clears_only_the_chat_override(tmp_path):
+    from whyline.console import relay_ops
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import failover
+
+    config = tmp_path / ".whyline" / "relay" / "config.toml"
+    config.write_text(
+        '[roles]\nimplementer = "codex"\n\n[backup]\nchain = ["codex", "grok"]\n',
+        encoding="utf-8",
+    )
+    _chat_override(tmp_path, "claude", "codex")
+    _chat_override(tmp_path, "codex", "grok")
+    role = tmp_path / ".whyline" / "relay" / "active-roles.json"
+    role.write_text('{"implementer": {"agent": "grok"}}\n', encoding="utf-8")
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/reset-backup")
+    assert event is not None and event.kind == "output"
+    assert event.text == "Back to claude. The chain is still codex → grok."
+    assert "whyline relay chat" not in event.text
+    assert failover.resolve_chat_agent(tmp_path, "claude") == "claude"
+    assert failover.resolve_chat_agent(tmp_path, "codex") == "grok"
+    assert role.read_text(encoding="utf-8") == '{"implementer": {"agent": "grok"}}\n'
+    assert relay_ops.read_backup(tmp_path) == ["codex", "grok"]
+    assert 'implementer = "codex"' in config.read_text(encoding="utf-8")
+
+
+def test_reset_backup_during_a_live_relay_writes_nothing(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import failover
+
+    config = tmp_path / ".whyline" / "relay" / "config.toml"
+    config.write_text('[backup]\nchain = ["codex", "grok"]\n', encoding="utf-8")
+    _chat_override(tmp_path, "claude", "codex")
+    chat = failover.chat_path(tmp_path)
+    before = chat.read_bytes()
+    config_before = config.read_bytes()
+    monkeypatch.setattr(relay_ops, "live_run", lambda repo: "BAR-4, codex")
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/reset-backup")
+    assert event is not None and event.kind == "error"
+    assert event.text == "Finish or stop the current job before changing the backup chain."
+    assert chat.read_bytes() == before
+    assert config.read_bytes() == config_before
+    assert failover.resolve_chat_agent(tmp_path, "claude") == "codex"
 
 
 def test_relay_mode_accepts_cli_prefixed_commands(monkeypatch, tmp_path):

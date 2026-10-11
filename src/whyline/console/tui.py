@@ -58,12 +58,15 @@ from whyline.console.attachments_ui import (
 from whyline.console.relay_process import RelayProcess
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
+    RESET_BUSY_TEXT,
     _HOME_REFUSAL,
     _agents_command as agents_command_event,
     _is_home,
     _run_login,
     after_login,
+    backup_chain_sentence,
     busy_label,
+    clear_chat_override,
     dispatch,
     handle_slash_command,
     home_repo_warning,
@@ -71,6 +74,7 @@ from whyline.console.repl import (
     strip_relay_prefix,
     named_row,
     repo_switch_warning,
+    reset_failover_text,
     run_result_text,
     switch_repo,
     unknown_command_text,
@@ -546,6 +550,8 @@ class WhylineConsoleApp(App):
     #cb-agent { width: 24; }
     /* The open list may be wider than the box, so no agent wraps. */
     #cb-agent > SelectOverlay { width: 36; }
+    /* Hidden until a chat override differs from the saved primary. */
+    #cb-failover { width: auto; height: 1; display: none; }
     #cb-backup { width: 18; }
     #cb-backup > SelectOverlay { width: 56; }
     #cb-backup-more { width: auto; height: 1; min-width: 2; }
@@ -1295,35 +1301,51 @@ class WhylineConsoleApp(App):
             self._cb_refreshing = False
         self._cb_sync_backup_closed()
 
+    def _cb_sync_failover(self) -> None:
+        """`using {effective}` when chat has switched. Hidden on the primary."""
+        from whyline_relay import failover
+
+        try:
+            label = self._main("#cb-failover", Label)
+        except (NoMatches, IndexError):
+            return
+        primary = self._cb_saved[0] if self._cb_saved else ""
+        effective = primary
+        if primary:
+            try:
+                effective = failover.resolve_chat_agent(self.session.root, primary)
+            except (OSError, ValueError):
+                effective = primary
+        if not primary or effective == primary:
+            label.update("")
+            label.display = False
+        else:
+            label.update(f"using {effective}")
+            label.display = True
+        # The label is about twelve columns. Give them back before the next paint.
+        self._cb_fit()
+
     def _cb_reset_failover(self) -> None:
         """Clear the saved primary's chat override. Leave the chain and roles.
 
         The primary is the saved agent. An unsaved Agent edit is not the
         chat that failover switched. A live job does not clear.
         """
-        from whyline_relay import failover
-
         if self._cb_chain_busy():
-            self.render_event(SessionEvent(
-                kind="error",
-                text="Finish or stop the current job before resetting failover.",
-            ))
+            self.render_event(SessionEvent(kind="error", text=RESET_BUSY_TEXT))
             return
         root = self.session.root
         primary = self._cb_saved[0] if self._cb_saved else "claude"
         chain = self._cb_saved[3] if self._cb_saved else ()
         try:
-            failover.clear_overrides(
-                root, role=primary, storage_path=failover.chat_path(root),
-            )
+            clear_chat_override(root, primary)
         except OSError as error:
             self.render_event(SessionEvent(kind="error", text=str(error)))
             return
         self._cb_reload_backup_options()
-        shown = " → ".join(chain) if chain else "none"
+        self._cb_sync_failover()
         self.render_event(SessionEvent(
-            kind="output",
-            text=f"Back to {primary}. The chain is still {shown}.",
+            kind="output", text=reset_failover_text(primary, chain),
         ))
 
     def _cb_chain_busy(self) -> bool:
@@ -1475,6 +1497,7 @@ class WhylineConsoleApp(App):
             self._cb_saved = (agent, model_name, repo_text, self._cb_chain)
             self._cb_status_seen = _cb_status_key(status)
             self._cb_sync_backup_closed()
+            self._cb_sync_failover()
             self._cb_mark_save()
         finally:
             self._cb_refreshing = False
@@ -1529,7 +1552,13 @@ class WhylineConsoleApp(App):
             self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
             self._main("#cb-model-label", Label).update("M" if narrow else "Model")
             self._main("#cb-repo-label", Label).update("R" if narrow else "Repo")
-            self._main("#cb-agent", Select).styles.width = 14 if narrow else 24
+            try:
+                failover_on = bool(self._main("#cb-failover", Label).display)
+            except (NoMatches, IndexError):
+                failover_on = False
+            # Wide agent box is 24. A visible failover label needs those columns
+            # back or Save leaves a 120-column row. Narrow rows are already 14.
+            self._main("#cb-agent", Select).styles.width = 14 if narrow or failover_on else 24
             # "Bak" and a narrower box keep Save on the 80-column row.
             # BAR-5 owns the final 18/14 split; 8 is what still fits beside it.
             self._main("#cb-backup-label", Label).update("Bak" if narrow else "Backup")
@@ -1586,23 +1615,15 @@ class WhylineConsoleApp(App):
                     kind="error", text=self._cb_backup_unreadable))
                 return
             if self._cb_chain_busy():
-                self.render_event(SessionEvent(
-                    kind="error",
-                    text="Finish or stop the current job before changing the backup chain.",
-                ))
+                self.render_event(SessionEvent(kind="error", text=RESET_BUSY_TEXT))
                 return
             try:
                 relay_ops.save_backup(self.session.root, list(chain))
             except (gitcheck.GitError, relay_config.ConfigError) as error:
                 self.render_event(SessionEvent(kind="error", text=str(error)))
                 return
-            shown_chain = " → ".join(chain) if chain else "none"
             self.render_event(SessionEvent(
-                kind="output",
-                text=(
-                    f"Backup for this repo: {shown_chain} "
-                    "(chat, brainstorm, and the relay)."
-                ),
+                kind="output", text=backup_chain_sentence(chain),
             ))
             saved_chain = chain
             with self.prevent(Select.Changed):
@@ -1627,8 +1648,10 @@ class WhylineConsoleApp(App):
                 box.value = False
             self._cb_agent_shown = agent
             self._cb_saved = (agent, model_name, saved_repo, saved_chain)
+            self._cb_sync_failover()
         elif chain_changed and not global_too:
             self._cb_saved = (saved_agent, saved_model, saved_repo, saved_chain)
+            self._cb_sync_failover()
         if not repo_text.strip():
             # An empty path does nothing: put the current repo back.
             self._cb_refresh()
@@ -1746,6 +1769,7 @@ class WhylineConsoleApp(App):
         yield Horizontal(
             Label("Agent", id="cb-agent-label"),
             Select(options, allow_blank=False, id="cb-agent"),
+            Label("", id="cb-failover"),
             Label("Backup", id="cb-backup-label").with_tooltip(
                 "Shared fallback: chat, brainstorm, and the relay"
             ),
@@ -2244,7 +2268,11 @@ class WhylineConsoleApp(App):
         triggered a setup handoff), False otherwise, so _send() knows
         whether to fall through to an ordinary (possibly slow) dispatch()
         call in a worker."""
-        if self.session.mode == "chat" and text.strip() == "/paste":
+        command = text.strip()
+        if command == "/reset-backup" and self._cb_chain_busy():
+            self.render_event(SessionEvent(kind="error", text=RESET_BUSY_TEXT))
+            return True
+        if self.session.mode == "chat" and command == "/paste":
             self._attach_chosen("paste")
             return True
         event = handle_slash_command(self.session, text)
@@ -2280,6 +2308,9 @@ class WhylineConsoleApp(App):
             )
             return True
         self.render_event(event)
+        if command == "/reset-backup" and event.kind == "output":
+            self._cb_reload_backup_options()
+            self._cb_sync_failover()
         self._sync_mode_indicator()
         return True
 
