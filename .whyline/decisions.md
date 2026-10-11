@@ -10502,3 +10502,99 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6f3ebaa68dbb44e6a2ddd268601340f9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:06:47.952Z"} -->
+
+## 2026-10-11 — Paint checked agents first, then remaining installed agents, then unknown names
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-2
+
+**Because:** Up and Down swap the checked order. Showing that order as the row order is what makes the buttons a chain editor rather than a hidden permutation of the installed list.
+
+**Rejected:**
+
+- Keep rows in the installed-agent list and only permute order() — Up and Down would not show the chain being edited
+
+**Files:** src/whyline/console/chain_editor.py
+
+<!-- whyline-event: ba8541f29ba948c68f1a42d85bdf4034 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:25:09.503Z"} -->
+
+## 2026-10-11 — BackupChainScreen Reset calls on_reset and stays open
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-2
+
+**Because:** This task must not write config, and the bar owns the repo and the failover file. Reset is disabled while busy. When it runs it tells the caller and leaves the editor up, so Cancel can still discard the chain.
+
+**Rejected:**
+
+- Dismiss with a reset sentinel — that closes the editor the user is still looking at
+- Call failover.clear_overrides here — the screen has no repo root and this task does not write config
+
+**Files:** src/whyline/console/chain_editor.py
+
+<!-- whyline-event: 39e6686121eb4547aa308a417672b953 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:25:09.503Z"} -->
+
+## 2026-10-11 — Unknown config names stay visible, unchecked, and disabled, and order() omits them
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-2
+
+**Because:** The task says an unknown name stays visible and disabled and is absent from order(). order() is the checked order, so a checked box that Save would drop would disagree with the row.
+
+**Rejected:**
+
+- Leave unknown names checked so Save round-trips them — the task says they are absent from order()
+- Drop unknown names on load — a config name is not dropped on open, so the row stays on screen
+
+**Files:** src/whyline/console/chain_editor.py
+
+<!-- whyline-event: 31534007e4cf4fd1b5b2fbdb0a5918f6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:25:09.508Z"} -->
+
+## 2026-10-11 — Detach chain rows immediately when rebuilding them
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-2
+
+**Because:** Textual remove_children only prunes on the next beat, and the replacement rows reuse the same ids. Leaving the old nodes in the parent raises DuplicateIds.
+
+**Rejected:**
+
+- Await remove_children in a worker — load() has to leave the rows queryable before the next message, and a cancelled worker can paint a half-built list
+
+**Files:** src/whyline/console/chain_editor.py
+
+<!-- whyline-event: 53ef932651da4907aa454e1ed4847415 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:25:09.513Z"} -->
+
+## 2026-10-11 — OrderedChain and BackupChainScreen pass all ordered chain, unknown agent, and modal contract tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-2
+
+**Because:** 12 unit tests and all 1196 project tests pass with no regressions
+
+**Files:** src/whyline/console/chain_editor.py
+
+<!-- whyline-event: a337f8f8aab340b9ac5d4215f9c2984c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:32:55.448Z"} -->
+
+## 2026-10-11 — Approve BAR-2 ordered chain editor
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-2
+
+**Because:** The implementation satisfies ordered checking, unknown-name preservation, movement boundaries, Automatic and None behavior, and modal Save Cancel Reset contracts; focused and full pytest suites pass
+
+**Files:** src/whyline/console/chain_editor.py, tests/console/test_chain_editor.py
+
+<!-- whyline-event: cedfb070c8084aa3a7aa5714dc8b43d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:36:28.915Z"} -->
