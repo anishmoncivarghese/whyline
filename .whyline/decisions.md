@@ -10155,3 +10155,103 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f45e4605215044ab88a639890ed5c463 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-10T18:56:38.397Z"} -->
+
+## 2026-10-10 — Repository clean-tree FAIL lists every dirty path on the existing sentence
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-3
+
+**Because:** scope=repository must name every gitcheck.dirty_paths entry, and the hint must be exactly commit or stash your changes
+
+**Rejected:**
+
+- Truncate the list — the task says every path
+- Drop the existing sentence — full scope keeps that sentence, and only the path list changes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: a7e741e0671f4e9181a3ccfaf0577164 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T19:05:19.822Z"} -->
+
+## 2026-10-10 — preflight.run takes scope as a keyword-only argument
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-3
+
+**Because:** allow_dirty and runner are already keyword-only, and callers pass scope by name
+
+**Rejected:**
+
+- Positional after plan_path — run(root, repository) would bind the string as the plan path
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: 37f387e773e74d9bb2ff2f95ef9327b0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T19:05:24.349Z"} -->
+
+## 2026-10-10 — Repository scope reuses the relay-setup check for config load
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-3
+
+**Because:** That one check is today's config result, including a missing or invalid file, and full scope must keep its message
+
+**Rejected:**
+
+- A new ok line that says relay config loads — full would gain a line it does not have today
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: cb120f97bfee492984d897ee68aafdc3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T19:05:24.352Z"} -->
+
+## 2026-10-10 — Preflight scope=repository behaves as specified and all tests pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAK-3
+
+**Because:** Repository scope returns the exact required checks in order, omits plan and login checks, formats clean-tree failure with all dirty paths and exact hint, raises ValueError for allow_dirty or invalid scopes, and all tests pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: 2ecce1dd301c4b89be555f6076661cea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-10T19:12:31.406Z"} -->
+
+## 2026-10-11 — Diagnose BAK-3 relay pause as a cross-repository handoff
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAK-3
+
+**Because:** Relay state in agentdock still points to tester handoff a7906fc5fc844694b85975b1ff0d8608; the Codex review log and whyline-relay active handoff confirm approval e41f5182cd494b0ba82d6c04906656f1 was written in whyline-relay instead. The relay reads only its root active-handoff.json and correctly pauses on an unchanged id.
+
+**Rejected:**
+
+- Resume immediately — the expected approval is still absent from the relay repository
+
+**Files:** .whyline/relay/state.json
+
+<!-- whyline-event: 762c48c899f94d918a4693eed106eb5d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T06:17:07.493Z"} -->
+
+## 2026-10-11 — Pin relay handoff commands to the relay repository on every agent turn
+
+**Actor:** codex
+**Role:** implementer
+**Task:** HANDOFF-ROOT
+
+**Because:** BAK-3 paused because its reviewer wrote approval in the task repository instead of the relay repository. A generated footer after routing instructions names the absolute handoff path and requires handoff and decision commands to run from the relay root, including custom prompts, legacy turns and planner turns. The 77 focused tests and all 878 relay tests passed; both installed CLI environments were updated and verified.
+
+**Rejected:**
+
+- Change only built-in review text — custom prompts and other agent roles could repeat the same mistake
+- Route using the agent final message — prose cannot substitute for a validated handoff record
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py, /Users/anish/whyline-relay/src/whyline_relay/loop.py, /Users/anish/whyline-relay/tests/test_prompts.py, /Users/anish/whyline-relay/tests/test_loop_single.py
+
+<!-- whyline-event: 579d10f36f6941acaa35b837f814601d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T06:23:34.306Z"} -->
