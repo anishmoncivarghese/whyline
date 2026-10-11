@@ -10255,3 +10255,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 579d10f36f6941acaa35b837f814601d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T06:23:34.306Z"} -->
+
+## 2026-10-11 — Relay mode strips a leading 'whyline relay'/'whyline-relay' and the pause card says 'type resume or press Resume'
+
+**Actor:** claude
+**Role:** implementer
+**Task:** console-resume-hint
+
+**Because:** The pause card told users to type a CLI command that the Relay input rejected as unknown; pasting the relay's own 'Resume with:' line now works too
+
+**Rejected:**
+
+- Only change the pause text — the relay CLI itself still prints 'Resume with: whyline relay resume' into the console transcript
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: 1d3ede4045944d45930c534da517b19f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:28:44.811Z"} -->

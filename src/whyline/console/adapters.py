@@ -224,7 +224,7 @@ def classify_relay_output(root: Path | str, text: str, code: int) -> SessionEven
                 f"[{kind_label}] Task {saved.task_id}\n"
                 f"Reason {saved.paused_reason}\n"
                 f"Log {saved.log_path}\n"
-                "Resume: whyline-relay resume"
+                "Resume: type resume or press Resume"
             )
             return SessionEvent(kind="pause", text=structured)
         return SessionEvent(kind="pause", text=text)

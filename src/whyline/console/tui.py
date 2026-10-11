@@ -68,6 +68,7 @@ from whyline.console.repl import (
     handle_slash_command,
     home_repo_warning,
     login_argv,
+    strip_relay_prefix,
     named_row,
     repo_switch_warning,
     run_result_text,
@@ -1827,6 +1828,8 @@ class WhylineConsoleApp(App):
         if self._plan_state in ("review", "answering") and not text.startswith("/"):
             self._plan_reply(text)
             return
+        if self.session.mode == "relay":
+            text = strip_relay_prefix(text) or text
         if self.session.mode == "relay" and (text.strip() == "run" or text.split() == ["start"]):
             self._run_flow_start()
             return

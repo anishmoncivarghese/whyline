@@ -696,6 +696,18 @@ def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> No
     _print_event(session.record(event), print_fn)
 
 
+def strip_relay_prefix(text: str) -> str:
+    """Drops a leading "whyline relay" / "whyline-relay", so a command
+    copied from the relay's own "Resume with: ..." line runs in Relay mode
+    instead of being rejected as unknown."""
+    parts = text.split()
+    if parts[:2] == ["whyline", "relay"]:
+        return " ".join(parts[2:])
+    if parts[:1] == ["whyline-relay"]:
+        return " ".join(parts[1:])
+    return text
+
+
 def dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
     try:
         return _dispatch(session, text, attachments=attachments)
@@ -721,6 +733,7 @@ def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEven
             )
         return adapters.run_chat_turn(session.root, agent=agent, prompt=text)
     # relay mode
+    text = strip_relay_prefix(text) or text
     first = text.split(maxsplit=1)[0]
     if first == "doctor":
         return adapters.run_doctor(session.root)

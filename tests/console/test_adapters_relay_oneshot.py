@@ -132,7 +132,8 @@ def test_run_relay_oneshot_pause_uses_structured_state_not_raw_text(
     assert "[rate-limit]" in event.text
     assert "T-1" in event.text
     assert "/tmp/T-1-2-codex.log" in event.text
-    assert "whyline-relay resume" in event.text
+    assert "Resume: type resume or press Resume" in event.text
+    assert "whyline-relay resume" not in event.text
 
 
 def test_run_relay_oneshot_pause_falls_back_to_raw_text_with_no_saved_state(

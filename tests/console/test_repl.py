@@ -868,3 +868,28 @@ def test_unknown_commands_are_explained_not_sent_to_the_agent():
     assert "/model" in unknown_command_text("/agents")
     assert "/model codex" in unknown_command_text("/default codex")
     assert "/help" in unknown_command_text("/frobnicate")
+
+
+def test_relay_mode_accepts_cli_prefixed_commands(monkeypatch, tmp_path):
+    # The relay's own pause text says "Resume with: whyline relay resume";
+    # pasting that into the console must work, not be "Unknown".
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    calls = []
+    monkeypatch.setattr(
+        adapters,
+        "run_relay_oneshot",
+        lambda root, argv: calls.append(argv) or SessionEvent(kind="output", text="ok"),
+    )
+    session = repl.ConsoleSession(root=tmp_path, mode="relay")
+    for text in ("whyline relay resume", "whyline-relay resume", "whyline relay start --plan P"):
+        repl.dispatch(session, text)
+    assert calls == [["resume"], ["resume"], ["start", "--plan", "P"]]
+
+
+def test_strip_relay_prefix_leaves_other_text_alone():
+    assert repl.strip_relay_prefix("whyline relay resume") == "resume"
+    assert repl.strip_relay_prefix("whyline-relay  status") == "status"
+    assert repl.strip_relay_prefix("whyline status") == "whyline status"
+    assert repl.strip_relay_prefix("resume") == "resume"
