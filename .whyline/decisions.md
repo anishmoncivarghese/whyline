@@ -10272,3 +10272,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1d3ede4045944d45930c534da517b19f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:28:44.811Z"} -->
+
+## 2026-10-11 — Add REC-1..5 auto-recovery and extend BAK-4 so resume commits the relay's own decision log
+
+**Actor:** claude
+**Role:** planner
+**Task:** REC
+
+**Because:** BAK-3 paused twice on mechanical causes (cross-repo handoff, decisions.md dirtied by agents' whyline notes); recovery routes pauses to fix/agent/failover/human, uses the selected agent then the backup chain, verifies by git state and handoff id rather than the agent's verdict, and resumes only after scope=repository preflight
+
+**Rejected:**
+
+- Let the recovery agent commit or stash freely — it could hide task-code changes from review
+- Ignore .whyline/decisions.md in preflight — it is tracked and the decisions would never be committed
+- Auto-recover auth/blocked/round-cap/release — those need a human decision
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: b5205a440b4e434d884759b23812608d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:31:36.061Z"} -->
