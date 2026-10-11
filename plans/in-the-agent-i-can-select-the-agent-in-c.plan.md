@@ -33,7 +33,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Extend `tests/test_gitcheck.py` and the resume tests in `tests/test_cli_commands.py`. Cover: `RELAY_IGNORE` contains those four paths; `ensure_relay_ignored` adds the new lines to an exclude file that already has the old list and does not duplicate lines that are already present; `commit_decision_log` on a scratch repo commits only `.whyline/decisions.md` with the task id in the message; a second dirty path (tracked or untracked) commits nothing; a clean tree commits nothing; a paused relay whose only change is the decision log resumes past the clean-tree check; `--allow-dirty` leaves the file uncommitted.
   Verify with `uv run pytest -q tests/test_gitcheck.py tests/test_cli_commands.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] BAK-5: Publish whyline-relay 0.2.34
+- [x] BAK-5: Publish whyline-relay 0.2.34
   relay-profile: release
   relay-repo: /Users/anish/whyline-relay
   In `/Users/anish/whyline-relay` only, set `pyproject.toml` to `0.2.34`. The file may say `0.2.32` or `0.2.33` when this task starts. Do not use `0.2.33`: `plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md` already assigns that tag to the timeout work, and this release does not contain `cancel_event` or `write_timeout_minutes`. Do not open `0.3`. Do not change this whyline checkout.
