@@ -26,6 +26,41 @@ class PlanRequest:
 
 
 @dataclass(frozen=True)
+class AutoRunRequest:
+    """Schema 1 snapshot of an unsaved Auto run. There is no runner here.
+
+    `timeout_minutes` of 0 means no limit. Only a caller that already offers
+    `none` may pass 0. Any other non-positive int is rejected. A bool is
+    rejected too: `bool` is a subclass of `int`, and `False` would otherwise
+    be stored as the unlimited value.
+    """
+
+    name: str
+    topic: str
+    replace: bool
+    continue_paths: bool
+    agents: tuple[str, ...]
+    passes: int
+    final_agent: str
+    timeout_minutes: int
+    attachments: tuple[Path, ...]
+    drafter: str
+    reviewer: str
+    implementer: str
+    tester: str
+    reviewer_role: str
+    release: str
+    chain: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        minutes = self.timeout_minutes
+        if isinstance(minutes, bool) or not isinstance(minutes, int):
+            raise TypeError("timeout_minutes must be an int; a bool is not a timeout")
+        if minutes < 0:
+            raise ValueError("timeout_minutes must be 0 or a positive number of minutes")
+
+
+@dataclass(frozen=True)
 class Outcome:
     kind: str  # "draft" | "questions"
     draft: relay_ops.Draft | None = None

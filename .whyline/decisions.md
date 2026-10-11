@@ -11124,3 +11124,115 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0b10bb01b0394ec5a6e9898e77ab0c77 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:34:21.864Z"} -->
+
+## 2026-10-11 — Fingerprint hashes a flat schema-1 document
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-1
+
+**Because:** Later resume compares attachment hashes, models, availability, and trust without treating a moved HEAD as a form change, and the tests must read a null size and digest
+
+**Rejected:**
+
+- Keep the mapping private inside fingerprint — the nulls would be invisible and HEAD could not be set aside later
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: b0a9547a6e1d49faa0fcc44da3c8cbdb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:50:48.064Z"} -->
+
+## 2026-10-11 — Resolve each model from repo load then load_global models
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-1
+
+**Because:** That is the same string model.resolve already returns for an agent; an unset model is an empty string
+
+**Rejected:**
+
+- Read load_global().get(agent) — console.json stores names under models, and the top-level key is default_agent
+- JSON null for an unset model — the spec asks for the resolved model string
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: cb0bbcaaec724b7da9f2bb7db21a10f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:50:48.098Z"} -->
+
+## 2026-10-11 — Leave Antigravity trust unused without reading it when Antigravity is not named
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-1
+
+**Because:** A request that does not name Antigravity must not depend on the settings file or the decline marker
+
+**Rejected:**
+
+- Always call antigravity_state and overwrite — a settings failure would change an unrelated fingerprint
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 33faf55efbaa4c29a1ee1ccab0f59ece -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:50:48.130Z"} -->
+
+## 2026-10-11 — Reject a bool timeout with TypeError and a negative with ValueError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-1
+
+**Because:** bool subclasses int, so False would otherwise store as unlimited 0; a negative is an int this dataclass must not store
+
+**Rejected:**
+
+- TypeError for every non-positive — the spec reserves TypeError for the bool trap, and 0 stays legal
+
+**Files:** src/whyline/console/plan_job.py
+
+<!-- whyline-event: 54cbe05dc0b74062bbe437d6311b721a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:50:48.161Z"} -->
+
+## 2026-10-11 — Run fingerprint git with GIT_DIR and GIT_WORK_TREE cleared
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-1
+
+**Because:** The hash has to describe root when the caller inherited another repository environment
+
+**Rejected:**
+
+- Inherit the environment — git would status that other repository
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 7813923ded034f6fb80ef8fa8cafee71 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:50:48.192Z"} -->
+
+## 2026-10-11 — Approve AutoRunRequest freezing and canonical fingerprinting for AUT-1
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AUT-1
+
+**Because:** All 11 auto_run unit tests and the full test suite pass; schema 1 dataclass validation and fingerprint generation behave as specified
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 9ca46ee65f274789bc4209b92f26ad9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:55:00.497Z"} -->
+
+## 2026-10-11 — Approve AUT-1 frozen request and canonical fingerprint
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AUT-1
+
+**Because:** The implementation matches schema 1, includes all named-agent model and availability inputs, captures git and Antigravity state, handles attachments and timeout validation correctly, and both the focused 11-test suite and full pytest suite pass
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 86dbaa60f04b4f889ef8dad865280063 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:58:49.205Z"} -->
