@@ -11236,3 +11236,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 86dbaa60f04b4f889ef8dad865280063 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T15:58:49.205Z"} -->
+
+## 2026-10-11 — Share one brainstorm field mount between Auto and a new brainstorm
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-2
+
+**Because:** brainstorm_field_widgets hard-codes #bs-* ids, so a second mount in #rp-auto-group raises DuplicateIds
+
+**Rejected:**
+
+- Reparent #rp-new-group on each source change — remove() deletes the widget
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 40a97001b6e44bb8888800503ad2bdb9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:21:06.237Z"} -->
+
+## 2026-10-11 — Join the Auto backup summary with an arrow
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-2
+
+**Because:** The chain is ordered, and Set up already shows that order with an arrow
+
+**Rejected:**
+
+- Plus signs — that separator is for the research set in the same sentence
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 6331d8876ee146bab10f227cbb199720 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:21:06.270Z"} -->
+
+## 2026-10-11 — Follow the final writer only while Auto is selected
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-2
+
+**Because:** Brainstorm, describe, and paste keep the plan request they already build
+
+**Rejected:**
+
+- Follow on every source — changing the shared final-writer select would retarget the brainstorm drafter
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 76488c8656834c4eba12c7673841e283 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:21:06.303Z"} -->
+
+## 2026-10-11 — Auto plan source functions properly without mounting Run, supporting execution roles, chain editor, follow-writer behavior, and summary
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AUT-2
+
+**Because:** Auto displays the expected widgets, isolates execution fields from brainstorm/draft/paste, tracks final writer changes cleanly, handles custom pipelines in auto_summary, fits 80x24 layout, and passes all tests
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 8e3b9fa9ab514ea59116042ead854c68 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:26:18.008Z"} -->
+
+## 2026-10-11 — AUT-2 approved: Auto plan source meets the requested UI, defaults, summary, and isolation behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AUT-2
+
+**Because:** The diff preserves all existing PlanRequest paths, adds Auto without mounting Run, correctly separates role and backup defaults, follows the final writer conditionally, fits at 80x24, and both focused and full test suites pass
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: f3e531f9c0624a4d8bac66834ec2f1e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:30:16.568Z"} -->

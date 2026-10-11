@@ -748,6 +748,64 @@ def role_meaning(
     )
 
 
+def _summary_name(name: str) -> str:
+    """A one-word agent label. An empty name is `none`, not a blank clause."""
+    text = str(name or "")
+    if not text:
+        return "none"
+    return text[:1].upper() + text[1:]
+
+
+def _summary_release(name: str) -> str:
+    text = str(name or "")
+    if text in ("", "human", "you"):
+        return "you"
+    return _summary_name(text)
+
+
+def _has_custom_pipeline(root: Path) -> bool:
+    from whyline_relay import config
+
+    try:
+        loaded = config.load(root)
+    except config.ConfigError:
+        return False
+    return loaded.pipeline is not None
+
+
+_CUSTOM_PIPELINE = (
+    " This repo has a custom pipeline; Run updates the three role agents"
+    " and leaves the other stages."
+)
+
+
+def auto_summary(request) -> str:
+    """One line for the unsaved Auto form.
+
+    Research names join with ` + `. The chain keeps its order with ` → `,
+    or `Backup: none` when nothing is checked. `request.root`, when set,
+    is the repo whose loaded config may add the custom-pipeline sentence.
+    """
+    agents = tuple(getattr(request, "agents", ()) or ())
+    chain = tuple(getattr(request, "chain", ()) or ())
+    research = " + ".join(_summary_name(agent) for agent in agents) or "none"
+    backup = " → ".join(_summary_name(agent) for agent in chain) or "none"
+    line = (
+        f"{research} research → {_summary_name(getattr(request, 'final_agent', ''))} synthesizes → "
+        f"{_summary_name(getattr(request, 'drafter', ''))} drafts, "
+        f"{_summary_name(getattr(request, 'reviewer', ''))} reviews → "
+        f"{_summary_name(getattr(request, 'implementer', ''))} implements, "
+        f"{_summary_name(getattr(request, 'tester', ''))} tests, "
+        f"{_summary_name(getattr(request, 'reviewer_role', ''))} reviews → "
+        f"whyline commits → {_summary_release(getattr(request, 'release', 'human'))} release. "
+        f"Backup: {backup}."
+    )
+    root = getattr(request, "root", None)
+    if root is not None and _has_custom_pipeline(root):
+        line += _CUSTOM_PIPELINE
+    return line
+
+
 
 
 def prepare_agents(root: Path, agents: list[str], *, commit: bool = True) -> list[Path]:

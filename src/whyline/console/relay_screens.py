@@ -24,7 +24,26 @@ _SOURCES = [
     ("Brainstorm it", "brainstorm"),
     ("I'll describe it", "draft"),
     ("I have a plan already", "paste"),
+    ("Auto — brainstorm to implementation", "auto"),
 ]
+
+
+class _PlanChain(OrderedChain):
+    """Auto's shared chain. Up, Down, Automatic, and None stop on the chain,
+    so the plan screen hears about the new order from here."""
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        super().on_checkbox_changed(event)
+        self._notify()
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        super().on_button_pressed(event)
+        self._notify()
+
+    def _notify(self) -> None:
+        screen = self.screen
+        if isinstance(screen, RelayPlanScreen):
+            screen._refresh_auto_summary()
 
 
 class RelayPlanScreen(ModalScreen):
@@ -42,10 +61,14 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen Vertical, RelayPlanScreen Horizontal { height: auto; }
     RelayPlanScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelayPlanScreen TextArea { height: 8; }
-    RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-reviewer { width: 40; }
+    RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-reviewer,
+    RelayPlanScreen #rp-implementer, RelayPlanScreen #rp-tester,
+    RelayPlanScreen #rp-exec-reviewer, RelayPlanScreen #rp-release { width: 40; }
     RelayPlanScreen #rp-name { width: 1fr; }
     RelayPlanScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelayPlanScreen Checkbox:focus { border: none; }
+    RelayPlanScreen #rp-replace, RelayPlanScreen #rp-continue-paths { height: auto; }
+    RelayPlanScreen #rp-committer, RelayPlanScreen #rp-auto-summary { height: auto; }
     RelayPlanScreen #rp-error { color: $error; height: auto; }
     RelayPlanScreen #rp-error.-empty { display: none; }
     RelayPlanScreen #rp-buttons { margin-top: 1; }
@@ -59,6 +82,8 @@ class RelayPlanScreen(ModalScreen):
         self._active = active
         self._agents = relay_ops.relay_agents(root) or ["claude", "codex"]
         self._planner = relay_ops.planner_agents(root)
+        self._final_writer: str | None = None
+        self._load_execution_defaults()
 
     def _agent_select(self, wanted: str, select_id: str) -> Select:
         value = wanted if wanted in self._agents else self._agents[0]
@@ -89,6 +114,9 @@ class RelayPlanScreen(ModalScreen):
                 id="rp-draft-group",
             ),
             Vertical(*self._brainstorm_widgets(), id="rp-brainstorm-group"),
+            # brainstorm_field_widgets hard-codes #bs-* ids, so Auto and a new
+            # brainstorm share this one mount instead of composing a second copy.
+            Vertical(*self._research_widgets(), id="rp-new-group"),
             Vertical(
                 Horizontal(
                     Label("Drafter:", classes="field-label"),
@@ -102,12 +130,16 @@ class RelayPlanScreen(ModalScreen):
                 ),
                 id="rp-roles-row",
             ),
+            self._auto_group(),
             id="rp-form",
         )
+        check = Button("Check", id="rp-check", variant="primary")
+        check.display = False
         yield Vertical(
             form,
             Static("", id="rp-error", classes="-empty"),
             Horizontal(
+                check,
                 Button("Make the plan", id="rp-go", variant="success"),
                 Button("Resume draft", id="rp-resume-draft", variant="primary"),
                 Button("Discard it", id="rp-discard-draft", variant="warning"),
@@ -116,13 +148,18 @@ class RelayPlanScreen(ModalScreen):
             ),
         )
 
-    def _brainstorm_widgets(self) -> list:
+    def _research_default(self) -> str:
         from whyline.console.repl import BRAINSTORM_AGENTS
-        from whyline.console.tui import brainstorm_field_widgets
 
         usable = [a for a in BRAINSTORM_AGENTS if self._status[a]["available"]]
-        default = self._active if self._active in usable else (usable or ["claude"])[0]
+        return self._active if self._active in usable else (usable or ["claude"])[0]
+
+    def _brainstorm_widgets(self) -> list:
         docs = relay_ops.brainstorm_docs(self._root)
+        default = self._research_default()
+        from whyline.console.repl import BRAINSTORM_AGENTS
+
+        usable = [a for a in BRAINSTORM_AGENTS if self._status[a]["available"]]
         return [
             Horizontal(
                 Label("From:", classes="field-label"),
@@ -143,24 +180,111 @@ class RelayPlanScreen(ModalScreen):
                 ),
                 id="rp-writer-row",
             ),
-            Vertical(
-                *brainstorm_field_widgets(
-                    self._status, default, self.app.session.root, self.app._attach_session
-                ),
-                id="rp-new-group",
-            ),
         ]
+
+    def _research_widgets(self) -> list:
+        from whyline.console.tui import brainstorm_field_widgets
+
+        default = self._research_default()
+        self._final_writer = default
+        return brainstorm_field_widgets(
+            self._status, default, self.app.session.root, self.app._attach_session
+        )
+
+    def _load_execution_defaults(self) -> None:
+        """Roles from the saved form, or a recommendation. The chain is only read_backup."""
+        if relay_ops.roles_configured(self._root):
+            roles = relay_ops.current_roles(self._root)
+            self._release = relay_ops.release_role(self._root)
+        else:
+            roles = relay_ops.recommend_roles(
+                relay_ops.usable_agents(self._root, self._status)
+            )
+            self._release = "human"
+        self._role_values = {
+            "implementer": roles.get("implementer", ""),
+            "tester": roles.get("tester", ""),
+            "reviewer": roles.get("reviewer", ""),
+        }
+        self._chain = list(relay_ops.read_backup(self._root))
+
+    def _role_value(self, wanted: str) -> str:
+        if wanted in self._agents:
+            return wanted
+        return self._agents[0]
+
+    def _auto_group(self) -> Vertical:
+        group = Vertical(*self._auto_widgets(), id="rp-auto-group")
+        group.display = False
+        return group
+
+    def _auto_widgets(self) -> list:
+        rows = [
+            Horizontal(
+                Label(label, classes="field-label"),
+                Select(
+                    [(agent, agent) for agent in self._agents],
+                    value=self._role_value(self._role_values[key]),
+                    allow_blank=False,
+                    id=widget_id,
+                ),
+            )
+            for key, label, widget_id in (
+                ("implementer", "Implementer:", "rp-implementer"),
+                ("tester", "Tester:", "rp-tester"),
+                ("reviewer", "Reviewer:", "rp-exec-reviewer"),
+            )
+        ]
+        release_options = [("you", "human"), *[(agent, agent) for agent in self._agents]]
+        release_values = [value for _label, value in release_options]
+        release = self._release if self._release in release_values else "human"
+        chain = _PlanChain(self._agents, self._fill_backup, id="rp-chain")
+        rows.extend(
+            [
+                Horizontal(
+                    Label("Release:", classes="field-label"),
+                    Select(release_options, value=release, allow_blank=False, id="rp-release"),
+                ),
+                Static("Committer: whyline (automatic)", id="rp-committer", markup=False),
+                Label("Backup, used when an agent fails:"),
+                chain,
+                Checkbox(
+                    "Replace an existing brainstorm, spec, or plan",
+                    value=False,
+                    id="rp-replace",
+                ),
+                Checkbox(
+                    "Continue anyway: some agents get images as file paths only",
+                    value=False,
+                    id="rp-continue-paths",
+                ),
+                Static("", id="rp-auto-summary", markup=False),
+            ]
+        )
+        return rows
+
+    def _fill_backup(self) -> list[str]:
+        """Names for an empty Auto chain. Automatic is not a stored value."""
+        from whyline import account, model
+
+        primary, _chosen_model = model.resolve(self._root)
+        usable = relay_ops.usable_agents(self._root, account.agent_status(self._root))
+        return relay_ops.staged_backup(primary, usable)
 
     def on_mount(self) -> None:
         self._show_source("brainstorm")
-        self.query_one("#rp-writer-row").display = False
         pending = relay_ops.pending_draft(self._root)
-        self.query_one("#rp-resume-draft").display = bool(pending)
-        self.query_one("#rp-discard-draft").display = bool(pending)
+        spec = relay_ops.pending_spec(self._root)
+        resume = bool(pending or spec)
+        self.query_one("#rp-resume-draft").display = resume
+        self.query_one("#rp-discard-draft").display = resume
         if pending:
             self._error(f'A plan draft for "{pending}" was left unfinished.')
+        # The chain's own on_mount sync returns while is_mounted is still false.
+        self.query_one("#rp-chain", OrderedChain).load(self._chain)
         self._sync_planner_agents()
         self._sync_brainstorm_agents()
+        self._refresh_auto_summary()
 
     def _sync_planner_agents(self) -> None:
         try:
@@ -186,29 +310,66 @@ class RelayPlanScreen(ModalScreen):
         return self.query_one("#rp-source", Select).value
 
     def _show_source(self, source: str) -> None:
-        for name in ("paste", "draft", "brainstorm"):
+        for name in ("paste", "draft", "brainstorm", "auto"):
             self.query_one(f"#rp-{name}-group").display = name == source
-        roles_shown = source in ("draft", "brainstorm")
+        self._sync_from(source)
+        roles_shown = source in ("draft", "brainstorm", "auto")
         self.query_one("#rp-roles-row").display = roles_shown
         self.query_one("#rp-drafter-row").display = roles_shown
         self.query_one("#rp-reviewer-row").display = roles_shown
         self.query_one("#rp-drafter").display = roles_shown
         self.query_one("#rp-reviewer").display = roles_shown
-        self.query_one("#rp-go", Button).label = "Save" if source == "paste" else "Make the plan"
+        go = self.query_one("#rp-go", Button)
+        go.display = source != "auto"
+        if source != "auto":
+            go.label = "Save" if source == "paste" else "Make the plan"
+        self.query_one("#rp-check", Button).display = source == "auto"
+
+    def _sync_from(self, source: str | None = None) -> None:
+        source = self._source() if source is None else source
+        new = self.query_one("#rp-from", Select).value == "new"
+        self.query_one("#rp-new-group").display = source == "auto" or (
+            source == "brainstorm" and new
+        )
+        self.query_one("#rp-writer-row").display = source == "brainstorm" and not new
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         if event.select.id == "rp-source":
             self._show_source(event.value)
         elif event.select.id == "rp-from":
-            new = event.value == "new"
-            self.query_one("#rp-new-group").display = new
-            self.query_one("#rp-writer-row").display = not new
+            self._sync_from()
+        elif event.select.id == "bs-final":
+            self._follow_drafter(event.value)
+            self._refresh_auto_summary()
         elif event.select.id in ("rp-drafter", "rp-reviewer"):
             self._sync_planner_agents()
+            self._refresh_auto_summary()
+        elif event.select.id in ("rp-implementer", "rp-tester", "rp-exec-reviewer", "rp-release"):
+            self._refresh_auto_summary()
+
+    def _follow_drafter(self, current: str) -> None:
+        """On Auto, move the drafter from A to B only while it is still A.
+
+        Brainstorm uses this same final-writer select. Following there would
+        change a plan request the other sources already build.
+        """
+        previous = self._final_writer
+        self._final_writer = current
+        if (
+            self._source() != "auto"
+            or not previous
+            or previous == current
+            or current not in self._agents
+        ):
+            return
+        drafter = self.query_one("#rp-drafter", Select)
+        if drafter.value == previous:
+            drafter.value = current
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         if event.checkbox.id and event.checkbox.id.startswith("bs-"):
             self._sync_brainstorm_agents()
+            self._refresh_auto_summary()
 
     def _error(self, text: str) -> None:
         error = self.query_one("#rp-error", Static)
@@ -294,6 +455,10 @@ class RelayPlanScreen(ModalScreen):
     def _on_rp_cancel(self) -> None:
         self.dismiss(None)
 
+    def _on_rp_check(self) -> None:
+        """Visible before AUT-5. That task starts the read-only worker."""
+        return
+
     def _on_rp_go(self) -> None:
         source = self._source()
         if source == "paste":
@@ -356,6 +521,34 @@ class RelayPlanScreen(ModalScreen):
         self._error("")
         self.query_one("#rp-resume-draft").display = False
         self.query_one("#rp-discard-draft").display = False
+
+    def _auto_view(self):
+        from types import SimpleNamespace
+
+        from whyline.console.repl import BRAINSTORM_AGENTS
+
+        agents = tuple(
+            agent for agent in BRAINSTORM_AGENTS if self.query_one(f"#bs-{agent}", Checkbox).value
+        )
+        return SimpleNamespace(
+            root=self._root,
+            agents=agents,
+            final_agent=self.query_one("#bs-final", Select).value,
+            drafter=self.query_one("#rp-drafter", Select).value,
+            reviewer=self.query_one("#rp-reviewer", Select).value,
+            implementer=self.query_one("#rp-implementer", Select).value,
+            tester=self.query_one("#rp-tester", Select).value,
+            reviewer_role=self.query_one("#rp-exec-reviewer", Select).value,
+            release=self.query_one("#rp-release", Select).value,
+            chain=tuple(self.query_one("#rp-chain", OrderedChain).order()),
+        )
+
+    def _refresh_auto_summary(self) -> None:
+        try:
+            text = relay_ops.auto_summary(self._auto_view())
+        except NoMatches:
+            return
+        self.query_one("#rp-auto-summary", Static).update(text)
 
 
 class PlanDraftScreen(ModalScreen):
