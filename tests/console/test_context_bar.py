@@ -67,6 +67,20 @@ def _plain(widget) -> str:
     return content.plain if hasattr(content, "plain") else str(content)
 
 
+async def _click_modal(pilot, app, selector: str) -> None:
+    """Click a control on the active modal once it is laid out. Textual 2 can
+    push a screen before its buttons have a nonzero region; a click sampled
+    in that window misses or lands out of bounds (seen on Windows CI)."""
+    for _ in range(100):
+        found = app.screen.query(selector)
+        if found and found.first().region.width > 0:
+            break
+        await pilot.pause(0.02)
+    else:
+        raise AssertionError(f"{selector} never rendered on {type(app.screen).__name__}")
+    await pilot.click(selector)
+
+
 def _lines(app):
     return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 
@@ -588,13 +602,9 @@ async def test_manage_save_dirties_the_bar_and_does_not_write(tmp_path, monkeypa
         app.query_one("#cb-backup", tui.Select).value = "manage"
         await pilot.pause()
         assert isinstance(app.screen, BackupChainScreen)
-        for _ in range(20):
-            if app.screen.query("#chain-check-claude"):
-                break
-            await pilot.pause()
-        await pilot.click("#chain-check-claude")
+        await _click_modal(pilot, app, "#chain-check-claude")
         await pilot.pause()
-        await pilot.click("#bc-save")
+        await _click_modal(pilot, app, "#bc-save")
         await pilot.pause()
         assert not isinstance(app.screen, BackupChainScreen)
         assert not app.query_one("#cb-save", tui.Button).disabled
@@ -670,7 +680,7 @@ async def test_editor_reset_clears_the_chat_override_and_stays_open(tmp_path, mo
         app.query_one("#cb-backup", tui.Select).value = "manage"
         await pilot.pause()
         assert isinstance(app.screen, BackupChainScreen)
-        await pilot.click("#bc-reset")
+        await _click_modal(pilot, app, "#bc-reset")
         await pilot.pause()
         assert isinstance(app.screen, BackupChainScreen)
         assert failover.resolve_chat_agent(root, "claude") == "claude"
@@ -679,7 +689,7 @@ async def test_editor_reset_clears_the_chat_override_and_stays_open(tmp_path, mo
             "Back to claude. The chain is still codex → grok." in line
             for line in _lines(app)
         )
-        await pilot.click("#bc-cancel")
+        await _click_modal(pilot, app, "#bc-cancel")
         await pilot.pause()
         select = app.query_one("#cb-backup", tui.Select)
         assert not isinstance(app.screen, BackupChainScreen)
@@ -782,7 +792,7 @@ async def test_backup_hides_below_80_and_the_agent_menu_opens_it(tmp_path, monke
         assert select.value == "claude"
         assert isinstance(app.screen, BackupChainScreen)
         assert app._main("#cb-save", tui.Button).disabled
-        await pilot.click("#bc-cancel")
+        await _click_modal(pilot, app, "#bc-cancel")
         await pilot.pause()
         assert not isinstance(app.screen, BackupChainScreen)
         assert select.value == "claude"
