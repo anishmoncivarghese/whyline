@@ -1,4 +1,6 @@
 <!-- whyline-plan v1 | source: draft | drafted-by: grok (reviewed by codex) | spec: docs/specs/in-chat-therr-is-hardocded-limit-of-300s.md | created: 2026-10-10T14:15:57+05:30 -->
+> **Moved, 2026-10-12:** `RTO-1`–`RTO-7` now run inside `plans/in-the-agent-i-can-select-the-agent-in-c.plan.md` before its `RUN-2` (0.2.35), and `CTO-*` / `UTO-2`–`UTO-6` run after its `FIL-4`, plus a 0.3.44 release. `RTO-8` and `UTO-1` are dropped. Do not run this file with the relay.
+
 # Configurable per-attempt timeouts
 
 Spec: `docs/specs/in-chat-therr-is-hardocded-limit-of-300s.md`.

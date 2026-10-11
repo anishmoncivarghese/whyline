@@ -11682,3 +11682,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 27c4c74ea0fb4899bf461687e71aa08d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T19:55:27.974Z"} -->
+
+## 2026-10-11 — Merge the timeout plan into the main plan: RTO-1..7 before RUN-2, CTO-1..4 and UTO-2..6 after FIL, plus a 0.3.44 release
+
+**Actor:** claude
+**Role:** planner
+**Task:** RTO
+
+**Because:** RUN-2 refuses to tag 0.2.35 without cancel_event and chat.NO_LIMIT, which only the timeout plan's RTO tasks add, and that plan was 0/18; RUN-3..7 depend on 0.2.35. RTO-7 overlaps RUN-1's timeout writer so it now verifies and fills gaps; CTO-1 widths defer to BAR-5's 80-column guarantees and FIL-2's console-column measuring
+
+**Rejected:**
+
+- Keep the timeout plan separate — RUN-2 would stall and the plan cannot run two relays in one checkout
+- Keep RTO-8 (0.2.33) — 0.2.34 is already published, so 0.2.33 would go backwards; RUN-2's 0.2.35 ships these
+- Keep UTO-1 (depend on 0.2.33) — RUN-3 already raises the floor to 0.2.35
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md, plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md
+
+<!-- whyline-event: 5e9eb9a8eff045a6a1d0706513183464 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:20:12.306Z"} -->
