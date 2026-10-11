@@ -10328,3 +10328,67 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2da258e07939419aa27682a55bd97085 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:57:31.477Z"} -->
+
+## 2026-10-11 — Commit the decision log on the branch resume is already on
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-4
+
+**Because:** The task places the call after the live-relay refusal and before the clean-tree check, and the saved-branch switch stays after those checks
+
+**Rejected:**
+
+- Switch to the saved branch first — that would land the commit on the agents' branch, but it would also move the branch switch ahead of the clean-tree check
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 7118ef6186cf494f8b7191760076c520 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:12:48.547Z"} -->
+
+## 2026-10-11 — A failed decision-log commit stops resume with EXIT_ERROR
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAK-4
+
+**Because:** cmd_resume already turns later git failures into a stderr message and EXIT_ERROR, and an uncaught GitError would escape main as a traceback
+
+**Rejected:**
+
+- Let GitError propagate — resume would crash instead of returning the error exit the rest of the command uses
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 2767847e736d4abc980e0797a9ae55ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:12:48.547Z"} -->
+
+## 2026-10-11 — BAK-4 implementation passes all test cases and behavior requirements
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAK-4
+
+**Because:** RELAY_IGNORE contains the runtime/chat files, commit_decision_log only commits lone decisions.md with task ID message, resume prints notification and respects --allow-dirty, and targeted tests pass with 51/51 exit 0
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/gitcheck.py, /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 02500b301b5b47c7b5ac2e5e2d1b4f9f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:19:31.710Z"} -->
+
+## 2026-10-11 — Pin the relay's Codex model to gpt-5.6-sol in .whyline/relay/config.toml
+
+**Actor:** claude
+**Role:** operator
+**Task:** BAK-4
+
+**Because:** The global ~/.codex/config.toml default changed to gpt-6.1-sol (unsupported on the ChatGPT account), which made the BAK-4 review exit in 5s without a handoff; a per-agent model keeps the relay independent of the interactive Codex default
+
+**Rejected:**
+
+- Change the global Codex default back — the next model-picker change would break the relay again
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: 5444913af46b4949aeaa1ddf1c13713a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:26:26.561Z"} -->
