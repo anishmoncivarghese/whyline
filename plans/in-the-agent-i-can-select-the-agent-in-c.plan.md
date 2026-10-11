@@ -88,7 +88,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 ## Console, Auto form and read-only Check
 
-- [ ] AUT-1: Freeze the Auto request and fingerprint it
+- [x] AUT-1: Freeze the Auto request and fingerprint it
   Edit only `src/whyline/console/plan_job.py`, `src/whyline/console/auto_run.py` (new), and `tests/console/test_auto_run.py` (new). Do not add a runner and do not mount Auto on the Plan screen.
   `plan_job.AutoRunRequest` is a frozen dataclass, schema 1: `name: str`, `topic: str`, `replace: bool`, `continue_paths: bool`, `agents: tuple[str, ...]`, `passes: int`, `final_agent: str`, `timeout_minutes: int`, `attachments: tuple[Path, ...]`, `drafter: str`, `reviewer: str`, `implementer: str`, `tester: str`, `reviewer_role: str`, `release: str`, `chain: tuple[str, ...]`. `0` is the only non-positive timeout this dataclass stores, and only a caller that already offers `none` may pass it. A bool is not a timeout; the constructor raises `TypeError` for a bool.
   `auto_run.fingerprint(root, request) -> str` is sha256 of canonical JSON (`sort_keys=True`, separators `(",", ":")`) of schema 1 plus every field above, and: each attachment as path, size, and sha256 of its bytes, or `null` / `null` when the path is missing; the resolved model string for every named agent, from `whyline.model.load` then `load_global`; `account.agent_status(root)[agent]["available"]` for every named agent; `git rev-parse HEAD`; `git status --porcelain` stdout; Antigravity trust as `trusted`, `declined`, `ask`, or `unused` when Antigravity is not named. Named means every research agent, the final writer, drafter, reviewer, implementer, tester, execution reviewer, every chain member, and release when release is not `human`.
