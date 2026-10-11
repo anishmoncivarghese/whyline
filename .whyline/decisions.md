@@ -10424,3 +10424,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: be0a9c81afcf49dd8ae80ad9db947513 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:34:20.009Z"} -->
+
+## 2026-10-11 — Fix test_loop_cross_repo's import instead of accepting BAK-4 review's 'pre-existing collection error'
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** BAK-4
+
+**Because:** Plain uv run pytest interrupted the whole run on that file, so BAK-5's 'pytest exits 0' gate could not pass and the review's 'all collectable tests passed' covered nothing; the error was mine (from tests.* resolved only under python -m pytest)
+
+**Rejected:**
+
+- Leave it as documented — a collection error stops every test, not just that file
+
+**Files:** /Users/anish/whyline-relay/tests/test_loop_cross_repo.py
+
+<!-- whyline-event: 0a411deab084473f9df6e667a0203a67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:40:10.281Z"} -->
