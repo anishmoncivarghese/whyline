@@ -76,7 +76,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Extend `tests/console/test_context_bar.py`. At width 80 with the timeout select mounted, Backup is visible and Save's region ends at or before column 80. At width 79, Backup is hidden, the agent prompt contains `bak`, and `Backup…` opens the editor.
   Verify with `uv run pytest -q tests/console/test_context_bar.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] BAR-6: Use the ordered editor in Set up
+- [x] BAR-6: Use the ordered editor in Set up
   Edit only `src/whyline/console/relay_screens.py` and `tests/console/test_relay_setup_screen.py`. `RelaySetupScreen` replaces the `#rs-backup-{agent}` checkboxes with one `OrderedChain`. `_chosen()` returns that widget's `order()`. Guided mode still collapses to the one-line summary, `Backup: codex → grok` or `Backup: none`. Set up's Check still calls `save_roles`, `save_release`, and `prepare_agents` before `run_checks`. The chain in that call is the editor order. Set up does not gain Automatic as a stored mode. Its Automatic button only fills an empty editor, using `staged_backup`. Do not change `src/whyline/console/agents_screens.py`. Those backup checkboxes stay a different store.
   Extend `tests/console/test_relay_setup_screen.py`. Cover: the editor round-trips `grok, claude` rather than the sorted agent list; Check still writes roles and that chain; the guided summary shows `Backup: grok → claude`. Extend `tests/console/test_new_agent.py` so the scheduled-agent backup checkbox still writes that form's own `backup` list and does not call `relay_ops.save_backup`.
   Verify with `uv run pytest -q tests/console/test_relay_setup_screen.py tests/console/test_new_agent.py` and `uv run pytest -q`. Change nothing else.
