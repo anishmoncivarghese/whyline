@@ -10411,3 +10411,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 523581f81eed4b6d8648f85cb5ab5ec9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:29:45.006Z"} -->
+
+## 2026-10-11 — Approve BAK-4 decision-log resume handling and relay ignores
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAK-4
+
+**Because:** The implementation is scoped correctly, commits only a lone tracked .whyline/decisions.md before resume checks, preserves --allow-dirty behavior, and targeted tests pass; the full suite has only the documented pre-existing test_loop_cross_repo.py collection error
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/gitcheck.py
+
+<!-- whyline-event: be0a9c81afcf49dd8ae80ad9db947513 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T10:34:20.009Z"} -->
