@@ -11390,3 +11390,131 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 626339890b9044faa2f46ccd60a6c644 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T16:59:12.737Z"} -->
+
+## 2026-10-11 — CheckLine carries a group so Auto headings stay with each line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-4
+
+**Because:** AUT-5 prints seven headings, and the live-relay sentence is in both Repository and Concurrency, so the group cannot be recovered from the text
+
+**Rejected:**
+
+- encoding the heading in the message — Set up prints status and message only, and a duplicated sentence would land under one heading
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 317769e2fa594d168ac143efff2b9eac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:24:02.582Z"} -->
+
+## 2026-10-11 — Warn when the form implementer equals its execution reviewer even if a pipeline is configured
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-4
+
+**Because:** preflight only warns when pipeline is None, and the candidate config installs the default pipeline, so that condition would never fire
+
+**Rejected:**
+
+- copying the pipeline is None guard — a normal Auto form would never show the warning
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: fa095fa70c7540f48b647faba6971be7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:24:02.617Z"} -->
+
+## 2026-10-11 — Resolve only the implement, test, and review prompt names
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-4
+
+**Because:** a custom pipeline is the summary warning, not a FAIL, while full preflight fails every other stage prompt
+
+**Rejected:**
+
+- failing every pipeline stage prompt — that turns a custom pipeline into a FAIL
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 2713bb6bbb7d4b3a80a50b1184316629 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:24:02.649Z"} -->
+
+## 2026-10-11 — Write the candidate timeout as an unquoted integer
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-4
+
+**Because:** the timeout writer Run will use persists an unquoted integer
+
+**Rejected:**
+
+- setup._set_top_level — it quotes the value
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: c42a5255b8614b6d867729c059c80252 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:24:02.682Z"} -->
+
+## 2026-10-11 — Only an image with path-unverified delivery uses the continue sentence
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-4
+
+**Because:** the task names images and that sentence, while a file with path-unverified delivery is a different attachment warning
+
+**Rejected:**
+
+- failing every path-unverified kind — a grok PDF would fail Check even though the task only names images
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 6d23769fc78c42c58d5993b392cfe96d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:24:02.714Z"} -->
+
+## 2026-10-11 — Repeat the live-relay line under Concurrency as well as Repository
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-4
+
+**Because:** scope=repository already ends with that line, and the concurrency section asks for the same sentence
+
+**Rejected:**
+
+- dropping it from Concurrency — the task lists running.live there separately from the repository results
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 1e286129199941e2b387c13104e74cbf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:24:02.746Z"} -->
+
+## 2026-10-11 — Approve candidate_checks implementation and tests for unsaved form validation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AUT-4
+
+**Because:** candidate_checks validates unsaved forms in memory across all required categories without modifying the repo or Antigravity settings, and all test suites pass
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 7de83e420c474507a9f647548e3b1244 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:30:09.914Z"} -->
+
+## 2026-10-11 — Approve AUT-4 unsaved candidate checks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AUT-4
+
+**Because:** The diff implements all ordered check groups without persisting form state or trust, exercises the required mutation guards and edge cases, and both focused and full pytest suites pass
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 804a7a270d0f4720aeec299fff3102a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:34:36.862Z"} -->

@@ -553,3 +553,610 @@ def test_interrupt_live_run_with_nothing_running(tmp_path, monkeypatch):
 
     monkeypatch.setattr(running, "live", lambda root: None)
     assert relay_ops.interrupt_live_run(tmp_path) is False
+
+
+_READY_CONFIG = """\
+plan = "plans/saved-missing.plan.md"
+timeout_minutes = 30
+
+[roles]
+implementer = "codex"
+reviewer = "claude"
+"""
+
+_GROUPS = (
+    "Repository",
+    "Agents and logins",
+    "Inputs",
+    "Planning",
+    "Execution",
+    "Concurrency",
+    "Will write",
+)
+
+
+def _ready(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q", "-b", "main")
+    _git(path, "config", "user.email", "t@example.com")
+    _git(path, "config", "user.name", "T")
+    (path / "README.md").write_text("x\n", encoding="utf-8")
+    relay = path / ".whyline" / "relay"
+    relay.mkdir(parents=True)
+    (path / ".whyline" / "ledger.jsonl").write_text("", encoding="utf-8")
+    (relay / "config.toml").write_text(_READY_CONFIG, encoding="utf-8")
+    (relay / "claude-settings.json").write_text("{}\n", encoding="utf-8")
+    _git(path, "add", "-A")
+    _git(path, "commit", "-qm", "ready")
+    return path
+
+
+def _request(**overrides):
+    from whyline.console.plan_job import AutoRunRequest
+
+    fields = dict(
+        name="fresh-plan",
+        topic="fresh topic",
+        replace=False,
+        continue_paths=False,
+        agents=("claude",),
+        passes=0,
+        final_agent="claude",
+        timeout_minutes=15,
+        attachments=(),
+        drafter="claude",
+        reviewer="grok",
+        implementer="claude",
+        tester="grok",
+        reviewer_role="grok",
+        release="human",
+        chain=("grok",),
+    )
+    fields.update(overrides)
+    return AutoRunRequest(**fields)
+
+
+def _tree(root: Path) -> list[tuple[str, bytes]]:
+    found = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if ".git" in relative.parts or not path.is_file():
+            continue
+        found.append((relative.as_posix(), path.read_bytes()))
+    return found
+
+
+def _settings_bytes() -> bytes | None:
+    from whyline_relay import antigravity
+
+    path = antigravity.settings_path()
+    if not path.exists():
+        return None
+    return path.read_bytes()
+
+
+def _exclude(root: Path, *lines: str) -> None:
+    path = root / ".git" / "info" / "exclude"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    path.write_text(current + "".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def _silent(root: Path, call):
+    before = (_git(root, "status", "--porcelain"), _tree(root), _settings_bytes())
+    result = call()
+    assert (_git(root, "status", "--porcelain"), _tree(root), _settings_bytes()) == before
+    return result
+
+
+def _grouped(lines, group: str):
+    return [line for line in lines if line.group == group]
+
+
+@pytest.fixture
+def agents(monkeypatch):
+    status = {
+        "claude": {"available": True, "label": "available", "hint": None},
+        "codex": {"available": False, "label": "not logged in", "hint": "Run /login codex"},
+        "grok": {"available": True, "label": "installed (login not checked)", "hint": None},
+        "antigravity": {
+            "available": True, "label": "installed (login not checked)", "hint": None,
+        },
+    }
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["antigravity", "claude", "codex", "grok"],
+    )
+    monkeypatch.setattr("whyline.account.agent_status", lambda root: status)
+    return status
+
+
+@pytest.fixture
+def guard(monkeypatch):
+    def banned(name):
+        def _call(*args, **kwargs):
+            raise AssertionError(name)
+        return _call
+
+    for name in (
+        "save_roles", "save_release", "save_planner", "prepare_agents", "select_plan",
+        "trust_antigravity", "decline_antigravity", "forget_antigravity_decline",
+        "approve_plan", "approve_spec", "save_pasted_plan", "save_backup",
+    ):
+        monkeypatch.setattr(relay_ops, name, banned(name))
+    from whyline_relay import setup
+
+    for name in ("write_roles", "write_release", "write_planner", "write_backup", "write_plan"):
+        monkeypatch.setattr(setup, name, banned(name))
+
+
+def _assert_shape(lines):
+    assert lines
+    seen = []
+    for line in lines:
+        assert line.status in {"ok", "warn", "FAIL"}
+        assert line.group in _GROUPS
+        if not seen or seen[-1] != line.group:
+            seen.append(line.group)
+    assert seen == [group for group in _GROUPS if group in seen]
+
+
+def test_candidate_checks_ignore_a_missing_saved_plan_and_logged_out_saved_role(
+    tmp_path, agents, guard,
+):
+    root = _ready(tmp_path / "repo")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    _assert_shape(lines)
+    assert not any(line.status == "FAIL" for line in lines)
+    assert not any("saved-missing" in line.message for line in lines)
+    assert not any("codex" in line.message.lower() for line in lines)
+    will = _grouped(lines, "Will write")
+    assert any(
+        line.status == "ok"
+        and line.message == (
+            "Relay timeout for this repo becomes 15m. "
+            "Later relay tasks in this repo use that timeout."
+        )
+        for line in will
+    )
+    assert all("trust" not in line.message.lower() and "declined" not in line.message for line in will)
+    assert any(line.status == "ok" and line.message == "Planner max visits is 3." for line in lines)
+
+
+def test_candidate_checks_calls_repository_scope_without_allow_dirty(tmp_path, agents, guard, monkeypatch):
+    from whyline_relay import preflight
+
+    root = _ready(tmp_path / "repo")
+    seen = []
+    real = preflight.run
+
+    def wrapped(*args, **kwargs):
+        seen.append((args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(preflight, "run", wrapped)
+    relay_ops.candidate_checks(root, _request())
+    assert len(seen) == 1
+    args, kwargs = seen[0]
+    assert len(args) == 1
+    assert kwargs.get("scope") == "repository"
+    assert kwargs.get("allow_dirty", False) is False
+
+
+def test_dirty_tree_fails_in_the_repository_group(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    (root / "notes.txt").write_text("dirty\n", encoding="utf-8")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    hits = [
+        line for line in _grouped(lines, "Repository")
+        if line.status == "FAIL" and "notes.txt" in line.message
+    ]
+    assert len(hits) == 1
+    assert hits[0].hint == "commit or stash your changes"
+    assert "--allow-dirty" not in hits[0].message
+    assert "--allow-dirty" not in (hits[0].hint or "")
+
+
+def test_logged_out_selected_agent_fails_in_the_agents_group(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request(implementer="codex")))
+    hits = [
+        line for line in _grouped(lines, "Agents and logins")
+        if line.status == "FAIL" and "codex" in line.message
+    ]
+    assert len(hits) == 1
+    assert hits[0].hint == "Run /login codex"
+
+
+def test_missing_attachment_fails_in_inputs_even_with_continue_paths(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    missing = tmp_path / "gone.pdf"
+    for flag in (False, True):
+        lines = _silent(
+            root,
+            lambda flag=flag: relay_ops.candidate_checks(
+                root, _request(attachments=(missing,), continue_paths=flag)
+            ),
+        )
+        hits = [
+            line for line in _grouped(lines, "Inputs")
+            if str(missing) in line.message
+        ]
+        assert hits
+        assert all(line.status == "FAIL" for line in hits)
+
+
+def test_path_unverified_image_fails_until_continue_paths(tmp_path, agents, guard, monkeypatch):
+    root = _ready(tmp_path / "repo")
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["antigravity", "claude", "codex", "grok", "mystery"],
+    )
+    request = _request(agents=("mystery",), attachments=(image,))
+    message = "mystery get images as file paths only and may not see them."
+    blocked = _silent(root, lambda: relay_ops.candidate_checks(root, request))
+    hits = [line for line in _grouped(blocked, "Inputs") if line.message == message]
+    assert len(hits) == 1 and hits[0].status == "FAIL"
+    allowed = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(root, _request(
+            agents=("mystery",), attachments=(image,), continue_paths=True,
+        )),
+    )
+    warned = [line for line in _grouped(allowed, "Inputs") if line.message == message]
+    assert len(warned) == 1 and warned[0].status == "warn"
+
+
+def test_slug_clash_fails_until_replace(tmp_path, agents, guard):
+    from whyline_relay import brainstorm, specs
+
+    root = _ready(tmp_path / "repo")
+    name = "My Topic"
+    paths = (
+        brainstorm.shared_path(root, name),
+        root / "docs" / "specs" / f"{specs._slug(name)}.md",
+        relay_ops.plan_path(root, name),
+    )
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("exists\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "clash")
+    shown = [path.relative_to(root).as_posix() for path in paths]
+    blocked = _silent(
+        root, lambda: relay_ops.candidate_checks(root, _request(name=name, topic=name))
+    )
+    for label in shown:
+        hits = [
+            line for line in _grouped(blocked, "Planning")
+            if line.status == "FAIL" and label in line.message
+        ]
+        assert len(hits) == 1
+    replaced = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(
+            root, _request(name=name, topic=name, replace=True)
+        ),
+    )
+    for label in shown:
+        hits = [
+            line for line in _grouped(replaced, "Planning")
+            if label in line.message
+        ]
+        assert len(hits) == 1
+        assert hits[0].status == "ok"
+        assert "Run will replace" in hits[0].message
+    assert not any(line.status == "FAIL" and line.group == "Planning" for line in replaced)
+
+
+def test_blank_name_falls_back_to_the_topic_then_plan(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    topic_plan = relay_ops.plan_path(root, "alpha")
+    topic_plan.parent.mkdir(parents=True)
+    topic_plan.write_text("x\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "alpha")
+    lines = _silent(
+        root, lambda: relay_ops.candidate_checks(root, _request(name="", topic="alpha"))
+    )
+    assert any(
+        line.group == "Planning" and line.status == "FAIL"
+        and "plans/alpha.plan.md" in line.message
+        for line in lines
+    )
+    root2 = _ready(tmp_path / "empty")
+    fallback = relay_ops.plan_path(root2, "plan")
+    fallback.parent.mkdir(parents=True)
+    fallback.write_text("x\n", encoding="utf-8")
+    _git(root2, "add", "-A")
+    _git(root2, "commit", "-qm", "plan")
+    lines = _silent(
+        root2, lambda: relay_ops.candidate_checks(root2, _request(name="", topic=""))
+    )
+    assert any(
+        line.group == "Planning" and line.status == "FAIL" and "plans/plan.plan.md" in line.message
+        for line in lines
+    )
+
+
+def test_antigravity_ask_fails_and_writes_nothing(tmp_path, agents, guard, monkeypatch):
+    root = _ready(tmp_path / "repo")
+    monkeypatch.setattr(relay_ops, "antigravity_state", lambda root: "ask")
+    lines = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(root, _request(agents=("antigravity",))),
+    )
+    assert any(
+        line.status == "FAIL" and line.message == "Antigravity trust is not resolved for this repo"
+        for line in lines
+    )
+    assert any(
+        line.status == "warn" and line.group == "Agents and logins" and "generic agent" in line.message
+        for line in lines
+    )
+    assert not (root / ".whyline" / "relay" / "antigravity-declined").exists()
+    will = _grouped(lines, "Will write")
+    assert will
+    assert all("trust" not in line.message.lower() and "declined" not in line.message for line in will)
+
+
+def test_antigravity_declined_fails_and_trusted_is_ok(tmp_path, agents, guard, monkeypatch):
+    root = _ready(tmp_path / "repo")
+    monkeypatch.setattr(relay_ops, "antigravity_state", lambda root: "declined")
+    declined = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(root, _request(agents=("antigravity",))),
+    )
+    assert any(
+        line.status == "FAIL" and line.message == "Antigravity is not trusted for this repo"
+        for line in declined
+    )
+    monkeypatch.setattr(relay_ops, "antigravity_state", lambda root: "trusted")
+    trusted = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(root, _request(agents=("antigravity",))),
+    )
+    assert any(
+        line.status == "ok"
+        and line.group == "Agents and logins"
+        and line.message == "Antigravity is trusted for this repo"
+        for line in trusted
+    )
+    assert not any(
+        line.status == "FAIL" and line.message.startswith("Antigravity")
+        for line in trusted
+    )
+
+
+def test_live_relay_fails_in_the_concurrency_group(tmp_path, agents, guard):
+    import json
+    import os
+    from dataclasses import asdict
+
+    from whyline_relay import running
+
+    root = _ready(tmp_path / "repo")
+    marker = running.Running(
+        agent="codex", task="T1", round=1, started="2026-10-11T00:00:00+00:00",
+        pid=os.getpid(), role="implementer",
+    )
+    path = root / ".whyline" / "relay" / "running.json"
+    path.write_text(json.dumps(asdict(marker)), encoding="utf-8")
+    _exclude(root, ".whyline/relay/running.json")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    hits = [
+        line for line in _grouped(lines, "Concurrency")
+        if line.status == "FAIL" and "another relay is running here" in line.message
+    ]
+    assert len(hits) == 1
+    assert f"pid {os.getpid()}" in hits[0].message
+
+
+def test_dead_auto_lock_is_ok_and_a_live_lock_fails(tmp_path, agents, guard):
+    import os
+
+    from whyline_relay import running
+
+    root = _ready(tmp_path / "repo")
+    lock = root / ".whyline" / "relay" / "auto-run.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    _exclude(root, ".whyline/relay/auto-run.lock")
+    dead = 1_000_000
+    while running.pid_is_alive(dead) and dead < 1_000_200:
+        dead += 1
+    assert not running.pid_is_alive(dead)
+    lock.write_text(f"{dead}\n", encoding="utf-8")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    assert any(
+        line.group == "Concurrency" and line.status == "ok"
+        and line.message == "The stale lock will be taken."
+        for line in lines
+    )
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    assert any(
+        line.group == "Concurrency" and line.status == "FAIL"
+        and line.message == "An Auto run is already in progress."
+        for line in lines
+    )
+
+
+def test_unfinished_draft_fails_in_concurrency(tmp_path, agents, guard):
+    from whyline_relay import state
+
+    root = _ready(tmp_path / "repo")
+    state.save_plan(root, state.PlanState(
+        description="build it",
+        stage="draft",
+        round=1,
+        stage_visits={},
+        agent="claude",
+        feedback="",
+        draft_path=str(root / ".whyline" / "relay" / "draft-plan.md"),
+        paused_reason="",
+        log_path="",
+    ))
+    _exclude(root, ".whyline/relay/plan-state.json")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    assert any(
+        line.group == "Concurrency" and line.status == "FAIL"
+        and line.message == "A plan draft is already unfinished -- open Plan to resume or discard it."
+        for line in lines
+    )
+
+
+def test_timeout_zero_fails_until_no_limit_exists(tmp_path, agents, guard):
+    from whyline_relay import chat
+
+    root = _ready(tmp_path / "repo")
+    lines = _silent(
+        root, lambda: relay_ops.candidate_checks(root, _request(timeout_minutes=0))
+    )
+    if hasattr(chat, "NO_LIMIT"):
+        assert any(
+            line.group == "Inputs" and line.status == "ok" and "no limit" in line.message.lower()
+            for line in lines
+        )
+    else:
+        assert any(
+            line.group == "Inputs" and line.status == "FAIL"
+            and line.message == "No limit is not available yet"
+            for line in lines
+        )
+    assert any(
+        line.group == "Will write" and line.status == "ok"
+        and "becomes no limit." in line.message
+        and "Later relay tasks in this repo use that timeout." in line.message
+        for line in lines
+    )
+
+
+def test_empty_topic_and_no_research_agent_fail(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    lines = _silent(
+        root, lambda: relay_ops.candidate_checks(root, _request(topic="", agents=()))
+    )
+    inputs = _grouped(lines, "Inputs")
+    assert any(line.status == "FAIL" and line.message == "Topic is empty." for line in inputs)
+    assert any(
+        line.status == "FAIL" and line.message == "Pick at least one research agent."
+        for line in inputs
+    )
+
+
+def test_implementer_matching_reviewer_warns_and_does_not_fail(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    lines = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(
+            root, _request(implementer="claude", reviewer_role="claude")
+        ),
+    )
+    hits = [
+        line for line in _grouped(lines, "Execution")
+        if "both the implementer and the reviewer" in line.message
+    ]
+    assert len(hits) == 1
+    assert hits[0].status == "warn"
+
+
+def test_custom_pipeline_is_a_warning(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    config = root / ".whyline" / "relay" / "config.toml"
+    config.write_text(
+        """\
+plan = "plans/saved-missing.plan.md"
+timeout_minutes = 30
+
+[roles]
+implementer = "codex"
+tester = "claude"
+reviewer = "claude"
+
+[pipeline]
+default_profile = "full"
+
+[pipeline.profiles]
+full = ["draft", "test", "review"]
+
+[pipeline.stages.draft]
+role = "implementer"
+prompt = "implement"
+
+[pipeline.stages.draft.on]
+ready = "@next"
+
+[pipeline.stages.test]
+role = "tester"
+prompt = "test"
+
+[pipeline.stages.test.on]
+passed = "@next"
+failed = "draft"
+
+[pipeline.stages.review]
+role = "reviewer"
+prompt = "review"
+
+[pipeline.stages.review.on]
+approved = "@complete"
+rejected = "draft"
+""",
+        encoding="utf-8",
+    )
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "pipeline")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    hits = [
+        line for line in _grouped(lines, "Execution")
+        if "custom pipeline" in line.message
+    ]
+    assert len(hits) == 1
+    assert hits[0].status == "warn"
+    assert not any(line.status == "FAIL" and "custom pipeline" in line.message for line in lines)
+
+
+def test_candidate_scratch_is_removed_when_load_fails(tmp_path, agents, guard, monkeypatch):
+    from whyline_relay import antigravity
+
+    root = _ready(tmp_path / "repo")
+    created = []
+    real = relay_ops.tempfile.TemporaryDirectory
+
+    class Spy(real):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created.append(Path(self.name))
+
+    monkeypatch.setattr(relay_ops.tempfile, "TemporaryDirectory", Spy)
+    lines = _silent(
+        root,
+        lambda: relay_ops.candidate_checks(root, _request(implementer="not-a-real-agent")),
+    )
+    assert created
+    scratch = created[0]
+    assert not scratch.exists()
+    repo = root.resolve()
+    settings_dir = antigravity.settings_path().resolve().parent
+    assert repo not in scratch.parents and scratch != repo
+    assert settings_dir not in scratch.parents
+    assert any(
+        line.group == "Execution" and line.status == "FAIL" and "not-a-real-agent" in line.message
+        for line in lines
+    )
+
+
+def test_non_positive_max_visits_fails_in_planning(tmp_path, agents, guard):
+    root = _ready(tmp_path / "repo")
+    config = root / ".whyline" / "relay" / "config.toml"
+    config.write_text(config.read_text(encoding="utf-8") + "\n[planner]\nmax_visits = 0\n", encoding="utf-8")
+    lines = _silent(root, lambda: relay_ops.candidate_checks(root, _request()))
+    assert any(
+        line.group == "Planning" and line.status == "FAIL"
+        and line.message == "[planner] max_visits must be a positive integer"
+        for line in lines
+    )

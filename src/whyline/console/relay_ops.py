@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import tempfile
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace as dc_replace
@@ -43,9 +44,12 @@ class Draft:
 
 @dataclass(frozen=True)
 class CheckLine:
+    """One check row. `group` is empty for Set up and set by `candidate_checks`."""
+
     status: str
     message: str
     hint: str | None = None
+    group: str = ""
 
 
 def _settings(root: Path):
@@ -828,3 +832,501 @@ def delivery_for(root: Path, agent: str, kind: str) -> str:
     from whyline_relay import attachments, config
 
     return attachments.delivery(config.load(root), agent, kind)
+
+
+# The same sentence preflight._role_checks emits when Antigravity is in use.
+_ANTIGRAVITY_GENERIC = (
+    "antigravity is a generic agent, and its headless permission "
+    "enforcement is known to be unreliable -- see README, 'Using "
+    "Antigravity today', and "
+    "github.com/google-antigravity/antigravity-cli#548. The relay "
+    "does not manage its permissions, login or denials"
+)
+_PROMPT_NAMES = ("implement", "test", "review")
+
+
+def _line(status: str, message: str, group: str, hint: str | None = None) -> CheckLine:
+    return CheckLine(status, message, hint, group)
+
+
+def _auto_plan_name(request) -> str:
+    """The plan screen's `_plan_name`: the field, then the topic, then `plan`."""
+    name = str(getattr(request, "name", "") or "").strip()
+    topic = str(getattr(request, "topic", "") or "").strip()
+    return name or topic or "plan"
+
+
+def _no_limit_available() -> bool:
+    from whyline_relay import chat
+
+    return hasattr(chat, "NO_LIMIT")
+
+
+def _scratch_parent(root: Path) -> Path:
+    """A directory that is neither this repo nor Antigravity's settings dir."""
+    from whyline_relay import antigravity
+
+    repo = root.resolve()
+    settings_dir = antigravity.settings_path().resolve().parent
+    system_temp = Path(tempfile.gettempdir()).resolve()
+    candidates = [system_temp, repo.parent]
+    for parent in candidates:
+        try:
+            parent = parent.resolve()
+        except OSError:
+            continue
+        if not parent.is_dir():
+            continue
+        if parent == repo or repo in parent.parents:
+            continue
+        if parent == settings_dir or settings_dir in parent.parents:
+            continue
+        return parent
+    return repo.parent
+
+
+def _outside(path: Path, banned: Path) -> bool:
+    return path != banned and banned not in path.parents
+
+
+def _set_unquoted_timeout(text: str, minutes: int) -> str:
+    """Set top-level `timeout_minutes` to an unquoted integer.
+
+    The relay's string helper would quote it, and a quoted timeout is not
+    the value Run persists.
+    """
+    lines = text.splitlines()
+    first_table = next(
+        (index for index, line in enumerate(lines) if line.lstrip().startswith("[")),
+        len(lines),
+    )
+    rendered = str(int(minutes))
+    for index in range(first_table):
+        match = re.match(r"^(\s*timeout_minutes\s*=\s*).*$", lines[index])
+        if match:
+            lines[index] = f"{match.group(1)}{rendered}"
+            return "\n".join(lines).rstrip("\n") + "\n"
+    insert_at = first_table
+    while insert_at > 0 and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    new = [f"timeout_minutes = {rendered}"]
+    if first_table < len(lines):
+        new.append("")
+    lines[insert_at:first_table] = new
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _candidate_toml(root: Path, request) -> str:
+    """The TOML Run would persist, built in memory from the file on disk."""
+    from whyline_relay import config, setup
+
+    path = config.config_path(root)
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    implementer = str(request.implementer or "")
+    tester = str(request.tester or "")
+    reviewer = str(request.reviewer_role or "")
+    if setup._has_pipeline(existing):
+        content = setup._set_keys(existing, "roles", {
+            "implementer": implementer,
+            "tester": tester,
+            "reviewer": reviewer,
+        })
+    else:
+        template = setup.PIPELINE_CONFIG_TEMPLATE.format(
+            implementer=implementer, tester=tester, reviewer=reviewer,
+        )
+        kept = setup._without_tables(existing, {"roles", "backup", "status_map"})
+        content = f"{kept}\n\n{template}" if kept else template
+        existing_release = None
+        if existing:
+            try:
+                old = tomllib.loads(existing)
+            except tomllib.TOMLDecodeError:
+                old = {}
+            if isinstance(old.get("roles"), dict):
+                existing_release = old["roles"].get("release")
+        if isinstance(existing_release, str) and existing_release:
+            content = setup._set_keys(content, "roles", {"release": existing_release})
+    chain = [name for name in tuple(request.chain or ()) if name]
+    content = setup._set_backup(content, chain)
+    content = setup._set_keys(content, "planner", {
+        "draft": str(request.drafter or ""),
+        "review": str(request.reviewer or ""),
+    })
+    content = setup._set_keys(content, "roles", {"release": str(request.release or "")})
+    return _set_unquoted_timeout(content, request.timeout_minutes)
+
+
+def _load_candidate(root: Path, request):
+    """Parse the candidate TOML on a scratch root, then remove that root."""
+    from whyline_relay import antigravity, config
+
+    text = _candidate_toml(root, request)
+    parent = _scratch_parent(root)
+    directory = tempfile.TemporaryDirectory(dir=str(parent))
+    try:
+        scratch = Path(directory.name).resolve()
+        repo = root.resolve()
+        settings_dir = antigravity.settings_path().resolve().parent
+        if not _outside(scratch, repo):
+            raise RuntimeError("candidate scratch is inside the repository")
+        if not _outside(scratch, settings_dir):
+            raise RuntimeError("candidate scratch is inside Antigravity settings")
+        path = config.config_path(scratch)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return config.load(scratch)
+    finally:
+        directory.cleanup()
+
+
+def _loaded_settings(root: Path):
+    from whyline_relay import config
+
+    try:
+        return config.load(root)
+    except (config.ConfigError, TypeError, ValueError, OSError):
+        return None
+
+
+def _has_login_check(root: Path, agent: str) -> bool:
+    from whyline_relay import adapters, config
+
+    settings = _loaded_settings(root)
+    if settings is not None and agent in settings.agents:
+        try:
+            adapter = config.adapter_for(settings, agent)
+        except KeyError:
+            return False
+        return adapter.login_argv is not None
+    try:
+        return adapters.get(agent).login_argv is not None
+    except KeyError:
+        return False
+
+
+def _repository_lines(root: Path) -> list[CheckLine]:
+    from whyline_relay import preflight
+
+    checks = preflight.run(root, scope="repository")
+    return [_line(check.status, check.message, "Repository", check.hint) for check in checks]
+
+
+def _agent_lines(root: Path, request) -> list[CheckLine]:
+    from whyline import account
+    from whyline.console.auto_run import named_agents
+
+    group = "Agents and logins"
+    installed = set(relay_agents(root))
+    status = account.agent_status(root)
+    lines: list[CheckLine] = []
+    for agent in named_agents(request):
+        if agent not in installed:
+            lines.append(_line("FAIL", f"{agent} is not installed", group, f"install {agent}"))
+            continue
+        info = status.get(agent) or {}
+        if _has_login_check(root, agent) and not info.get("available"):
+            label = info.get("label") or "not logged in"
+            lines.append(_line("FAIL", f"{agent} is {label}", group, info.get("hint")))
+        elif _has_login_check(root, agent):
+            lines.append(_line("ok", f"{agent} is logged in", group))
+        else:
+            lines.append(_line("ok", f"{agent} is installed", group))
+    if "antigravity" not in named_agents(request):
+        return lines
+    state = antigravity_state(root)
+    if state == "declined":
+        lines.append(_line("FAIL", "Antigravity is not trusted for this repo", group))
+    elif state == "trusted":
+        lines.append(_line("ok", "Antigravity is trusted for this repo", group))
+    else:
+        lines.append(_line("FAIL", "Antigravity trust is not resolved for this repo", group))
+    lines.append(_line("warn", _ANTIGRAVITY_GENERIC, group))
+    return lines
+
+
+def _delivery_agents(request) -> list[str]:
+    names = [
+        *tuple(getattr(request, "agents", ()) or ()),
+        str(getattr(request, "drafter", "") or ""),
+        str(getattr(request, "reviewer", "") or ""),
+    ]
+    return list(dict.fromkeys(name for name in names if str(name).strip()))
+
+
+def _input_lines(root: Path, request) -> list[CheckLine]:
+    from whyline.console.tui import BRAINSTORM_TIMEOUT_OPTIONS
+    from whyline_relay import attachments as relay_attachments
+
+    group = "Inputs"
+    lines: list[CheckLine] = []
+    topic = str(request.topic or "").strip()
+    if topic:
+        lines.append(_line("ok", f"Topic is {topic}.", group))
+    else:
+        lines.append(_line("FAIL", "Topic is empty.", group))
+    research = tuple(request.agents or ())
+    if research:
+        lines.append(_line("ok", f"Research agents: {', '.join(research)}.", group))
+    else:
+        lines.append(_line("FAIL", "Pick at least one research agent.", group))
+    passes = str(request.passes).strip()
+    if re.fullmatch(r"[0-9]+", passes):
+        lines.append(_line("ok", f"Review passes: {request.passes}.", group))
+    else:
+        lines.append(_line(
+            "FAIL", f"Review passes must be a whole number, not {request.passes!r}.", group
+        ))
+    minutes = request.timeout_minutes
+    if minutes in BRAINSTORM_TIMEOUT_OPTIONS:
+        lines.append(_line("ok", f"Timeout is {minutes} minutes.", group))
+    elif minutes == 0 and _no_limit_available():
+        lines.append(_line("ok", "Timeout is no limit.", group))
+    elif minutes == 0:
+        lines.append(_line("FAIL", "No limit is not available yet", group))
+    else:
+        choices = ", ".join(str(item) for item in BRAINSTORM_TIMEOUT_OPTIONS)
+        lines.append(_line("FAIL", f"Timeout must be one of {choices} minutes.", group))
+
+    readable_images: list[Path] = []
+    for path in tuple(request.attachments or ()):
+        shown = str(path)
+        if not path.exists():
+            lines.append(_line("FAIL", f"Attachment is missing: {shown}", group))
+            continue
+        if not path.is_file():
+            lines.append(_line("FAIL", f"Attachment is not a file: {shown}", group))
+            continue
+        try:
+            with path.open("rb") as handle:
+                handle.read(1)
+        except OSError as error:
+            lines.append(_line("FAIL", f"Attachment is not readable: {shown} ({error})", group))
+            continue
+        lines.append(_line("ok", f"Attachment {shown} is readable.", group))
+        try:
+            kind = relay_attachments.kind_of(path)
+        except OSError:
+            kind = "file"
+        if kind == "image":
+            readable_images.append(path)
+
+    agents = _delivery_agents(request)
+    deliveries: dict[tuple[str, str], str] = {}
+    for agent in agents:
+        for kind in ("image", "file"):
+            try:
+                value = delivery_for(root, agent, kind)
+            except (OSError, ValueError, KeyError) as error:
+                lines.append(_line(
+                    "FAIL", f"Could not check {agent} {kind} delivery: {error}", group
+                ))
+                continue
+            if not value:
+                lines.append(_line("FAIL", f"{agent} has no {kind} delivery.", group))
+                value = ""
+            deliveries[(agent, kind)] = value
+    if readable_images:
+        risky = [
+            agent for agent in agents
+            if deliveries.get((agent, "image")) == "path-unverified"
+        ]
+        if risky:
+            message = (
+                f"{', '.join(risky)} get images as file paths only and may not see them."
+            )
+            status = "warn" if request.continue_paths else "FAIL"
+            lines.append(_line(status, message, group))
+    return lines
+
+
+def _target_line(root: Path, path: Path, replace: bool) -> CheckLine:
+    try:
+        shown = path.relative_to(root).as_posix()
+    except ValueError:
+        shown = path.as_posix()
+    if not path.exists():
+        return _line("ok", f"{shown} is free.", "Planning")
+    if replace:
+        return _line("ok", f"Run will replace {shown}.", "Planning")
+    return _line("FAIL", f"{shown} already exists.", "Planning")
+
+
+def _max_visits_line(root: Path) -> CheckLine:
+    from whyline_relay import config
+
+    group = "Planning"
+    path = config.config_path(root)
+    if not path.is_file():
+        return _line("ok", "Planner max visits is 3.", group)
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError) as error:
+        return _line("FAIL", str(error), group)
+    planner = raw.get("planner") or {}
+    if not isinstance(planner, dict) or "max_visits" not in planner:
+        return _line("ok", "Planner max visits is 3.", group)
+    value = planner.get("max_visits")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return _line("FAIL", "[planner] max_visits must be a positive integer", group)
+    return _line("ok", f"Planner max visits is {value}.", group)
+
+
+def _planning_lines(root: Path, request) -> list[CheckLine]:
+    from whyline_relay import brainstorm, specs
+
+    group = "Planning"
+    lines: list[CheckLine] = []
+    for label, value in (("Drafter", request.drafter), ("Reviewer", request.reviewer)):
+        if str(value or "").strip():
+            lines.append(_line("ok", f"{label} is {value}.", group))
+        else:
+            lines.append(_line("FAIL", f"{label} is empty.", group))
+    lines.append(_max_visits_line(root))
+    plan_name = _auto_plan_name(request)
+    targets = (
+        brainstorm.shared_path(root, str(request.topic or "")),
+        root / "docs" / "specs" / f"{specs._slug(plan_name)}.md",
+        plan_path(root, plan_name),
+    )
+    for target in targets:
+        lines.append(_target_line(root, target, bool(request.replace)))
+    return lines
+
+
+def _execution_lines(root: Path, request) -> list[CheckLine]:
+    from whyline_relay import config, prompts
+
+    group = "Execution"
+    lines: list[CheckLine] = []
+    for label, value in (
+        ("Implementer", request.implementer),
+        ("Tester", request.tester),
+        ("Reviewer", request.reviewer_role),
+    ):
+        if str(value or "").strip():
+            lines.append(_line("ok", f"{label} is {value}.", group))
+        else:
+            lines.append(_line("FAIL", f"{label} is empty.", group))
+    implementer = str(request.implementer or "").strip()
+    reviewer = str(request.reviewer_role or "").strip()
+    if implementer and implementer == reviewer:
+        lines.append(_line(
+            "warn",
+            f"{implementer} is both the implementer and the reviewer, "
+            "so the review is not independent",
+            group,
+        ))
+    release = str(request.release or "")
+    if release == "human":
+        lines.append(_line("ok", "Release is human.", group))
+    elif not release.strip():
+        lines.append(_line("FAIL", "Release is empty.", group))
+    else:
+        lines.append(_line("ok", f"Release is {release}.", group))
+    try:
+        _load_candidate(root, request)
+    except (config.ConfigError, TypeError, ValueError) as error:
+        lines.append(_line("FAIL", str(error), group))
+    for name in _PROMPT_NAMES:
+        try:
+            prompts.load(root, name)
+        except prompts.PromptError as error:
+            lines.append(_line(
+                "FAIL",
+                str(error),
+                group,
+                f"add .whyline/relay/prompts/{name}.md, or name a "
+                "built-in prompt (implement, review) instead",
+            ))
+        else:
+            lines.append(_line("ok", f"Prompt {name} resolves.", group))
+    if _has_custom_pipeline(root):
+        lines.append(_line("warn", _CUSTOM_PIPELINE.strip(), group))
+    return lines
+
+
+def _concurrency_lines(root: Path) -> list[CheckLine]:
+    from whyline_relay import invocation, running
+
+    group = "Concurrency"
+    lines: list[CheckLine] = []
+    active = running.live(root)
+    if active is not None:
+        lines.append(_line(
+            "FAIL",
+            f"another relay is running here (pid {active.pid})",
+            group,
+            f"wait for it, or run: {invocation.command('stop')}",
+        ))
+    else:
+        lines.append(_line("ok", "no other relay is running here", group))
+    if pending_draft(root) or pending_spec(root):
+        lines.append(_line(
+            "FAIL",
+            "A plan draft is already unfinished -- open Plan to resume or discard it.",
+            group,
+        ))
+    else:
+        lines.append(_line("ok", "No unfinished plan or spec draft.", group))
+    lock = root / ".whyline" / "relay" / "auto-run.lock"
+    if lock.exists():
+        try:
+            pid = int(lock.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            pid = None
+        if pid is not None and not running.pid_is_alive(pid):
+            lines.append(_line("ok", "The stale lock will be taken.", group))
+        else:
+            lines.append(_line("FAIL", "An Auto run is already in progress.", group))
+    return lines
+
+
+def _timeout_amount(minutes: int) -> str:
+    if minutes == 0:
+        return "no limit"
+    return f"{minutes}m"
+
+
+def _will_write_lines(request) -> list[CheckLine]:
+    group = "Will write"
+    chain = [name for name in tuple(request.chain or ()) if name]
+    chain_text = ", ".join(chain) if chain else "none"
+    amount = _timeout_amount(request.timeout_minutes)
+    return [
+        _line("ok", f"Run will set implementer to {request.implementer}.", group),
+        _line("ok", f"Run will set tester to {request.tester}.", group),
+        _line("ok", f"Run will set reviewer to {request.reviewer_role}.", group),
+        _line("ok", f"Run will set release to {request.release}.", group),
+        _line("ok", f"Run will set the backup chain to {chain_text}.", group),
+        _line(
+            "ok",
+            f"Run will set the planner to {request.drafter} drafts, {request.reviewer} reviews.",
+            group,
+        ),
+        _line(
+            "ok",
+            "Relay timeout for this repo becomes "
+            f"{amount}. Later relay tasks in this repo use that timeout.",
+            group,
+        ),
+    ]
+
+
+def candidate_checks(root: Path, request) -> list[CheckLine]:
+    """Check an unsaved Auto form. Reads the repository and returns lines.
+
+    The candidate config is parsed in a temporary directory outside the
+    repository and outside Antigravity's settings file. This does not save
+    roles, release, the planner, or trust, and it does not open the trust dialog.
+    """
+    lines = [
+        *_repository_lines(root),
+        *_agent_lines(root, request),
+        *_input_lines(root, request),
+        *_planning_lines(root, request),
+        *_execution_lines(root, request),
+        *_concurrency_lines(root),
+        *_will_write_lines(request),
+    ]
+    return lines
