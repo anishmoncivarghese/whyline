@@ -84,13 +84,13 @@ def test_missing_attachment_stores_null_size_and_digest(tmp_path):
 def test_attachment_bytes_change_the_hash(tmp_path):
     root = _repo(tmp_path / "repo")
     attachment = tmp_path / "note.md"
-    attachment.write_text("one\n", encoding="utf-8")
+    attachment.write_bytes(b"one\n")  # exact bytes: write_text gives \r\n on Windows
     request = _request(attachments=(attachment,))
     before = auto_run.fingerprint(root, request)
     entry = auto_run.document(root, request)["attachments"][0]
     assert entry["size"] == len(b"one\n")
     assert entry["sha256"] == hashlib.sha256(b"one\n").hexdigest()
-    attachment.write_text("two\n", encoding="utf-8")
+    attachment.write_bytes(b"two\n")
     assert auto_run.fingerprint(root, request) != before
 
 
