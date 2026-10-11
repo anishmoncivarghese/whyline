@@ -916,3 +916,488 @@ async def test_decline_failure_is_one_fail_line_and_skips_the_worker(tmp_path, m
     assert settings.read_text(encoding="utf-8") == before_settings
     assert not (repo / ".whyline" / "relay" / "antigravity-declined").exists()
     assert getattr(screen, "_check_fingerprint", None) is None
+
+
+_READY_CONFIG = """\
+plan = "plans/saved-missing.plan.md"
+timeout_minutes = 30
+
+[roles]
+implementer = "codex"
+reviewer = "claude"
+"""
+
+_HEADINGS = (
+    "Repository",
+    "Agents and logins",
+    "Inputs",
+    "Planning",
+    "Execution",
+    "Concurrency",
+    "Will write",
+)
+
+_CLEAN_STATUS = {
+    "claude": {"available": True, "label": "ok"},
+    "codex": {"available": True, "label": "ok"},
+    "antigravity": {"available": False, "label": "off"},
+    "grok": {"available": True, "label": "ok"},
+}
+
+
+def _ready(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q", "-b", "main")
+    _git(path, "config", "user.email", "t@example.com")
+    _git(path, "config", "user.name", "T")
+    (path / "README.md").write_text("x\n", encoding="utf-8")
+    relay = path / ".whyline" / "relay"
+    relay.mkdir(parents=True)
+    (path / ".whyline" / "ledger.jsonl").write_text("", encoding="utf-8")
+    (relay / "config.toml").write_text(_READY_CONFIG, encoding="utf-8")
+    (relay / "claude-settings.json").write_text("{}\n", encoding="utf-8")
+    _git(path, "add", "-A")
+    _git(path, "commit", "-qm", "ready")
+    return path
+
+
+def _logins(monkeypatch, *, codex_out=False) -> None:
+    status = {
+        agent: {"available": True, "label": "ok", "hint": None}
+        for agent in ("claude", "codex", "antigravity", "grok")
+    }
+    if codex_out:
+        status["codex"] = {
+            "available": False,
+            "label": "not logged in",
+            "hint": "Run /login codex",
+        }
+    monkeypatch.setattr("whyline.account.agent_status", lambda root, status=status: status)
+
+
+def _ban_writes(monkeypatch) -> None:
+    def banned(name):
+        def _call(*args, **kwargs):
+            raise AssertionError(name)
+
+        return _call
+
+    for name in (
+        "save_roles",
+        "save_release",
+        "save_planner",
+        "prepare_agents",
+        "select_plan",
+        "trust_antigravity",
+        "decline_antigravity",
+        "forget_antigravity_decline",
+        "approve_plan",
+        "approve_spec",
+    ):
+        monkeypatch.setattr(relay_ops, name, banned(name))
+
+
+def _checks_text(screen) -> str:
+    return str(screen.query_one("#rp-checks", tui.Static).renderable)
+
+
+def _status_words(text: str) -> list[str]:
+    words = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("ok", "warn", "FAIL")):
+            words.append(stripped.split()[0])
+    return words
+
+
+async def _wait_for(pilot, condition, what: str) -> None:
+    for _ in range(200):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
+
+
+async def _fill_auto(screen, pilot) -> None:
+    screen.query_one("#bs-topic", tui.Input).value = "fresh topic"
+    screen.query_one("#rp-name", tui.Input).value = "fresh-plan"
+    await pilot.pause()
+
+
+async def _run_check(pilot, screen) -> str:
+    await pilot.click("#rp-check")
+    await _wait_for(
+        pilot,
+        lambda: _checks_text(screen) not in ("", "Checking…"),
+        "check result",
+    )
+    return _checks_text(screen)
+
+
+async def _open_filled(app, pilot, status=None):
+    screen, _results = await _open_auto(app, pilot, status or _CLEAN_STATUS)
+    await _fill_auto(screen, pilot)
+    return screen
+
+
+async def test_warning_keeps_its_hint_and_stores_a_fingerprint(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        relay_ops,
+        "candidate_checks",
+        lambda root, request: [
+            relay_ops.CheckLine("ok", "tree is clean", None, "Repository"),
+            relay_ops.CheckLine("warn", "same person reviews", "split the roles", "Execution"),
+        ],
+    )
+    monkeypatch.setattr(auto_run, "fingerprint", lambda root, request: "ab" * 32)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        text = await _run_check(pilot, screen)
+        assert "Execution" in text
+        assert "warn  same person reviews" in text
+        assert "fix: split the roles" in text
+        assert "FAIL" not in _status_words(text)
+        assert screen._check_fingerprint == "ab" * 32
+        assert not screen.query("#rp-run")
+
+
+async def test_a_fail_line_keeps_its_hint_and_stores_no_fingerprint(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        relay_ops,
+        "candidate_checks",
+        lambda root, request: [
+            relay_ops.CheckLine("FAIL", "topic is empty", "enter a topic", "Inputs"),
+            relay_ops.CheckLine("ok", "later", None, "Will write"),
+        ],
+    )
+    monkeypatch.setattr(auto_run, "fingerprint", lambda root, request: "nope")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        text = await _run_check(pilot, screen)
+        assert text.index("Inputs") < text.index("Will write")
+        assert "FAIL  topic is empty" in text
+        assert "fix: enter a topic" in text
+        assert screen._check_fingerprint is None
+
+
+async def test_editing_the_topic_after_a_clean_check_clears_it(tmp_path, monkeypatch):
+    repo = _ready(tmp_path / "repo")
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        text = await _run_check(pilot, screen)
+        assert _status_words(text).count("FAIL") == 0, text
+        positions = [text.index(heading) for heading in _HEADINGS]
+        assert positions == sorted(positions)
+        assert screen._check_fingerprint
+        screen.query_one("#bs-topic", tui.Input).value = "a different topic"
+        await pilot.pause()
+        assert _checks_text(screen) == ""
+        assert "-empty" in screen.query_one("#rp-checks").classes
+        assert screen._check_fingerprint is None
+        assert not screen.query("#rp-run")
+
+
+async def test_porcelain_change_does_not_match_the_stored_fingerprint(tmp_path, monkeypatch):
+    repo = _ready(tmp_path / "repo")
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        await _run_check(pilot, screen)
+        stored = screen._check_fingerprint
+        assert stored
+        assert stored == auto_run.fingerprint(repo, screen._auto_request())
+        (repo / "extra.txt").write_text("y\n", encoding="utf-8")
+        assert auto_run.fingerprint(repo, screen._auto_request()) != stored
+        assert screen._check_fingerprint == stored
+
+
+async def test_auto_edits_drop_the_stored_fingerprint(tmp_path, monkeypatch):
+    from whyline.console.attachments import Attachment
+
+    repo = _ready(tmp_path / "repo")
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+    outside = tmp_path / "note.txt"
+    outside.write_text("note\n", encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+
+        async def passed() -> None:
+            text = await _run_check(pilot, screen)
+            assert "FAIL" not in _status_words(text), text
+            assert screen._check_fingerprint
+
+        await passed()
+        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        await pilot.pause()
+        assert _checks_text(screen) == ""
+        assert screen._check_fingerprint is None
+        screen.query_one("#rp-source", tui.Select).value = "auto"
+        await pilot.pause()
+        assert _checks_text(screen) == ""
+        assert screen._check_fingerprint is None
+
+        await passed()
+        screen.query_one("#rp-replace", tui.Checkbox).value = True
+        await pilot.pause()
+        assert _checks_text(screen) == ""
+        assert screen._check_fingerprint is None
+
+        await passed()
+        screen.query_one("#rp-continue-paths", tui.Checkbox).value = True
+        await pilot.pause()
+        assert screen._check_fingerprint is None
+        assert _checks_text(screen) == ""
+
+        await passed()
+        screen.query_one("#chain-check-grok", tui.Checkbox).value = True
+        await pilot.pause()
+        assert screen._check_fingerprint is None
+        assert _checks_text(screen) == ""
+
+        await passed()
+        screen.query_one("#bs-attachments").pending.add(
+            Attachment("n1", "note.txt", outside, "file", 5, "picker")
+        )
+        assert _checks_text(screen) == ""
+        assert screen._check_fingerprint is None
+
+
+async def _button_failure(tmp_path, monkeypatch, setup, heading: str, needle: str, *, agents=None, codex_out=False):
+    repo = _ready(tmp_path / "repo")
+    _logins(monkeypatch, codex_out=codex_out)
+    _ban_writes(monkeypatch)
+    if agents is not None:
+        monkeypatch.setattr(
+            relay_ops, "relay_agents", lambda root=None, which=None, agents=agents: list(agents)
+        )
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        setup(screen, repo, pilot, tmp_path)
+        await pilot.pause()
+        before = _git(repo, "status", "--porcelain")
+        text = await _run_check(pilot, screen)
+        assert heading in text
+        assert needle in text
+        assert screen._check_fingerprint is None
+        assert _git(repo, "status", "--porcelain") == before
+        assert isinstance(app.screen, RelayPlanScreen)
+
+
+async def test_dirty_tree_from_the_button_leaves_git_status(tmp_path, monkeypatch):
+    def setup(screen, repo, pilot, tmp_path):
+        (repo / "notes.txt").write_text("dirty\n", encoding="utf-8")
+
+    await _button_failure(
+        tmp_path,
+        monkeypatch,
+        setup,
+        "Repository",
+        "FAIL  working tree has uncommitted changes: notes.txt\n      fix: commit or stash your changes",
+    )
+
+
+async def test_logged_out_agent_from_the_button_leaves_git_status(tmp_path, monkeypatch):
+    def setup(screen, repo, pilot, tmp_path):
+        return None
+
+    await _button_failure(
+        tmp_path,
+        monkeypatch,
+        setup,
+        "Agents and logins",
+        "FAIL  codex is not logged in\n      fix: Run /login codex",
+        codex_out=True,
+    )
+
+
+async def test_missing_attachment_from_the_button_leaves_git_status(tmp_path, monkeypatch):
+    from whyline.console.attachments import Attachment
+
+    missing = tmp_path / "gone.pdf"
+
+    def setup(screen, repo, pilot, tmp_path):
+        screen.query_one("#bs-attachments").pending.add(
+            Attachment("m1", "gone.pdf", missing, "file", 1, "picker")
+        )
+
+    await _button_failure(
+        tmp_path,
+        monkeypatch,
+        setup,
+        "Inputs",
+        f"FAIL  Attachment is missing: {missing}",
+    )
+
+
+async def test_path_unverified_image_from_the_button_leaves_git_status(tmp_path, monkeypatch):
+    from whyline.console.attachments import Attachment
+
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+
+    def setup(screen, repo, pilot, tmp_path):
+        screen.query_one("#rp-drafter", tui.Select).value = "mystery"
+        screen.query_one("#bs-attachments").pending.add(
+            Attachment("img", "shot.png", image, "image", image.stat().st_size, "picker")
+        )
+
+    await _button_failure(
+        tmp_path,
+        monkeypatch,
+        setup,
+        "Inputs",
+        "FAIL  mystery get images as file paths only and may not see them.",
+        agents=["claude", "codex", "grok", "mystery"],
+    )
+
+
+async def test_slug_clash_from_the_button_leaves_git_status(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm, specs
+
+    def setup(screen, repo, pilot, tmp_path):
+        name = "My Topic"
+        paths = (
+            brainstorm.shared_path(repo, name),
+            repo / "docs" / "specs" / f"{specs._slug(name)}.md",
+            relay_ops.plan_path(repo, name),
+        )
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("exists\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "clash")
+        screen.query_one("#bs-topic", tui.Input).value = name
+        screen.query_one("#rp-name", tui.Input).value = name
+
+    await _button_failure(
+        tmp_path,
+        monkeypatch,
+        setup,
+        "Planning",
+        "FAIL  plans/",
+    )
+
+
+async def test_live_relay_from_the_button_leaves_git_status(tmp_path, monkeypatch):
+    import json
+    import os
+    from dataclasses import asdict
+
+    from whyline_relay import running
+
+    def setup(screen, repo, pilot, tmp_path):
+        _ignore_decline(repo)
+        exclude = repo / ".git" / "info" / "exclude"
+        text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+        if ".whyline/relay/running.json" not in text.splitlines():
+            with exclude.open("a", encoding="utf-8") as handle:
+                handle.write(".whyline/relay/running.json\n")
+        marker = running.Running(
+            agent="codex",
+            task="T1",
+            round=1,
+            started="2026-10-11T00:00:00+00:00",
+            pid=os.getpid(),
+            role="implementer",
+        )
+        path = repo / ".whyline" / "relay" / "running.json"
+        path.write_text(json.dumps(asdict(marker)), encoding="utf-8")
+
+    await _button_failure(
+        tmp_path,
+        monkeypatch,
+        setup,
+        "Concurrency",
+        "another relay is running here",
+    )
+
+
+async def test_not_now_fails_the_trust_line_and_stores_no_fingerprint(tmp_path, monkeypatch):
+    repo = _ready(tmp_path / "repo")
+    _settings(monkeypatch, tmp_path / "gemini")
+    _ignore_decline(repo)
+    _logins(monkeypatch)
+    calls = {"trust": 0, "decline": 0}
+    real_trust = relay_ops.trust_antigravity
+    real_decline = relay_ops.decline_antigravity
+
+    def trust(root):
+        calls["trust"] += 1
+        return real_trust(root)
+
+    def decline(root):
+        calls["decline"] += 1
+        return real_decline(root)
+
+    _ban_writes(monkeypatch)
+    monkeypatch.setattr(relay_ops, "trust_antigravity", trust)
+    monkeypatch.setattr(relay_ops, "decline_antigravity", decline)
+    before = _git(repo, "status", "--porcelain")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _results = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        await pilot.click("#cancel")
+        await _wait_for(
+            pilot,
+            lambda: "Antigravity is not trusted for this repo" in _checks_text(screen),
+            "trust fail",
+        )
+        text = _checks_text(screen)
+        assert "Agents and logins" in text
+        assert "FAIL  Antigravity is not trusted for this repo" in text
+        assert screen._check_fingerprint is None
+        assert _git(repo, "status", "--porcelain") == before
+    assert calls == {"trust": 0, "decline": 1}
+
+
+async def test_trust_it_marks_the_trust_line_ok(tmp_path, monkeypatch):
+    repo = _ready(tmp_path / "repo")
+    _settings(monkeypatch, tmp_path / "gemini")
+    _logins(monkeypatch)
+    calls = {"trust": 0, "decline": 0}
+    real_trust = relay_ops.trust_antigravity
+    real_decline = relay_ops.decline_antigravity
+
+    def trust(root):
+        calls["trust"] += 1
+        return real_trust(root)
+
+    def decline(root):
+        calls["decline"] += 1
+        return real_decline(root)
+
+    _ban_writes(monkeypatch)
+    monkeypatch.setattr(relay_ops, "trust_antigravity", trust)
+    monkeypatch.setattr(relay_ops, "decline_antigravity", decline)
+    before = _git(repo, "status", "--porcelain")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _results = await _open_auto(app, pilot, NAMED)
+        await pilot.click("#rp-check")
+        await pilot.pause()
+        await pilot.click("#confirm")
+        await _wait_for(
+            pilot,
+            lambda: "Antigravity is trusted for this repo" in _checks_text(screen),
+            "trust ok",
+        )
+        text = _checks_text(screen)
+        assert text.index("Agents and logins") < text.index("Antigravity is trusted for this repo")
+        assert "ok    Antigravity is trusted for this repo" in text
+        assert "Antigravity is not trusted for this repo" not in text
+        assert "Antigravity trust is not resolved" not in text
+        assert _git(repo, "status", "--porcelain") == before
+    assert calls == {"trust": 1, "decline": 0}

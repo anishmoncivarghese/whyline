@@ -27,6 +27,56 @@ _SOURCES = [
     ("I have a plan already", "paste"),
     ("Auto — brainstorm to implementation", "auto"),
 ]
+# Fields that belong to the unsaved Auto request. A change drops the check.
+_AUTO_SELECTS = frozenset({
+    "bs-final",
+    "bs-timeout",
+    "rp-drafter",
+    "rp-reviewer",
+    "rp-implementer",
+    "rp-tester",
+    "rp-exec-reviewer",
+    "rp-release",
+})
+_AUTO_INPUTS = frozenset({"rp-name", "bs-topic", "bs-passes"})
+_AUTO_BOXES = frozenset({"rp-replace", "rp-continue-paths"})
+_CHECK_HEADINGS = (
+    "Repository",
+    "Agents and logins",
+    "Inputs",
+    "Planning",
+    "Execution",
+    "Concurrency",
+    "Will write",
+)
+
+
+def _format_check_lines(checks: list) -> str:
+    """Set up's status line, under the candidate_checks headings.
+
+    Known headings stay in that order. A heading with no lines is omitted.
+    A non-ok line keeps its hint, including a warning.
+    """
+    grouped: dict[str, list] = {}
+    order: list[str] = []
+    for check in checks:
+        group = getattr(check, "group", "") or ""
+        if group not in grouped:
+            grouped[group] = []
+            order.append(group)
+        grouped[group].append(check)
+    known = [heading for heading in _CHECK_HEADINGS if heading in grouped]
+    rest = [group for group in order if group not in _CHECK_HEADINGS]
+    lines: list[str] = []
+    for group in known + rest:
+        if group:
+            lines.append(group)
+        for check in grouped[group]:
+            line = f"{check.status:<4}  {check.message}"
+            if check.status != "ok" and check.hint:
+                line += f"\n      fix: {check.hint}"
+            lines.append(line)
+    return "\n".join(lines)
 
 
 class _PlanChain(OrderedChain):
@@ -34,17 +84,23 @@ class _PlanChain(OrderedChain):
     so the plan screen hears about the new order from here."""
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        before = self.order()
         super().on_checkbox_changed(event)
-        self._notify()
+        self._notify(before)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
+        before = self.order()
         super().on_button_pressed(event)
-        self._notify()
+        self._notify(before)
 
-    def _notify(self) -> None:
+    def _notify(self, before: list[str]) -> None:
         screen = self.screen
-        if isinstance(screen, RelayPlanScreen):
-            screen._refresh_auto_summary()
+        if not isinstance(screen, RelayPlanScreen):
+            return
+        screen._refresh_auto_summary()
+        # Up at the end of the chain stops here and does not change order.
+        if self.order() != before:
+            screen._drop_stored_check()
 
 
 class _AntigravityTrustScreen(ConfirmScreen):
@@ -92,6 +148,8 @@ class RelayPlanScreen(ModalScreen):
         self._agents = relay_ops.relay_agents(root) or ["claude", "codex"]
         self._planner = relay_ops.planner_agents(root)
         self._final_writer: str | None = None
+        self._token: object | None = None
+        self._check_fingerprint: str | None = None
         self._load_execution_defaults()
 
     def _agent_select(self, wanted: str, select_id: str) -> Select:
@@ -295,6 +353,7 @@ class RelayPlanScreen(ModalScreen):
         self._sync_planner_agents()
         self._sync_brainstorm_agents()
         self._refresh_auto_summary()
+        self._watch_auto_attachments()
 
     def _sync_planner_agents(self) -> None:
         try:
@@ -334,6 +393,7 @@ class RelayPlanScreen(ModalScreen):
         if source != "auto":
             go.label = "Save" if source == "paste" else "Make the plan"
         self.query_one("#rp-check", Button).display = source == "auto"
+        self._drop_stored_check()
 
     def _sync_from(self, source: str | None = None) -> None:
         source = self._source() if source is None else source
@@ -344,18 +404,25 @@ class RelayPlanScreen(ModalScreen):
         self.query_one("#rp-writer-row").display = source == "brainstorm" and not new
 
     def on_select_changed(self, event: "Select.Changed") -> None:
-        if event.select.id == "rp-source":
+        select_id = event.select.id
+        if select_id == "rp-source":
             self._show_source(event.value)
-        elif event.select.id == "rp-from":
+        elif select_id == "rp-from":
             self._sync_from()
-        elif event.select.id == "bs-final":
+        elif select_id == "bs-final":
             self._follow_drafter(event.value)
             self._refresh_auto_summary()
-        elif event.select.id in ("rp-drafter", "rp-reviewer"):
+        elif select_id in ("rp-drafter", "rp-reviewer"):
             self._sync_planner_agents()
             self._refresh_auto_summary()
-        elif event.select.id in ("rp-implementer", "rp-tester", "rp-exec-reviewer", "rp-release"):
+        elif select_id in ("rp-implementer", "rp-tester", "rp-exec-reviewer", "rp-release"):
             self._refresh_auto_summary()
+        if select_id in _AUTO_SELECTS:
+            self._drop_stored_check()
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        if event.input.id in _AUTO_INPUTS:
+            self._drop_stored_check()
 
     def _follow_drafter(self, current: str) -> None:
         """On Auto, move the drafter from A to B only while it is still A.
@@ -377,9 +444,13 @@ class RelayPlanScreen(ModalScreen):
             drafter.value = current
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
-        if event.checkbox.id and event.checkbox.id.startswith("bs-"):
+        box_id = event.checkbox.id or ""
+        if box_id.startswith("bs-"):
             self._sync_brainstorm_agents()
             self._refresh_auto_summary()
+            self._drop_stored_check()
+        elif box_id in _AUTO_BOXES:
+            self._drop_stored_check()
 
     def _error(self, text: str) -> None:
         error = self.query_one("#rp-error", Static)
@@ -463,12 +534,14 @@ class RelayPlanScreen(ModalScreen):
             handler()
 
     def _on_rp_cancel(self) -> None:
+        self._token = object()
         self.dismiss(None)
 
     def _on_rp_check(self) -> None:
         """Ask first when a named agent is Antigravity and this repo is `ask`.
 
-        The worker is a no-op until AUT-5. Tests spy on `_start_check_worker`.
+        The worker starts only after that dialog returns. Tests spy on
+        `_start_check_worker`.
         """
         from whyline.console.auto_run import named_agents
 
@@ -511,13 +584,145 @@ class RelayPlanScreen(ModalScreen):
 
     def _show_check_failure(self, error: Exception) -> None:
         """One FAIL line. No fingerprint, and the worker does not start."""
+        self._check_fingerprint = None
         checks = self.query_one("#rp-checks", Static)
         checks.update(f"FAIL  {error}")
         checks.remove_class("-empty")
 
+    def _drop_stored_check(self) -> None:
+        """Forget the last check. Run is not mounted; a missing fingerprint
+        is what would leave it disabled.
+        """
+        self._token = object()
+        self._check_fingerprint = None
+        try:
+            checks = self.query_one("#rp-checks", Static)
+        except NoMatches:
+            return
+        checks.update("")
+        checks.add_class("-empty")
+
+    def _watch_auto_attachments(self) -> None:
+        """The attachment tray does not post a message this screen can hear."""
+        try:
+            pending = self.query_one("#bs-attachments", AttachmentsField).pending
+        except NoMatches:
+            return
+        add, remove, clear = pending.add, pending.remove, pending.clear
+
+        def added(attachment) -> None:
+            add(attachment)
+            self._drop_stored_check()
+
+        def removed(attachment_id: str) -> None:
+            remove(attachment_id)
+            self._drop_stored_check()
+
+        def cleared() -> None:
+            clear()
+            self._drop_stored_check()
+
+        pending.add = added
+        pending.remove = removed
+        pending.clear = cleared
+
+    def _auto_request(self):
+        """The unsaved Auto form. An empty name stays empty so path fallback
+        belongs to candidate_checks, matching `_plan_name` there.
+        """
+        from whyline.console.plan_job import AutoRunRequest
+        from whyline.console.repl import BRAINSTORM_AGENTS
+
+        raw_passes = self.query_one("#bs-passes", Input).value.strip() or "0"
+        if not raw_passes.isdigit():
+            raise ValueError("Review passes must be a whole number (0 or more).")
+        return AutoRunRequest(
+            name=self.query_one("#rp-name", Input).value.strip(),
+            topic=self.query_one("#bs-topic", Input).value.strip(),
+            replace=bool(self.query_one("#rp-replace", Checkbox).value),
+            continue_paths=bool(self.query_one("#rp-continue-paths", Checkbox).value),
+            agents=tuple(
+                agent
+                for agent in BRAINSTORM_AGENTS
+                if self.query_one(f"#bs-{agent}", Checkbox).value
+            ),
+            passes=int(raw_passes),
+            final_agent=str(self.query_one("#bs-final", Select).value),
+            timeout_minutes=self.query_one("#bs-timeout", Select).value,
+            attachments=tuple(
+                self.query_one("#bs-attachments", AttachmentsField).pending.paths()
+            ),
+            drafter=str(self.query_one("#rp-drafter", Select).value),
+            reviewer=str(self.query_one("#rp-reviewer", Select).value),
+            implementer=str(self.query_one("#rp-implementer", Select).value),
+            tester=str(self.query_one("#rp-tester", Select).value),
+            reviewer_role=str(self.query_one("#rp-exec-reviewer", Select).value),
+            release=str(self.query_one("#rp-release", Select).value),
+            chain=tuple(self.query_one("#rp-chain", OrderedChain).order()),
+        )
+
     def _start_check_worker(self) -> None:
-        """No-op until AUT-5 fills in the read-only check."""
-        return
+        """Same token as Set up. Reads the form, writes nothing, stores a
+        fingerprint only when the report has no FAIL.
+        """
+        try:
+            request = self._auto_request()
+        except (TypeError, ValueError) as error:
+            self._show_check_failure(error)
+            return
+        token = object()
+        self._token = token
+        self._check_fingerprint = None
+        self._error("")
+        widget = self.query_one("#rp-checks", Static)
+        widget.update("Checking…")
+        widget.remove_class("-empty")
+        root = self._root
+
+        def in_thread() -> None:
+            from whyline.console import auto_run
+
+            try:
+                checks = relay_ops.candidate_checks(root, request)
+                # Called after the trust dialog, including when a line failed.
+                # A git error must not hide those FAIL lines. A clean check
+                # has nothing else to show, so that error is the result.
+                try:
+                    digest = auto_run.fingerprint(root, request)
+                except Exception:
+                    if any(check.status == "FAIL" for check in checks):
+                        digest = None
+                    else:
+                        raise
+            except Exception as error:
+                self.app.call_from_thread(self._check_worker_failed, error, token)
+                return
+            if any(check.status == "FAIL" for check in checks):
+                digest = None
+            self.app.call_from_thread(self._show_auto_checks, checks, digest, token)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _check_worker_failed(self, error: Exception, token: object) -> None:
+        if token is not self._token or not self.is_attached:
+            return
+        try:
+            self._show_check_failure(error)
+        except NoMatches:
+            return
+
+    def _show_auto_checks(self, checks: list, digest: str | None, token: object) -> None:
+        if token is not self._token or not self.is_attached:
+            return
+        failures = sum(check.status == "FAIL" for check in checks)
+        try:
+            widget = self.query_one("#rp-checks", Static)
+            text = _format_check_lines(checks)
+            widget.update(text)
+            widget.set_class(not text, "-empty")
+            self._check_fingerprint = digest if failures == 0 else None
+        except NoMatches:
+            return
 
     def _on_rp_go(self) -> None:
         source = self._source()

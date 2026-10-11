@@ -11518,3 +11518,114 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 804a7a270d0f4720aeec299fff3102a0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:34:36.862Z"} -->
+
+## 2026-10-11 — Store a fingerprint only when the check has zero FAIL lines
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-5
+
+**Because:** Warnings do not block, and a FAIL must not leave a digest Run could treat as current
+
+**Rejected:**
+
+- storing the digest whenever fingerprint returns — a failed check would still look current
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 0ff0c0ade5f84bcba6dfab4674ba24d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:56:31.844Z"} -->
+
+## 2026-10-11 — Keep FAIL lines when fingerprint cannot read git
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-5
+
+**Because:** A repository that is not a git checkout already has a FAIL, and git rev-parse raising would replace that report
+
+**Rejected:**
+
+- letting the git error win — the screen would hide the candidate_checks lines
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: c69987a3d6714c56a923c7b133d10585 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:56:35.770Z"} -->
+
+## 2026-10-11 — Wrap the attachment tray mutators to drop a stale check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-5
+
+**Because:** AttachmentsField does not post a message the plan screen can hear, and this task cannot edit that widget
+
+**Rejected:**
+
+- polling the tray — the check would stay current until the next refresh
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: d13cbde4c30f4dd5bd577659e49c9ca7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:56:38.563Z"} -->
+
+## 2026-10-11 — Drop the check only when the chain order changes
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-5
+
+**Because:** Up or Down at the end of the chain does not change the request, matching Set up
+
+**Rejected:**
+
+- dropping on every chain button — a no-op press would clear a clean check
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 275390b501fd4557a259a3616e97b601 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:56:46.258Z"} -->
+
+## 2026-10-11 — Pass an empty plan name through to candidate_checks
+
+**Actor:** grok
+**Role:** implementer
+**Task:** AUT-5
+
+**Because:** Path fallback already lives there, and an empty name is a different fingerprint field from the topic
+
+**Rejected:**
+
+- applying _plan_name on the screen — the stored digest would not match the form empty name
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: f261d6b6d2114560a5f12f238ca9a2da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T17:56:46.277Z"} -->
+
+## 2026-10-11 — Pass AUT-5: Check worker runs read-only, groups headings, and drops fingerprints on form change
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AUT-5
+
+**Because:** All 113 targeted relay tests and full test suite pass cleanly with git status unchanged
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: fe763bc7b91c4618ad771eb456f0ed6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T18:03:00.670Z"} -->
+
+## 2026-10-11 — Approve AUT-5 worker checks and stale fingerprint invalidation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AUT-5
+
+**Because:** The implementation satisfies the requested read-only worker, post-dialog trust state, grouped output, clean-only fingerprint storage, and all specified invalidation paths; focused and full pytest suites pass
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 13c385e52dcc4d6abf5cee5638408fee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T18:08:06.976Z"} -->
