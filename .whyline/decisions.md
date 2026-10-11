@@ -11701,3 +11701,183 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5e9eb9a8eff045a6a1d0706513183464 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:20:12.306Z"} -->
+
+## 2026-10-11 — Append the unattended synthesis instruction as its own paragraph
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** unattended=False must leave today's synthesis prompt byte-for-byte unchanged
+
+**Rejected:**
+
+- editing the existing sentence — that would change the default prompt
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 887417fa0b2442a8873c8814ab8a87ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:24:19.930Z"} -->
+
+## 2026-10-11 — Write timeout_minutes with an unquoted setter, not _set_top_level
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** the value must be a bare TOML integer, including 0, and _set_top_level quotes strings
+
+**Rejected:**
+
+- _set_top_level — it wraps the value in quotes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 0b65a5dbc3a044ffabc4e6869617fd7d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:24:19.930Z"} -->
+
+## 2026-10-11 — Leave unattended off the setup wizard and chat brainstorm
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** this task only adds the parameter, and those callers have no unattended signal
+
+**Rejected:**
+
+- passing unattended=True from setup and chat — that would change prompts this task did not ask to change
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 6bc19374fecf481088a8fc660b322d76 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:24:19.930Z"} -->
+
+## 2026-10-11 — Insert a missing timeout_minutes with the same blank-line rule as _set_top_level
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** the key stays with the other top-level keys and one blank line remains before the first table
+
+**Rejected:**
+
+- gluing the key to the table header — that drops the blank line the rest of the config uses
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 2283c1602e09412bb582c88f28b0888e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:24:19.930Z"} -->
+
+## 2026-10-11 — Pass RUN-1: unattended synthesis flag and unquoted timeout_minutes behave correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-1
+
+**Because:** All unit tests and the full test suite pass cleanly covering both features
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 406e4e1aeae641a3bf4db82d8bd3705d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:28:05.104Z"} -->
+
+## 2026-10-11 — Reject RUN-1 review because the required test command was denied
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-1
+
+**Because:** uv run --directory /Users/anish/whyline-relay pytest -q tests/test_brainstorm_setup.py tests/test_setup.py could not initialize /Users/anish/.cache/uv due to Operation not permitted, so independent test verification cannot be completed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 8c805bda553f4f6f9853d3ddb82ef8bd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:28:47.799Z"} -->
+
+## 2026-10-11 — Keep the existing unattended synthesis paragraph and unquoted timeout writer
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** Round 4 rechecked the diff against the spec and both required pytest commands exited 0, so the rejected review was the uv cache denial rather than a code defect
+
+**Rejected:**
+
+- rewriting the helpers — they already append one paragraph only when unattended is true and write a bare integer through _write_config
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 0f5ed13ad2b34224a7551c5b19f735bd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:33:44.117Z"} -->
+
+## 2026-10-11 — Pass RUN-1: unattended synthesis flag and unquoted timeout_minutes pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-1
+
+**Because:** All unit tests in test_brainstorm_setup.py and test_setup.py as well as full pytest suite pass cleanly
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 5280be6711b54ee5afbc49113bf5b6d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:36:36.306Z"} -->
+
+## 2026-10-11 — Reject RUN-1 review because the required focused test command was denied
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-1
+
+**Because:** uv run --directory /Users/anish/whyline-relay pytest -q tests/test_brainstorm_setup.py tests/test_setup.py could not initialize /Users/anish/.cache/uv due to Operation not permitted, so independent verification cannot be completed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 0804129824304865990b410d79229b23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:37:09.350Z"} -->
+
+## 2026-10-11 — Keep the existing unattended synthesis paragraph and unquoted timeout writer
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** Round 7 rechecked the uncommitted diff against the spec and both required pytest commands exited 0, so the rejected review was the uv cache denial rather than a code defect
+
+**Rejected:**
+
+- rewriting the helpers — they already append one paragraph only when unattended is true and write a bare integer through _write_config
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: d3fcae72f4f242d38a2a08f68b1b7260 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:40:51.513Z"} -->
+
+## 2026-10-11 — Pass RUN-1: unattended synthesis flag and unquoted timeout_minutes pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-1
+
+**Because:** Ran targeted tests (tests/test_brainstorm_setup.py tests/test_setup.py) and full pytest test suite in whyline-relay; all passed cleanly with exit code 0
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: e64644b388d7472391ec02e2aafd5303 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:43:19.770Z"} -->
+
+## 2026-10-11 — Reject RUN-1 because the required focused test command was denied
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-1
+
+**Because:** uv run --directory /Users/anish/whyline-relay pytest -q tests/test_brainstorm_setup.py tests/test_setup.py could not initialize /Users/anish/.cache/uv because opening /Users/anish/.cache/uv/sdists-v9/.git was not permitted, so independent verification cannot be completed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: f31d72ca1ddb47e384bb76d084c8883a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:43:56.300Z"} -->
