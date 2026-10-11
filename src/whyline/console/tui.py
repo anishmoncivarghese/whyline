@@ -149,6 +149,8 @@ def _short_path(path: Path) -> str:
 
 # The dropdown is narrow; /model keeps the full wording.
 _CB_SHORT_LABELS = {"installed (login not checked)": "login unchecked"}
+# Action row on the agent menu once Backup has left the row.
+_CB_BACKUP_MENU = "backup-menu"
 
 
 def _cb_options(status: dict) -> list[tuple[str, str]]:
@@ -178,12 +180,19 @@ def _cb_status_key(status: dict) -> tuple[tuple[str, bool, str], ...]:
 def _cb_match_option(current: object, options: list[tuple[str, str]]) -> str:
     """The same agent in `options`, keeping or dropping the unavailable `!`."""
     values = [value for _label, value in options]
-    if isinstance(current, str):
+    if isinstance(current, str) and current != _CB_BACKUP_MENU:
         name = current[1:] if current.startswith("!") else current
         for candidate in (name, f"!{name}"):
             if candidate in values:
                 return candidate
     return options[0][1]
+
+
+def _cb_agent_name(value: object) -> str:
+    """The agent id, without the unavailable `!` marker."""
+    if isinstance(value, str) and value.startswith("!"):
+        return value[1:]
+    return str(value)
 
 
 def _model_rejected(value: str) -> bool:
@@ -1134,6 +1143,8 @@ class WhylineConsoleApp(App):
 
     def _cb_current(self) -> tuple[str, str, str, tuple[str, ...]]:
         raw = self._main("#cb-agent", Select).value
+        if raw == _CB_BACKUP_MENU:
+            raw = self._cb_agent_shown or ""
         if isinstance(raw, str) and raw.startswith("!"):
             agent = raw[1:]
         elif isinstance(raw, str):
@@ -1204,6 +1215,7 @@ class WhylineConsoleApp(App):
             self._cb_set_backup_closed(select, self._cb_backup_unreadable)
             more.update("")
             more.display = False
+            self._cb_after_backup_sync()
             return
         value = self._cb_backup_real
         chain = self._cb_chain
@@ -1227,6 +1239,83 @@ class WhylineConsoleApp(App):
         else:
             more.update("")
             more.display = False
+        self._cb_after_backup_sync()
+
+    def _cb_bak_head(self) -> str:
+        """What the narrow agent row says after `bak`.
+
+        An empty chain is `none`. Automatic, while it is still the unsaved
+        selection, prefixes that head with `auto`.
+        """
+        head = self._cb_chain[0] if self._cb_chain else "none"
+        if self._cb_backup_real == "automatic":
+            return f"auto {head}"
+        return head
+
+    def _cb_after_backup_sync(self) -> None:
+        """Keep Backup off the row below 80, and refresh the agent menu."""
+        if self.size.width < 80:
+            try:
+                self._main("#cb-backup-label", Label).display = False
+                self._main("#cb-backup", Select).display = False
+                self._main("#cb-backup-more", Static).display = False
+            except (NoMatches, IndexError):
+                pass
+        self._cb_sync_agent_menu()
+
+    def _cb_sync_agent_menu(self) -> None:
+        """Below 80 each agent row names the backup head and offers Backup…"""
+        try:
+            select = self._main("#cb-agent", Select)
+        except (NoMatches, IndexError):
+            return
+        from whyline import account
+
+        status = account.agent_status(self.session.root)
+        base = _cb_options(status) or [("claude", "claude")]
+        if self.size.width < 80:
+            head = self._cb_bak_head()
+            options = [
+                (f"{_cb_agent_name(value)} · bak {head}", value)
+                for _prompt, value in base
+            ]
+            options.append(("Backup…", _CB_BACKUP_MENU))
+        else:
+            options = list(base)
+        listed = [
+            (str(prompt), value)
+            for prompt, value in select._options
+            if value is not Select.BLANK
+        ]
+        if listed == options:
+            return
+        shown = select.value
+        if shown == _CB_BACKUP_MENU:
+            shown = self._cb_agent_shown
+        chosen = _cb_match_option(shown, base)
+        with self.prevent(Select.Changed):
+            select.set_options(options)
+            if select.value != chosen:
+                select.value = chosen
+
+    def _cb_restore_agent_select(self) -> None:
+        """Put the agent menu back on the real agent after Backup…"""
+        select = self._main("#cb-agent", Select)
+        name = self._cb_agent_shown
+        if not isinstance(name, str) or not name or name == _CB_BACKUP_MENU:
+            name = self._cb_saved[0] if self._cb_saved else "claude"
+        legal = set(getattr(select, "_legal_values", ()))
+        target = name if name in legal else f"!{name}"
+        if target not in legal:
+            for _prompt, value in select._options:
+                if value != _CB_BACKUP_MENU and value is not Select.BLANK:
+                    target = value
+                    break
+            else:
+                return
+        with self.prevent(Select.Changed):
+            if select.value != target:
+                select.value = target
 
     def _cb_show_backup(self, chain: tuple[str, ...], real: str | None = None) -> None:
         """Show `chain` on the backup control. Does not post Select.Changed."""
@@ -1517,7 +1606,8 @@ class WhylineConsoleApp(App):
         if key == self._cb_status_seen:
             return
         options = _cb_options(status) or [("claude", "claude")]
-        chosen = _cb_match_option(select.value, options)
+        current = self._cb_agent_shown if select.value == _CB_BACKUP_MENU else select.value
+        chosen = _cb_match_option(current, options)
         saved_chain = self._cb_saved[3] if self._cb_saved else ()
         primary = self._cb_saved[0] if self._cb_saved else "claude"
         self._cb_refreshing = True
@@ -1547,8 +1637,9 @@ class WhylineConsoleApp(App):
     def _cb_fit(self) -> None:
         """Below 100 columns the labels shrink so Save stays on screen."""
         try:
-            narrow = self.size.width < 100
-            wide_backup = self.size.width >= 110
+            width = self.size.width
+            narrow = width < 100
+            compact = width < 80
             self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
             self._main("#cb-model-label", Label).update("M" if narrow else "Model")
             self._main("#cb-repo-label", Label).update("R" if narrow else "Repo")
@@ -1558,13 +1649,26 @@ class WhylineConsoleApp(App):
                 failover_on = False
             # Wide agent box is 24. A visible failover label needs those columns
             # back or Save leaves a 120-column row. Narrow rows are already 14.
+            # The timeout plan's 10 and 12 stay out of this task.
             self._main("#cb-agent", Select).styles.width = 14 if narrow or failover_on else 24
-            # "Bak" and a narrower box keep Save on the 80-column row.
-            # BAR-5 owns the final 18/14 split; 8 is what still fits beside it.
-            self._main("#cb-backup-label", Label).update("Bak" if narrow else "Backup")
-            self._main("#cb-backup", Select).styles.width = 18 if wide_backup else 8
+            backup_label = self._main("#cb-backup-label", Label)
+            backup_label.update("Bak" if narrow else "Backup")
+            backup_label.display = not compact
+            backup = self._main("#cb-backup", Select)
+            backup.styles.width = 18 if width >= 110 else 14
+            backup.display = not compact
+            if compact:
+                self._main("#cb-backup-more", Static).display = False
+            # Backup at 14 plus the full labels passes column 108, and on an
+            # 80-column row the timeout slot (a label plus 8) needs the same
+            # room. The checkbox returns once Backup is the wide 18.
+            self._main("#cb-global", Checkbox).display = width >= 110
         except (NoMatches, IndexError):
             return
+        if compact:
+            self._cb_sync_agent_menu()
+        else:
+            self._cb_sync_backup_closed()
 
     def _cb_snap_back(self, name: str) -> None:
         from whyline import account
@@ -1956,6 +2060,10 @@ class WhylineConsoleApp(App):
         if event.value != select.value:
             return
         value = event.value
+        if value == _CB_BACKUP_MENU:
+            self._cb_restore_agent_select()
+            self._cb_open_chain_editor()
+            return
         if isinstance(value, str) and value.startswith("!"):
             self._cb_snap_back(value[1:])
             return

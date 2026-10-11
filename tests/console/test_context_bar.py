@@ -145,9 +145,34 @@ async def test_a_new_folder_is_set_up_after_one_confirmation(tmp_path, monkeypat
 
 
 async def test_the_bar_fits_80_columns(tmp_path):
+    """Backup stays visible at 80, with room for the timeout plan's narrow control."""
     app = tui.WhylineConsoleApp(root=_repo(tmp_path))
     async with app.run_test(size=(80, 24)) as pilot:
+        bar = app.query_one("#context-bar")
+        mounted = False
+        stand_label = stand_select = None
+        if not bar.query("#cb-timeout") and not bar.query("#cb-timeout-label"):
+            stand_label = tui.Label("T", id="cb-timeout-label")
+            stand_select = tui.Select([("5m", "5m")], allow_blank=False, id="cb-timeout")
+            stand_select.styles.width = 8
+            await bar.mount(stand_label, stand_select, before=bar.query_one("#cb-repo-label"))
+            mounted = True
+            await pilot.pause()
+        assert app.query_one("#cb-backup").display
+        assert app.query_one("#cb-backup-label").display
+        assert app.query_one("#cb-backup").region.width == 14
+        assert app.query_one("#cb-agent").region.width == 14
+        assert app.query_one("#cb-model").region.width == 18
         assert app.query_one("#cb-save").region.right <= 80
+        prompts = _option_map(app.query_one("#cb-agent", tui.Select))
+        assert "backup-menu" not in prompts
+        assert all("bak" not in prompt for prompt in prompts.values())
+        if mounted:
+            await stand_select.remove()
+            await stand_label.remove()
+            await pilot.pause()
+            assert not bar.query("#cb-timeout")
+            assert not bar.query("#cb-timeout-label")
 
 
 def _status_grok_unavailable() -> dict:
@@ -729,3 +754,63 @@ async def test_save_keeps_a_sticky_override_and_shows_using(tmp_path, monkeypatc
     assert role.read_text(encoding="utf-8") == role_before
     assert relay_ops.read_backup(root) == ["codex", "grok"]
     assert model.resolve(root) == ("claude", "opus")
+
+
+async def test_backup_hides_below_80_and_the_agent_menu_opens_it(tmp_path, monkeypatch):
+    from whyline.console.chain_editor import BackupChainScreen
+
+    _installed(monkeypatch, ["claude", "codex", "grok"])
+    root = _repo(tmp_path)
+    _chat_override(root, "claude", "codex")
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(79, 24)) as pilot:
+        assert not app.query_one("#cb-backup").display
+        assert not app.query_one("#cb-backup-label").display
+        assert not app.query_one("#cb-backup-more").display
+        failover = app.query_one("#cb-failover", tui.Label)
+        assert failover.display
+        assert _plain(failover) == "using codex"
+        select = app.query_one("#cb-agent", tui.Select)
+        prompts = _option_map(select)
+        assert prompts["claude"] == "claude · bak none"
+        assert "bak" in prompts["claude"]
+        assert prompts["backup-menu"] == "Backup…"
+        assert app.query_one("#cb-save").region.right <= 79
+        assert app.query_one("#cb-save", tui.Button).disabled
+        select.value = "backup-menu"
+        await pilot.pause()
+        assert select.value == "claude"
+        assert isinstance(app.screen, BackupChainScreen)
+        assert app._main("#cb-save", tui.Button).disabled
+        await pilot.click("#bc-cancel")
+        await pilot.pause()
+        assert not isinstance(app.screen, BackupChainScreen)
+        assert select.value == "claude"
+        assert app.query_one("#cb-save", tui.Button).disabled
+        select.value = "codex"
+        await pilot.pause()
+        assert not app.query_one("#cb-save", tui.Button).disabled
+        select.value = "backup-menu"
+        await pilot.pause()
+        assert select.value == "codex"
+        assert isinstance(app.screen, BackupChainScreen)
+        assert not app._main("#cb-save", tui.Button).disabled
+
+
+async def test_narrow_agent_prompt_names_the_backup_head(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+
+    _installed(monkeypatch, ["claude", "codex", "grok"])
+    root = _repo(tmp_path)
+    relay_ops.save_backup(root, ["codex", "grok"])
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(79, 24)) as pilot:
+        select = app.query_one("#cb-agent", tui.Select)
+        assert not app.query_one("#cb-backup").display
+        assert not app.query_one("#cb-backup-more").display
+        assert _option_map(select)["claude"] == "claude · bak codex"
+        assert _option_map(select)["!grok"] == "grok · bak codex"
+        app.query_one("#cb-backup", tui.Select).value = "automatic"
+        await pilot.pause()
+        assert _option_map(select)["claude"] == "claude · bak auto codex"
+        assert select.value == "claude"

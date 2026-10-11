@@ -10952,3 +10952,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: da289d4566f345e9ab9288dc5dd7147c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T13:47:41.785Z"} -->
+
+## 2026-10-11 — Hide all-repos until the backup select is 18 wide
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-5
+
+**Because:** Backup at 14 plus a timeout label and an 8-wide select put Save at column 95 on an 80-column row, and the same 14-wide select with full labels puts Save past columns 100 through 108. The checkbox is 17 columns and returns at 110.
+
+**Rejected:**
+
+- Shrink Agent to 10 or Model to 12 — the task leaves those widths to the timeout plan
+- Shorten the checkbox to a bare toggle — that still left Save at column 81
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 1a05a5dfbe2e402381ba57329bc8c817 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:14:12.019Z"} -->
+
+## 2026-10-11 — Prefix an automatic backup with auto on the narrow agent row
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-5
+
+**Because:** Automatic is an unsaved selection on top of the chain head, so the prompt is bak auto {head}, and an empty chain's head is none.
+
+**Rejected:**
+
+- Show only none whenever the chain is empty — the automatic marker would disappear while that selection is unsaved
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b88b2ebbc3694575a40e633ab226b738 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:14:17.154Z"} -->
+
+## 2026-10-11 — BAR-5 narrow context bar behavior and agent backup menu verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-5
+
+**Because:** Backup hides below 80 columns, agent options format as {name} · bak {head} with Backup… opening BackupChainScreen and restoring agent selection, Save stays within row bounds at 80 and 79 columns, and all tests pass
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 12efb6eae79c4846aa3af1c82775183f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:19:18.094Z"} -->
+
+## 2026-10-11 — BAR-5 narrow backup layout and menu approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-5
+
+**Because:** The diff preserves the existing under-100 label shrink, uses Backup widths 18 at 110+ and 14 below, hides only Backup controls below 80 while retaining failover and Save, restores the agent before opening BackupChainScreen, and focused plus full tests pass
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 71787e87b51547c787ae93c37232d57c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:23:00.412Z"} -->
