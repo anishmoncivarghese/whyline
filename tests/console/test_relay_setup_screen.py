@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from whyline.console import relay_ops, tui
+from whyline.console.chain_editor import OrderedChain
 from whyline.console.relay_screens import RelaySetupScreen
 
 pytestmark = [
@@ -88,8 +89,10 @@ async def test_fields_are_prefilled_from_the_current_config(tmp_path):
         assert [prompt for prompt, _ in release._options if _ is not tui.Select.BLANK] == [
             "you", "claude", "codex"
         ]
-        assert screen.query_one("#rs-backup-claude", tui.Checkbox).value
-        assert not screen.query_one("#rs-backup-codex", tui.Checkbox).value
+        chain = screen.query_one("#rs-backup", OrderedChain)
+        assert chain.order() == ["claude"]
+        assert screen.query_one("#chain-check-claude", tui.Checkbox).value
+        assert not screen.query_one("#chain-check-codex", tui.Checkbox).value
         assert screen.query_one("#rs-start", tui.Button).disabled
 
 
@@ -299,3 +302,134 @@ async def test_a_check_that_ends_after_the_popup_closed_is_ignored(tmp_path, mon
         for _ in range(20):
             await pilot.pause(0.05)
     assert results == [None]  # and nothing crashed
+
+
+def _roles(backup, **roles):
+    return {
+        "implementer": roles.get("implementer", "codex"),
+        "tester": roles.get("tester", "claude"),
+        "reviewer": roles.get("reviewer", "grok"),
+        "backup": backup,
+    }
+
+
+def _install(monkeypatch, agents, backup, **roles):
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: list(agents))
+    monkeypatch.setattr(relay_ops, "current_roles", lambda root: _roles(backup, **roles))
+
+
+async def test_the_editor_round_trips_grok_then_claude(tmp_path, monkeypatch):
+    agents = ["claude", "codex", "grok"]
+    _install(monkeypatch, agents, ["grok", "claude"])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        chain = screen.query_one("#rs-backup", OrderedChain)
+        assert chain.order() == ["grok", "claude"]
+        assert chain.order() != sorted(agents)
+        assert screen.query_one("#chain-check-grok", tui.Checkbox).value
+        assert screen.query_one("#chain-check-claude", tui.Checkbox).value
+        assert not screen.query_one("#chain-check-codex", tui.Checkbox).value
+
+
+async def test_check_writes_roles_and_the_editor_chain(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _install(monkeypatch, ["claude", "codex", "grok"], ["grok", "claude"])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+    assert ops[0] == ("codex", "claude", "grok", ["grok", "claude"])
+    assert ops[0][3] != sorted(["claude", "codex", "grok"])
+    assert ("release", "human") in ops
+
+
+async def test_guided_summary_shows_backup_grok_then_claude(tmp_path, monkeypatch):
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {a: {"available": True, "label": "ok"} for a in ("claude", "codex", "grok")},
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    _install(monkeypatch, ["claude", "codex", "grok"], ["grok", "claude"])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.push_screen(RelaySetupScreen(tmp_path, guided=True))
+        await pilot.pause()
+        summary = str(app.screen.query_one("#rs-summary", tui.Static).renderable)
+    assert summary == (
+        "Implementer: codex · Tester: claude · Reviewer: grok · "
+        "Backup: grok → claude · Release: you"
+    )
+
+
+async def test_automatic_fills_only_an_empty_editor_from_staged_backup(tmp_path, monkeypatch, ops):
+    from whyline import account, model
+
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _install(monkeypatch, ["claude", "codex", "grok"], [])
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {a: {"available": True, "label": "ok"} for a in ("claude", "codex", "grok")},
+    )
+    model.set_default_agent(tmp_path, "codex")
+    backup_writes = []
+    monkeypatch.setattr(relay_ops, "save_backup", lambda *args: backup_writes.append(args))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 60)) as pilot:
+        screen, _ = await _open(app, pilot)
+        chain = screen.query_one("#rs-backup", OrderedChain)
+        assert chain.order() == []
+        screen.query_one("#chain-automatic", tui.Button).press()
+        await pilot.pause()
+        assert chain.order() == ["claude", "grok"]
+        assert "automatic" not in chain.order()
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+    assert ops[0] == ("codex", "claude", "grok", ["claude", "grok"])
+    assert backup_writes == []
+
+
+async def test_automatic_leaves_a_chain_the_editor_already_has(tmp_path, monkeypatch):
+    _install(monkeypatch, ["claude", "codex", "grok"], ["grok", "claude"])
+    calls = []
+    real = relay_ops.staged_backup
+
+    def spy(*args):
+        calls.append(args)
+        return real(*args)
+
+    monkeypatch.setattr(relay_ops, "staged_backup", spy)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 60)) as pilot:
+        screen, _ = await _open(app, pilot)
+        calls.clear()  # the bar may stage its own empty chain while the app mounts
+        screen.query_one("#chain-automatic", tui.Button).press()
+        await pilot.pause()
+        assert calls == []
+        assert screen.query_one("#rs-backup", OrderedChain).order() == ["grok", "claude"]
+
+
+async def test_reordering_the_chain_after_a_check_disables_start(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _install(monkeypatch, ["claude", "codex", "grok"], ["grok", "claude"])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 60)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        screen.query_one("#chain-up-claude", tui.Button).press()
+        await pilot.pause()
+        assert screen.query_one("#rs-backup", OrderedChain).order() == ["claude", "grok"]
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert _checks_text(screen) == ""

@@ -24,9 +24,13 @@ def env(monkeypatch, tmp_path):
 
 
 async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+
     src = tmp_path / "repo" / "docs"
     src.mkdir(parents=True)
     monkeypatch.setattr(mac_input, "pick_files", lambda run=None: [src])
+    backup_writes = []
+    monkeypatch.setattr(relay_ops, "save_backup", lambda *args: backup_writes.append(args))
     app = tui.WhylineConsoleApp(root=tmp_path / "repo")
     async with app.run_test(size=(120, 100)) as pilot:
         app.push_screen(NewAgentScreen(tmp_path / "repo", STATUS), app._new_agent_done)
@@ -53,6 +57,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
     saved = tmp_path / "repo/.whyline/agents/digest.toml"
     text = saved.read_text()
     assert saved.exists() and 'backup = ["codex"]' in text
+    assert backup_writes == []
     assert 'sources = ["docs"]' in text
     assert state.all_activations(state.connect())[0].status == "active"
 

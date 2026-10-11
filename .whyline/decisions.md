@@ -11013,3 +11013,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 71787e87b51547c787ae93c37232d57c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:23:00.412Z"} -->
+
+## 2026-10-11 — Set up Automatic stages logged-in agents except the saved chat agent
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-6
+
+**Because:** The chain is the one shared chain, and staged_backup already defines that empty-chain order for the bar.
+
+**Rejected:**
+
+- Implementer as the primary — Automatic in Set up would stage a different list than the bar for the same empty chain.
+- recommend_roles backup — that drops the tester and reviewer, which the spec refuses for Automatic.
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 1b54adcb45934f419cb883ead4faab51 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:40:17.471Z"} -->
+
+## 2026-10-11 — Set up clears a passing check when chain buttons change the order
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-6
+
+**Because:** OrderedChain stops Up, Down, Automatic, and None, so those edits never reach the screen, and Start would launch the chain Check already saved.
+
+**Rejected:**
+
+- Leave Start enabled after a reorder — Check writes the chain before Start, so the launch would use the previous order.
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: f164b856d8904559b0a8297e240a7bc1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:40:21.537Z"} -->
+
+## 2026-10-11 — Set up ordered chain backup behaves correctly across round-trips, checks, guided summaries, and invalidation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-6
+
+**Because:** OrderedChain round-trips custom orders, preserves order on Check, renders cleanly in guided summary, fills only empty chains with staged_backup, and invalidates checks on reordering without leaking to scheduled-agent backups
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: f37bcd27d5654798b3f35eac5b63d7d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:45:25.344Z"} -->
+
+## 2026-10-11 — BAR-6 approved: Set up uses the ordered backup editor without merging scheduled-agent storage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-6
+
+**Because:** The implementation preserves custom chain order through Check and guided summary, Automatic only fills an empty editor from staged_backup, scheduled-agent backup remains isolated, and both focused and full test suites pass
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py, tests/console/test_new_agent.py
+
+<!-- whyline-event: bf087bb99a6d419c9e3e11e3d9d5022e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T14:49:10.577Z"} -->

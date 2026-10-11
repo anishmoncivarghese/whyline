@@ -17,6 +17,7 @@ from textual.widgets import Button, Checkbox, Input, Label, Select, Static, Text
 
 from whyline.console import relay_ops
 from whyline.console.attachments_ui import AttachmentsField
+from whyline.console.chain_editor import OrderedChain
 from whyline.console.plan_job import PlanRequest
 
 _SOURCES = [
@@ -413,6 +414,25 @@ class RunChoiceScreen(ModalScreen):
         self.dismiss({"run-new": "new", "run-existing": "existing"}.get(event.button.id))
 
 
+class _SetupChain(OrderedChain):
+    """The Set up chain. Up, Down, Automatic, and None stop their own presses.
+
+    Those edits never reach ``RelaySetupScreen``, and Check has already
+    written the previous order by the time Start runs. Tell the screen when
+    the order actually changes so Start cannot launch an unchecked chain.
+    """
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        before = self.order()
+        super().on_button_pressed(event)
+        event.prevent_default()
+        if self.order() == before:
+            return
+        screen = self.screen
+        if isinstance(screen, RelaySetupScreen):
+            screen._invalidate()
+
+
 class RelaySetupScreen(ModalScreen):
     """Who implements, tests and reviews; a check (doctor); then Start.
     Start is only enabled by a check with no FAIL, and any edit after a
@@ -487,6 +507,7 @@ class RelaySetupScreen(ModalScreen):
 
         self._release = relay_ops.release_role(root)
         self._summary = self._guided and self._configured
+        self._backup = list(self._roles.get("backup") or [])
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
 
@@ -522,10 +543,8 @@ class RelaySetupScreen(ModalScreen):
             )
             for role, label in self.ROLES
         ]
-        backups = [
-            Checkbox(agent, value=agent in self._roles.get("backup", []), id=f"rs-backup-{agent}")
-            for agent in self._agents
-        ]
+        chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
+        chain.load(self._backup)
         title = (
             "Run: check who does what, then start."
             if self._guided
@@ -576,7 +595,7 @@ class RelaySetupScreen(ModalScreen):
                     ),
                 ),
                 Label("Backup, used when an agent fails:"),
-                *backups,
+                chain,
                 Static("", id="rs-meaning"),
                 id="rs-roles",
             ),
@@ -603,8 +622,19 @@ class RelaySetupScreen(ModalScreen):
             else:
                 self.query_one("#rs-roles").display = False
                 self.query_one("#rs-check").display = False
+        # compose() loads before the chain is mounted, and the chain's own
+        # on_mount sync returns while is_mounted is still false.
+        self.query_one("#rs-backup", OrderedChain).load(self._backup)
         self._update_meaning()
         self.call_after_refresh(self._ready)
+
+    def _fill_backup(self) -> list[str]:
+        """Names for an empty editor. Automatic is not a value Check stores."""
+        from whyline import account, model
+
+        primary, _chosen_model = model.resolve(self._root)
+        usable = relay_ops.usable_agents(self._root, account.agent_status(self._root))
+        return relay_ops.staged_backup(primary, usable)
 
     def _update_meaning(self) -> None:
         i, t, r, _ = self._chosen()
@@ -645,7 +675,7 @@ class RelaySetupScreen(ModalScreen):
         implementer, tester, reviewer = (
             self.query_one(f"#rs-{role}", Select).value for role, _ in self.ROLES
         )
-        backup = [a for a in self._agents if self.query_one(f"#rs-backup-{a}", Checkbox).value]
+        backup = self.query_one("#rs-backup", OrderedChain).order()
         return implementer, tester, reviewer, backup
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
