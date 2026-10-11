@@ -42,7 +42,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 ## Console, backup bar, after whyline-relay 0.2.34
 
-- [ ] BAR-1: Depend on 0.2.34 and wrap the chain reader
+- [x] BAR-1: Depend on 0.2.34 and wrap the chain reader
   Edit only this whyline checkout. Raise both `whyline-relay` bounds in `pyproject.toml` — the project `dependencies` list and the `dev` group — from `>=0.2.32,<0.3` to `>=0.2.34,<0.3`. Refresh `uv.lock`. Install the published `0.2.34`.
   In `src/whyline/console/relay_ops.py`, add `read_backup(root)` and `save_backup(root, chain)`. They call `setup.read_backup` and `setup.write_backup`. `save_backup` does not call `write_roles`. Add `staged_backup(primary, usable) -> list[str]`: the names in `usable` except `primary`, ordered by `_PREFERENCE["implementer"]` (`codex`, `claude`, `antigravity`, `grok`), then any other usable name not in that tuple. `current_roles` keeps returning the chain for Set up, read via `read_backup`, still filtered to names `relay_agents` knows. Do not catch `ConfigError` and turn it into an empty chain. A missing file still yields an empty backup list.
   Extend `tests/console/test_relay_ops.py`. Cover: a missing file reads `[]`; a chain of `grok, claude` round-trips through `save_backup` and the commit touches only `config.toml`; `staged_backup("codex", ["codex", "claude", "grok"])` is `["claude", "grok"]`; a `ConfigError` from `read_backup` is not swallowed by `current_roles`.
