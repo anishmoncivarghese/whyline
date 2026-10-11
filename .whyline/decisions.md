@@ -10309,3 +10309,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: be373b6b5f944a2a92faaa7ed64129af -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:42:09.824Z"} -->
+
+## 2026-10-11 — Run the whole plan from agentdock; tasks that edit whyline-relay carry relay-repo: so the relay commits them there
+
+**Actor:** claude
+**Role:** implementer
+**Task:** XREPO
+
+**Because:** The user does not want to switch repositories mid-plan; the relay could only commit in the repo it started in, so whyline-relay gained per-task relay-repo (whyline-relay d958b43) that moves only the task's git work while plan, state, handoffs and logs stay in agentdock
+
+**Rejected:**
+
+- Switch the console Repo to whyline-relay for BAK-4/5 — the repo shuffle the user rejected
+- A plan-level default repository — per-task lines are explicit and the plan mixes both repositories
+- Run agents with cwd in the task repo — handoffs and notes would land there again; the footer names both repos instead
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md, /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 2da258e07939419aa27682a55bd97085 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:57:31.477Z"} -->

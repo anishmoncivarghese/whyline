@@ -3,7 +3,7 @@
 
 Spec: `docs/specs/in-the-agent-i-can-select-the-agent-in-c.md`.
 
-Two git repositories. Each task names the only checkout it edits. Run `BAK-*` and `RUN-1` / `RUN-2` with the relay started in `/Users/anish/whyline-relay` (published release 0.2.32 today). Run `BAR-*`, `AUT-*`, and `RUN-3` onward in this whyline checkout. `BAR-*` starts only after `BAK-5` is on PyPI. `AUT-*` stays on that same relay. `RUN-3` onward starts only after `RUN-2` is on PyPI.
+Two git repositories. Each task names the only checkout it edits. Run the whole plan with the relay started in this whyline checkout. `BAK-4`, `BAK-5`, `RUN-1`, and `RUN-2` carry `relay-repo: /Users/anish/whyline-relay`, so the relay commits them there and you never switch repositories (`BAK-1` to `BAK-3` were committed there by hand). `BAR-*`, `AUT-*`, and `RUN-3` onward commit in this checkout. `BAR-*` starts only after `BAK-5` is on PyPI. `AUT-*` stays on that same relay. `RUN-3` onward starts only after `RUN-2` is on PyPI.
 
 Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is the Auto form and a read-only Check. Release 3 is the runner. Brainstorm, describe, and paste keep Make the plan or Save, their approval stops, and Set up. Agents-mode backup checkboxes stay on the scheduled-agent form.
 
@@ -27,6 +27,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
   Verify with `uv run pytest -q tests/test_preflight.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
 - [ ] BAK-4: Ignore Auto runtime files and the chat failover file, and commit the relay's own decision log on resume
+  relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/gitcheck.py`, `/Users/anish/whyline-relay/src/whyline_relay/cli.py`, and their tests. Add `.whyline/relay/auto-run.json`, `.whyline/relay/auto-run.lock`, `.whyline/relay/chat-active-agents.json`, and `.whyline/relay/recovery.json` to `RELAY_IGNORE`. Do not add them only to `.whyline/relay/.gitignore`. `ensure_relay_gitignore` writes that file once, and existing repos would keep the old copy. `ensure_relay_ignored` already appends missing `RELAY_IGNORE` lines to `.git/info/exclude`.
   Decision log: agents run `whyline note` during a round, which edits the tracked `.whyline/decisions.md`. A round that pauses before the relay's own commit leaves that file dirty, and `whyline relay resume` then fails its clean-tree check on a change the relay's agents made (measured on BAK-3 round 3). Add `gitcheck.commit_decision_log(root, task_id) -> bool`. It commits only when `gitcheck.dirty_paths(root)` is exactly `[".whyline/decisions.md"]`, through `commit_paths` with the message `chore: record {task_id} decisions`, and returns True. Any other dirty path, including untracked files, means it commits nothing and returns False, so the existing clean-tree FAIL still names every path. A clean tree returns False. `cmd_resume` calls it with the saved task id after the live-relay refusal and before `_launch_checks`, and prints `Committed {task_id}'s decision log.` to stderr when it returns True. `--allow-dirty` skips the call. `start`, `guard`, and `preflight` do not change.
   Extend `tests/test_gitcheck.py` and the resume tests in `tests/test_cli_commands.py`. Cover: `RELAY_IGNORE` contains those four paths; `ensure_relay_ignored` adds the new lines to an exclude file that already has the old list and does not duplicate lines that are already present; `commit_decision_log` on a scratch repo commits only `.whyline/decisions.md` with the task id in the message; a second dirty path (tracked or untracked) commits nothing; a clean tree commits nothing; a paused relay whose only change is the decision log resumes past the clean-tree check; `--allow-dirty` leaves the file uncommitted.
@@ -34,6 +35,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 - [ ] BAK-5: Publish whyline-relay 0.2.34
   relay-profile: release
+  relay-repo: /Users/anish/whyline-relay
   In `/Users/anish/whyline-relay` only, set `pyproject.toml` to `0.2.34`. The file may say `0.2.32` or `0.2.33` when this task starts. Do not use `0.2.33`: `plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md` already assigns that tag to the timeout work, and this release does not contain `cancel_event` or `write_timeout_minutes`. Do not open `0.3`. Do not change this whyline checkout.
   Write `docs/releases/v0.2.34.md` in the same shape as `docs/releases/v0.2.32.md`, covering `read_backup`, `write_backup`, `write_roles` delegating the chain, `preflight.run(scope="repository")`, the four new `RELAY_IGNORE` lines, and resume committing the decision log when it is the only change.
   Run `uv run pytest -q` in `/Users/anish/whyline-relay` and confirm it exits 0 before tagging `v0.2.34` and publishing to PyPI the same way `v0.2.32` was published. Confirm a clean environment can install `whyline-relay==0.2.34` and import `whyline_relay.setup.read_backup`.
@@ -130,6 +132,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 ## Relay package, unattended synthesis (`/Users/anish/whyline-relay`)
 
 - [ ] RUN-1: Let synthesis decide derived questions, and add the timeout writer if it is missing
+  relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay`. Do not add `cancel_event`, `AgentCancelled`, or `chat.NO_LIMIT`. Those belong to `plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md`. If they are already in the tree, leave them alone.
   `brainstorm.run_final_synthesis` gains `unattended: bool = False`. `True` appends one paragraph to the synthesis prompt: decide questions whose answer follows from the request, record each decision in the document, and leave `## Open questions` only for a choice that would change what gets built and cannot be derived from the request. The default `False` leaves today's prompt text byte-for-byte unchanged. Do not add that paragraph to the plan-draft prompt.
   If `setup.write_timeout_minutes` is missing, add `write_timeout_minutes(root, minutes, *, commit=True) -> Path`. It writes an unquoted integer, including `0`. Replace a top-level `timeout_minutes = …` line, or insert `timeout_minutes = N` before the first table when the line is absent. Commit through `_write_config`. Do not call `_set_top_level`: that helper quotes strings, and a quoted `timeout_minutes` fails `config.load`. Do not change `write_release`. If the function already exists, do not change it.
@@ -138,6 +141,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 - [ ] RUN-2: Publish whyline-relay 0.2.35
   relay-profile: release
+  relay-repo: /Users/anish/whyline-relay
   In `/Users/anish/whyline-relay` only, set `pyproject.toml` to `0.2.35`. Do not tag unless this tree already imports all of: `setup.read_backup`, `setup.write_backup`, `setup.write_timeout_minutes`, `chat.NO_LIMIT`, and `agents.run` with a `cancel_event` parameter, and `run_final_synthesis` accepts `unattended`. If `cancel_event` or `chat.NO_LIMIT` is missing, do not implement them and do not tag. Merge the timeout plan's relay commits onto this line first so `0.2.35` contains both, and do not publish a newer `0.2.33` that lacks the backup APIs. Do not open `0.3`. Do not change this whyline checkout and do not turn on the Chat `none` menu.
   Write `docs/releases/v0.2.35.md` in the same shape as `docs/releases/v0.2.34.md`, covering the unattended synthesis paragraph and `write_timeout_minutes` when this tag is the one that added it. Run `uv run pytest -q` and confirm it exits 0 before tagging `v0.2.35` and publishing to PyPI the same way `v0.2.34` was published. Confirm a clean environment can install `whyline-relay==0.2.35` and that `inspect.signature(whyline_relay.agents.run).parameters` contains `cancel_event`.
 
