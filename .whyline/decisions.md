@@ -10291,3 +10291,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b5205a440b4e434d884759b23812608d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:31:36.061Z"} -->
+
+## 2026-10-11 — Commit BAK-1..3 by hand in whyline-relay on relay/bak-relay and run BAK-4/5 from .whyline/relay/bak-relay.md there
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** BAK-3
+
+**Because:** The relay was started in agentdock though BAK tasks edit only whyline-relay, so it committed only decisions.md under BAK ids, handoffs landed in the wrong repo, and BAK-3 could never be committed; the plan header already says to run BAK-* in whyline-relay
+
+**Rejected:**
+
+- Reset agentdock to the saved base and resume — the relay would find nothing to commit in agentdock and pause again
+- Drop the loop.py/prompts.py handoff footer — it is tested and prevents the same cross-repo pause; kept as its own commit
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md, /Users/anish/whyline-relay/.whyline/relay/bak-relay.md
+
+<!-- whyline-event: be373b6b5f944a2a92faaa7ed64129af -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T09:42:09.824Z"} -->
