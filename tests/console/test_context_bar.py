@@ -67,18 +67,27 @@ def _plain(widget) -> str:
     return content.plain if hasattr(content, "plain") else str(content)
 
 
+async def _until(pilot, condition, what):
+    """Wait for an outcome instead of one pause: Windows CI on Python 3.11
+    needs several event-loop turns before a click's handler has run."""
+    for _ in range(400):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
+
+
 async def _click_modal(pilot, app, selector: str) -> None:
-    """Click a control on the active modal once it is laid out. Textual 2 can
-    push a screen before its buttons have a nonzero region; a click sampled
-    in that window misses or lands out of bounds (seen on Windows CI)."""
-    for _ in range(100):
-        found = app.screen.query(selector)
-        if found and found.first().region.width > 0:
-            break
-        await pilot.pause(0.02)
+    """Activate a control on the active modal once it is mounted. Pressing it
+    sends the same message a click does; a coordinate click can land while the
+    pushed modal is still laying out and miss (seen on Windows CI)."""
+    await _until(pilot, lambda: bool(app.screen.query(selector)), f"{selector} mounted")
+    widget = app.screen.query_one(selector)
+    if hasattr(widget, "press"):
+        widget.press()
     else:
-        raise AssertionError(f"{selector} never rendered on {type(app.screen).__name__}")
-    await pilot.click(selector)
+        widget.toggle()
+    await pilot.pause()
 
 
 def _lines(app):
@@ -600,13 +609,11 @@ async def test_manage_save_dirties_the_bar_and_does_not_write(tmp_path, monkeypa
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         app.query_one("#cb-backup", tui.Select).value = "manage"
-        await pilot.pause()
-        assert isinstance(app.screen, BackupChainScreen)
+        await _until(pilot, lambda: isinstance(app.screen, BackupChainScreen), "editor open")
         await _click_modal(pilot, app, "#chain-check-claude")
-        await pilot.pause()
+        await _until(pilot, lambda: app.screen.query_one("#chain-check-claude").value, "claude checked")
         await _click_modal(pilot, app, "#bc-save")
-        await pilot.pause()
-        assert not isinstance(app.screen, BackupChainScreen)
+        await _until(pilot, lambda: not isinstance(app.screen, BackupChainScreen), "editor saved")
         assert not app.query_one("#cb-save", tui.Button).disabled
         assert _backup_closed(app.query_one("#cb-backup", tui.Select)) == "claude"
     assert relay_ops.read_backup(root) == []
@@ -678,21 +685,20 @@ async def test_editor_reset_clears_the_chat_override_and_stays_open(tmp_path, mo
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         app.query_one("#cb-backup", tui.Select).value = "manage"
-        await pilot.pause()
-        assert isinstance(app.screen, BackupChainScreen)
+        await _until(pilot, lambda: isinstance(app.screen, BackupChainScreen), "editor open")
         await _click_modal(pilot, app, "#bc-reset")
-        await pilot.pause()
+        await _until(
+            pilot, lambda: failover.resolve_chat_agent(root, "claude") == "claude", "override reset"
+        )
         assert isinstance(app.screen, BackupChainScreen)
-        assert failover.resolve_chat_agent(root, "claude") == "claude"
         assert not app._main("#cb-failover", tui.Label).display
         assert any(
             "Back to claude. The chain is still codex → grok." in line
             for line in _lines(app)
         )
         await _click_modal(pilot, app, "#bc-cancel")
-        await pilot.pause()
+        await _until(pilot, lambda: not isinstance(app.screen, BackupChainScreen), "editor closed")
         select = app.query_one("#cb-backup", tui.Select)
-        assert not isinstance(app.screen, BackupChainScreen)
         assert "reset" not in _option_map(select)
         assert select.value == "codex"
         assert _backup_closed(select) == "codex"
@@ -788,22 +794,19 @@ async def test_backup_hides_below_80_and_the_agent_menu_opens_it(tmp_path, monke
         assert app.query_one("#cb-save").region.right <= 79
         assert app.query_one("#cb-save", tui.Button).disabled
         select.value = "backup-menu"
-        await pilot.pause()
+        await _until(pilot, lambda: isinstance(app.screen, BackupChainScreen), "editor open")
         assert select.value == "claude"
-        assert isinstance(app.screen, BackupChainScreen)
         assert app._main("#cb-save", tui.Button).disabled
         await _click_modal(pilot, app, "#bc-cancel")
-        await pilot.pause()
-        assert not isinstance(app.screen, BackupChainScreen)
+        await _until(pilot, lambda: not isinstance(app.screen, BackupChainScreen), "editor closed")
         assert select.value == "claude"
         assert app.query_one("#cb-save", tui.Button).disabled
         select.value = "codex"
         await pilot.pause()
         assert not app.query_one("#cb-save", tui.Button).disabled
         select.value = "backup-menu"
-        await pilot.pause()
+        await _until(pilot, lambda: isinstance(app.screen, BackupChainScreen), "editor open again")
         assert select.value == "codex"
-        assert isinstance(app.screen, BackupChainScreen)
         assert not app._main("#cb-save", tui.Button).disabled
 
 
