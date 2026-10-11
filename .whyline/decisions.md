@@ -11629,3 +11629,38 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 13c385e52dcc4d6abf5cee5638408fee -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T18:08:06.976Z"} -->
+
+## 2026-10-11 — Relay-mode done/skip read the release task from the relay's saved pause when the console has none in memory
+
+**Actor:** claude
+**Role:** implementer
+**Task:** console-release-done
+
+**Because:** The in-memory release task is lost on console restart, so done became an unknown relay command at BAR-7; relay_ops.release_task already reads the saved pause. Restore runs lazily on done/skip and on switching into Relay mode, never while a relay process runs, so the done path cannot re-arm itself
+
+**Rejected:**
+
+- Restore inside _sync_mode_indicator — it runs right after done clears the task and would re-arm the release prompt
+- Restore on app mount — the console opens in Chat, where done/skip mean nothing
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py
+
+<!-- whyline-event: 0519615d36e947a09720a2c702b36ef2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T19:31:11.943Z"} -->
+
+## 2026-10-11 — Release whyline 0.3.40 for AUT-6, with the done/skip restart fix, and gate the tag on main CI first
+
+**Actor:** claude
+**Role:** releaser
+**Task:** AUT-6
+
+**Because:** AUT-1..5 shipped the Auto form and read-only Check without Run, as AUT-6 requires; the restart fix was merged at this pause so it ships too. 0.3.39's first tag failed only on Windows CI, so main CI must pass before tagging
+
+**Rejected:**
+
+- Tag immediately as before — a Windows-only failure would again need the tag moved
+
+**Files:** docs/releases/v0.3.40.md
+
+<!-- whyline-event: a53a16d6cac94bdf90455bf5e90761bb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T19:31:11.976Z"} -->
