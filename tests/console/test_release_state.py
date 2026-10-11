@@ -193,3 +193,61 @@ async def test_the_relays_own_release_pause_still_starts_a_release(tmp_path):
 
         assert app._release_task is not None and app._release_task[0] == "T-2"
         assert "· release" in app.sub_title
+
+
+# A restarted console has no in-memory release state; the relay's saved
+# pause is the source of truth.
+def _saved_release(monkeypatch, info=("T-2", ["Bump the version", "Tag and push"])):
+    monkeypatch.setattr(relay_ops, "release_task", lambda root: info)
+
+
+async def test_done_after_a_restart_uses_the_saved_release_pause(tmp_path, monkeypatch):
+    _saved_release(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._release_task = None  # what a fresh console starts with
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "done"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert FakeProcess.instances and FakeProcess.instances[-1].args == ["done", "T-2"]
+        assert not any("Unknown relay command" in line for line in _lines(app))
+
+
+async def test_skip_after_a_restart_uses_the_saved_release_pause(tmp_path, monkeypatch):
+    _saved_release(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._release_task = None
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "skip"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert FakeProcess.instances[-1].args == ["skip", "T-2"]
+
+
+async def test_switching_to_relay_mode_restores_the_release_prompt(tmp_path, monkeypatch):
+    _saved_release(monkeypatch)
+    monkeypatch.setattr(tui.adapters, "relay_is_configured", lambda root: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        assert "· release" in app.sub_title
+        assert str(app.query_one("#relay-resume", tui.Button).label) == "Release done…"
+        assert any("T-2 is a release task waiting for you" in line for line in _lines(app))
+
+
+async def test_done_with_no_release_pause_says_so_and_runs_nothing(tmp_path, monkeypatch):
+    _saved_release(monkeypatch, info=None)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "done"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert FakeProcess.instances == []
+        assert any("not paused on a release task" in line for line in _lines(app))

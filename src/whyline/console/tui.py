@@ -71,6 +71,7 @@ from whyline.console.repl import (
     handle_slash_command,
     home_repo_warning,
     login_argv,
+    NO_RELEASE_PAUSE,
     strip_relay_prefix,
     named_row,
     repo_switch_warning,
@@ -637,6 +638,23 @@ class WhylineConsoleApp(App):
         warning = home_repo_warning(self.session.root, Path.cwd())
         if warning:
             self.render_event(SessionEvent(kind="error", text=warning))
+
+    def _restore_release_task(self) -> bool:
+        """Picks the release task back up from the relay's saved pause. The
+        in-memory one is lost when the console restarts, which made `done`
+        an unknown command. Never while a relay process is running."""
+        if getattr(self, "_release_task", None):
+            return True
+        if self.session.mode != "relay" or (self._relay is not None and self._relay.running()):
+            return False
+        try:
+            info = relay_ops.release_task(self.session.root)
+        except Exception:
+            info = None
+        if info is None:
+            return False
+        self._release_task = info
+        return True
 
     def _sync_mode_indicator(self) -> None:
         """The subtitle alone was easy to miss, so the current mode is also
@@ -1968,6 +1986,16 @@ class WhylineConsoleApp(App):
             ))
         elif button_id and button_id.startswith("mode-"):
             self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
+            if self.session.mode == "relay" and not getattr(self, "_release_task", None):
+                if self._restore_release_task():
+                    task_id, _ = self._release_task
+                    self.render_event(SessionEvent(
+                        kind="pause",
+                        text=f'{task_id} is a release task waiting for you. '
+                        'Type "done" when finished, or "skip".',
+                    ))
+                    self._sync_mode_indicator()
+                    self._sync_relay_buttons()
             # Enter submits the prompt. A click would otherwise leave focus on the button.
             try:
                 self._main("#prompt", Input).focus()
@@ -2336,6 +2364,14 @@ class WhylineConsoleApp(App):
             input_text = text
             attachments = ()
         self.render_event(SessionEvent(kind="input", text=input_text))
+        if (
+            self.session.mode == "relay"
+            and text.strip().lower() in ("done", "skip")
+            and not getattr(self, "_release_task", None)
+            and not self._restore_release_task()
+        ):
+            self.render_event(SessionEvent(kind="error", text=NO_RELEASE_PAUSE))
+            return
         if getattr(self, "_release_task", None) and text.strip().lower() in ("done", "skip"):
             cmd = text.strip().lower()
             task_id, _ = self._release_task

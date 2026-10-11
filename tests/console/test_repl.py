@@ -979,3 +979,24 @@ def test_strip_relay_prefix_leaves_other_text_alone():
     assert repl.strip_relay_prefix("whyline-relay  status") == "status"
     assert repl.strip_relay_prefix("whyline status") == "whyline status"
     assert repl.strip_relay_prefix("resume") == "resume"
+
+
+def test_plain_console_done_and_skip_use_the_saved_release_pause(monkeypatch, tmp_path):
+    from whyline.console import adapters, relay_ops
+    from whyline.console.session import SessionEvent
+
+    calls = []
+    monkeypatch.setattr(
+        adapters, "run_relay_oneshot",
+        lambda root, argv: calls.append(argv) or SessionEvent(kind="output", text="ok"),
+    )
+    monkeypatch.setattr(relay_ops, "release_task", lambda root: ("T-2", []))
+    session = repl.ConsoleSession(root=tmp_path, mode="relay")
+    repl.dispatch(session, "done")
+    repl.dispatch(session, "skip")
+    assert calls == [["done", "T-2"], ["skip", "T-2"]]
+
+    monkeypatch.setattr(relay_ops, "release_task", lambda root: None)
+    event = repl.dispatch(session, "done")
+    assert calls == [["done", "T-2"], ["skip", "T-2"]]
+    assert "not paused on a release task" in event.text

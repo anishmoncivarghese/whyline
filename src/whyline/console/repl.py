@@ -784,6 +784,20 @@ def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> No
     _print_event(session.record(event), print_fn)
 
 
+NO_RELEASE_PAUSE = "Nothing to mark done or skip: the relay is not paused on a release task."
+
+
+def release_command(root: Path, command: str) -> SessionEvent:
+    """`done` / `skip` for the release task the relay is paused on, read from
+    its saved state, so it works after a console restart too."""
+    from whyline.console import relay_ops
+
+    info = relay_ops.release_task(root)
+    if info is None:
+        return SessionEvent(kind="error", text=NO_RELEASE_PAUSE)
+    return adapters.run_relay_oneshot(root, [command, info[0]])
+
+
 def strip_relay_prefix(text: str) -> str:
     """Drops a leading "whyline relay" / "whyline-relay", so a command
     copied from the relay's own "Resume with: ..." line runs in Relay mode
@@ -829,7 +843,9 @@ def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEven
         return adapters.run_status(session.root)
     if first in ("start", "resume"):
         return adapters.run_relay_oneshot(session.root, text.split())
+    if first in ("done", "skip"):
+        return release_command(session.root, first)
     return SessionEvent(
         kind="error",
-        text=f"Unknown relay command: {first!r}. Try doctor, status, start, resume.",
+        text=f"Unknown relay command: {first!r}. Try doctor, status, start, resume, done, skip.",
     )
