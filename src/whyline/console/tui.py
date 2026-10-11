@@ -183,8 +183,26 @@ def _cb_match_option(current: object, options: list[tuple[str, str]]) -> str:
 
 
 def _model_rejected(value: str) -> bool:
-    """A model name has no spaces or quotes, the same rule the bar enforces."""
+    """Save writes nothing for an empty name, or one with a space or a quote.
+
+    A blank field is not the agent's default on Save. Whitespace alone is
+    empty. A name that still has characters is rejected when any character
+    is a space or a quote.
+    """
+    if not value.strip():
+        return True
     return any(ch.isspace() or ch in "\"'" for ch in value)
+
+
+def _cb_dedupe(names) -> tuple[str, ...]:
+    """First occurrence of each non-empty name, in order."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return tuple(out)
 
 
 class ConfirmScreen(ModalScreen):
@@ -521,14 +539,20 @@ class WhylineConsoleApp(App):
     DEFAULT_CSS = """
     Horizontal > Button { min-width: 6; width: auto; }
     RichLog#transcript { height: 1fr; }
-    #modes, #input-row, #controls, #context-bar { height: auto; }
+    #modes, #input-row, #controls { height: auto; }
+    /* One row. A wrapped prompt would push Save onto a second line. */
+    #context-bar { height: 1; text-wrap: nowrap; }
     #modes-label { width: auto; padding: 1 1 0 1; }
     #cb-agent { width: 24; }
     /* The open list may be wider than the box, so no agent wraps. */
     #cb-agent > SelectOverlay { width: 36; }
+    #cb-backup { width: 18; }
+    #cb-backup > SelectOverlay { width: 56; }
+    #cb-backup-more { width: auto; height: 1; min-width: 2; }
     #cb-model { width: 18; }
     #cb-repo { width: 1fr; }
-    #context-bar Label { padding: 1 0 0 1; }
+    #context-bar Label { padding: 0 0 0 1; height: 1; }
+    #context-bar SelectCurrent { height: 1; text-wrap: nowrap; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
     #agents-status { height: auto; padding: 0 1; color: $text-muted; display: none; }
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
@@ -564,7 +588,10 @@ class WhylineConsoleApp(App):
         self._pending = att.PendingAttachments()
         self._attach_session = att.session_name()
         self._sent_attachments: list = []
-        self._cb_saved: tuple[str, str, str] | None = None
+        self._cb_saved: tuple[str, str, str, tuple[str, ...]] | None = None
+        self._cb_chain: tuple[str, ...] = ()
+        self._cb_backup_real = "none"
+        self._cb_backup_unreadable: str | None = None
         self._cb_agent_shown: str | None = None
         self._cb_status_seen: tuple[tuple[str, bool, str], ...] | None = None
         self._cb_refreshing = False
@@ -1081,13 +1108,25 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(kind="output", text=shown))
         self._refresh_agents_status()
 
-    def _cb_saved_tuple(self) -> tuple[str, str, str]:
+    def _cb_load_chain(self) -> tuple[str, ...]:
+        """The saved chain, unfiltered. A bad config is not an empty chain."""
+        from whyline_relay import config as relay_config
+
+        try:
+            chain = tuple(relay_ops.read_backup(self.session.root))
+        except (relay_config.ConfigError, OSError) as error:
+            self._cb_backup_unreadable = str(error)
+            return ()
+        self._cb_backup_unreadable = None
+        return chain
+
+    def _cb_saved_tuple(self) -> tuple[str, str, str, tuple[str, ...]]:
         from whyline import model
 
         agent, model_name = model.resolve(self.session.root)
-        return (agent, model_name, _short_path(self.session.root))
+        return (agent, model_name, _short_path(self.session.root), self._cb_load_chain())
 
-    def _cb_current(self) -> tuple[str, str, str]:
+    def _cb_current(self) -> tuple[str, str, str, tuple[str, ...]]:
         raw = self._main("#cb-agent", Select).value
         if isinstance(raw, str) and raw.startswith("!"):
             agent = raw[1:]
@@ -1099,7 +1138,273 @@ class WhylineConsoleApp(App):
             agent,
             self._main("#cb-model", Input).value,
             self._main("#cb-repo", Input).value,
+            self._cb_chain,
         )
+
+    def _cb_backup_detail(self, name: str, status: dict) -> str:
+        info = status.get(name) or {}
+        if info.get("available"):
+            return "available"
+        return str(info.get("hint") or info.get("label") or "unavailable")
+
+    def _cb_backup_options(self, saved_chain: tuple[str, ...], primary: str) -> list[tuple[str, str]]:
+        """Automatic, None, installed agents, then Manage and maybe Reset.
+
+        A saved name `relay_agents` does not list is appended before Manage
+        so the closed control can still show that head.
+        """
+        from whyline import account
+        from whyline_relay import failover
+
+        root = self.session.root
+        status = account.agent_status(root)
+        if saved_chain:
+            resolved = " → ".join(saved_chain)
+        else:
+            usable = relay_ops.usable_agents(root, status)
+            staged = relay_ops.staged_backup(primary, usable)
+            resolved = " → ".join(staged) if staged else "none"
+        options: list[tuple[str, str]] = [
+            (f"Automatic · {resolved}", "automatic"),
+            ("None — no fallback", "none"),
+        ]
+        installed = list(relay_ops.relay_agents(root))
+        names = installed + [name for name in saved_chain if name not in installed]
+        for name in names:
+            options.append((f"{name} — {self._cb_backup_detail(name, status)}", name))
+        options.append(("Manage chain…", "manage"))
+        try:
+            effective = failover.resolve_chat_agent(root, primary)
+        except (OSError, ValueError):
+            effective = primary
+        if effective != primary:
+            options.append((f"Reset failover (back to {primary})", "reset"))
+        return options
+
+    def _cb_set_backup_closed(self, select: Select, text: str) -> None:
+        try:
+            select.query_one("#label", Static).update(Text(text))
+        except (NoMatches, IndexError):
+            return
+
+    def _cb_sync_backup_closed(self) -> None:
+        """Head (and +N) for a saved chain. Automatic keeps its own row."""
+        try:
+            select = self._main("#cb-backup", Select)
+            more = self._main("#cb-backup-more", Static)
+        except (NoMatches, IndexError):
+            return
+        if self._cb_backup_unreadable:
+            self._cb_set_backup_closed(select, self._cb_backup_unreadable)
+            more.update("")
+            more.display = False
+            return
+        value = self._cb_backup_real
+        chain = self._cb_chain
+        if value == "automatic":
+            prompt = "Automatic"
+            for option, option_value in select._options:
+                if option_value == "automatic":
+                    prompt = str(option)
+                    break
+            self._cb_set_backup_closed(select, prompt)
+            extra = 0
+        elif not chain or value == "none":
+            self._cb_set_backup_closed(select, "None")
+            extra = 0
+        else:
+            self._cb_set_backup_closed(select, chain[0])
+            extra = len(chain) - 1
+        if extra:
+            more.update(f"+{extra}")
+            more.display = True
+        else:
+            more.update("")
+            more.display = False
+
+    def _cb_show_backup(self, chain: tuple[str, ...], real: str | None = None) -> None:
+        """Show `chain` on the backup control. Does not post Select.Changed."""
+        self._cb_chain = tuple(chain)
+        select = self._main("#cb-backup", Select)
+        legal = set(getattr(select, "_legal_values", ()))
+        if real is None:
+            real = chain[0] if chain else "none"
+        self._cb_backup_real = real
+        shown = real if real in legal else ("none" if "none" in legal else None)
+        if shown is not None and select.value != shown:
+            select.value = shown
+        self._cb_sync_backup_closed()
+
+    def _cb_choose_backup(self, value: str) -> None:
+        """The chain this value would write. Manage and Reset never get here."""
+        saved_chain = self._cb_saved[3] if self._cb_saved else ()
+        primary = self._cb_saved[0] if self._cb_saved else "claude"
+        if value == "automatic":
+            if saved_chain:
+                self._cb_chain = tuple(saved_chain)
+            else:
+                from whyline import account
+
+                status = account.agent_status(self.session.root)
+                usable = relay_ops.usable_agents(self.session.root, status)
+                self._cb_chain = tuple(
+                    relay_ops.staged_backup(primary, usable)
+                )
+        elif value == "none":
+            self._cb_chain = ()
+        else:
+            self._cb_chain = _cb_dedupe((value, *self._cb_chain))
+        self._cb_backup_real = value
+        self._cb_sync_backup_closed()
+
+    def _cb_restore_backup_select(self) -> None:
+        select = self._main("#cb-backup", Select)
+        previous = self._cb_backup_real
+        legal = set(getattr(select, "_legal_values", ()))
+        if previous not in legal:
+            previous = "none" if "none" in legal else select._options[0][1]
+        with self.prevent(Select.Changed):
+            if select.value != previous:
+                select.value = previous
+        self._cb_sync_backup_closed()
+
+    def _cb_reload_backup_options(self) -> None:
+        """Rebuild Backup rows from the saved chain. Keep the real value.
+
+        `set_options` snaps to the first row. The real value goes back
+        afterwards, and the closed prompt is the head, not that row.
+        """
+        try:
+            select = self._main("#cb-backup", Select)
+        except (NoMatches, IndexError):
+            return
+        saved_chain = self._cb_saved[3] if self._cb_saved else ()
+        primary = self._cb_saved[0] if self._cb_saved else "claude"
+        shown = self._cb_backup_real
+        self._cb_refreshing = True
+        try:
+            with self.prevent(Select.Changed):
+                select.set_options(self._cb_backup_options(saved_chain, primary))
+                legal = set(getattr(select, "_legal_values", ()))
+                if shown not in legal:
+                    shown = "none" if "none" in legal else select._options[0][1]
+                    self._cb_backup_real = shown
+                if select.value != shown:
+                    select.value = shown
+        finally:
+            self._cb_refreshing = False
+        self._cb_sync_backup_closed()
+
+    def _cb_reset_failover(self) -> None:
+        """Clear the saved primary's chat override. Leave the chain and roles.
+
+        The primary is the saved agent. An unsaved Agent edit is not the
+        chat that failover switched. A live job does not clear.
+        """
+        from whyline_relay import failover
+
+        if self._cb_chain_busy():
+            self.render_event(SessionEvent(
+                kind="error",
+                text="Finish or stop the current job before resetting failover.",
+            ))
+            return
+        root = self.session.root
+        primary = self._cb_saved[0] if self._cb_saved else "claude"
+        chain = self._cb_saved[3] if self._cb_saved else ()
+        try:
+            failover.clear_overrides(
+                root, role=primary, storage_path=failover.chat_path(root),
+            )
+        except OSError as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self._cb_reload_backup_options()
+        shown = " → ".join(chain) if chain else "none"
+        self.render_event(SessionEvent(
+            kind="output",
+            text=f"Back to {primary}. The chain is still {shown}.",
+        ))
+
+    def _cb_chain_busy(self) -> bool:
+        if self._busy_text or self._plan_state or self._relay_running():
+            return True
+        try:
+            return relay_ops.live_run(self.session.root) is not None
+        except (OSError, ValueError):
+            return False
+
+    def _cb_open_chain_editor(self) -> None:
+        from whyline import account
+        from whyline.console.chain_editor import BackupChainScreen
+
+        root = self.session.root
+        try:
+            agents = relay_ops.relay_agents(root)
+        except (OSError, ValueError):
+            agents = []
+        # Unfiltered: a configured name the install cannot run stays visible.
+        chain = list(self._cb_chain)
+        primary = self._cb_saved[0] if self._cb_saved else "claude"
+
+        def fill() -> list[str]:
+            status = account.agent_status(root)
+            return relay_ops.staged_backup(primary, relay_ops.usable_agents(root, status))
+
+        screen = BackupChainScreen(
+            agents,
+            chain,
+            fill,
+            busy=self._cb_chain_busy(),
+            on_reset=self._cb_reset_failover,
+        )
+        self.push_screen(screen, self._cb_backup_editor_done)
+        # compose() loads the chain before the widget is mounted, and the
+        # editor's own on_mount sync returns while is_mounted is still false.
+        # Reload after the screen is up so the rows actually appear.
+        self.call_after_refresh(lambda: self._cb_kick_editor(screen, chain, 8))
+
+    def _cb_kick_editor(self, screen, chain: list[str], tries: int) -> None:
+        if tries <= 0 or screen not in self.screen_stack:
+            return
+        if not screen.is_mounted:
+            self.call_after_refresh(lambda: self._cb_kick_editor(screen, chain, tries - 1))
+            return
+        try:
+            editor = screen.query_one("#bc-chain")
+        except (NoMatches, IndexError):
+            self.call_after_refresh(lambda: self._cb_kick_editor(screen, chain, tries - 1))
+            return
+        editor.load(list(chain))
+
+    def _cb_backup_editor_done(self, order: list[str] | None) -> None:
+        if order is None:
+            self._cb_sync_backup_closed()
+            return
+        chain = _cb_dedupe(order)
+        real = chain[0] if chain else "none"
+        with self.prevent(Select.Changed):
+            self._cb_show_backup(chain, real)
+        self._cb_mark_save()
+
+    def _cb_on_backup_changed(self, event: "Select.Changed") -> None:
+        if self._cb_refreshing:
+            return
+        select = event.select
+        if event.value != select.value:
+            return
+        value = event.value
+        if not isinstance(value, str):
+            return
+        if value in ("manage", "reset"):
+            self._cb_restore_backup_select()
+            if value == "manage":
+                self._cb_open_chain_editor()
+            elif value == "reset":
+                self._cb_reset_failover()
+            return
+        self._cb_choose_backup(value)
+        self._cb_mark_save()
 
     def _cb_dirty(self) -> bool:
         if self._cb_saved is None:
@@ -1149,17 +1454,27 @@ class WhylineConsoleApp(App):
         try:
             status = account.agent_status(self.session.root)
             options = _cb_options(status) or [("claude", "claude")]
-            agent, model_name, repo_text = self._cb_saved_tuple()
+            agent, model_name, repo_text, chain = self._cb_saved_tuple()
             chosen = _cb_match_option(agent, options)
+            backup_options = self._cb_backup_options(chain, agent)
+            self._cb_chain = chain
             with self.prevent(Select.Changed, Input.Changed):
                 select.set_options(options)
                 if select.value != chosen:
                     select.value = chosen
                 model_input.value = model_name
                 repo_input.value = repo_text
+                try:
+                    backup = self._main("#cb-backup", Select)
+                except (NoMatches, IndexError):
+                    backup = None
+                if backup is not None:
+                    backup.set_options(backup_options)
+                    self._cb_show_backup(chain)
             self._cb_agent_shown = agent
-            self._cb_saved = (agent, model_name, repo_text)
+            self._cb_saved = (agent, model_name, repo_text, self._cb_chain)
             self._cb_status_seen = _cb_status_key(status)
+            self._cb_sync_backup_closed()
             self._cb_mark_save()
         finally:
             self._cb_refreshing = False
@@ -1180,13 +1495,28 @@ class WhylineConsoleApp(App):
             return
         options = _cb_options(status) or [("claude", "claude")]
         chosen = _cb_match_option(select.value, options)
+        saved_chain = self._cb_saved[3] if self._cb_saved else ()
+        primary = self._cb_saved[0] if self._cb_saved else "claude"
         self._cb_refreshing = True
         try:
             with self.prevent(Select.Changed):
                 select.set_options(options)
                 if select.value != chosen:
                     select.value = chosen
+                try:
+                    backup = self._main("#cb-backup", Select)
+                except (NoMatches, IndexError):
+                    backup = None
+                if backup is not None:
+                    backup.set_options(self._cb_backup_options(saved_chain, primary))
+                    shown = self._cb_backup_real
+                    legal = set(getattr(backup, "_legal_values", ()))
+                    if shown not in legal:
+                        shown = "none" if "none" in legal else backup._options[0][1]
+                    if backup.value != shown:
+                        backup.value = shown
             self._cb_status_seen = key
+            self._cb_sync_backup_closed()
             self._cb_mark_save()
         finally:
             self._cb_refreshing = False
@@ -1195,10 +1525,15 @@ class WhylineConsoleApp(App):
         """Below 100 columns the labels shrink so Save stays on screen."""
         try:
             narrow = self.size.width < 100
+            wide_backup = self.size.width >= 110
             self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
             self._main("#cb-model-label", Label).update("M" if narrow else "Model")
             self._main("#cb-repo-label", Label).update("R" if narrow else "Repo")
             self._main("#cb-agent", Select).styles.width = 14 if narrow else 24
+            # "Bak" and a narrower box keep Save on the 80-column row.
+            # BAR-5 owns the final 18/14 split; 8 is what still fits beside it.
+            self._main("#cb-backup-label", Label).update("Bak" if narrow else "Backup")
+            self._main("#cb-backup", Select).styles.width = 18 if wide_backup else 8
         except (NoMatches, IndexError):
             return
 
@@ -1225,20 +1560,57 @@ class WhylineConsoleApp(App):
 
     def _cb_save(self) -> None:
         from whyline import model
+        from whyline_relay import config as relay_config, gitcheck
 
         if self._cb_saved is None:
             return
-        agent, model_name, repo_text = self._cb_current()
-        saved_agent, saved_model, saved_repo = self._cb_saved
+        agent, model_name, repo_text, chain = self._cb_current()
+        saved_agent, saved_model, saved_repo, saved_chain = self._cb_saved
+        # Before the chain, the agent, the model, or the repo.
+        if _model_rejected(model_name):
+            text = (
+                "A model name is required"
+                if not model_name.strip()
+                else "A model name has no spaces"
+            )
+            self.render_event(SessionEvent(kind="error", text=text))
+            return
         agent_changed = (agent, model_name) != (saved_agent, saved_model)
         repo_changed = repo_text != saved_repo
         global_too = bool(self._main("#cb-global", Checkbox).value)
-        if agent_changed or global_too:
-            if _model_rejected(model_name):
+        chain_changed = chain != saved_chain
+        # "all repos" writes the global agent and model only.
+        if chain_changed and not global_too:
+            if self._cb_backup_unreadable:
                 self.render_event(SessionEvent(
-                    kind="error", text="A model name has no spaces"))
+                    kind="error", text=self._cb_backup_unreadable))
                 return
+            if self._cb_chain_busy():
+                self.render_event(SessionEvent(
+                    kind="error",
+                    text="Finish or stop the current job before changing the backup chain.",
+                ))
+                return
+            try:
+                relay_ops.save_backup(self.session.root, list(chain))
+            except (gitcheck.GitError, relay_config.ConfigError) as error:
+                self.render_event(SessionEvent(kind="error", text=str(error)))
+                return
+            shown_chain = " → ".join(chain) if chain else "none"
+            self.render_event(SessionEvent(
+                kind="output",
+                text=(
+                    f"Backup for this repo: {shown_chain} "
+                    "(chat, brainstorm, and the relay)."
+                ),
+            ))
+            saved_chain = chain
+            with self.prevent(Select.Changed):
+                self._cb_show_backup(chain)
+        if agent_changed or global_too:
             if not agent:
+                self._cb_saved = (saved_agent, saved_model, saved_repo, saved_chain)
+                self._cb_mark_save()
                 return
             model.set_default_agent(self.session.root, agent)
             model.set_one(self.session.root, agent, model_name)
@@ -1254,7 +1626,9 @@ class WhylineConsoleApp(App):
             if box.value:
                 box.value = False
             self._cb_agent_shown = agent
-            self._cb_saved = (agent, model_name, saved_repo)
+            self._cb_saved = (agent, model_name, saved_repo, saved_chain)
+        elif chain_changed and not global_too:
+            self._cb_saved = (saved_agent, saved_model, saved_repo, saved_chain)
         if not repo_text.strip():
             # An empty path does nothing: put the current repo back.
             self._cb_refresh()
@@ -1372,6 +1746,15 @@ class WhylineConsoleApp(App):
         yield Horizontal(
             Label("Agent", id="cb-agent-label"),
             Select(options, allow_blank=False, id="cb-agent"),
+            Label("Backup", id="cb-backup-label").with_tooltip(
+                "Shared fallback: chat, brainstorm, and the relay"
+            ),
+            Select(
+                [("None — no fallback", "none")],
+                allow_blank=False,
+                id="cb-backup",
+            ),
+            Static("", id="cb-backup-more"),
             Label("Model", id="cb-model-label"),
             Input(placeholder="default", id="cb-model"),
             Label("Repo", id="cb-repo-label"),
@@ -1539,6 +1922,9 @@ class WhylineConsoleApp(App):
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         select = event.select
+        if select.id == "cb-backup":
+            self._cb_on_backup_changed(event)
+            return
         if select.id != "cb-agent":
             return
         # Textual queues Changed, so a refresh can move the value again

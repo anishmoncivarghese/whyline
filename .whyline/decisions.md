@@ -10598,3 +10598,215 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cedfb070c8084aa3a7aa5714dc8b43d6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T11:36:28.915Z"} -->
+
+## 2026-10-11 — A blank model name still saves
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** The model field starts empty, which means the agent's own default. None-then-Save and the existing agent and repo saves all write with that empty field.
+
+**Rejected:**
+
+- Reject an empty name before any write — Save would do nothing on a fresh repo, and the repo-switch test would stop saving the agent.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: c40de1d6627d4ac2a95345aa0bdc38ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:03:44.566Z"} -->
+
+## 2026-10-11 — Backup select is 8 wide below 110 columns and the label is Bak below 100
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** At width 12, Save's right edge landed on column 83 in the 80-column fit test.
+
+**Rejected:**
+
+- Width 14 from the later fit task — the current test failed at that size.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 56929747c4764997b379c01ef525423b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:03:44.601Z"} -->
+
+## 2026-10-11 — Manage reloads the chain after the editor screen is mounted
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** OrderedChain.load during compose, and its on_mount sync, both run before is_mounted is true, so the checkboxes never appear.
+
+**Rejected:**
+
+- Edit chain_editor.py — this task may only change tui.py and the context bar tests.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8e0c2077003d4577a79aef81c5da6be0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:03:44.634Z"} -->
+
+## 2026-10-11 — Reset on the backup select only restores the previous value
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** Clearing the chat override is the next task, and this one only says Reset is an action that snaps back.
+
+**Rejected:**
+
+- Clear chat-active-agents.json now — that write is specified for the failover task, not this one.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 94fdd4e2831a490581298e7c31c1f2e2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:03:44.665Z"} -->
+
+## 2026-10-11 — Backup chain context bar controls and save lifecycle pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-3
+
+**Because:** Full test suite and context bar test suite passed, covering saved chain display, dirty tracking, model validation, and job busy refusals
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 30a3f2f5b9f14c96a0f289e40ed9bcda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:07:37.164Z"} -->
+
+## 2026-10-11 — Rejected BAR-3 because empty model names still permit writes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-3
+
+**Because:** BAR-3 requires _cb_save to validate the model first and return without writing when it is empty or contains a space, but _model_rejected explicitly allows blank and no regression test covers the empty case
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 557f5ac6ef604eb7baab7359798440cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:11:04.091Z"} -->
+
+## 2026-10-11 — Reject an empty model name before every context-bar write
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** The review requires Save to return before the chain, the agent, the model, and the repo when the model field is empty. A blank field used to mean the agent's own default, so a chain change still committed.
+
+**Rejected:**
+
+- Keep a blank field as the default — the review rejected that, and None-then-Save would hide the empty case.
+- Reject a blank only after a saved model was cleared — an already-empty field would still write the chain.
+
+**Test:** uv run pytest -q tests/console/test_context_bar.py: exit 0, 20 passed
+**Test:** uv run pytest -q: exit 0, one skipped, the rest passed
+
+**Supersedes:** c40de1d6
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 4b6e3802273540f9a2b578ecd970e785 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:20:55.443Z","supersedes":["c40de1d6627d4ac2a95345aa0bdc38ad"]} -->
+
+## 2026-10-11 — Empty model validation and backup chain context bar updates pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-3
+
+**Because:** Save halts before any writes when the model field is blank or contains spaces, and all 20 context bar tests plus the full test suite pass
+
+**Test:** uv run pytest -q tests/console/test_context_bar.py: exit 0, 20 passed
+**Test:** uv run pytest -q: exit 0, one skipped, the rest passed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 271831fe875b40199f8216cb23a2021d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:25:42.429Z"} -->
+
+## 2026-10-11 — Rejected BAR-3 because the Reset failover action is inert
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-3
+
+**Because:** The Backup select advertises reset when the saved primary has a chat failover override, but _cb_on_backup_changed only restores the previous selection and returns; it never clears the primary's chat override, refreshes the row, or wires the editor's Reset button, and no test covers reset behavior
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 623ace0924414dd283358347489f24d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:30:51.684Z"} -->
+
+## 2026-10-11 — Reset clears the saved primary's chat override and refreshes Backup
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** Selecting Reset restores the previous real Backup value, clears that primary's chat override, and drops the Reset row. The primary is the saved agent from model.resolve. The transcript names the saved chain because Reset does not write. Rebuilding only the Backup options keeps an unsaved agent, model, repo, or chain edit.
+
+**Rejected:**
+
+- Reload the whole bar with _cb_refresh — that copies agent, model, repo, and chain from disk and drops an unsaved edit
+- Delete chat-active-agents.json — another agent's chat override would disappear, and active-roles.json must stay
+- Name the unsaved Backup selection in the transcript — that chain is not on disk, so the word still would be wrong
+
+**Test:** uv run pytest -q tests/console/test_context_bar.py: exit 0, 23 passed
+**Test:** uv run pytest -q: exit 0, one skipped, the rest passed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: f779030739c545d198aea048c3410369 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:41:12.330Z"} -->
+
+## 2026-10-11 — A live job refuses Reset and leaves the chat override
+
+**Actor:** grok
+**Role:** implementer
+**Task:** BAR-3
+
+**Because:** Reset runs only when no chat turn, plan job, or relay run is active. The chain editor already disables its Reset button from that same check, and the Backup row now uses it too.
+
+**Rejected:**
+
+- Reuse the chain-change refusal — Reset does not change the chain, so that sentence would be false
+- Clear the override during the job — the sticky chat switch would drop while a turn is still running
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 5730a13d98254a3bb7a7df5aa5e3f43e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:41:15.777Z"} -->
+
+## 2026-10-11 — Context bar backup chain implementation passes all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** BAR-3
+
+**Because:** Full test suite and context bar test suite passed with 100% success covering backup chain display, dirty tracking, model validation, failover reset, and job busy refusals
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 351df506b43d4e05b04c1fdaac491a86 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:46:10.144Z"} -->
+
+## 2026-10-11 — BAR-3 implementation approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** BAR-3
+
+**Because:** The context bar chain UI, dirty-state semantics, action restoration, validation and write ordering match the specification; focused and full test suites pass, and the diff has no whitespace errors
+
+**Files:** src/whyline/console/tui.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: baf0230961ab4c949be22d643412818f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T12:49:53.743Z"} -->
