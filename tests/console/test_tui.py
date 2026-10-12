@@ -833,3 +833,20 @@ def test_system_copy_uses_the_platform_command(monkeypatch):
     assert calls == [(["pbcopy"], "hello")]
     monkeypatch.setattr(tui.shutil, "which", lambda name: None)
     assert tui._system_copy("hello") is False
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_thinking_line_shows_brackets_literally(tmp_path):
+    # Brainstorm progress reads "[1/3] Codex starting pass-zero"; as markup
+    # that was a style tag and crashed the console with MarkupError.
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        label = "brainstorming: [1/3] Codex starting pass-zero (0s) [bold]x[/]"
+        app._set_busy(True, label)
+        await pilot.pause()
+        app._tick()
+        await pilot.pause()
+        shown = str(app.query_one("#thinking", tui.Static).renderable)
+        assert "[1/3] Codex starting pass-zero" in shown
+        assert "[bold]x[/]" in shown

@@ -1911,7 +1911,9 @@ class WhylineConsoleApp(App):
         )
         self._transcript = RichLog(id="transcript", wrap=True)
         yield self._transcript
-        yield Static("", id="thinking")
+        # Plain text: progress labels contain brackets ("[1/3] Codex ...")
+        # that Textual would otherwise parse as markup and crash on.
+        yield Static("", id="thinking", markup=False)
         yield Static("", id="agents-status")
         yield Horizontal(
             Button("Approve", id="plan-approve", variant="success"),
