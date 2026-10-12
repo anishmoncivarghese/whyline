@@ -183,7 +183,7 @@ These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.
   Extend `tests/test_config.py` and the CLI tests in `tests/test_cli_commands.py`. Cover `timeout_minutes = 0` loading, a negative and a boolean failing `ConfigError`, a missing key staying 30, `--timeout none` and `--timeout unlimited` setting 0 without changing the toml, `--timeout 0` being kept, and `--timeout -1` failing argparse with the file unchanged.
   Verify with `uv run pytest -q tests/test_config.py tests/test_cli_commands.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] RTO-5: Remember a one-shot timeout across pause and Resume
+- [x] RTO-5: Remember a one-shot timeout across pause and Resume
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/loop.py`, `state.py`, `cli.py`, and `planner.py`.
   `loop.run_agent` passes `timeout_seconds=None` when `settings.timeout_minutes == 0`, otherwise `timeout_minutes * 60`. It never passes 0 into `agents.run`. Check `cancel_event` before `grok.resume_command` in that same resume loop. Create the event in `run_agent` and pass it to `agents.run`. `RTO-6` is what sets the event from the STOP file. Until then the event simply stays clear.

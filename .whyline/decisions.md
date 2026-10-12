@@ -12293,3 +12293,102 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7b0e0f29ae3f49e8b455a953b84ee8df -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:52:54.917Z"} -->
+
+## 2026-10-12 — Map a stored timeout of 0 to timeout_seconds None and persist the integer
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-5
+
+**Because:** agents.run rejects 0, and a stored 0 must still mean no watchdog after Resume
+
+**Rejected:**
+
+- persisting None for unlimited — None already means the record predates the field and Resume would reload config
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 1f5903e8bedf4358b03fed82e6c57801 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:07:21.837Z"} -->
+
+## 2026-10-12 — Restore a saved cap before the unlimited-timeout warning
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-5
+
+**Because:** the warning describes the run about to launch an agent, which uses the saved cap when one was stored
+
+**Rejected:**
+
+- warning from the config file first — a saved positive cap would warn even though the resumed run has a limit, and a saved 0 with a positive config would stay silent
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: f5a02d1a404c4132b7cff7e08699c68b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:07:21.873Z"} -->
+
+## 2026-10-12 — Raise AgentCancelled before a Grok resume when cancel_event is set
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-5
+
+**Because:** chat.py already treats a set cancel_event as AgentCancelled, and RTO-6 is what sets the event from the STOP file
+
+**Rejected:**
+
+- converting the cancel into Paused — this task does not ask the loop to treat STOP as a pause
+- reading the STOP file inside run_agent — that belongs to RTO-6
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 0fce3a598f8f40ffb02f424a891fd243 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:07:21.908Z"} -->
+
+## 2026-10-12 — Accept cancel_event on the strict agents.run test doubles
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-5
+
+**Because:** run_agent now passes that keyword, and those doubles were written to match agents.run so the full suite would TypeError
+
+**Rejected:**
+
+- omitting the keyword when a double does not accept it — that would hide a missing parameter on the real agents.run call
+
+**Files:** /Users/anish/whyline-relay/tests/test_loop_pipeline.py
+
+<!-- whyline-event: 58accbf926744f4892510381bb9ec3f6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:07:21.943Z"} -->
+
+## 2026-10-12 — Approve RTO-5: timeout persists across pause and resume for loop and planner
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-5
+
+**Because:** Full test suite and targeted tests pass covering timeout=0, default 30m, legacy state fallback, and cancel_event
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 397a9a8167fe471397de1c6c5342566d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:11:41.711Z"} -->
+
+## 2026-10-12 — Approve RTO-5 timeout persistence implementation and coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-5
+
+**Because:** The saved timeout is restored for relay and planner resumes, zero maps to agents.run timeout_seconds=None, legacy records fall back to config, cancel_event is passed and checked before Grok resume, and both targeted and full suites pass; the three additional test-only signature updates are necessary compatibility changes for the new required agents.run keyword
+
+**Rejected:**
+
+- Request changes for files outside the named test set — those edits only update strict agents.run test doubles to accept the newly required cancel_event keyword and are needed for the full suite
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 99904cbc9f4649b6b0761a64281e8f3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:15:28.548Z"} -->
