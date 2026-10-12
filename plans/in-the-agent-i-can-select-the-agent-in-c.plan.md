@@ -198,7 +198,7 @@ These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.
   Extend `tests/test_interrupt.py` and `tests/test_loop_single.py`. Cover creating the STOP file during `agents.run`: the child is cancelled, the run pauses, and the saved state stores the timeout field. Also cover a STOP file that appears after the current task has already finished: the next task does not start.
   Verify with `uv run pytest -q tests/test_interrupt.py tests/test_loop_single.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] RTO-7: Commit Relay timeout_minutes from setup
+- [x] RTO-7: Commit Relay timeout_minutes from setup
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/setup.py` and `tests/test_setup.py`. `RUN-1` adds `write_timeout_minutes` when it is missing, so it may already exist: if it does, check it against every rule below and fix only what differs; otherwise add it. `write_timeout_minutes(root, minutes, *, commit=True) -> Path`. It writes an unquoted integer, including 0. Replace a top-level `timeout_minutes = …` line, or insert `timeout_minutes = N` before the first table when the line is absent. Commit through the existing `_write_config` helper, with a message that names the new value. Do not call `_set_top_level`: that helper quotes strings, and a quoted `timeout_minutes` would fail `config.load`. Do not change `write_release`.
   Extend `tests/test_setup.py`. Cover replacing an existing line, inserting a missing line, writing `0`, and leaving every other line byte-for-byte intact.
@@ -240,13 +240,19 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests: a visit-cap pause resumes with that stage lowered by one and the note recorded; a non-cap pause refuses and leaves the state byte-for-byte; a failing note still resumes; other stages' counts are untouched.
   Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
+- [ ] SBX-6: An approved task that changed nothing still completes
+  relay-repo: /Users/anish/whyline-relay
+  Edit only `/Users/anish/whyline-relay/src/whyline_relay/gitcheck.py`, `loop.py`, and their tests. When the terminal stage approves and `commit_all` finds nothing staged in the task's repository, `_commit_and_approve` makes an empty commit there with today's `commit_message(task, "")` text, `chore: {id} needed no changes ({id})`, so `commit_verified` passes and the box is ticked. This happened to `RTO-7`, whose work `RUN-1` had already done; it paused with "approved but no commit naming it exists" and had to be committed by hand. A legacy two-role run keeps its rule that the reviewer commits. The `HEAD moved` check before the commit is unchanged.
+  Tests: a cross-repo and a same-repo task approved with no changes each get one empty commit naming the task and tick; an approval with changes still makes one normal commit; a stage that committed on its own still pauses with `HEAD moved`.
+  Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
+
 ## Relay package, release 0.2.35
 
 - [ ] RUN-2: Publish whyline-relay 0.2.35
   relay-profile: release
   relay-repo: /Users/anish/whyline-relay
   In `/Users/anish/whyline-relay` only, set `pyproject.toml` to `0.2.35`. Do not tag unless this tree already imports all of: `setup.read_backup`, `setup.write_backup`, `setup.write_timeout_minutes`, `chat.NO_LIMIT`, and `agents.run` with a `cancel_event` parameter, and `run_final_synthesis` accepts `unattended`. If `cancel_event` or `chat.NO_LIMIT` is missing, do not implement them and do not tag. `RTO-1` to `RTO-7` ran on this same line just before this task, so `0.2.35` already contains both, and do not publish a newer `0.2.33` that lacks the backup APIs. Do not open `0.3`. Do not change this whyline checkout and do not turn on the Chat `none` menu.
-  Write `docs/releases/v0.2.35.md` in the same shape as `docs/releases/v0.2.34.md`, covering the unattended synthesis paragraph and `write_timeout_minutes` when this tag is the one that added it, the per-attempt timeout work from `RTO-1`–`RTO-7` (optional watchdog, `cancel_event`, `chat.NO_LIMIT`, `timeout_minutes = 0`, `--timeout none`, STOP cancelling the in-flight agent), and `SBX-1`–`SBX-5` (agents get the task repository, tool caches stay in the workspace, a refused command pauses as blocked, preflight warns, and `resume --retry-stage`). Run `uv run pytest -q` and confirm it exits 0 before tagging `v0.2.35` and publishing to PyPI the same way `v0.2.34` was published. Confirm a clean environment can install `whyline-relay==0.2.35` and that `inspect.signature(whyline_relay.agents.run).parameters` contains `cancel_event`.
+  Write `docs/releases/v0.2.35.md` in the same shape as `docs/releases/v0.2.34.md`, covering the unattended synthesis paragraph and `write_timeout_minutes` when this tag is the one that added it, the per-attempt timeout work from `RTO-1`–`RTO-7` (optional watchdog, `cancel_event`, `chat.NO_LIMIT`, `timeout_minutes = 0`, `--timeout none`, STOP cancelling the in-flight agent), and `SBX-1`–`SBX-6` (agents get the task repository, tool caches stay in the workspace, a refused command pauses as blocked, preflight warns, `resume --retry-stage`, and an approved no-change task still completes). Run `uv run pytest -q` and confirm it exits 0 before tagging `v0.2.35` and publishing to PyPI the same way `v0.2.34` was published. Confirm a clean environment can install `whyline-relay==0.2.35` and that `inspect.signature(whyline_relay.agents.run).parameters` contains `cancel_event`.
 
 ## Console, Auto runner, after whyline-relay 0.2.35
 

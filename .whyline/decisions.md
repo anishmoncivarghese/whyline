@@ -12453,3 +12453,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0f2aed6909c6450baf8b59077157bf42 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:37:36.327Z"} -->
+
+## 2026-10-12 — Leave write_timeout_minutes as RUN-1 wrote it
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-7
+
+**Because:** It already writes an unquoted integer, including 0, replaces or inserts the top-level line, and commits through _write_config with a message that names the value. The setup tests cover replace, insert, zero, and untouched lines.
+
+**Rejected:**
+
+- Call _set_top_level — it quotes the value, and config.load rejects a quoted timeout_minutes
+- Rewrite the insert to drop the separator blank line — that blank line is what keeps every other line intact on the rich config the tests already lock in
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 03ac5def09554b5abeb3ffcda45fcb90 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:44:54.909Z"} -->
+
+## 2026-10-12 — Approve write_timeout_minutes behavior and test coverage
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-7
+
+**Because:** write_timeout_minutes correctly writes bare integer timeout values including 0, preserves surrounding content, and test suite passes completely
+
+**Rejected:**
+
+- Fail task — implementation already fully satisfies RTO-7 requirements
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: a5dfef9b55034d7f98e04cbbb3ec6970 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:49:35.379Z"} -->
+
+## 2026-10-12 — Approve write_timeout_minutes implementation and coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-7
+
+**Because:** The existing implementation satisfies every RTO-7 rule, the tests verify replacement, insertion, zero, byte preservation, parsing, and commit messaging, and both required test scopes pass
+
+**Rejected:**
+
+- Request changes — no behavioral, safety, or coverage defect was found
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py, /Users/anish/whyline-relay/tests/test_setup.py
+
+<!-- whyline-event: 8ae44b6c8f2d489d81e1bb79650127d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:53:10.038Z"} -->
