@@ -12020,3 +12020,65 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 11647a5cb27740ca92acce49824a97f5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:29:11.911Z"} -->
+
+## 2026-10-12 — Resume a Grok permission-policy pause only while cancel_event is clear
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-2
+
+**Because:** Exit 0 with stopReason cancelled is both a permission-policy pause and the shape a stopped child can return. The spec keeps the resume loop and only forbids resume after Stop, and each resume must still receive the full budget.
+
+**Rejected:**
+
+- Treat every stopReason cancelled as terminal — that removes permission-policy resume and fails the existing resume tests
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/chat.py
+
+<!-- whyline-event: 8ad67f38b29b4b24b61a0a2ffb767b5e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:45:54.538Z"} -->
+
+## 2026-10-12 — Reject a non-positive chat timeout before generating permission files
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-2
+
+**Because:** ValueError is a programming error and must not leave a setup commit. The value passed to run_fn is that mapped budget: omitted None is 300, NO_LIMIT is None, and a positive int is forwarded.
+
+**Rejected:**
+
+- Raise only inside the run_fn call after ensure_permission_files — a bad timeout would still commit generated permission files
+- Treat 0 as unlimited in Chat — only the NO_LIMIT sentinel maps to an uncapped wait
+- Forward True as 1 second — bool is an int subclass and agents.run already rejects it before spawn
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/chat.py
+
+<!-- whyline-event: e2c708dd0ba147809ca52f9d445c306d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:45:58.622Z"} -->
+
+## 2026-10-12 — Accept timeout mapping sentinel and cancel_event checks skipping resume and attempt commit
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-2
+
+**Because:** Verified that NO_LIMIT maps to None, None maps to 300, <=0 raises ValueError, and cancel_event skips Grok resumes and prevents attempt commits across all tests
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/chat.py
+
+<!-- whyline-event: 39f90e15a940458388ab9b670cee3ba2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:49:27.893Z"} -->
+
+## 2026-10-12 — Approve RTO-2 timeout mapping and cancellation commit guards
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-2
+
+**Because:** The implementation maps omitted, unlimited, and positive timeouts correctly; validates before setup commits; propagates cancellation without failover or chat logging; guards Grok resumes and attempt commits; and both focused and full test suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/chat.py
+
+<!-- whyline-event: 62ae52648ba7414fb547341721e7c3ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:52:15.810Z"} -->
