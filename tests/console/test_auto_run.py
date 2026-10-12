@@ -1,7 +1,9 @@
-"""Schema 1 AutoRunRequest and its fingerprint, on a scratch git repo."""
+"""Schema 1 AutoRunRequest, its fingerprint, and the Auto checkpoint."""
 
 import hashlib
 import json
+import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -155,3 +157,214 @@ def test_available_comes_from_agent_status(tmp_path, monkeypatch):
     assert body["available"]["claude"] is True
     assert body["available"]["codex"] is False
     assert body["available"]["grok"] is False
+
+
+def _dead_pid() -> int:
+    from whyline_relay import running
+
+    dead = 1_000_000
+    while running.pid_is_alive(dead) and dead < 1_000_200:
+        dead += 1
+    assert not running.pid_is_alive(dead)
+    return dead
+
+
+def _lock(root: Path) -> Path:
+    return root / ".whyline" / "relay" / "auto-run.lock"
+
+
+def _assigns(text: str, key: str, value: str) -> bool:
+    """True when a TOML line sets `key` to `value`, ignoring alignment spaces."""
+    return re.search(rf"(?m)^{re.escape(key)}\s*=\s*{re.escape(value)}$", text) is not None
+
+
+def test_form_fingerprint_ignores_head(tmp_path):
+    root = _repo(tmp_path)
+    request = _request()
+    form = auto_run.form_fingerprint(root, request)
+    full = auto_run.fingerprint(root, request)
+    assert "head" not in auto_run.form_document(root, request)
+    assert "porcelain" not in auto_run.form_document(root, request)
+    (root / "README.md").write_text("y\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "move head")
+    assert auto_run.form_fingerprint(root, request) == form
+    assert auto_run.fingerprint(root, request) != full
+
+
+def test_lock_file_is_exclusive(tmp_path):
+    root = _repo(tmp_path)
+    auto_run.acquire_lock(root)
+    lock = _lock(root)
+    held = lock.read_text(encoding="utf-8")
+    assert int(held.strip()) == os.getpid()
+    with pytest.raises(auto_run.AutoBusy):
+        auto_run.acquire_lock(root)
+    assert lock.read_text(encoding="utf-8") == held
+
+
+def test_dead_pid_is_taken(tmp_path):
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    auto_run.acquire_lock(root)
+    assert int(lock.read_text(encoding="utf-8").strip()) == os.getpid()
+    auto_run.release_lock(root)
+    assert not lock.exists()
+    lock.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    request = _request()
+    auto_run.run(root, request, auto_run.fingerprint(root, request))
+    assert not lock.exists()
+    saved = json.loads(
+        (root / ".whyline" / "relay" / "auto-run.json").read_text(encoding="utf-8")
+    )
+    assert saved["phase"] == "persist"
+
+
+def test_live_pid_raises_auto_busy(tmp_path):
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    with pytest.raises(auto_run.AutoBusy):
+        auto_run.acquire_lock(root)
+    assert int(lock.read_text(encoding="utf-8").strip()) == os.getpid()
+    request = _request()
+    with pytest.raises(auto_run.AutoBusy):
+        auto_run.run(root, request, auto_run.fingerprint(root, request))
+    assert not (root / ".whyline" / "relay" / "auto-run.json").exists()
+    assert _git(root, "log", "--format=%s").splitlines() == ["initial"]
+
+
+def test_ensure_relay_ignored_runs_before_the_lock_file(tmp_path, monkeypatch):
+    from whyline_relay import gitcheck
+
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    seen: list[Path] = []
+    real = gitcheck.ensure_relay_ignored
+
+    def spy(target):
+        assert not lock.exists()
+        seen.append(target)
+        real(target)
+
+    monkeypatch.setattr(gitcheck, "ensure_relay_ignored", spy)
+    auto_run.acquire_lock(root)
+    assert seen == [root]
+    exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert ".whyline/relay/auto-run.json" in exclude
+    assert ".whyline/relay/auto-run.lock" in exclude
+
+
+def _distinct_request(**overrides) -> plan_job.AutoRunRequest:
+    fields = dict(
+        drafter="claude",
+        reviewer="codex",
+        implementer="grok",
+        tester="claude",
+        reviewer_role="grok",
+        release="codex",
+        chain=("codex", "grok"),
+        timeout_minutes=15,
+    )
+    fields.update(overrides)
+    return _request(**fields)
+
+
+def test_persist_commits_the_config_once(tmp_path):
+    root = _repo(tmp_path)
+    request = _distinct_request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed)
+    assert _git(root, "rev-list", "--count", "HEAD").strip() == "2"
+    assert (
+        _git(root, "log", "-1", "--format=%s").strip()
+        == "setup: auto run roles, backup, and timeout"
+    )
+    committed = set(
+        _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").split()
+    )
+    assert committed == {
+        ".whyline/relay/config.toml",
+        ".whyline/relay/prompts/test.md",
+    }
+    config = (root / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert _assigns(config, "draft", '"claude"')
+    assert _assigns(config, "review", '"codex"')
+    assert _assigns(config, "implementer", '"grok"')
+    assert _assigns(config, "tester", '"claude"')
+    assert _assigns(config, "reviewer", '"grok"')
+    assert _assigns(config, "release", '"codex"')
+    assert _assigns(config, "chain", '["codex", "grok"]')
+    assert _assigns(config, "timeout_minutes", "15")
+    head = _git(root, "rev-parse", "HEAD").strip()
+    saved = json.loads(
+        (root / ".whyline" / "relay" / "auto-run.json").read_text(encoding="utf-8")
+    )
+    assert saved["schema"] == 1
+    assert saved["phase"] == "persist"
+    assert saved["topic"] == request.topic
+    assert saved["name"] == request.name
+    assert saved["fingerprint"] == dismissed
+    assert saved["last_check"] == dismissed
+    assert saved["persist_commit"] == head
+    assert saved["brainstorm"] == {"path": None, "sha256": None}
+    assert saved["spec"] == {"path": None, "sha256": None}
+    assert saved["plan"] == {"path": None, "sha256": None}
+    assert "pause" not in saved
+    assert "head" not in saved["request"]
+    assert "porcelain" not in saved["request"]
+    assert saved["request"]["attachments"] == []
+    assert "models" in saved["request"]
+    assert "available" in saved["request"]
+    assert "antigravity" in saved["request"]
+    assert not _lock(root).exists()
+    assert _git(root, "status", "--porcelain") == ""
+    # The persist commit moved HEAD, so Check's fingerprint no longer matches.
+    assert auto_run.fingerprint(root, request) != dismissed
+    auto_run.run(root, request, dismissed)
+    assert _git(root, "rev-parse", "HEAD").strip() == head
+    assert _git(root, "rev-list", "--count", "HEAD").strip() == "2"
+    with pytest.raises(auto_run.AutoStale):
+        auto_run.run(root, _distinct_request(topic="other"), dismissed)
+    assert _git(root, "rev-parse", "HEAD").strip() == head
+
+
+def test_zero_timeout_minutes_is_unquoted(tmp_path):
+    root = _repo(tmp_path)
+    request = _request(timeout_minutes=0)
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed)
+    text = (root / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert _assigns(text, "timeout_minutes", "0")
+    assert not _assigns(text, "timeout_minutes", '"0"')
+    head = _git(root, "rev-parse", "HEAD")
+    auto_run.run(root, request, dismissed)
+    assert _git(root, "rev-parse", "HEAD") == head
+    text = (root / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert _assigns(text, "timeout_minutes", "0")
+    assert not _assigns(text, "timeout_minutes", '"0"')
+
+
+def test_changed_form_writes_nothing(tmp_path):
+    root = _repo(tmp_path)
+    dismissed = auto_run.fingerprint(root, _request())
+    with pytest.raises(auto_run.AutoStale, match="out of date"):
+        auto_run.run(root, _request(topic="other"), dismissed)
+    assert not (root / ".whyline" / "relay" / "auto-run.json").exists()
+    assert not _lock(root).exists()
+    assert _git(root, "log", "--format=%s").splitlines() == ["initial"]
+
+
+def test_matching_artifact_is_not_pending(tmp_path):
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"hello\n")
+    digest = hashlib.sha256(b"hello\n").hexdigest()
+    assert auto_run.artifact_matches({"path": str(path), "sha256": digest})
+    assert not auto_run.artifact_matches({"path": str(path), "sha256": "0" * 64})
+    assert not auto_run.artifact_matches({"path": str(tmp_path / "missing.md"), "sha256": digest})
+    assert not auto_run.artifact_matches({"path": None, "sha256": None})
+    path.write_bytes(b"bye\n")
+    assert not auto_run.artifact_matches({"path": str(path), "sha256": digest})

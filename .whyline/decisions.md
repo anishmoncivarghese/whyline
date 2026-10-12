@@ -13093,3 +13093,83 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c7664a496b474f53a0f68baeeb92afe5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:01:50.405Z"} -->
+
+## 2026-10-12 — Revalidate ignores HEAD after the first check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-4
+
+**Because:** The persist commit moves HEAD, so a second call with Check's fingerprint compares the stored form fields, attachment hashes, models, availability, and Antigravity trust. Porcelain is not part of that form.
+
+**Rejected:**
+
+- Require fingerprint() on every call — the persist commit changes HEAD and the same request would be rejected.
+- Compare only form_fingerprint() to the dismissed hash — Check stores the full fingerprint, so the two hashes never match.
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 09199af1a39f49eeb4aeb3100dfe27c7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:23:07.443Z"} -->
+
+## 2026-10-12 — Persist rewrites the config and lets commit_paths skip a clean tree
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-4
+
+**Because:** The same bytes must not add a commit, and a real edit to the config must still be committed. The checkpoint phase is persist once that commit sha is stored.
+
+**Rejected:**
+
+- Skip persist when persist_commit is set — an out-of-band edit would never be written.
+- Leave the phase at start — the checkpoint would look like persist had not run.
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: b3dd8f9a894b4512ba3edec27950ba82 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:23:07.477Z"} -->
+
+## 2026-10-12 — run releases the Auto lock when it returns
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-4
+
+**Because:** This process's pid is live, so a second call would raise AutoBusy if the lock stayed held. A lock that is not a pid stays busy, matching Check.
+
+**Rejected:**
+
+- Leave the lock held after persist — the same process could not take it for the next call.
+- Steal a lock that is not a pid — Check treats that file as a run already in progress.
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 89e538f9fb66482fb0c29aafb26857c7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:23:07.509Z"} -->
+
+## 2026-10-12 — Approve Auto checkpointing and single config persistence for RUN-4
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-4
+
+**Because:** All 20 auto_run tests and the full test suite pass; lock exclusivity, dead pid reclamation, form revalidation ignoring HEAD, schema-1 checkpointing, and unquoted zero timeout are verified
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 4849652a062b4f1b802b7eadf885cb81 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:28:35.499Z"} -->
+
+## 2026-10-12 — Approve RUN-4 checkpoint locking and single persistence commit
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-4
+
+**Because:** The implementation matches the schema-1 checkpoint, form-only revalidation, exclusive live/dead pid lock behavior, one scoped config commit, and unquoted zero timeout requirements; the 20 focused tests and full 1376-pass suite succeeded
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: ffb09502cc124d6fbd2e8f0c3ed0a3a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:33:32.153Z"} -->
