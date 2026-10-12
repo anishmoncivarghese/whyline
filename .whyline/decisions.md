@@ -12523,3 +12523,38 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 598d6aca3ae048878cc026dea8da3767 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T09:40:05.007Z"} -->
+
+## 2026-10-12 — Design remote Whyline control around structured interventions before full terminal access
+
+**Actor:** codex
+**Role:** brainstormer
+**Task:** remote-control-brainstorm
+
+**Because:** Existing relay checkpoints, running markers, logs, questions, and stop/resume semantics can support safe typed commands; a Mac-authoritative event and command layer gives iPhone control without making unrestricted remote shell the initial security boundary
+
+**Rejected:**
+
+- Start with screen sharing — it obscures workflow state and provides no typed, auditable intervention contract
+- Expose a public shell endpoint — remote terminal access is account-level code execution and should be a separately elevated later capability
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: 51cac4dc4be8480eae9f9c254f00545e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T09:50:46.184Z"} -->
+
+## 2026-10-12 — Render the console thinking line with markup=False
+
+**Actor:** claude
+**Role:** implementer
+**Task:** console-thinking-markup
+
+**Because:** Brainstorm progress labels contain [1/3]-style brackets, which Textual parsed as a style tag and raised MarkupError, crashing the console; the line only ever shows plain status text
+
+**Rejected:**
+
+- Escape each label — every future caller would have to remember to; turning markup off covers all of them
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 9ffe4adc0bc045f9b90d1fdcafb58383 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T09:54:16.954Z"} -->
