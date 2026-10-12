@@ -256,7 +256,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
 
 ## Console, Auto runner, after whyline-relay 0.2.35
 
-- [ ] RUN-3: Depend on whyline-relay 0.2.35
+- [x] RUN-3: Depend on whyline-relay 0.2.35
   In this whyline checkout, raise both `whyline-relay` bounds in `pyproject.toml` from `>=0.2.34,<0.3` to `>=0.2.35,<0.3`. Refresh `uv.lock`. Install the published `0.2.35` and confirm `chat.NO_LIMIT` imports, `agents.run` accepts `cancel_event`, `setup.write_timeout_minutes` exists, and `run_final_synthesis` accepts `unattended`. Do not add UI and do not show Run. Do not tag or publish whyline.
   Verify with `uv run pytest -q`. Change nothing else.
 
