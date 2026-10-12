@@ -144,7 +144,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md`, run here so `RUN-2`'s 0.2.35 ships them; its `RTO-8` (a 0.2.33 release) is dropped because 0.2.34 is already out. The relay stays in this whyline checkout; each task commits in whyline-relay through `relay-repo`.
 
-- [ ] RTO-1: Optional watchdog and user cancel in agents.run
+- [x] RTO-1: Optional watchdog and user cancel in agents.run
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/agents.py`. Leave this whyline checkout untouched. `timeout_seconds` stays a required keyword and becomes `int | None`. Add `cancel_event: threading.Event | None = None`. Add `AgentCancelled(RuntimeError)` beside `AgentTimeout`. Do not give `timeout_seconds` a default.
   After the binary lookup and before `Popen`: a bool, zero, or a negative number raises `ValueError` and does not spawn. An already-set `cancel_event` raises `AgentCancelled` and does not spawn. `None` constructs no `Timer` and does not call `Timer(None)`, `Timer(0)`, or a stand-in interval. A positive int arms the existing timer. On fire, SIGTERM the process group (`start_new_session=True` stays) and SIGKILL it `KILL_GRACE_SECONDS` (5) later, then raise `AgentTimeout` with `{argv[0]} exceeded {n}s and was terminated`.

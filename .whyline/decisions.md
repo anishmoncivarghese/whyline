@@ -11943,3 +11943,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bb2a606f9570425cbf1ccc132bdebc58 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:01:02.222Z"} -->
+
+## 2026-10-12 — Reject bool, zero, negative, and non-int timeouts before spawn
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-1
+
+**Because:** timeout_seconds is int | None and only a positive int may arm the watchdog; bool is an int, so True would otherwise start a 1s timer
+
+**Rejected:**
+
+- let Timer coerce a float or treat True as 1 — that arms a watchdog the type does not allow
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/agents.py
+
+<!-- whyline-event: 38c5f49aaf524c0899e1d13a49665867 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:22:55.123Z"} -->
+
+## 2026-10-12 — Join started timers after cancel so kill callbacks cannot outlive run
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-1
+
+**Because:** Timer.cancel does not stop a callback that has already started, and a timeout racing a cancel must leave no threads behind
+
+**Rejected:**
+
+- cancel without join — the SIGKILL thread would still be alive when AgentCancelled leaves run
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/agents.py
+
+<!-- whyline-event: d59429fe919b4e51bc7c154508fdf755 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:22:55.200Z"} -->
+
+## 2026-10-12 — Ctrl+C uses the shared SIGKILL timer instead of a second inline kill
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-1
+
+**Because:** begin_kill is one-shot across the watchdog, the cancel listener, and BaseException, so the except path must not send its own SIGTERM or arm its own SIGKILL
+
+**Rejected:**
+
+- keep wait(timeout=KILL_GRACE_SECONDS) plus an inline SIGKILL — a second signal would fire when the timer and the except path overlap
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/agents.py
+
+<!-- whyline-event: 904de572a0ec4ba98b7fb7d0c341df4b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:22:55.260Z"} -->
+
+## 2026-10-12 — Approve RTO-1 watchdog, cancel, and teardown behavior
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-1
+
+**Because:** All 29 agent tests and the full test suite pass cleanly with expected cancellation, timeout, and process group termination semantics
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/agents.py
+
+<!-- whyline-event: 23125b4370164b168fe41367b9320042 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:26:48.082Z"} -->
+
+## 2026-10-12 — Approve RTO-1 optional watchdog and cancellation implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-1
+
+**Because:** The implementation matches the required validation, one-shot process-group termination, reap-before-exception, cancellation precedence, heartbeat, and teardown semantics; all 29 focused tests and the full suite pass independently
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/agents.py
+
+<!-- whyline-event: 11647a5cb27740ca92acce49824a97f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:29:11.911Z"} -->
