@@ -228,7 +228,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests: `blocked` from draft, test, and review pauses with that reason; the footer of every stage lists `blocked`; a `rejected` whose summary says the verification was denied pauses and leaves the draft visit count unchanged; a `rejected` with a real defect still routes to draft; the fingerprint of today's agentdock pipeline shape is unchanged.
   Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] SBX-4: Preflight warns when an agent cannot reach a task's repository
+- [x] SBX-4: Preflight warns when an agent cannot reach a task's repository
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/preflight.py` and `tests/test_preflight.py`. In `scope="full"`, for the plan's unchecked tasks that name a `relay-repo`: a path that is not the top of a git repository is `FAIL` (the same text `loop.task_repo` uses); for each role agent, a dir flag (from `SBX-1`) is `ok  {agent} gets {flag} {repo}`; an agent without one is `warn  {agent} has no way to be given {repo}; its sandbox may refuse writes there` with the fix `set dir_flag in [agents.{agent}] or allow that path in its command`. `scope="repository"` is unchanged.
   Tests: a plan with no `relay-repo` adds no lines; a bad path fails; Codex is ok; a generic agent without a dir flag warns with the fix; repository scope adds nothing.

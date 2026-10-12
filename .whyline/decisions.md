@@ -12851,3 +12851,65 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2d09d625da2748f4b67c046052387856 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:27:11.806Z"} -->
+
+## 2026-10-12 — Reachability uses loop.task_repo
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-4
+
+**Because:** The failure text and the git-top rule have to stay the ones the run already uses
+
+**Rejected:**
+
+- copy the message into preflight — the two copies would drift
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: 0d8769bc0fe549e2aa3d8758ab7d1aa3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:42:05.942Z"} -->
+
+## 2026-10-12 — Report each outside repository once, for role agents only
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-4
+
+**Because:** The line names the path, not the task, and a backup is not a role. The relay checkout needs no directory flag because the run adds none
+
+**Rejected:**
+
+- warn when the task repo is the relay root — the agent already runs there
+- repeat the line on every task — plans reuse one relay-repo and the message has no task id
+- include the backup chain — the task says role agents
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py, /Users/anish/whyline-relay/tests/test_preflight.py
+
+<!-- whyline-event: 0bbe9bd62bbd42dbafcfdf816c7b8ec6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:42:05.977Z"} -->
+
+## 2026-10-12 — Preflight warns when an agent cannot reach a task repo and all checks pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-4
+
+**Because:** Full scope checks reachability for unchecked relay-repo tasks, reports FAIL for invalid repos using loop.task_repo, reports ok when role agents have dir_flag, warns with remediation when missing dir_flag, ignores repository scope and checked tasks, and test suite passes 100%
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: b56a0db1e791489199392c14bf791aad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:45:06.457Z"} -->
+
+## 2026-10-12 — Approve task-repository reachability preflight checks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-4
+
+**Because:** The implementation limits new output to full scope and unchecked relay-repo tasks, reuses loop.task_repo failure semantics, reports each outside repository for role agents according to dir_flag, provides the required remediation, and both focused and full test suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py, /Users/anish/whyline-relay/tests/test_preflight.py
+
+<!-- whyline-event: 81d0287e68b1451ea34670f79ee9736f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:47:49.967Z"} -->
