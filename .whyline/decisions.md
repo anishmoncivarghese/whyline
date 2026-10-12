@@ -12913,3 +12913,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 81d0287e68b1451ea34670f79ee9736f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:47:49.967Z"} -->
+
+## 2026-10-12 — resume --retry-stage warns and continues when whyline note fails
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-5
+
+**Because:** whylinecmd.note raises WhylineUnavailable, the same as sync and claim. cmd_resume catches that, prints a warning, and still resumes, because the visit was already given back.
+
+**Rejected:**
+
+- note() prints the warning and returns — every future caller would lose the failure, and only resume is required to continue
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/whylinecmd.py, /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 3d47d40e19e845188fbc59e0016a42d9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:00:52.794Z"} -->
+
+## 2026-10-12 — The retry note is from actor relay, role resume
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-5
+
+**Because:** The retry is the relay's own decision, made before config is loaded. The note text is the same sentence printed to the operator.
+
+**Rejected:**
+
+- the capped stage's configured agent and role — config.load can fail or disagree with the saved pipeline fingerprint, and the count is already lowered by then
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 7bed37f644b841749d9fd198c5a28245 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:00:58.742Z"} -->
+
+## 2026-10-12 — A stage retry lowers the saved visit count by exactly one
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-5
+
+**Because:** Each use must give back one visit from whatever count is stored. The pause checkpoint is the count from before the visit that tripped the cap, so subtracting one is what lets the stage run once more.
+
+**Rejected:**
+
+- setting the count to N-1 from the pause sentence — the stored count is not always N plus one, so that would skip visits or leave the cap in place
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: fdda724179474961a0ce923fb2fbbbe5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:01:02.511Z"} -->
+
+## 2026-10-12 — retry-stage consults RelayState and refuses before any other resume work
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-5
+
+**Because:** The visit-cap sentence is stored on the task pause, and a non-cap must leave that file byte-for-byte, including before plan resume, preflight, or a branch switch.
+
+**Rejected:**
+
+- retrying a plan checkpoint — PlanState.paused_reason is always empty, so a planner visit cap has no saved sentence to match
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 0a4579de1cc94ff08d5f5adced6047ef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:01:05.897Z"} -->
+
+## 2026-10-12 — Approved: resume --retry-stage lowers capped stage visit count by 1 and resumes with note
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-5
+
+**Because:** All requirements verified and test suite passes cleanly
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: a222d4e6c2a54a97894d9b7ec237c03f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:05:20.135Z"} -->
+
+## 2026-10-12 — Approved: retry-stage safely grants one recorded retry only for saved stage-cap pauses
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-5
+
+**Because:** The diff meets the requested behavior and coverage, preserves unrelated visit counts and max_visits, refuses non-cap states without mutation, tolerates note failures, and the full suite passed.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: d31b690d7e314989bdee68324675d00b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:08:43.781Z"} -->

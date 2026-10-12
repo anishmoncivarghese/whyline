@@ -234,7 +234,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests: a plan with no `relay-repo` adds no lines; a bad path fails; Codex is ok; a generic agent without a dir flag warns with the fix; repository scope adds nothing.
   Verify with `uv run pytest -q tests/test_preflight.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] SBX-5: Resume can retry a capped stage once, on the record
+- [x] SBX-5: Resume can retry a capped stage once, on the record
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/cli.py`, `whylinecmd.py`, and their tests. `whyline relay resume --retry-stage` works only when the saved pause reason is a stage visit cap (`hit stage 'X''s N-visit cap`); otherwise it exits non-zero with `Nothing to retry: the relay is not paused on a stage visit cap.` and changes nothing. It lowers that one stage's saved visit count by one, saves the state, prints `Retrying stage 'X' once more.`, records it through a new `whylinecmd.note(root, text, *, because, task, actor, role)` that runs `whyline note` (a failing `whyline` prints a warning and does not stop the resume), and then resumes as usual. It never edits `max_visits`, so the pipeline fingerprint is unchanged. Each use lowers the count by exactly one.
   Tests: a visit-cap pause resumes with that stage lowered by one and the note recorded; a non-cap pause refuses and leaves the state byte-for-byte; a failing note still resumes; other stages' counts are untouched.
