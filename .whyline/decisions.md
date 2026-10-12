@@ -12558,3 +12558,98 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9ffe4adc0bc045f9b90d1fdcafb58383 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T09:54:16.954Z"} -->
+
+## 2026-10-12 — Store a generic dir_flag per agent and overlay it onto a copy of the adapter
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-1
+
+**Because:** GENERIC is one shared adapter, and the repository path is only known when a turn runs
+
+**Rejected:**
+
+- mutate GENERIC.dir_flag — every generic agent would share the last opt-in
+- append the flag at config load — the task path does not exist yet
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/config.py
+
+<!-- whyline-event: 35fef07b4551412f9013993fbec32dc0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:22:46.365Z"} -->
+
+## 2026-10-12 — Treat a directory flag as already present only when the exact flag and absolute path are consecutive arguments
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-1
+
+**Because:** the task says not to repeat that exact pair, and a command may already pass the same flag for a different directory
+
+**Rejected:**
+
+- skip whenever --add-dir appears — --add-dir . is not the task repository
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 37775593b3ed41a6b80637a858124c23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:22:46.399Z"} -->
+
+## 2026-10-12 — Do not special-case planner turns when adding a task directory
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-1
+
+**Because:** a planner task has no relay-repo, so task_repo is the relay root and the same-repo rule already adds nothing
+
+**Rejected:**
+
+- skip task id __plan__ — that would miss any other turn whose task simply has no repository line
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 95b27fc79f2d417da87273f274287f30 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:22:46.431Z"} -->
+
+## 2026-10-12 — Refuse dir_flag on an adapter that already declares one
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-1
+
+**Because:** the opt-in is only defined for a generic agent, and a configured value on Codex or Claude would look like it replaced the built-in flag
+
+**Rejected:**
+
+- ignore the key — a string in config would silently do nothing
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/config.py
+
+<!-- whyline-event: 25781e19e22f457b857455a944c0b5e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:22:46.463Z"} -->
+
+## 2026-10-12 — Accept cross-repo dir_flag passing and opt-in validation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-1
+
+**Because:** All unit and integration tests pass, verifying directory flags are correctly appended for Codex, Claude, and opted-in generic agents while respecting duplicate avoidance and same-repo rules
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 5d277c187c7e408fbbb5b69c7d99da40 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:28:57.711Z"} -->
+
+## 2026-10-12 — Approve task-repository directory flag propagation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-1
+
+**Because:** The scoped diff implements built-in and generic dir_flag behavior, exact duplicate suppression, same-repo and planner omission, final-command bypass checking, and the full pytest suite passes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 6994d4267c6c4015b90f0cac44f10cfa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:32:43.789Z"} -->

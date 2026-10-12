@@ -208,7 +208,7 @@ These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.
 
 RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could not write whyline-relay or `~/.cache/uv`, so it could not run the tests, handed off `rejected`, and correct work bounced back to the implementer until the caps ran out. These tasks stop that class of failure in the relay itself and ship in 0.2.35 with `RUN-2`. They run after `RTO-1`–`RTO-7`, which edit the same files first.
 
-- [ ] SBX-1: Give agents write access to the task's repository
+- [x] SBX-1: Give agents write access to the task's repository
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/adapters/base.py`, `adapters/codex.py`, `adapters/claude.py`, `adapters/generic.py`, `config.py`, `loop.py`, and their tests. `Adapter` gains `dir_flag: tuple[str, ...] | None`: `("--add-dir",)` for Codex and Claude, `None` for the generic adapter. A generic agent may opt in with `dir_flag = "--add-dir"` in its `[agents.<name>]` table; any other type is a `ConfigError`.
   In `loop.run_agent`, when `task_repo(root, task)` differs from `root` and the agent has a dir flag, append the flag and the task repository's absolute path to the command before the prompt (`build_argv` keeps the prompt last), unless the command already contains that exact flag and path. A task in the relay's own repository adds nothing. The planner's turns add nothing. The permission-bypass check still runs on the final command and the added flag is not a bypass flag.
