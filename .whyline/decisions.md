@@ -12392,3 +12392,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 99904cbc9f4649b6b0761a64281e8f3e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:15:28.548Z"} -->
+
+## 2026-10-12 — Watch STOP beside agents.run and set cancel_event
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-6
+
+**Because:** The main thread is blocked inside the child, and agents.run already kills that child when cancel_event is set. The watch polls every 50ms, the same slice as the cancel listener.
+
+**Rejected:**
+
+- Poll on the main thread — agents.run does not return until the child exits
+- Signal the child from the watcher — that would fork a second kill path, and console Stop stays SIGINT
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: aa7092452e554f0c83a3d4fba5f159a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:29:10.817Z"} -->
+
+## 2026-10-12 — Set cancel_event before agents.run when STOP already exists
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-6
+
+**Because:** A file that appears between turns of the same task would otherwise start a child and only kill it after the first poll.
+
+**Rejected:**
+
+- Leave the gap to the between-task check — that check runs only before the next task, so the next turn of this task would still start
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 3734b450c1c34649bb2d2bcae0a000c9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:29:10.850Z"} -->
+
+## 2026-10-12 — Approve RTO-6 implementation: STOP file cancels active agent and pauses run with state saved
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-6
+
+**Because:** All interrupt and single loop tests pass, and full test suite passes with zero failures
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: ecefed065b03483080909f241c0c78b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:33:54.762Z"} -->
+
+## 2026-10-12 — Approve RTO-6 STOP-file cancellation implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-6
+
+**Because:** The watcher cancels an in-flight agent, AgentCancelled follows the existing pause path, saved state preserves timeout 0, the next-task guard remains effective, and both focused and full test suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 0f2aed6909c6450baf8b59077157bf42 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:37:36.327Z"} -->
