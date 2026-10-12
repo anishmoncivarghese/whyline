@@ -11930,3 +11930,16 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a009112a81c940a7856dcdacca0a1a5b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T03:49:47.412Z"} -->
+
+## 2026-10-12 — Approve RUN-1: unattended synthesis guidance and integer timeout writer satisfy the specification
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-1
+
+**Because:** The diff gates exactly one appended paragraph behind unattended=True, preserves the default prompt and plan-draft prompt, writes bare integer timeout_minutes through _write_config while preserving other config text, and both focused and full pytest suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py, /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: bb2a606f9570425cbf1ccc132bdebc58 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:01:02.222Z"} -->

@@ -131,7 +131,7 @@ Release 1 is the shared `[backup].chain` on the bar and in Set up. Release 2 is 
 
 ## Relay package, unattended synthesis (`/Users/anish/whyline-relay`)
 
-- [ ] RUN-1: Let synthesis decide derived questions, and add the timeout writer if it is missing
+- [x] RUN-1: Let synthesis decide derived questions, and add the timeout writer if it is missing
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay`. Do not add `cancel_event`, `AgentCancelled`, or `chat.NO_LIMIT`. Those belong to `plans/in-chat-therr-is-hardocded-limit-of-300s.plan.md`. If they are already in the tree, leave them alone.
   `brainstorm.run_final_synthesis` gains `unattended: bool = False`. `True` appends one paragraph to the synthesis prompt: decide questions whose answer follows from the request, record each decision in the document, and leave `## Open questions` only for a choice that would change what gets built and cannot be derived from the request. The default `False` leaves today's prompt text byte-for-byte unchanged. Do not add that paragraph to the plan-draft prompt.
