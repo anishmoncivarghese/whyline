@@ -13324,3 +13324,131 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c3c90ed88a2b45acb7cfde67ddc63885 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:43:26.647Z"} -->
+
+## 2026-10-12 — run defaults to through=relay
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-6
+
+**Because:** A caller that does not pass through must preflight and launch after the plan.
+
+**Rejected:**
+
+- leave the default at plan — the sequence would stop before the launcher
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: b85dc69f0e624e12977f2dfe303442d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:06:24.458Z"} -->
+
+## 2026-10-12 — Resume raises AutoStale on a repository FAIL
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-6
+
+**Because:** A form mismatch already raises before a model, and a dirty tree is the same kind of refusal.
+
+**Rejected:**
+
+- pause the checkpoint — Resume would look started and the lock would be taken
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 6f506a18929f4db384b10e8bb5d7575e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:06:24.493Z"} -->
+
+## 2026-10-12 — Resume does not call start when phase is already relay
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-6
+
+**Because:** Final preflight still re-runs, but a second start would launch another relay.
+
+**Rejected:**
+
+- call the launcher whenever preflight passes — the relay is already running
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 510095400e304acba6575125be918b53 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:06:24.525Z"} -->
+
+## 2026-10-12 — Stop sets the Auto run event and does not merge the planner loop event
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-6
+
+**Because:** The task only sets the event research already passes into agents.run. The planner loop builds its own event.
+
+**Rejected:**
+
+- wrap agents.run to set both events — that is a second kill path this task was told not to add
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 7ea91aebd2a14a89bdd9a86c5464cc9f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:06:24.558Z"} -->
+
+## 2026-10-12 — Write the plan path into the one persist commit
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-6
+
+**Because:** select_plan commits when the plan key changes, and a clean run must commit config.toml once
+
+**Rejected:**
+
+- Let select_plan add a second setup commit — that commits config.toml twice
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 63e244c8ff3d4812a4827e1030f2e568 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:07:54.155Z"} -->
+
+## 2026-10-12 — Do not launch again when the checkpoint phase is already relay
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-6
+
+**Because:** Resume re-runs full preflight, and the relay is already started
+
+**Rejected:**
+
+- Call the launcher after every passing preflight — a second resume would start another relay
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: ff7a79ee502742cf89dc23e5741c3b24 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:07:54.190Z"} -->
+
+## 2026-10-12 — Approve RUN-6 preflight, launch, stop, and resume behaviors
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-6
+
+**Because:** All 47 auto_run tests pass including clean launch, preflight fail pause, stop/resume artifact caching, and clean tree gating; full suite passed with 1277 passed, 1 skipped
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: d946ee3d8f7e42c69bb3b67735612b23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:10:50.337Z"} -->
+
+## 2026-10-12 — Approve RUN-6 preflight, launch, stop, and resume implementation
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RUN-6
+
+**Because:** Preflight halts on FAIL, launcher runs on zero FAILs, stop and close_console cancel and mark stopped, resume gates on clean tree and caches matching artifacts; all 47 auto_run tests and 1277 full suite tests pass
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 6ad303f2c81345ebb1ba2ea13acbec21 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:18:38.314Z"} -->

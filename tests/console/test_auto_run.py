@@ -557,7 +557,9 @@ def test_open_questions_pause_until_an_answer_clears_them(tmp_path, monkeypatch)
 
     _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
     monkeypatch.setattr(relay_ops, "revise_synthesis", fake_revise)
-    finished = auto_run.run(root, request, dismissed, answer="Use the first store.")
+    finished = auto_run.run(
+        root, request, dismissed, answer="Use the first store.", through="plan"
+    )
     assert brainstorm_calls == ["claude"]
     assert revised == ["Use the first store."]
     assert len(spec_calls) == 1
@@ -597,7 +599,9 @@ def test_synthesis_answer_failure_walks_the_saved_chain(tmp_path, monkeypatch):
     assert paused["phase"] == "research"
 
     _install_planning(monkeypatch, root, [], [], [])
-    finished = auto_run.run(root, request, dismissed, answer="Use the first store.")
+    finished = auto_run.run(
+        root, request, dismissed, answer="Use the first store.", through="plan"
+    )
     assert finished["phase"] == "plan"
     assert revised == [
         ("claude", ["claude", "codex"]),
@@ -766,11 +770,11 @@ def test_matching_phase_artifact_is_not_called_again(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
     monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
     monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
-    first = auto_run.run(root, request, dismissed)
+    first = auto_run.run(root, request, dismissed, through="plan")
     assert calls == ["brainstorm", "spec", "plan"]
     assert first["phase"] == "plan"
     assert approved == [("spec", True), ("plan", True)]
-    auto_run.run(root, request, dismissed)
+    auto_run.run(root, request, dismissed, through="plan")
     assert calls == ["brainstorm", "spec", "plan"]
 
 
@@ -818,7 +822,7 @@ def test_spec_and_plan_failures_walk_only_the_saved_chain(tmp_path, monkeypatch)
     monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
     monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
 
-    finished = auto_run.run(root, request, dismissed)
+    finished = auto_run.run(root, request, dismissed, through="plan")
     assert finished["phase"] == "plan"
     assert seen == [
         ("spec", ("claude", "codex")),
@@ -889,7 +893,7 @@ def test_nonzero_exit_without_handoff_walks_only_the_saved_chain(tmp_path, monke
     monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
     monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
 
-    finished = auto_run.run(root, request, dismissed)
+    finished = auto_run.run(root, request, dismissed, through="plan")
     assert finished["phase"] == "plan"
     assert "pause" not in finished
     assert seen == [
@@ -1183,7 +1187,7 @@ def test_resumed_run_reenters_resume_spec_and_resume_draft(tmp_path, monkeypatch
     assert plan_pause["phase"] == "plan"
     assert calls == ["draft_spec", "resume_spec", "approve_spec", "draft_plan"]
 
-    finished = auto_run.run(root, request, dismissed)
+    finished = auto_run.run(root, request, dismissed, through="plan")
     assert calls == [
         "draft_spec",
         "resume_spec",
@@ -1233,7 +1237,7 @@ def test_final_synthesis_does_not_substitute_outside_the_chain(tmp_path, monkeyp
     monkeypatch.setattr(chat, "run_turn", fake_turn)
     monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
     _install_planning(monkeypatch, root, [], [], [])
-    finished = auto_run.run(root, request, dismissed)
+    finished = auto_run.run(root, request, dismissed, through="plan")
     assert attempted == ["claude", "codex"]
     assert "grok" not in attempted
     assert finished["phase"] == "plan"
@@ -1259,3 +1263,409 @@ def test_blocked_brainstorm_pauses_without_drafting_a_spec(tmp_path, monkeypatch
     assert "blocked" in paused["pause"]["reason"]
     assert paused["brainstorm"]["sha256"]
     assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+
+
+class _Check:
+    def __init__(self, status, message, hint=None):
+        self.status = status
+        self.message = message
+        self.hint = hint
+
+
+_BRAIN_COMMIT = 'brainstorm: claude final synthesis on "topic"'
+_SPEC_COMMIT = "docs: add spec plan"
+_PLAN_COMMIT = "docs: add plan plans/plan.plan.md"
+_CONFIG_COMMIT = "setup: auto run roles, backup, and timeout"
+
+
+def _commit_rel(root: Path, path: Path, message: str) -> None:
+    relative = path.relative_to(root).as_posix()
+    _git(root, "add", "--", relative)
+    _git(root, "commit", "-qm", message, "--", relative)
+
+
+def _subjects(root: Path) -> list[str]:
+    return _git(root, "log", "--format=%s").splitlines()
+
+
+def _assert_one_commit_each(root: Path) -> None:
+    subjects = _subjects(root)
+    assert subjects.count(_CONFIG_COMMIT) == 1
+    assert subjects.count(_BRAIN_COMMIT) == 1
+    assert subjects.count(_SPEC_COMMIT) == 1
+    assert subjects.count(_PLAN_COMMIT) == 1
+
+
+def _passing_checks(scope: str) -> list[_Check]:
+    if scope == "repository":
+        return [_Check("ok", "working tree is clean")]
+    return [
+        _Check("ok", "plan parses and has unchecked tasks"),
+        _Check("warn", "grok is a generic agent"),
+    ]
+
+
+def _install_committed(monkeypatch, root, calls, launched, trace, checks):
+    """Commit each artifact from the fakes, and let `checks(scope)` answer preflight."""
+    from whyline_relay import preflight
+
+    real_select = relay_ops.select_plan
+
+    def fake_brainstorm(_root, **kwargs):
+        calls.append("brainstorm")
+        path = _write_synthesis(root, _CLEAN, topic=kwargs.get("topic", "topic"))
+        _commit_rel(root, path, _BRAIN_COMMIT)
+        return SessionEvent("output", "saved")
+
+    def draft_spec(_root, _text, _attachments=(), *, progress):
+        calls.append("spec")
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        calls.append("approve_spec")
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        _commit_rel(root, target, _SPEC_COMMIT)
+        return target
+
+    def draft_plan(_root, _description, _attachments=(), *, progress, spec=None):
+        calls.append("plan")
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        calls.append("approve_plan")
+        target = root / "plans" / "plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        _commit_rel(root, target, _PLAN_COMMIT)
+        return target
+
+    def spy_select(target_root, path):
+        trace.append("select")
+        real_select(target_root, path)
+
+    def fake_preflight(_root, plan_path=None, **kwargs):
+        scope = kwargs.get("scope", "full")
+        assert kwargs.get("allow_dirty", False) is False
+        trace.append(("preflight", scope, plan_path))
+        return checks(scope)
+
+    def launcher(args):
+        launched.append(list(args))
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+    monkeypatch.setattr(relay_ops, "select_plan", spy_select)
+    monkeypatch.setattr(preflight, "run", fake_preflight)
+    return launcher
+
+
+def _checkpoint(root: Path) -> dict:
+    return json.loads(
+        (root / ".whyline" / "relay" / "auto-run.json").read_text(encoding="utf-8")
+    )
+
+
+def test_clean_run_commits_each_artifact_and_launches_once(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    assert request.release == "human"
+    dismissed = auto_run.fingerprint(root, request)
+    calls: list[str] = []
+    launched: list[list[str]] = []
+    trace: list = []
+    lines: list[str] = []
+    launcher = _install_committed(monkeypatch, root, calls, launched, trace, _passing_checks)
+    finished = auto_run.run(
+        root, request, dismissed, progress=lines.append, launcher=launcher
+    )
+    assert calls == ["brainstorm", "spec", "approve_spec", "plan", "approve_plan"]
+    assert finished["phase"] == "relay"
+    assert "pause" not in finished
+    assert launched == [["start"]]
+    assert "auto · final preflight" in lines
+    _assert_one_commit_each(root)
+    plan = root / "plans" / "plan.plan.md"
+    assert trace[0] == "select"
+    assert ("preflight", "full", plan) in trace
+    # A warn is not a FAIL, and release human does not skip the launch.
+    assert any(check.status == "warn" for check in _passing_checks("full"))
+    event = threading.Event()
+    auto_run.close_console(root, event)
+    assert not event.is_set()
+    assert _checkpoint(root)["phase"] == "relay"
+    # Preflight runs again. The relay is already started, so start is not repeated.
+    again = auto_run.resume(root, request, progress=lines.append, launcher=launcher)
+    assert again["phase"] == "relay"
+    assert launched == [["start"]]
+    assert calls == ["brainstorm", "spec", "approve_spec", "plan", "approve_plan"]
+    assert sum(1 for item in trace if item[:2] == ("preflight", "full")) == 2
+    _assert_one_commit_each(root)
+
+
+def test_final_preflight_fail_keeps_artifacts_and_resume_reruns_it(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    calls: list[str] = []
+    launched: list[list[str]] = []
+    trace: list = []
+    lines: list[str] = []
+    state = {"fail": True}
+
+    def checks(scope):
+        if scope == "repository":
+            return [_Check("ok", "working tree is clean")]
+        if state["fail"]:
+            return [_Check("FAIL", "no unchecked tasks in plans/plan.plan.md", "add one")]
+        return _passing_checks("full")
+
+    launcher = _install_committed(monkeypatch, root, calls, launched, trace, checks)
+    paused = auto_run.run(root, request, dismissed, progress=lines.append, launcher=launcher)
+    assert launched == []
+    assert paused["phase"] == "preflight"
+    assert "no unchecked tasks" in paused["pause"]["reason"]
+    assert "Set up can open on that plan." in paused["pause"]["reason"]
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+    assert "auto · final preflight" in lines
+    assert "no unchecked tasks" in "\n".join(lines)
+    _assert_one_commit_each(root)
+    assert (root / "docs" / "specs" / "plan.md").is_file()
+    assert (root / "plans" / "plan.plan.md").is_file()
+    kept = calls.copy()
+    state["fail"] = False
+    finished = auto_run.resume(root, request, progress=lines.append, launcher=launcher)
+    assert calls == kept
+    assert finished["phase"] == "relay"
+    assert launched == [["start"]]
+    assert sum(1 for item in trace if item[:2] == ("preflight", "full")) == 2
+    _assert_one_commit_each(root)
+
+
+def test_stop_after_each_artifact_and_resume_skips_a_matching_hash(tmp_path, monkeypatch):
+    from whyline_relay import agents
+
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    calls: list[str] = []
+    launched: list[list[str]] = []
+    trace: list = []
+    launcher = _install_committed(
+        monkeypatch, root, calls, launched, trace, _passing_checks
+    )
+    armed = {"research", "spec", "plan"}
+    active = {"event": threading.Event()}
+    original = auto_run._save
+
+    def tracing_save(target, current):
+        written = original(target, current)
+        phase = current.get("phase")
+        if phase in armed and "pause" not in current:
+            armed.remove(phase)
+            auto_run.stop(target, active["event"])
+            raise agents.AgentCancelled(f"stopped after {phase}")
+        return written
+
+    monkeypatch.setattr(auto_run, "_save", tracing_save)
+
+    def again():
+        active["event"] = threading.Event()
+        return auto_run.resume(root, request, cancel_event=active["event"], launcher=launcher)
+
+    first = auto_run.run(
+        root, request, dismissed, cancel_event=active["event"], launcher=launcher
+    )
+    assert first["phase"] == "stopped"
+    assert calls == ["brainstorm"]
+    assert _subjects(root).count(_BRAIN_COMMIT) == 1
+
+    second = again()
+    assert second["phase"] == "stopped"
+    assert calls == ["brainstorm", "spec", "approve_spec"]
+
+    third = again()
+    assert third["phase"] == "stopped"
+    assert calls == ["brainstorm", "spec", "approve_spec", "plan", "approve_plan"]
+
+    finished = again()
+    assert finished["phase"] == "relay"
+    assert calls == ["brainstorm", "spec", "approve_spec", "plan", "approve_plan"]
+    assert launched == [["start"]]
+    _assert_one_commit_each(root)
+    assert sum(1 for item in trace if item[:2] == ("preflight", "repository")) == 3
+
+
+def test_close_during_research_sets_cancel_and_stops(tmp_path, monkeypatch):
+    from whyline_relay import agents
+
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    cancel = threading.Event()
+    started = threading.Event()
+    calls: list[str] = []
+    launched: list[list[str]] = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        calls.append("brainstorm")
+        started.set()
+        if not cancel.wait(5):
+            raise AssertionError("cancel event was not set")
+        raise agents.AgentCancelled("closed")
+
+    def fail_spec(*_args, **_kwargs):
+        calls.append("spec")
+        raise AssertionError("draft_spec")
+
+    def launcher(args):
+        launched.append(list(args))
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", fail_spec)
+    holder: dict = {}
+
+    def worker():
+        try:
+            holder["result"] = auto_run.run(
+                root, request, dismissed, cancel_event=cancel, launcher=launcher
+            )
+        except BaseException as error:
+            holder["error"] = error
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    assert started.wait(5)
+    auto_run.close_console(root, cancel)
+    thread.join(5)
+    assert not thread.is_alive()
+    assert "error" not in holder
+    assert cancel.is_set()
+    assert holder["result"]["phase"] == "stopped"
+    assert _checkpoint(root)["phase"] == "stopped"
+    assert calls == ["brainstorm"]
+    assert launched == []
+    assert not _lock(root).exists()
+
+
+def test_resume_live_lock_fails(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+    _lock(root).write_text(f"{os.getpid()}\n", encoding="utf-8")
+    calls: list[str] = []
+
+    def boom(*_args, **_kwargs):
+        calls.append("brainstorm")
+        raise AssertionError("model started")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", boom)
+    monkeypatch.setattr(
+        __import__("whyline_relay.preflight", fromlist=["run"]),
+        "run",
+        lambda *_args, **_kwargs: [_Check("ok", "working tree is clean")],
+    )
+    with pytest.raises(auto_run.AutoBusy):
+        auto_run.resume(root, request)
+    assert calls == []
+    assert int(_lock(root).read_text(encoding="utf-8").strip()) == os.getpid()
+    assert _checkpoint(root)["phase"] == "persist"
+
+
+def test_resume_dead_lock_is_taken(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+    _lock(root).write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    calls: list[str] = []
+    launched: list[list[str]] = []
+    seen: dict = {}
+
+    def fake_brainstorm(_root, **_kwargs):
+        calls.append("brainstorm")
+        seen["pid"] = int(_lock(root).read_text(encoding="utf-8").strip())
+        _write_synthesis(root, _CLEAN)
+        _commit_rel(root, _write_synthesis(root, _CLEAN), _BRAIN_COMMIT)
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    launcher = _install_committed(monkeypatch, root, calls, launched, [], _passing_checks)
+    # The installer replaced brainstorm. Put the pid-recording fake back on top.
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    finished = auto_run.resume(root, request, launcher=launcher)
+    assert seen["pid"] == os.getpid()
+    assert "brainstorm" in calls
+    assert finished["phase"] == "relay"
+    assert launched == [["start"]]
+    assert not _lock(root).exists()
+
+
+def test_resume_form_mismatch_does_not_start_a_model(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("model started")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", boom)
+    with pytest.raises(auto_run.AutoStale, match="out of date"):
+        auto_run.resume(root, _request(topic="other"))
+    assert _checkpoint(root)["phase"] == "persist"
+    assert _subjects(root).count(_CONFIG_COMMIT) == 1
+    assert not (root / "docs" / "brainstorm").exists()
+
+
+def test_resume_repository_fail_does_not_start_a_model(tmp_path, monkeypatch):
+    from whyline_relay import preflight
+
+    root = _repo(tmp_path)
+    request = _request()
+    auto_run.run(root, request, auto_run.fingerprint(root, request), through="persist")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("model started")
+
+    def fake_preflight(_root, plan_path=None, **kwargs):
+        assert kwargs.get("scope") == "repository"
+        assert kwargs.get("allow_dirty", False) is False
+        return [
+            _Check(
+                "FAIL",
+                "working tree has uncommitted changes: README.md",
+                "commit or stash your changes",
+            )
+        ]
+
+    monkeypatch.setattr(adapters, "run_brainstorm", boom)
+    monkeypatch.setattr(preflight, "run", fake_preflight)
+    with pytest.raises(auto_run.AutoStale, match="uncommitted changes"):
+        auto_run.resume(root, request)
+    assert _checkpoint(root)["phase"] == "persist"
+
+
+def test_resume_ignores_the_pre_persist_head(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+    (root / "note.md").write_text("n\n", encoding="utf-8")
+    _git(root, "add", "--", "note.md")
+    _git(root, "commit", "-qm", "unrelated")
+    saved = _checkpoint(root)
+    assert saved["fingerprint"] != auto_run.fingerprint(root, request)
+    assert saved["request"] == auto_run.form_document(root, request)
+    calls: list[str] = []
+    launched: list[list[str]] = []
+    launcher = _install_committed(monkeypatch, root, calls, launched, [], _passing_checks)
+    finished = auto_run.resume(root, request, launcher=launcher)
+    assert calls[0] == "brainstorm"
+    assert finished["phase"] == "relay"
+    assert launched == [["start"]]

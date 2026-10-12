@@ -11,8 +11,9 @@ readable file), `models`, `available`, `head` (`git rev-parse HEAD` stdout),
 
 `run` revalidates that fingerprint, takes `.whyline/relay/auto-run.lock`,
 persists the relay config once, then researches, gates the synthesis, and
-drafts the spec and the plan. A pause stops the run. The runner does not
-invent an answer. Widget handlers stay out.
+drafts the spec and the plan. Final preflight selects that plan and runs
+`preflight` at full scope. Zero `FAIL` lines launch the relay. A pause stops
+the run. The runner does not invent an answer. Widget handlers stay out.
 """
 
 from __future__ import annotations
@@ -55,6 +56,11 @@ _UNATTENDED_PARAGRAPH = (
 )
 
 _GATE_ACTIONS = ("resume", "change", "cancel")
+
+_PREFLIGHT_PROGRESS = "auto · final preflight"
+
+# Printed with the FAIL lines when full preflight stops before the launcher.
+_SETUP_CAN_OPEN = "Set up can open on that plan."
 
 _PLANNER_LINE = re.compile(
     r"^(?P<agent>\S+) is (?P<action>drafting the spec|drafting the plan|reviewing the draft)$"
@@ -348,7 +354,7 @@ def _checkpoint(
 
 
 def _persist(root: Path, request: AutoRunRequest) -> str:
-    """Write the four setup keys without committing, then commit them once.
+    """Write the setup keys without committing, then commit them once.
 
     `reviewer` is the planner. `reviewer_role` is the execution reviewer.
     `commit_paths` is a no-op when those files have no diff, so a second call
@@ -368,6 +374,11 @@ def _persist(root: Path, request: AutoRunRequest) -> str:
     )
     setup.write_release(root, request.release, commit=False)
     setup.write_timeout_minutes(root, request.timeout_minutes, commit=False)
+    # select_plan commits when `plan` changes. The path is fixed by the
+    # request, so writing it into this commit keeps phase 7 from committing
+    # config.toml again.
+    plan_rel = relay_ops.plan_path(root, _work_name(request)).relative_to(root).as_posix()
+    setup.write_plan(root, plan_rel, commit=False)
     gitcheck.commit_paths(root, list(written), _COMMIT_MESSAGE)
     return _git_stdout(root, "rev-parse", "HEAD").strip()
 
@@ -1110,6 +1121,33 @@ def _plan_phase(root, request, current, *, saved_phase, progress, answer):
     return current
 
 
+def _cancelled(cancel_event: threading.Event | None) -> bool:
+    return cancel_event is not None and cancel_event.is_set()
+
+
+def _as_stopped(root: Path, current: dict) -> dict:
+    """Mark `current` stopped and write it. Completed artifacts stay."""
+    current["phase"] = "stopped"
+    current.pop("pause", None)
+    atomic_write_json(checkpoint_path(root), current)
+    return current
+
+
+def _halted(root: Path, current: dict, cancel_event: threading.Event | None) -> dict | None:
+    """The checkpoint to return when this phase must not continue.
+
+    A pause is the phase's own result. A set cancel event, or a phase that
+    already wrote `stopped`, ends the run before the next model call.
+    """
+    if current.get("phase") == "stopped":
+        return current
+    if "pause" in current:
+        return current
+    if _cancelled(cancel_event):
+        return _as_stopped(root, current)
+    return None
+
+
 def _after_persist(root, request, current, *, saved_phase, progress, cancel_event, answer):
     current = _research_phase(
         root,
@@ -1120,9 +1158,11 @@ def _after_persist(root, request, current, *, saved_phase, progress, cancel_even
         cancel_event=cancel_event,
         answer=answer,
     )
-    _save(root, current)
-    if "pause" in current:
-        return current
+    if current.get("phase") != "stopped":
+        _save(root, current)
+    halted = _halted(root, current, cancel_event)
+    if halted is not None:
+        return halted
     current = _spec_phase(
         root,
         request,
@@ -1131,9 +1171,11 @@ def _after_persist(root, request, current, *, saved_phase, progress, cancel_even
         progress=progress,
         answer=answer,
     )
-    _save(root, current)
-    if "pause" in current:
-        return current
+    if current.get("phase") != "stopped":
+        _save(root, current)
+    halted = _halted(root, current, cancel_event)
+    if halted is not None:
+        return halted
     current = _plan_phase(
         root,
         request,
@@ -1142,7 +1184,73 @@ def _after_persist(root, request, current, *, saved_phase, progress, cancel_even
         progress=progress,
         answer=answer,
     )
-    return _save(root, current)
+    if current.get("phase") != "stopped":
+        _save(root, current)
+    halted = _halted(root, current, cancel_event)
+    if halted is not None:
+        return halted
+    return current
+
+
+def _fail_lines(checks) -> str:
+    body = "\n".join(f"{check.status:<4}  {check.message}" for check in checks)
+    return f"{body}\n{_SETUP_CAN_OPEN}"
+
+
+def _preflight_phase(root: Path, current: dict, *, progress) -> dict:
+    """Select the approved plan and run full preflight.
+
+    This phase has no artifact hash. Resume runs it again so it sees the
+    tree as it is. `FAIL` stops before the launcher. `warn` does not.
+    Release `human` is not a failure and does not skip the launch.
+    """
+    _emit(progress, _PREFLIGHT_PROGRESS)
+    record = current.get("plan") if isinstance(current.get("plan"), dict) else None
+    path_text = record.get("path") if isinstance(record, dict) else None
+    plan = Path(path_text) if isinstance(path_text, str) and path_text else None
+    if plan is None or not plan.is_file():
+        reason = f"The approved plan is missing.\n{_SETUP_CAN_OPEN}"
+        _emit(progress, reason)
+        return _mark_pause(current, "preflight", reason)
+    relay_ops.select_plan(root, plan)
+    from whyline_relay import preflight
+
+    checks = preflight.run(root, plan, scope="full")
+    fails = [check for check in checks if check.status == "FAIL"]
+    if fails:
+        reason = _fail_lines(fails)
+        _emit(progress, reason)
+        return _mark_pause(current, "preflight", reason)
+    _clear_pause(current)
+    current["phase"] = "preflight"
+    return current
+
+
+def _repository_failures(root: Path) -> list:
+    """FAIL lines from `preflight.run(root, scope="repository")`.
+
+    Resume uses this as the clean-tree gate. It does not pass `allow_dirty`.
+    """
+    from whyline_relay import preflight
+
+    checks = preflight.run(root, scope="repository")
+    return [check for check in checks if check.status == "FAIL"]
+
+
+def _launch(current: dict, *, launcher, saved_phase: str | None) -> dict:
+    """Call the injected launcher once when preflight has just passed.
+
+    A checkpoint that is already `relay` has launched. Resume re-runs
+    preflight and, when that still passes, leaves the running relay alone.
+    Release `human` is not a reason to skip this call.
+    """
+    if saved_phase != "relay":
+        if launcher is None:
+            raise ValueError("launcher is required")
+        launcher(["start"])
+    _clear_pause(current)
+    current["phase"] = "relay"
+    return current
 
 
 def run(
@@ -1153,18 +1261,21 @@ def run(
     progress=None,
     cancel_event: threading.Event | None = None,
     answer: str | None = None,
-    through: str = "plan",
+    through: str = "relay",
+    launcher=None,
 ) -> dict:
-    """Revalidate, lock, persist, then research, spec, and plan.
+    """Revalidate, lock, persist, then research, spec, plan, preflight, and launch.
 
-    `through="persist"` returns after the config commit. The default runs
-    through the plan. `answer` is a person's reply to a synthesis pause: it
-    goes through `revise_synthesis`, and that gate runs again. The lock is
-    released when this call returns, including when a phase raises. A stale
-    form raises `AutoStale` before any write. A live lock raises `AutoBusy`.
+    `through="persist"` returns after the config commit. `through="plan"`
+    returns after the plan artifact. The default runs final preflight and,
+    when that has zero `FAIL` lines, calls `launcher` with `["start"]`.
+    `answer` is a person's reply to a synthesis pause: it goes through
+    `revise_synthesis`, and that gate runs again. The lock is released when
+    this call returns, including when a phase raises. A stale form raises
+    `AutoStale` before any write. A live lock raises `AutoBusy`.
     """
-    if through not in {"persist", "plan"}:
-        raise ValueError("through must be persist or plan")
+    if through not in {"persist", "plan", "relay"}:
+        raise ValueError("through must be persist, plan, or relay")
     if answer is not None:
         answer = answer.strip() or None
     fresh = document(root, request)
@@ -1178,7 +1289,10 @@ def run(
     previous = saved.get("persist_commit") if isinstance(saved, dict) else None
     if previous is not None and not isinstance(previous, str):
         previous = None
+    from whyline_relay import agents as relay_agents
+
     acquire_lock(root)
+    current = None
     try:
         current = _checkpoint(
             saved,
@@ -1189,12 +1303,16 @@ def run(
             persist_commit=previous,
         )
         atomic_write_json(path, current)
+        if _cancelled(cancel_event):
+            return _as_stopped(root, current)
         current["phase"] = "persist"
         current["persist_commit"] = _persist(root, request)
         atomic_write_json(path, current)
         if through == "persist":
             return current
-        return _after_persist(
+        if _cancelled(cancel_event):
+            return _as_stopped(root, current)
+        current = _after_persist(
             root,
             request,
             current,
@@ -1203,5 +1321,98 @@ def run(
             cancel_event=cancel_event,
             answer=answer,
         )
+        if through == "plan" or current.get("phase") == "stopped" or "pause" in current:
+            return current
+        if _cancelled(cancel_event):
+            return _as_stopped(root, current)
+        current = _preflight_phase(root, current, progress=progress)
+        _save(root, current)
+        if "pause" in current:
+            return current
+        if _cancelled(cancel_event):
+            return _as_stopped(root, current)
+        current = _launch(current, launcher=launcher, saved_phase=saved_phase)
+        return _save(root, current)
+    except relay_agents.AgentCancelled:
+        if not isinstance(current, dict):
+            raise
+        return _as_stopped(root, current)
     finally:
         release_lock(root)
+
+
+def stop(root: Path, cancel_event: threading.Event | None = None) -> None:
+    """Set the in-flight cancel event, mark the checkpoint stopped, release the lock.
+
+    The event is the one `run` passed into `agents.run`. Setting it is the
+    whole kill: `agents.run` SIGTERMs the process group when that event is
+    set. Completed artifacts stay in the checkpoint.
+    """
+    if cancel_event is not None:
+        cancel_event.set()
+    path = checkpoint_path(root)
+    saved = load_object(path)
+    if isinstance(saved, dict):
+        saved["phase"] = "stopped"
+        saved.pop("pause", None)
+        atomic_write_json(path, saved)
+    release_lock(root)
+
+
+def close_console(root: Path, cancel_event: threading.Event | None = None) -> None:
+    """Closing during phases 1–7 uses the same cancel and writes `stopped`.
+
+    There is no "Leave it running" choice on that path. Once the checkpoint
+    phase is `relay`, this returns without writing. `QuitRelayScreen` is the
+    quit UI for a running relay, and this function does not replace it.
+    """
+    saved = load_object(checkpoint_path(root))
+    phase = saved.get("phase") if isinstance(saved, dict) else None
+    if phase == "relay":
+        return
+    stop(root, cancel_event)
+
+
+def resume(
+    root: Path,
+    request: AutoRunRequest,
+    *,
+    progress=None,
+    cancel_event: threading.Event | None = None,
+    answer: str | None = None,
+    launcher=None,
+) -> dict:
+    """Continue from the first phase whose artifact is missing or stale.
+
+    Compares the form fields with a fresh computation, then a
+    `scope="repository"` check. It does not compare the pre-persist `HEAD`
+    stored inside the old fingerprint. A form mismatch raises `AutoStale`
+    before the lock and before any model call. A repository `FAIL` raises
+    `AutoStale` with those lines, also before a model call. Artifact hashes
+    are compared by the phase walker, which does not call `approve_spec` or
+    `approve_plan` again when the hash matches. Final preflight runs again.
+    """
+    saved = load_object(checkpoint_path(root))
+    if not isinstance(saved, dict) or saved.get("schema") != SCHEMA:
+        raise AutoStale("This check is out of date. Check again.")
+    if saved.get("request") != form_document(root, request):
+        raise AutoStale("This check is out of date. Check again.")
+    fails = _repository_failures(root)
+    if fails:
+        lines = "\n".join(f"{check.status:<4}  {check.message}" for check in fails)
+        raise AutoStale(lines)
+    dismissed = saved.get("fingerprint")
+    if not isinstance(dismissed, str):
+        dismissed = saved.get("last_check")
+    if not isinstance(dismissed, str):
+        raise AutoStale("This check is out of date. Check again.")
+    return run(
+        root,
+        request,
+        dismissed,
+        progress=progress,
+        cancel_event=cancel_event,
+        answer=answer,
+        through="relay",
+        launcher=launcher,
+    )
