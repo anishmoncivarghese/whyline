@@ -267,7 +267,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests on a scratch repo: the lock file is exclusive; a dead pid is taken; a live pid raises `AutoBusy`; persist commits the config once and a second call with the same content does not add a commit; `0` is an unquoted `timeout_minutes`.
   Verify with `uv run pytest -q tests/console/test_auto_run.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] RUN-5: Research, then spec, then plan, and pause instead of inventing an answer
+- [x] RUN-5: Research, then spec, then plan, and pause instead of inventing an answer
   Edit only `src/whyline/console/auto_run.py` and `tests/console/test_auto_run.py`. Continue the phase list from `RUN-4`.
   Research: `adapters.run_brainstorm` with the request's agents, passes, final writer, attachments, and timeout. `timeout_minutes == 0` passes `chat.NO_LIMIT`. A positive value passes `timeout_minutes * 60`. Pass the run's `cancel_event` through. Do not add the Chat `none` menu and do not change Chat's 300-second default. `run_final_synthesis` is called with `unattended=True`. A finished `docs/brainstorm/{slug}.md` that contains `## Final Synthesis` is the artifact.
   Synthesis gate: `open_questions` on that file, or a brainstorm `blocked` outcome, pauses. The runner does not invent an answer. The user's answer goes through `revise_synthesis` and this phase runs again. A synthesis with no open questions continues. The pause `actions` are `resume`, `change`, and `cancel`.
