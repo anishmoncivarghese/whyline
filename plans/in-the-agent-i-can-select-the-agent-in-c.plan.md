@@ -174,7 +174,7 @@ These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.
   Extend `tests/test_brainstorm_timeout.py` and `tests/test_brainstorm_setup.py`. Cover the null round-trip, a missing file, a truncated JSON file, a missing key, a non-positive number, `_save_timeout` of the sentinel writing no minutes field, the parser's sentinel and "ask again" cases, the prompt default, the outside-menu value 300, cancel between models, and `_run_brainstorm_plan_source` forwarding `NO_LIMIT` into `run_pass_zero`.
   Verify with `uv run pytest -q tests/test_brainstorm_timeout.py tests/test_brainstorm_setup.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] RTO-4: Accept timeout_minutes 0 and --timeout none
+- [x] RTO-4: Accept timeout_minutes 0 and --timeout none
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/config.py` and `src/whyline_relay/cli.py`.
   `config.load` keeps the default `timeout_minutes` of 30. The loaded value must be an `int` and not a `bool`, and it must be `>= 0`. Zero means unlimited. Anything else raises `ConfigError` with the text `timeout_minutes must be 0 (no limit) or a positive number of minutes`. A missing key stays 30. Reject `True` before `int()`, because `bool` is a subclass of `int`.

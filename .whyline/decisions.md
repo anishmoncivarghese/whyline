@@ -12232,3 +12232,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9c151743ff6f4c818e5e0ee3c760dbb9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:35:33.305Z"} -->
+
+## 2026-10-12 — Warn about an unlimited timeout only once a run is about to launch an agent
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-4
+
+**Because:** start and resume should say the watchdog is off immediately before planner.resume or loop.run_plan, after the branch switch has succeeded
+
+**Rejected:**
+
+- printing from _continue_plan — done and skip would warn too, and the task names only start and resume
+- printing on dry-run — no agent is launched
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: d53ee8b504dd435c8743d35c20d06940 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:47:18.352Z"} -->
+
+## 2026-10-12 — Keep timeout_minutes 0 as an int and do not map it to None in the CLI
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-4
+
+**Because:** RTO-5 teaches loop.run_agent to pass timeout_seconds=None when the value is 0, and this task cannot edit loop.py
+
+**Rejected:**
+
+- substituting None on the settings object — Config.timeout_minutes is an int, and agents.run rejects 0 until that mapping lands
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/config.py
+
+<!-- whyline-event: ad07205636a745ce887772de257da19e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:47:18.385Z"} -->
+
+## 2026-10-12 — Accept timeout_minutes 0 and --timeout none/unlimited with watchdog warning
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-4
+
+**Because:** Full test suite and targeted tests pass with correct config validation, argparse parsing, and warning on start/resume
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/config.py
+
+<!-- whyline-event: 11359b4c6ca04f69a1adedf3e04de94b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:50:25.843Z"} -->
+
+## 2026-10-12 — Approve unlimited timeout configuration and CLI overrides
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-4
+
+**Because:** The implementation matches the requested strict validation, aliases, non-persistence, warning scope and timing; targeted and full pytest suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/config.py, /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 7b0e0f29ae3f49e8b455a953b84ee8df -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:52:54.917Z"} -->
