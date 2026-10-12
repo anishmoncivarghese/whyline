@@ -240,7 +240,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests: a visit-cap pause resumes with that stage lowered by one and the note recorded; a non-cap pause refuses and leaves the state byte-for-byte; a failing note still resumes; other stages' counts are untouched.
   Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] SBX-6: An approved task that changed nothing still completes
+- [x] SBX-6: An approved task that changed nothing still completes
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/gitcheck.py`, `loop.py`, and their tests. When the terminal stage approves and `commit_all` finds nothing staged in the task's repository, `_commit_and_approve` makes an empty commit there with today's `commit_message(task, "")` text, `chore: {id} needed no changes ({id})`, so `commit_verified` passes and the box is ticked. This happened to `RTO-7`, whose work `RUN-1` had already done; it paused with "approved but no commit naming it exists" and had to be committed by hand. A legacy two-role run keeps its rule that the reviewer commits. The `HEAD moved` check before the commit is unchanged.
   Tests: a cross-repo and a same-repo task approved with no changes each get one empty commit naming the task and tick; an approval with changes still makes one normal commit; a stage that committed on its own still pauses with `HEAD moved`.

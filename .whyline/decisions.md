@@ -13007,3 +13007,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d31b690d7e314989bdee68324675d00b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:08:43.781Z"} -->
+
+## 2026-10-12 — An approved clean task gets gitcheck.commit_empty, not a flag on commit_all
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-6
+
+**Because:** commit_all must keep returning False and committing nothing on a clean tree; chat turns rely on that no-op
+
+**Rejected:**
+
+- allow-empty inside commit_all — a clean chat turn would record an empty commit
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/gitcheck.py, /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: e4204057b6fc4522805ca010c5f6480b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:24:32.996Z"} -->
+
+## 2026-10-12 — Only a configured pipeline's terminal approval records the empty commit
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-6
+
+**Because:** a legacy two-role run still requires the reviewer to commit, so an approval with nothing staged keeps pausing
+
+**Rejected:**
+
+- always empty-commit inside _commit_and_approve — a two-role approval would tick without the reviewer's commit
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: ba9fc0a782934265b0b5cd6c54041601 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:24:41.275Z"} -->
+
+## 2026-10-12 — Approved empty-commit behavior verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-6
+
+**Because:** Clean-task empty commit generation, cross-repo/same-repo ticking, HEAD moved checks, and legacy two-role pause all pass test suite
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 37b5109d8ec9423ca3dcd3fd5f58a72e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:28:12.488Z"} -->
+
+## 2026-10-12 — Approved clean terminal-task empty commits
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-6
+
+**Because:** The implementation creates the required task-naming empty commit only for configured pipeline completion, preserves legacy reviewer-commit behavior and the pre-commit HEAD guard, and the full test suite passes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 674db313ce544d36947205af17bcc4f4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:30:52.777Z"} -->
