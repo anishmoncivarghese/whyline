@@ -12730,3 +12730,124 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7c11f7a360284ca38e702e0663350aed -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:49:32.095Z"} -->
+
+## 2026-10-12 — Implicit blocked only when the stage that just ran has no blocked transition
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-3
+
+**Because:** A stage that routes blocked itself keeps that route, and the outcome is not stored on the stage so the config fingerprint stays the hash of the written table
+
+**Rejected:**
+
+- inject blocked into every stage at load — that overwrites an explicit route and rewrites the table the fingerprint hashes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/pipeline.py
+
+<!-- whyline-event: 0eb64be0e565488798b2bd0bd4caf0de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:06:39.812Z"} -->
+
+## 2026-10-12 — Pause a sandbox back-route in the loop before counting the earlier visit
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-3
+
+**Because:** The pause names the agent and the summary, and resume would otherwise send the same handoff back and burn a visit
+
+**Rejected:**
+
+- make decide return blocked for a sandbox summary — a real defect must still advance, and the pause would say reported blocked
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: e568dbb00801411f9ed5cdccf2873b91 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:06:44.763Z"} -->
+
+## 2026-10-12 — Stage footer adds the blocked handoff line only when the stage did not list blocked
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-3
+
+**Because:** That line is the command for a refused command, and a stage that already routes blocked must keep its own single command
+
+**Rejected:**
+
+- always append a second blocked line — the footer says to use exactly one outcome
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py
+
+<!-- whyline-event: 1b554dff7bfb4e7991c41f7e3be7b620 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:06:54.166Z"} -->
+
+## 2026-10-12 — All tests for unlisted blocked transitions and sandbox backstop pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-3
+
+**Because:** Implicit blocked handling, stage footer guidance, and sandbox refusal backstops in loop behave correctly without mutating pipeline fingerprints
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 8857f33b2d5f47aeaac18c8506c2f52c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:10:55.080Z"} -->
+
+## 2026-10-12 — Request correction to literal blocked footer command
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-3
+
+**Because:** The suite passes, but a stage with an explicit blocked transition emits its configured blocked command with --summary "<why>" (and sometimes --question) instead of the required literal --status blocked --summary "<the exact command and the refusal>" line; the added test explicitly accepts the noncompliant form.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py, /Users/anish/whyline-relay/tests/test_prompts.py
+
+<!-- whyline-event: c39951a7f59b4f30abaf6dc60e35c65f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:14:22.177Z"} -->
+
+## 2026-10-12 — Render an explicit blocked transition with the literal refusal command
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-3
+
+**Because:** SBX-3 requires that exact --status blocked --summary line on every stage, including one that already routes blocked
+
+**Rejected:**
+
+- keep the why placeholder plus a separate rule sentence — review rejected that form
+- append a second blocked line — the footer says to use exactly one outcome
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py, /Users/anish/whyline-relay/tests/test_prompts.py
+
+<!-- whyline-event: 35d6225f758d4834a805d74a23320de9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:21:32.074Z"} -->
+
+## 2026-10-12 — Explicit and implicit blocked stage footers and sandbox backstops verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-3
+
+**Because:** Every stage footer renders the literal blocked command and rule, explicit blocked routes keep their recipient, unlisted blocked decisions pause, sandbox backstop prevents backward routing, and full test suite passes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py
+
+<!-- whyline-event: 7dc640bf4d1643afb986ef383c1eb4b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:24:45.097Z"} -->
+
+## 2026-10-12 — Approve blocked pause and sandbox back-route protection
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-3
+
+**Because:** The diff implements implicit blocked decisions without fingerprint mutation, preserves explicit blocked routing, emits the required literal footer command and rule, pauses sandbox-marked back-routes before counting visits, and the full test suite passes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/pipeline.py, /Users/anish/whyline-relay/src/whyline_relay/prompts.py, /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 2d09d625da2748f4b67c046052387856 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T14:27:11.806Z"} -->

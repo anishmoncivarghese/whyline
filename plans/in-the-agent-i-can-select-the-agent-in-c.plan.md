@@ -221,7 +221,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests: the child sees the cache path; an existing `UV_CACHE_DIR` wins; the relay's own `os.environ` is unchanged after the run; `RELAY_IGNORE` lists the cache folder and `ensure_relay_ignored` adds it once.
   Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] SBX-3: "Could not verify" pauses instead of sending correct work back
+- [x] SBX-3: "Could not verify" pauses instead of sending correct work back
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/pipeline.py`, `prompts.py`, `loop.py`, and their tests. In a configured pipeline, a handoff with the `blocked` status from any stage decides `blocked` when that stage has no transition of its own for it. The pipeline fingerprint does not change for an existing config. `stage_footer` lists `blocked` for every stage with its literal `whyline handoff ... --status blocked --summary "<the exact command and the refusal>"` line and says: a required command refused by permissions or the sandbox is `blocked`, never a back-route outcome such as `failed` or `rejected`, because that sends correct work back to be redone.
   As a backstop, when a stage hands off an outcome that routes to an earlier stage and its summary contains one of `SANDBOX_MARKERS` (`permission denied`, `operation not permitted`, `sandbox`, `was denied`, `not permitted`; case-insensitive), the relay does not route it. It pauses with `{agent} could not run a required command: {summary}` and does not count a visit for the earlier stage.
