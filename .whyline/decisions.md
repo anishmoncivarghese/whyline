@@ -12505,3 +12505,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8ae44b6c8f2d489d81e1bb79650127d1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T06:53:10.038Z"} -->
+
+## 2026-10-12 — Complete RTO-7 by hand as a no-change task and add SBX-6 so the relay does this itself
+
+**Actor:** claude
+**Role:** operator
+**Task:** RTO-7
+
+**Because:** RUN-1 already added write_timeout_minutes, so RTO-7 was approved with nothing to commit in whyline-relay; the relay's commit step found nothing staged and commit_verified refused to tick. Resume would only retry that same empty commit, and a manual commit would trip the HEAD-moved check, so the task was recorded with an empty commit in the relay's own 'needed no changes' format (f95ef29), ticked, and its finished state cleared
+
+**Rejected:**
+
+- Resume as is — retries the same empty commit and pauses again
+- Add a filler change to commit — invents work the task did not need
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 598d6aca3ae048878cc026dea8da3767 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T09:40:05.007Z"} -->
