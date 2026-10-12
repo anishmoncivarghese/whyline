@@ -13173,3 +13173,154 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ffb09502cc124d6fbd2e8f0c3ed0a3a8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:33:32.153Z"} -->
+
+## 2026-10-12 — Salvage the timed-out RUN-5 implementation with bounded failover and cancellation repairs
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-5
+
+**Because:** Grok changed only the two permitted RUN-5 files; the implementation matched the planned research/spec/plan phases, and review found three recoverable failure-path gaps: duplicate research backups, missing cancellation on synthesis revision, and no saved-chain retry for a failed revision
+
+**Rejected:**
+
+- discard Grok's work — all focused tests passed before repair and the implementation covered the requested phase machinery
+- commit by hand — the configured pipeline must let its tester and reviewer approve before the relay creates the task commit
+
+**Verdict:** ready
+**Reviewed commit:** 393e7f87203a679c48366bb6294f4a34e79881f5
+**Test:** uv run pytest -q tests/console/test_auto_run.py: 32 passed
+**Test:** uv run pytest -q -k 'not test_resend_reports_back_in_the_runs_view': passed with one unrelated test excluded
+**Test:** pre-RUN-5 archive exact delivery-screen test: reproduced the same failure
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: c5afaf38c732449d818a854d6cf1ed34 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T18:18:23.417Z"} -->
+
+## 2026-10-12 — Approve Auto research, spec, and plan execution with pause gates and failover for RUN-5
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-5
+
+**Because:** All 32 auto_run tests and the full test suite pass (1388 passed, 1 skipped); verified brainstorm with timeout/cancel passing, unattended synthesis gating, spec and plan drafting with visit-cap and validation pauses, bounded chain failover, and artifact match reuse
+
+**Test:** uv run pytest -q tests/console/test_auto_run.py: 32 passed
+**Test:** uv run pytest -q: 1388 passed, 1 skipped
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: ce23206ffd254070a6b892ada7ddb8fc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T18:23:19.591Z"} -->
+
+## 2026-10-12 — Reject RUN-5 until planner pauses resume and research failover stays inside the saved chain
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-5
+
+**Because:** Both required pytest commands pass, but _hold_pause makes every saved spec or plan pause terminal instead of re-entering resume_spec or resume_draft, and brainstorm final synthesis can still substitute another selected research agent outside request.chain; the fake tests do not exercise either path
+
+**Rejected:**
+
+- approve based on green tests — the missing resume and out-of-chain substitution cases are explicit behavioral requirements
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: c2531b38da424633a4b114f15e847f47 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T18:30:21.374Z"} -->
+
+## 2026-10-12 — Accept the second Grok timeout's preserved RUN-5 repair for retesting
+
+**Actor:** codex
+**Role:** implementer
+**Task:** RUN-5
+
+**Because:** Inspection and regression tests confirm paused spec and plan checkpoints now call resume_spec and resume_draft, while Auto constrains each final-synthesis attempt to its requested writer so only request.chain controls substitution; 36 focused tests, the full suite, and git diff --check pass
+
+**Rejected:**
+
+- restart Grok again — the preserved working tree already contains both reviewer-requested corrections and their regressions
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: 589ec244380f47b0b8b3c8d0efa3d0b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:05:08.941Z"} -->
+
+## 2026-10-12 — Approve RUN-5 Round 3 repair with resume re-entry and bounded synthesis failover
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-5
+
+**Because:** All 36 auto_run tests and the full suite pass; verified saved spec/plan checkpoints re-enter resume_spec/resume_draft instead of being terminal, final synthesis is constrained to request.chain, blocked brainstorms pause before drafting, and git diff --check is clean
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 0a9f6d3610814d3aacf35e06def60add -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:11:00.310Z"} -->
+
+## 2026-10-12 — Reject RUN-5 Round 4 because spec and plan do not fail over after ordinary model failures
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-5
+
+**Because:** The planner returns a normal nonzero agent exit as loop.Paused without an AgentTimeout or AgentMissing cause; _guard_draft classifies that as a human pause, so _spec_with_failover and _plan_with_failover never call failover.next_backup even though RUN-5 requires every model failure to walk the saved chain. The added failover test only raises AgentTimeout and misses this production path; both required pytest commands otherwise pass.
+
+**Rejected:**
+
+- Approve on green tests — the fake failure does not match the planner's normal nonzero-exit behavior
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: 1a4fc2c59a6b4175895c765cde34f133 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:18:12.221Z"} -->
+
+## 2026-10-12 — Treat a planner no-handoff pause as a model failure
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-5
+
+**Because:** A nonzero agent exit returns from agents.run and the planner raises loop.Paused with that reason and no AgentTimeout or AgentMissing cause, so spec and plan must walk request.chain
+
+**Rejected:**
+
+- Treat every causeless loop.Paused as a failure — visit caps, PlanQuestions, and blocked handoffs are also causeless and must stay pauses
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: e28b22cdc37b47f7a8d5a1ffd6e2dcdb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:30:38.824Z"} -->
+
+## 2026-10-12 — Approve RUN-5 Round 6 failover on planner no-handoff exits
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-5
+
+**Because:** All 38 auto_run tests and the full suite pass; verified planner turns that exit without handing off walk request.chain and pause only when the chain is exhausted
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: cd0bbad66490453599dc3eb6e794de23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:36:48.028Z"} -->
+
+## 2026-10-12 — Approve RUN-5 Auto research, spec, and plan execution with pause gates and failover
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RUN-5
+
+**Because:** All 38 auto_run tests and the full suite pass; verified research, spec, and plan phases pause without inventing answers, fail over through the saved chain on timeouts and no-handoff exits, re-enter paused drafts on resume, and avoid agents outside the chain
+
+**Rejected:**
+
+- reject or request changes — all acceptance criteria, review requirements, failover behaviors, and test suites are satisfied
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: c3c90ed88a2b45acb7cfde67ddc63885 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T19:43:26.647Z"} -->

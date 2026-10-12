@@ -1,4 +1,4 @@
-"""Schema 1 fingerprint of an unsaved Auto request, and the start of its run.
+"""Schema 1 fingerprint of an unsaved Auto request, and its run.
 
 `document` is the canonical mapping. `fingerprint` is the sha256 hex of that
 mapping as JSON with `sort_keys=True` and separators `(',', ':')`.
@@ -10,8 +10,9 @@ readable file), `models`, `available`, `head` (`git rev-parse HEAD` stdout),
 (`trusted`, `declined`, `ask`, or `unused`).
 
 `run` revalidates that fingerprint, takes `.whyline/relay/auto-run.lock`,
-and persists the relay config once. Later phases stay out of this module
-until their tasks land. Widget handlers stay out.
+persists the relay config once, then researches, gates the synthesis, and
+drafts the spec and the plan. A pause stops the run. The runner does not
+invent an answer. Widget handlers stay out.
 """
 
 from __future__ import annotations
@@ -19,7 +20,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from whyline import account, model
@@ -40,6 +44,21 @@ _SKIPPED_IN_FORM = ("head", "porcelain")
 PAUSE_ACTIONS = frozenset({"resume", "change", "replace", "cancel"})
 
 _COMMIT_MESSAGE = "setup: auto run roles, backup, and timeout"
+
+# The paragraph RUN-1 appends to an unattended synthesis. Spec drafting gets
+# the same paragraph. Plan drafting does not.
+_UNATTENDED_PARAGRAPH = (
+    "Decide questions whose answer follows from the request, "
+    "record each decision in the document, and leave "
+    '"## Open questions" only for a choice that would change what '
+    "gets built and cannot be derived from the request."
+)
+
+_GATE_ACTIONS = ("resume", "change", "cancel")
+
+_PLANNER_LINE = re.compile(
+    r"^(?P<agent>\S+) is (?P<action>drafting the spec|drafting the plan|reviewing the draft)$"
+)
 
 
 def named_agents(request: AutoRunRequest) -> tuple[str, ...]:
@@ -377,18 +396,785 @@ def artifact_matches(record: object) -> bool:
     return hashlib.sha256(data).hexdigest() == digest
 
 
-def run(root: Path, request: AutoRunRequest, dismissed: str) -> dict:
-    """Revalidate, lock, write phase `start`, and persist the config once.
+class _ModelFailure(Exception):
+    """The agent that just ran failed. The backup chain may try the next one."""
 
-    Returns the checkpoint mapping. The lock is released when this call
-    returns, including when persist raises. A stale form raises `AutoStale`
-    before any write. A live lock raises `AutoBusy`.
+
+class _NeedPause(Exception):
+    """The chain is exhausted, or the draft loop stopped for a person."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _emit(progress, line: str) -> None:
+    if progress is not None:
+        progress(line)
+
+
+def _timeout_seconds(minutes: int):
+    """`0` is no watchdog. A positive count is that many seconds."""
+    from whyline_relay import chat
+
+    if minutes == 0:
+        return chat.NO_LIMIT
+    return minutes * 60
+
+
+def _mark_pause(current: dict, phase: str, reason: str) -> dict:
+    current["phase"] = phase
+    current["pause"] = {"reason": reason, "actions": list(_GATE_ACTIONS)}
+    return current
+
+
+def _clear_pause(current: dict) -> None:
+    current.pop("pause", None)
+
+
+def _save(root: Path, current: dict) -> dict:
+    atomic_write_json(checkpoint_path(root), current)
+    return current
+
+
+def _hold_pause(current: dict, saved_phase: str | None, phase: str, answer: str | None) -> bool:
+    """Hold a research pause until a person answers it.
+
+    A spec or plan pause is a Resume. Returning it again would skip
+    `resume_spec` / `resume_draft`, so those phases always re-enter.
     """
+    if phase != "research":
+        return False
+    if saved_phase != phase or not isinstance(current.get("pause"), dict):
+        return False
+    if answer:
+        return False
+    current["phase"] = phase
+    return True
+
+
+def _questions_reason(questions: list[str]) -> str:
+    lines = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, 1))
+    return f"Open questions:\n{lines}"
+
+
+def _exhausted(tried: list[str]) -> str:
+    return "Backup chain exhausted. Agents tried: " + ", ".join(tried) + "."
+
+
+def _shown(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _has_final(path: Path) -> bool:
+    return "## Final Synthesis" in _read_text(path)
+
+
+def _store_artifact(path: Path) -> dict:
+    data = path.read_bytes()
+    return {"path": str(path), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def _brainstorm_doc(root: Path, topic: str) -> tuple[Path, str]:
+    from whyline_relay import brainstorm
+
+    shared = brainstorm.shared_path(root, topic)
+    return shared, _shown(root, shared)
+
+
+def _work_name(request: AutoRunRequest) -> str:
+    return request.name or request.topic or "plan"
+
+
+def _spec_request(doc: str) -> str:
+    base = (
+        f"Write the spec from the brainstorm in {doc} "
+        "(its Final Synthesis is the agreed direction)."
+    )
+    return f"{base}\n\n{_UNATTENDED_PARAGRAPH}"
+
+
+def _next_backup(chain: tuple[str, ...] | list[str], tried: list[str]) -> str | None:
+    from whyline_relay import failover
+
+    backup = failover.next_backup(list(chain), set(tried))
+    if not isinstance(backup, str) or backup not in tuple(chain):
+        return None
+    return backup
+
+
+def _substitute_agent(agents: list[str], failed: str, backup: str) -> list[str]:
+    """Replace a failed agent without running an existing backup twice."""
+    replaced: list[str] = []
+    for agent in agents:
+        candidate = backup if agent == failed else agent
+        if candidate not in replaced:
+            replaced.append(candidate)
+    if backup not in replaced:
+        replaced.append(backup)
+    return replaced
+
+
+def _requested_writer(args, kwargs) -> str | None:
+    writer = kwargs.get("final_agent")
+    if isinstance(writer, str) and writer:
+        return writer
+    if len(args) >= 2 and isinstance(args[1], str) and args[1]:
+        return args[1]
+    return None
+
+
+def _only_writer(models, writer: str | None):
+    """The synthesis roster brainstorm is allowed to walk on this attempt.
+
+    `run_final_synthesis` tries every selected research agent after a failure.
+    That substitutes an agent that is not in the saved chain. Auto walks the
+    chain itself, through `failover.next_backup`, so this attempt keeps only
+    the writer it asked for.
+    """
+    if not isinstance(models, (list, tuple)) or not writer:
+        return models
+    kept = []
+    for item in models:
+        key = item[0] if isinstance(item, (tuple, list)) and item else item
+        if key == writer:
+            kept.append(item)
+    if isinstance(models, tuple):
+        return tuple(kept)
+    return kept
+
+
+def _limit_synthesis_models(args, kwargs):
+    writer = _requested_writer(args, kwargs)
+    if len(args) >= 3 and "models" not in kwargs:
+        limited = _only_writer(args[2], writer)
+        if limited is args[2]:
+            return args, kwargs
+        updated = list(args)
+        updated[2] = limited
+        return tuple(updated), kwargs
+    models = kwargs.get("models")
+    limited = _only_writer(models, writer)
+    if limited is models:
+        return args, kwargs
+    copied = dict(kwargs)
+    copied["models"] = limited
+    return args, copied
+
+
+def _on_brainstorm_progress(progress):
+    """Translate a brainstorm start event into the Auto transcript line."""
+
+    def on_event(event) -> None:
+        if progress is None or getattr(event, "status", None) != "starting":
+            return
+        phase = getattr(event, "phase", "")
+        agent = getattr(event, "agent", "")
+        if phase == "pass-zero":
+            progress(f"auto · research {event.ordinal}/{event.total} · {agent}")
+        elif phase == "synthesis":
+            progress(f"auto · synthesis · {agent}")
+
+    return on_event
+
+
+def _substitution_print(progress):
+    """Brainstorm already names a substituted section on this stream."""
+
+    def print_fn(line="") -> None:
+        text = line if isinstance(line, str) else str(line)
+        if progress is not None and "substitut" in text.lower():
+            progress(text)
+
+    return print_fn
+
+
+def _planner_progress_line(kind: str, stage: str, visit: int, cap: int, agent: str) -> str | None:
+    if kind == "spec" and stage == "review":
+        return f"auto · spec review {visit}/{cap} · {agent}"
+    if kind == "spec" and stage == "draft":
+        return f"auto · spec draft {visit}/{cap} · {agent}"
+    if kind == "plan" and stage == "review":
+        return "auto · plan review"
+    if kind == "plan" and stage == "draft":
+        return f"auto · plan draft {visit}/{cap} · {agent}"
+    return None
+
+
+def _planner_visit(root: Path, kind: str, stage: str) -> tuple[int, int]:
+    from whyline_relay import config, planner, state
+
+    kind_obj = planner.SPEC_KIND if kind == "spec" else planner.PLAN_KIND
+    saved = state.load_plan(root, name=kind_obj.state_name)
+    visit = 1
+    if saved is not None and isinstance(saved.stage_visits, dict):
+        raw = saved.stage_visits.get(stage)
+        if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
+            visit = raw
+    cap = 3
+    try:
+        loaded = config.load(root).planner.max_visits
+    except Exception:
+        loaded = 3
+    if isinstance(loaded, int) and not isinstance(loaded, bool) and loaded > 0:
+        cap = loaded
+    return visit, cap
+
+
+def _on_planner_line(root: Path, kind: str, progress, line, last_agent: dict) -> None:
+    match = _PLANNER_LINE.match(str(line).strip())
+    if not match:
+        return
+    agent = match.group("agent")
+    last_agent["name"] = agent
+    if progress is None:
+        return
+    stage = "review" if match.group("action") == "reviewing the draft" else "draft"
+    visit, cap = _planner_visit(root, kind, stage)
+    text = _planner_progress_line(kind, stage, visit, cap, agent)
+    if text:
+        progress(text)
+
+
+@contextmanager
+def _brainstorm_call(timeout_seconds, cancel_event, on_progress):
+    """Apply Auto's timeout, cancel, and unattended flag to brainstorm's own calls.
+
+    `adapters.run_brainstorm` multiplies minutes by 60 and does not take
+    `cancel_event` or `unattended`. This task cannot change that adapter.
+    """
+    from whyline_relay import brainstorm
+
+    names = ("run_pass_zero", "run_review_pass", "run_final_synthesis")
+    saved = {name: getattr(brainstorm, name) for name in names}
+
+    def wrap(name: str, **forced):
+        original = saved[name]
+
+        def wrapped(*args, **kwargs):
+            kwargs["timeout_seconds"] = timeout_seconds
+            kwargs["cancel_event"] = cancel_event
+            kwargs.update(forced)
+            if on_progress is not None:
+                kwargs["progress_fn"] = on_progress
+            if name == "run_final_synthesis":
+                args, kwargs = _limit_synthesis_models(args, kwargs)
+            return original(*args, **kwargs)
+
+        return wrapped
+
+    brainstorm.run_pass_zero = wrap("run_pass_zero")
+    brainstorm.run_review_pass = wrap("run_review_pass")
+    brainstorm.run_final_synthesis = wrap("run_final_synthesis", unattended=True)
+    try:
+        yield
+    finally:
+        for name, original in saved.items():
+            setattr(brainstorm, name, original)
+
+
+@contextmanager
+def _synthesis_revision_call(cancel_event):
+    """Pass Auto's cancellation event through relay_ops' fixed interface."""
+    from whyline_relay import brainstorm
+
+    original = brainstorm.revise_synthesis
+
+    def wrapped(*args, **kwargs):
+        kwargs["cancel_event"] = cancel_event
+        return original(*args, **kwargs)
+
+    brainstorm.revise_synthesis = wrapped
+    try:
+        yield
+    finally:
+        brainstorm.revise_synthesis = original
+
+
+def _research_status(result) -> tuple[str, str]:
+    from whyline.console import adapters
+
+    if result is None:
+        return "ok", ""
+    kind = getattr(result, "kind", None)
+    text = getattr(result, "text", "")
+    if isinstance(result, dict):
+        kind = result.get("outcome", result.get("kind", kind))
+        text = str(result.get("text") or result.get("reason") or text or "")
+    text = text if isinstance(text, str) else str(text or "")
+    if kind == "blocked" or adapters.failure_kind(text) == "blocked":
+        return "blocked", text or "Brainstorm blocked."
+    if kind == "error":
+        return "failure", text or "Research failed."
+    return "ok", ""
+
+
+def _invoke_brainstorm(root, request, agents, final_agent, progress, cancel_event):
+    from whyline.console import adapters
+    from whyline_relay import agents as relay_agents
+    from whyline_relay import brainstorm, chat
+
+    timeout = _timeout_seconds(request.timeout_minutes)
+    try:
+        with _brainstorm_call(timeout, cancel_event, _on_brainstorm_progress(progress)):
+            result = adapters.run_brainstorm(
+                root,
+                topic=request.topic,
+                agents=list(agents),
+                passes=request.passes,
+                final_agent=final_agent,
+                timeout_minutes=request.timeout_minutes,
+                progress=_substitution_print(progress),
+                attachments=list(request.attachments),
+            )
+    except relay_agents.AgentCancelled:
+        raise
+    except (
+        relay_agents.AgentTimeout,
+        relay_agents.AgentMissing,
+        chat.AgentUnavailable,
+        brainstorm.NothingToSynthesize,
+    ) as error:
+        raise _ModelFailure(str(error)) from error
+    status, detail = _research_status(result)
+    if status == "failure":
+        raise _ModelFailure(detail or "Research failed.")
+    return status, detail
+
+
+def _config_text(root: Path) -> str:
+    return (root / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+
+
+def _restore_config(root: Path, text: str) -> None:
+    path = root / ".whyline" / "relay" / "config.toml"
+    if path.read_text(encoding="utf-8") != text:
+        path.write_text(text, encoding="utf-8")
+
+
+def _use_planner(root: Path, drafter: str, reviewer: str) -> None:
+    from whyline_relay import setup
+
+    setup.write_planner(root, drafter, reviewer, commit=False)
+
+
+def _spec_draft_path(root: Path) -> Path:
+    from whyline_relay import specs
+
+    return specs.draft_path(root)
+
+
+def _plan_draft_path(root: Path) -> Path:
+    from whyline_relay import planner
+
+    return planner.draft_path(root)
+
+
+def _paused_reason(error: BaseException, root: Path, path: Path) -> str:
+    questions = getattr(error, "questions", ())
+    if questions:
+        text = _questions_reason(list(questions))
+    else:
+        text = str(error)
+    return f"{text}\nDraft: {_shown(root, path)}"
+
+
+def _reason_for_draft_pause(error: _NeedPause, root: Path, path: Path) -> str:
+    cause = error.__cause__
+    if cause is not None and not error.reason:
+        return _paused_reason(cause, root, path)
+    shown = _shown(root, path)
+    if error.reason.endswith(shown):
+        return error.reason
+    return f"{error.reason}\nDraft: {shown}"
+
+
+def _no_handoff_pause(error: BaseException) -> bool:
+    """A planner turn that finished without a handoff.
+
+    `agents.run` returns after a nonzero exit. The planner then raises
+    `loop.Paused` with this reason and no `AgentTimeout` or `AgentMissing`
+    cause. Visit caps, questions, and blocked handoffs use other reasons.
+    """
+    from whyline.console import adapters
+
+    reason = getattr(error, "reason", None)
+    text = reason if isinstance(reason, str) and reason else str(error)
+    return adapters.failure_kind(text) == "no-handoff"
+
+
+def _guard_draft(call):
+    """Return the draft, or raise `_NeedPause` / `_ModelFailure`."""
+    from whyline_relay import agents as relay_agents
+    from whyline_relay import chat, loop
+
+    questions = relay_ops.plan_questions_error()
+    try:
+        return call()
+    except questions as error:
+        raise _NeedPause("") from error
+    except loop.Paused as error:
+        cause = error.__cause__
+        if isinstance(cause, relay_agents.AgentCancelled):
+            raise
+        if isinstance(cause, (relay_agents.AgentTimeout, relay_agents.AgentMissing)):
+            raise _ModelFailure(str(error)) from error
+        if _no_handoff_pause(error):
+            raise _ModelFailure(str(error)) from error
+        raise _NeedPause(str(error)) from error
+    except (relay_agents.AgentTimeout, relay_agents.AgentMissing, chat.AgentUnavailable) as error:
+        raise _ModelFailure(str(error)) from error
+
+
+def _revise(
+    root: Path,
+    request: AutoRunRequest,
+    answer: str,
+    progress,
+    cancel_event: threading.Event | None,
+) -> None:
+    from whyline_relay import agents as relay_agents
+    from whyline_relay import chat
+
+    agent = request.final_agent
+    roster = list(request.agents)
+    tried: list[str] = []
+    while True:
+        _emit(progress, f"auto · synthesis · {agent}")
+        try:
+            with _synthesis_revision_call(cancel_event):
+                relay_ops.revise_synthesis(
+                    root,
+                    request.topic,
+                    agent,
+                    roster,
+                    answer,
+                    progress=progress or (lambda _line: None),
+                    timeout_minutes=(
+                        request.timeout_minutes if request.timeout_minutes else None
+                    ),
+                    attachments=list(request.attachments),
+                )
+            return
+        except relay_agents.AgentCancelled:
+            raise
+        except (
+            relay_agents.AgentTimeout,
+            relay_agents.AgentMissing,
+            chat.AgentUnavailable,
+        ):
+            if agent not in tried:
+                tried.append(agent)
+            backup = _next_backup(request.chain, tried)
+            if backup is None:
+                raise _NeedPause(_exhausted(tried)) from None
+            _emit(progress, f"{agent} failed; trying {backup}")
+            roster = _substitute_agent(roster, agent, backup)
+            agent = backup
+
+
+def _accept_synthesis(current: dict, path: Path) -> dict:
+    if not path.is_file() or not _has_final(path):
+        return _mark_pause(current, "research", "Research did not write a Final Synthesis.")
+    current["brainstorm"] = _store_artifact(path)
+    questions = relay_ops.open_questions(_read_text(path))
+    if questions:
+        return _mark_pause(current, "research", _questions_reason(questions))
+    _clear_pause(current)
+    current["phase"] = "research"
+    return current
+
+
+def _research_phase(root, request, current, *, saved_phase, progress, cancel_event, answer):
+    if _hold_pause(current, saved_phase, "research", answer):
+        return current
+    path, _doc = _brainstorm_doc(root, request.topic)
+    if answer and saved_phase == "research" and isinstance(current.get("pause"), dict):
+        try:
+            _revise(root, request, answer, progress, cancel_event)
+        except _NeedPause as error:
+            return _mark_pause(current, "research", error.reason)
+        _clear_pause(current)
+        return _accept_synthesis(current, path)
+    if artifact_matches(current.get("brainstorm")):
+        return _accept_synthesis(current, path)
+
+    agents = list(request.agents)
+    final = request.final_agent
+    tried: list[str] = []
+    while True:
+        try:
+            status, detail = _invoke_brainstorm(
+                root, request, agents, final, progress, cancel_event
+            )
+        except _ModelFailure:
+            if final not in tried:
+                tried.append(final)
+            backup = _next_backup(request.chain, tried)
+            if backup is None:
+                return _mark_pause(current, "research", _exhausted(tried))
+            _emit(progress, f"{final} failed; trying {backup}")
+            agents = _substitute_agent(agents, final, backup)
+            final = backup
+            continue
+        if status == "blocked":
+            if path.is_file() and _has_final(path):
+                current["brainstorm"] = _store_artifact(path)
+            reason = detail or "Brainstorm blocked."
+            if path.is_file():
+                questions = relay_ops.open_questions(_read_text(path))
+                if questions:
+                    reason = f"{reason}\n{_questions_reason(questions)}"
+            return _mark_pause(current, "research", reason)
+        if not _has_final(path):
+            if final not in tried:
+                tried.append(final)
+            backup = _next_backup(request.chain, tried)
+            if backup is None:
+                return _mark_pause(current, "research", _exhausted(tried))
+            _emit(progress, f"{final} failed; trying {backup}")
+            agents = _substitute_agent(agents, final, backup)
+            final = backup
+            continue
+        return _accept_synthesis(current, path)
+
+
+def _draft_spec_once(root, request, text, progress, last_agent):
+    def print_fn(line=""):
+        _on_planner_line(root, "spec", progress, line, last_agent)
+
+    def call():
+        if relay_ops.pending_spec(root):
+            return relay_ops.resume_spec(root, progress=print_fn)
+        return relay_ops.draft_spec(
+            root, text, list(request.attachments), progress=print_fn
+        )
+
+    return _guard_draft(call)
+
+
+def _spec_with_failover(root, request, text, progress):
+    drafter = request.drafter
+    reviewer = request.reviewer
+    tried: list[str] = []
+    last_agent = {"name": drafter}
+    substituted = False
+    while True:
+        if substituted:
+            _use_planner(root, drafter, reviewer)
+        try:
+            return _draft_spec_once(root, request, text, progress, last_agent)
+        except _ModelFailure:
+            failed = last_agent["name"] or drafter
+            if failed not in tried:
+                tried.append(failed)
+            backup = _next_backup(request.chain, tried)
+            if backup is None:
+                raise _NeedPause(_exhausted(tried)) from None
+            _emit(progress, f"{failed} failed; trying {backup}")
+            if failed == reviewer and failed != drafter:
+                reviewer = backup
+            else:
+                drafter = backup
+            last_agent["name"] = backup
+            substituted = True
+
+
+def _spec_phase(root, request, current, *, saved_phase, progress, answer):
+    if _hold_pause(current, saved_phase, "spec", answer):
+        return current
+    if artifact_matches(current.get("spec")):
+        _clear_pause(current)
+        current["phase"] = "spec"
+        return current
+    _path, doc = _brainstorm_doc(root, request.topic)
+    text = _spec_request(doc)
+    original = _config_text(root)
+    try:
+        try:
+            draft = _spec_with_failover(root, request, text, progress)
+        except _NeedPause as error:
+            return _mark_pause(
+                current, "spec", _reason_for_draft_pause(error, root, _spec_draft_path(root))
+            )
+    finally:
+        _restore_config(root, original)
+    if not draft.text.strip() or relay_ops.open_questions(draft.text):
+        if draft.text.strip():
+            reason = _questions_reason(relay_ops.open_questions(draft.text))
+        else:
+            reason = "The spec draft is empty."
+        reason = f"{reason}\nDraft: {_shown(root, draft.path)}"
+        return _mark_pause(current, "spec", reason)
+    target = relay_ops.approve_spec(
+        root, draft, _work_name(request), replace=request.replace
+    )
+    current["spec"] = _store_artifact(target)
+    _clear_pause(current)
+    current["phase"] = "spec"
+    return current
+
+
+def _draft_plan_once(root, request, spec_path: Path, progress, last_agent):
+    def print_fn(line=""):
+        _on_planner_line(root, "plan", progress, line, last_agent)
+
+    def call():
+        if relay_ops.pending_draft(root):
+            return relay_ops.resume_draft(root, progress=print_fn)
+        return relay_ops.draft_plan(
+            root,
+            request.topic,
+            list(request.attachments),
+            progress=print_fn,
+            spec=spec_path,
+        )
+
+    return _guard_draft(call)
+
+
+def _plan_with_failover(root, request, spec_path: Path, progress):
+    drafter = request.drafter
+    reviewer = request.reviewer
+    tried: list[str] = []
+    last_agent = {"name": drafter}
+    substituted = False
+    while True:
+        if substituted:
+            _use_planner(root, drafter, reviewer)
+        try:
+            return _draft_plan_once(root, request, spec_path, progress, last_agent)
+        except _ModelFailure:
+            failed = last_agent["name"] or drafter
+            if failed not in tried:
+                tried.append(failed)
+            backup = _next_backup(request.chain, tried)
+            if backup is None:
+                raise _NeedPause(_exhausted(tried)) from None
+            _emit(progress, f"{failed} failed; trying {backup}")
+            if failed == reviewer and failed != drafter:
+                reviewer = backup
+            else:
+                drafter = backup
+            last_agent["name"] = backup
+            substituted = True
+
+
+def _plan_phase(root, request, current, *, saved_phase, progress, answer):
+    if _hold_pause(current, saved_phase, "plan", answer):
+        return current
+    if artifact_matches(current.get("plan")):
+        _clear_pause(current)
+        current["phase"] = "plan"
+        return current
+    spec_record = current.get("spec") if isinstance(current.get("spec"), dict) else {}
+    spec_text = spec_record.get("path") if isinstance(spec_record, dict) else None
+    if not isinstance(spec_text, str) or not spec_text:
+        return _mark_pause(current, "plan", "The approved spec is missing.")
+    spec_path = Path(spec_text)
+    original = _config_text(root)
+    try:
+        try:
+            draft = _plan_with_failover(root, request, spec_path, progress)
+        except _NeedPause as error:
+            return _mark_pause(
+                current, "plan", _reason_for_draft_pause(error, root, _plan_draft_path(root))
+            )
+    finally:
+        _restore_config(root, original)
+    problems = relay_ops.validate_plan(draft.text)
+    if problems:
+        reason = "\n".join(problems) + f"\nDraft: {_shown(root, draft.path)}"
+        return _mark_pause(current, "plan", reason)
+    spec_shown = _shown(root, spec_path)
+    target = relay_ops.approve_plan(
+        root,
+        draft,
+        _work_name(request),
+        replace=request.replace,
+        spec=spec_shown,
+    )
+    current["plan"] = _store_artifact(target)
+    _clear_pause(current)
+    current["phase"] = "plan"
+    return current
+
+
+def _after_persist(root, request, current, *, saved_phase, progress, cancel_event, answer):
+    current = _research_phase(
+        root,
+        request,
+        current,
+        saved_phase=saved_phase,
+        progress=progress,
+        cancel_event=cancel_event,
+        answer=answer,
+    )
+    _save(root, current)
+    if "pause" in current:
+        return current
+    current = _spec_phase(
+        root,
+        request,
+        current,
+        saved_phase=saved_phase,
+        progress=progress,
+        answer=answer,
+    )
+    _save(root, current)
+    if "pause" in current:
+        return current
+    current = _plan_phase(
+        root,
+        request,
+        current,
+        saved_phase=saved_phase,
+        progress=progress,
+        answer=answer,
+    )
+    return _save(root, current)
+
+
+def run(
+    root: Path,
+    request: AutoRunRequest,
+    dismissed: str,
+    *,
+    progress=None,
+    cancel_event: threading.Event | None = None,
+    answer: str | None = None,
+    through: str = "plan",
+) -> dict:
+    """Revalidate, lock, persist, then research, spec, and plan.
+
+    `through="persist"` returns after the config commit. The default runs
+    through the plan. `answer` is a person's reply to a synthesis pause: it
+    goes through `revise_synthesis`, and that gate runs again. The lock is
+    released when this call returns, including when a phase raises. A stale
+    form raises `AutoStale` before any write. A live lock raises `AutoBusy`.
+    """
+    if through not in {"persist", "plan"}:
+        raise ValueError("through must be persist or plan")
+    if answer is not None:
+        answer = answer.strip() or None
     fresh = document(root, request)
     path = checkpoint_path(root)
     saved = load_object(path)
     if not _matches(fresh, dismissed, saved):
         raise AutoStale("This check is out of date. Check again.")
+    saved_phase = saved.get("phase") if isinstance(saved, dict) else None
+    if not isinstance(saved_phase, str):
+        saved_phase = None
     previous = saved.get("persist_commit") if isinstance(saved, dict) else None
     if previous is not None and not isinstance(previous, str):
         previous = None
@@ -406,6 +1192,16 @@ def run(root: Path, request: AutoRunRequest, dismissed: str) -> dict:
         current["phase"] = "persist"
         current["persist_commit"] = _persist(root, request)
         atomic_write_json(path, current)
-        return current
+        if through == "persist":
+            return current
+        return _after_persist(
+            root,
+            request,
+            current,
+            saved_phase=saved_phase,
+            progress=progress,
+            cancel_event=cancel_event,
+            answer=answer,
+        )
     finally:
         release_lock(root)

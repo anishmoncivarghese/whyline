@@ -5,12 +5,14 @@ import json
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
 
 from whyline import account, model
-from whyline.console import auto_run, plan_job, relay_ops
+from whyline.console import adapters, auto_run, plan_job, relay_ops
+from whyline.console.session import SessionEvent
 
 
 def _git(root: Path, *args: str) -> str:
@@ -214,7 +216,7 @@ def test_dead_pid_is_taken(tmp_path):
     assert not lock.exists()
     lock.write_text(f"{_dead_pid()}\n", encoding="utf-8")
     request = _request()
-    auto_run.run(root, request, auto_run.fingerprint(root, request))
+    auto_run.run(root, request, auto_run.fingerprint(root, request), through="persist")
     assert not lock.exists()
     saved = json.loads(
         (root / ".whyline" / "relay" / "auto-run.json").read_text(encoding="utf-8")
@@ -277,7 +279,7 @@ def test_persist_commits_the_config_once(tmp_path):
     root = _repo(tmp_path)
     request = _distinct_request()
     dismissed = auto_run.fingerprint(root, request)
-    auto_run.run(root, request, dismissed)
+    auto_run.run(root, request, dismissed, through="persist")
     assert _git(root, "rev-list", "--count", "HEAD").strip() == "2"
     assert (
         _git(root, "log", "-1", "--format=%s").strip()
@@ -324,7 +326,7 @@ def test_persist_commits_the_config_once(tmp_path):
     assert _git(root, "status", "--porcelain") == ""
     # The persist commit moved HEAD, so Check's fingerprint no longer matches.
     assert auto_run.fingerprint(root, request) != dismissed
-    auto_run.run(root, request, dismissed)
+    auto_run.run(root, request, dismissed, through="persist")
     assert _git(root, "rev-parse", "HEAD").strip() == head
     assert _git(root, "rev-list", "--count", "HEAD").strip() == "2"
     with pytest.raises(auto_run.AutoStale):
@@ -336,12 +338,12 @@ def test_zero_timeout_minutes_is_unquoted(tmp_path):
     root = _repo(tmp_path)
     request = _request(timeout_minutes=0)
     dismissed = auto_run.fingerprint(root, request)
-    auto_run.run(root, request, dismissed)
+    auto_run.run(root, request, dismissed, through="persist")
     text = (root / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
     assert _assigns(text, "timeout_minutes", "0")
     assert not _assigns(text, "timeout_minutes", '"0"')
     head = _git(root, "rev-parse", "HEAD")
-    auto_run.run(root, request, dismissed)
+    auto_run.run(root, request, dismissed, through="persist")
     assert _git(root, "rev-parse", "HEAD") == head
     text = (root / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
     assert _assigns(text, "timeout_minutes", "0")
@@ -368,3 +370,892 @@ def test_matching_artifact_is_not_pending(tmp_path):
     assert not auto_run.artifact_matches({"path": None, "sha256": None})
     path.write_bytes(b"bye\n")
     assert not auto_run.artifact_matches({"path": str(path), "sha256": digest})
+
+
+_CLEAN = "# Topic\n\n## Final Synthesis\n\nShip the console runner.\n"
+_OPEN = _CLEAN + "\n## Open questions\n1. Which store?\n"
+_SPEC = "# Spec\n\n## Done\n"
+_PLAN = "- [ ] RUN-5: done\n"
+
+
+def _write_synthesis(root: Path, text: str, topic: str = "topic") -> Path:
+    from whyline_relay import brainstorm
+
+    path = brainstorm.shared_path(root, topic)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _draft(path: Path, text: str, source: str) -> relay_ops.Draft:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return relay_ops.Draft(path=path, text=text, drafted_by="claude", source=source)
+
+
+def _install_planning(monkeypatch, root, spec_calls, plan_calls, approved):
+    def draft_spec(_root, text, attachments=(), *, progress):
+        spec_calls.append(text)
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, name, *, replace=False):
+        approved.append(("spec", replace))
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def draft_plan(_root, description, attachments=(), *, progress, spec=None):
+        plan_calls.append(description)
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, name, *, replace=False, spec=""):
+        approved.append(("plan", replace))
+        target = root / "plans" / "plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+
+
+def test_brainstorm_call_forces_no_limit_cancel_and_unattended(monkeypatch):
+    from whyline_relay import brainstorm, chat
+
+    seen: dict = {}
+
+    def spy(*_args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout_seconds")
+        seen["cancel"] = kwargs.get("cancel_event")
+        seen["unattended"] = kwargs.get("unattended")
+        return {"agent": "claude", "response": "ok"}
+
+    monkeypatch.setattr(brainstorm, "run_final_synthesis", spy)
+    event = threading.Event()
+    with auto_run._brainstorm_call(chat.NO_LIMIT, event, None):
+        brainstorm.run_final_synthesis(timeout_seconds=15, unattended=False)
+    assert seen["timeout"] is chat.NO_LIMIT
+    assert seen["cancel"] is event
+    assert seen["unattended"] is True
+    assert auto_run._timeout_seconds(0) is chat.NO_LIMIT
+    assert auto_run._timeout_seconds(15) == 900
+
+    def spy_pass(*_args, **kwargs):
+        seen["pass_timeout"] = kwargs.get("timeout_seconds")
+        seen["pass_cancel"] = kwargs.get("cancel_event")
+        return {}
+
+    monkeypatch.setattr(brainstorm, "run_pass_zero", spy_pass)
+    with auto_run._brainstorm_call(45 * 60, None, None):
+        brainstorm.run_pass_zero(timeout_seconds=1)
+    assert seen["pass_timeout"] == 2700
+    assert seen["pass_cancel"] is None
+
+
+def test_synthesis_revision_receives_cancel_event(monkeypatch):
+    from whyline_relay import brainstorm
+
+    seen: dict = {}
+
+    def spy(*_args, **kwargs):
+        seen["cancel"] = kwargs.get("cancel_event")
+        return {"agent": "claude", "response": "ok"}
+
+    monkeypatch.setattr(brainstorm, "revise_synthesis", spy)
+    event = threading.Event()
+    with auto_run._synthesis_revision_call(event):
+        brainstorm.revise_synthesis(cancel_event=None)
+    assert seen["cancel"] is event
+
+
+def test_progress_lines_use_the_underlying_indexes():
+    from whyline_relay import brainstorm
+
+    lines: list[str] = []
+    report = auto_run._on_brainstorm_progress(lines.append)
+    report(
+        brainstorm.ProgressEvent(
+            status="starting",
+            agent="codex",
+            label="Codex",
+            phase="pass-zero",
+            ordinal=2,
+            total=4,
+            elapsed_seconds=0,
+        )
+    )
+    report(
+        brainstorm.ProgressEvent(
+            status="running",
+            agent="codex",
+            label="Codex",
+            phase="pass-zero",
+            ordinal=2,
+            total=4,
+            elapsed_seconds=1,
+        )
+    )
+    report(
+        brainstorm.ProgressEvent(
+            status="starting",
+            agent="claude",
+            label="Claude",
+            phase="synthesis",
+            ordinal=1,
+            total=1,
+            elapsed_seconds=0,
+        )
+    )
+    assert lines == [
+        "auto · research 2/4 · codex",
+        "auto · synthesis · claude",
+    ]
+    assert auto_run._planner_progress_line("spec", "review", 1, 3, "codex") == (
+        "auto · spec review 1/3 · codex"
+    )
+    assert auto_run._planner_progress_line("plan", "review", 2, 3, "claude") == (
+        "auto · plan review"
+    )
+
+
+def test_open_questions_pause_until_an_answer_clears_them(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    brainstorm_calls: list[str] = []
+    revised: list[str] = []
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+
+    def fake_brainstorm(_root, **kwargs):
+        brainstorm_calls.append(kwargs["final_agent"])
+        _write_synthesis(root, _OPEN)
+        return SessionEvent("output", "saved")
+
+    def fake_revise(_root, _topic, _agent, _agents, feedback, **kwargs):
+        revised.append(feedback)
+        _write_synthesis(root, _CLEAN)
+
+    def fail_spec(*_args, **_kwargs):
+        raise AssertionError("draft_spec")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "revise_synthesis", fake_revise)
+    monkeypatch.setattr(relay_ops, "draft_spec", fail_spec)
+    paused = auto_run.run(root, request, dismissed)
+    assert spec_calls == []
+    assert revised == []
+    assert paused["phase"] == "research"
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+    assert "Which store?" in paused["pause"]["reason"]
+    assert "brainstorm" in paused
+    assert paused["brainstorm"]["sha256"]
+
+    _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
+    monkeypatch.setattr(relay_ops, "revise_synthesis", fake_revise)
+    finished = auto_run.run(root, request, dismissed, answer="Use the first store.")
+    assert brainstorm_calls == ["claude"]
+    assert revised == ["Use the first store."]
+    assert len(spec_calls) == 1
+    assert spec_calls[0] == (
+        "Write the spec from the brainstorm in docs/brainstorm/topic.md "
+        "(its Final Synthesis is the agreed direction).\n\n"
+        + auto_run._UNATTENDED_PARAGRAPH
+    )
+    assert plan_calls == ["topic"]
+    assert auto_run._UNATTENDED_PARAGRAPH not in plan_calls[0]
+    assert approved == [("spec", False), ("plan", False)]
+    assert finished["phase"] == "plan"
+    assert "pause" not in finished
+
+
+def test_synthesis_answer_failure_walks_the_saved_chain(tmp_path, monkeypatch):
+    from whyline_relay import agents
+
+    root = _repo(tmp_path)
+    request = _request(chain=("codex",))
+    dismissed = auto_run.fingerprint(root, request)
+    revised: list[tuple[str, list[str]]] = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _OPEN)
+        return SessionEvent("output", "saved")
+
+    def fake_revise(_root, _topic, agent, roster, _feedback, **_kwargs):
+        revised.append((agent, roster))
+        if agent == "claude":
+            raise agents.AgentTimeout("claude timed out")
+        _write_synthesis(root, _CLEAN)
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "revise_synthesis", fake_revise)
+    paused = auto_run.run(root, request, dismissed)
+    assert paused["phase"] == "research"
+
+    _install_planning(monkeypatch, root, [], [], [])
+    finished = auto_run.run(root, request, dismissed, answer="Use the first store.")
+    assert finished["phase"] == "plan"
+    assert revised == [
+        ("claude", ["claude", "codex"]),
+        ("codex", ["codex"]),
+    ]
+
+
+def test_visit_cap_does_not_approve_spec(tmp_path, monkeypatch):
+    from whyline_relay import loop
+
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    approved: list = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    def fake_spec(*_args, **_kwargs):
+        raise loop.Paused(
+            "__spec__ hit stage 'review''s 3-visit cap without reaching \"@complete\"",
+            None,
+        )
+
+    def fake_approve(*_args, **_kwargs):
+        approved.append(True)
+        raise AssertionError("approve_spec")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", fake_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", fake_approve)
+    paused = auto_run.run(root, request, dismissed)
+    assert approved == []
+    assert "visit cap" in paused["pause"]["reason"]
+    assert "draft-spec.md" in paused["pause"]["reason"]
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+    assert paused["phase"] == "spec"
+
+
+def test_plan_questions_and_blocked_handoff_do_not_approve_spec(tmp_path, monkeypatch):
+    from whyline_relay import loop, planner
+
+    root = _repo(tmp_path)
+    approved: list = []
+
+    def fake_brainstorm(_root, **kwargs):
+        _write_synthesis(root, _CLEAN, topic=kwargs["topic"])
+        return SessionEvent("output", "saved")
+
+    def fail_approve(*_args, **_kwargs):
+        approved.append(True)
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "approve_spec", fail_approve)
+
+    request = _request(topic="questions")
+    dismissed = auto_run.fingerprint(root, request)
+
+    def ask(*_args, **_kwargs):
+        raise planner.PlanQuestions(
+            "need a choice",
+            None,
+            questions=("Which db?",),
+            stage="draft",
+            agent="claude",
+        )
+
+    monkeypatch.setattr(relay_ops, "draft_spec", ask)
+    questioned = auto_run.run(root, request, dismissed)
+    assert approved == []
+    assert "Which db?" in questioned["pause"]["reason"]
+    assert "draft-spec.md" in questioned["pause"]["reason"]
+
+    (root / ".whyline" / "relay" / "auto-run.json").unlink()
+    blocked_request = _request(topic="blocked-spec")
+    blocked_dismissed = auto_run.fingerprint(root, blocked_request)
+
+    def blocked_spec(*_args, **_kwargs):
+        raise loop.Paused("the plan draft was blocked: sandbox denied the command", None)
+
+    monkeypatch.setattr(relay_ops, "draft_spec", blocked_spec)
+    blocked = auto_run.run(root, blocked_request, blocked_dismissed)
+    assert approved == []
+    assert blocked["phase"] == "spec"
+    assert "blocked" in blocked["pause"]["reason"]
+    assert "draft-spec.md" in blocked["pause"]["reason"]
+
+
+def test_parse_error_pauses_with_the_plan_draft_and_does_not_approve(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    approved: list = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    _install_planning(monkeypatch, root, [], [], approved)
+
+    def draft_plan(_root, description, attachments=(), *, progress, spec=None):
+        assert auto_run._UNATTENDED_PARAGRAPH not in description
+        return _draft(
+            root / ".whyline" / "relay" / "draft-plan.md",
+            "Prose without a checklist.\n",
+            "planner",
+        )
+
+    def approve_plan(*_args, **_kwargs):
+        approved.append("plan")
+        raise AssertionError("approve_plan")
+
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+    paused = auto_run.run(root, request, dismissed)
+    assert "plan" not in approved
+    assert paused["phase"] == "plan"
+    assert "draft-plan.md" in paused["pause"]["reason"]
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+    assert paused["spec"]["sha256"]
+
+
+def test_matching_phase_artifact_is_not_called_again(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request(replace=True)
+    dismissed = auto_run.fingerprint(root, request)
+    calls: list[str] = []
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        calls.append("brainstorm")
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+
+    def draft_spec(_root, text, attachments=(), *, progress):
+        calls.append("spec")
+        spec_calls.append(text)
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        approved.append(("spec", replace))
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def draft_plan(_root, description, attachments=(), *, progress, spec=None):
+        calls.append("plan")
+        plan_calls.append(description)
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        approved.append(("plan", replace))
+        target = root / "plans" / "plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+    first = auto_run.run(root, request, dismissed)
+    assert calls == ["brainstorm", "spec", "plan"]
+    assert first["phase"] == "plan"
+    assert approved == [("spec", True), ("plan", True)]
+    auto_run.run(root, request, dismissed)
+    assert calls == ["brainstorm", "spec", "plan"]
+
+
+def test_spec_and_plan_failures_walk_only_the_saved_chain(tmp_path, monkeypatch):
+    from whyline_relay import agents
+
+    root = _repo(tmp_path)
+    request = _request(chain=("codex",))
+    dismissed = auto_run.fingerprint(root, request)
+    seen: list[tuple[str, tuple[str, str]]] = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    def draft_spec(_root, _text, _attachments=(), *, progress):
+        roles = relay_ops.planner_agents(root)
+        seen.append(("spec", roles))
+        if roles[0] == "claude":
+            raise agents.AgentTimeout("claude timed out")
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def draft_plan(_root, _description, _attachments=(), *, progress, spec=None):
+        roles = relay_ops.planner_agents(root)
+        seen.append(("plan", roles))
+        if roles[0] == "claude":
+            raise agents.AgentTimeout("claude timed out")
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        target = root / "plans" / "plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+
+    finished = auto_run.run(root, request, dismissed)
+    assert finished["phase"] == "plan"
+    assert seen == [
+        ("spec", ("claude", "codex")),
+        ("spec", ("codex", "codex")),
+        ("plan", ("claude", "codex")),
+        ("plan", ("codex", "codex")),
+    ]
+    assert relay_ops.planner_agents(root) == ("claude", "codex")
+
+
+def _planner_no_handoff(agent: str):
+    """The pause `planner._drive_pipeline` raises after a nonzero exit.
+
+    `agents.run` returns the exit code. The planner does not chain
+    `AgentTimeout` or `AgentMissing` onto this exception.
+    """
+    from whyline_relay import loop
+
+    error = loop.Paused(
+        f"{agent} exited without handing off; nothing was routed",
+        None,
+    )
+    assert error.__cause__ is None
+    raise error
+
+
+def test_nonzero_exit_without_handoff_walks_only_the_saved_chain(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request(chain=("codex",))
+    dismissed = auto_run.fingerprint(root, request)
+    seen: list[tuple[str, tuple[str, str]]] = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    def draft_spec(_root, _text, _attachments=(), *, progress):
+        roles = relay_ops.planner_agents(root)
+        seen.append(("spec", roles))
+        progress(f"{roles[0]} is drafting the spec")
+        if roles[0] != "codex":
+            _planner_no_handoff(roles[0])
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def draft_plan(_root, _description, _attachments=(), *, progress, spec=None):
+        roles = relay_ops.planner_agents(root)
+        seen.append(("plan", roles))
+        progress(f"{roles[0]} is drafting the plan")
+        if roles[0] != "codex":
+            _planner_no_handoff(roles[0])
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        target = root / "plans" / "plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+
+    finished = auto_run.run(root, request, dismissed)
+    assert finished["phase"] == "plan"
+    assert "pause" not in finished
+    assert seen == [
+        ("spec", ("claude", "codex")),
+        ("spec", ("codex", "codex")),
+        ("plan", ("claude", "codex")),
+        ("plan", ("codex", "codex")),
+    ]
+    assert relay_ops.planner_agents(root) == ("claude", "codex")
+    assert "grok" not in {agent for _phase, roles in seen for agent in roles}
+
+
+def test_nonzero_exit_without_handoff_pauses_with_every_agent_tried(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request(chain=("codex",))
+    dismissed = auto_run.fingerprint(root, request)
+    spec_roles: list[tuple[str, str]] = []
+    plan_roles: list[tuple[str, str]] = []
+
+    def fake_brainstorm(_root, **kwargs):
+        _write_synthesis(root, _CLEAN, topic=kwargs["topic"])
+        return SessionEvent("output", "saved")
+
+    def draft_spec(_root, _text, _attachments=(), *, progress):
+        roles = relay_ops.planner_agents(root)
+        spec_roles.append(roles)
+        progress(f"{roles[0]} is drafting the spec")
+        _planner_no_handoff(roles[0])
+
+    def approve_spec(*_args, **_kwargs):
+        raise AssertionError("approve_spec")
+
+    def draft_plan(*_args, **_kwargs):
+        raise AssertionError("draft_plan")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+
+    paused = auto_run.run(root, request, dismissed)
+    assert spec_roles == [("claude", "codex"), ("codex", "codex")]
+    assert "grok" not in {agent for roles in spec_roles for agent in roles}
+    assert "antigravity" not in {agent for roles in spec_roles for agent in roles}
+    assert paused["phase"] == "spec"
+    assert "claude" in paused["pause"]["reason"]
+    assert "codex" in paused["pause"]["reason"]
+    assert "Backup chain exhausted" in paused["pause"]["reason"]
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+
+    (root / ".whyline" / "relay" / "auto-run.json").unlink()
+    plan_request = _request(topic="plan-exit", chain=("codex",))
+    plan_dismissed = auto_run.fingerprint(root, plan_request)
+
+    def succeeding_spec(_root, _text, _attachments=(), *, progress):
+        progress("claude is drafting the spec")
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec_now(_root, draft, _name, *, replace=False):
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def failing_plan(_root, _description, _attachments=(), *, progress, spec=None):
+        roles = relay_ops.planner_agents(root)
+        plan_roles.append(roles)
+        progress(f"{roles[0]} is drafting the plan")
+        _planner_no_handoff(roles[0])
+
+    def approve_plan(*_args, **_kwargs):
+        raise AssertionError("approve_plan")
+
+    monkeypatch.setattr(relay_ops, "draft_spec", succeeding_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec_now)
+    monkeypatch.setattr(relay_ops, "draft_plan", failing_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+
+    plan_pause = auto_run.run(root, plan_request, plan_dismissed)
+    assert plan_roles == [("claude", "codex"), ("codex", "codex")]
+    assert "grok" not in {agent for roles in plan_roles for agent in roles}
+    assert plan_pause["phase"] == "plan"
+    assert "claude" in plan_pause["pause"]["reason"]
+    assert "codex" in plan_pause["pause"]["reason"]
+    assert "Backup chain exhausted" in plan_pause["pause"]["reason"]
+    assert plan_pause["pause"]["actions"] == ["resume", "change", "cancel"]
+
+
+def test_exhausted_chain_pauses_with_the_agents_tried(tmp_path, monkeypatch):
+    from whyline_relay import agents
+
+    root = _repo(tmp_path)
+    request = _request(
+        agents=("claude", "codex"), final_agent="claude", chain=("codex",)
+    )
+    dismissed = auto_run.fingerprint(root, request)
+    called: list[str] = []
+    rosters: list[list[str]] = []
+
+    def fake_brainstorm(_root, **kwargs):
+        agent = kwargs["final_agent"]
+        called.append(agent)
+        rosters.append(kwargs["agents"])
+        raise agents.AgentTimeout(f"{agent} exceeded 1s and was terminated")
+
+    def fail_spec(*_args, **_kwargs):
+        raise AssertionError("draft_spec")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", fail_spec)
+    paused = auto_run.run(root, request, dismissed)
+    assert called == ["claude", "codex"]
+    assert rosters == [["claude", "codex"], ["codex"]]
+    assert "grok" not in called
+    assert "antigravity" not in called
+    assert "claude" in paused["pause"]["reason"]
+    assert "codex" in paused["pause"]["reason"]
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
+    assert paused["phase"] == "research"
+
+
+def _touch_config(root: Path) -> None:
+    path = root / ".whyline" / "relay" / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text("timeout_minutes = 15\n", encoding="utf-8")
+
+
+def _approve_target(root: Path, draft, relative: str) -> Path:
+    target = root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(draft.text, encoding="utf-8")
+    return target
+
+
+def test_saved_spec_pause_reenters_resume_spec(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _touch_config(root)
+    request = _request()
+    calls: list[str] = []
+
+    def pending(_root):
+        calls.append("pending_spec")
+        return "Write the spec"
+
+    def resume_spec(_root, *, progress):
+        calls.append("resume_spec")
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def draft_spec(*_args, **_kwargs):
+        calls.append("draft_spec")
+        raise AssertionError("draft_spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        calls.append("approve_spec")
+        return _approve_target(root, draft, "docs/specs/plan.md")
+
+    monkeypatch.setattr(relay_ops, "pending_spec", pending)
+    monkeypatch.setattr(relay_ops, "resume_spec", resume_spec)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    current = {
+        "phase": "spec",
+        "pause": {
+            "reason": "visit cap\nDraft: .whyline/relay/draft-spec.md",
+            "actions": ["resume", "change", "cancel"],
+        },
+        "spec": {"path": None, "sha256": None},
+    }
+    result = auto_run._spec_phase(
+        root, request, current, saved_phase="spec", progress=None, answer=None
+    )
+    assert calls == ["pending_spec", "resume_spec", "approve_spec"]
+    assert result["phase"] == "spec"
+    assert "pause" not in result
+
+
+def test_saved_plan_pause_reenters_resume_draft(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _touch_config(root)
+    request = _request()
+    calls: list[str] = []
+    spec = root / "docs" / "specs" / "plan.md"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(_SPEC, encoding="utf-8")
+
+    def pending(_root):
+        calls.append("pending_draft")
+        return "topic"
+
+    def resume_draft(_root, *, progress):
+        calls.append("resume_draft")
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def draft_plan(*_args, **_kwargs):
+        calls.append("draft_plan")
+        raise AssertionError("draft_plan")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        calls.append("approve_plan")
+        return _approve_target(root, draft, "plans/plan.plan.md")
+
+    monkeypatch.setattr(relay_ops, "pending_draft", pending)
+    monkeypatch.setattr(relay_ops, "resume_draft", resume_draft)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+    current = {
+        "phase": "plan",
+        "pause": {
+            "reason": "visit cap\nDraft: .whyline/relay/draft-plan.md",
+            "actions": ["resume", "change", "cancel"],
+        },
+        "spec": {"path": str(spec), "sha256": hashlib.sha256(_SPEC.encode()).hexdigest()},
+        "plan": {"path": None, "sha256": None},
+    }
+    result = auto_run._plan_phase(
+        root, request, current, saved_phase="plan", progress=None, answer=None
+    )
+    assert calls == ["pending_draft", "resume_draft", "approve_plan"]
+    assert result["phase"] == "plan"
+    assert "pause" not in result
+
+
+def test_resumed_run_reenters_resume_spec_and_resume_draft(tmp_path, monkeypatch):
+    from whyline_relay import loop
+
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    calls: list[str] = []
+    drafted = {"spec": 0, "plan": 0}
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    def pending_spec(_root):
+        return "Write the spec" if drafted["spec"] else None
+
+    def draft_spec(_root, _text, _attachments=(), *, progress):
+        drafted["spec"] += 1
+        calls.append("draft_spec")
+        raise loop.Paused(
+            "__spec__ hit stage 'review''s 3-visit cap without reaching \"@complete\"",
+            None,
+        )
+
+    def resume_spec(_root, *, progress):
+        calls.append("resume_spec")
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        calls.append("approve_spec")
+        return _approve_target(root, draft, "docs/specs/plan.md")
+
+    def pending_draft(_root):
+        return "topic" if drafted["plan"] else None
+
+    def draft_plan(_root, _description, _attachments=(), *, progress, spec=None):
+        drafted["plan"] += 1
+        calls.append("draft_plan")
+        raise loop.Paused(
+            "__plan__ hit stage 'review''s 3-visit cap without reaching \"@complete\"",
+            None,
+        )
+
+    def resume_draft(_root, *, progress):
+        calls.append("resume_draft")
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        calls.append("approve_plan")
+        return _approve_target(root, draft, "plans/plan.plan.md")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "pending_spec", pending_spec)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "resume_spec", resume_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "pending_draft", pending_draft)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "resume_draft", resume_draft)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+
+    spec_pause = auto_run.run(root, request, dismissed)
+    assert spec_pause["phase"] == "spec"
+    assert "visit cap" in spec_pause["pause"]["reason"]
+    assert calls == ["draft_spec"]
+
+    plan_pause = auto_run.run(root, request, dismissed)
+    assert plan_pause["phase"] == "plan"
+    assert calls == ["draft_spec", "resume_spec", "approve_spec", "draft_plan"]
+
+    finished = auto_run.run(root, request, dismissed)
+    assert calls == [
+        "draft_spec",
+        "resume_spec",
+        "approve_spec",
+        "draft_plan",
+        "resume_draft",
+        "approve_plan",
+    ]
+    assert finished["phase"] == "plan"
+    assert "pause" not in finished
+
+
+def test_final_synthesis_does_not_substitute_outside_the_chain(tmp_path, monkeypatch):
+    from whyline_relay import agents, brainstorm, chat, config
+
+    root = _repo(tmp_path)
+    request = _request(agents=("claude", "grok"), final_agent="claude", chain=("codex",))
+    dismissed = auto_run.fingerprint(root, request)
+    attempted: list[str] = []
+    research = (
+        "# Topic\n\n## Claude\n\nClaude's research.\n\n"
+        "## Grok\n\nGrok's research.\n\n"
+        "## Codex\n\nCodex's research.\n"
+    )
+
+    def fake_turn(_root, *, agent, **_kwargs):
+        attempted.append(agent)
+        if agent != "codex":
+            raise agents.AgentTimeout(f"{agent} exceeded 1s and was terminated")
+        _write_synthesis(root, _CLEAN)
+        return {"ok": True, "agent": agent, "response": "done"}
+
+    def fake_brainstorm(root, **kwargs):
+        _write_synthesis(root, research, topic=kwargs["topic"])
+        labels = {"claude": "Claude", "grok": "Grok", "codex": "Codex"}
+        models = [(agent, labels.get(agent, agent)) for agent in kwargs["agents"]]
+        brainstorm.run_final_synthesis(
+            root,
+            kwargs["final_agent"],
+            models,
+            kwargs["topic"],
+            settings=config.load(root),
+            print_fn=lambda _line="": None,
+        )
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(chat, "run_turn", fake_turn)
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    _install_planning(monkeypatch, root, [], [], [])
+    finished = auto_run.run(root, request, dismissed)
+    assert attempted == ["claude", "codex"]
+    assert "grok" not in attempted
+    assert finished["phase"] == "plan"
+    assert "pause" not in finished
+
+
+def test_blocked_brainstorm_pauses_without_drafting_a_spec(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("error", "the brainstorm reported blocked: need a human")
+
+    def fail_spec(*_args, **_kwargs):
+        raise AssertionError("draft_spec")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", fail_spec)
+    paused = auto_run.run(root, request, dismissed)
+    assert paused["phase"] == "research"
+    assert "blocked" in paused["pause"]["reason"]
+    assert paused["brainstorm"]["sha256"]
+    assert paused["pause"]["actions"] == ["resume", "change", "cancel"]
