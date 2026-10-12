@@ -248,7 +248,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
 
 ## Relay package, release 0.2.35
 
-- [ ] RUN-2: Publish whyline-relay 0.2.35
+- [x] RUN-2: Publish whyline-relay 0.2.35
   relay-profile: release
   relay-repo: /Users/anish/whyline-relay
   In `/Users/anish/whyline-relay` only, set `pyproject.toml` to `0.2.35`. Do not tag unless this tree already imports all of: `setup.read_backup`, `setup.write_backup`, `setup.write_timeout_minutes`, `chat.NO_LIMIT`, and `agents.run` with a `cancel_event` parameter, and `run_final_synthesis` accepts `unattended`. If `cancel_event` or `chat.NO_LIMIT` is missing, do not implement them and do not tag. `RTO-1` to `RTO-7` ran on this same line just before this task, so `0.2.35` already contains both, and do not publish a newer `0.2.33` that lacks the backup APIs. Do not open `0.3`. Do not change this whyline checkout and do not turn on the Chat `none` menu.
