@@ -13067,3 +13067,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 674db313ce544d36947205af17bcc4f4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:30:52.777Z"} -->
+
+## 2026-10-12 — Pass RUN-3 whyline-relay 0.2.35 dependency update
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-3
+
+**Because:** Both pyproject.toml bounds raised to >=0.2.35,<0.3, uv.lock resolved to published 0.2.35, verified chat.NO_LIMIT, agents.run cancel_event, setup.write_timeout_minutes, and run_final_synthesis unattended, and full test suite passed.
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: effffaa92b6847eb8033948aef75b172 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T15:56:59.768Z"} -->
+
+## 2026-10-12 — Approve RUN-3 whyline-relay 0.2.35 dependency update
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-3
+
+**Because:** Both dependency declarations require >=0.2.35,<0.3, uv.lock resolves the published 0.2.35 artifacts, the installed package exposes all four required APIs, and uv run pytest -q passes
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: c7664a496b474f53a0f68baeeb92afe5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T16:01:50.405Z"} -->
