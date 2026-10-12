@@ -11881,3 +11881,52 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f31d72ca1ddb47e384bb76d084c8883a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-11T20:43:56.300Z"} -->
+
+## 2026-10-11 — Keep the existing unattended synthesis paragraph and unquoted timeout writer
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RUN-1
+
+**Because:** Round 9 rechecked the uncommitted diff against the spec. Focused pytest and the full suite both exited 0, so the rejection was the uv cache denial rather than a code defect.
+
+**Rejected:**
+
+- rewriting the helpers — they already append one paragraph only when unattended is true and write a bare integer through _write_config
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py, /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: d79d272555c44e7babd6cb734e44d9b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T21:00:06.308Z"} -->
+
+## 2026-10-11 — Pass RUN-1: unattended synthesis flag and unquoted timeout_minutes pass all tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RUN-1
+
+**Because:** Ran targeted tests (tests/test_brainstorm_setup.py tests/test_setup.py) and full pytest suite in whyline-relay; both exited cleanly with code 0
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 66caf2590d4741708bf7a480aa813896 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-11T21:02:35.016Z"} -->
+
+## 2026-10-12 — Add SBX-1..5 (sandbox-aware agents) before RUN-2 and REC-4B (sandbox explanation, Retry stage) before REC-5
+
+**Actor:** claude
+**Role:** planner
+**Task:** SBX
+
+**Because:** RUN-1 burned its draft and review visit caps because Codex's sandbox could not write whyline-relay or ~/.cache/uv, so it rejected correct work it could not verify. The relay will pass the task repo to agents that have a dir flag, keep uv's cache in the workspace, treat a refused command as blocked rather than a back-route, warn in preflight, and offer a recorded one-visit stage retry instead of hand-editing state.json
+
+**Rejected:**
+
+- Raise max_visits — hides the cause and changes the pipeline fingerprint, which resume refuses
+- Run agents with danger-full-access — far wider than the task repo and cache need
+- Detect denials only from raw logs — wording varies by CLI; the handoff summary plus an explicit blocked outcome is deterministic
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: a009112a81c940a7856dcdacca0a1a5b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T03:49:47.412Z"} -->

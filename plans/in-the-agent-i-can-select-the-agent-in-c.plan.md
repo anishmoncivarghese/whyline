@@ -204,13 +204,49 @@ These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.
   Extend `tests/test_setup.py`. Cover replacing an existing line, inserting a missing line, writing `0`, and leaving every other line byte-for-byte intact.
   Verify with `uv run pytest -q tests/test_setup.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
+## Relay package, sandbox-aware agents, before whyline-relay 0.2.35
+
+RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could not write whyline-relay or `~/.cache/uv`, so it could not run the tests, handed off `rejected`, and correct work bounced back to the implementer until the caps ran out. These tasks stop that class of failure in the relay itself and ship in 0.2.35 with `RUN-2`. They run after `RTO-1`–`RTO-7`, which edit the same files first.
+
+- [ ] SBX-1: Give agents write access to the task's repository
+  relay-repo: /Users/anish/whyline-relay
+  Edit only `/Users/anish/whyline-relay/src/whyline_relay/adapters/base.py`, `adapters/codex.py`, `adapters/claude.py`, `adapters/generic.py`, `config.py`, `loop.py`, and their tests. `Adapter` gains `dir_flag: tuple[str, ...] | None`: `("--add-dir",)` for Codex and Claude, `None` for the generic adapter. A generic agent may opt in with `dir_flag = "--add-dir"` in its `[agents.<name>]` table; any other type is a `ConfigError`.
+  In `loop.run_agent`, when `task_repo(root, task)` differs from `root` and the agent has a dir flag, append the flag and the task repository's absolute path to the command before the prompt (`build_argv` keeps the prompt last), unless the command already contains that exact flag and path. A task in the relay's own repository adds nothing. The planner's turns add nothing. The permission-bypass check still runs on the final command and the added flag is not a bypass flag.
+  Tests: a Codex and a Claude turn for a `relay-repo` task carry `--add-dir <repo>` once; a configured duplicate is not repeated; a same-repo task adds nothing; a generic agent without the key adds nothing and one with it does; a bad `dir_flag` type fails config load.
+  Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
+
+- [ ] SBX-2: Keep tool caches inside the relay repository
+  relay-repo: /Users/anish/whyline-relay
+  Edit only `/Users/anish/whyline-relay/src/whyline_relay/agents.py`, `loop.py`, `gitcheck.py`, and their tests. `agents.run` gains `env: Mapping[str, str] | None = None`, merged over `os.environ` for the child only; `None` keeps today's behavior. `loop.run_agent` passes `UV_CACHE_DIR=<root>/.whyline/relay/cache/uv` unless the relay's own environment already sets `UV_CACHE_DIR`, so `uv run` in either repository writes inside the agent's workspace. Add `.whyline/relay/cache/` to `RELAY_IGNORE`. Do not set any other variable.
+  Tests: the child sees the cache path; an existing `UV_CACHE_DIR` wins; the relay's own `os.environ` is unchanged after the run; `RELAY_IGNORE` lists the cache folder and `ensure_relay_ignored` adds it once.
+  Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
+
+- [ ] SBX-3: "Could not verify" pauses instead of sending correct work back
+  relay-repo: /Users/anish/whyline-relay
+  Edit only `/Users/anish/whyline-relay/src/whyline_relay/pipeline.py`, `prompts.py`, `loop.py`, and their tests. In a configured pipeline, a handoff with the `blocked` status from any stage decides `blocked` when that stage has no transition of its own for it. The pipeline fingerprint does not change for an existing config. `stage_footer` lists `blocked` for every stage with its literal `whyline handoff ... --status blocked --summary "<the exact command and the refusal>"` line and says: a required command refused by permissions or the sandbox is `blocked`, never a back-route outcome such as `failed` or `rejected`, because that sends correct work back to be redone.
+  As a backstop, when a stage hands off an outcome that routes to an earlier stage and its summary contains one of `SANDBOX_MARKERS` (`permission denied`, `operation not permitted`, `sandbox`, `was denied`, `not permitted`; case-insensitive), the relay does not route it. It pauses with `{agent} could not run a required command: {summary}` and does not count a visit for the earlier stage.
+  Tests: `blocked` from draft, test, and review pauses with that reason; the footer of every stage lists `blocked`; a `rejected` whose summary says the verification was denied pauses and leaves the draft visit count unchanged; a `rejected` with a real defect still routes to draft; the fingerprint of today's agentdock pipeline shape is unchanged.
+  Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
+
+- [ ] SBX-4: Preflight warns when an agent cannot reach a task's repository
+  relay-repo: /Users/anish/whyline-relay
+  Edit only `/Users/anish/whyline-relay/src/whyline_relay/preflight.py` and `tests/test_preflight.py`. In `scope="full"`, for the plan's unchecked tasks that name a `relay-repo`: a path that is not the top of a git repository is `FAIL` (the same text `loop.task_repo` uses); for each role agent, a dir flag (from `SBX-1`) is `ok  {agent} gets {flag} {repo}`; an agent without one is `warn  {agent} has no way to be given {repo}; its sandbox may refuse writes there` with the fix `set dir_flag in [agents.{agent}] or allow that path in its command`. `scope="repository"` is unchanged.
+  Tests: a plan with no `relay-repo` adds no lines; a bad path fails; Codex is ok; a generic agent without a dir flag warns with the fix; repository scope adds nothing.
+  Verify with `uv run pytest -q tests/test_preflight.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
+
+- [ ] SBX-5: Resume can retry a capped stage once, on the record
+  relay-repo: /Users/anish/whyline-relay
+  Edit only `/Users/anish/whyline-relay/src/whyline_relay/cli.py`, `whylinecmd.py`, and their tests. `whyline relay resume --retry-stage` works only when the saved pause reason is a stage visit cap (`hit stage 'X''s N-visit cap`); otherwise it exits non-zero with `Nothing to retry: the relay is not paused on a stage visit cap.` and changes nothing. It lowers that one stage's saved visit count by one, saves the state, prints `Retrying stage 'X' once more.`, records it through a new `whylinecmd.note(root, text, *, because, task, actor, role)` that runs `whyline note` (a failing `whyline` prints a warning and does not stop the resume), and then resumes as usual. It never edits `max_visits`, so the pipeline fingerprint is unchanged. Each use lowers the count by exactly one.
+  Tests: a visit-cap pause resumes with that stage lowered by one and the note recorded; a non-cap pause refuses and leaves the state byte-for-byte; a failing note still resumes; other stages' counts are untouched.
+  Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
+
 ## Relay package, release 0.2.35
 
 - [ ] RUN-2: Publish whyline-relay 0.2.35
   relay-profile: release
   relay-repo: /Users/anish/whyline-relay
   In `/Users/anish/whyline-relay` only, set `pyproject.toml` to `0.2.35`. Do not tag unless this tree already imports all of: `setup.read_backup`, `setup.write_backup`, `setup.write_timeout_minutes`, `chat.NO_LIMIT`, and `agents.run` with a `cancel_event` parameter, and `run_final_synthesis` accepts `unattended`. If `cancel_event` or `chat.NO_LIMIT` is missing, do not implement them and do not tag. `RTO-1` to `RTO-7` ran on this same line just before this task, so `0.2.35` already contains both, and do not publish a newer `0.2.33` that lacks the backup APIs. Do not open `0.3`. Do not change this whyline checkout and do not turn on the Chat `none` menu.
-  Write `docs/releases/v0.2.35.md` in the same shape as `docs/releases/v0.2.34.md`, covering the unattended synthesis paragraph and `write_timeout_minutes` when this tag is the one that added it. Run `uv run pytest -q` and confirm it exits 0 before tagging `v0.2.35` and publishing to PyPI the same way `v0.2.34` was published. Confirm a clean environment can install `whyline-relay==0.2.35` and that `inspect.signature(whyline_relay.agents.run).parameters` contains `cancel_event`.
+  Write `docs/releases/v0.2.35.md` in the same shape as `docs/releases/v0.2.34.md`, covering the unattended synthesis paragraph and `write_timeout_minutes` when this tag is the one that added it, the per-attempt timeout work from `RTO-1`–`RTO-7` (optional watchdog, `cancel_event`, `chat.NO_LIMIT`, `timeout_minutes = 0`, `--timeout none`, STOP cancelling the in-flight agent), and `SBX-1`–`SBX-5` (agents get the task repository, tool caches stay in the workspace, a refused command pauses as blocked, preflight warns, and `resume --retry-stage`). Run `uv run pytest -q` and confirm it exits 0 before tagging `v0.2.35` and publishing to PyPI the same way `v0.2.34` was published. Confirm a clean environment can install `whyline-relay==0.2.35` and that `inspect.signature(whyline_relay.agents.run).parameters` contains `cancel_event`.
 
 ## Console, Auto runner, after whyline-relay 0.2.35
 
@@ -285,9 +321,14 @@ Recovery acts on a relay pause or a dirty-tree preflight FAIL, in Auto and in Re
   Tests: an Auto pause with a decision-log-only tree commits, resumes, and calls the launcher once; an Auto `no-handoff` pause with a fake agent that writes the handoff resumes; an `auth` pause does not call the runner and keeps the pause; the Relay pause card shows Recover for `no-handoff` and not for `blocked`; a second pause in the same round hides Recover.
   Verify with `uv run pytest -q tests/console/test_auto_run.py tests/console/test_recovery.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
+- [ ] REC-4B: Explain sandbox refusals and offer Retry stage
+  Edit only `src/whyline/console/adapters.py`, `src/whyline/console/recovery.py`, `src/whyline/console/tui.py`, and their tests. Add `("sandbox", "could not run a required command")` to `adapters._FAILURE_PHRASES`, before the existing entries, and `("visit-cap", "-visit cap without")`. `recovery.route` maps `sandbox` to `human`: the pause card shows the refused command from the reason and, for an agent whose adapter has a dir flag, the config change that would allow it; it never edits the config. `visit-cap` maps to `human` with a `Retry stage` action on the pause card that launches `["resume", "--retry-stage"]` the way Resume launches `["resume"]`; Auto never presses it for you.
+  Tests: a sandbox pause is classified `sandbox`, shows the command, and changes no file; a visit-cap pause shows Retry stage and pressing it launches `resume --retry-stage`; other pauses do not show it.
+  Verify with `uv run pytest -q tests/console/test_recovery.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
+
 - [ ] REC-5: Publish whyline 0.3.42
   relay-profile: release
-  In this whyline checkout, bump `pyproject.toml` from `0.3.41` to `0.3.42`. Write `docs/releases/v0.3.42.md` in the same shape as `docs/releases/v0.3.41.md`: Auto commits the relay's own decision log and resumes; a missing handoff gets one constrained turn from the selected agent, then the backup chain; recovery never edits task code or skips the clean-tree check; auth, blocked, round-cap, and release pauses still stop for you; Relay mode offers the same thing as a Recover button. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.42`, push, and publish to PyPI the same way `v0.3.41` was published. Confirm `uv tool upgrade whyline` installs `0.3.42`.
+  In this whyline checkout, bump `pyproject.toml` from `0.3.41` to `0.3.42`. Write `docs/releases/v0.3.42.md` in the same shape as `docs/releases/v0.3.41.md`: Auto commits the relay's own decision log and resumes; a missing handoff gets one constrained turn from the selected agent, then the backup chain; recovery never edits task code or skips the clean-tree check; auth, blocked, round-cap, and release pauses still stop for you; Relay mode offers the same thing as a Recover button. A sandbox refusal is explained with the exact command, and a capped stage can be retried once from the pause card. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.42`, push, and publish to PyPI the same way `v0.3.41` was published. Confirm `uv tool upgrade whyline` installs `0.3.42`.
 
 ## Console, See files, after whyline 0.3.42
 
