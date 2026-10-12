@@ -12082,3 +12082,153 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 62ae52648ba7414fb547341721e7c3ee -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T04:52:15.810Z"} -->
+
+## 2026-10-12 — Treat JSON booleans and non-integers as a missing timeout
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-3
+
+**Because:** The spec accepts only a positive int or JSON null. A bool is an int subclass, so True would otherwise become 1 second.
+
+**Rejected:**
+
+- Calling int() on every JSON value — int(True) is 1, and int(None) turns JSON null into an exception that looks like a missing file
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: b1b9ca87cf5e45e9bc8070f4cf5aff6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:11:02.054Z"} -->
+
+## 2026-10-12 — Return partial agent maps on cancel from pass-zero and review, and raise AgentCancelled from synthesis, plan draft, and revise
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-3
+
+**Because:** Pass-zero and review already return the agents that finished. The other three have no successful partial result, so the caller must see a cancellation instead of a normal completion.
+
+**Rejected:**
+
+- Revert the last commit — models that already committed must stay committed
+- Swallow AgentCancelled and continue the loop — that starts the next model
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: f796c3cd26074390bbc41e6b6b077c47 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:11:02.088Z"} -->
+
+## 2026-10-12 — Leave a missing topic timeout file unwritten when applying the 900 second default
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-3
+
+**Because:** An omitted call with no file means the user has not chosen. Writing 900 would make the next empty answer look like a resumed selection.
+
+**Rejected:**
+
+- Save 900 on the fallback — a missing file would no longer be missing, and the prompt default would be a stored choice
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 5653423dc8834888a543d160438abae9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:11:02.120Z"} -->
+
+## 2026-10-12 — Keep the plan-source timeout forward as an identity check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-3
+
+**Because:** chat.NO_LIMIT is not None and must be passed into run_pass_zero. The existing condition already does that.
+
+**Rejected:**
+
+- A truthiness check — it would drop values the sentinel must survive
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 466dd2d7963c498a9c3a45e63b4f7bfc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:11:02.151Z"} -->
+
+## 2026-10-12 — Approve RTO-3 brainstorm timeout handling and test coverage
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-3
+
+**Because:** All unit and integration tests for missing vs unlimited timeout, prompt pre-selection, JSON null persistence, cancel handling, and runner forwarding pass across the entire suite
+
+**Files:** /Users/anish/whyline-relay/tests/test_brainstorm_timeout.py
+
+<!-- whyline-event: 3dd454416ee6465cbe5c2db6caedd171 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:14:54.611Z"} -->
+
+## 2026-10-12 — Reject RTO-3 because partial-result stages propagate cancellation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-3
+
+**Because:** run_pass_zero and run_review_pass re-raise AgentCancelled from chat.run_turn instead of returning their accumulated agent maps, so cancellation during a model does not follow the recorded partial-result behavior; the focused and full pytest suites pass but do not cover this path
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 3c475cc9b0094502a5b2ce2f99c7a016 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:18:06.137Z"} -->
+
+## 2026-10-12 — Return the accumulated agent map when a turn raises AgentCancelled
+
+**Actor:** grok
+**Role:** implementer
+**Task:** RTO-3
+
+**Because:** A cancel checked before the next model already returns that map. AgentCancelled from the turn is the same stop, and the caller has to see which agents already committed.
+
+**Rejected:**
+
+- Re-raise AgentCancelled — the caller never receives the partial map, which is what the review rejected
+- Continue with the next model — that starts another agent after the cancel
+- Restore the shared file on cancel — the chat turn already leaves a cancelled edit uncommitted, and restoring it would hide that partial write
+
+**Test:** uv run --directory /Users/anish/whyline-relay pytest -q tests/test_brainstorm_timeout.py tests/test_brainstorm_setup.py: exit 0, 46 passed
+**Test:** uv run --directory /Users/anish/whyline-relay pytest -q: exit 0, 951 passed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py, /Users/anish/whyline-relay/tests/test_brainstorm_timeout.py
+
+<!-- whyline-event: 2bd8c5914433460c9c147d4cca25f4a3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:29:02.259Z"} -->
+
+## 2026-10-12 — Pass RTO-3 after verifying timeout sentinel and cancellation handling
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RTO-3
+
+**Because:** Pass zero and review return the accumulated agent map on cancellation; NO_LIMIT round trips through JSON null without minutes; timeout parsing, fallback defaults, and chat status line match spec; all 46 focused and 951 full tests pass
+
+**Rejected:**
+
+- Reject RTO-3 — cancel handling in pass zero and review pass now correctly returns accumulated partial results without raising AgentCancelled
+
+**Test:** uv run --directory /Users/anish/whyline-relay pytest -q tests/test_brainstorm_timeout.py tests/test_brainstorm_setup.py: exit 0, 46 passed
+**Test:** uv run --directory /Users/anish/whyline-relay pytest -q: exit 0, 951 passed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py, /Users/anish/whyline-relay/src/whyline_relay/chat.py, /Users/anish/whyline-relay/tests/test_brainstorm_timeout.py, /Users/anish/whyline-relay/tests/test_brainstorm_setup.py
+
+<!-- whyline-event: b474075239f449b4acd78c1c785c0077 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:32:55.970Z"} -->
+
+## 2026-10-12 — Approve RTO-3 timeout sentinel and cancellation handling
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RTO-3
+
+**Because:** The diff implements the required missing/null/positive timeout states, preserves identity-based NO_LIMIT forwarding and serialization, applies the 900-second brainstorm fallback, stops cancellation before later models while preserving committed results, and both focused and full test suites pass
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py, /Users/anish/whyline-relay/src/whyline_relay/chat.py, /Users/anish/whyline-relay/tests/test_brainstorm_timeout.py, /Users/anish/whyline-relay/tests/test_brainstorm_setup.py
+
+<!-- whyline-event: 9c151743ff6f4c818e5e0ee3c760dbb9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T05:35:33.305Z"} -->

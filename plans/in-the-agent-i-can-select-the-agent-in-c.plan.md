@@ -162,7 +162,7 @@ These are `RTO-1` to `RTO-7` of `plans/in-chat-therr-is-hardocded-limit-of-300s.
   Extend `tests/test_chat_turn.py` and `tests/test_grok_resume.py` with the existing fake `run_fn`. Cover: `run_turn(timeout_seconds=None)` still uses 300; explicit 900, 1800, 2700, and 3600 reach every failover attempt and each Grok resume; `NO_LIMIT` reaches `run_fn` as `None`; `AgentCancelled` from the first attempt does not call the backup and does not commit; a set event after a normal return and before commit skips the commit; zero raises `ValueError` and does not call `run_fn`.
   Verify with `uv run pytest -q tests/test_chat_turn.py tests/test_grok_resume.py` and `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] RTO-3: Distinguish a missing Brainstorm timeout from unlimited
+- [x] RTO-3: Distinguish a missing Brainstorm timeout from unlimited
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/brainstorm.py`, the `/brainstorm` branch in `src/whyline_relay/chat.py`, and the `timeout_seconds is not None` forward in `setup._run_brainstorm_plan_source`. Keep that condition as an identity check. A truthiness check would drop values the sentinel must survive.
   `_load_timeout` has three outcomes. A missing file, an unreadable file, invalid JSON, a non-object payload, a missing `timeout_seconds` key, or a `timeout_seconds` that is not a positive int and not JSON `null` is missing (`None`). JSON `null` returns `chat.NO_LIMIT`. A positive int returns that many seconds. Do not fall back to `timeout_minutes`, and do not let `int(None)` turn JSON `null` into missing.
