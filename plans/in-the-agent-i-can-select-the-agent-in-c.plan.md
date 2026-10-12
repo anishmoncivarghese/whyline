@@ -215,7 +215,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
   Tests: a Codex and a Claude turn for a `relay-repo` task carry `--add-dir <repo>` once; a configured duplicate is not repeated; a same-repo task adds nothing; a generic agent without the key adds nothing and one with it does; a bad `dir_flag` type fails config load.
   Verify with `uv run pytest -q` from `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] SBX-2: Keep tool caches inside the relay repository
+- [x] SBX-2: Keep tool caches inside the relay repository
   relay-repo: /Users/anish/whyline-relay
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/agents.py`, `loop.py`, `gitcheck.py`, and their tests. `agents.run` gains `env: Mapping[str, str] | None = None`, merged over `os.environ` for the child only; `None` keeps today's behavior. `loop.run_agent` passes `UV_CACHE_DIR=<root>/.whyline/relay/cache/uv` unless the relay's own environment already sets `UV_CACHE_DIR`, so `uv run` in either repository writes inside the agent's workspace. Add `.whyline/relay/cache/` to `RELAY_IGNORE`. Do not set any other variable.
   Tests: the child sees the cache path; an existing `UV_CACHE_DIR` wins; the relay's own `os.environ` is unchanged after the run; `RELAY_IGNORE` lists the cache folder and `ensure_relay_ignored` adds it once.

@@ -12653,3 +12653,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6994d4267c6c4015b90f0cac44f10cfa -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:32:43.789Z"} -->
+
+## 2026-10-12 — Leave an existing UV_CACHE_DIR inherited
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-2
+
+**Because:** an existing value wins, and env None keeps today's child environment
+
+**Rejected:**
+
+- copy the current value into a new mapping — that still sets the variable when the task says not to set it if one is already present
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 794f61743c6245b1b20ca0583dab88e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:42:39.563Z"} -->
+
+## 2026-10-12 — Do not create the uv cache directory
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-2
+
+**Because:** uv creates UV_CACHE_DIR when a child runs uv; the relay only names the path and gitignores the folder
+
+**Rejected:**
+
+- mkdir in run_agent — a turn that never calls uv would still leave an empty directory
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 8708ced4bb8e4f4c872a708c8d28a1fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:42:43.355Z"} -->
+
+## 2026-10-12 — Accept env on copied agents.run stand-ins
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SBX-2
+
+**Because:** run_agent always passes env, and a stand-in with the old keyword list raises TypeError
+
+**Rejected:**
+
+- leave the copied signatures — planner and pipeline tests fail before they script a handoff
+
+**Files:** /Users/anish/whyline-relay/tests/test_planner.py
+
+<!-- whyline-event: dabe7ee8b7024b069b1b0d611c60af6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:42:45.949Z"} -->
+
+## 2026-10-12 — Accept SBX-2: UV_CACHE_DIR isolation, child env merging, and git exclusion behave as specified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SBX-2
+
+**Because:** All 1000 tests passed, confirming child receives UV_CACHE_DIR under relay root unless pre-existing, relay os.environ is untouched, and RELAY_IGNORE excludes cache folder idempotently
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: eb93b0ea702f4823aa2ebfb7374f6223 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:46:36.422Z"} -->
+
+## 2026-10-12 — Approve SBX-2 cache isolation and relay ignore behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SBX-2
+
+**Because:** The allowed-file diff merges optional child-only environment overrides without mutating os.environ, sets only UV_CACHE_DIR under the relay root when absent, preserves an existing value, adds the cache ignore idempotently, and the full pytest suite passes
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 7c11f7a360284ca38e702e0663350aed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T13:49:32.095Z"} -->
