@@ -13835,3 +13835,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f9c8ac6be63c4053871f2f50cc6a4d52 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:08:37.239Z"} -->
+
+## 2026-10-13 — Moved REC-2's saved base_commit from 13f93f1 to 8f1c1b3 by hand
+
+**Actor:** claude
+**Role:** operator
+**Task:** REC-2
+
+**Because:** The only commits between them are the decision log and plan edits made while paused; the stage, round and REC-2's uncommitted work are unchanged, so no review is skipped. No relay command moves the base
+
+**Rejected:**
+
+- Leave the plan edit uncommitted — git add -A would sweep it into REC-2's commit and fail scope review
+
+**Files:** .whyline/relay/state.json
+
+<!-- whyline-event: f5ede0254d5e44e8ae60b3bd4391a6a7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:08:46.417Z"} -->
