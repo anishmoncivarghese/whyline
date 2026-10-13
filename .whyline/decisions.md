@@ -13660,3 +13660,33 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1a3a3e113b2846288f156ea08495d170 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T18:46:10.448Z"} -->
+
+## 2026-10-13 — REC-1 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-1
+
+**Because:** The route matrix, dirty-path distinction, attempt gating, corrupt-file handling, and atomic replacement tests pass, and the full project suite exits successfully
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 8abf4f2c303e47f88ee009c9d8388580 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T20:25:51.212Z"} -->
+
+## 2026-10-13 — Approve REC-1 recovery routing and attempt persistence
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-1
+
+**Because:** The implementation matches every required route, exact dirty-path handling, per-task-and-round gating, corrupt-file fallback, and atomic replacement behavior; both the focused and full test suites pass
+
+**Rejected:**
+
+- Request signature-only changes — accepting Sequence[str] plus None safely widens the specified list[str] API without changing required behavior
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4cedfd0d30fa41b386262a4a7be1af2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T20:30:53.763Z"} -->
