@@ -13882,3 +13882,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0fda7a362ae74d8da9a703fb892f3cb3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:19:53.915Z"} -->
+
+## 2026-10-13 — Constrained recovery turn gates by task and round, verifies HEAD and working tree via git porcelain with untracked expansion, and requires valid active handoff before fix preflight
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-3
+
+**Because:** Ensures agent turns cannot modify code or claim resolution without a genuine active handoff in the relay root
+
+**Rejected:**
+
+- Trust RECOVERY verdict line alone — a hallucinating or failing model could claim resolution without writing a handoff or while dirtying source files
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: ab9b7dc244ad4f1cbbeb7bbd498860c2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:43:19.721Z"} -->
+
+## 2026-10-13 — REC-3 passes behavioral and regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-3
+
+**Because:** All 19 focused recovery tests passed, covering handoff verification, mutation detection, backup failover, chain exhaustion, prompt constraints, and once-per-round gating; the complete project suite also exited successfully
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 3665aa0481294173b560cbac8994fac1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:48:09.018Z"} -->
+
+## 2026-10-13 — REC-3 requires changes for recovery mutation and agent-chain enforcement
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-3
+
+**Because:** The implementation passes all tests but _diff_trees exempts every .whyline/relay path, so forbidden relay-file edits can escape the required path-naming check, and recover allows an explicit agent argument to override session.agent even though only the selected agent and configured backups may run
+
+**Rejected:**
+
+- Approve based on passing tests — the uncovered safety paths violate explicit REC-3 constraints
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 1fc8b823c5744e1ca917540aa0e22555 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:53:44.055Z"} -->
+
+## 2026-10-13 — Restrict recovery tree exemptions to decisions log and relay logs, and enforce session.agent with no outside override
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-3
+
+**Because:** Ensures forbidden relay file mutations like config.toml are detected as human with exact paths and session.agent precedence cannot be bypassed by callers
+
+**Rejected:**
+
+- Blanket exempt .whyline/relay — allows forbidden config or script edits to go undetected
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: b78ff41a253e47b5b0cfba404cc8e069 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:11:11.640Z"} -->
+
+## 2026-10-13 — REC-3 passes behavioral and regression testing in round 5
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-3
+
+**Because:** All 24 focused recovery tests passed and the complete project suite exited successfully with the expected single skip
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 302f102c7dd94159a561376c6f26d212 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:15:55.925Z"} -->
+
+## 2026-10-13 — REC-3 round 6 requires complete mutation detection and post-note preflight
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-3
+
+**Because:** The recovery snapshot only includes git-status paths, so ignored runtime files such as .whyline/relay/state.json can be changed without a human verdict, and the resolved path runs fix/preflight before whyline note, leaving decisions.md dirty after declaring success
+
+**Rejected:**
+
+- Approve based on green tests — the 24 focused tests and full suite do not cover either safety failure
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 29dd8fe4e19a48258314e9d1e97e33a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:22:03.048Z"} -->
+
+## 2026-10-13 — Snapshot ignored relay runtime directory and commit recovery note before preflight
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-3
+
+**Because:** Ignored relay files like state.json can be mutated during recovery without appearing in git status, and recording the recovery note before REC-2 fix ensures it is committed with a clean preflight pass
+
+**Rejected:**
+
+- Exempt state.json — allows agents to alter relay state undetected
+- Run fix before note — leaves decisions.md dirty upon resolved return
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4b7a8473bfb241a2bf279e796f936ad0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:35:28.183Z"} -->
+
+## 2026-10-13 — REC-3 round 8 passes behavioral and regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-3
+
+**Because:** All 26 focused recovery tests passed, the complete project suite exited successfully with one expected skip, and the worktree retained only the three expected task paths
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 2434710b0ac642ccb2d6b1e7a53ce27b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:44:22.400Z"} -->
+
+## 2026-10-13 — REC-3 round 9 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-3
+
+**Because:** The constrained recovery turn honors the selected-agent and backup chain, includes the required context, detects HEAD and unauthorized path mutations including ignored relay state, verifies a new task handoff before REC-2 fix/preflight, records attempts and recovery notes, and passes all focused and full-suite tests
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 49374ce0d10543518ee324a1a1200e78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:49:33.372Z"} -->

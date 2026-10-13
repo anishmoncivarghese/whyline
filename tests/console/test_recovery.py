@@ -418,3 +418,712 @@ def test_cross_repository_handoff_ignores_paths_in_relay_root(tmp_path: Path) ->
     )
     assert recovery.cross_repository_handoff(relay_repo) is None
 
+
+def test_recovery_turn_that_writes_new_handoff_resolves(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "active-handoff.json").write_text(
+        json.dumps({
+            "v": 1,
+            "id": "old-handoff-100",
+            "task": "REC-3",
+            "status": "in-progress",
+        }),
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, prompt, **kwargs):
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-handoff-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+                "summary": "Recovered",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "resolved"
+    assert res.verdict == "resolved"
+
+    attempts = recovery.load_attempts(repo)
+    assert len(attempts) == 1
+    assert attempts[0]["task"] == "REC-3"
+    assert attempts[0]["round"] == 1
+    assert attempts[0]["kind"] == "agent"
+    assert attempts[0]["agent"] == "codex"
+    assert attempts[0]["verdict"] == "resolved"
+
+    decisions_text = (repo / ".whyline" / "decisions.md").read_text(encoding="utf-8")
+    assert "recovery" in decisions_text.lower()
+
+    import subprocess
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert status.strip() == ""
+
+
+def test_recovery_turn_resolved_line_without_new_handoff_is_human(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "active-handoff.json").write_text(
+        json.dumps({
+            "v": 1,
+            "id": "old-handoff-100",
+            "task": "REC-3",
+            "status": "in-progress",
+        }),
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, prompt, **kwargs):
+        # Outputs resolved without writing a new handoff
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+
+    attempts = recovery.load_attempts(repo)
+    assert len(attempts) == 1
+    assert attempts[0]["verdict"] == "human"
+
+
+def test_recovery_turn_that_edits_source_file_is_human_naming_file(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+
+    src_file = repo / "src" / "feature.py"
+    src_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def fake_runner(command, prompt, **kwargs):
+        src_file.write_text("print('forbidden edit')\n", encoding="utf-8")
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-handoff-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+    assert "src/feature.py" in res
+    assert "src/feature.py" in str(res)
+    # File is not reverted by recovery
+    assert src_file.is_file()
+
+
+def test_recovery_failing_selected_agent_falls_through_to_first_backup(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n[backup]\nchain = ["codex"]\n',
+        encoding="utf-8",
+    )
+    import subprocess
+
+    subprocess.run(["git", "commit", "-am", "update config"], cwd=repo, check=True)
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+
+    from whyline_relay import agents as relay_agents
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        if agent_name == "grok":
+            raise relay_agents.AgentMissing("grok is not installed")
+        if agent_name == "codex":
+            (repo / ".whyline" / "active-handoff.json").write_text(
+                json.dumps({
+                    "v": 1,
+                    "id": "new-handoff-200",
+                    "task": "REC-3",
+                    "status": "ready-for-review",
+                }),
+                encoding="utf-8",
+            )
+            return "RECOVERY: resolved\n"
+        raise RuntimeError(f"unexpected agent {agent_name}")
+
+    res = recovery.recover(repo, agent="grok", runner=fake_runner)
+    assert res == "resolved"
+    assert called == ["grok", "codex"]
+    attempts = recovery.load_attempts(repo)
+    assert len(attempts) == 1
+    assert attempts[0]["agent"] == "codex"
+
+
+def test_recovery_exhausted_chain_is_human_naming_agents_tried(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n[backup]\nchain = ["claude"]\n',
+        encoding="utf-8",
+    )
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+
+    from whyline_relay import agents as relay_agents
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        raise relay_agents.AgentTimeout(f"{agent_name} timed out")
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+    assert called == ["codex", "claude"]
+    assert "codex" in res and "claude" in res
+    assert "codex" in str(res) and "claude" in str(res)
+
+
+def test_recovery_second_attempt_in_same_round_never_calls_runner(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+
+    recovery.record_attempt(
+        repo,
+        task="REC-3",
+        round=1,
+        kind="agent",
+        agent="codex",
+        verdict="human",
+    )
+
+    called = False
+
+    def fake_runner(command, prompt, **kwargs):
+        nonlocal called
+        called = True
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert called is False
+
+
+def test_recovery_prompt_contents_and_session(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    log_file = repo / ".whyline" / "relay" / "logs" / "round.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_lines = "\n".join(f"log line {i}" for i in range(100))
+    log_file.write_text(log_lines, encoding="utf-8")
+
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": ".whyline/relay/logs/round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "active-handoff.json").write_text(
+        json.dumps({
+            "v": 1,
+            "id": "old-100",
+            "task": "REC-3",
+            "status": "in-progress",
+        }),
+        encoding="utf-8",
+    )
+
+    captured_prompt: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        captured_prompt.append(prompt)
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.recover(session, runner=fake_runner)
+    assert res == "resolved"
+    assert len(captured_prompt) == 1
+    prompt = captured_prompt[0]
+    assert "no-handoff" in prompt
+    assert "log line 99" in prompt
+    assert "log line 20" in prompt
+    assert "log line 10\n" not in prompt
+    assert "old-100" in prompt
+    assert "whyline handoff" in prompt
+    assert "RECOVERY: resolved" in prompt
+    assert "RECOVERY: needs-human <reason>" in prompt
+    assert "must not edit, stage, or commit" in prompt
+
+
+def test_recovery_turn_that_edits_relay_config_is_human_naming_path(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+
+    relay_cfg = repo / ".whyline" / "relay" / "config.toml"
+
+    def fake_runner(command, prompt, **kwargs):
+        relay_cfg.write_text(
+            'plan = "plan.md"\n[roles]\nimplementer = "hacked"\n',
+            encoding="utf-8",
+        )
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-handoff-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+    assert ".whyline/relay/config.toml" in res
+    assert ".whyline/relay/config.toml" in str(res)
+    assert ".whyline/relay/config.toml" in res.paths
+
+
+def test_recovery_turn_that_creates_relay_file_outside_logs_is_human_naming_path(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+
+    extra_file = repo / ".whyline" / "relay" / "forbidden.txt"
+
+    def fake_runner(command, prompt, **kwargs):
+        extra_file.write_text("unauthorized file\n", encoding="utf-8")
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-handoff-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+    assert ".whyline/relay/forbidden.txt" in res
+    assert ".whyline/relay/forbidden.txt" in str(res)
+    assert ".whyline/relay/forbidden.txt" in res.paths
+
+
+def test_recovery_turn_that_edits_relay_state_json_is_human_naming_path(
+    tmp_path: Path,
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, prompt, **kwargs):
+        state_file.write_text(
+            json.dumps({
+                "plan": "hacked.md",
+                "branch": "main",
+                "task_id": "REC-3",
+                "round": 1,
+            }),
+            encoding="utf-8",
+        )
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-handoff-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+    assert ".whyline/relay/state.json" in res
+    assert ".whyline/relay/state.json" in str(res)
+    assert ".whyline/relay/state.json" in res.paths
+
+
+def test_recovery_resolved_returns_clean_repository_with_committed_note(
+    tmp_path: Path,
+) -> None:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-handoff-100",
+        }),
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "active-handoff.json").write_text(
+        json.dumps({
+            "v": 1,
+            "id": "old-handoff-100",
+            "task": "REC-3",
+            "status": "in-progress",
+        }),
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, prompt, **kwargs):
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-handoff-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+                "summary": "Recovered",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    res = recovery.recover(repo, agent="codex", runner=fake_runner)
+    assert res == "resolved"
+    assert res.verdict == "resolved"
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert status.strip() == ""
+
+    msg = subprocess.run(
+        ["git", "log", "-1", "--format=%s"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert msg == "chore: record REC-3 decisions"
+
+
+def test_recovery_session_agent_takes_precedence_over_outside_agent_argument(
+    tmp_path: Path,
+) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n[backup]\nchain = ["claude"]\n',
+        encoding="utf-8",
+    )
+    import subprocess
+
+    subprocess.run(["git", "commit", "-am", "update config"], cwd=repo, check=True)
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        (repo / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-200",
+                "task": "REC-3",
+                "status": "ready-for-review",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.recover(session, agent="rogue_agent", runner=fake_runner)
+    assert res == "resolved"
+    assert called == ["codex"]
+    attempts = recovery.load_attempts(repo)
+    assert len(attempts) == 1
+    assert attempts[0]["agent"] == "codex"
+
+
+def test_recovery_failing_session_agent_falls_to_backup_ignoring_outside_override(
+    tmp_path: Path,
+) -> None:
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import agents as relay_agents
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n[backup]\nchain = ["codex"]\n',
+        encoding="utf-8",
+    )
+    import subprocess
+
+    subprocess.run(["git", "commit", "-am", "update config"], cwd=repo, check=True)
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        if agent_name == "grok":
+            raise relay_agents.AgentMissing("grok missing")
+        if agent_name == "codex":
+            (repo / ".whyline" / "active-handoff.json").write_text(
+                json.dumps({
+                    "v": 1,
+                    "id": "new-200",
+                    "task": "REC-3",
+                    "status": "ready-for-review",
+                }),
+                encoding="utf-8",
+            )
+            return "RECOVERY: resolved\n"
+        raise RuntimeError(f"unexpected outside agent {agent_name}")
+
+    session = ConsoleSession(root=repo, agent="grok")
+    res = recovery.recover(session, agent="rogue_agent", runner=fake_runner)
+    assert res == "resolved"
+    assert called == ["grok", "codex"]
+    attempts = recovery.load_attempts(repo)
+    assert len(attempts) == 1
+    assert attempts[0]["agent"] == "codex"
+
+
+def test_recovery_exhausted_chain_with_outside_override_reports_only_chain_agents(
+    tmp_path: Path,
+) -> None:
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import agents as relay_agents
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n[backup]\nchain = ["claude"]\n',
+        encoding="utf-8",
+    )
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-3",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "no-handoff",
+            "log_path": "round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        raise relay_agents.AgentTimeout(f"{agent_name} timed out")
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.recover(session, agent="rogue_agent", runner=fake_runner)
+    assert res == "human"
+    assert res.verdict == "human"
+    assert called == ["codex", "claude"]
+    assert "codex" in res and "claude" in res
+    assert "rogue_agent" not in res
+    assert "rogue_agent" not in str(res)
+    assert res.agents == ["claude", "codex"]
+
+
+
