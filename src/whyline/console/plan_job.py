@@ -4,10 +4,34 @@ change requests back. No widgets here; tui.py owns presentation."""
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 from whyline.console import relay_ops
+
+
+def run_auto(
+    root: Path,
+    request: AutoRunRequest,
+    fingerprint: str,
+    progress=None,
+    cancel_event: threading.Event | None = None,
+    launcher=None,
+    **kwargs,
+) -> dict:
+    from whyline.console import auto_run
+
+    return auto_run.run(
+        root,
+        request,
+        fingerprint,
+        progress=progress,
+        cancel_event=cancel_event,
+        launcher=launcher,
+        **kwargs,
+    )
+
 
 
 @dataclass(frozen=True)

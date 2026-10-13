@@ -493,7 +493,7 @@ async def test_other_sources_do_not_show_auto_execution_fields(tmp_path):
         timeout = screen.query_one("#bs-timeout", tui.Select)
         assert timeout.value == 15
         assert [value for _label, value in timeout._options] == list(tui.BRAINSTORM_TIMEOUT_OPTIONS)
-        assert not screen.query("#rp-run")
+        assert not screen.query_one("#rp-run").display
         assert not screen.query("#cb-timeout")
         for source in ("brainstorm", "draft", "paste"):
             screen.query_one("#rp-source", tui.Select).value = source
@@ -657,7 +657,7 @@ async def test_auto_check_and_cancel_fit_on_80x24(tmp_path):
         await pilot.pause()
         assert _fits(screen.query_one("#rp-check"))
         assert _fits(screen.query_one("#rp-cancel"))
-        assert not screen.query("#rp-run")
+        assert _fits(screen.query_one("#rp-run"))
 
 
 async def test_check_asks_before_the_worker_when_antigravity_is_unresolved(tmp_path, monkeypatch):
@@ -1059,7 +1059,7 @@ async def test_warning_keeps_its_hint_and_stores_a_fingerprint(tmp_path, monkeyp
         assert "fix: split the roles" in text
         assert "FAIL" not in _status_words(text)
         assert screen._check_fingerprint == "ab" * 32
-        assert not screen.query("#rp-run")
+        assert screen.query_one("#rp-run").disabled is False
 
 
 async def test_a_fail_line_keeps_its_hint_and_stores_no_fingerprint(tmp_path, monkeypatch):
@@ -1094,12 +1094,13 @@ async def test_editing_the_topic_after_a_clean_check_clears_it(tmp_path, monkeyp
         positions = [text.index(heading) for heading in _HEADINGS]
         assert positions == sorted(positions)
         assert screen._check_fingerprint
+        assert screen.query_one("#rp-run").disabled is False
         screen.query_one("#bs-topic", tui.Input).value = "a different topic"
         await pilot.pause()
         assert _checks_text(screen) == ""
         assert "-empty" in screen.query_one("#rp-checks").classes
         assert screen._check_fingerprint is None
-        assert not screen.query("#rp-run")
+        assert screen.query_one("#rp-run").disabled is True
 
 
 async def test_porcelain_change_does_not_match_the_stored_fingerprint(tmp_path, monkeypatch):
@@ -1401,3 +1402,151 @@ async def test_trust_it_marks_the_trust_line_ok(tmp_path, monkeypatch):
         assert "Antigravity trust is not resolved" not in text
         assert _git(repo, "status", "--porcelain") == before
     assert calls == {"trust": 1, "decline": 0}
+
+
+def _auto_request(**overrides) -> plan_job.AutoRunRequest:
+    fields = dict(
+        name="resume-test",
+        topic="my-topic",
+        replace=False,
+        continue_paths=False,
+        agents=("codex",),
+        passes=1,
+        final_agent="codex",
+        timeout_minutes=15,
+        attachments=(),
+        drafter="claude",
+        reviewer="codex",
+        implementer="grok",
+        tester="claude",
+        reviewer_role="codex",
+        release="human",
+        chain=("codex",),
+    )
+    fields.update(overrides)
+    return plan_job.AutoRunRequest(**fields)
+
+
+async def test_untracked_file_makes_run_refuse_with_out_of_date_line(tmp_path, monkeypatch):
+    repo = _ready(tmp_path / "repo")
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        text = await _run_check(pilot, screen)
+        assert _status_words(text).count("FAIL") == 0
+        assert screen._check_fingerprint is not None
+        assert screen.query_one("#rp-run").disabled is False
+
+        (repo / "untracked.txt").write_text("hello\n", encoding="utf-8")
+        screen.query_one("#rp-run").scroll_visible()
+        await pilot.pause()
+        await pilot.click("#rp-run")
+        await pilot.pause()
+
+        assert app.screen is screen
+        assert screen._check_fingerprint is None
+        assert screen.query_one("#rp-run").disabled is True
+
+        lines = [str(line) for line in app.screen_stack[0].query_one("#transcript", tui.RichLog).lines]
+        assert any("This check is out of date. Check again." in line for line in lines)
+
+
+async def test_clean_check_run_dismisses_with_request_and_fingerprint(tmp_path, monkeypatch):
+    repo = _ready(tmp_path / "repo")
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+    app = tui.WhylineConsoleApp(root=repo)
+    dismissed = []
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_filled(app, pilot)
+        screen.dismiss = lambda result: dismissed.append(result)
+        text = await _run_check(pilot, screen)
+        assert _status_words(text).count("FAIL") == 0
+        stored = screen._check_fingerprint
+        assert stored is not None
+
+        screen.query_one("#rp-run").scroll_visible()
+        await pilot.pause()
+        await pilot.click("#rp-run")
+        await pilot.pause()
+
+        assert len(dismissed) == 1
+        req, fp = dismissed[0]
+        assert isinstance(req, plan_job.AutoRunRequest)
+        assert fp == stored
+
+
+async def test_checkpoint_loaded_when_paused_and_enabled_if_fresh_match(tmp_path, monkeypatch):
+    from whyline.state import atomic_write_json
+    from whyline_relay import gitcheck
+
+    repo = _ready(tmp_path / "repo")
+    gitcheck.ensure_relay_ignored(repo)
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+
+    req = _auto_request()
+    doc = auto_run.document(repo, req)
+    fp = auto_run.fingerprint(repo, req)
+    checkpoint = {
+        "schema": 1,
+        "phase": "paused",
+        "fingerprint": fp,
+        "request": auto_run._form_view(doc),
+        "pause": {"reason": "paused for test", "actions": ["resume", "cancel"]},
+    }
+    cp_path = auto_run.checkpoint_path(repo)
+    cp_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(cp_path, checkpoint)
+
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "auto"
+        await pilot.pause()
+
+        run_btn = screen.query_one("#rp-run", tui.Button)
+        assert str(run_btn.label) == "Resume"
+        assert run_btn.disabled is False
+        assert screen.query_one("#rp-name", tui.Input).value == "resume-test"
+        assert screen.query_one("#bs-topic", tui.Input).value == "my-topic"
+
+
+async def test_checkpoint_dirty_tree_disables_resume(tmp_path, monkeypatch):
+    from whyline.state import atomic_write_json
+    from whyline_relay import gitcheck
+
+    repo = _ready(tmp_path / "repo")
+    gitcheck.ensure_relay_ignored(repo)
+    _logins(monkeypatch)
+    _ban_writes(monkeypatch)
+
+    req = _auto_request()
+    doc = auto_run.document(repo, req)
+    fp = auto_run.fingerprint(repo, req)
+    checkpoint = {
+        "schema": 1,
+        "phase": "paused",
+        "fingerprint": fp,
+        "request": auto_run._form_view(doc),
+        "pause": {"reason": "paused for test", "actions": ["resume", "cancel"]},
+    }
+    cp_path = auto_run.checkpoint_path(repo)
+    cp_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(cp_path, checkpoint)
+
+    (repo / "dirty.txt").write_text("modified\n")
+
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "auto"
+        await pilot.pause()
+
+        run_btn = screen.query_one("#rp-run", tui.Button)
+        assert str(run_btn.label) == "Resume"
+        assert run_btn.disabled is True
+
+

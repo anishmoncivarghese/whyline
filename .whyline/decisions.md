@@ -13452,3 +13452,146 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6ad303f2c81345ebb1ba2ea13acbec21 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-12T20:18:38.314Z"} -->
+
+## 2026-10-12 — Flatten context-bar controls to one row instead of growing the bar
+
+**Actor:** claude
+**Role:** implementer
+**Task:** BAR-FIX
+
+**Because:** BAR-3 pinned #context-bar to height 1 but Select/Input/Checkbox/Button keep Textual's 2-3 row tall border, so only their top edge showed and values were hidden; borderless height-1 fields with a $boost background keep the one-row layout and Save on screen at 80/120/200 columns
+
+**Rejected:**
+
+- height — auto on the bar: costs 2 extra rows of transcript for every mode
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: f729315d48d64c7d8c3fc0233053c846 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-12T22:09:21.504Z"} -->
+
+## 2026-10-13 — Open Set up and Plan on the Automatic backup order when no chain is saved; a saved chain still loads as saved
+
+**Actor:** claude
+**Role:** implementer
+**Task:** BAR-FIX
+
+**Because:** User asked for Automatic as the default; with an empty chain a failed agent simply pauses, which is what happened when grok ran out
+
+**Rejected:**
+
+- Always open on Automatic — would silently discard a chain the user deliberately saved
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: c94f84704c3943fabfb3ff9a080dcf74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T04:55:35.990Z"} -->
+
+## 2026-10-13 — Ship the console fixes as whyline 0.3.40.2 from v0.3.40.1 plus cherry-picks, not from the relay plan branch
+
+**Actor:** claude
+**Role:** release
+**Task:** BAR-FIX
+
+**Because:** The plan branch carries RUN-4..RUN-6 Auto-run code whose UI (RUN-7) is unfinished and slated for 0.3.41; a patch off the last release ships only the bar fix, the Automatic default and the whyline-relay>=0.2.36 floor
+
+**Rejected:**
+
+- Release from the plan branch — would publish half-wired Auto run
+- Wait for 0.3.41 — Codex and Antigravity are out of usage, so RUN-7 is blocked
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: 8ea11abb5eb248048f999930d80d49b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T05:21:47.445Z"} -->
+
+## 2026-10-13 — Set up offers relay timeouts of 30, 45, 60 minutes or none, written only when changed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** UTO-5
+
+**Because:** User asked for a 30-minute floor with longer options; antigravity hit the fixed 1800s limit on RUN-7. Writing only on change avoids a config commit on every Check
+
+**Rejected:**
+
+- Include 15 minutes as UTO-5 planned — user set 30 as the minimum
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 7ee7122367d34c47830d2aef3f3c550f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T15:36:52.691Z"} -->
+
+## 2026-10-13 — Constrain RelayPlanScreen form to 45vh and checks to 25vh scrollable
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RUN-7
+
+**Because:** Candidate checks output contains dozens of lines that overflowed unscrollable modal containers, pushing action buttons off-screen at 80x24 and 110x40; mirroring RelaySetupScreen layout keeps buttons reachable
+
+**Rejected:**
+
+- Let checks grow height auto — pushed Run and Cancel off-screen causing OutOfBounds on clicks
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4e484ad6c4ca4647b6304ec988935702 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T16:17:52.775Z"} -->
+
+## 2026-10-13 — RUN-7 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** RUN-7
+
+**Because:** The mandated targeted RUN-7 suite and the complete project pytest suite both exited 0, covering Run gating, stale fingerprints, popup reachability, auto-run dispatch, cancellation, and unchanged PlanRequest flows
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: f0e6e106182a4491aea95c76141448bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T16:23:43.167Z"} -->
+
+## 2026-10-13 — Approve RUN-7 Auto Run button and main window auto runner execution
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RUN-7
+
+**Because:** All task specifications are met, working-tree changes are clean and targeted, and both targeted and full pytest suites passed with exit 0.
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 5815d2d6f632475fb469d2fcefe7b2a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T16:31:27.195Z"} -->
+
+## 2026-10-13 — Cleared the sticky reviewer failover (codex->antigravity from 2026-10-13 01:07)
+
+**Actor:** claude
+**Role:** operator
+**Task:** RUN-7
+
+**Because:** The override never expired, so antigravity reviewed its own RUN-7 implementation; codex has usage again
+
+**Files:** .whyline/relay/active-roles.json
+
+<!-- whyline-event: c2ec9892897f49b2bdb5ab8fe87c733c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T16:51:42.933Z"} -->
+
+## 2026-10-13 — Send RUN-7 back to review by codex and rebase the relay's base_commit onto d0b0044
+
+**Actor:** claude
+**Role:** operator
+**Task:** RUN-7
+
+**Because:** antigravity's approval was a self-review caused by a stale reviewer failover; the two commits after dafa513 (02ac08a, d0b0044) only change .whyline/relay/config.toml, so treating d0b0044 as the base keeps them out of the RUN-7 commit
+
+**Rejected:**
+
+- git reset dafa513 as the relay suggested — would fold the two config edits into the RUN-7 commit
+- Commit on antigravity's approval — implementer approved its own work
+
+**Files:** .whyline/relay/state.json
+
+<!-- whyline-event: a3bd13bd4d07400393f1a5ad15bef557 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T17:00:35.489Z"} -->

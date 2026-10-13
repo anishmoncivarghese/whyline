@@ -850,3 +850,110 @@ async def test_thinking_line_shows_brackets_literally(tmp_path):
         shown = str(app.query_one("#thinking", tui.Static).renderable)
         assert "[1/3] Codex starting pass-zero" in shown
         assert "[bold]x[/]" in shown
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_bottom_bar_run_opens_plan_when_no_plan_exists(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+        await pilot.click("#relay-run")
+        await pilot.pause()
+        from whyline.console.relay_screens import RelayPlanScreen
+        assert isinstance(app.screen, RelayPlanScreen)
+
+
+def _auto_request(**overrides):
+    from whyline.console import plan_job
+
+    fields = dict(
+        name="test",
+        topic="t",
+        replace=False,
+        continue_paths=False,
+        agents=("codex",),
+        passes=1,
+        final_agent="codex",
+        timeout_minutes=15,
+        attachments=(),
+        drafter="claude",
+        reviewer="codex",
+        implementer="grok",
+        tester="claude",
+        reviewer_role="codex",
+        release="human",
+        chain=("codex",),
+    )
+    fields.update(overrides)
+    return plan_job.AutoRunRequest(**fields)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_fake_end_to_end_dismiss_calls_run_auto_once(tmp_path, monkeypatch):
+    from whyline.console import plan_job
+    called = []
+
+    def fake_run_auto(root, request, fingerprint, progress=None, cancel_event=None, launcher=None, **kwargs):
+        called.append((root, request, fingerprint))
+        if progress:
+            progress("auto step 1")
+        return {"phase": "relay"}
+
+    monkeypatch.setattr(plan_job, "run_auto", fake_run_auto)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        req = _auto_request()
+        app._plan_chosen((req, "fp123"))
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if called:
+                break
+        assert len(called) == 1
+        assert called[0][0] == tmp_path
+        assert called[0][1] == req
+        assert called[0][2] == "fp123"
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("auto step 1" in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_stop_sets_auto_cancel_event(tmp_path, monkeypatch):
+    import threading
+    from whyline.console import plan_job
+    started = threading.Event()
+    cancelled = threading.Event()
+
+    def fake_run_auto(root, request, fingerprint, progress=None, cancel_event=None, launcher=None, **kwargs):
+        started.set()
+        if cancel_event:
+            cancel_event.wait(timeout=5)
+            if cancel_event.is_set():
+                cancelled.set()
+        return {"phase": "stopped"}
+
+    monkeypatch.setattr(plan_job, "run_auto", fake_run_auto)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        req = _auto_request()
+        app._plan_chosen((req, "fp123"))
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if started.is_set():
+                break
+        assert started.is_set()
+        assert not app.query_one("#stop", tui.Button).disabled
+        await pilot.click("#stop")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if cancelled.is_set():
+                break
+        assert cancelled.is_set()
+
+

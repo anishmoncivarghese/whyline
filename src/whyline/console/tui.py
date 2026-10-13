@@ -588,6 +588,7 @@ class WhylineConsoleApp(App):
         self._busy_text = ""
         self._busy_since = 0.0
         self._spin = 0
+        self._auto_cancel_event = None
         self._relay = None  # the RelayProcess started by Start/Resume, if any
         self._relay_label = ""
         self._external_relay: str | None = None  # a relay another console started
@@ -2272,6 +2273,10 @@ class WhylineConsoleApp(App):
         if self._plan_state == "working":
             self._leave_plan()
             self._end_run_flow("Run stopped: no plan was saved.")
+        if getattr(self, "_auto_cancel_event", None) is not None:
+            self._auto_cancel_event.set()
+            self._auto_cancel_event = None
+            self._end_run_flow("Run stopped.")
         for worker in self.workers:
             worker.cancel()
         self._set_busy(False)
@@ -2655,10 +2660,80 @@ class WhylineConsoleApp(App):
         if result is None:
             self._end_run_flow("Run cancelled.")
             return
+        if isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], plan_job.AutoRunRequest):
+            request, fingerprint = result
+            self._start_auto_job(request, fingerprint)
+            return
         if isinstance(result, plan_job.PlanRequest):
             self._start_plan_job(result)
         else:
             self._plan_saved(result)
+
+    def _start_auto_job(self, request: plan_job.AutoRunRequest, fingerprint: str) -> None:
+        import threading
+
+        cancel_event = threading.Event()
+        self._auto_cancel_event = cancel_event
+        token = object()
+        self._dispatch_token = token
+        self._set_busy(True, "auto")
+        root = self.session.root
+
+        def in_thread() -> None:
+            def progress(line: str) -> None:
+                self.call_from_thread(self._auto_progress, line, token)
+
+            result = None
+            error = None
+            try:
+                result = plan_job.run_auto(
+                    root,
+                    request,
+                    fingerprint,
+                    progress=progress,
+                    cancel_event=cancel_event,
+                    launcher=lambda args: self.call_from_thread(self._launch_relay, args),
+                )
+            except Exception as caught:
+                error = caught
+            if error is not None:
+                self.call_from_thread(self._auto_failed, error, token)
+                return
+            self.call_from_thread(self._auto_done, result, token)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _auto_progress(self, line: str, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self.render_event(SessionEvent(kind="output", text=line))
+        self._busy_text = line
+
+    def _auto_failed(self, error: Exception, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self._auto_cancel_event = None
+        self.render_event(
+            SessionEvent(
+                kind="error",
+                text=f"Auto run stopped: {error or error.__class__.__name__}.",
+            )
+        )
+        self._end_run_flow("Run stopped.")
+
+    def _auto_done(self, result: dict | None, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._set_busy(False)
+        self._auto_cancel_event = None
+        if isinstance(result, dict):
+            if "pause" in result:
+                reason = result["pause"].get("reason", "")
+                self.render_event(SessionEvent(kind="pause", text=reason))
+            elif result.get("phase") == "stopped":
+                self.render_event(SessionEvent(kind="output", text="Auto run stopped."))
+        self._end_run_flow("Auto run finished.")
 
     def _plan_saved(self, path: Path | None) -> None:
         if path is None:
@@ -3139,6 +3214,10 @@ class WhylineConsoleApp(App):
         if self._relay_running():
             self.push_screen(QuitRelayScreen(self._relay_label or "relay"), self._quit_choice)
             return
+        if getattr(self, "_auto_cancel_event", None) is not None:
+            from whyline.console import auto_run
+
+            auto_run.close_console(self.session.root, self._auto_cancel_event)
         self.exit()
 
     def _quit_choice(self, choice: "str | None") -> None:

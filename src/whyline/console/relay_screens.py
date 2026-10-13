@@ -120,7 +120,7 @@ class RelayPlanScreen(ModalScreen):
         width: 96; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
         border: thick $accent; background: $surface;
     }
-    RelayPlanScreen #rp-form { height: auto; max-height: 70vh; }  /* 1fr has no effect in an auto-height popup */
+    RelayPlanScreen #rp-form { height: auto; max-height: 45vh; }  /* 1fr has no effect in an auto-height popup */
     RelayPlanScreen Vertical, RelayPlanScreen Horizontal { height: auto; }
     RelayPlanScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelayPlanScreen TextArea { height: 8; }
@@ -134,13 +134,13 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen #rp-committer, RelayPlanScreen #rp-auto-summary { height: auto; }
     RelayPlanScreen #rp-error { color: $error; height: auto; }
     RelayPlanScreen #rp-error.-empty { display: none; }
-    RelayPlanScreen #rp-checks { height: auto; }
+    RelayPlanScreen #rp-checks { height: auto; max-height: 25vh; overflow-y: auto; }
     RelayPlanScreen #rp-checks.-empty { display: none; }
     RelayPlanScreen #rp-buttons { margin-top: 1; }
     RelayPlanScreen #rp-buttons Button { margin-right: 1; }
     """
 
-    def __init__(self, root: Path, status: dict, active: str) -> None:
+    def __init__(self, root: Path, status: dict, active: str, source: str = "brainstorm") -> None:
         super().__init__()
         self._root = root
         self._status = status
@@ -150,6 +150,9 @@ class RelayPlanScreen(ModalScreen):
         self._final_writer: str | None = None
         self._token: object | None = None
         self._check_fingerprint: str | None = None
+        self._initial_source = source
+        self._checkpoint_loaded = False
+        self._filling = False
         self._load_execution_defaults()
 
     def _agent_select(self, wanted: str, select_id: str) -> Select:
@@ -166,7 +169,7 @@ class RelayPlanScreen(ModalScreen):
             ),
             Horizontal(
                 Label("Source:", classes="field-label"),
-                Select(_SOURCES, value="brainstorm", allow_blank=False, id="rp-source"),
+                Select(_SOURCES, value=self._initial_source, allow_blank=False, id="rp-source"),
             ),
             Vertical(
                 Label("Paste the plan (each task as `- [ ] ID: title`):"),
@@ -202,12 +205,15 @@ class RelayPlanScreen(ModalScreen):
         )
         check = Button("Check", id="rp-check", variant="primary")
         check.display = False
+        run_btn = Button("Run", id="rp-run", variant="success", disabled=True)
+        run_btn.display = False
         yield Vertical(
             form,
             Static("", id="rp-error", classes="-empty"),
             Static("", id="rp-checks", classes="-empty", markup=False),
             Horizontal(
                 check,
+                run_btn,
                 Button("Make the plan", id="rp-go", variant="success"),
                 Button("Resume draft", id="rp-resume-draft", variant="primary"),
                 Button("Discard it", id="rp-discard-draft", variant="warning"),
@@ -340,7 +346,7 @@ class RelayPlanScreen(ModalScreen):
         return relay_ops.staged_backup(primary, usable)
 
     def on_mount(self) -> None:
-        self._show_source("brainstorm")
+        self._show_source(self._initial_source)
         pending = relay_ops.pending_draft(self._root)
         spec = relay_ops.pending_spec(self._root)
         resume = bool(pending or spec)
@@ -393,7 +399,10 @@ class RelayPlanScreen(ModalScreen):
         if source != "auto":
             go.label = "Save" if source == "paste" else "Make the plan"
         self.query_one("#rp-check", Button).display = source == "auto"
+        self.query_one("#rp-run", Button).display = source == "auto"
         self._drop_stored_check()
+        if source == "auto":
+            self._load_auto_checkpoint()
 
     def _sync_from(self, source: str | None = None) -> None:
         source = self._source() if source is None else source
@@ -404,6 +413,8 @@ class RelayPlanScreen(ModalScreen):
         self.query_one("#rp-writer-row").display = source == "brainstorm" and not new
 
     def on_select_changed(self, event: "Select.Changed") -> None:
+        if getattr(self, "_filling", False):
+            return
         select_id = event.select.id
         if select_id == "rp-source":
             self._show_source(event.value)
@@ -421,6 +432,8 @@ class RelayPlanScreen(ModalScreen):
             self._drop_stored_check()
 
     def on_input_changed(self, event: "Input.Changed") -> None:
+        if getattr(self, "_filling", False):
+            return
         if event.input.id in _AUTO_INPUTS:
             self._drop_stored_check()
 
@@ -444,6 +457,8 @@ class RelayPlanScreen(ModalScreen):
             drafter.value = current
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        if getattr(self, "_filling", False):
+            return
         box_id = event.checkbox.id or ""
         if box_id.startswith("bs-"):
             self._sync_brainstorm_agents()
@@ -551,6 +566,53 @@ class RelayPlanScreen(ModalScreen):
             return
         self._start_check_worker()
 
+    def _on_rp_run(self) -> None:
+        from whyline.console import auto_run
+
+        try:
+            request = self._auto_request()
+        except (TypeError, ValueError) as error:
+            self._show_check_failure(error)
+            return
+
+        try:
+            fresh_doc = auto_run.document(self._root, request)
+            fresh_fp = auto_run._digest(fresh_doc)
+        except Exception:
+            fresh_doc = None
+            fresh_fp = None
+
+        saved = None
+        checkpoint_file = auto_run.checkpoint_path(self._root)
+        if checkpoint_file.is_file():
+            from whyline.state import load_object
+            try:
+                saved = load_object(checkpoint_file)
+            except Exception:
+                saved = None
+        is_checkpoint = isinstance(saved, dict) and (saved.get("phase") in ("paused", "stopped") or "pause" in saved)
+
+        matches = False
+        if self._check_fingerprint and fresh_fp is not None:
+            if fresh_fp == self._check_fingerprint:
+                matches = True
+            elif is_checkpoint:
+                form_matches = (saved.get("request") == auto_run._form_view(fresh_doc))
+                clean_tree = (fresh_doc.get("porcelain") == "") and not auto_run._repository_failures(self._root)
+                if form_matches and clean_tree and self._check_fingerprint in (saved.get("fingerprint"), saved.get("last_check")):
+                    matches = True
+
+        if not matches:
+            self._drop_stored_check()
+            if hasattr(self.app, "render_event"):
+                from whyline.console.session import SessionEvent
+                self.app.render_event(
+                    SessionEvent(kind="error", text="This check is out of date. Check again.")
+                )
+            return
+
+        self.dismiss((request, self._check_fingerprint))
+
     def _ask_antigravity_trust(self) -> None:
         """Same wording as `_with_antigravity`. That helper is unchanged."""
         from whyline_relay import antigravity
@@ -585,14 +647,46 @@ class RelayPlanScreen(ModalScreen):
     def _show_check_failure(self, error: Exception) -> None:
         """One FAIL line. No fingerprint, and the worker does not start."""
         self._check_fingerprint = None
+        try:
+            self.query_one("#rp-run", Button).disabled = True
+        except NoMatches:
+            pass
         checks = self.query_one("#rp-checks", Static)
         checks.update(f"FAIL  {error}")
         checks.remove_class("-empty")
 
     def _drop_stored_check(self) -> None:
-        """Forget the last check. Run is not mounted; a missing fingerprint
-        is what would leave it disabled.
-        """
+        """Forget the last check."""
+        if self._source() == "auto":
+            from whyline.console import auto_run
+            from whyline.state import load_object
+
+            path = auto_run.checkpoint_path(self._root)
+            saved = None
+            if path.is_file():
+                try:
+                    saved = load_object(path)
+                except Exception:
+                    saved = None
+            if isinstance(saved, dict) and (
+                saved.get("phase") in ("paused", "stopped") or "pause" in saved
+            ):
+                saved_req = saved.get("request")
+                try:
+                    current_request = self._auto_request()
+                    fresh_doc = auto_run.document(self._root, current_request)
+                    form_matches = saved_req == auto_run._form_view(fresh_doc)
+                    clean_tree = (fresh_doc.get("porcelain") == "") and not auto_run._repository_failures(self._root)
+                    if form_matches and clean_tree:
+                        self._check_fingerprint = saved.get("fingerprint") or saved.get("last_check")
+                        try:
+                            self.query_one("#rp-run", Button).disabled = False
+                        except NoMatches:
+                            pass
+                        return
+                except Exception:
+                    pass
+
         self._token = object()
         self._check_fingerprint = None
         try:
@@ -601,6 +695,144 @@ class RelayPlanScreen(ModalScreen):
             return
         checks.update("")
         checks.add_class("-empty")
+        try:
+            self.query_one("#rp-run", Button).disabled = True
+        except NoMatches:
+            pass
+
+    def _load_auto_checkpoint(self) -> None:
+        from whyline.console import auto_run
+        from whyline.state import load_object
+
+        path = auto_run.checkpoint_path(self._root)
+        if not path.is_file():
+            return
+        try:
+            saved = load_object(path)
+        except Exception:
+            return
+        if not isinstance(saved, dict) or saved.get("schema") != auto_run.SCHEMA:
+            return
+        is_paused_or_stopped = (saved.get("phase") in ("paused", "stopped") or "pause" in saved)
+        if not is_paused_or_stopped:
+            return
+        saved_req = saved.get("request")
+        if not isinstance(saved_req, dict):
+            return
+
+        run_btn = self.query_one("#rp-run", Button)
+        run_btn.label = "Resume"
+
+        self._filling = True
+        try:
+            self._populate_auto_form(saved_req)
+        finally:
+            self._filling = False
+
+        self._refresh_auto_summary()
+        self._sync_planner_agents()
+        self._sync_brainstorm_agents()
+
+        try:
+            current_request = self._auto_request()
+            fresh_doc = auto_run.document(self._root, current_request)
+            form_matches = (saved_req == auto_run._form_view(fresh_doc))
+            clean_tree = (fresh_doc.get("porcelain") == "") and not auto_run._repository_failures(self._root)
+            if form_matches and clean_tree:
+                self._check_fingerprint = saved.get("fingerprint") or saved.get("last_check")
+                run_btn.disabled = False
+            else:
+                self._check_fingerprint = None
+                run_btn.disabled = True
+        except Exception:
+            self._check_fingerprint = None
+            run_btn.disabled = True
+
+    def _populate_auto_form(self, saved_req: dict) -> None:
+        if "name" in saved_req:
+            self.query_one("#rp-name", Input).value = str(saved_req["name"])
+        if "topic" in saved_req:
+            self.query_one("#bs-topic", Input).value = str(saved_req["topic"])
+        if "replace" in saved_req:
+            self.query_one("#rp-replace", Checkbox).value = bool(saved_req["replace"])
+        if "continue_paths" in saved_req:
+            self.query_one("#rp-continue-paths", Checkbox).value = bool(saved_req["continue_paths"])
+        from whyline.console.repl import BRAINSTORM_AGENTS
+        req_agents = set(saved_req.get("agents") or ())
+        for a in BRAINSTORM_AGENTS:
+            try:
+                self.query_one(f"#bs-{a}", Checkbox).value = (a in req_agents)
+            except NoMatches:
+                pass
+        if "passes" in saved_req:
+            self.query_one("#bs-passes", Input).value = str(saved_req["passes"])
+        if "final_agent" in saved_req and saved_req["final_agent"]:
+            try:
+                self.query_one("#bs-final", Select).value = saved_req["final_agent"]
+                self._final_writer = saved_req["final_agent"]
+            except Exception:
+                pass
+        if "timeout_minutes" in saved_req:
+            try:
+                self.query_one("#bs-timeout", Select).value = saved_req["timeout_minutes"]
+            except Exception:
+                pass
+        if "drafter" in saved_req and saved_req["drafter"]:
+            try:
+                self.query_one("#rp-drafter", Select).value = saved_req["drafter"]
+            except Exception:
+                pass
+        if "reviewer" in saved_req and saved_req["reviewer"]:
+            try:
+                self.query_one("#rp-reviewer", Select).value = saved_req["reviewer"]
+            except Exception:
+                pass
+        if "implementer" in saved_req and saved_req["implementer"]:
+            try:
+                self.query_one("#rp-implementer", Select).value = saved_req["implementer"]
+            except Exception:
+                pass
+        if "tester" in saved_req and saved_req["tester"]:
+            try:
+                self.query_one("#rp-tester", Select).value = saved_req["tester"]
+            except Exception:
+                pass
+        if "reviewer_role" in saved_req and saved_req["reviewer_role"]:
+            try:
+                self.query_one("#rp-exec-reviewer", Select).value = saved_req["reviewer_role"]
+            except Exception:
+                pass
+        if "release" in saved_req and saved_req["release"]:
+            try:
+                self.query_one("#rp-release", Select).value = saved_req["release"]
+            except Exception:
+                pass
+        if "chain" in saved_req:
+            try:
+                self.query_one("#rp-chain", OrderedChain).load(list(saved_req["chain"]))
+            except Exception:
+                pass
+        try:
+            att_field = self.query_one("#bs-attachments", AttachmentsField)
+            att_field.pending.clear()
+            from whyline.console import attachments as att
+            for item in saved_req.get("attachments") or ():
+                p_str = item.get("path") if isinstance(item, dict) else str(item)
+                p = Path(p_str)
+                if p.is_file():
+                    import secrets
+                    att_item = att.Attachment(
+                        id=secrets.token_hex(4),
+                        name=p.name,
+                        path=p,
+                        kind=att._kind(p),
+                        size=p.stat().st_size,
+                        source="picker",
+                    )
+                    att_field.pending.add(att_item)
+            att_field.refresh_view()
+        except Exception:
+            pass
 
     def _watch_auto_attachments(self) -> None:
         """The attachment tray does not post a message this screen can hear."""
@@ -612,15 +844,18 @@ class RelayPlanScreen(ModalScreen):
 
         def added(attachment) -> None:
             add(attachment)
-            self._drop_stored_check()
+            if not getattr(self, "_filling", False):
+                self._drop_stored_check()
 
         def removed(attachment_id: str) -> None:
             remove(attachment_id)
-            self._drop_stored_check()
+            if not getattr(self, "_filling", False):
+                self._drop_stored_check()
 
         def cleared() -> None:
             clear()
-            self._drop_stored_check()
+            if not getattr(self, "_filling", False):
+                self._drop_stored_check()
 
         pending.add = added
         pending.remove = removed
@@ -673,6 +908,10 @@ class RelayPlanScreen(ModalScreen):
         token = object()
         self._token = token
         self._check_fingerprint = None
+        try:
+            self.query_one("#rp-run", Button).disabled = True
+        except NoMatches:
+            pass
         self._error("")
         widget = self.query_one("#rp-checks", Static)
         widget.update("Checking…")
@@ -721,6 +960,7 @@ class RelayPlanScreen(ModalScreen):
             widget.update(text)
             widget.set_class(not text, "-empty")
             self._check_fingerprint = digest if failures == 0 else None
+            self.query_one("#rp-run", Button).disabled = self._check_fingerprint is None
         except NoMatches:
             return
 

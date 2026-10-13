@@ -514,3 +514,36 @@ def test_questions_text_numbers_them():
 def test_questions_text_without_asker_defaults():
     text = plan_job.questions_text(plan_job.Outcome("questions", None, ("A?",), ""))
     assert text.splitlines()[0] == "The agent needs answers before the plan can continue:"
+
+
+def test_plan_job_run_auto_calls_auto_run_run(tmp_path, monkeypatch):
+    from whyline.console import auto_run
+
+    called = []
+    monkeypatch.setattr(auto_run, "run", lambda *args, **kwargs: called.append((args, kwargs)) or {"phase": "done"})
+    req = plan_job.AutoRunRequest(
+        name="test",
+        topic="t",
+        replace=False,
+        continue_paths=False,
+        agents=("codex",),
+        passes=1,
+        final_agent="codex",
+        timeout_minutes=15,
+        attachments=(),
+        drafter="claude",
+        reviewer="codex",
+        implementer="grok",
+        tester="claude",
+        reviewer_role="codex",
+        release="human",
+        chain=("codex",),
+    )
+    res = plan_job.run_auto(tmp_path, req, "fp123")
+    assert res == {"phase": "done"}
+    assert len(called) == 1
+    assert called[0][0][0] == tmp_path
+    assert called[0][0][1] == req
+    assert called[0][0][2] == "fp123"
+
+
