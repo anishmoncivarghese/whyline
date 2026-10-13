@@ -557,6 +557,18 @@ async def test_configured_roles_still_take_the_chain_from_read_backup(tmp_path, 
         assert screen.query_one("#rp-chain", OrderedChain).order() == ["claude"]
 
 
+async def test_an_unsaved_chain_opens_on_automatic(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "read_backup", lambda root: [])
+    monkeypatch.setattr(relay_ops, "usable_agents", lambda root, status: ["claude", "codex", "grok"])
+    from whyline import model
+
+    model.set_default_agent(tmp_path, "codex")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        assert screen.query_one("#rp-chain", OrderedChain).order() == ["claude", "grok"]
+
+
 async def test_drafter_follows_the_final_writer_only_while_it_still_matches(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
@@ -1158,7 +1170,9 @@ async def test_auto_edits_drop_the_stored_fingerprint(tmp_path, monkeypatch):
         assert _checks_text(screen) == ""
 
         await passed()
-        screen.query_one("#chain-check-grok", tui.Checkbox).value = True
+        # Flip it: an unsaved chain opens on Automatic, which may tick grok.
+        grok = screen.query_one("#chain-check-grok", tui.Checkbox)
+        grok.value = not grok.value
         await pilot.pause()
         assert screen._check_fingerprint is None
         assert _checks_text(screen) == ""
