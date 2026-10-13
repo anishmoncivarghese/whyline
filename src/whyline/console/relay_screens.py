@@ -355,7 +355,8 @@ class RelayPlanScreen(ModalScreen):
         if pending:
             self._error(f'A plan draft for "{pending}" was left unfinished.')
         # The chain's own on_mount sync returns while is_mounted is still false.
-        self.query_one("#rp-chain", OrderedChain).load(self._chain)
+        # Nothing saved yet: open on Automatic rather than on no backup.
+        self.query_one("#rp-chain", OrderedChain).load(self._chain or self._fill_backup())
         self._sync_planner_agents()
         self._sync_brainstorm_agents()
         self._refresh_auto_summary()
@@ -1322,7 +1323,8 @@ class RelaySetupScreen(ModalScreen):
                 self.query_one("#rs-check").display = False
         # compose() loads before the chain is mounted, and the chain's own
         # on_mount sync returns while is_mounted is still false.
-        self.query_one("#rs-backup", OrderedChain).load(self._backup)
+        # Nothing saved yet: open on Automatic rather than on no backup.
+        self.query_one("#rs-backup", OrderedChain).load(self._backup or self._fill_backup())
         self._update_meaning()
         self.call_after_refresh(self._ready)
 

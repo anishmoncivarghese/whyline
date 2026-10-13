@@ -385,6 +385,10 @@ async def test_automatic_fills_only_an_empty_editor_from_staged_backup(tmp_path,
     async with app.run_test(size=(110, 60)) as pilot:
         screen, _ = await _open(app, pilot)
         chain = screen.query_one("#rs-backup", OrderedChain)
+        # Nothing saved, so the editor opens on Automatic already.
+        assert chain.order() == ["claude", "grok"]
+        screen.query_one("#chain-none", tui.Button).press()
+        await pilot.pause()
         assert chain.order() == []
         screen.query_one("#chain-automatic", tui.Button).press()
         await pilot.pause()
