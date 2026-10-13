@@ -223,7 +223,7 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.3.40.1"
+version = "0.3.40.2"
 source = { editable = "." }
 dependencies = [
     { name = "markdown" },
@@ -244,7 +244,7 @@ requires-dist = [
     { name = "markdown", specifier = ">=3.5,<4" },
     { name = "prompt-toolkit", specifier = ">=3.0,<4.0" },
     { name = "textual", specifier = ">=2.1.2,<3.0" },
-    { name = "whyline-relay", specifier = ">=0.2.34,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.36,<0.3" },
 ]
 provides-extras = ["relay", "console", "ui", "all"]
 
@@ -252,14 +252,14 @@ provides-extras = ["relay", "console", "ui", "all"]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "whyline-relay", specifier = ">=0.2.34,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.36,<0.3" },
 ]
 
 [[package]]
 name = "whyline-relay"
-version = "0.2.34.1"
+version = "0.2.36"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2d/06/825b64d27992c30c1af3546fc712308e3c2edafc2de603003b379c90afb2/whyline_relay-0.2.34.1.tar.gz", hash = "sha256:b5d7b5a1ee69618860f09cc15c298566bb6f7eb6e968128db7f4c7b173b5e956", size = 232667, upload-time = "2026-10-11T19:47:52.246Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/75/a2dcdfc9fd5d965c2cc6325fc4cc0725660e97a3e74bd0ab5a95ba9fe626/whyline_relay-0.2.36.tar.gz", hash = "sha256:fa477baced753712ba14481bebd87f3e2bf6419c743ceea6b33246ec80576620", size = 258041, upload-time = "2026-10-13T05:05:37.29Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/33/f2/5603963580a946f9317c6c271a05493ed0b0b3dced4b91cca8e1da645bdd/whyline_relay-0.2.34.1-py3-none-any.whl", hash = "sha256:7f3b92edab01541d154bb1e6fa5d4a0cd4e8450342c85e82b32c620f13c6748d", size = 129143, upload-time = "2026-10-11T19:47:51.037Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/a2/e1777cbbabfe080130ba4428c6cf8c870b01545952a973e45ad469f2537a/whyline_relay-0.2.36-py3-none-any.whl", hash = "sha256:dc57eae22ac798eb7e6e41885bfa5ee61c757ad7fb77347bc5f4380c5781eba6", size = 137426, upload-time = "2026-10-13T05:05:35.755Z" },
 ]
