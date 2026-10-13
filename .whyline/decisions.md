@@ -13852,3 +13852,33 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f5ede0254d5e44e8ae60b3bd4391a6a7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:08:46.417Z"} -->
+
+## 2026-10-13 — REC-2 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-2
+
+**Because:** The 12 targeted recovery tests and the complete project test suite both exited successfully, covering the required scratch-repository fix and cross-repository handoff cases
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a4b7333f7af34ada9f3d59e9043af8c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:15:03.450Z"} -->
+
+## 2026-10-13 — Approve REC-2 mechanical recovery and cross-repository diagnosis
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-2
+
+**Because:** fix commits only the decision log through the relay API, reruns repository preflight, preserves FAIL details, and the read-only cross-repository diagnosis correctly filters task and saved handoff id; all 12 focused tests and the full suite pass
+
+**Rejected:**
+
+- Request changes for compatibility wrappers or the extra EOF blank line — neither changes required behavior or creates a safety issue
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 0fda7a362ae74d8da9a703fb892f3cb3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:19:53.915Z"} -->
