@@ -118,6 +118,31 @@ def test_run_status_reports_a_paused_run(repo):
     assert "stuck" in event.text
 
 
+def test_run_status_while_running_is_not_a_pause(repo):
+    import json
+    import os
+    from datetime import datetime
+    from whyline_relay import state
+
+    state.save(
+        repo.path,
+        state.RelayState(
+            plan="plan.md", branch="relay/plan", task_id="T-1", round=1,
+            base_commit="abc123", paused_reason="agy exceeded 1800s", log_path="x.log",
+        ),
+    )
+    marker = repo.path / ".whyline" / "relay" / "running.json"
+    marker.write_text(json.dumps({
+        "agent": "antigravity", "task": "T-1", "round": 1, "role": "implementer",
+        "started": datetime.now().astimezone().isoformat(), "pid": os.getpid(),
+    }), encoding="utf-8")
+    event = adapters.run_status(repo.path)
+    assert event.kind == "output"
+    assert event.text.startswith("Running: antigravity implementing T-1")
+    assert "Paused    " not in event.text
+    assert "Last pause  agy exceeded 1800s" in event.text
+
+
 def test_failure_kind_classifies_rate_limit():
     assert (
         adapters.failure_kind(

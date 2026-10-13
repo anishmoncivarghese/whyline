@@ -174,6 +174,11 @@ def run_status(root: Path) -> SessionEvent:
     lines.append(f"Task      {saved.task_id}")
     lines.append(f"Branch    {saved.branch}")
     lines.append(f"Plan      {saved.plan}")
+    if active is not None:
+        # The saved pause is only rewritten at the next pause or finish, so
+        # while an agent runs it is history, not the current state.
+        lines.append(f"Last pause  {saved.paused_reason}")
+        return SessionEvent(kind="output", text="\n".join(lines))
     lines.append(f"Paused    {saved.paused_reason}")
     if saved.log_path:
         lines.append(f"Log       {saved.log_path}")
