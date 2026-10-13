@@ -13595,3 +13595,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a3bd13bd4d07400393f1a5ad15bef557 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T17:00:35.489Z"} -->
+
+## 2026-10-13 — Request RUN-7 changes because the implementation commit includes out-of-scope history
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RUN-7
+
+**Because:** RUN-7 explicitly limits edits to three console modules and their tests, but 9f3d9bc adds 143 lines to .whyline/decisions.md, including BAR-FIX, UTO-5, release, and operator records unrelated to the implementation
+
+**Rejected:**
+
+- Approve despite the extra file — would accept a direct violation of the task's Change nothing else boundary
+
+**Files:** .whyline/decisions.md
+
+<!-- whyline-event: dc36d01ce1ae4d61ab7110eae241fdd0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T17:09:29.486Z"} -->
