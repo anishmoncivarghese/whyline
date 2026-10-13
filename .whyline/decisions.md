@@ -13629,3 +13629,34 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: da872df6710e4cb09d2b85b797c19416 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T17:35:50.656Z"} -->
+
+## 2026-10-13 — Marked RUN-8 done with loop.mark_done instead of whyline relay done
+
+**Actor:** claude
+**Role:** release
+**Task:** RUN-8
+
+**Because:** relay done continues the plan and would have launched agents on REC-1, which the user had not asked to start
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 137e70cdc96f4b0ba11133387f09ebd0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T18:31:36.964Z"} -->
+
+## 2026-10-13 — Plan Resolve as user-chosen fixes from a deterministic catalogue, with the selected agent only recommending for unknown problems
+
+**Actor:** claude
+**Role:** planner
+**Task:** REC-4D
+
+**Because:** Every stall on 2026-10-13 (dirty paused work, relay running, HEAD moved by config commits, sticky reviewer switch, 1800s timeout, out of credit) had a known fix; a model is only needed when nothing matches, and letting it act directly is how a hand-edited state.json skipped codex's review
+
+**Rejected:**
+
+- Let the recovery agent apply fixes itself — an agent outside the user's click could resume past a review or edit relay state
+- Keep Recover only on Relay pause cards — Set up and Resume failures were where the user got stuck
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 1a3a3e113b2846288f156ea08495d170 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T18:46:10.448Z"} -->
