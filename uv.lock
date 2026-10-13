@@ -223,7 +223,7 @@ wheels = [
 
 [[package]]
 name = "whyline"
-version = "0.3.40.1"
+version = "0.3.41"
 source = { editable = "." }
 dependencies = [
     { name = "markdown" },
@@ -244,7 +244,7 @@ requires-dist = [
     { name = "markdown", specifier = ">=3.5,<4" },
     { name = "prompt-toolkit", specifier = ">=3.0,<4.0" },
     { name = "textual", specifier = ">=2.1.2,<3.0" },
-    { name = "whyline-relay", specifier = ">=0.2.35,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.36,<0.3" },
 ]
 provides-extras = ["relay", "console", "ui", "all"]
 
@@ -252,14 +252,14 @@ provides-extras = ["relay", "console", "ui", "all"]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "whyline-relay", specifier = ">=0.2.35,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.36,<0.3" },
 ]
 
 [[package]]
 name = "whyline-relay"
-version = "0.2.35"
+version = "0.2.36"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e2/a7/d3190fd05415dba4fabfe1862a451d8d35b479a55eed5f04f550bdc92c00/whyline_relay-0.2.35.tar.gz", hash = "sha256:8b8b1dde562545196de7224625d07bba6411563df6259c8fa918fa328d7ef0e9", size = 257496, upload-time = "2026-10-12T15:42:55.852Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/75/a2dcdfc9fd5d965c2cc6325fc4cc0725660e97a3e74bd0ab5a95ba9fe626/whyline_relay-0.2.36.tar.gz", hash = "sha256:fa477baced753712ba14481bebd87f3e2bf6419c743ceea6b33246ec80576620", size = 258041, upload-time = "2026-10-13T05:05:37.29Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/64/9647cb36db1ec17d8ffa675c71650a4d86d4080796ba4c955b692a103ff6/whyline_relay-0.2.35-py3-none-any.whl", hash = "sha256:5d57777d807e127cbe43235ce5000b8336fdd8c488a46385ff8f880c3c1b46bd", size = 137290, upload-time = "2026-10-12T15:42:54.289Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/a2/e1777cbbabfe080130ba4428c6cf8c870b01545952a973e45ad469f2537a/whyline_relay-0.2.36-py3-none-any.whl", hash = "sha256:dc57eae22ac798eb7e6e41885bfa5ee61c757ad7fb77347bc5f4380c5781eba6", size = 137426, upload-time = "2026-10-13T05:05:35.755Z" },
 ]
