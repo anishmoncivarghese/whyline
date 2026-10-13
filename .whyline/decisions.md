@@ -13690,3 +13690,148 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4cedfd0d30fa41b386262a4a7be1af2e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T20:30:53.763Z"} -->
+
+## 2026-10-13 — Design Idea Analyst as a SQLite-backed local workflow with Excel projection and optional hosted inbox
+
+**Actor:** codex
+**Role:** researcher
+**Task:** IDEA-ANALYST-RESEARCH
+
+**Because:** Whyline already has launchd agents, outbound Telegram, Mail triggers, and checkpointed brainstorm-to-plan services; a durable domain layer can reuse them while preserving evidence, decisions, idempotency, and offline recovery
+
+**Rejected:**
+
+- Use Excel as the database — concurrent updates, locking, schema evolution, and crash recovery would be fragile
+- Make a hosted service authoritative in v1 — it would unnecessarily move ideas, model credentials, and repository context off the Mac
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: 539a13ac36a5456798c2c7f22cee15c5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T20:48:51.864Z"} -->
+
+## 2026-10-13 — Implement mechanical fix with FixResult tuple subclass and cross-repository handoff diagnosis
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-2
+
+**Because:** fix needs to report both status and FAIL lines while supporting string comparison and tuple unpacking; cross-repository handoff extracts git roots from task text and returns read-only diagnosis
+
+**Rejected:**
+
+- Return plain string from fix — loses FAIL lines needed by caller to diagnose issues
+- Mutate or sync external handoff in REC-2 — REC-2 is strictly read-only diagnostics feeding REC-3
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 2e63fda4f47646f89566aa4f9c36815a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T20:52:49.420Z"} -->
+
+## 2026-10-13 — Center the idea analyser on a durable Idea Inbox that reuses the existing brainstorm engine
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** brainstorm-idea-analyser-pass-1
+
+**Because:** The combined review shows Whyline already implements multi-model independent passes, review, synthesis, and planning; the missing product is inbound conversational state, evidence-backed triage, safe ledger projection, and offline recovery
+
+**Rejected:**
+
+- Build a new brainstorm engine — duplicates working relay functionality
+- Use Excel as the source of truth — unsafe for history, deduplication, concurrency, and crash recovery
+- Route every typo through an LLM — deterministic parsing plus constrained fallback is cheaper and safer
+
+**Files:** docs/brainstorm/now-i-am-thinking-of-creating-an-analayser-say-i-send-an-ema.md
+
+<!-- whyline-event: 254167fef0f64d689ffbeed591169066 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T20:56:24.370Z"} -->
+
+## 2026-10-13 — Claude pass-1 review: revise Claude's brainstorm section to converge on Idea Inbox design, defer to Codex's SQLite+xlsx storage model
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** BAK-3
+
+**Because:** My original pass and Codex's revised synthesis independently reached the same architecture (reuse existing brainstorm engine, gate Antigravity's unattended mode, deterministic parsing over LLM typo-correction); revised ratings to align (usefulness 7/9) and adopted Codex's SQLite-source-of-truth design over my original CSV/openpyxl framing
+
+**Rejected:**
+
+- Append a new dated block instead of replacing in place — violates the instruction that the file should show only current view, not history of passes
+- Fix the mislabeled first '## Claude' heading (content is actually Antigravity's pass) — out of scope for this task, which is limited to my own section
+
+**Files:** docs/brainstorm/now-i-am-thinking-of-creating-an-analayser-say-i-send-an-ema.md
+
+<!-- whyline-event: 1b4f0b46bb4049daa09180934496f466 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:00:56.985Z"} -->
+
+## 2026-10-13 — Recommend a staged local-first Idea Inbox using SQLite authority and generated XLSX exports
+
+**Actor:** claude
+**Role:** synthesizer
+**Task:** brainstorm-idea-analyzer-final
+
+**Because:** All review passes converge that Whyline already supplies the differentiated multi-model brainstorm pipeline; the missing value is durable Telegram/email intake, source-backed triage, conversational state, and guarded promotion into planning
+
+**Rejected:**
+
+- Build a new brainstorming engine — duplicates existing Whyline research, synthesis, spec, and plan machinery
+- Use Excel as the authoritative ledger — unsafe for concurrent updates, history, recovery, and job coordination
+- Launch the full hosted multi-model workflow first — validates expensive integration before the smaller capture-analyse-decide loop
+
+**Files:** docs/brainstorm/now-i-am-thinking-of-creating-an-analayser-say-i-send-an-ema.md
+
+<!-- whyline-event: 2543b5ae0cff46549d6dfbf11a007135 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:03:29.803Z"} -->
+
+## 2026-10-13 — Moved Brainstorm's 7 commits off the relay branch to brainstorm/idea-analyser and rewound to REC-2's base with git reset --keep
+
+**Actor:** claude
+**Role:** operator
+**Task:** REC-2
+
+**Because:** A Brainstorm run in the same repo committed during REC-2's draft stage; the relay blamed antigravity and paused. Its suggested git reset would have folded the brainstorm files into REC-2's commit
+
+**Rejected:**
+
+- git reset <base> as the pause message said — brainstorm docs would become uncommitted and join REC-2's commit
+- Keep the commits and resume — the relay pauses again on any HEAD move
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 0626fa8bf9aa491da0828ba9807ca065 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:08:37.176Z"} -->
+
+## 2026-10-13 — Plan REC-4F: a Set up Resolve select, Review or Auto; Auto applies only recommended options that need no confirm, once per task and round
+
+**Actor:** claude
+**Role:** planner
+**Task:** REC-4F
+
+**Because:** The user wants Auto runs not to stop on known problems, but stash, reset, moving commits aside and stopping a relay can lose or rewrite work, so they keep needing a click; one attempt per round stops a fix that does not work from looping
+
+**Rejected:**
+
+- Auto applies every recommended option — would stash or reset without a human
+- Let the agent choose and apply fixes in Auto — already rejected in REC-4D's decision
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 5bfde7d7b8434faab01f3e42836ff686 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:08:37.208Z"} -->
+
+## 2026-10-13 — Add foreign-commits to REC-4C: commits by another whyline run during a stage are moved to a branch, not blamed on the agent
+
+**Actor:** claude
+**Role:** planner
+**Task:** REC-4C
+
+**Because:** On 2026-10-14 Brainstorm commits during REC-2 were reported as antigravity committing in draft
+
+**Rejected:**
+
+- Fold them into the task with reset-keep — unrelated docs would land in the task's commit and fail review on scope
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: f9c8ac6be63c4053871f2f50cc6a4d52 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T21:08:37.239Z"} -->
