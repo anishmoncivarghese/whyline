@@ -308,7 +308,7 @@ Recovery acts on a relay pause or a dirty-tree preflight FAIL, in Auto and in Re
   Tests: every kind maps as listed; a decision-log-only dirty set is `fix` and adding one more path makes it `human`; a second attempt for the same task and round is refused, a new round is allowed; a corrupt file reads as empty.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] REC-2: Apply the mechanical fixes without an agent
+- [x] REC-2: Apply the mechanical fixes without an agent
   Edit only `src/whyline/console/recovery.py` and `tests/console/test_recovery.py`. `fix` calls `whyline_relay.gitcheck.commit_decision_log(root, task_id)` from `BAK-4` and reruns `preflight.run(root, scope="repository")`; zero FAIL lines means `resolved`, otherwise `human` with the FAIL lines.
   Cross-repository handoff: before any `agent` route, read the paused task's text from the plan and collect the git roots of the absolute paths it names (`git rev-parse --show-toplevel`). For each root other than the relay root, read its `.whyline/active-handoff.json`. When one names the paused task and its id differs from the saved `last_handoff_id`, return a diagnosis naming that repository and the handoff id. This step does not copy, move, or rewrite any handoff file. It only feeds the diagnosis to `REC-3`'s prompt.
   Tests on scratch repos: a decision-log-only pause commits once and resolves; a second dirty path is `human` and commits nothing; a newer handoff for the task in a second repository is diagnosed with its id; a handoff for another task, or one equal to `last_handoff_id`, is not.
