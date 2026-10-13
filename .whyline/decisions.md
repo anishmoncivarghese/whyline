@@ -13612,3 +13612,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dc36d01ce1ae4d61ab7110eae241fdd0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T17:09:29.486Z"} -->
+
+## 2026-10-13 — Release 0.3.41 with whyline-relay>=0.2.36, not the planned >=0.2.35
+
+**Actor:** claude
+**Role:** release
+**Task:** RUN-8
+
+**Because:** 0.3.40.2 already shipped requiring 0.2.36 for the billing-exhaustion failover fix; 0.3.41 must not lower the floor below a released patch
+
+**Rejected:**
+
+- Keep >=0.2.35 as RUN-8 text says — would let 0.3.41 install without the failover fix 0.3.40.2 relies on
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: da872df6710e4cb09d2b85b797c19416 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-13T17:35:50.656Z"} -->
