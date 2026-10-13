@@ -1207,6 +1207,7 @@ class RelaySetupScreen(ModalScreen):
         self._release = relay_ops.release_role(root)
         self._summary = self._guided and self._configured
         self._backup = list(self._roles.get("backup") or [])
+        self._timeout = relay_ops.relay_timeout(root)
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
 
@@ -1293,6 +1294,15 @@ class RelaySetupScreen(ModalScreen):
                         id="rs-release",
                     ),
                 ),
+                Horizontal(
+                    Label("Timeout:", classes="field-label"),
+                    Select(
+                        self._timeout_options(),
+                        value=self._timeout,
+                        allow_blank=False,
+                        id="rs-timeout",
+                    ).with_tooltip("How long one agent may run before the relay stops it"),
+                ),
                 Label("Backup, used when an agent fails:"),
                 chain,
                 Static("", id="rs-meaning"),
@@ -1309,6 +1319,12 @@ class RelaySetupScreen(ModalScreen):
                 id="rs-buttons",
             ),
         )
+
+    def _timeout_options(self) -> list[tuple[str, int]]:
+        """30, 45, 60 minutes, then none (0). A saved value outside those stays
+        selectable, so opening Set up never rewrites a timeout nobody touched."""
+        minutes = sorted({*relay_ops.RELAY_TIMEOUT_OPTIONS, self._timeout} - {0})
+        return [(f"{m} minutes", m) for m in minutes] + [("none (no limit)", 0)]
 
     def on_mount(self) -> None:
         self.query_one("#rs-make-plan").display = not self._plans
@@ -1405,6 +1421,7 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-checks", Static).update("Checking…")
         root, chosen = self._root, self._chosen()
         release = self.query_one("#rs-release", Select).value
+        timeout = self.query_one("#rs-timeout", Select).value
         plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
 
         def in_thread() -> None:
@@ -1413,6 +1430,9 @@ class RelaySetupScreen(ModalScreen):
                     relay_ops.forget_antigravity_decline(root)
                 relay_ops.save_roles(root, *chosen)
                 relay_ops.save_release(root, release)
+                # Only on a change: each write is its own config commit.
+                if timeout != relay_ops.relay_timeout(root):
+                    relay_ops.save_timeout(root, timeout)
                 agents_to_prepare = [chosen[0], chosen[1], chosen[2], *chosen[3]]
                 if release != "human":
                     agents_to_prepare.append(release)

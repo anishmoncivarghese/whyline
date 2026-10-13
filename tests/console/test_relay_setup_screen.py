@@ -437,3 +437,73 @@ async def test_reordering_the_chain_after_a_check_disables_start(tmp_path, monke
         assert screen.query_one("#rs-backup", OrderedChain).order() == ["claude", "grok"]
         assert screen.query_one("#rs-start", tui.Button).disabled
         assert _checks_text(screen) == ""
+
+
+def _timeout_rows(select) -> list:
+    return [value for _prompt, value in select._options if value is not tui.Select.BLANK]
+
+
+async def test_timeout_offers_30_45_60_and_none_and_shows_the_saved_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_timeout", lambda root: 45)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        select = screen.query_one("#rs-timeout", tui.Select)
+        assert _timeout_rows(select) == [30, 45, 60, 0]
+        assert select.value == 45
+
+
+async def test_an_unlisted_saved_timeout_stays_selected_instead_of_snapping(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_timeout", lambda root: 20)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        select = screen.query_one("#rs-timeout", tui.Select)
+        assert _timeout_rows(select) == [20, 30, 45, 60, 0]
+        assert select.value == 20
+
+
+async def test_check_saves_a_changed_timeout_and_not_an_unchanged_one(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_timeout", lambda root: 30)
+    monkeypatch.setattr(
+        relay_ops, "save_timeout", lambda root, minutes: ops.append(("timeout", minutes))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        start = screen.query_one("#rs-start", tui.Button)
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "first check")
+        assert not [op for op in ops if op[0] == "timeout"]
+        screen.query_one("#rs-timeout", tui.Select).value = 60
+        await pilot.pause()
+        assert start.disabled  # a changed timeout needs a fresh check
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "second check")
+    assert ("timeout", 60) in ops
+
+
+async def test_none_is_saved_as_zero(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_timeout", lambda root: 30)
+    monkeypatch.setattr(
+        relay_ops, "save_timeout", lambda root, minutes: ops.append(("timeout", minutes))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-timeout", tui.Select).value = 0
+        await pilot.pause()
+        screen.query_one("#rs-check", tui.Button).press()
+        start = screen.query_one("#rs-start", tui.Button)
+        await _wait_for(pilot, lambda: not start.disabled, "check")
+    assert ("timeout", 0) in ops
+
+
+async def test_relay_timeout_reads_the_config_and_falls_back_to_30(tmp_path):
+    assert relay_ops.relay_timeout(tmp_path) == 30
+    relay = tmp_path / ".whyline" / "relay"
+    relay.mkdir(parents=True)
+    (relay / "config.toml").write_text('plan = "plan.md"\ntimeout_minutes = 45\n', encoding="utf-8")
+    assert relay_ops.relay_timeout(tmp_path) == 45

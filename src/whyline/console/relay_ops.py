@@ -551,6 +551,25 @@ def save_release(root: Path, value: str) -> None:
     setup.write_release(root, value)
 
 
+# Set up's per-agent-run limits, plus 0 for none. 30 is the floor: a relay
+# stage that runs the test suite routinely needs more than 15 minutes.
+RELAY_TIMEOUT_OPTIONS = (30, 45, 60, 0)
+
+
+def relay_timeout(root: Path) -> int:
+    """The saved `timeout_minutes`, or the relay's default 30 when unreadable."""
+    try:
+        return int(_settings(root).timeout_minutes)
+    except Exception:
+        return 30
+
+
+def save_timeout(root: Path, minutes: int) -> None:
+    from whyline_relay import setup
+
+    setup.write_timeout_minutes(root, minutes)
+
+
 def release_role(root: Path) -> str:
     try:
         return _settings(root).release_role
