@@ -827,3 +827,21 @@ async def test_narrow_agent_prompt_names_the_backup_head(tmp_path, monkeypatch):
         await pilot.pause()
         assert _option_map(select)["claude"] == "claude · bak auto codex"
         assert select.value == "claude"
+
+
+@pytest.mark.parametrize("width", [80, 120, 200])
+async def test_every_bar_control_is_one_row_and_on_screen(tmp_path, width):
+    """The bar is one row, so a bordered Select, Input, Checkbox or Button
+    (two or three rows tall) shows only its top edge: the agent, backup,
+    model and repo values vanish and Save cannot be read."""
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(width, 30)) as pilot:
+        await pilot.pause()
+        bar = app.query_one("#context-bar")
+        assert bar.region.height == 1
+        for child in bar.children:
+            if not child.display:
+                continue
+            assert child.region.height == 1, f"{child.id} is {child.region.height} rows"
+            assert child.region.right <= width, f"{child.id} runs past column {width}"
+        assert app.query_one("#cb-save").region.width >= 4
