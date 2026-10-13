@@ -569,6 +569,16 @@ class WhylineConsoleApp(App):
     #cb-repo { width: 1fr; }
     #context-bar Label { padding: 0 0 0 1; height: 1; }
     #context-bar SelectCurrent { height: 1; text-wrap: nowrap; }
+    /* Select, Input, Checkbox and Button draw a tall border (2-3 rows). In a
+       one-row bar that clips them to their top edge, hiding every value, so
+       flatten them to one row and mark each field with a background. */
+    #context-bar Select, #context-bar Input, #context-bar Checkbox,
+    #context-bar Button { height: 1; min-height: 1; border: none; }
+    #context-bar SelectCurrent { border: none; padding: 0 1; background: $boost; }
+    #context-bar Input { padding: 0 1; background: $boost; }
+    #context-bar Input:focus, #context-bar Select:focus > SelectCurrent { background: $primary 30%; }
+    #context-bar Checkbox { padding: 0 1; background: transparent; }
+    #context-bar Button { padding: 0 1; min-width: 6; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
     #agents-status { height: auto; padding: 0 1; color: $text-muted; display: none; }
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
