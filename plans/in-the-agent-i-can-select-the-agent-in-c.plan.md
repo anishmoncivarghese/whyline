@@ -302,7 +302,7 @@ RUN-1 hit its visit caps because Codex's sandbox (rooted in this checkout) could
 
 Recovery acts on a relay pause or a dirty-tree preflight FAIL, in Auto and in Relay mode. It fixes what is mechanical, hands one narrow turn to the selected agent and then the backup chain for a missing handoff, and stops for a human on everything else. It never edits task code, never passes `--allow-dirty`, and never resumes until `preflight.run(root, scope="repository")` passes.
 
-- [ ] REC-1: Classify a pause into a recovery route
+- [x] REC-1: Classify a pause into a recovery route
   Edit only `src/whyline/console/recovery.py` (new) and `tests/console/test_recovery.py` (new). Add `route(kind: str, dirty: list[str]) -> str`, returning `fix`, `agent`, `failover`, or `human`. `kind` is `adapters.failure_kind(reason)`, unchanged, plus `dirty` for a clean-tree FAIL. `dirty` whose paths are exactly `[".whyline/decisions.md"]` is `fix`; any other dirty set is `human`. `no-handoff` is `agent`. `rate-limit` is `failover`. `auth`, `blocked`, `round-cap`, `release`, and `other` are `human`. Do not add phrases to `_FAILURE_PHRASES`.
   Add the attempt record `.whyline/relay/recovery.json`, schema 1: a list of `{task, round, kind, agent, verdict, at}`. `allowed(root, task, round) -> bool` is False once that task and round have one entry. A missing or unreadable file is an empty list. Writes go through a temp file and `os.replace`.
   Tests: every kind maps as listed; a decision-log-only dirty set is `fix` and adding one more path makes it `human`; a second attempt for the same task and round is refused, a new round is allowed; a corrupt file reads as empty.
