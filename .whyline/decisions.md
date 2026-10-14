@@ -14738,3 +14738,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 71d1c5e907d24ccf8d2b3934f8451c6a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:54:34.594Z"} -->
+
+## 2026-10-14 — Fix the no-agents crash as NOA-1 right after REC-5, shipping in 0.3.43
+
+**Actor:** claude
+**Role:** planner
+**Task:** NOA-1
+
+**Because:** Set up raises EmptySelectError and Plan raises IndexError when no agent CLI is installed; found by CI on v0.3.42. A message plus disabled buttons tells a new user what to install instead of a traceback
+
+**Rejected:**
+
+- Show an empty form with a blank agent — lets Check and Start run with no agent
+- Fold it into the 0.3.42 release — that release is already tagged and in CI
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: fc6455ee84254bf3b54826cd9d021a27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:58:15.657Z"} -->
