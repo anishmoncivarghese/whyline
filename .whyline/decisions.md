@@ -14720,3 +14720,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1c3afb0d1d6d445592a980cc90c9c0fa -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.952Z"} -->
+
+## 2026-10-14 — Fix the v0.3.42 CI failure in the tests with an installed_agents fixture, and move the unpublished v0.3.42 tag to the fix
+
+**Actor:** claude
+**Role:** release
+**Task:** REC-5
+
+**Because:** relay_ops.relay_agents uses shutil.which, so the five REC tests depended on agent CLIs being installed; CI has none. Product behaviour (installed and logged in) is correct. The release run skipped publish, so nothing on PyPI points at the old tag
+
+**Rejected:**
+
+- Autouse fixture faking agents for every console test — would hide real which-based behaviour in other tests
+- Release as 0.3.42.1 and leave v0.3.42 on a commit that never published — a version number with no package
+
+**Files:** tests/console/conftest.py
+
+<!-- whyline-event: 71d1c5e907d24ccf8d2b3934f8451c6a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:54:34.594Z"} -->
