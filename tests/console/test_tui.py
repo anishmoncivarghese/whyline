@@ -969,7 +969,7 @@ def _init_test_repo(path):
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_resolve_closes_setup_and_prints_problem_with_recommended_option_first(tmp_path, monkeypatch):
+async def test_resolve_closes_setup_and_prints_problem_with_recommended_option_first(tmp_path, monkeypatch, installed_agents):
     from textual.containers import Horizontal
     from whyline.console import relay_screens
     _init_test_repo(tmp_path)
@@ -1932,7 +1932,7 @@ async def test_ask_agent_opt_prefixed_recommendation_in_tui(tmp_path, monkeypatc
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monkeypatch):
+async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monkeypatch, installed_agents):
     import subprocess
     from whyline_relay import config as relay_config
 

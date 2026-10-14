@@ -28,3 +28,17 @@ def _no_real_scheduler(monkeypatch):
 
     monkeypatch.setattr(launchd, "turn_on", refuse)
     monkeypatch.setattr(launchd, "turn_off", refuse)
+
+
+@pytest.fixture
+def installed_agents(monkeypatch):
+    """Pretend these relay agents are installed. `relay_ops.relay_agents`
+    looks the CLIs up on PATH, so a test that fakes `account.agent_status`
+    alone passes on a developer Mac and fails on CI, where none is installed."""
+    from whyline.console import relay_ops
+
+    def install(*names: str) -> None:
+        monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: sorted(names))
+
+    install("antigravity", "claude", "codex", "grok")
+    return install

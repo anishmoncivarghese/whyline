@@ -1240,7 +1240,7 @@ def test_visit_cap_pause_is_classified_visit_cap_and_routes_to_human(tmp_path: P
     assert "Retry stage: type resume --retry-stage or press Retry stage" in event.text
 
 
-def test_each_known_problem_diagnosed_with_recommended_option_first(tmp_path: Path, monkeypatch) -> None:
+def test_each_known_problem_diagnosed_with_recommended_option_first(tmp_path: Path, monkeypatch, installed_agents) -> None:
     import subprocess
     from whyline import account
     from whyline_relay import failover, running
@@ -1605,7 +1605,7 @@ def test_timeout_steps_30_to_45_45_to_60_and_60_to_none(tmp_path: Path) -> None:
     assert launched == [["resume"]]
 
 
-def test_out_of_usage_offers_only_usable_agents(tmp_path: Path, monkeypatch) -> None:
+def test_out_of_usage_offers_only_usable_agents(tmp_path: Path, monkeypatch, installed_agents) -> None:
     import subprocess
     from whyline import account
     from whyline_relay import failover
@@ -1657,8 +1657,7 @@ def test_out_of_usage_offers_only_usable_agents(tmp_path: Path, monkeypatch) -> 
 
 
 def test_out_of_usage_configured_pipeline_updates_mapped_role_and_resumes(
-    tmp_path: Path, monkeypatch
-) -> None:
+    tmp_path: Path, monkeypatch, installed_agents) -> None:
     import subprocess
     from whyline import account
     from whyline_relay import failover
