@@ -14756,3 +14756,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fc6455ee84254bf3b54826cd9d021a27 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:58:15.657Z"} -->
+
+## 2026-10-14 — Raise the Resolve UI test wait loops from 1.5 s to a 15 s ceiling
+
+**Actor:** claude
+**Role:** release
+**Task:** REC-5
+
+**Because:** Windows CI git commits exceed 1.5 s; the loops exit as soon as their condition holds, so a higher ceiling costs nothing when fast. A 3 s delay in recovery.apply fails the old test and passes the new one
+
+**Rejected:**
+
+- Skip the test on Windows — hides the Resolve flow from Windows coverage
+
+**Files:** tests/console/test_tui.py
+
+<!-- whyline-event: 5f33f91f9f7940dd95dc5fda1ddccf1b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T22:14:18.538Z"} -->
