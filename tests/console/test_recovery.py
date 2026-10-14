@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from whyline.console import adapters, recovery
 
 
@@ -1238,4 +1240,621 @@ def test_visit_cap_pause_is_classified_visit_cap_and_routes_to_human(tmp_path: P
     assert "Retry stage: type resume --retry-stage or press Retry stage" in event.text
 
 
+def test_each_known_problem_diagnosed_with_recommended_option_first(tmp_path: Path, monkeypatch) -> None:
+    import subprocess
+    from whyline import account
+    from whyline_relay import failover, running
 
+    # 1. dirty-log
+    repo_log = _init_scratch_repo(tmp_path / "repo_log")
+    (repo_log / ".whyline" / "decisions.md").write_text("# Decisions\n- note\n", encoding="utf-8")
+    probs = recovery.diagnose(repo_log, ["FAIL  working tree has uncommitted changes: .whyline/decisions.md"], "")
+    assert len(probs) == 1
+    assert probs[0].id == "dirty-log"
+    assert probs[0].options[0].id == "commit-log"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 2. dirty-paused-work
+    repo_paused = _init_scratch_repo(tmp_path / "repo_paused")
+    (repo_paused / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "REC-1", "paused_reason": "dirty"}), encoding="utf-8"
+    )
+    (repo_paused / "work.txt").write_text("in progress\n")
+    probs = recovery.diagnose(repo_paused, ["FAIL  working tree has uncommitted changes"], "dirty")
+    assert probs[0].id == "dirty-paused-work"
+    assert probs[0].options[0].id == "resume-keep"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[1].id == "stash"
+    assert probs[0].options[1].confirm is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 3. dirty-other
+    repo_other = _init_scratch_repo(tmp_path / "repo_other")
+    (repo_other / "untracked.txt").write_text("random\n")
+    probs = recovery.diagnose(repo_other, ["FAIL  working tree has uncommitted changes"], "")
+    assert probs[0].id == "dirty-other"
+    assert probs[0].options[0].id == "stash"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[0].confirm is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 4. relay-running
+    repo_run = _init_scratch_repo(tmp_path / "repo_run")
+    running.start_turn(repo_run, "codex", "REC-1", 1, role="implementer")
+    try:
+        probs = recovery.diagnose(repo_run, ["FAIL  another relay is running here"], "")
+        assert probs[0].id == "relay-running"
+        assert probs[0].options[0].id == "wait"
+        assert probs[0].options[0].recommended is True
+        assert probs[0].options[1].id == "stop"
+        assert probs[0].options[1].confirm is True
+        assert probs[0].options[-2].id == "show"
+        assert probs[0].options[-1].id == "cancel"
+    finally:
+        running.clear(repo_run)
+
+    # 5. head-moved
+    repo_head = _init_scratch_repo(tmp_path / "repo_head")
+    base_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_head, capture_output=True, text=True).stdout.strip()
+    (repo_head / "src").mkdir(exist_ok=True)
+    (repo_head / "src" / "alpha.py").write_text("x = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo_head, check=True)
+    subprocess.run(["git", "commit", "-m", "work: alpha"], cwd=repo_head, check=True)
+    (repo_head / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "REC-1", "base_commit": base_sha, "paused_reason": "HEAD moved before the relay could make its own commit"}),
+        encoding="utf-8",
+    )
+    probs = recovery.diagnose(repo_head, [], "REC-1: HEAD moved before the relay could make its own commit; reset to base")
+    assert probs[0].id == "head-moved"
+    assert probs[0].options[0].id == "reset-keep"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[0].confirm is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 6. foreign-commits
+    repo_fc = _init_scratch_repo(tmp_path / "repo_fc")
+    base_fc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_fc, capture_output=True, text=True).stdout.strip()
+    (repo_fc / "docs").mkdir(exist_ok=True)
+    (repo_fc / "docs" / "brainstorm.md").write_text("doc\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo_fc, check=True)
+    subprocess.run(["git", "commit", "-m", "brainstorm: initial ideas"], cwd=repo_fc, check=True)
+    (repo_fc / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "REC-1", "base_commit": base_fc, "paused_reason": "codex made a commit in stage 'draft'"}),
+        encoding="utf-8",
+    )
+    probs = recovery.diagnose(repo_fc, [], "codex made a commit in stage 'draft', which the relay forbids")
+    assert probs[0].id == "foreign-commits"
+    assert probs[0].options[0].id == "move-aside"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[0].confirm is True
+    assert probs[0].options[1].id == "reset-keep"
+    assert probs[0].options[1].confirm is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 7. sticky-switch
+    repo_sticky = _init_scratch_repo(tmp_path / "repo_sticky")
+    failover.write_override(
+        repo_sticky,
+        "implementer",
+        failover.ActiveOverride("claude", "codex", "rate-limit", "2026-10-14", []),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"codex": {"available": True, "label": "available", "hint": None}},
+    )
+    probs = recovery.diagnose(repo_sticky, [], "")
+    assert probs[0].id == "sticky-switch"
+    assert probs[0].options[0].id == "reset-role"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 8. timeout
+    repo_to = _init_scratch_repo(tmp_path / "repo_to")
+    probs = recovery.diagnose(repo_to, [], "codex exceeded 1800s and was terminated")
+    assert probs[0].id == "timeout"
+    assert probs[0].options[0].id == "resume-longer"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[1].id == "resume"
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 9. out-of-usage
+    repo_usg = _init_scratch_repo(tmp_path / "repo_usg")
+    (repo_usg / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n[backup]\nchain = ["codex"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-am", "update backup chain"], cwd=repo_usg, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"codex": {"available": False}, "claude": {"available": False}, "grok": {"available": True}},
+    )
+    probs = recovery.diagnose(repo_usg, [], "codex hit a usage or rate limit; try again when it resets")
+    assert probs[0].id == "out-of-usage"
+    assert probs[0].options[0].id == "use-grok"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 10. visit-cap
+    repo_vc = _init_scratch_repo(tmp_path / "repo_vc")
+    probs = recovery.diagnose(repo_vc, [], "TASK-1 hit stage 'review''s 3-visit cap without reaching \"@complete\"")
+    assert probs[0].id == "visit-cap"
+    assert probs[0].options[0].id == "retry-stage"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+    # 11. unknown
+    repo_unk = _init_scratch_repo(tmp_path / "repo_unk")
+    probs = recovery.diagnose(repo_unk, [], "unrecognized glitch occurred")
+    assert probs[0].id == "unknown"
+    assert probs[0].options[0].id == "ask-agent"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+
+def test_commit_log_commits_one_file(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    count_before = _commit_count(repo)
+    (repo / ".whyline" / "decisions.md").write_text("# Decisions\n- [2026-10-14] new decision\n", encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "REC-4C", "paused_reason": "dirty"}), encoding="utf-8"
+    )
+
+    probs = recovery.diagnose(repo, ["FAIL  working tree has uncommitted changes: .whyline/decisions.md"], "")
+    assert probs[0].id == "dirty-log"
+    assert probs[0].options[0].id == "commit-log"
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "commit-log", launched.append)
+
+    assert _commit_count(repo) == count_before + 1
+    assert "Committed decision log" in res
+    assert _last_commit_message(repo) == "chore: record REC-4C decisions"
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True).stdout
+    assert status.strip() == ""
+    assert launched == []
+
+
+def test_stash_leaves_clean_tree_and_named_stash(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "REC-4C", "paused_reason": "dirty"}), encoding="utf-8"
+    )
+    (repo / "dirty_code.py").write_text("print('dirty')\n", encoding="utf-8")
+
+    probs = recovery.diagnose(repo, ["FAIL  working tree has uncommitted changes"], "dirty")
+    assert probs[0].id == "dirty-paused-work"
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "stash", launched.append)
+
+    assert "Stashed uncommitted changes" in res
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True).stdout
+    assert status.strip() == ""
+    stashes = subprocess.run(["git", "stash", "list"], cwd=repo, capture_output=True, text=True, check=True).stdout
+    assert "whyline resolve REC-4C" in stashes
+    assert launched == []
+
+
+def test_resume_keep_calls_launch_and_nothing_else(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "REC-4C", "paused_reason": "dirty"}), encoding="utf-8"
+    )
+    (repo / "dirty_code.py").write_text("print('dirty')\n", encoding="utf-8")
+
+    probs = recovery.diagnose(repo, ["FAIL  working tree has uncommitted changes"], "dirty")
+    assert probs[0].id == "dirty-paused-work"
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "resume-keep", launched.append)
+
+    assert launched == [["resume", "--allow-dirty"]]
+    assert "Resumed relay with uncommitted changes kept" in res
+    assert (repo / "dirty_code.py").is_file()
+
+
+def test_head_moved_lists_commits_and_their_files(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "src" / "alpha.py").write_text("alpha = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "work: commit alpha"], cwd=repo, check=True)
+
+    (repo / "src" / "beta.py").write_text("beta = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "work: commit beta"], cwd=repo, check=True)
+
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "task_id": "REC-4C",
+            "base_commit": base,
+            "paused_reason": "REC-4C: HEAD moved before the relay could make its own commit; reset to base",
+        }),
+        encoding="utf-8",
+    )
+
+    probs = recovery.diagnose(repo, [], "REC-4C: HEAD moved before the relay could make its own commit; reset to base")
+    assert probs[0].id == "head-moved"
+
+    evidence_text = "\n".join(probs[0].evidence)
+    assert "work: commit alpha" in evidence_text
+    assert "work: commit beta" in evidence_text
+    assert "alpha.py" in evidence_text
+    assert "beta.py" in evidence_text
+
+    detail = probs[0].options[0].detail
+    assert "src/alpha.py" in detail
+    assert "src/beta.py" in detail
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "reset-keep", launched.append)
+    assert launched == [["resume", "--allow-dirty"]]
+    current_head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    assert current_head == base
+    assert (repo / "src" / "alpha.py").read_text(encoding="utf-8") == "alpha = 1\n"
+    assert (repo / "src" / "beta.py").read_text(encoding="utf-8") == "beta = 2\n"
+
+
+def test_foreign_commits_move_aside_and_src_touch_makes_head_moved(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    (repo / "docs").mkdir(exist_ok=True)
+
+    for i in range(1, 4):
+        (repo / "docs" / f"brainstorm_{i}.md").write_text(f"draft {i}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-m", f"brainstorm: pass {i}"], cwd=repo, check=True)
+
+    # Task's dirty uncommitted work
+    (repo / "task_work.txt").write_text("uncommitted work\n", encoding="utf-8")
+
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "task_id": "REC-4C",
+            "base_commit": base,
+            "paused_reason": "codex made a commit in stage 'draft', which the relay forbids",
+        }),
+        encoding="utf-8",
+    )
+
+    probs = recovery.diagnose(repo, [], "codex made a commit in stage 'draft', which the relay forbids")
+    assert probs[0].id == "foreign-commits"
+    assert probs[0].options[0].id == "move-aside"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[0].confirm is True
+    assert probs[0].options[1].id == "reset-keep"
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "move-aside", launched.append)
+
+    # Move-aside leaves them on branch and HEAD at base with dirty files intact
+    current_head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    assert current_head == base
+    assert (repo / "task_work.txt").read_text(encoding="utf-8") == "uncommitted work\n"
+    assert launched == [["resume", "--allow-dirty"]]
+
+    branches = subprocess.run(["git", "branch"], cwd=repo, capture_output=True, text=True, check=True).stdout
+    assert "whyline-aside/REC-4C-" in branches
+
+    # One commit touching src/ makes it head-moved
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "src" / "feature.py").write_text("touch = True\n", encoding="utf-8")
+    subprocess.run(["git", "add", "src/feature.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "brainstorm: touches src"], cwd=repo, check=True)
+
+    probs2 = recovery.diagnose(repo, [], "codex made a commit in stage 'draft', which the relay forbids")
+    assert probs2[0].id == "head-moved"
+    assert probs2[0].options[0].id == "reset-keep"
+    launched2: list[list[str]] = []
+    recovery.apply(repo, probs2[0], "reset-keep", launched2.append)
+    assert launched2 == [["resume", "--allow-dirty"]]
+
+
+def test_timeout_steps_30_to_45_45_to_60_and_60_to_none(tmp_path: Path) -> None:
+    from whyline.console import relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_timeout(repo, 30)
+    assert relay_ops.relay_timeout(repo) == 30
+
+    # Step 1: 30 to 45
+    probs = recovery.diagnose(repo, [], "codex exceeded 1800s and was terminated")
+    assert probs[0].id == "timeout"
+    assert probs[0].options[0].id == "resume-longer"
+    launched: list[list[str]] = []
+    recovery.apply(repo, probs[0], "resume-longer", launched.append)
+    assert relay_ops.relay_timeout(repo) == 45
+    assert launched == [["resume"]]
+
+    # Step 2: 45 to 60
+    probs = recovery.diagnose(repo, [], "codex exceeded 2700s and was terminated")
+    assert probs[0].id == "timeout"
+    launched = []
+    recovery.apply(repo, probs[0], "resume-longer", launched.append)
+    assert relay_ops.relay_timeout(repo) == 60
+    assert launched == [["resume"]]
+
+    # Step 3: 60 to none (0)
+    probs = recovery.diagnose(repo, [], "codex exceeded 3600s and was terminated")
+    assert probs[0].id == "timeout"
+    launched = []
+    recovery.apply(repo, probs[0], "resume-longer", launched.append)
+    assert relay_ops.relay_timeout(repo) == 0
+    assert launched == [["resume"]]
+
+
+def test_out_of_usage_offers_only_usable_agents(tmp_path: Path, monkeypatch) -> None:
+    import subprocess
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n[backup]\nchain = ["codex", "claude", "grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-am", "update backup chain"], cwd=repo, check=True)
+
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            agent="codex",
+            backup_for="codex",
+            reason="rate-limit",
+            since="2026-10-14T10:00:00Z",
+            tried=["claude", "grok"],
+        ),
+    )
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "codex": {"available": False},
+            "claude": {"available": False},
+            "grok": {"available": True},
+        },
+    )
+
+    probs = recovery.diagnose(repo, [], "codex hit a usage or rate limit; try again when it resets")
+    assert probs[0].id == "out-of-usage"
+    option_ids = [opt.id for opt in probs[0].options]
+    assert "use-grok" in option_ids
+    assert "use-claude" not in option_ids
+    assert "use-codex" not in option_ids
+    assert probs[0].options[0].id == "use-grok"
+    assert probs[0].options[0].recommended is True
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "use-grok", launched.append)
+    assert launched == [["resume"]]
+    assert "Set role implementer to grok" in res
+    cfg_text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert 'implementer = "grok"' in cfg_text
+
+
+def test_out_of_usage_configured_pipeline_updates_mapped_role_and_resumes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        """plan = "plan.md"
+
+[roles]
+implementer = "codex"
+tester = "claude"
+reviewer = "claude"
+
+[pipeline]
+default_profile = "full"
+
+[pipeline.profiles]
+full = ["draft", "test", "review"]
+
+[pipeline.stages.draft]
+role = "implementer"
+prompt = "implement"
+
+[pipeline.stages.draft.on]
+ready = "@next"
+
+[pipeline.stages.test]
+role = "tester"
+prompt = "test"
+
+[pipeline.stages.test.on]
+passed = "@next"
+failed = "draft"
+
+[pipeline.stages.review]
+role = "reviewer"
+prompt = "review"
+
+[pipeline.stages.review.on]
+approved = "@complete"
+rejected = "draft"
+
+[backup]
+chain = ["codex", "claude"]
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-am", "configure pipeline"], cwd=repo, check=True)
+
+    # Paused at stage 'draft', mapped to role 'implementer'
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4C",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "codex hit a usage or rate limit; try again when it resets",
+            "log_path": "round.log",
+            "stage": "draft",
+            "profile": "full",
+        }),
+        encoding="utf-8",
+    )
+
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            agent="codex",
+            backup_for="codex",
+            reason="rate-limit",
+            since="2026-10-14T10:00:00Z",
+            tried=["claude"],
+        ),
+    )
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "codex": {"available": False},
+            "claude": {"available": False},
+            "grok": {"available": True},
+        },
+    )
+
+    probs = recovery.diagnose(repo, [], "codex hit a usage or rate limit; try again when it resets")
+    assert probs[0].id == "out-of-usage"
+    assert probs[0].options[0].id == "use-grok"
+    assert probs[0].options[0].detail == "whyline relay roles set implementer grok, then resume"
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "use-grok", launched.append)
+    assert launched == [["resume"]]
+    assert "Set role implementer to grok" in res
+    cfg_text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert 'implementer = "grok"' in cfg_text
+
+    # Paused at stage 'test', mapped to role 'tester'
+    repo_test = _init_scratch_repo(tmp_path / "repo_test")
+    (repo_test / ".whyline" / "relay" / "config.toml").write_text(
+        """plan = "plan.md"
+
+[roles]
+implementer = "codex"
+tester = "claude"
+reviewer = "claude"
+
+[pipeline]
+default_profile = "full"
+
+[pipeline.profiles]
+full = ["draft", "test", "review"]
+
+[pipeline.stages.draft]
+role = "implementer"
+prompt = "implement"
+
+[pipeline.stages.draft.on]
+ready = "@next"
+
+[pipeline.stages.test]
+role = "tester"
+prompt = "test"
+
+[pipeline.stages.test.on]
+passed = "@next"
+failed = "draft"
+
+[pipeline.stages.review]
+role = "reviewer"
+prompt = "review"
+
+[pipeline.stages.review.on]
+approved = "@complete"
+rejected = "draft"
+
+[backup]
+chain = ["codex", "claude"]
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-am", "configure pipeline"], cwd=repo_test, check=True)
+
+    (repo_test / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4C",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "claude hit a usage or rate limit; try again when it resets",
+            "log_path": "round.log",
+            "stage": "test",
+            "profile": "full",
+        }),
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo_test,
+        "tester",
+        failover.ActiveOverride(
+            agent="claude",
+            backup_for="claude",
+            reason="rate-limit",
+            since="2026-10-14T10:00:00Z",
+            tried=["codex"],
+        ),
+    )
+    probs_test = recovery.diagnose(repo_test, [], "claude hit a usage or rate limit; try again when it resets")
+    assert probs_test[0].id == "out-of-usage"
+    assert probs_test[0].options[0].id == "use-grok"
+    assert probs_test[0].options[0].detail == "whyline relay roles set tester grok, then resume"
+
+    launched_test: list[list[str]] = []
+    res_test = recovery.apply(repo_test, probs_test[0], "use-grok", launched_test.append)
+    assert launched_test == [["resume"]]
+    assert "Set role tester to grok" in res_test
+    cfg_text_test = (repo_test / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert 'tester = "grok"' in cfg_text_test
+
+
+def test_unrecognised_reason_is_unknown(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    probs = recovery.diagnose(repo, [], "a completely unrecognized error message happened")
+    assert probs[0].id == "unknown"
+    assert probs[0].options[0].id == "ask-agent"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[-2].id == "show"
+    assert probs[0].options[-1].id == "cancel"
+
+
+def test_apply_with_unoffered_option_raises_value_error(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    probs = recovery.diagnose(repo, [], "a completely unrecognized error message happened")
+    assert probs[0].id == "unknown"
+    with pytest.raises(ValueError, match="not offered"):
+        recovery.apply(repo, probs[0], "nonexistent-option", lambda cmd: None)

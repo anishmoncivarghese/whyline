@@ -8,9 +8,10 @@ import re
 import subprocess
 import tempfile
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 SCHEMA = 1
 RECOVERY_FILE = Path(".whyline/relay/recovery.json")
@@ -1120,3 +1121,794 @@ def explain_sandbox(root: Path | str, reason: str, task_id: str = "") -> dict[st
             f"add '{flag_str} {dir_target}' to [agents.{agent}] command in .whyline/relay/config.toml"
         )
     return {"command": cmd, "agent": agent, "dir_flag": flag, "config_change": config_change}
+
+
+@dataclass(frozen=True)
+class Option:
+    id: str
+    label: str
+    detail: str
+    recommended: bool
+    confirm: bool
+
+
+@dataclass(frozen=True)
+class Problem:
+    id: str
+    summary: str
+    evidence: list[str]
+    options: list[Option]
+
+
+def next_timeout(current: int) -> int:
+    if current == 0:
+        return 0
+    for candidate in (45, 60):
+        if candidate > current:
+            return candidate
+    return 0
+
+
+def _read_state_dict(root_path: Path) -> dict[str, Any]:
+    state_file = root_path / ".whyline" / "relay" / "state.json"
+    if state_file.is_file():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def diagnose(
+    root: Path | str,
+    fail_lines: list[str] | None = None,
+    pause_reason: str = "",
+) -> list[Problem]:
+    root_path = Path(root).resolve()
+    fails = [str(f) for f in (fail_lines or [])]
+    reason = str(pause_reason or "")
+
+    st = None
+    try:
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+    except Exception:
+        pass
+
+    st_dict = _read_state_dict(root_path)
+
+    saved_task_id = (st.task_id if st and st.task_id else "") or str(st_dict.get("task_id") or "")
+    saved_base_commit = (st.base_commit if st and st.base_commit else "") or str(st_dict.get("base_commit") or "")
+    saved_pause_reason = (st.paused_reason if st and st.paused_reason else "") or str(st_dict.get("paused_reason") or "")
+    saved_plan = (st.plan if st and st.plan else "") or str(st_dict.get("plan") or "")
+    saved_stage = (st.stage if st and st.stage else "") or str(st_dict.get("stage") or "")
+
+    if not reason and not fails and saved_pause_reason:
+        reason = saved_pause_reason
+
+    problems: list[Problem] = []
+
+    # 1. relay-running
+    live_marker = None
+    try:
+        from whyline_relay import running
+
+        live_marker = running.live(root_path)
+    except Exception:
+        pass
+
+    if live_marker is not None or any("another relay is running here" in line for line in fails):
+        pid_str = f" (pid {live_marker.pid})" if live_marker is not None else ""
+        evidence_lines = (
+            [f"Another relay is running here{pid_str}"]
+            if live_marker is not None
+            else [f for f in fails if "another relay is running here" in f]
+        )
+        opts = [
+            Option("wait", "Wait", "print whyline relay status", recommended=True, confirm=False),
+            Option("stop", "Stop relay", "run whyline relay stop", recommended=False, confirm=True),
+            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ]
+        problems.append(
+            Problem(
+                id="relay-running",
+                summary=f"Relay is currently running{pid_str}",
+                evidence=evidence_lines,
+                options=opts,
+            )
+        )
+
+    # 2. sticky-switch
+    try:
+        from whyline import account
+        from whyline_relay import failover
+
+        overrides = failover.read_overrides(root_path)
+        if overrides:
+            agent_status_map = account.agent_status(root_path)
+            for role, override in overrides.items():
+                configured = override.backup_for
+                if agent_status_map.get(configured, {}).get("available"):
+                    evidence_lines = [
+                        f"Role {role} overridden to {override.agent}; configured agent {configured} is logged in again"
+                    ]
+                    opts = [
+                        Option(
+                            "reset-role",
+                            f"Reset {role}",
+                            f"whyline relay roles reset {role}",
+                            recommended=True,
+                            confirm=False,
+                        ),
+                        Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                        Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                    ]
+                    problems.append(
+                        Problem(
+                            id="sticky-switch",
+                            summary=f"Role '{role}' is on backup '{override.agent}', but configured agent '{configured}' is logged in again",
+                            evidence=evidence_lines,
+                            options=opts,
+                        )
+                    )
+    except Exception:
+        pass
+
+    # 3. foreign-commits vs head-moved
+    head_moved_trigger = (
+        "HEAD moved" in reason
+        or "made a commit" in reason
+        or any("HEAD moved" in line or "made a commit" in line for line in fails)
+    )
+    if head_moved_trigger:
+        base_commit = saved_base_commit
+        if not base_commit:
+            m = re.search(r"reset\s+(?:to\s+)?([0-9a-fA-F]{6,40})", reason)
+            if m:
+                base_commit = m.group(1)
+        if not base_commit:
+            try:
+                base_commit = subprocess.run(
+                    ["git", "rev-parse", "HEAD~1"],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+            except Exception:
+                base_commit = "HEAD~1"
+
+        evidence_lines = []
+        try:
+            log_proc = subprocess.run(
+                ["git", "log", "--oneline", f"{base_commit}..HEAD", "--stat"],
+                cwd=root_path,
+                capture_output=True,
+                text=True,
+            )
+            evidence_lines = [l for l in log_proc.stdout.splitlines() if l.strip()]
+        except Exception:
+            evidence_lines = [reason] if reason else fails
+
+        commit_shas = []
+        try:
+            rev_proc = subprocess.run(
+                ["git", "rev-list", "--reverse", f"{base_commit}..HEAD"],
+                cwd=root_path,
+                capture_output=True,
+                text=True,
+            )
+            commit_shas = [c.strip() for c in rev_proc.stdout.splitlines() if c.strip()]
+        except Exception:
+            pass
+
+        all_touched_files = []
+        try:
+            diff_proc = subprocess.run(
+                ["git", "diff", "--name-only", f"{base_commit}..HEAD"],
+                cwd=root_path,
+                capture_output=True,
+                text=True,
+            )
+            all_touched_files = sorted(set(f.strip() for f in diff_proc.stdout.splitlines() if f.strip()))
+        except Exception:
+            pass
+        files_str = ", ".join(all_touched_files) if all_touched_files else "none"
+
+        task_text = ""
+        task_id = saved_task_id
+        if not task_id:
+            m_tid = re.search(r"^([A-Z0-9_-]+):", reason)
+            if m_tid:
+                task_id = m_tid.group(1)
+        if task_id:
+            plan_name = saved_plan or "plan.md"
+            plan_file = root_path / plan_name
+            if plan_file.is_file():
+                try:
+                    from whyline_relay import plan as plan_mod
+
+                    tasks = plan_mod.parse(plan_file.read_text(encoding="utf-8"))
+                    matched = plan_mod.find(tasks, task_id)
+                    if matched:
+                        task_text = matched.text
+                except Exception:
+                    pass
+
+        is_foreign = len(commit_shas) > 0
+        for c in commit_shas:
+            try:
+                subj = subprocess.run(
+                    ["git", "log", "-1", "--format=%s", c],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            except Exception:
+                subj = ""
+            if not (
+                subj.startswith("brainstorm:")
+                or subj.startswith("plan:")
+                or subj.startswith("chore: record decisions")
+                or bool(re.match(r"^chore:\s*record\s+.*decisions", subj))
+            ):
+                is_foreign = False
+                break
+
+            try:
+                c_diff = subprocess.run(
+                    ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", c],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                )
+                c_files = [f.strip() for f in c_diff.stdout.splitlines() if f.strip()]
+            except Exception:
+                c_files = []
+
+            for f in c_files:
+                if f.startswith("src/") or f.startswith("tests/") or f == "src" or f == "tests":
+                    is_foreign = False
+                    break
+                if task_text and f in task_text:
+                    is_foreign = False
+                    break
+            if not is_foreign:
+                break
+
+        if is_foreign:
+            short_head = ""
+            try:
+                short_head = subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            except Exception:
+                short_head = "aside"
+            task_tag = task_id or "task"
+            branch_name = f"whyline-aside/{task_tag}-{short_head}"
+            opts = [
+                Option(
+                    "move-aside",
+                    "Move aside foreign commits",
+                    f"git branch {branch_name} HEAD then git reset --keep {base_commit}, then resume-keep",
+                    recommended=True,
+                    confirm=True,
+                ),
+                Option(
+                    "reset-keep",
+                    "Reset to base commit",
+                    f"git reset {base_commit} (files stay: {files_str}), then resume-keep",
+                    recommended=False,
+                    confirm=True,
+                ),
+                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+            ]
+            problems.append(
+                Problem(
+                    id="foreign-commits",
+                    summary=f"Foreign commits made by another whyline run in {base_commit}..HEAD",
+                    evidence=evidence_lines,
+                    options=opts,
+                )
+            )
+        else:
+            opts = [
+                Option(
+                    "reset-keep",
+                    "Reset to base commit",
+                    f"git reset {base_commit} (files stay: {files_str}), then resume-keep",
+                    recommended=True,
+                    confirm=True,
+                ),
+                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+            ]
+            problems.append(
+                Problem(
+                    id="head-moved",
+                    summary="HEAD moved before the relay could make its own commit",
+                    evidence=evidence_lines,
+                    options=opts,
+                )
+            )
+
+    # 4. Dirty tree problems (dirty-log, dirty-paused-work, dirty-other)
+    dirty_paths = []
+    try:
+        from whyline_relay import gitcheck
+
+        dirty_paths = gitcheck.dirty_paths(root_path)
+    except Exception:
+        pass
+    if not dirty_paths:
+        try:
+            status_p = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root_path,
+                capture_output=True,
+                text=True,
+            )
+            dirty_paths = [l[3:].strip() for l in status_p.stdout.splitlines() if l.strip()]
+        except Exception:
+            pass
+
+    has_dirty_fail = any("uncommitted changes" in line for line in fails)
+
+    if (dirty_paths or has_dirty_fail) and not head_moved_trigger:
+        if dirty_paths == [".whyline/decisions.md"]:
+            task_id = saved_task_id
+            opts = [
+                Option(
+                    "commit-log",
+                    "Commit decision log",
+                    f"gitcheck.commit_decision_log(root, {task_id!r})",
+                    recommended=True,
+                    confirm=False,
+                ),
+                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+            ]
+            problems.append(
+                Problem(
+                    id="dirty-log",
+                    summary="Uncommitted paths are exactly .whyline/decisions.md",
+                    evidence=[".whyline/decisions.md"],
+                    options=opts,
+                )
+            )
+        elif bool(saved_task_id):
+            status_out = ""
+            diff_out = ""
+            try:
+                status_out = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+                diff_out = subprocess.run(
+                    ["git", "diff", "--stat"],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+            except Exception:
+                pass
+            evidence_lines = [l for l in status_out.splitlines() if l.strip()] + [
+                l for l in diff_out.splitlines() if l.strip()
+            ]
+            opts = [
+                Option(
+                    "resume-keep",
+                    "Resume and keep changes",
+                    'resume and keep these changes: ["resume", "--allow-dirty"]',
+                    recommended=True,
+                    confirm=False,
+                ),
+                Option(
+                    "stash",
+                    "Stash changes",
+                    f'git stash push -u -m "whyline resolve {saved_task_id}"',
+                    recommended=False,
+                    confirm=True,
+                ),
+                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+            ]
+            problems.append(
+                Problem(
+                    id="dirty-paused-work",
+                    summary=f"Uncommitted changes during paused task {saved_task_id}",
+                    evidence=evidence_lines,
+                    options=opts,
+                )
+            )
+        else:
+            status_out = ""
+            try:
+                status_out = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=root_path,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+            except Exception:
+                pass
+            evidence_lines = [l for l in status_out.splitlines() if l.strip()] or [p for p in dirty_paths]
+            opts = [
+                Option(
+                    "stash",
+                    "Stash changes",
+                    'git stash push -u -m "whyline resolve"',
+                    recommended=True,
+                    confirm=True,
+                ),
+                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+            ]
+            problems.append(
+                Problem(
+                    id="dirty-other",
+                    summary="Uncommitted paths with no paused task",
+                    evidence=evidence_lines,
+                    options=opts,
+                )
+            )
+
+    # 5. timeout
+    m_timeout = re.search(r"exceeded\s+(\d+)s\s+and\s+was\s+terminated", reason)
+    if not m_timeout:
+        for f in fails:
+            m_timeout = re.search(r"exceeded\s+(\d+)s\s+and\s+was\s+terminated", f)
+            if m_timeout:
+                break
+    if m_timeout:
+        from whyline.console import relay_ops
+
+        current_timeout = (
+            st.timeout_minutes
+            if st and st.timeout_minutes is not None
+            else relay_ops.relay_timeout(root_path)
+        )
+        next_val = next_timeout(current_timeout)
+        next_label = f"{next_val}m" if next_val != 0 else "none (no limit)"
+        opts = [
+            Option(
+                "resume-longer",
+                f"Resume with longer timeout ({next_label})",
+                f"relay_ops.save_timeout(root, {next_val}) then resume",
+                recommended=True,
+                confirm=False,
+            ),
+            Option("resume", "Resume as is", "resume with current timeout", recommended=False, confirm=False),
+            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ]
+        problems.append(
+            Problem(
+                id="timeout",
+                summary=f"Agent exceeded {m_timeout.group(1)}s timeout and was terminated",
+                evidence=[reason] if reason else fails,
+                options=opts,
+            )
+        )
+
+    # 6. out-of-usage
+    from whyline.console import adapters
+
+    if adapters.failure_kind(reason) == "rate-limit":
+        failed_agent = ""
+        m_fa = re.search(r"(\S+)\s+hit a usage or rate limit", reason)
+        if m_fa:
+            failed_agent = m_fa.group(1)
+
+        from whyline_relay import (
+            config as relay_config,
+            failover as relay_failover,
+            setup as relay_setup,
+        )
+
+        cfg = None
+        try:
+            cfg = relay_config.load(root_path)
+        except Exception:
+            pass
+
+        try:
+            chain = list(relay_setup.read_backup(root_path))
+        except Exception:
+            chain = []
+        if not chain and cfg is not None:
+            try:
+                chain = list(cfg.backup_chain)
+            except Exception:
+                chain = []
+
+        role = "implementer"
+        stage_name = saved_stage
+        if not stage_name:
+            m_st = re.search(r"stage\s+['\"]([^'\"]+)['\"]", reason)
+            if m_st:
+                stage_name = m_st.group(1)
+
+        if cfg is not None and cfg.pipeline is not None:
+            if stage_name and stage_name in cfg.pipeline.stages:
+                role = cfg.pipeline.stages[stage_name].role
+            elif stage_name and stage_name in cfg.pipeline.roles:
+                role = stage_name
+            else:
+                overrides = relay_failover.read_overrides(root_path)
+                matched_role = None
+                for r_name, ov in overrides.items():
+                    if ov.agent == failed_agent and r_name in cfg.pipeline.roles:
+                        matched_role = r_name
+                        break
+                if matched_role is None and failed_agent:
+                    for r_name, r_obj in cfg.pipeline.roles.items():
+                        if r_obj.agent == failed_agent:
+                            matched_role = r_name
+                            break
+                if matched_role is not None:
+                    role = matched_role
+                elif "implementer" in cfg.pipeline.roles:
+                    role = "implementer"
+                elif cfg.pipeline.roles:
+                    role = next(iter(cfg.pipeline.roles))
+        else:
+            if stage_name in ("review", "reviewer") or (not stage_name and st and st.round == 2):
+                role = "reviewer"
+            elif stage_name in ("implement", "implementer"):
+                role = "implementer"
+            elif failed_agent and cfg is not None and hasattr(cfg, "roles"):
+                for r in ("implementer", "reviewer"):
+                    if getattr(cfg.roles, r, None) == failed_agent:
+                        role = r
+                        break
+
+        existing = relay_failover.read_overrides(root_path).get(role)
+        tried = set(existing.tried) if existing is not None else set()
+        if failed_agent:
+            tried.add(failed_agent)
+
+        next_backup = relay_failover.next_backup(chain, tried)
+        if next_backup is None:
+            from whyline import account
+            from whyline.console import relay_ops
+
+            status_map = account.agent_status(root_path)
+            usable = relay_ops.usable_agents(root_path, status_map)
+            candidates = [a for a in usable if a != failed_agent]
+            candidates.sort(key=lambda a: chain.index(a) if a in chain else 9999)
+
+            opts = []
+            for i, ag in enumerate(candidates):
+                opts.append(
+                    Option(
+                        f"use-{ag}",
+                        f"Use {ag}",
+                        f"whyline relay roles set {role} {ag}, then resume",
+                        recommended=(i == 0),
+                        confirm=False,
+                    )
+                )
+            opts.append(Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False))
+            opts.append(Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False))
+
+            problems.append(
+                Problem(
+                    id="out-of-usage",
+                    summary=f"Rate limit hit by {failed_agent or 'agent'} and backup chain is exhausted",
+                    evidence=[reason] if reason else fails,
+                    options=opts,
+                )
+            )
+
+    # 7. visit-cap
+    if adapters.failure_kind(reason) == "visit-cap":
+        opts = [
+            Option(
+                "retry-stage",
+                "Retry stage",
+                "whyline relay resume --retry-stage",
+                recommended=True,
+                confirm=False,
+            ),
+            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ]
+        problems.append(
+            Problem(
+                id="visit-cap",
+                summary=f"Stage visit cap reached: {reason}",
+                evidence=[reason] if reason else fails,
+                options=opts,
+            )
+        )
+
+    # 8. unknown fallback
+    if not problems and (reason or fails):
+        opts = [
+            Option(
+                "ask-agent",
+                "Ask agent",
+                "ask-agent (filled in by REC-4E)",
+                recommended=True,
+                confirm=False,
+            ),
+            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ]
+        problems.append(
+            Problem(
+                id="unknown",
+                summary=reason or (fails[0] if fails else "Unknown problem"),
+                evidence=[reason] if reason else fails,
+                options=opts,
+            )
+        )
+
+    return problems
+
+
+def apply(
+    root: Path | str,
+    problem: Problem,
+    option_id: str,
+    launch: Callable[[list[str]], None],
+) -> str:
+    root_path = Path(root).resolve()
+    if not any(opt.id == option_id for opt in problem.options):
+        raise ValueError(
+            f"Option {option_id!r} is not offered by problem {problem.id!r}"
+        )
+
+    matched_opt = next(opt for opt in problem.options if opt.id == option_id)
+
+    if option_id == "commit-log":
+        from whyline_relay import gitcheck, state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        task_id = (st.task_id if st and st.task_id else "") or str(st_dict.get("task_id") or "")
+        gitcheck.commit_decision_log(root_path, task_id)
+        return f"Committed decision log for {task_id}." if task_id else "Committed decision log."
+
+    if option_id == "resume-keep":
+        launch(["resume", "--allow-dirty"])
+        return "Resumed relay with uncommitted changes kept."
+
+    if option_id == "stash":
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        task_id = (st.task_id if st and st.task_id else "") or str(st_dict.get("task_id") or "")
+        msg = f"whyline resolve {task_id}" if task_id else "whyline resolve"
+        subprocess.run(["git", "stash", "push", "-u", "-m", msg], cwd=root_path, check=True)
+        return f"Stashed uncommitted changes: {msg}."
+
+    if option_id == "wait":
+        from whyline.console import adapters
+
+        ev = adapters.run_status(root_path)
+        print(ev.text)
+        return "Printed whyline relay status."
+
+    if option_id == "stop":
+        from whyline_relay import loop
+
+        target = loop.stop_path(root_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+        return "Stopped the current agent. Nothing new will start."
+
+    if option_id == "reset-keep":
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        base_commit = (st.base_commit if st and st.base_commit else "") or str(st_dict.get("base_commit") or "")
+        if not base_commit:
+            m = re.search(r"reset\s+([0-9a-fA-F]{6,40})", matched_opt.detail)
+            if m:
+                base_commit = m.group(1)
+        if not base_commit:
+            base_commit = "HEAD~1"
+        subprocess.run(["git", "reset", base_commit], cwd=root_path, check=True)
+        launch(["resume", "--allow-dirty"])
+        return f"Reset HEAD to {base_commit} (files stay) and resumed relay with changes kept."
+
+    if option_id == "move-aside":
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        task_id = (st.task_id if st and st.task_id else "") or str(st_dict.get("task_id") or "") or "task"
+        base_commit = (st.base_commit if st and st.base_commit else "") or str(st_dict.get("base_commit") or "")
+        if not base_commit:
+            m = re.search(r"reset --keep\s+([0-9a-fA-F]{6,40})", matched_opt.detail)
+            if m:
+                base_commit = m.group(1)
+        if not base_commit:
+            base_commit = "HEAD~1"
+        short_head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=root_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        branch_name = f"whyline-aside/{task_id}-{short_head}"
+        subprocess.run(["git", "branch", "-f", branch_name, "HEAD"], cwd=root_path, check=True)
+        subprocess.run(["git", "reset", "--keep", base_commit], cwd=root_path, check=True)
+        launch(["resume", "--allow-dirty"])
+        return f"Moved foreign commits to branch {branch_name}, reset to {base_commit}, and resumed relay with changes kept."
+
+    if option_id == "reset-role":
+        from whyline_relay import failover, roles
+
+        m = re.search(r"roles reset\s+(\S+)", matched_opt.detail)
+        role = m.group(1) if m else None
+        if not role:
+            overrides = failover.read_overrides(root_path)
+            if overrides:
+                role = next(iter(overrides))
+        roles.reset(root_path, role)
+        return f"Reset role {role} to its configured agent." if role else "Reset role to its configured agent."
+
+    if option_id == "resume-longer":
+        from whyline.console import relay_ops
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        cur = (
+            st.timeout_minutes
+            if st and hasattr(st, "timeout_minutes") and st.timeout_minutes is not None
+            else (st_dict.get("timeout_minutes") if "timeout_minutes" in st_dict else relay_ops.relay_timeout(root_path))
+        )
+        nxt = next_timeout(int(cur or 0))
+        relay_ops.save_timeout(root_path, nxt)
+        launch(["resume"])
+        nxt_label = f"{nxt} minutes" if nxt != 0 else "none"
+        return f"Saved timeout {nxt_label} and resumed relay."
+
+    if option_id == "resume":
+        launch(["resume"])
+        return "Resumed relay."
+
+    if option_id.startswith("use-"):
+        agent = option_id[len("use-") :]
+        from whyline_relay import config as relay_config, roles
+
+        settings = relay_config.load(root_path)
+        m = re.search(r"roles set\s+(\S+)", matched_opt.detail)
+        role = m.group(1) if m else "implementer"
+        roles.set_role(root_path, settings, role, agent=agent, model=None)
+        launch(["resume"])
+        return f"Set role {role} to {agent} and resumed relay."
+
+    if option_id == "retry-stage":
+        launch(["resume", "--retry-stage"])
+        return "Resumed relay with --retry-stage."
+
+    if option_id == "ask-agent":
+        return "Asked agent for recommendation."
+
+    if option_id == "show":
+        print("\n".join(problem.evidence))
+        return "Showed evidence."
+
+    if option_id == "cancel":
+        return "Resolve cancelled; nothing else was changed."
+
+    raise ValueError(f"Unhandled option id: {option_id!r}")
+

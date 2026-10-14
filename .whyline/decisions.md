@@ -14259,3 +14259,134 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 358de141b7f244ea90bda8b7c09c6bb3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T07:35:23.790Z"} -->
+
+## 2026-10-14 — Diagnose known pause and preflight problems with recommended options
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4C
+
+**Because:** Resolving known failures deterministically without LLM calls improves reliability and lets users fix issues with one click
+
+**Rejected:**
+
+- Ask agent for every problem — slow, expensive, and risks hallucinating invalid git commands
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: e3c42747ffaa4f1aa9e843a0a274ad2c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T08:28:30.162Z"} -->
+
+## 2026-10-14 — Fail REC-4C because reset options do not resume paused work
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4C
+
+**Because:** The required focused and full suites pass, but isolated execution shows apply(reset-keep) and apply(move-aside) leave launch untouched instead of calling launch(["resume", "--allow-dirty"]), despite both option contracts requiring then resume-keep; the move-aside test creates a launch recorder without asserting it
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 6b324a7eebbb4518b4117a5bf4f96518 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T08:34:35.633Z"} -->
+
+## 2026-10-14 — Launch resume --allow-dirty in apply for reset-keep and move-aside options
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4C
+
+**Because:** Both option contracts require resume-keep after Git reset or branch operations so paused work is resumed with uncommitted changes intact
+
+**Rejected:**
+
+- Leave launch untouched — reviewer verified that reset-keep and move-aside left launches empty instead of resuming paused work
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: c479232fc41b476ebcb689c176270e5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T08:59:33.815Z"} -->
+
+## 2026-10-14 — Pass REC-4C after verifying recovery diagnosis and apply behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4C
+
+**Because:** The focused recovery suite passed all 39 tests, the full project suite exited successfully, and inspection confirmed reset-keep and move-aside now launch resume with --allow-dirty while respecting the launcher and file constraints
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 9e13581f7a2b440f99e4ce4ff2f7c4ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T09:06:13.322Z"} -->
+
+## 2026-10-14 — Reject REC-4C because configured-pipeline failover targets the stage instead of its role
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4C
+
+**Because:** diagnose assigns RelayState.stage directly to the out-of-usage role, so a stage such as draft mapped to implementer produces an invalid roles set draft command and apply raises RoleSetError; the focused 39-test suite and full suite pass because no test covers this configured-pipeline path
+
+**Rejected:**
+
+- Approve based on passing suites — the untested configured-pipeline recovery action is not executable
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 3b4ec9af1f654feab2932585bf031b94 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T09:13:02.073Z"} -->
+
+## 2026-10-14 — Resolve out-of-usage roles via configured pipeline stage mapping
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4C
+
+**Because:** Configured pipelines map stages like draft or test to distinct roles like implementer or tester; roles set requires a configured role name rather than a pipeline stage name
+
+**Rejected:**
+
+- Assign RelayState.stage directly — fails in configured pipelines because stage names like draft are rejected by roles.set_role with RoleSetError
+
+**Test:** uv run pytest -q tests/console/test_recovery.py: 40 passed
+**Test:** uv run pytest -q: 1469 passed, 1 skipped
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 3dd85c4686b44476a4c72cb6cc62307a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T09:27:59.554Z"} -->
+
+## 2026-10-14 — Pass REC-4C round 7 after configured-pipeline failover regression verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4C
+
+**Because:** The focused recovery suite passed all 40 tests, the full project suite completed successfully with one expected skip, and inspection confirmed out-of-usage recovery maps saved pipeline stages to configured roles before applying the agent switch and resuming
+
+**Rejected:**
+
+- Fail the task — no behavioral defect was reproduced and all required tests passed
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 68f35c69e0ab470699149c34049ea64b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T09:33:15.236Z"} -->
+
+## 2026-10-14 — Approve REC-4C round 8 after final role-mapping review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4C
+
+**Because:** The configured-pipeline recovery now maps saved stages to configured roles before switching agents, the added regression exercises both draft-to-implementer and test-to-tester application paths, the focused 40-test suite passed, and the full project suite passed
+
+**Rejected:**
+
+- Request changes — no behavioral defect or safety regression was found in the reviewed diff
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 6a17beb1c9ae40caa0b985083afec932 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T09:38:22.048Z"} -->
