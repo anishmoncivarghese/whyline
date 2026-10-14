@@ -332,7 +332,7 @@ Recovery acts on a relay pause or a dirty-tree preflight FAIL, in Auto and in Re
   Tests: a sandbox pause is classified `sandbox`, shows the command, and changes no file; a visit-cap pause shows Retry stage and pressing it launches `resume --retry-stage`; other pauses do not show it.
   Verify with `uv run pytest -q tests/console/test_recovery.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] REC-4C: Name each known problem and its recommended fixes
+- [x] REC-4C: Name each known problem and its recommended fixes
   Edit only `src/whyline/console/recovery.py` and `tests/console/test_recovery.py`. No Textual import in `recovery.py`.
   Add frozen dataclasses `Option(id: str, label: str, detail: str, recommended: bool, confirm: bool)` and `Problem(id: str, summary: str, evidence: list[str], options: list[Option])`, and `diagnose(root: Path, fail_lines: list[str], pause_reason: str) -> list[Problem]`. `fail_lines` are the `FAIL` lines of a Check or of a failed Resume preflight; `pause_reason` is `state.load(root).paused_reason` or `""`. The first option of every problem is the recommended one. Every problem also ends with `show` (print the evidence again) and `cancel`.
   Known problems, matched from the preflight message or the pause reason, never by asking a model:
