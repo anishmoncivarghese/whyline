@@ -290,7 +290,15 @@ def route(kind: str, dirty: Sequence[str] | None = None) -> str:
         return "agent"
     if kind == "rate-limit":
         return "failover"
-    if kind in ("auth", "blocked", "round-cap", "release", "other"):
+    if kind in (
+        "auth",
+        "blocked",
+        "round-cap",
+        "release",
+        "sandbox",
+        "visit-cap",
+        "other",
+    ):
         return "human"
     return "human"
 
@@ -1090,3 +1098,25 @@ turn = recover
 agent_recovery = recover
 recover_agent = recover
 run_recovery_turn = recover
+
+
+def extract_refused_command(reason: str) -> str:
+    from whyline.console import adapters
+
+    return adapters.extract_refused_command(reason)
+
+
+def explain_sandbox(root: Path | str, reason: str, task_id: str = "") -> dict[str, str | None]:
+    from whyline.console import adapters
+
+    cmd = adapters.extract_refused_command(reason)
+    agent = adapters.extract_agent_from_reason(reason)
+    flag = adapters.get_agent_dir_flag(root, agent)
+    config_change = None
+    if flag:
+        flag_str = " ".join(flag)
+        dir_target = adapters.extract_target_dir(root, reason, cmd, task_id)
+        config_change = (
+            f"add '{flag_str} {dir_target}' to [agents.{agent}] command in .whyline/relay/config.toml"
+        )
+    return {"command": cmd, "agent": agent, "dir_flag": flag, "config_change": config_change}

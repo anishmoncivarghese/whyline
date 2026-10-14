@@ -585,6 +585,7 @@ class WhylineConsoleApp(App):
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
+    #relay-retry-stage { display: none; }
     """
 
     def __init__(self, *, root: Path, runner: Any = None) -> None:
@@ -728,7 +729,7 @@ class WhylineConsoleApp(App):
         Enable and disable stay in _sync_relay_buttons and the stop path."""
         wanted = set(_MODE_BUTTONS.get(self.session.mode, ())) | set(_SHARED_BUTTONS)
         for button in self._main("#controls").query(Button):
-            if button.id == "relay-resolve":
+            if button.id in ("relay-resolve", "relay-retry-stage"):
                 continue
             button.display = button.id in wanted
         self._main("#attach").display = self.session.mode == "chat"
@@ -772,7 +773,13 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             resolve = None
 
+        try:
+            retry_stage = self._main("#relay-retry-stage", Button)
+        except (NoMatches, IndexError):
+            retry_stage = None
+
         show_resolve = False
+        show_retry_stage = False
         if (
             in_relay
             and paused
@@ -809,15 +816,23 @@ class WhylineConsoleApp(App):
                     else:
                         kind = adapters.failure_kind(reason)
 
+                    if kind == "visit-cap":
+                        show_retry_stage = True
+
                     rt = recovery.route(kind, dirty_files)
                     if rt != "human" and recovery.allowed(self.session.root, task_id, round_num):
                         show_resolve = True
             except Exception:
                 show_resolve = False
+                show_retry_stage = False
 
         if resolve is not None:
             resolve.display = show_resolve
             resolve.disabled = not show_resolve or running or self._recovering_pause
+
+        if retry_stage is not None:
+            retry_stage.display = show_retry_stage
+            retry_stage.disabled = not show_retry_stage or running or self._recovering_pause
 
     def _placeholder(self, mode: str) -> str:
         if mode == "relay":
@@ -2008,6 +2023,7 @@ class WhylineConsoleApp(App):
             Button("Plan", id="relay-plan", disabled=True),
             Button("Set up", id="relay-setup", disabled=True),
             Button("Resume", id="relay-resume", disabled=True),
+            Button("Retry stage", id="relay-retry-stage", disabled=True),
             Button("Resolve", id="relay-resolve", disabled=True),
             Button("New", id="agents-new"),
             Button("Agents", id="agents-list"),
@@ -2103,6 +2119,8 @@ class WhylineConsoleApp(App):
                 self._sync_relay_buttons()
             else:
                 self._launch_relay(["resume"])
+        elif button_id == "relay-retry-stage":
+            self._launch_relay(["resume", "--retry-stage"])
         elif button_id == "relay-resolve":
             self._resolve_relay_pause()
         elif button_id == "plan-approve":
@@ -3241,12 +3259,13 @@ class WhylineConsoleApp(App):
                             reason = str(res)
                             task_id = "REC"
                             log_path = ""
-                        kind_label = adapters.failure_kind(reason)
-                        lines = [f"[{kind_label}] Task {task_id}", f"Reason {reason}"]
-                        if log_path:
-                            lines.append(f"Log {log_path}")
-                        lines.append("Resume: type resume or press Resume")
-                        self.render_event(SessionEvent(kind="pause", text="\n".join(lines)))
+                        pause_text = adapters.format_pause_text(
+                            self.session.root,
+                            task_id,
+                            reason,
+                            log_path,
+                        )
+                        self.render_event(SessionEvent(kind="pause", text=pause_text))
                         self._end_run_flow("Auto run stopped.")
                     self._sync_relay_buttons()
 

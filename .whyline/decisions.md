@@ -14215,3 +14215,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1b508254bd9a408e8fe2e2378d87f617 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T06:53:41.882Z"} -->
+
+## 2026-10-14 — Explain sandbox refusals on pause card and offer Retry stage for visit-cap
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4B
+
+**Because:** Sandbox refusals need explicit visibility of the refused command and config change that grants access without modifying config, and capped stages require a single-click Retry stage action in Relay mode that Auto never presses automatically
+
+**Rejected:**
+
+- Edit config.toml automatically — sandbox access rules must remain under human control
+- Automatically retry capped stages in Auto — capped visits require human review
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 9e093c114b36453e97de0e0c48b70d24 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T07:24:04.069Z"} -->
+
+## 2026-10-14 — Pass REC-4B sandbox explanation and retry-stage behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4B
+
+**Because:** Focused tests verified sandbox classification, refused-command display, read-only config behavior, visit-cap-only Retry stage visibility and resume --retry-stage launch; the full regression suite also passed
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 8f72c243338d4f2fba408f4117526038 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T07:29:29.317Z"} -->
+
+## 2026-10-14 — Approve REC-4B sandbox explanation and Retry stage action
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4B
+
+**Because:** The diff classifies both requested pause phrases before existing entries, routes both kinds to humans, shows the refused command and adapter-specific directory guidance without writes, exposes Retry stage only for visit-cap pauses, launches resume --retry-stage exactly, leaves Auto inert, and both focused and full test suites pass
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 358de141b7f244ea90bda8b7c09c6bb3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T07:35:23.790Z"} -->

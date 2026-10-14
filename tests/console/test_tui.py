@@ -1394,6 +1394,249 @@ async def test_auto_launched_unrelated_nonzero_fail_exit_does_not_call_recovery(
         assert not any("auto · recover" in line for line in lines)
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_visit_cap_pause_shows_retry_stage_and_pressing_launches_resume_retry_stage(tmp_path, monkeypatch):
+    import json
+    from whyline.console import relay_ops
+
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "TASK-1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "TASK-1 hit stage 'review''s 3-visit cap without reaching \"@complete\"",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    launched: list[list[str]] = []
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        btn = app.query_one("#relay-retry-stage", tui.Button)
+        assert btn.display is True
+        assert btn.disabled is False
+
+        await pilot.click("#relay-retry-stage")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if launched:
+                break
+
+        assert launched == [["resume", "--retry-stage"]]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_other_pauses_do_not_show_retry_stage(tmp_path, monkeypatch):
+    import json
+    from whyline.console import relay_ops
+
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "TASK-1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "codex exited without handing off",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        # 1. no-handoff pause does not show Retry stage
+        assert app.query_one("#relay-retry-stage", tui.Button).display is False
+
+        # 2. sandbox pause does not show Retry stage
+        state_file.write_text(
+            json.dumps({
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "TASK-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "codex could not run a required command: pytest: permission denied",
+                "log_path": "round.log",
+            }),
+            encoding="utf-8",
+        )
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert app.query_one("#relay-retry-stage", tui.Button).display is False
+
+        # 3. blocked pause does not show Retry stage
+        state_file.write_text(
+            json.dumps({
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "TASK-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "codex reported blocked: permission denied",
+                "log_path": "round.log",
+            }),
+            encoding="utf-8",
+        )
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert app.query_one("#relay-retry-stage", tui.Button).display is False
+
+        # 4. auth pause does not show Retry stage
+        state_file.write_text(
+            json.dumps({
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "TASK-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "codex is no longer logged in",
+                "log_path": "round.log",
+            }),
+            encoding="utf-8",
+        )
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert app.query_one("#relay-retry-stage", tui.Button).display is False
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_sandbox_pause_in_tui_shows_command_and_changes_no_file(tmp_path, monkeypatch):
+    import json
+    from whyline.console import relay_ops
+
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "TASK-1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "codex could not run a required command: uv run pytest -q tests/test_foo.py: permission denied",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    config_file = tmp_path / ".whyline" / "relay" / "config.toml"
+    config_file.write_text('[agents.codex]\ncommand = ["codex", "exec"]\n', encoding="utf-8")
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    files_before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(
+            2,
+            "Paused: codex could not run a required command: uv run pytest -q tests/test_foo.py: permission denied",
+        )
+        await pilot.pause()
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("[sandbox]" in line for line in lines)
+        assert any("uv run pytest -q tests/test_foo.py" in line for line in lines)
+        assert any("Command uv run pytest -q tests/test_foo.py" in line for line in lines)
+        assert any("Config change:" in line for line in lines)
+
+        files_after = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+        assert files_after == files_before
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_auto_never_presses_retry_stage_on_visit_cap(tmp_path, monkeypatch):
+    import json
+    from whyline.console import plan_job, recovery, relay_ops
+
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "TASK-1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "TASK-1 hit stage 'review''s 3-visit cap without reaching \"@complete\"",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    launched: list[list[str]] = []
+
+    def fake_run_auto(root, request, fingerprint, progress=None, cancel_event=None, launcher=None, **kwargs):
+        if launcher:
+            launcher(["start"])
+        return {"phase": "relay"}
+
+    monkeypatch.setattr(plan_job, "run_auto", fake_run_auto)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+
+    def fake_launch_relay(args, **kwargs):
+        launched.append(list(args))
+        app._auto_relay = kwargs.get("auto", True)
+
+    monkeypatch.setattr(app, "_launch_relay", fake_launch_relay)
+
+    async with app.run_test() as pilot:
+        req = _auto_request()
+        app._plan_chosen((req, "fp123"))
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if launched:
+                break
+
+        assert launched == [["start"]]
+        assert getattr(app, "_auto_relay", False) is True
+
+        # Relay pauses on visit-cap
+        app._relay_finished(
+            2,
+            "Paused: TASK-1 hit stage 'review''s 3-visit cap without reaching \"@complete\"",
+        )
+
+        for _ in range(10):
+            await pilot.pause(0.05)
+
+        # Auto must NOT have launched resume --retry-stage
+        assert launched == [["start"]]
+        assert getattr(app, "_auto_relay", False) is False
+
+
 
 
 

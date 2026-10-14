@@ -15,6 +15,8 @@ from whyline.console.session import SessionEvent
 _INTERACTIVE_ONLY = {"account", "model"}
 
 _FAILURE_PHRASES = (
+    ("sandbox", "could not run a required command"),
+    ("visit-cap", "-visit cap without"),
     ("rate-limit", "hit a usage or rate limit"),
     ("auth", "is no longer logged in"),
     ("no-handoff", "exited without handing off"),
@@ -22,6 +24,149 @@ _FAILURE_PHRASES = (
     ("blocked", "reported blocked:"),
     ("release", "release task for you:"),
 )
+
+
+def extract_refused_command(reason: str) -> str:
+    """Extracts the command that was refused by the sandbox from a pause reason."""
+    phrase = "could not run a required command:"
+    if phrase in reason:
+        rest = reason.split(phrase, 1)[1].strip()
+    elif "could not run a required command" in reason:
+        rest = reason.split("could not run a required command", 1)[1].lstrip(":").strip()
+    else:
+        rest = reason.strip()
+
+    markers = (
+        "permission denied",
+        "operation not permitted",
+        "sandbox",
+        "was denied",
+        "not permitted",
+    )
+    if ":" in rest:
+        before, _, after = rest.partition(":")
+        if any(m in after.lower() for m in markers):
+            return before.strip()
+    for m in ("was denied", "is not permitted", "permission denied", "operation not permitted", "not permitted"):
+        idx = rest.lower().find(m)
+        if idx > 0:
+            candidate = rest[:idx].rstrip(": ").strip()
+            if candidate:
+                return candidate
+    return rest
+
+
+def extract_agent_from_reason(reason: str) -> str:
+    """Extracts the agent name from a pause reason like '{agent} could not run a required command: ...'."""
+    clean = reason.removeprefix("Paused:").strip()
+    phrase = "could not run a required command"
+    if phrase in clean:
+        prefix = clean.split(phrase, 1)[0].strip()
+        if prefix:
+            return prefix.split()[-1]
+    return ""
+
+
+def get_agent_dir_flag(root: Path | str, agent: str) -> tuple[str, ...] | None:
+    """Returns the adapter dir_flag for an agent if available, else None."""
+    if not agent:
+        return None
+    try:
+        from whyline_relay import config as relay_config
+
+        settings = relay_config.load(Path(root))
+        adapter = relay_config.adapter_for(settings, agent)
+        flag = getattr(adapter, "dir_flag", None)
+        if flag:
+            return flag
+    except Exception:
+        pass
+    try:
+        from whyline_relay import adapters as relay_adapters
+
+        adapter = relay_adapters.get(agent)
+        return getattr(adapter, "dir_flag", None)
+    except Exception:
+        return None
+
+
+def extract_target_dir(
+    root: Path | str,
+    reason: str,
+    cmd: str = "",
+    task_id: str = "",
+) -> str:
+    """Extracts target directory mentioned in command, reason, or task repo."""
+    pattern = r"(?:(?:/[^\s`\"'<>\(\)\[\]{}]+)|(?:[a-zA-Z]:\\[^\s`\"'<>\(\)\[\]{}]+))"
+    for match in re.findall(pattern, f"{reason} {cmd}"):
+        clean = match.rstrip(".,;:!?'\")]}")
+        if len(clean) > 1:
+            try:
+                p = Path(clean)
+                if p.is_dir():
+                    return str(p)
+                elif p.parent.exists() or "/" in clean:
+                    return str(p.parent)
+                return str(p)
+            except Exception:
+                pass
+    try:
+        from whyline_relay import plan as plan_mod, state as relay_state
+
+        root_path = Path(root).resolve()
+        st = relay_state.load(root_path)
+        plan_name = st.plan if st and st.plan else "plan.md"
+        plan_file = root_path / plan_name
+        if plan_file.is_file():
+            tasks = plan_mod.parse(plan_file.read_text(encoding="utf-8"))
+            tid = task_id or (st.task_id if st else "")
+            task = plan_mod.find(tasks, tid) if tid else (tasks[0] if tasks else None)
+            if task and task.repo:
+                return str(task.repo)
+    except Exception:
+        pass
+    return "<directory>"
+
+
+def format_pause_text(
+    root: Path | str,
+    task_id: str,
+    reason: str,
+    log_path: str = "",
+) -> str:
+    """Builds structured pause card text."""
+    kind_label = failure_kind(reason)
+    task_prefix = f"Task {task_id}" if task_id else "Task"
+    lines = [f"[{kind_label}] {task_prefix}".strip(), f"Reason {reason}"]
+
+    if kind_label == "sandbox":
+        cmd = extract_refused_command(reason)
+        if cmd:
+            lines.append(f"Command {cmd}")
+        agent = extract_agent_from_reason(reason)
+        if not agent:
+            try:
+                from whyline_relay import state as relay_state
+
+                st = relay_state.load(Path(root))
+                if st and getattr(st, "agent", None):
+                    agent = st.agent
+            except Exception:
+                pass
+        dir_flag = get_agent_dir_flag(root, agent)
+        if dir_flag:
+            flag_str = " ".join(dir_flag)
+            dir_target = extract_target_dir(root, reason, cmd, task_id)
+            lines.append(
+                f"Config change: add '{flag_str} {dir_target}' to [agents.{agent}] command in .whyline/relay/config.toml"
+            )
+
+    if log_path:
+        lines.append(f"Log {log_path}")
+    lines.append("Resume: type resume or press Resume")
+    if kind_label == "visit-cap":
+        lines.append("Retry stage: type resume --retry-stage or press Retry stage")
+    return "\n".join(lines)
 
 
 def failure_kind(reason: str) -> str:
@@ -224,12 +369,11 @@ def classify_relay_output(root: Path | str, text: str, code: int) -> SessionEven
 
         saved = relay_state.load(Path(root))
         if saved is not None:
-            kind_label = failure_kind(saved.paused_reason)
-            structured = (
-                f"[{kind_label}] Task {saved.task_id}\n"
-                f"Reason {saved.paused_reason}\n"
-                f"Log {saved.log_path}\n"
-                "Resume: type resume or press Resume"
+            structured = format_pause_text(
+                root,
+                saved.task_id,
+                saved.paused_reason,
+                saved.log_path or "",
             )
             return SessionEvent(kind="pause", text=structured)
         return SessionEvent(kind="pause", text=text)

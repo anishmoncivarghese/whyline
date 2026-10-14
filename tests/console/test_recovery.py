@@ -14,6 +14,8 @@ def test_every_kind_maps_as_listed() -> None:
     assert recovery.route("dirty", ["src/other.py"]) == "human"
 
     # adapters.failure_kind values
+    assert recovery.route("sandbox", []) == "human"
+    assert recovery.route("visit-cap", []) == "human"
     assert recovery.route("no-handoff", []) == "agent"
     assert recovery.route("rate-limit", []) == "failover"
     assert recovery.route("auth", []) == "human"
@@ -28,6 +30,8 @@ def test_every_kind_maps_as_listed() -> None:
 
 def test_failure_kind_integration() -> None:
     reasons_and_expected = [
+        ("codex could not run a required command: pytest: permission denied", "human"),
+        ("T-1 hit stage 'review''s 3-visit cap without reaching \"@complete\"", "human"),
         ("hit a usage or rate limit", "failover"),
         ("is no longer logged in", "human"),
         ("exited without handing off", "agent"),
@@ -1124,6 +1128,114 @@ def test_recovery_exhausted_chain_with_outside_override_reports_only_chain_agent
     assert "rogue_agent" not in res
     assert "rogue_agent" not in str(res)
     assert res.agents == ["claude", "codex"]
+
+
+def test_sandbox_pause_is_classified_sandbox_shows_command_and_changes_no_file(tmp_path: Path):
+    from whyline.console import adapters
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4B",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "codex could not run a required command: uv run pytest -q: permission denied",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    config_file = tmp_path / ".whyline" / "relay" / "config.toml"
+    config_content = '[agents.codex]\ncommand = ["codex", "exec"]\n'
+    config_file.write_text(config_content, encoding="utf-8")
+
+    files_before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+    reason = "codex could not run a required command: uv run pytest -q: permission denied"
+    assert adapters.failure_kind(reason) == "sandbox"
+    assert recovery.route("sandbox") == "human"
+
+    event = adapters.classify_relay_output(tmp_path, f"Paused: {reason}", 2)
+    assert event.kind == "pause"
+    assert "[sandbox]" in event.text
+    assert "uv run pytest -q" in event.text
+    assert "Command uv run pytest -q" in event.text
+    # Adapter for codex has dir flag (--add-dir), so config change is shown
+    assert "Config change:" in event.text
+    assert "--add-dir" in event.text
+    assert "[agents.codex]" in event.text
+
+    # Changes NO file, never edits the config
+    files_after = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert files_after == files_before
+    assert config_file.read_text(encoding="utf-8") == config_content
+
+
+def test_sandbox_pause_without_dir_flag_shows_command_and_no_config_change(tmp_path: Path):
+    from whyline.console import adapters
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4B",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "aider could not run a required command: pytest: permission denied",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    config_file = tmp_path / ".whyline" / "relay" / "config.toml"
+    config_content = '[agents.aider]\nadapter = "generic"\ncommand = ["aider"]\n'
+    config_file.write_text(config_content, encoding="utf-8")
+
+    files_before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+    reason = "aider could not run a required command: pytest: permission denied"
+    assert adapters.failure_kind(reason) == "sandbox"
+
+    event = adapters.classify_relay_output(tmp_path, f"Paused: {reason}", 2)
+    assert event.kind == "pause"
+    assert "[sandbox]" in event.text
+    assert "pytest" in event.text
+    assert "Command pytest" in event.text
+    # Aider has generic adapter with no dir flag, so no config change shown
+    assert "Config change:" not in event.text
+
+    files_after = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert files_after == files_before
+
+
+def test_visit_cap_pause_is_classified_visit_cap_and_routes_to_human(tmp_path: Path):
+    from whyline.console import adapters
+
+    reason = "TASK-1 hit stage 'review''s 3-visit cap without reaching \"@complete\""
+    assert adapters.failure_kind(reason) == "visit-cap"
+    assert recovery.route("visit-cap") == "human"
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "TASK-1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": reason,
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    event = adapters.classify_relay_output(tmp_path, f"Paused: {reason}", 2)
+    assert event.kind == "pause"
+    assert "[visit-cap]" in event.text
+    assert "Retry stage: type resume --retry-stage or press Retry stage" in event.text
 
 
 
