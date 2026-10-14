@@ -3364,6 +3364,25 @@ class WhylineConsoleApp(App):
             pass
         self._sync_relay_buttons()
 
+        if opt.id == "ask-agent":
+            def ask_thread() -> None:
+                ask_res = None
+                try:
+                    ask_res = recovery.ask_agent(
+                        self.session.root,
+                        session=self.session,
+                        runner=self._runner,
+                        fail_lines=self._current_fail_lines(),
+                        problem=self._resolve_problem,
+                    )
+                except Exception:
+                    pass
+                finally:
+                    self.call_from_thread(self._ask_agent_finished, ask_res)
+
+            self.run_worker(ask_thread, thread=True)
+            return
+
         def in_thread() -> None:
             res = ""
             did_resume = False
@@ -3458,6 +3477,174 @@ class WhylineConsoleApp(App):
             except (NoMatches, IndexError):
                 pass
             self._sync_relay_buttons()
+
+    def _ask_agent_finished(self, res: Any) -> None:
+        from whyline.console import recovery
+
+        self._resolve_running = False
+
+        if res is None:
+            self.render_event(SessionEvent(kind="output", text="Agent inquiry failed."))
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Check by hand: inspect problem details and logs.",
+                )
+            )
+            show_opt = recovery.Option(
+                "show", "Show evidence", "print the evidence again", recommended=False, confirm=False
+            )
+            cancel_opt = recovery.Option(
+                "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+            )
+            self._resolve_problem = recovery.Problem(
+                id=self._resolve_problem.id if self._resolve_problem else "unknown",
+                summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
+                evidence=self._resolve_problem.evidence if self._resolve_problem else [],
+                options=[show_opt, cancel_opt],
+            )
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
+        if res.status == "recommended" and res.option is not None:
+            if res.explanation:
+                self.render_event(SessionEvent(kind="output", text=res.explanation))
+            show_opt = recovery.Option(
+                "show", "Show evidence", "print the evidence again", recommended=False, confirm=False
+            )
+            cancel_opt = recovery.Option(
+                "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+            )
+            new_opts = [res.option, show_opt, cancel_opt]
+            self._resolve_problem = recovery.Problem(
+                id=self._resolve_problem.id if self._resolve_problem else "unknown",
+                summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
+                evidence=self._resolve_problem.evidence if self._resolve_problem else [],
+                options=new_opts,
+            )
+            for idx, opt in enumerate(new_opts, 1):
+                rec_str = " (recommended)" if opt.recommended else ""
+                self.render_event(SessionEvent(kind="output", text=f"  {idx}. {opt.label}{rec_str}"))
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
+        if res.status == "unlisted":
+            if res.explanation:
+                self.render_event(SessionEvent(kind="output", text=res.explanation))
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text=f"Agent recommended unlisted option '{res.recommendation}'; ignored.",
+                )
+            )
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Check by hand: inspect problem details and logs.",
+                )
+            )
+            show_opt = recovery.Option(
+                "show", "Show evidence", "print the evidence again", recommended=False, confirm=False
+            )
+            cancel_opt = recovery.Option(
+                "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+            )
+            self._resolve_problem = recovery.Problem(
+                id=self._resolve_problem.id if self._resolve_problem else "unknown",
+                summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
+                evidence=self._resolve_problem.evidence if self._resolve_problem else [],
+                options=[show_opt, cancel_opt],
+            )
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
+        if res.status == "modified":
+            paths_str = ", ".join(res.changed_paths)
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text=f"Agent turn modified files: {paths_str}. Recommendation discarded.",
+                )
+            )
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Check by hand: inspect modified files and repository status.",
+                )
+            )
+            show_opt = recovery.Option(
+                "show", "Show evidence", "print the evidence again", recommended=False, confirm=False
+            )
+            cancel_opt = recovery.Option(
+                "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+            )
+            self._resolve_problem = recovery.Problem(
+                id=self._resolve_problem.id if self._resolve_problem else "unknown",
+                summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
+                evidence=self._resolve_problem.evidence if self._resolve_problem else [],
+                options=[show_opt, cancel_opt],
+            )
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
+        if res.status == "human":
+            if res.explanation:
+                self.render_event(SessionEvent(kind="output", text=res.explanation))
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Check by hand: manual intervention required.",
+                )
+            )
+            show_opt = recovery.Option(
+                "show", "Show evidence", "print the evidence again", recommended=False, confirm=False
+            )
+            cancel_opt = recovery.Option(
+                "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+            )
+            self._resolve_problem = recovery.Problem(
+                id=self._resolve_problem.id if self._resolve_problem else "unknown",
+                summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
+                evidence=self._resolve_problem.evidence if self._resolve_problem else [],
+                options=[show_opt, cancel_opt],
+            )
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
+        if res.status == "exhausted":
+            agents_str = ", ".join(res.agents_tried) if res.agents_tried else "none"
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text=f"Exhausted recovery chain. Agents tried: {agents_str}.",
+                )
+            )
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Check by hand: inspect failure reason and logs.",
+                )
+            )
+            show_opt = recovery.Option(
+                "show", "Show evidence", "print the evidence again", recommended=False, confirm=False
+            )
+            cancel_opt = recovery.Option(
+                "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+            )
+            self._resolve_problem = recovery.Problem(
+                id=self._resolve_problem.id if self._resolve_problem else "unknown",
+                summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
+                evidence=self._resolve_problem.evidence if self._resolve_problem else [],
+                options=[show_opt, cancel_opt],
+            )
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
 
     def _resolve_relay_pause(self) -> None:
         self._start_resolve_flow(source="resume")

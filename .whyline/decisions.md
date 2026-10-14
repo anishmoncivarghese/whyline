@@ -14434,3 +14434,143 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8d7ba0bf64a64cbca424de2b37c4a07d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T10:32:45.278Z"} -->
+
+## 2026-10-14 — Ask selected agent for unknown resolve problems with snapshot protection and manual click apply
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4E
+
+**Because:** Unknown preflight failures and pauses receive a read-only agent consultation with snapshot tree verification before offering the recommendation for explicit user execution
+
+**Rejected:**
+
+- Apply agent recommendation automatically — mutating actions like stash, reset, or restart require explicit user consent
+- Allow agent turn to modify files — diagnostic turn must remain strictly read-only and any file edits are discarded
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: cd69af74db864de7afb39ecf9837086f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T11:01:07.029Z"} -->
+
+## 2026-10-14 — REC-4E passes focused, confirmation, and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4E
+
+**Because:** The required focused suite and complete project suite exited 0, and targeted TUI tests verified destructive stash recommendations remain confirmation-gated while agent recommendations apply only after an explicit click
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: a0a660f571b245698ff48906829b2708 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T11:07:02.882Z"} -->
+
+## 2026-10-14 — Reject REC-4E because agent recommendations are not strictly validated and role actions are not executable
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4E
+
+**Because:** The focused and full suites pass, but recovery.ask_agent accepts an unlisted opt-prefixed id after stripping its prefix, and make_rec_4c_option embeds a literal <role> that recovery.apply treats as the actual role for reset-role and use-agent clicks
+
+**Rejected:**
+
+- Approve based on passing tests — the tests do not cover strict id validation or execution of synthesized role options
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 326706e174444481b974740705762673 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T11:14:25.133Z"} -->
+
+## 2026-10-14 — Strictly validate agent recommendations and resolve real configured roles for synthesized role options
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4E
+
+**Because:** Recommendations must strictly match catalog ids without stripping prefixes, and synthesized reset-role/use-<agent> options must resolve configured roles from overrides/stages/config so execution does not fail
+
+**Rejected:**
+
+- Strip opt- prefix automatically — unlisted options must not be coerced into listed options
+- Hardcode default role — fails when projects configure pipeline roles or have active role overrides
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py, tests/console/test_tui.py
+
+<!-- whyline-event: 05a8dda6f38e4f629a0b2485861ea7cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T11:34:28.964Z"} -->
+
+## 2026-10-14 — REC-4E Round 5 passes focused and full behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4E
+
+**Because:** The focused suite covers strict rejection of opt-prefixed and other unlisted recommendations, mutation discard, backup failover, click-only application, and configured-role execution; both required suites exited 0
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui.py
+
+<!-- whyline-event: cd88fec80f4e4575a3075fac58363dcc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T11:40:35.747Z"} -->
+
+## 2026-10-14 — Reject REC-4E Round 6 because synthesized role actions target the wrong legacy round-2 role
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4E
+
+**Because:** resolve_configured_role checks the round-2 reviewer fallback only inside an elif stage_name branch, making the not-stage_name condition unreachable; a legacy RelayState intentionally has an empty stage, so a recommended use-<agent> action changes implementer instead of reviewer despite both focused and full suites passing
+
+**Rejected:**
+
+- Approve based on passing suites — current tests cover pipeline-configured implementer targeting but not legacy round-2 reviewer targeting
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: b2354c61df9d4428b35fb05d292db811 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T11:47:19.189Z"} -->
+
+## 2026-10-14 — Resolve active role independently of pipeline stage name so legacy round-2 states target reviewer
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4E
+
+**Because:** Legacy RelayState runs have an empty stage and rely on round number; decoupling active role resolution from stage existence allows round-2 states to select reviewer for synthesized use-<agent> and reset-role actions instead of falling through to implementer
+
+**Rejected:**
+
+- Inspect overrides before resolving active role — causes synthesized reset-role actions to pick arbitrary overrides or fallback to implementer when overrides are empty in round 2
+- Hardcode reviewer for empty stages — breaks round 1 legacy runs which should resolve implementer
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: b1c9afe154fb4d64b36eabfa2f9b05d9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T13:51:40.354Z"} -->
+
+## 2026-10-14 — Pass REC-4E Round 8 after focused and full regression suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4E
+
+**Because:** The mandated recovery/TUI suite passed all 117 tests and the full project suite passed 1420 tests with 1 skip, covering the requested fake-runner recommendation, click-gating, mutation rejection, invalid-id, and backup-failover behavior without regressions
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui.py
+
+<!-- whyline-event: 2b9e402ec9e34a8e9cf7a37542d51da9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T15:53:05.830Z"} -->
+
+## 2026-10-14 — Approve REC-4E Round 9 after independent diff review and regression verification
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4E
+
+**Because:** The selected-agent and backup-chain inquiry uses REC-3 runner, timeout, and model-failure behavior; its prompt, mutation rejection, recommendation validation, and TUI click-gating match the task, and both required pytest suites passed without failures
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 54c0268e24dc49afad80ced558368597 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T20:04:32.128Z"} -->

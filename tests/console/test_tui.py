@@ -1702,6 +1702,294 @@ async def test_auto_never_presses_retry_stage_on_visit_cap(tmp_path, monkeypatch
         assert getattr(app, "_auto_relay", False) is False
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_recommendation_of_listed_id_is_offered_and_applies_only_on_click(tmp_path, monkeypatch):
+    _init_test_repo(tmp_path)
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Retry the failed stage.\n"
+            "RECOMMEND: retry-stage\n"
+        )
+
+    launched: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    monkeypatch.setattr(app, "_launch_relay", lambda args: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unclassified preflight check"])
+        await pilot.pause()
+
+        btn_ask = app.query_one("#resolve-ask-agent", tui.Button)
+        assert btn_ask.display is True
+        assert btn_ask.variant == "success"
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if app.query("#resolve-retry-stage"):
+                break
+
+        btn_retry = app.query_one("#resolve-retry-stage", tui.Button)
+        assert btn_retry.display is True
+        assert btn_retry.variant == "success"
+        assert app.query_one("#resolve-show", tui.Button).display is True
+        assert app.query_one("#resolve-cancel", tui.Button).display is True
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Retry the failed stage." in l for l in lines)
+
+        # Not applied yet!
+        assert launched == []
+
+        await pilot.click("#resolve-retry-stage")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if launched:
+                break
+
+        # Applied on click!
+        assert launched == [["resume", "--retry-stage"]]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_unlisted_id_ignored_and_reported(tmp_path, monkeypatch):
+    _init_test_repo(tmp_path)
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Run unknown custom procedure.\n"
+            "RECOMMEND: custom-reboot\n"
+        )
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unknown weird error"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False):
+                break
+
+        assert not app.query("#resolve-custom-reboot")
+        assert app.query_one("#resolve-show", tui.Button).display is True
+        assert app.query_one("#resolve-cancel", tui.Button).display is True
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("custom-reboot" in l for l in lines)
+        assert any("Check" in l and "hand" in l for l in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_turn_that_edits_file_discarded_and_names_file(tmp_path, monkeypatch):
+    _init_test_repo(tmp_path)
+
+    def fake_runner(command, prompt, **kwargs):
+        (tmp_path / "sneaky_mutation.txt").write_text("evil\n", encoding="utf-8")
+        return (
+            "EXPLANATION: Recommendation should be discarded.\n"
+            "RECOMMEND: stash\n"
+        )
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL mystery failure"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False):
+                break
+
+        assert not app.query("#resolve-stash")
+        assert app.query_one("#resolve-show", tui.Button).display is True
+        assert app.query_one("#resolve-cancel", tui.Button).display is True
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("sneaky_mutation.txt" in l for l in lines)
+        assert any("discarded" in l.lower() for l in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_failing_selected_agent_falls_through_to_first_backup(tmp_path, monkeypatch):
+    import subprocess
+    from whyline_relay import agents as relay_agents
+
+    _init_test_repo(tmp_path)
+    relay_cfg = tmp_path / ".whyline" / "relay" / "config.toml"
+    relay_cfg.parent.mkdir(parents=True, exist_ok=True)
+    relay_cfg.write_text(
+        'plan = "plan.md"\n[backup]\nchain = ["claude"]\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "config"], cwd=tmp_path, check=True, capture_output=True)
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        if agent_name == "grok":
+            raise relay_agents.AgentMissing("grok missing")
+        if agent_name == "claude":
+            return (
+                "EXPLANATION: Claude resolved the issue.\n"
+                "RECOMMEND: wait\n"
+            )
+        raise RuntimeError(f"unexpected agent {agent_name}")
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    app.session.agent = "grok"
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unknown problem"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if app.query("#resolve-wait"):
+                break
+
+        assert called == ["grok", "claude"]
+        assert app.query_one("#resolve-wait", tui.Button).display is True
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Claude resolved the issue." in l for l in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_no_option_applied_without_click(tmp_path, monkeypatch):
+    _init_test_repo(tmp_path)
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Keep the changes and resume.\n"
+            "RECOMMEND: resume-keep\n"
+        )
+
+    launched: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    monkeypatch.setattr(app, "_launch_relay", lambda args: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unexplained error"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if app.query("#resolve-resume-keep"):
+                break
+
+        assert app.query_one("#resolve-resume-keep", tui.Button).display is True
+        assert launched == []
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_opt_prefixed_recommendation_in_tui(tmp_path, monkeypatch):
+    _init_test_repo(tmp_path)
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Stash uncommitted changes.\n"
+            "RECOMMEND: opt-stash\n"
+        )
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unexplained error"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False):
+                break
+
+        assert not app.query("#resolve-opt-stash")
+        assert not app.query("#resolve-stash")
+        assert app.query_one("#resolve-show", tui.Button).display is True
+        assert app.query_one("#resolve-cancel", tui.Button).display is True
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("opt-stash" in l and "ignored" in l for l in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monkeypatch):
+    import subprocess
+    from whyline_relay import config as relay_config
+
+    _init_test_repo(tmp_path)
+    relay_cfg = tmp_path / ".whyline" / "relay" / "config.toml"
+    relay_cfg.parent.mkdir(parents=True, exist_ok=True)
+    relay_cfg.write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "cfg"], cwd=tmp_path, check=True, capture_output=True)
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Switch implementer to claude.\n"
+            "RECOMMEND: use-claude\n"
+        )
+
+    monkeypatch.setattr(
+        "whyline.account.agent_status",
+        lambda root: {"claude": {"available": True}, "codex": {"available": True}},
+    )
+
+    launched: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    monkeypatch.setattr(app, "_launch_relay", lambda args: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unknown failure"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(80):
+            await pilot.pause(0.05)
+            if app.query("#resolve-use-claude"):
+                break
+
+        btn_use = app.query_one("#resolve-use-claude", tui.Button)
+        assert btn_use.display is True
+        assert btn_use.label.plain == "Use claude"
+        assert launched == []
+
+        await pilot.click("#resolve-use-claude")
+        for _ in range(80):
+            await pilot.pause(0.05)
+            if launched:
+                break
+
+        assert launched == [["resume"]]
+        cfg = relay_config.load(tmp_path)
+        assert cfg.roles.implementer == "claude"
+
+
+
+
 
 
 

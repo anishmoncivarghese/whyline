@@ -1858,3 +1858,420 @@ def test_apply_with_unoffered_option_raises_value_error(tmp_path: Path) -> None:
     assert probs[0].id == "unknown"
     with pytest.raises(ValueError, match="not offered"):
         recovery.apply(repo, probs[0], "nonexistent-option", lambda cmd: None)
+
+
+def test_build_ask_agent_prompt_holds_all_required_sections(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    log_dir = repo / ".whyline" / "relay" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4E",
+            "round": 1,
+            "paused_reason": "an unclassified pause reason",
+            "log_path": ".whyline/relay/logs/round-REC-4E-1.log",
+        }),
+        encoding="utf-8",
+    )
+    round_log = log_dir / "round-REC-4E-1.log"
+    round_log.write_text("\n".join(f"log line {i}" for i in range(100)) + "\n", encoding="utf-8")
+
+    (repo / "dirty_test.txt").write_text("modified\n", encoding="utf-8")
+
+    prompt = recovery.build_ask_agent_prompt(
+        repo,
+        fail_lines=["FAIL preflight failed"],
+        pause_reason="an unclassified pause reason",
+        round_log="\n".join(f"log line {i}" for i in range(20, 100)),
+        relay_status="whyline relay status output",
+        git_status="?? dirty_test.txt",
+    )
+
+    assert "an unclassified pause reason" in prompt
+    assert "FAIL preflight failed" in prompt
+    assert "log line 99" in prompt
+    assert "log line 19" not in prompt
+    assert "whyline relay status output" in prompt
+    assert "?? dirty_test.txt" in prompt
+    for opt_id in recovery.REC_4C_OPTIONS:
+        assert opt_id in prompt
+    assert "You must not edit, stage, or commit anything." in prompt
+    assert "EXPLANATION: <one paragraph>" in prompt
+    assert "RECOMMEND: <option id>" in prompt
+    assert "RECOMMEND: human" in prompt
+
+
+def test_ask_agent_recommendation_of_listed_id(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "I checked the issue.\n"
+            "EXPLANATION: Dirty changes need to be stashed away.\n"
+            "RECOMMEND: stash\n"
+        )
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.ask_agent(session, runner=fake_runner)
+
+    assert res.status == "recommended"
+    assert res.recommendation == "stash"
+    assert res.explanation == "Dirty changes need to be stashed away."
+    assert res.agent == "codex"
+    assert res.option is not None
+    assert res.option.id == "stash"
+    assert res.option.recommended is True
+    assert res.option.confirm is True
+
+
+def test_ask_agent_unlisted_id_ignored_and_reported(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Unlisted action.\n"
+            "RECOMMEND: reboot-machine\n"
+        )
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.ask_agent(session, runner=fake_runner)
+
+    assert res.status == "unlisted"
+    assert res.recommendation == "reboot-machine"
+    assert res.explanation == "Unlisted action."
+    assert res.option is None
+
+
+def test_ask_agent_turn_that_edits_file_discarded_and_names_file(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    def fake_runner(command, prompt, **kwargs):
+        (repo / "sneaky_edit.txt").write_text("evil\n", encoding="utf-8")
+        return (
+            "EXPLANATION: Everything is fine.\n"
+            "RECOMMEND: stash\n"
+        )
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.ask_agent(session, runner=fake_runner)
+
+    assert res.status == "modified"
+    assert "sneaky_edit.txt" in res.changed_paths
+    assert res.recommendation == ""
+    assert res.option is None
+
+
+def test_ask_agent_failing_selected_agent_falls_through_to_backup(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import agents as relay_agents
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    # backup chain in repo config has reviewer = claude, backup_chain = ["claude"]
+    relay_cfg = repo / ".whyline" / "relay" / "config.toml"
+    relay_cfg.write_text(
+        'plan = "plan.md"\n[backup]\nchain = ["claude"]\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+
+    called: list[str] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent_name = kwargs.get("agent_name") or command[0]
+        called.append(agent_name)
+        if agent_name == "grok":
+            raise relay_agents.AgentMissing("grok missing")
+        if agent_name == "claude":
+            return (
+                "EXPLANATION: Claude solved it.\n"
+                "RECOMMEND: commit-log\n"
+            )
+        raise RuntimeError(f"unexpected agent {agent_name}")
+
+    session = ConsoleSession(root=repo, agent="grok")
+    res = recovery.ask_agent(session, runner=fake_runner)
+
+    assert res.status == "recommended"
+    assert res.recommendation == "commit-log"
+    assert res.agent == "claude"
+    assert called == ["grok", "claude"]
+    assert res.option is not None
+    assert res.option.id == "commit-log"
+
+
+def test_ask_agent_recommend_human_and_exhausted(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import agents as relay_agents
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    # 1. human recommendation
+    def fake_human_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Need human help.\n"
+            "RECOMMEND: human\n"
+        )
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res_human = recovery.ask_agent(session, runner=fake_human_runner)
+    assert res_human.status == "human"
+    assert res_human.recommendation == "human"
+    assert res_human.explanation == "Need human help."
+
+    # 2. exhausted chain
+    def fake_fail_runner(command, prompt, **kwargs):
+        raise relay_agents.AgentTimeout("timed out")
+
+    res_ex = recovery.ask_agent(session, runner=fake_fail_runner)
+    assert res_ex.status == "exhausted"
+    assert "codex" in res_ex.agents_tried
+
+
+def test_ask_agent_opt_prefixed_id_is_treated_as_unlisted(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    def fake_runner(command, prompt, **kwargs):
+        return (
+            "EXPLANATION: Agent mistakenly prefixed option with opt-.\n"
+            "RECOMMEND: opt-stash\n"
+        )
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.ask_agent(session, runner=fake_runner)
+
+    assert res.status == "unlisted"
+    assert res.recommendation == "opt-stash"
+    assert res.option is None
+
+
+def test_make_rec_4c_option_resolves_real_configured_role(tmp_path: Path) -> None:
+    from whyline_relay import failover as relay_failover
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_cfg = repo / ".whyline" / "relay" / "config.toml"
+    relay_cfg.parent.mkdir(parents=True, exist_ok=True)
+    relay_cfg.write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+
+    # 1. Synthesized reset-role with no overrides resolves configured role (implementer)
+    opt_reset = recovery.make_rec_4c_option("reset-role", root=repo)
+    assert "<role>" not in opt_reset.detail
+    assert opt_reset.detail == "whyline relay roles reset implementer"
+    assert opt_reset.label == "Reset implementer"
+
+    # 2. Synthesized reset-role with override on reviewer resolves reviewer
+    ov = relay_failover.ActiveOverride(
+        agent="gemini",
+        reason="usage",
+        backup_for="claude",
+        since="2026-10-14T00:00:00",
+        tried=["claude"],
+    )
+    relay_failover.write_override(repo, "reviewer", ov)
+    opt_reset_ov = recovery.make_rec_4c_option("reset-role", root=repo)
+    assert "<role>" not in opt_reset_ov.detail
+    assert opt_reset_ov.detail == "whyline relay roles reset reviewer"
+    assert opt_reset_ov.label == "Reset reviewer"
+
+    # 3. Synthesized use-<agent> resolves configured role (implementer)
+    opt_use = recovery.make_rec_4c_option("use-claude", root=repo)
+    assert "<role>" not in opt_use.detail
+    assert opt_use.detail == "whyline relay roles set implementer claude, then resume"
+    assert opt_use.label == "Use claude"
+
+
+def test_apply_synthesized_role_options(tmp_path: Path) -> None:
+    from whyline_relay import (
+        config as relay_config,
+        failover as relay_failover,
+        roles as relay_roles,
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_cfg = repo / ".whyline" / "relay" / "config.toml"
+    relay_cfg.parent.mkdir(parents=True, exist_ok=True)
+    relay_cfg.write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+
+    # Active override on implementer
+    ov = relay_failover.ActiveOverride(
+        agent="claude",
+        reason="usage",
+        backup_for="codex",
+        since="2026-10-14T00:00:00",
+        tried=["codex"],
+    )
+    relay_failover.write_override(repo, "implementer", ov)
+    assert "implementer" in relay_failover.read_overrides(repo)
+
+    # Reset role option
+    opt_reset = recovery.make_rec_4c_option("reset-role", root=repo)
+    problem_reset = recovery.Problem(
+        id="unknown",
+        summary="Unknown issue",
+        evidence=[],
+        options=[
+            opt_reset,
+            recovery.Option("show", "Show", "print evidence", recommended=False, confirm=False),
+            recovery.Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ],
+    )
+    launched: list[list[str]] = []
+    res_msg = recovery.apply(
+        repo,
+        problem_reset,
+        "reset-role",
+        launch=lambda args: launched.append(args),
+    )
+    assert "Reset role implementer" in res_msg
+    assert "implementer" not in relay_failover.read_overrides(repo)
+
+    # Use agent option
+    opt_use = recovery.make_rec_4c_option("use-claude", root=repo)
+    problem_use = recovery.Problem(
+        id="unknown",
+        summary="Unknown issue",
+        evidence=[],
+        options=[
+            opt_use,
+            recovery.Option("show", "Show", "print evidence", recommended=False, confirm=False),
+            recovery.Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ],
+    )
+    res_use_msg = recovery.apply(
+        repo,
+        problem_use,
+        "use-claude",
+        launch=lambda args: launched.append(args),
+    )
+    assert "Set role implementer to claude and resumed relay." in res_use_msg
+    settings = relay_config.load(repo)
+    assert relay_roles.current_roles(settings)["implementer"] == "claude"
+    assert launched == [["resume"]]
+
+
+def test_synthesized_role_options_legacy_round_2(tmp_path: Path) -> None:
+    from whyline_relay import (
+        config as relay_config,
+        failover as relay_failover,
+        roles as relay_roles,
+        state as relay_state,
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_cfg = repo / ".whyline" / "relay" / "config.toml"
+    relay_cfg.parent.mkdir(parents=True, exist_ok=True)
+    relay_cfg.write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "codex"\n',
+        encoding="utf-8",
+    )
+
+    # Legacy RelayState with empty stage and round=2
+    relay_state.save(
+        repo,
+        relay_state.RelayState(
+            plan="plan.md",
+            branch="main",
+            task_id="REC-4E",
+            round=2,
+            base_commit="HEAD~1",
+            paused_reason="unknown problem",
+            log_path="",
+            stage="",
+        ),
+    )
+
+    # 1. Make coverage: verify synthesized options select reviewer
+    opt_use = recovery.make_rec_4c_option("use-claude", root=repo)
+    assert "<role>" not in opt_use.detail
+    assert opt_use.label == "Use claude"
+    assert opt_use.detail == "whyline relay roles set reviewer claude, then resume"
+
+    opt_reset = recovery.make_rec_4c_option("reset-role", root=repo)
+    assert "<role>" not in opt_reset.detail
+    assert opt_reset.label == "Reset reviewer"
+    assert opt_reset.detail == "whyline relay roles reset reviewer"
+
+    # 2. Apply coverage for use-<agent>: reviewer changes while implementer is untouched
+    problem_use = recovery.Problem(
+        id="unknown",
+        summary="Unknown issue",
+        evidence=[],
+        options=[
+            opt_use,
+            recovery.Option("show", "Show", "print evidence", recommended=False, confirm=False),
+            recovery.Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ],
+    )
+    launched: list[list[str]] = []
+    res_use_msg = recovery.apply(
+        repo,
+        problem_use,
+        "use-claude",
+        launch=lambda args: launched.append(args),
+    )
+    assert res_use_msg == "Set role reviewer to claude and resumed relay."
+    settings = relay_config.load(repo)
+    current = relay_roles.current_roles(settings)
+    assert current["reviewer"] == "claude"
+    assert current["implementer"] == "codex"
+    assert launched == [["resume"]]
+
+    # 3. Apply coverage for reset-role: reviewer override reset while implementer is untouched
+    ov_reviewer = relay_failover.ActiveOverride(
+        agent="claude",
+        reason="usage",
+        backup_for="codex",
+        since="2026-10-14T00:00:00",
+        tried=["codex"],
+    )
+    relay_failover.write_override(repo, "reviewer", ov_reviewer)
+    ov_implementer = relay_failover.ActiveOverride(
+        agent="claude",
+        reason="usage",
+        backup_for="codex",
+        since="2026-10-14T00:00:00",
+        tried=["codex"],
+    )
+    relay_failover.write_override(repo, "implementer", ov_implementer)
+    assert "reviewer" in relay_failover.read_overrides(repo)
+    assert "implementer" in relay_failover.read_overrides(repo)
+
+    problem_reset = recovery.Problem(
+        id="unknown",
+        summary="Unknown issue",
+        evidence=[],
+        options=[
+            opt_reset,
+            recovery.Option("show", "Show", "print evidence", recommended=False, confirm=False),
+            recovery.Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ],
+    )
+    launched.clear()
+    res_reset_msg = recovery.apply(
+        repo,
+        problem_reset,
+        "reset-role",
+        launch=lambda args: launched.append(args),
+    )
+    assert res_reset_msg == "Reset role reviewer to its configured agent."
+    active_overrides = relay_failover.read_overrides(repo)
+    assert "reviewer" not in active_overrides
+    assert "implementer" in active_overrides
+
+
+

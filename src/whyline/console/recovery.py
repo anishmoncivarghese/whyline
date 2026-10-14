@@ -8,7 +8,7 @@ import re
 import subprocess
 import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -1161,6 +1161,203 @@ def _read_state_dict(root_path: Path) -> dict[str, Any]:
     return {}
 
 
+REC_4C_OPTIONS: dict[str, str] = {
+    "commit-log": "Commit decision log",
+    "resume-keep": "Resume and keep changes",
+    "stash": "Stash changes",
+    "wait": "Wait",
+    "stop": "Stop relay",
+    "reset-keep": "Reset to base commit",
+    "move-aside": "Move aside foreign commits",
+    "reset-role": "Reset role",
+    "resume-longer": "Resume with longer timeout",
+    "resume": "Resume as is",
+    "retry-stage": "Retry stage",
+}
+
+
+def get_rec_4c_options(root: Path | str | None = None) -> dict[str, str]:
+    opts = dict(REC_4C_OPTIONS)
+    if root is not None:
+        try:
+            from whyline import account
+            from whyline.console import relay_ops
+
+            status_map = account.agent_status(Path(root))
+            usable = relay_ops.usable_agents(Path(root), status_map)
+            for ag in usable:
+                opts[f"use-{ag}"] = f"Use {ag}"
+        except Exception:
+            pass
+    return opts
+
+
+def resolve_configured_role(
+    root: Path | str | None = None,
+    opt_id: str = "",
+) -> str:
+    """Resolve a real configured role for recovery options such as reset-role or use-<agent>."""
+    if root is None:
+        return "implementer"
+
+    root_path = Path(root).resolve()
+    configured_roles: list[str] = []
+    settings = None
+    try:
+        from whyline_relay import config as relay_config, roles as relay_roles
+
+        settings = relay_config.load(root_path)
+        current = relay_roles.current_roles(settings)
+        configured_roles = list(current.keys())
+    except Exception:
+        pass
+
+    stage_name = ""
+    pause_reason = ""
+    round_num = 1
+    try:
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        stage_name = (st.stage if st and st.stage else "") or str(st_dict.get("stage") or "")
+        pause_reason = (st.paused_reason if st and st.paused_reason else "") or str(st_dict.get("paused_reason") or "")
+        round_num = (st.round if st and hasattr(st, "round") and st.round is not None else 1) or int(st_dict.get("round") or 1)
+    except Exception:
+        pass
+
+    if not stage_name and pause_reason:
+        m_st = re.search(r"stage\s+['\"]([^'\"]+)['\"]", pause_reason)
+        if m_st:
+            stage_name = m_st.group(1)
+
+    active_role: str | None = None
+    if settings is not None and getattr(settings, "pipeline", None) is not None:
+        if stage_name and stage_name in settings.pipeline.stages:
+            r = settings.pipeline.stages[stage_name].role
+            if not configured_roles or r in configured_roles:
+                active_role = r
+        elif stage_name and stage_name in settings.pipeline.roles:
+            active_role = stage_name
+
+    if active_role is None:
+        if stage_name in ("review", "reviewer") or (not stage_name and round_num == 2):
+            if not configured_roles or "reviewer" in configured_roles:
+                active_role = "reviewer"
+        elif stage_name in ("implement", "implementer", "draft") or (not stage_name and round_num == 1):
+            if not configured_roles or "implementer" in configured_roles:
+                active_role = "implementer"
+
+    if opt_id == "reset-role":
+        try:
+            from whyline_relay import failover as relay_failover
+
+            overrides = relay_failover.read_overrides(root_path)
+            if overrides:
+                if active_role and active_role in overrides:
+                    return active_role
+                for r in overrides:
+                    if not configured_roles or r in configured_roles:
+                        return r
+                return next(iter(overrides))
+        except Exception:
+            pass
+
+    if active_role is not None:
+        return active_role
+
+    if configured_roles:
+        if "implementer" in configured_roles:
+            return "implementer"
+        return configured_roles[0]
+
+    return "implementer"
+
+
+def make_rec_4c_option(
+    opt_id: str,
+    root: Path | str | None = None,
+    recommended: bool = True,
+) -> Option:
+    catalog = get_rec_4c_options(root)
+    label = catalog.get(opt_id)
+    if not label:
+        if opt_id.startswith("use-"):
+            ag = opt_id[len("use-") :]
+            label = f"Use {ag}"
+        else:
+            label = opt_id
+
+    confirm = opt_id in ("stash", "stop", "reset-keep", "move-aside")
+
+    task_id = ""
+    base_commit = "HEAD~1"
+    if root is not None:
+        try:
+            from whyline_relay import state as state_mod
+
+            st = state_mod.load(Path(root))
+            st_dict = _read_state_dict(Path(root))
+            task_id = (st.task_id if st and st.task_id else "") or str(
+                st_dict.get("task_id") or ""
+            )
+            base_commit = (
+                (st.base_commit if st and st.base_commit else "")
+                or str(st_dict.get("base_commit") or "HEAD~1")
+            )
+        except Exception:
+            pass
+
+    target_role = ""
+    if opt_id == "reset-role" or opt_id.startswith("use-"):
+        target_role = resolve_configured_role(root, opt_id)
+
+    detail = label
+    if opt_id == "stash":
+        detail = (
+            f'git stash push -u -m "whyline resolve {task_id}"'
+            if task_id
+            else 'git stash push -u -m "whyline resolve"'
+        )
+    elif opt_id == "stop":
+        detail = "run whyline relay stop"
+    elif opt_id == "reset-keep":
+        detail = f"git reset {base_commit} (files stay), then resume-keep"
+    elif opt_id == "move-aside":
+        detail = f"git branch whyline-aside/{task_id or 'task'} HEAD then git reset --keep {base_commit}, then resume-keep"
+    elif opt_id == "resume-keep":
+        detail = 'resume and keep these changes: ["resume", "--allow-dirty"]'
+    elif opt_id == "commit-log":
+        detail = (
+            f"gitcheck.commit_decision_log(root, {task_id!r})"
+            if task_id
+            else "gitcheck.commit_decision_log(root)"
+        )
+    elif opt_id == "wait":
+        detail = "print whyline relay status"
+    elif opt_id == "retry-stage":
+        detail = "whyline relay resume --retry-stage"
+    elif opt_id == "resume":
+        detail = "resume with current timeout"
+    elif opt_id == "resume-longer":
+        detail = "resume with longer timeout"
+    elif opt_id == "reset-role":
+        label = f"Reset {target_role}" if target_role else "Reset role"
+        detail = f"whyline relay roles reset {target_role}" if target_role else "whyline relay roles reset"
+    elif opt_id.startswith("use-"):
+        ag = opt_id[len("use-") :]
+        label = f"Use {ag}"
+        detail = f"whyline relay roles set {target_role} {ag}, then resume"
+
+    return Option(
+        id=opt_id,
+        label=label,
+        detail=detail,
+        recommended=recommended,
+        confirm=confirm,
+    )
+
+
 def diagnose(
     root: Path | str,
     fail_lines: list[str] | None = None,
@@ -1857,10 +2054,8 @@ def apply(
 
         m = re.search(r"roles reset\s+(\S+)", matched_opt.detail)
         role = m.group(1) if m else None
-        if not role:
-            overrides = failover.read_overrides(root_path)
-            if overrides:
-                role = next(iter(overrides))
+        if not role or role == "<role>":
+            role = resolve_configured_role(root_path, option_id)
         roles.reset(root_path, role)
         return f"Reset role {role} to its configured agent." if role else "Reset role to its configured agent."
 
@@ -1891,7 +2086,15 @@ def apply(
 
         settings = relay_config.load(root_path)
         m = re.search(r"roles set\s+(\S+)", matched_opt.detail)
-        role = m.group(1) if m else "implementer"
+        role = m.group(1) if m else None
+        if not role or role == "<role>":
+            role = resolve_configured_role(root_path, option_id)
+        current = roles.current_roles(settings)
+        if role not in current:
+            if "implementer" in current:
+                role = "implementer"
+            elif current:
+                role = next(iter(current))
         roles.set_role(root_path, settings, role, agent=agent, model=None)
         launch(["resume"])
         return f"Set role {role} to {agent} and resumed relay."
@@ -1911,4 +2114,533 @@ def apply(
         return "Resolve cancelled; nothing else was changed."
 
     raise ValueError(f"Unhandled option id: {option_id!r}")
+
+
+def build_ask_agent_prompt(
+    root: Path | str,
+    fail_lines: Sequence[str] | None = None,
+    pause_reason: str = "",
+    round_log: str = "",
+    relay_status: str = "",
+    git_status: str = "",
+    options_catalog: dict[str, str] | None = None,
+) -> str:
+    root_path = Path(root).resolve()
+    fails = [str(f) for f in (fail_lines or [])]
+    reason = str(pause_reason or "")
+
+    sections = [
+        "A relay problem occurred that Resolve does not know how to handle.",
+        "",
+    ]
+
+    if reason:
+        sections.extend(["## Pause Reason", reason, ""])
+    if fails:
+        sections.append("## Preflight FAIL Lines")
+        for f in fails:
+            sections.append(f)
+        sections.append("")
+    if not reason and not fails:
+        sections.extend(["## Problem", "Unknown problem", ""])
+
+    sections.extend([
+        "## Recent Round Log",
+        round_log.strip() if round_log else "None",
+        "",
+        "## Relay Status",
+        relay_status.strip() if relay_status else "None",
+        "",
+        "## Git Status",
+        git_status.strip() if git_status else "Clean",
+        "",
+    ])
+
+    if options_catalog is None:
+        options_catalog = get_rec_4c_options(root_path)
+
+    sections.append("## Available REC-4C Options")
+    for opt_id, label in options_catalog.items():
+        sections.append(f"- {opt_id}: {label}")
+    sections.append("")
+
+    sections.extend([
+        "## Instructions",
+        "You are acting in a read-only diagnostic capacity.",
+        "You must not edit, stage, or commit anything.",
+        "Analyze the situation and recommend an option from the list above, or human if manual intervention is required.",
+        "You must end your response with:",
+        "EXPLANATION: <one paragraph>",
+        "RECOMMEND: <option id>",
+        "or",
+        "RECOMMEND: human",
+    ])
+
+    return "\n".join(sections)
+
+
+def parse_agent_recommendation(text: str) -> tuple[str, str]:
+    explanation = ""
+    recommendation = ""
+
+    m_rec = re.search(r"^RECOMMEND:\s*(\S+)", text, re.MULTILINE | re.IGNORECASE)
+    if m_rec:
+        recommendation = m_rec.group(1).strip()
+        recommendation = recommendation.strip("`'\"*.")
+
+    m_exp = re.search(
+        r"^EXPLANATION:\s*(.+?)(?=\n\s*(?:RECOMMEND:|$)|\Z)",
+        text,
+        re.MULTILINE | re.IGNORECASE | re.DOTALL,
+    )
+    if m_exp:
+        explanation = m_exp.group(1).strip()
+    elif not explanation and text:
+        if m_rec:
+            explanation = text[: m_rec.start()].strip()
+        else:
+            explanation = text.strip()
+
+    return explanation, recommendation
+
+
+def _is_exempt_ask(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    if (
+        normalized == ".whyline/relay/logs"
+        or normalized == ".whyline/relay/logs/"
+        or normalized.startswith(".whyline/relay/logs/")
+    ):
+        return True
+    return False
+
+
+def _snapshot_ask_state(root: Path) -> tuple[str, str, dict[str, bytes]]:
+    head = ""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except Exception:
+        pass
+
+    status_str = ""
+    try:
+        status_str = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except Exception:
+        pass
+
+    contents: dict[str, bytes] = {}
+    for line in status_str.splitlines():
+        if not line.strip():
+            continue
+        p = line[3:].strip()
+        if " -> " in p:
+            p = p.split(" -> ")[-1]
+        file_path = root / p
+        if file_path.is_file():
+            try:
+                contents[p] = file_path.read_bytes()
+            except OSError:
+                pass
+    return head, status_str, contents
+
+
+def _diff_ask_state(
+    root: Path,
+    head_before: str,
+    status_before: str,
+    contents_before: dict[str, bytes],
+    head_after: str,
+    status_after: str,
+    contents_after: dict[str, bytes],
+) -> list[str]:
+    changed: set[str] = set()
+    if head_before and head_after and head_after != head_before:
+        changed.add("HEAD")
+        try:
+            diff_proc = subprocess.run(
+                ["git", "diff", "--name-only", head_before, head_after],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            for f in diff_proc.stdout.splitlines():
+                if f.strip():
+                    changed.add(f.strip())
+        except Exception:
+            pass
+
+    def parse_status(s: str) -> dict[str, str]:
+        res = {}
+        for line in s.splitlines():
+            if not line.strip():
+                continue
+            code = line[:2]
+            p = line[3:].strip()
+            if " -> " in p:
+                p = p.split(" -> ")[-1]
+            if not _is_exempt_ask(p):
+                res[p] = code
+        return res
+
+    parsed_before = parse_status(status_before)
+    parsed_after = parse_status(status_after)
+
+    for p, code in parsed_after.items():
+        if p not in parsed_before:
+            changed.add(p)
+        elif code != parsed_before[p]:
+            changed.add(p)
+        elif contents_after.get(p) != contents_before.get(p):
+            changed.add(p)
+
+    for p in parsed_before:
+        if p not in parsed_after:
+            changed.add(p)
+
+    return sorted(changed)
+
+
+@dataclass
+class AskAgentResult:
+    status: str  # "recommended", "human", "unlisted", "modified", "exhausted"
+    recommendation: str
+    explanation: str
+    agent: str
+    changed_paths: list[str] = field(default_factory=list)
+    agents_tried: list[str] = field(default_factory=list)
+    option: Option | None = None
+
+
+def ask_agent(
+    root: Path | str | Any,
+    session: Any = None,
+    *,
+    agent: str | None = None,
+    runner: Any = None,
+    run_fn: Any = None,
+    fail_lines: Sequence[str] | None = None,
+    pause_reason: str = "",
+    problem: Problem | None = None,
+    round_log: str | None = None,
+    relay_status: str | None = None,
+    git_status: str | None = None,
+    options_catalog: dict[str, str] | None = None,
+) -> AskAgentResult:
+    from whyline_relay import (
+        config as relay_config,
+        failover as relay_failover,
+        setup as relay_setup,
+        state as relay_state,
+    )
+
+    session_obj = None
+    if hasattr(root, "root") and not isinstance(root, (str, Path)):
+        session_obj = root
+        root_path = Path(session_obj.root).resolve()
+        if session is None:
+            session = session_obj
+    else:
+        root_path = Path(root).resolve()
+        if session is not None and hasattr(session, "root"):
+            session_obj = session
+
+    if session_obj is not None:
+        selected_agent = getattr(session_obj, "agent", None)
+    elif isinstance(session, str):
+        selected_agent = session
+    elif agent:
+        selected_agent = agent
+    else:
+        selected_agent = None
+
+    active_runner = runner if runner is not None else run_fn
+
+    st = relay_state.load(root_path)
+
+    actual_fails = list(fail_lines) if fail_lines is not None else []
+    actual_pause_reason = pause_reason
+    if problem is not None:
+        if not actual_fails and problem.evidence:
+            actual_fails = [e for e in problem.evidence if "FAIL" in e]
+        if not actual_pause_reason:
+            actual_pause_reason = problem.summary
+            if not actual_fails and problem.evidence:
+                actual_pause_reason = "\n".join(problem.evidence)
+    if not actual_pause_reason and st and st.paused_reason:
+        actual_pause_reason = st.paused_reason
+
+    try:
+        backup_chain = list(relay_setup.read_backup(root_path))
+    except Exception:
+        backup_chain = []
+
+    if round_log is None:
+        round_log = ""
+        if st and st.log_path:
+            lp = Path(st.log_path)
+            if not lp.is_absolute():
+                lp = root_path / lp
+            if lp.is_file():
+                try:
+                    raw_lines = lp.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
+                    round_log = "\n".join(raw_lines[-80:])
+                except OSError:
+                    pass
+
+    if relay_status is None:
+        try:
+            from whyline.console import adapters
+
+            relay_status = adapters.run_status(root_path).text
+        except Exception:
+            relay_status = ""
+
+    if git_status is None:
+        try:
+            git_status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root_path,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except Exception:
+            git_status = ""
+
+    catalog = options_catalog or get_rec_4c_options(root_path)
+
+    prompt = build_ask_agent_prompt(
+        root_path,
+        fail_lines=actual_fails,
+        pause_reason=actual_pause_reason,
+        round_log=round_log,
+        relay_status=relay_status,
+        git_status=git_status,
+        options_catalog=catalog,
+    )
+
+    settings = relay_config.load(root_path)
+    if st and st.timeout_minutes is not None:
+        timeout_seconds = None if st.timeout_minutes == 0 else st.timeout_minutes * 60
+    elif hasattr(settings, "timeout_minutes") and settings.timeout_minutes is not None:
+        timeout_seconds = (
+            None if settings.timeout_minutes == 0 else settings.timeout_minutes * 60
+        )
+    else:
+        timeout_seconds = 15 * 60
+
+    head_before, status_before, contents_before = _snapshot_ask_state(root_path)
+
+    tried: set[str] = set()
+    current_agent: str | None = selected_agent
+    turn_taken_by: str | None = None
+    raw_output = ""
+    response_text = ""
+
+    while True:
+        if current_agent is None:
+            current_agent = relay_failover.next_backup(backup_chain, tried)
+            if current_agent is None:
+                break
+
+        if current_agent in tried:
+            current_agent = None
+            continue
+
+        tried.add(current_agent)
+
+        try:
+            from whyline_relay import chat as relay_chat
+
+            command = relay_chat.resolve_command(settings, current_agent)
+        except Exception:
+            if active_runner is not None and current_agent:
+                command = [current_agent]
+            else:
+                current_agent = None
+                continue
+
+        try:
+            adapter = relay_config.adapter_for(settings, current_agent)
+        except Exception:
+            adapter = None
+
+        log_target = (
+            root_path
+            / ".whyline"
+            / "relay"
+            / "logs"
+            / f"ask-agent-{current_agent}.log"
+        )
+        log_target.parent.mkdir(parents=True, exist_ok=True)
+
+        res = None
+        call_err = None
+        try:
+            if active_runner is not None:
+                try:
+                    res = active_runner(
+                        command,
+                        prompt,
+                        cwd=root_path,
+                        log_path=log_target,
+                        timeout_seconds=timeout_seconds,
+                        echo=False,
+                        agent_name=current_agent,
+                    )
+                except TypeError:
+                    try:
+                        res = active_runner(command, prompt, cwd=root_path)
+                    except TypeError:
+                        try:
+                            res = active_runner(command, prompt)
+                        except TypeError:
+                            try:
+                                res = active_runner([*command, prompt], cwd=root_path)
+                            except TypeError:
+                                try:
+                                    res = active_runner(current_agent, prompt)
+                                except TypeError:
+                                    res = active_runner(prompt)
+            else:
+                from whyline_relay import agents as relay_agents
+
+                res = relay_agents.run(
+                    command,
+                    prompt,
+                    cwd=root_path,
+                    log_path=log_target,
+                    timeout_seconds=timeout_seconds,
+                    echo=False,
+                    agent_name=current_agent,
+                )
+        except Exception as err:
+            call_err = err
+
+        if call_err is not None:
+            if _is_model_failure(call_err, ""):
+                current_agent = None
+                continue
+            raise call_err
+
+        if isinstance(res, str):
+            raw_output = res
+        elif hasattr(res, "output") and res.output is not None:
+            raw_output = res.output
+        elif hasattr(res, "stdout") and res.stdout is not None:
+            raw_output = res.stdout
+        elif isinstance(res, dict):
+            raw_output = res.get("output") or res.get("response") or ""
+        else:
+            raw_output = str(res) if res is not None else ""
+
+        if not raw_output and log_target.is_file():
+            try:
+                raw_output = log_target.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                pass
+
+        if adapter is not None and hasattr(adapter, "extract_response"):
+            try:
+                response_text = adapter.extract_response(raw_output)
+            except Exception:
+                response_text = raw_output
+        else:
+            response_text = raw_output
+
+        if _is_model_failure(
+            None, raw_output, adapter=adapter, command=command
+        ) or _is_model_failure(
+            None, response_text, adapter=adapter, command=command
+        ):
+            current_agent = None
+            continue
+
+        turn_taken_by = current_agent
+        break
+
+    if turn_taken_by is None:
+        return AskAgentResult(
+            status="exhausted",
+            recommendation="",
+            explanation="",
+            agent="",
+            agents_tried=sorted(tried),
+        )
+
+    head_after, status_after, contents_after = _snapshot_ask_state(root_path)
+    changed_paths = _diff_ask_state(
+        root_path,
+        head_before,
+        status_before,
+        contents_before,
+        head_after,
+        status_after,
+        contents_after,
+    )
+    if changed_paths:
+        return AskAgentResult(
+            status="modified",
+            recommendation="",
+            explanation="",
+            agent=turn_taken_by,
+            changed_paths=changed_paths,
+            agents_tried=sorted(tried),
+        )
+
+    explanation, recommendation = parse_agent_recommendation(
+        response_text or raw_output
+    )
+    if not explanation and raw_output:
+        raw_exp, raw_rec = parse_agent_recommendation(raw_output)
+        if raw_exp:
+            explanation = raw_exp
+        if not recommendation and raw_rec:
+            recommendation = raw_rec
+
+    if recommendation.lower() == "human":
+        return AskAgentResult(
+            status="human",
+            recommendation="human",
+            explanation=explanation,
+            agent=turn_taken_by,
+            agents_tried=sorted(tried),
+        )
+
+    if recommendation in catalog:
+        opt = make_rec_4c_option(recommendation, root=root_path, recommended=True)
+        return AskAgentResult(
+            status="recommended",
+            recommendation=recommendation,
+            explanation=explanation,
+            agent=turn_taken_by,
+            option=opt,
+            agents_tried=sorted(tried),
+        )
+
+    return AskAgentResult(
+        status="unlisted",
+        recommendation=recommendation,
+        explanation=explanation,
+        agent=turn_taken_by,
+        agents_tried=sorted(tried),
+    )
+
+
+ask = ask_agent
+ask_selected_agent = ask_agent
+
 
