@@ -1,7 +1,7 @@
 # Idea Inbox: capture, analyse, score, Excel, then plan on request
 
 Source: `docs/brainstorm/now-i-am-thinking-of-creating-an-analayser-say-i-send-an-ema.md` (Final Synthesis).
-Runs after `in-the-agent-i-can-select-the-agent-in-c.plan.md` ships 0.3.44.
+Runs after `in-the-agent-i-can-select-the-agent-in-c.plan.md` ships 0.3.45 (the test planner, TPL-1..10). With a Test planner set, re-run this plan through the planner or add a tests file before starting.
 
 Rules every task keeps:
 
@@ -13,7 +13,7 @@ Rules every task keeps:
 
 The SQLite ledger is the record. The Excel workbook is rebuilt from it after every change, so hand edits to the workbook are overwritten; the ledger never loses data.
 
-## Phase 1: ledger, analysis, Excel, CLI (whyline 0.3.45)
+## Phase 1: ledger, analysis, Excel, CLI (whyline 0.3.46)
 
 - [ ] IDEA-1: Idea ledger and state machine
   Add package `src/whyline/ideas/` with `__init__.py`, `paths.py`, and `store.py`, plus `tests/ideas/test_store.py`.
@@ -52,11 +52,11 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests: add then list shows the idea; drop then reopen round-trips; analyse with a fake runner prints the scores; `doctor` reports an unwritable workbook; an unknown id exits 1 with a clear message.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-6: Publish whyline 0.3.45
+- [ ] IDEA-6: Publish whyline 0.3.46
   relay-profile: release
-  Bump `pyproject.toml` to `0.3.45`. Write `docs/releases/v0.3.45.md` in the shape of the previous release notes: `whyline idea` captures an idea, analyses it with one read-only agent turn that lists the sources it checked, scores usefulness and complexity 1-9 with a YES / NO / NOT YET verdict, and keeps every idea in `~/.whyline/ideas/ideas.xlsx`, rebuilt from a local database. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.45`, push, publish to PyPI the way the previous release was published, and confirm `uv tool upgrade whyline` installs `0.3.45`.
+  Bump `pyproject.toml` to `0.3.46`. Write `docs/releases/v0.3.46.md` in the shape of the previous release notes: `whyline idea` captures an idea, analyses it with one read-only agent turn that lists the sources it checked, scores usefulness and complexity 1-9 with a YES / NO / NOT YET verdict, and keeps every idea in `~/.whyline/ideas/ideas.xlsx`, rebuilt from a local database. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.46`, push, publish to PyPI the way the previous release was published, and confirm `uv tool upgrade whyline` installs `0.3.46`.
 
-## Phase 2: Telegram (whyline 0.3.46)
+## Phase 2: Telegram (whyline 0.3.47)
 
 Review point: use the CLI for real ideas for a few days before starting this phase.
 
@@ -89,11 +89,11 @@ Review point: use the CLI for real ideas for a few days before starting this pha
   Tests: a disabled inbox does nothing; an exception in the inbox does not stop `run_tick` from starting due agents; one queued job is started once even across two ticks; an expired lease re-queues once then fails with a chat message.
   Verify with `uv run pytest -q tests/ideas tests/agents` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-11: Publish whyline 0.3.46
+- [ ] IDEA-11: Publish whyline 0.3.47
   relay-profile: release
-  Bump `pyproject.toml` to `0.3.46`. Write `docs/releases/v0.3.46.md`: send an idea to your Telegram bot and get scores, a report, and the workbook back, with buttons for Full report, Refine, Drop and Excel; only chats you allow are read; it runs from the existing scheduler without a terminal while you are logged in, and catches up on messages from up to about a day when the Mac was off. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.46`, push, publish to PyPI the way the previous release was published, and confirm `uv tool upgrade whyline` installs `0.3.46`.
+  Bump `pyproject.toml` to `0.3.47`. Write `docs/releases/v0.3.47.md`: send an idea to your Telegram bot and get scores, a report, and the workbook back, with buttons for Full report, Refine, Drop and Excel; only chats you allow are read; it runs from the existing scheduler without a terminal while you are logged in, and catches up on messages from up to about a day when the Mac was off. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.47`, push, publish to PyPI the way the previous release was published, and confirm `uv tool upgrade whyline` installs `0.3.47`.
 
-## Phase 3: Create plan (whyline 0.3.47)
+## Phase 3: Create plan (whyline 0.3.48)
 
 - [ ] IDEA-12: Read a plan request and confirm it
   Add `src/whyline/ideas/plan_request.py` and `tests/ideas/test_plan_request.py`, and the `/plan` and `Create plan` handling in `src/whyline/ideas/bot.py`.
@@ -119,9 +119,9 @@ Review point: use the CLI for real ideas for a few days before starting this pha
   Tests with fakes: a dirty repository waits and does not draft; a running relay waits; a draft is sent with three buttons; a question round-trips through the chat; Approve writes and commits the plan and never starts the relay; Discard leaves the repository as it was.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-15: Publish whyline 0.3.47
+- [ ] IDEA-15: Publish whyline 0.3.48
   relay-profile: release
-  Bump `pyproject.toml` to `0.3.47`. Write `docs/releases/v0.3.47.md`: Create plan on an analysed idea asks which models, passes, final writer, backup and repository to use, brainstorms in the inbox's own workspace so your repositories are untouched, drafts a plan when the repository is clean and no relay is running, and waits for your Approve; it never starts the relay. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.47`, push, publish to PyPI the way the previous release was published, and confirm `uv tool upgrade whyline` installs `0.3.47`.
+  Bump `pyproject.toml` to `0.3.48`. Write `docs/releases/v0.3.48.md`: Create plan on an analysed idea asks which models, passes, final writer, backup and repository to use, brainstorms in the inbox's own workspace so your repositories are untouched, drafts a plan when the repository is clean and no relay is running, and waits for your Approve; it never starts the relay. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.48`, push, publish to PyPI the way the previous release was published, and confirm `uv tool upgrade whyline` installs `0.3.48`.
 
 ## Later, not in this plan
 
