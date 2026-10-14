@@ -1669,3 +1669,240 @@ def test_resume_ignores_the_pre_persist_head(tmp_path, monkeypatch):
     assert calls[0] == "brainstorm"
     assert finished["phase"] == "relay"
     assert launched == [["start"]]
+
+
+def test_auto_pause_decision_log_only_commits_resumes_and_calls_launcher_once(tmp_path, monkeypatch):
+    from whyline_relay import gitcheck
+
+    root = _repo(tmp_path)
+    subprocess.run(["whyline", "init", "--yes"], cwd=root, check=True)
+    gitcheck.ensure_relay_ignored(root)
+    (root / ".whyline" / "relay").mkdir(parents=True, exist_ok=True)
+    (root / ".whyline" / "relay" / "claude-settings.json").write_text("{}\n", encoding="utf-8")
+    (root / "plan.md").write_text("# Plan\n- [ ] REC-4: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "setup"], cwd=root, check=True)
+
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+
+    cp_path = auto_run.checkpoint_path(root)
+    saved = auto_run.load_object(cp_path)
+    saved["phase"] = "relay"
+    saved["pause"] = {"reason": "paused with uncommitted changes", "actions": ["resume", "change", "cancel", "recover"]}
+    auto_run.atomic_write_json(cp_path, saved)
+
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "dirty",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+
+    (root / ".whyline" / "decisions.md").write_text("# Decisions\n- [2026-10-14] Test note\n", encoding="utf-8")
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    res = auto_run.resume(root, request, progress=lines.append, launcher=lambda args: launched.append(list(args)))
+
+    assert res["phase"] == "relay"
+    assert "pause" not in res
+    assert launched == [["resume"]]
+    assert "auto · recover decision-log" in lines
+    status = _git(root, "status", "--porcelain")
+    assert status == ""
+
+
+def test_auto_no_handoff_pause_resumes_with_fake_agent(tmp_path, monkeypatch):
+    from whyline_relay import gitcheck
+
+    root = _repo(tmp_path)
+    subprocess.run(["whyline", "init", "--yes"], cwd=root, check=True)
+    gitcheck.ensure_relay_ignored(root)
+    (root / ".whyline" / "relay").mkdir(parents=True, exist_ok=True)
+    (root / ".whyline" / "relay" / "claude-settings.json").write_text("{}\n", encoding="utf-8")
+    (root / "plan.md").write_text("# Plan\n- [ ] REC-4: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "setup"], cwd=root, check=True)
+
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+
+    cp_path = auto_run.checkpoint_path(root)
+    saved = auto_run.load_object(cp_path)
+    saved["phase"] = "relay"
+    saved["pause"] = {"reason": "codex exited without handing off", "actions": ["resume", "change", "cancel", "recover"]}
+    auto_run.atomic_write_json(cp_path, saved)
+
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "codex exited without handing off",
+            "log_path": "round.log",
+            "last_handoff_id": "old-100",
+        }),
+        encoding="utf-8",
+    )
+    (root / ".whyline" / "active-handoff.json").write_text(
+        json.dumps({
+            "v": 1,
+            "id": "old-100",
+            "type": "Handoff",
+            "task": "REC-4",
+            "status": "in-progress",
+            "from_actor": "codex",
+            "to_actor": "claude",
+        }),
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, prompt, **kwargs):
+        (root / ".whyline" / "active-handoff.json").write_text(
+            json.dumps({
+                "v": 1,
+                "id": "new-200",
+                "type": "Handoff",
+                "task": "REC-4",
+                "status": "ready-for-review",
+                "from_actor": "codex",
+                "to_actor": "claude",
+            }),
+            encoding="utf-8",
+        )
+        return "RECOVERY: resolved\n"
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    res = auto_run.resume(
+        root,
+        request,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+        runner=fake_runner,
+    )
+
+    assert res["phase"] == "relay"
+    assert "pause" not in res
+    assert launched == [["resume"]]
+    assert "auto · recover no-handoff · codex" in lines
+
+
+def test_auto_auth_pause_does_not_call_runner_and_keeps_pause(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+
+    cp_path = auto_run.checkpoint_path(root)
+    saved = auto_run.load_object(cp_path)
+    saved["phase"] = "relay"
+    auth_reason = "codex is no longer logged in; try again once you've signed back in"
+    saved["pause"] = {"reason": auth_reason, "actions": ["resume", "change", "cancel", "recover"]}
+    auto_run.atomic_write_json(cp_path, saved)
+
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": auth_reason,
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+
+    called = False
+
+    def boom(command, prompt, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("runner should not be called")
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    res = auto_run.resume(
+        root,
+        request,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+        runner=boom,
+    )
+
+    assert called is False
+    assert launched == []
+    assert "pause" in res
+    assert "is no longer logged in" in res["pause"]["reason"]
+
+
+def test_auto_failover_recovery_writes_override_and_resumes(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request()
+    dismissed = auto_run.fingerprint(root, request)
+    auto_run.run(root, request, dismissed, through="persist")
+
+    from whyline_relay import failover
+
+    (root / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n[backup]\nchain = ["grok"]\n',
+        encoding="utf-8",
+    )
+
+    cp_path = auto_run.checkpoint_path(root)
+    saved = auto_run.load_object(cp_path)
+    saved["phase"] = "relay"
+    rate_reason = "codex hit a usage or rate limit; try again when it resets"
+    saved["pause"] = {"reason": rate_reason, "actions": ["resume", "change", "cancel", "recover"]}
+    auto_run.atomic_write_json(cp_path, saved)
+
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": rate_reason,
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    res = auto_run.resume(
+        root,
+        request,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+
+    assert res["phase"] == "relay"
+    assert "pause" not in res
+    assert launched == [["resume"]]
+    assert "auto · recover failover · grok" in lines
+    overrides = failover.read_overrides(root)
+    assert "implementer" in overrides
+    assert overrides["implementer"].agent == "grok"
+

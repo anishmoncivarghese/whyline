@@ -240,6 +240,12 @@ def classify_relay_output(root: Path | str, text: str, code: int) -> SessionEven
     return SessionEvent(kind=kind, text=text)
 
 
+def recover_pause(root: Path | str, **kwargs):
+    from whyline.console import auto_run
+
+    return auto_run.recover_pause(root, **kwargs)
+
+
 
 def run_last_handoff(root: Path) -> SessionEvent:
     """Renders whyline-relay's current handoff record directly -- already

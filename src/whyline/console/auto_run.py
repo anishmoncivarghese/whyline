@@ -25,6 +25,7 @@ import re
 import subprocess
 import threading
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 from whyline import account, model
@@ -42,7 +43,7 @@ _IGNORED_GIT_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
 # moves HEAD, and porcelain is a separate clean-tree check.
 _SKIPPED_IN_FORM = ("head", "porcelain")
 
-PAUSE_ACTIONS = frozenset({"resume", "change", "replace", "cancel"})
+PAUSE_ACTIONS = frozenset({"resume", "change", "replace", "cancel", "recover"})
 
 _COMMIT_MESSAGE = "setup: auto run roles, backup, and timeout"
 
@@ -317,11 +318,11 @@ def _checked_pause(value: object) -> dict:
         raise ValueError("pause must be an object with a reason and actions")
     if any(not isinstance(item, str) or item not in PAUSE_ACTIONS for item in actions):
         raise ValueError(
-            "pause actions must be a subset of resume, change, replace, cancel"
+            "pause actions must be a subset of resume, change, replace, cancel, recover"
         )
     if len(set(actions)) != len(actions):
         raise ValueError(
-            "pause actions must be a subset of resume, change, replace, cancel"
+            "pause actions must be a subset of resume, change, replace, cancel, recover"
         )
     return {"reason": reason, "actions": list(actions)}
 
@@ -1218,6 +1219,31 @@ def _preflight_phase(root: Path, current: dict, *, progress) -> dict:
     checks = preflight.run(root, plan, scope="full")
     fails = [check for check in checks if check.status == "FAIL"]
     if fails:
+        proc = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        dirty = [line[3:].strip().split(" -> ")[-1] for line in proc.stdout.splitlines() if line.strip()]
+        if dirty == [".whyline/decisions.md"]:
+            _emit(progress, "auto · recover decision-log")
+            from whyline.console import recovery
+
+            actual_task_id = current.get("name") or ""
+            fix_res = recovery.fix(root, actual_task_id)
+            recovery.record_attempt(
+                root,
+                task=actual_task_id,
+                round=1,
+                kind="dirty",
+                agent="",
+                verdict=fix_res.verdict,
+            )
+            if fix_res.verdict == "resolved":
+                checks = preflight.run(root, plan, scope="full")
+                fails = [check for check in checks if check.status == "FAIL"]
+    if fails:
         reason = _fail_lines(fails)
         _emit(progress, reason)
         return _mark_pause(current, "preflight", reason)
@@ -1263,6 +1289,7 @@ def run(
     answer: str | None = None,
     through: str = "relay",
     launcher=None,
+    runner=None,
 ) -> dict:
     """Revalidate, lock, persist, then research, spec, plan, preflight, and launch.
 
@@ -1373,6 +1400,313 @@ def close_console(root: Path, cancel_event: threading.Event | None = None) -> No
     stop(root, cancel_event)
 
 
+def _apply_recovery_outcome_to_pause(
+    root: Path,
+    checkpoint: dict | None,
+    st: Any,
+    original_reason: str,
+    res: Any,
+) -> None:
+    outcome = str(res)
+    if outcome and outcome not in original_reason:
+        new_reason = f"{original_reason}\n{outcome}" if original_reason else outcome
+    else:
+        new_reason = original_reason
+
+    cp_path = checkpoint_path(root)
+    if isinstance(checkpoint, dict):
+        if "pause" in checkpoint:
+            checkpoint["pause"]["reason"] = new_reason
+        else:
+            checkpoint["pause"] = {"reason": new_reason, "actions": list(_GATE_ACTIONS)}
+        atomic_write_json(cp_path, checkpoint)
+    elif cp_path.is_file():
+        saved = load_object(cp_path)
+        if isinstance(saved, dict):
+            if "pause" in saved:
+                saved["pause"]["reason"] = new_reason
+            else:
+                saved["pause"] = {"reason": new_reason, "actions": list(_GATE_ACTIONS)}
+            atomic_write_json(cp_path, saved)
+
+    st_path = root / ".whyline" / "relay" / "state.json"
+    if st_path.is_file():
+        try:
+            raw = json.loads(st_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                raw["paused_reason"] = new_reason
+                atomic_write_json(st_path, raw)
+        except Exception:
+            pass
+
+
+def _clear_pause_in_checkpoint_and_state(
+    root: Path,
+    checkpoint: dict | None,
+) -> None:
+    cp_path = checkpoint_path(root)
+    if isinstance(checkpoint, dict):
+        checkpoint.pop("pause", None)
+        checkpoint["phase"] = "relay"
+        atomic_write_json(cp_path, checkpoint)
+    elif cp_path.is_file():
+        saved = load_object(cp_path)
+        if isinstance(saved, dict):
+            saved.pop("pause", None)
+            saved["phase"] = "relay"
+            atomic_write_json(cp_path, saved)
+
+
+def recover_pause(
+    root: Path | str,
+    *,
+    session: Any = None,
+    progress: Any = None,
+    launcher: Any = None,
+    runner: Any = None,
+    task_id: str = "",
+    round: int | None = None,
+    pause_reason: str = "",
+    request: AutoRunRequest | None = None,
+) -> Any:
+    from whyline_relay import (
+        config as relay_config,
+        failover as relay_failover,
+        setup as relay_setup,
+        state as relay_state,
+    )
+    from whyline.console import adapters, recovery
+
+    root_path = Path(root).resolve()
+    st = relay_state.load(root_path)
+    cp_path = checkpoint_path(root_path)
+    checkpoint = load_object(cp_path) if cp_path.is_file() else None
+
+    actual_task_id = task_id
+    if not actual_task_id and st and st.task_id:
+        actual_task_id = st.task_id
+    if not actual_task_id and isinstance(checkpoint, dict):
+        plan_record = checkpoint.get("plan")
+        if isinstance(plan_record, dict) and plan_record.get("path"):
+            try:
+                from whyline_relay import plan as plan_mod
+
+                p_file = Path(plan_record["path"])
+                if not p_file.is_absolute():
+                    p_file = root_path / p_file
+                if p_file.is_file():
+                    tasks = plan_mod.parse(p_file.read_text(encoding="utf-8"))
+                    if tasks:
+                        actual_task_id = tasks[0].task_id
+            except Exception:
+                pass
+    if not actual_task_id:
+        plan_file = root_path / (st.plan if st and st.plan else "plan.md")
+        if plan_file.is_file():
+            try:
+                from whyline_relay import plan as plan_mod
+
+                tasks = plan_mod.parse(plan_file.read_text(encoding="utf-8"))
+                if tasks:
+                    actual_task_id = tasks[0].task_id
+            except Exception:
+                pass
+    if not actual_task_id:
+        actual_task_id = "REC"
+
+    round_num = round if round is not None else (st.round if st and st.round else 1)
+
+    actual_pause_reason = pause_reason
+    if not actual_pause_reason and st and st.paused_reason:
+        actual_pause_reason = st.paused_reason
+    if not actual_pause_reason and isinstance(checkpoint, dict) and "pause" in checkpoint:
+        actual_pause_reason = checkpoint["pause"].get("reason", "")
+
+    dirty_files: list[str] = []
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root_path,
+            capture_output=True,
+            text=True,
+        )
+        for line in proc.stdout.splitlines():
+            if line.strip():
+                p = line[3:].strip()
+                if " -> " in p:
+                    p = p.split(" -> ")[-1]
+                if not p.startswith(".whyline/relay/"):
+                    dirty_files.append(p)
+    except Exception:
+        pass
+
+    if "uncommitted changes" in actual_pause_reason or actual_pause_reason == "dirty":
+        kind = "dirty"
+    else:
+        kind = adapters.failure_kind(actual_pause_reason)
+
+    route = recovery.route(kind, dirty_files)
+
+    if not recovery.allowed(root_path, actual_task_id, round_num):
+        reason = f"recovery already attempted for {actual_task_id} round {round_num}"
+        res = recovery.RecoveryResult("human", [reason], reason=reason)
+        _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+        return res
+
+    if route == "human":
+        res = recovery.RecoveryResult("human", [actual_pause_reason], reason=actual_pause_reason)
+        _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+        return res
+
+    if route == "fix":
+        _emit(progress, "auto · recover decision-log")
+        fix_res = recovery.fix(root_path, actual_task_id)
+        verdict = fix_res.verdict
+        recovery.record_attempt(
+            root_path,
+            task=actual_task_id,
+            round=round_num,
+            kind="dirty",
+            agent="",
+            verdict=verdict,
+        )
+        if verdict == "resolved":
+            res = recovery.RecoveryResult("resolved", [], reason="resolved")
+            _clear_pause_in_checkpoint_and_state(root_path, checkpoint)
+            if launcher is not None:
+                launcher(["resume"])
+            return res
+        else:
+            reason = f"repository preflight failed: {', '.join(fix_res.fail_lines)}"
+            res = recovery.RecoveryResult("human", fix_res.fail_lines, reason=reason)
+            _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+            return res
+
+    if route == "agent":
+        agent_name = ""
+        if session is not None and getattr(session, "agent", None):
+            agent_name = session.agent
+        if not agent_name and actual_pause_reason:
+            m = re.search(r"(\S+)\s+exited without handing off", actual_pause_reason)
+            if m:
+                agent_name = m.group(1)
+        if not agent_name and request is not None:
+            agent_name = request.implementer if round_num == 1 else request.reviewer
+        if not agent_name:
+            try:
+                settings = relay_config.load(root_path)
+                role = "reviewer" if round_num == 2 else "implementer"
+                agent_name = relay_failover.effective_agent(root_path, settings, role)
+            except Exception:
+                agent_name = "codex"
+
+        _emit(progress, f"auto · recover no-handoff · {agent_name}")
+        res = recovery.recover(
+            root_path,
+            session=session,
+            agent=agent_name,
+            runner=runner,
+            task_id=actual_task_id,
+            round=round_num,
+            pause_reason=actual_pause_reason,
+        )
+        if res.verdict == "resolved":
+            _clear_pause_in_checkpoint_and_state(root_path, checkpoint)
+            if launcher is not None:
+                launcher(["resume"])
+            return res
+        else:
+            _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+            return res
+
+    if route == "failover":
+        try:
+            backup_chain = list(relay_setup.read_backup(root_path))
+        except Exception:
+            backup_chain = []
+        if not backup_chain:
+            try:
+                settings = relay_config.load(root_path)
+                backup_chain = list(getattr(settings, "backup_chain", []))
+            except Exception:
+                backup_chain = []
+
+        failed_agent = ""
+        if actual_pause_reason:
+            m = re.search(r"(\S+)\s+hit a usage or rate limit", actual_pause_reason)
+            if m:
+                failed_agent = m.group(1)
+        if not failed_agent and session is not None and getattr(session, "agent", None):
+            failed_agent = session.agent
+
+        try:
+            settings = relay_config.load(root_path)
+        except Exception:
+            settings = None
+
+        role = "reviewer" if round_num == 2 else "implementer"
+        if settings is not None and hasattr(settings, "roles"):
+            for r in ("implementer", "reviewer"):
+                if getattr(settings.roles, r, None) == failed_agent:
+                    role = r
+                    break
+
+        existing = relay_failover.read_overrides(root_path).get(role)
+        tried = list(existing.tried) if existing is not None else []
+        if failed_agent and failed_agent not in tried:
+            tried.append(failed_agent)
+
+        backup = relay_failover.next_backup(backup_chain, set(tried))
+        if backup is not None:
+            _emit(progress, f"auto · recover failover · {backup}")
+            relay_failover.write_override(
+                root_path,
+                role,
+                relay_failover.ActiveOverride(
+                    agent=backup,
+                    backup_for=failed_agent or "agent",
+                    reason="rate-limit",
+                    since=datetime.now().astimezone().isoformat(),
+                    tried=tried,
+                ),
+            )
+            recovery.record_attempt(
+                root_path,
+                task=actual_task_id,
+                round=round_num,
+                kind="rate-limit",
+                agent=backup,
+                verdict="resolved",
+            )
+            res = recovery.RecoveryResult("resolved", [], reason="resolved")
+            _clear_pause_in_checkpoint_and_state(root_path, checkpoint)
+            if launcher is not None:
+                launcher(["resume"])
+            return res
+        else:
+            agents_list = sorted(set(tried))
+            reason = (
+                f"exhausted recovery chain: {', '.join(agents_list)}"
+                if agents_list
+                else "exhausted recovery chain: none"
+            )
+            recovery.record_attempt(
+                root_path,
+                task=actual_task_id,
+                round=round_num,
+                kind="rate-limit",
+                agent=failed_agent,
+                verdict="human",
+            )
+            res = recovery.RecoveryResult("human", [reason], reason=reason, agents=agents_list)
+            _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+            return res
+
+    res = recovery.RecoveryResult("human", [actual_pause_reason], reason=actual_pause_reason)
+    _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+    return res
+
+
 def resume(
     root: Path,
     request: AutoRunRequest,
@@ -1381,6 +1715,7 @@ def resume(
     cancel_event: threading.Event | None = None,
     answer: str | None = None,
     launcher=None,
+    runner=None,
 ) -> dict:
     """Continue from the first phase whose artifact is missing or stale.
 
@@ -1397,8 +1732,72 @@ def resume(
         raise AutoStale("This check is out of date. Check again.")
     if saved.get("request") != form_document(root, request):
         raise AutoStale("This check is out of date. Check again.")
+
+    st = None
+    try:
+        from whyline_relay import state as relay_state
+
+        st = relay_state.load(root)
+    except Exception:
+        pass
+
+    dirty_files: list[str] = []
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        for line in proc.stdout.splitlines():
+            if line.strip():
+                p = line[3:].strip()
+                if " -> " in p:
+                    p = p.split(" -> ")[-1]
+                if not p.startswith(".whyline/relay/"):
+                    dirty_files.append(p)
+    except Exception:
+        pass
+
+    decision_log_only = dirty_files == [".whyline/decisions.md"]
+    is_relay_pause = (st is not None and bool(st.paused_reason)) or (
+        isinstance(saved, dict) and (saved.get("phase") == "relay" and "pause" in saved)
+    )
+
+    if is_relay_pause or decision_log_only:
+        res = recover_pause(
+            root,
+            request=request,
+            progress=progress,
+            launcher=launcher,
+            runner=runner,
+        )
+        saved = load_object(checkpoint_path(root))
+        if res == "resolved":
+            if isinstance(saved, dict):
+                return saved
+            return {"phase": "relay"}
+        else:
+            if isinstance(saved, dict):
+                return saved
+            return {"phase": "paused", "pause": {"reason": str(res), "actions": list(_GATE_ACTIONS)}}
+
     fails = _repository_failures(root)
     if fails:
+        fail_msgs = [check.message for check in fails]
+        if len(fail_msgs) == 1 and ".whyline/decisions.md" in fail_msgs[0]:
+            res = recover_pause(
+                root,
+                request=request,
+                progress=progress,
+                launcher=launcher,
+                runner=runner,
+            )
+            saved = load_object(checkpoint_path(root))
+            if res == "resolved":
+                if isinstance(saved, dict):
+                    return saved
+                return {"phase": "relay"}
         lines = "\n".join(f"{check.status:<4}  {check.message}" for check in fails)
         raise AutoStale(lines)
     dismissed = saved.get("fingerprint")
@@ -1415,4 +1814,5 @@ def resume(
         answer=answer,
         through="relay",
         launcher=launcher,
+        runner=runner,
     )

@@ -14020,3 +14020,198 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 49374ce0d10543518ee324a1a1200e78 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-13T22:49:33.372Z"} -->
+
+## 2026-10-14 — Add recover to checkpoint pause actions subset and recover paused auto runs
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4
+
+**Because:** Auto run needs to classify pauses, call recovery once, and resume on resolved
+
+**Rejected:**
+
+- Let resume immediately raise AutoStale on any pause — prevents automated recovery
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: 57f57353d1ee4b8790e18e73dd4ed4cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T04:45:12.618Z"} -->
+
+## 2026-10-14 — Add relay-resolve button next to Resume shown only when recovery is allowed and route is not human
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4
+
+**Because:** Outside Auto recovery must never run without explicit Resolve click, and only one attempt per task round is allowed
+
+**Rejected:**
+
+- Show Resolve button in all modes or on human-required pauses — would confuse users or offer non-functional resolution
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 726161b574de433cb0a04bdc6eb477f8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T04:45:19.465Z"} -->
+
+## 2026-10-14 — Fail REC-4 because Relay Resolve can start concurrent recovery attempts
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4
+
+**Because:** The focused and full suites pass, and the 80-column layout fits, but a delayed recovery followed by a second Resolve click started two workers about 0.5 seconds apart before either recorded the round attempt; recovery must be locked or the action disabled for the worker lifetime to preserve one attempt per task round
+
+**Rejected:**
+
+- Pass based on the existing suites — they do not exercise a second click while the first Resolve worker is still running
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: c3f1af3202b04d97959c99eb8a598c9c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T04:51:50.553Z"} -->
+
+## 2026-10-14 — Disable and lock relay-resolve button for worker lifetime
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4
+
+**Because:** A second click during slow recovery started concurrent recovery attempts before the first recorded the round attempt
+
+**Rejected:**
+
+- Hide button on click — disabling gives visual feedback while preventing re-triggering; Rely only on recovery.json: recorded asynchronously after worker starts, allowing race window
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 6bf7ca34dba140c6b43740e01e38369f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T05:02:04.923Z"} -->
+
+## 2026-10-14 — Pass REC-4 after verifying recovery and concurrent-click protection
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4
+
+**Because:** The mandated focused suite and full project suite both passed, and the regression test confirms a second Resolve activation is ignored while the recovery worker is active
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 93c7e3892be44531856f3b8515e482b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T05:07:21.390Z"} -->
+
+## 2026-10-14 — Reject REC-4 because Auto relay pauses do not trigger recovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4
+
+**Because:** The focused and full suites pass, but a real Auto run ends its worker after asynchronously launching the relay; when that relay later pauses, _relay_finished only renders the pause and never calls recover_pause or auto_run.resume, while the added tests bypass this path by directly invoking auto_run.resume on a fabricated paused checkpoint
+
+**Rejected:**
+
+- Approve based on direct resume tests — they do not cover the TUI relay-exit path that must trigger recovery automatically
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: bbc46f4b447446169b001a1501eedf8a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T05:13:59.260Z"} -->
+
+## 2026-10-14 — Recover Auto-launched relay pauses and dirty-tree FAILs automatically in TUI
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4
+
+**Because:** Auto runs launch the relay asynchronously and need recovery to run in a background worker without requiring manual Resolve button activation
+
+**Rejected:**
+
+- Rely only on auto_run.resume — bypassed the TUI relay-exit lifecycle where real Auto runs pause
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 031fa46d6d34482b8c7bc625ad45cc78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T05:35:50.134Z"} -->
+
+## 2026-10-14 — Pass REC-4 after focused and full regression suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4
+
+**Because:** Both mandated pytest commands exited 0, and the TUI regressions verify Relay Resolve visibility, explicit-click worker recovery, resume launch, transcript progress, second-pause hiding, and concurrent-click suppression alongside automatic Auto relay-pause and dirty-tree recovery
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 64961dba88cb47eeb040fe226aba0e3a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T05:41:43.185Z"} -->
+
+## 2026-10-14 — Reject REC-4 because Auto recovery matches unrelated relay failures
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4
+
+**Because:** src/whyline/console/tui.py treats any nonzero exit with any dirty non-relay file, or any output containing FAIL, as a dirty-tree recovery trigger; this can convert unrelated failures into recovery and can resume them when only the decision log is dirty, beyond REC-4's specific dirty-tree FAIL requirement
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 2579c4ac63f34ed390f7c3b183ad2358 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T05:48:09.702Z"} -->
+
+## 2026-10-14 — Retrying stage 'draft' once more.
+
+**Actor:** relay
+**Role:** resume
+**Task:** REC-4
+
+**Because:** Stage 'draft' had hit its visit cap. Its saved visit count was lowered by one so this resume can enter it once more. max_visits is unchanged, so the pipeline fingerprint stays the same.
+
+<!-- whyline-event: 259171d547d647a7a2137888a2fe2752 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T06:20:56.427Z"} -->
+
+## 2026-10-14 — Narrow Auto dirty-tree recovery to specific uncommitted-changes failure output
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4
+
+**Because:** Unrelated nonzero exits with generic FAIL messages or arbitrary dirty files in the repo must not trigger recovery or be resolved when only the decision log is dirty
+
+**Rejected:**
+
+- Check git status dirty files or generic FAIL substring in tui.py — converts unrelated failures into recovery and unwanted resumes
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/auto_run.py
+
+<!-- whyline-event: f1bbb07e346542209f3b129c8004cfea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T06:41:53.691Z"} -->
+
+## 2026-10-14 — Pass REC-4 after focused and full-suite verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4
+
+**Because:** The mandated recovery and console tests completed successfully, and the full project suite reached 100% with exit code 0 and only the expected skip
+
+**Files:** src/whyline/console/auto_run.py, src/whyline/console/adapters.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 8c2509b742e049bdbcef7a5ad906209e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T06:47:25.453Z"} -->
+
+## 2026-10-14 — Approve REC-4 automatic and explicit pause recovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4
+
+**Because:** Auto handles structured relay pauses and explicit dirty-tree failures once, resolved outcomes resume through the injected launcher, human outcomes remain persisted, Relay Resolve is route- and attempt-gated with concurrent-click protection, and both required test commands pass
+
+**Files:** src/whyline/console/auto_run.py, src/whyline/console/adapters.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 1b508254bd9a408e8fe2e2378d87f617 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T06:53:41.882Z"} -->

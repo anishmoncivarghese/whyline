@@ -584,9 +584,10 @@ class WhylineConsoleApp(App):
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
+    #relay-resolve { display: none; }
     """
 
-    def __init__(self, *, root: Path) -> None:
+    def __init__(self, *, root: Path, runner: Any = None) -> None:
         from whyline import model
 
         super().__init__()
@@ -624,6 +625,10 @@ class WhylineConsoleApp(App):
         self._cb_refreshing = False
         self._agents_name: str | None = None
         self._editing_agent_id: str | None = None
+        self._recovering_pause = False
+        self._runner = runner
+        self._auto_relay = False
+        self._auto_request: plan_job.AutoRunRequest | None = None
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`).
@@ -723,6 +728,8 @@ class WhylineConsoleApp(App):
         Enable and disable stay in _sync_relay_buttons and the stop path."""
         wanted = set(_MODE_BUTTONS.get(self.session.mode, ())) | set(_SHARED_BUTTONS)
         for button in self._main("#controls").query(Button):
+            if button.id == "relay-resolve":
+                continue
             button.display = button.id in wanted
         self._main("#attach").display = self.session.mode == "chat"
         try:
@@ -759,6 +766,58 @@ class WhylineConsoleApp(App):
             resume.label = "Resume"
             self._stale_pause = None
             resume.disabled = not paused or running
+
+        try:
+            resolve = self._main("#relay-resolve", Button)
+        except (NoMatches, IndexError):
+            resolve = None
+
+        show_resolve = False
+        if (
+            in_relay
+            and paused
+            and not running
+            and not getattr(self, "_release_task", None)
+            and not stale
+        ):
+            try:
+                import subprocess
+                from whyline_relay import state as relay_state
+                from whyline.console import adapters, recovery
+
+                st = relay_state.load(self.session.root)
+                if st is not None:
+                    task_id = st.task_id or ""
+                    round_num = st.round if st.round is not None else 1
+                    reason = st.paused_reason or ""
+                    dirty_files = []
+                    if "uncommitted changes" in reason or reason == "dirty":
+                        kind = "dirty"
+                        proc = subprocess.run(
+                            ["git", "status", "--porcelain", "--untracked-files=all"],
+                            cwd=self.session.root,
+                            capture_output=True,
+                            text=True,
+                        )
+                        for line in proc.stdout.splitlines():
+                            if line.strip():
+                                p = line[3:].strip()
+                                if " -> " in p:
+                                    p = p.split(" -> ")[-1]
+                                if not p.startswith(".whyline/relay/"):
+                                    dirty_files.append(p)
+                    else:
+                        kind = adapters.failure_kind(reason)
+
+                    rt = recovery.route(kind, dirty_files)
+                    if rt != "human" and recovery.allowed(self.session.root, task_id, round_num):
+                        show_resolve = True
+            except Exception:
+                show_resolve = False
+
+        if resolve is not None:
+            resolve.display = show_resolve
+            resolve.disabled = not show_resolve or running or self._recovering_pause
 
     def _placeholder(self, mode: str) -> str:
         if mode == "relay":
@@ -1949,6 +2008,7 @@ class WhylineConsoleApp(App):
             Button("Plan", id="relay-plan", disabled=True),
             Button("Set up", id="relay-setup", disabled=True),
             Button("Resume", id="relay-resume", disabled=True),
+            Button("Resolve", id="relay-resolve", disabled=True),
             Button("New", id="agents-new"),
             Button("Agents", id="agents-list"),
             Button("Runs", id="agents-runs"),
@@ -1985,6 +2045,7 @@ class WhylineConsoleApp(App):
         elif button_id == "stop":
             other = None if self._relay_running() else self._live_relay()
             if self._relay_running():
+                self._auto_relay = False
                 self._relay.interrupt()
                 shown = f" ({self._relay_label.removeprefix('relay: ')})" if self._relay_label else ""
             elif other and relay_ops.interrupt_live_run(self.session.root):
@@ -2042,6 +2103,8 @@ class WhylineConsoleApp(App):
                 self._sync_relay_buttons()
             else:
                 self._launch_relay(["resume"])
+        elif button_id == "relay-resolve":
+            self._resolve_relay_pause()
         elif button_id == "plan-approve":
             self._approve_plan()
         elif button_id == "plan-view":
@@ -2287,6 +2350,8 @@ class WhylineConsoleApp(App):
             self._auto_cancel_event.set()
             self._auto_cancel_event = None
             self._end_run_flow("Run stopped.")
+        if getattr(self, "_auto_relay", False):
+            self._auto_relay = False
         for worker in self.workers:
             worker.cancel()
         self._set_busy(False)
@@ -2684,6 +2749,8 @@ class WhylineConsoleApp(App):
 
         cancel_event = threading.Event()
         self._auto_cancel_event = cancel_event
+        self._auto_relay = True
+        self._auto_request = request
         token = object()
         self._dispatch_token = token
         self._set_busy(True, "auto")
@@ -2702,7 +2769,8 @@ class WhylineConsoleApp(App):
                     fingerprint,
                     progress=progress,
                     cancel_event=cancel_event,
-                    launcher=lambda args: self.call_from_thread(self._launch_relay, args),
+                    launcher=lambda args: self.call_from_thread(self._launch_relay, args, auto=True),
+                    runner=getattr(self, "_runner", None),
                 )
             except Exception as caught:
                 error = caught
@@ -2724,6 +2792,7 @@ class WhylineConsoleApp(App):
             return
         self._set_busy(False)
         self._auto_cancel_event = None
+        self._auto_relay = False
         self.render_event(
             SessionEvent(
                 kind="error",
@@ -2741,9 +2810,12 @@ class WhylineConsoleApp(App):
             if "pause" in result:
                 reason = result["pause"].get("reason", "")
                 self.render_event(SessionEvent(kind="pause", text=reason))
+                self._auto_relay = False
             elif result.get("phase") == "stopped":
                 self.render_event(SessionEvent(kind="output", text="Auto run stopped."))
-        self._end_run_flow("Auto run finished.")
+                self._auto_relay = False
+        if not self._relay_running():
+            self._end_run_flow("Auto run finished.")
 
     def _plan_saved(self, path: Path | None) -> None:
         if path is None:
@@ -3094,9 +3166,98 @@ class WhylineConsoleApp(App):
             return
         stop.disabled = not (self._busy_text or self._relay_running() or live)
 
-    def _launch_relay(self, args: list[str]) -> None:
+    def _resolve_relay_pause(self) -> None:
+        if self._recovering_pause:
+            return
+        self._recovering_pause = True
+        try:
+            resolve = self._main("#relay-resolve", Button)
+            resolve.disabled = True
+        except (NoMatches, IndexError):
+            pass
+
+        def in_thread() -> None:
+            try:
+                def progress(line: str) -> None:
+                    self.call_from_thread(self.render_event, SessionEvent(kind="output", text=line))
+
+                launcher = lambda args: self.call_from_thread(self._launch_relay, args)
+                adapters.recover_pause(
+                    self.session.root,
+                    session=self.session,
+                    progress=progress,
+                    launcher=launcher,
+                )
+            finally:
+                def done() -> None:
+                    self._recovering_pause = False
+                    self._sync_relay_buttons()
+
+                self.call_from_thread(done)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _recover_auto_relay(self, pause_reason: str = "") -> None:
+        if self._recovering_pause:
+            return
+        self._recovering_pause = True
+        self._set_busy(True, "auto")
+
+        def in_thread() -> None:
+            res = None
+            try:
+                def progress(line: str) -> None:
+                    self.call_from_thread(self.render_event, SessionEvent(kind="output", text=line))
+
+                launcher = lambda args: self.call_from_thread(self._launch_relay, args, auto=True)
+                res = adapters.recover_pause(
+                    self.session.root,
+                    session=self.session,
+                    progress=progress,
+                    launcher=launcher,
+                    pause_reason=pause_reason,
+                    request=getattr(self, "_auto_request", None),
+                    runner=getattr(self, "_runner", None),
+                )
+            except Exception as exc:
+                res = exc
+            finally:
+                def done() -> None:
+                    self._recovering_pause = False
+                    self._set_busy(False)
+                    is_resolved = (
+                        res == "resolved"
+                        or getattr(res, "verdict", None) == "resolved"
+                    )
+                    if not is_resolved:
+                        self._auto_relay = False
+                        try:
+                            from whyline_relay import state as relay_state
+                            st = relay_state.load(self.session.root)
+                            reason = (st.paused_reason if st and st.paused_reason else "") or str(res)
+                            task_id = (st.task_id if st and st.task_id else "") or "REC"
+                            log_path = st.log_path if st and st.log_path else ""
+                        except Exception:
+                            reason = str(res)
+                            task_id = "REC"
+                            log_path = ""
+                        kind_label = adapters.failure_kind(reason)
+                        lines = [f"[{kind_label}] Task {task_id}", f"Reason {reason}"]
+                        if log_path:
+                            lines.append(f"Log {log_path}")
+                        lines.append("Resume: type resume or press Resume")
+                        self.render_event(SessionEvent(kind="pause", text="\n".join(lines)))
+                        self._end_run_flow("Auto run stopped.")
+                    self._sync_relay_buttons()
+
+                self.call_from_thread(done)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _launch_relay(self, args: list[str], *, auto: bool = False) -> None:
         """Start/Resume, from a button or typed. One relay at a time: ours,
         or one started elsewhere (a terminal) that running.live still sees."""
+        self._auto_relay = auto
         if self._refuse_in_home():
             return
         if args and args[0] == "start" and "--plan" not in args:
@@ -3115,7 +3276,7 @@ class WhylineConsoleApp(App):
             def proceed(allowed: bool) -> None:
                 if allowed:
                     self._antigravity_ok = True
-                    self._launch_relay(args)
+                    self._launch_relay(args, auto=auto)
                 else:
                     self.render_event(SessionEvent(
                         kind="error",
@@ -3183,12 +3344,15 @@ class WhylineConsoleApp(App):
             try:
                 from whyline_relay import state as relay_state
                 saved = relay_state.load(self.session.root)
-                if saved and saved.paused_reason:
+                if saved and saved.paused_reason and (
+                    saved.paused_reason.startswith("release task for you: ") or code == 2
+                ):
                     pause_text = saved.paused_reason
             except Exception:
                 pass
 
         if pause_text.startswith("release task for you: "):
+            self._auto_relay = False
             task_info = relay_ops.release_task(self.session.root)
             if task_info is None:
                 lines = pause_text.splitlines()
@@ -3207,7 +3371,34 @@ class WhylineConsoleApp(App):
             self._sync_relay_buttons()
             return
 
+        is_auto = getattr(self, "_auto_relay", False)
         event = adapters.classify_relay_output(self.session.root, text, code)
+        is_pause = bool(pause_text) or event.kind == "pause"
+
+        is_dirty_fail = code != 0 and (
+            "working tree has uncommitted changes" in text
+            or "uncommitted changes" in text
+        )
+
+        if is_auto and (is_pause or is_dirty_fail):
+            self._recover_auto_relay(pause_reason=pause_text or text)
+            return
+
+        if is_auto:
+            self._auto_relay = False
+            if event.kind == "output":
+                self.render_event(SessionEvent(kind="output", text="Relay finished."))
+                self._end_run_flow("Auto run finished.")
+            else:
+                self.render_event(SessionEvent(
+                    kind="error",
+                    text=f"The relay stopped with exit code {code}. Its full output is in "
+                         ".whyline/relay/logs/console-run.log.",
+                ))
+                self._end_run_flow("Run stopped.")
+            self._sync_relay_buttons()
+            return
+
         if event.kind == "pause":
             self.render_event(event)
         elif event.kind == "output":
