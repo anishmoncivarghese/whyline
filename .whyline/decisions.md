@@ -14621,3 +14621,102 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e920fefc34034f6b8d114f220f88c135 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:02:51.201Z"} -->
+
+## 2026-10-14 — Add an optional Test planner beside Drafter and Reviewer that writes <plan>.tests.md, reviewed with the plan
+
+**Actor:** claude
+**Role:** planner
+**Task:** TPL-2
+
+**Because:** Per-task unit tests existed, but nothing checked whole features end to end; the Resume --allow-dirty gap and REC-4's over-broad Auto trigger passed every task test. A different agent writing the tests avoids sharing the drafter's blind spots
+
+**Rejected:**
+
+- A test-case writer per task — duplicates the implementer and test stage and doubles tokens
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 4fceae0bf9d54ea48eed383d54d5c793 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.743Z"} -->
+
+## 2026-10-14 — Manual checks block every release, including releases an agent runs, with no override for a failed check
+
+**Actor:** claude
+**Role:** planner
+**Task:** TPL-5
+
+**Because:** The user confirmed manual checks are always theirs; an override would defeat the gate
+
+**Rejected:**
+
+- Block only when the user is the release role — an agent could release past an unconfirmed UI check
+- A release-anyway override — makes failed checks advisory
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 991656187bfd457794189ebde28befcd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.784Z"} -->
+
+## 2026-10-14 — Append TPL-1..10 at the REC-5 release pause, not while REC-4D ran
+
+**Actor:** claude
+**Role:** planner
+**Task:** TPL-1
+
+**Because:** The relay commits with git add -A, so a mid-task plan edit would join the task's commit, and committing it would move HEAD and pause the relay
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: dc25afafaf404854a4defadad4f7a097 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.822Z"} -->
+
+## 2026-10-14 — Plan the Idea Inbox in three phases: CLI ledger, analysis and Excel, then Telegram, then Create plan
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-1
+
+**Because:** The synthesis said prove the small loop first; Telegram adds a listener, outbox and leases worth building only once the CLI loop is useful
+
+**Rejected:**
+
+- Telegram in the first release — the biggest moving part before the scoring is proven
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: bcad2312dd524f988db6e9223b74c47d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.866Z"} -->
+
+## 2026-10-14 — Idea brainstorms run in ~/.whyline/ideas/workspace, never in the target repo; plan drafts wait for a clean tree and no running relay
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-13
+
+**Because:** On 2026-10-14 a Brainstorm committed into the relay's repo during REC-2 and paused it
+
+**Rejected:**
+
+- Brainstorm in the target repo as the console does — unattended runs would collide with relays
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 19fe44ca25c34509bdec6bb135935dc6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.911Z"} -->
+
+## 2026-10-14 — Write the idea workbook with stdlib zipfile like agents/docx.py, not openpyxl
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-4
+
+**Because:** whyline already writes Office files without dependencies; four flat sheets need no library
+
+**Rejected:**
+
+- openpyxl as the synthesis suggested — a new runtime dependency for simple sheets
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 1c3afb0d1d6d445592a980cc90c9c0fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:18:27.952Z"} -->
