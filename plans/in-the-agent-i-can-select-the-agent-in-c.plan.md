@@ -327,7 +327,7 @@ Recovery acts on a relay pause or a dirty-tree preflight FAIL, in Auto and in Re
   Tests: an Auto pause with a decision-log-only tree commits, resumes, and calls the launcher once; an Auto `no-handoff` pause with a fake agent that writes the handoff resumes; an `auth` pause does not call the runner and keeps the pause; the Relay pause card shows Resolve for `no-handoff` and not for `blocked`; a second pause in the same round hides Resolve.
   Verify with `uv run pytest -q tests/console/test_auto_run.py tests/console/test_recovery.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] REC-4B: Explain sandbox refusals and offer Retry stage
+- [x] REC-4B: Explain sandbox refusals and offer Retry stage
   Edit only `src/whyline/console/adapters.py`, `src/whyline/console/recovery.py`, `src/whyline/console/tui.py`, and their tests. Add `("sandbox", "could not run a required command")` to `adapters._FAILURE_PHRASES`, before the existing entries, and `("visit-cap", "-visit cap without")`. `recovery.route` maps `sandbox` to `human`: the pause card shows the refused command from the reason and, for an agent whose adapter has a dir flag, the config change that would allow it; it never edits the config. `visit-cap` maps to `human` with a `Retry stage` action on the pause card that launches `["resume", "--retry-stage"]` the way Resume launches `["resume"]`; Auto never presses it for you.
   Tests: a sandbox pause is classified `sandbox`, shows the command, and changes no file; a visit-cap pause shows Retry stage and pressing it launches `resume --retry-stage`; other pauses do not show it.
   Verify with `uv run pytest -q tests/console/test_recovery.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
