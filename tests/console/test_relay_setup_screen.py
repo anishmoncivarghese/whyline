@@ -507,3 +507,46 @@ async def test_relay_timeout_reads_the_config_and_falls_back_to_30(tmp_path):
     relay.mkdir(parents=True)
     (relay / "config.toml").write_text('plan = "plan.md"\ntimeout_minutes = 45\n', encoding="utf-8")
     assert relay_ops.relay_timeout(tmp_path) == 45
+
+
+async def test_check_with_fail_enables_resolve_and_clean_check_disables_it(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("FAIL"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        assert screen.query_one("#rs-resolve", tui.Button).disabled is True
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-resolve", tui.Button).disabled, "resolve enabled"
+        )
+        assert screen.query_one("#rs-resolve", tui.Button).disabled is False
+
+        # Invalidate by changing release or role
+        screen.query_one("#rs-implementer", tui.Select).value = "codex"
+        await pilot.pause()
+        assert screen.query_one("#rs-resolve", tui.Button).disabled is True
+
+        # Clean check disables it
+        monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start enabled"
+        )
+        assert screen.query_one("#rs-resolve", tui.Button).disabled is True
+
+
+async def test_resolve_closes_setup_with_resolve_tuple(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("FAIL"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-resolve", tui.Button).disabled, "resolve enabled"
+        )
+        await pilot.click("#rs-resolve")
+        await _wait_for(pilot, lambda: results, "popup to close")
+        assert len(results) == 1
+        assert results[0][0] == "resolve"
+        assert any("FAIL" in line for line in results[0][1])
+

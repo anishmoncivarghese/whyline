@@ -957,216 +957,281 @@ async def test_stop_sets_auto_cancel_event(tmp_path, monkeypatch):
         assert cancelled.is_set()
 
 
-@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
-@pytest.mark.asyncio
-async def test_relay_pause_card_shows_resolve_for_no_handoff_and_not_for_blocked(tmp_path, monkeypatch):
-    import json
-    from whyline.console import relay_ops
-
-    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
-    state_file = tmp_path / ".whyline" / "relay" / "state.json"
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(
-        json.dumps({
-            "plan": "plan.md",
-            "branch": "main",
-            "task_id": "TASK-1",
-            "round": 1,
-            "base_commit": "abc",
-            "paused_reason": "codex exited without handing off",
-            "log_path": "round.log",
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
-
-    app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test() as pilot:
-        app.session.mode = "relay"
-        app._sync_mode_indicator()
-        await pilot.pause()
-
-        assert app.query_one("#relay-resolve", tui.Button).display is True
-
-        # Change paused_reason to blocked
-        state_file.write_text(
-            json.dumps({
-                "plan": "plan.md",
-                "branch": "main",
-                "task_id": "TASK-1",
-                "round": 1,
-                "base_commit": "abc",
-                "paused_reason": "reported blocked: permission denied",
-                "log_path": "round.log",
-            }),
-            encoding="utf-8",
-        )
-        app._sync_relay_buttons()
-        await pilot.pause()
-
-        assert app.query_one("#relay-resolve", tui.Button).display is False
+def _init_test_repo(path):
+    import subprocess
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.local"], cwd=path, check=True, capture_output=True)
+    (path / ".gitkeep").write_text("", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_second_pause_in_same_round_hides_resolve(tmp_path, monkeypatch):
-    import json
-    from whyline.console import recovery, relay_ops
-
-    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
-    state_file = tmp_path / ".whyline" / "relay" / "state.json"
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(
-        json.dumps({
-            "plan": "plan.md",
-            "branch": "main",
-            "task_id": "TASK-1",
-            "round": 1,
-            "base_commit": "abc",
-            "paused_reason": "codex exited without handing off",
-            "log_path": "round.log",
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
-
+async def test_resolve_closes_setup_and_prints_problem_with_recommended_option_first(tmp_path, monkeypatch):
+    from textual.containers import Horizontal
+    from whyline.console import relay_screens
+    _init_test_repo(tmp_path)
+    (tmp_path / ".whyline").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".whyline" / "decisions.md").write_text("- decision 1\n", encoding="utf-8")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         app.session.mode = "relay"
         app._sync_mode_indicator()
+        app._open_relay_setup()
         await pilot.pause()
+        assert isinstance(app.screen, relay_screens.RelaySetupScreen)
 
-        assert app.query_one("#relay-resolve", tui.Button).display is True
-
-        # Second pause in the same round: attempt already recorded
-        recovery.record_attempt(
-            tmp_path,
-            task="TASK-1",
-            round=1,
-            kind="agent",
-            agent="codex",
-            verdict="human",
-        )
-        app._sync_relay_buttons()
+        app.screen.dismiss(("resolve", ["FAIL  working tree has uncommitted changes"]))
         await pilot.pause()
+        assert not isinstance(app.screen, relay_screens.RelaySetupScreen)
 
-        assert app.query_one("#relay-resolve", tui.Button).display is False
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Resolve: 1 problem(s)" in l for l in lines)
+        assert any("Uncommitted paths are exactly .whyline/decisions.md" in l for l in lines)
+        assert any("1. Commit decision log (recommended)" in l for l in lines)
+
+        actions = app.query_one("#resolve-actions", Horizontal)
+        assert actions.display is True
+        buttons = list(actions.query(tui.Button))
+        assert len(buttons) >= 1
+        assert buttons[0].id == "resolve-commit-log"
+        assert buttons[0].variant == "success"
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_relay_resolve_button_click_runs_in_worker_writes_transcript_and_launches_resume(tmp_path, monkeypatch):
-    import json
-    from whyline.console import adapters, recovery, relay_ops
-
-    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
-    state_file = tmp_path / ".whyline" / "relay" / "state.json"
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(
-        json.dumps({
-            "plan": "plan.md",
-            "branch": "main",
-            "task_id": "TASK-1",
-            "round": 1,
-            "base_commit": "abc",
-            "paused_reason": "codex exited without handing off",
-            "log_path": "round.log",
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
-
+async def test_clicking_recommended_option_of_dirty_log_commits_and_prints_setup_hint(tmp_path, monkeypatch):
+    import subprocess
+    _init_test_repo(tmp_path)
+    (tmp_path / ".whyline").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".whyline" / "decisions.md").write_text("- decision 1\n", encoding="utf-8")
     app = tui.WhylineConsoleApp(root=tmp_path)
-    launched: list[list[str]] = []
-    monkeypatch.setattr(app, "_launch_relay", lambda args: launched.append(list(args)))
-
-    def fake_recover_pause(root, session=None, progress=None, launcher=None, **kwargs):
-        if progress:
-            progress("auto · recover no-handoff · codex")
-        if launcher:
-            launcher(["resume"])
-        return recovery.RecoveryResult("resolved", [])
-
-    monkeypatch.setattr(adapters, "recover_pause", fake_recover_pause)
-
     async with app.run_test() as pilot:
         app.session.mode = "relay"
-        app._sync_mode_indicator()
+        app._start_resolve_flow(source="setup", fail_lines=["FAIL  working tree has uncommitted changes"])
         await pilot.pause()
 
-        assert app.query_one("#relay-resolve", tui.Button).display is True
+        btn = app.query_one("#resolve-commit-log", tui.Button)
+        assert btn.variant == "success"
+        await pilot.click("#resolve-commit-log")
 
-        await pilot.click("#relay-resolve")
-        for _ in range(20):
+        for _ in range(30):
             await pilot.pause(0.05)
-            if launched:
+            if not getattr(app, "_resolve_running", False):
                 break
 
-        assert launched == [["resume"]]
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True).stdout
+        assert status.strip() == ""
+
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
-        assert any("auto · recover no-handoff · codex" in line for line in lines)
+        assert any("Committed decision log" in l for l in lines)
+        assert any("Resolved. Open Set up again and press Check." in l for l in lines)
+
+        setup_btn = app.query_one("#resolve-setup", tui.Button)
+        assert setup_btn.display is True
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_relay_resolve_second_click_while_active_is_ignored(tmp_path, monkeypatch):
+async def test_confirm_option_shows_confirm_screen_and_cancel_there_changes_nothing(tmp_path, monkeypatch):
     import json
-    import time
-    from whyline.console import adapters, recovery, relay_ops
-
-    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    from textual.containers import Horizontal
+    from whyline.console import relay_ops
+    _init_test_repo(tmp_path)
+    (tmp_path / "extra.txt").write_text("extra", encoding="utf-8")
     state_file = tmp_path / ".whyline" / "relay" / "state.json"
     state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(
-        json.dumps({
-            "plan": "plan.md",
-            "branch": "main",
-            "task_id": "TASK-1",
-            "round": 1,
-            "base_commit": "abc",
-            "paused_reason": "codex exited without handing off",
-            "log_path": "round.log",
-        }),
-        encoding="utf-8",
-    )
+    state_file.write_text(json.dumps({
+        "plan": "plan.md", "branch": "main", "task_id": "TASK-1", "round": 1, "base_commit": "abc",
+        "paused_reason": "paused", "log_path": "round.log"
+    }), encoding="utf-8")
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
 
     app = tui.WhylineConsoleApp(root=tmp_path)
-    recovery_calls = 0
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume")
+        await pilot.pause()
 
-    def slow_recover_pause(root, session=None, progress=None, launcher=None, **kwargs):
-        nonlocal recovery_calls
-        recovery_calls += 1
-        time.sleep(0.4)
-        return recovery.RecoveryResult("resolved", [])
+        await pilot.click("#resolve-stash")
+        await pilot.pause()
 
-    monkeypatch.setattr(adapters, "recover_pause", slow_recover_pause)
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        assert "git stash" in app.screen._message
 
+        await pilot.click("#cancel")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, tui.ConfirmScreen)
+        assert (tmp_path / "extra.txt").exists()
+        assert app.query_one("#resolve-actions", Horizontal).display is True
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_typing_2_picks_second_option(tmp_path, monkeypatch):
+    import json
+    from whyline.console import relay_ops
+    _init_test_repo(tmp_path)
+    (tmp_path / "extra.txt").write_text("extra", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps({
+        "plan": "plan.md", "branch": "main", "task_id": "TASK-1", "round": 1, "base_commit": "abc",
+        "paused_reason": "paused", "log_path": "round.log"
+    }), encoding="utf-8")
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume")
+        await pilot.pause()
+
+        app._send_with("2")
+        await pilot.pause()
+
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        assert "git stash" in app.screen._message
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_resume_that_fails_preflight_enables_relay_resolve(tmp_path, monkeypatch):
+    _init_test_repo(tmp_path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         app.session.mode = "relay"
         app._sync_mode_indicator()
+        await pilot.pause()
+
+        assert app.query_one("#relay-resolve", tui.Button).display is False
+
+        app._relay_finished(1, "FAIL  working tree has uncommitted changes\n")
         await pilot.pause()
 
         btn = app.query_one("#relay-resolve", tui.Button)
         assert btn.display is True
         assert btn.disabled is False
 
-        await pilot.click("#relay-resolve")
-        await pilot.pause(0.05)
+        app._relay_finished(0, "Relay finished.\n")
+        await pilot.pause()
 
-        # The button is disabled and locked while recovery is active
-        assert btn.disabled is True
+        assert app.query_one("#relay-resolve", tui.Button).disabled is True
 
-        # Second click while recovery is active should be ignored
-        await pilot.click("#relay-resolve")
-        app._resolve_relay_pause()
 
-        for _ in range(20):
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_choosing_resume_keep_calls_launcher_once(tmp_path, monkeypatch):
+    import json
+    from textual.containers import Horizontal
+    from whyline.console import relay_ops
+    _init_test_repo(tmp_path)
+    (tmp_path / "extra.txt").write_text("extra", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps({
+        "plan": "plan.md", "branch": "main", "task_id": "TASK-1", "round": 1, "base_commit": "abc",
+        "paused_reason": "paused", "log_path": "round.log"
+    }), encoding="utf-8")
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    launched: list[list[str]] = []
+    monkeypatch.setattr(app, "_launch_relay", lambda args: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume")
+        await pilot.pause()
+
+        await pilot.click("#resolve-resume-keep")
+        for _ in range(30):
             await pilot.pause(0.05)
-            if not getattr(app, "_recovering_pause", False):
+            if launched:
                 break
 
-        assert recovery_calls == 1
+        assert launched == [["resume", "--allow-dirty"]]
+        assert app.query_one("#resolve-actions", Horizontal).display is False
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_two_problems_are_handled_one_after_the_other(tmp_path, monkeypatch):
+    from whyline_relay import failover
+    from whyline import account
+    _init_test_repo(tmp_path)
+    (tmp_path / ".whyline").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".whyline" / "decisions.md").write_text("- decision 1\n", encoding="utf-8")
+    failover.write_override(
+        tmp_path,
+        "implementer",
+        failover.ActiveOverride("claude", "codex", "rate-limit", "2026-10-14", []),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"codex": {"available": True}},
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="setup", fail_lines=["FAIL  working tree has uncommitted changes"])
+        await pilot.pause()
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Resolve: 2 problem(s)" in l for l in lines)
+
+        # First problem is sticky-switch
+        assert app.query_one("#resolve-reset-role", tui.Button).display is True
+        await pilot.click("#resolve-reset-role")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False):
+                break
+
+        # Problem 1 is gone, now Problem 2 (dirty-log) is displayed
+        lines2 = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Reset role implementer" in l or "Reset implementer" in l for l in lines2)
+        assert any("Uncommitted paths are exactly .whyline/decisions.md" in l for l in lines2)
+
+        # Button for Problem 2 is commit-log
+        assert app.query_one("#resolve-commit-log", tui.Button).display is True
+        await pilot.click("#resolve-commit-log")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False):
+                break
+
+        # Both problems resolved!
+        lines3 = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Resolved. Open Set up again and press Check." in l for l in lines3)
+        assert app.query_one("#resolve-setup", tui.Button).display is True
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_resolve_cancel_hides_row_and_prints_message(tmp_path, monkeypatch):
+    from textual.containers import Horizontal
+    _init_test_repo(tmp_path)
+    (tmp_path / ".whyline").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".whyline" / "decisions.md").write_text("- decision 1\n", encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="setup", fail_lines=["FAIL  working tree has uncommitted changes"])
+        await pilot.pause()
+
+        assert app.query_one("#resolve-actions", Horizontal).display is True
+        await pilot.click("#resolve-cancel")
+        await pilot.pause()
+
+        assert app.query_one("#resolve-actions", Horizontal).display is False
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Resolve cancelled; nothing else was changed." in l for l in lines)
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

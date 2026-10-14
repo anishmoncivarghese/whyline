@@ -584,6 +584,7 @@ class WhylineConsoleApp(App):
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
+    #resolve-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
     """
@@ -630,6 +631,12 @@ class WhylineConsoleApp(App):
         self._runner = runner
         self._auto_relay = False
         self._auto_request: plan_job.AutoRunRequest | None = None
+        self._resolve_source: str = ""
+        self._resolve_source_fail_lines: list[str] = []
+        self._resolve_problems: list = []
+        self._resolve_problem: Any = None
+        self._resolve_running: bool = False
+        self._resume_fail_lines: list[str] = []
 
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`).
@@ -780,55 +787,46 @@ class WhylineConsoleApp(App):
 
         show_resolve = False
         show_retry_stage = False
-        if (
-            in_relay
-            and paused
-            and not running
-            and not getattr(self, "_release_task", None)
-            and not stale
-        ):
-            try:
-                import subprocess
-                from whyline_relay import state as relay_state
-                from whyline.console import adapters, recovery
+        if in_relay and not getattr(self, "_release_task", None) and not stale:
+            has_preflight_fails = bool(getattr(self, "_resume_fail_lines", None))
+            has_diagnosed_pause = False
+            if paused:
+                try:
+                    from whyline_relay import state as relay_state
+                    from whyline.console import recovery
 
-                st = relay_state.load(self.session.root)
-                if st is not None:
-                    task_id = st.task_id or ""
-                    round_num = st.round if st.round is not None else 1
-                    reason = st.paused_reason or ""
-                    dirty_files = []
-                    if "uncommitted changes" in reason or reason == "dirty":
-                        kind = "dirty"
-                        proc = subprocess.run(
-                            ["git", "status", "--porcelain", "--untracked-files=all"],
-                            cwd=self.session.root,
-                            capture_output=True,
-                            text=True,
-                        )
-                        for line in proc.stdout.splitlines():
-                            if line.strip():
-                                p = line[3:].strip()
-                                if " -> " in p:
-                                    p = p.split(" -> ")[-1]
-                                if not p.startswith(".whyline/relay/"):
-                                    dirty_files.append(p)
-                    else:
-                        kind = adapters.failure_kind(reason)
+                    st = None
+                    try:
+                        st = relay_state.load(self.session.root)
+                    except Exception:
+                        pass
+                    reason = st.paused_reason if st and st.paused_reason else ""
+                    diag = recovery.diagnose(
+                        self.session.root,
+                        fail_lines=getattr(self, "_resume_fail_lines", []),
+                        pause_reason=reason,
+                    )
+                    if diag:
+                        has_diagnosed_pause = True
+                except Exception:
+                    pass
+            show_resolve = has_preflight_fails or has_diagnosed_pause
 
-                    if kind == "visit-cap":
-                        show_retry_stage = True
+            if paused and not running:
+                try:
+                    from whyline_relay import state as relay_state
+                    from whyline.console import adapters
 
-                    rt = recovery.route(kind, dirty_files)
-                    if rt != "human" and recovery.allowed(self.session.root, task_id, round_num):
-                        show_resolve = True
-            except Exception:
-                show_resolve = False
-                show_retry_stage = False
+                    st = relay_state.load(self.session.root)
+                    if st is not None and st.paused_reason:
+                        if adapters.failure_kind(st.paused_reason) == "visit-cap":
+                            show_retry_stage = True
+                except Exception:
+                    pass
 
         if resolve is not None:
             resolve.display = show_resolve
-            resolve.disabled = not show_resolve or running or self._recovering_pause
+            resolve.disabled = not show_resolve or running or getattr(self, "_resolve_running", False)
 
         if retry_stage is not None:
             retry_stage.display = show_retry_stage
@@ -2006,6 +2004,7 @@ class WhylineConsoleApp(App):
             Button("Discard", id="plan-discard", variant="warning"),
             id="plan-actions",
         )
+        yield Horizontal(id="resolve-actions")
         yield AttachmentTray(id="tray")
         yield Static("", id="slash-hint")
         yield Horizontal(
@@ -2122,7 +2121,16 @@ class WhylineConsoleApp(App):
         elif button_id == "relay-retry-stage":
             self._launch_relay(["resume", "--retry-stage"])
         elif button_id == "relay-resolve":
-            self._resolve_relay_pause()
+            self._start_resolve_flow(source="resume")
+        elif button_id and button_id.startswith("resolve-"):
+            if button_id == "resolve-setup":
+                self._main("#resolve-actions").display = False
+                self._open_relay_setup()
+            else:
+                opt_id = button_id.removeprefix("resolve-")
+                if opt_id.startswith("opt-"):
+                    opt_id = opt_id.removeprefix("opt-")
+                self._on_resolve_button_pressed(opt_id)
         elif button_id == "plan-approve":
             self._approve_plan()
         elif button_id == "plan-view":
@@ -2479,6 +2487,18 @@ class WhylineConsoleApp(App):
             self._sync_mode_indicator()
             self._launch_relay([cmd, task_id])
             return
+        if (
+            getattr(self, "_resolve_problem", None) is not None
+            and self._main("#resolve-actions").display
+            and not getattr(self, "_resolve_running", False)
+            and not text.startswith("/")
+        ):
+            if text.strip().isdigit():
+                idx = int(text.strip())
+                if 1 <= idx <= len(self._resolve_problem.options):
+                    opt = self._resolve_problem.options[idx - 1]
+                    self._pick_resolve_option(opt)
+                    return
         if self._plan_state in ("review", "answering") and not text.startswith("/"):
             self._plan_reply(text)
             return
@@ -3151,13 +3171,16 @@ class WhylineConsoleApp(App):
             self._setup_done,
         )
 
-    def _setup_done(self, choice: str | None) -> None:
+    def _setup_done(self, choice: Any) -> None:
         if choice == "start":
             self._run_flow = False
             self._launch_relay(["start"])
         elif choice == "plan":
             self._run_flow = True
             self._open_relay_plan()
+        elif isinstance(choice, tuple) and len(choice) == 2 and choice[0] == "resolve":
+            self._run_flow = False
+            self._start_resolve_flow(source="setup", fail_lines=choice[1])
         else:
             self._run_flow = False
 
@@ -3184,36 +3207,260 @@ class WhylineConsoleApp(App):
             return
         stop.disabled = not (self._busy_text or self._relay_running() or live)
 
-    def _resolve_relay_pause(self) -> None:
-        if self._recovering_pause:
-            return
-        self._recovering_pause = True
+    def _current_fail_lines(self) -> list[str]:
+        fails = list(getattr(self, "_resolve_source_fail_lines", []))
         try:
-            resolve = self._main("#relay-resolve", Button)
-            resolve.disabled = True
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=self.session.root,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if not status:
+                fails = [l for l in fails if "uncommitted changes" not in l]
+        except Exception:
+            pass
+        try:
+            from whyline_relay import running
+
+            if running.live(self.session.root) is None:
+                fails = [l for l in fails if "another relay is running here" not in l]
+        except Exception:
+            pass
+        self._resolve_source_fail_lines = fails
+        return fails
+
+    def _start_resolve_flow(self, source: str, fail_lines: list[str] | None = None) -> None:
+        from whyline.console import recovery
+        from whyline_relay import state as relay_state
+
+        if getattr(self, "_resolve_running", False):
+            return
+
+        self._resolve_source = source
+        if fail_lines is not None:
+            self._resolve_source_fail_lines = list(fail_lines)
+        elif source == "resume":
+            self._resolve_source_fail_lines = list(getattr(self, "_resume_fail_lines", []))
+        else:
+            self._resolve_source_fail_lines = []
+
+        reason = ""
+        if source == "resume":
+            try:
+                st = relay_state.load(self.session.root)
+                if st and st.paused_reason:
+                    reason = st.paused_reason
+            except Exception:
+                pass
+
+        fails = self._current_fail_lines()
+        problems = recovery.diagnose(
+            self.session.root,
+            fail_lines=fails,
+            pause_reason=reason,
+        )
+        self._resolve_problems = problems
+
+        if not problems:
+            if source == "setup":
+                self.render_event(SessionEvent(kind="output", text="Resolved. Open Set up again and press Check."))
+                self._show_resolve_setup_button()
+            else:
+                self.render_event(SessionEvent(kind="output", text="Resolved. Press Resume."))
+                self._resume_fail_lines = []
+                self._sync_relay_buttons()
+            return
+
+        self._resolve_problem = problems[0]
+        self._show_resolve_problem(problems[0], is_first=True, count=len(problems))
+        self._mount_resolve_buttons(problems[0])
+
+    def _show_resolve_problem(self, problem: Any, *, is_first: bool = False, count: int = 1) -> None:
+        lines: list[str] = []
+        if is_first:
+            lines.append(f"Resolve: {count} problem(s)")
+        lines.append(problem.summary)
+        for ev in problem.evidence:
+            lines.append(f"  {ev}")
+        ordered_opts = sorted(problem.options, key=lambda o: not o.recommended)
+        for idx, opt in enumerate(ordered_opts, 1):
+            rec_str = " (recommended)" if opt.recommended else ""
+            lines.append(f"  {idx}. {opt.label}{rec_str}")
+        for line in lines:
+            self.render_event(SessionEvent(kind="output", text=line))
+
+    def _mount_resolve_buttons(self, problem: Any) -> None:
+        try:
+            row = self._main("#resolve-actions", Horizontal)
+        except (NoMatches, IndexError):
+            return
+        row.remove_children()
+        for child in list(row.children):
+            row._nodes._remove(child)
+        ordered_opts = sorted(problem.options, key=lambda o: not o.recommended)
+        for opt in ordered_opts:
+            variant = "success" if opt.recommended else "default"
+            row.mount(Button(opt.label, id=f"resolve-{opt.id}", variant=variant))
+        row.display = True
+
+    def _show_resolve_setup_button(self) -> None:
+        try:
+            row = self._main("#resolve-actions", Horizontal)
+        except (NoMatches, IndexError):
+            return
+        row.remove_children()
+        for child in list(row.children):
+            row._nodes._remove(child)
+        row.mount(Button("Set up", id="resolve-setup", variant="primary"))
+        row.display = True
+
+    def _on_resolve_button_pressed(self, opt_id: str) -> None:
+        if self._resolve_problem is None or getattr(self, "_resolve_running", False):
+            return
+        matched = next((opt for opt in self._resolve_problem.options if opt.id == opt_id), None)
+        if matched is not None:
+            self._pick_resolve_option(matched)
+
+    def _pick_resolve_option(self, opt: Any) -> None:
+        if getattr(self, "_resolve_running", False):
+            return
+        if opt.id == "cancel":
+            self._close_resolve_flow()
+            self.render_event(SessionEvent(kind="output", text="Resolve cancelled; nothing else was changed."))
+            return
+        if opt.confirm:
+            def confirmed(yes: bool) -> None:
+                if yes:
+                    self._execute_resolve_option(opt)
+
+            self.push_screen(
+                ConfirmScreen(f"Run {opt.detail}?", confirm_label=opt.label),
+                confirmed,
+            )
+            return
+        self._execute_resolve_option(opt)
+
+    def _close_resolve_flow(self) -> None:
+        self._resolve_problem = None
+        self._resolve_problems = []
+        self._resolve_running = False
+        try:
+            self._main("#resolve-actions").display = False
         except (NoMatches, IndexError):
             pass
+        self._sync_relay_buttons()
+
+    def _execute_resolve_option(self, opt: Any) -> None:
+        from whyline.console import recovery
+
+        if getattr(self, "_resolve_running", False):
+            return
+        self._resolve_running = True
+        try:
+            for btn in self._main("#resolve-actions").query(Button):
+                btn.disabled = True
+        except (NoMatches, IndexError):
+            pass
+        self._sync_relay_buttons()
 
         def in_thread() -> None:
+            res = ""
+            did_resume = False
             try:
-                def progress(line: str) -> None:
-                    self.call_from_thread(self.render_event, SessionEvent(kind="output", text=line))
+                def launcher(args: list[str]) -> None:
+                    nonlocal did_resume
+                    did_resume = True
+                    self.call_from_thread(self._launch_relay, args)
 
-                launcher = lambda args: self.call_from_thread(self._launch_relay, args)
-                adapters.recover_pause(
+                res = recovery.apply(
                     self.session.root,
-                    session=self.session,
-                    progress=progress,
-                    launcher=launcher,
+                    self._resolve_problem,
+                    opt.id,
+                    launch=launcher,
                 )
+            except Exception as exc:
+                res = f"Resolve error: {exc}"
             finally:
-                def done() -> None:
-                    self._recovering_pause = False
-                    self._sync_relay_buttons()
-
-                self.call_from_thread(done)
+                self.call_from_thread(self._resolve_option_finished, opt, res, did_resume)
 
         self.run_worker(in_thread, thread=True)
+
+    def _resolve_option_finished(self, opt: Any, res: str, did_resume: bool) -> None:
+        from whyline.console import recovery
+        from whyline_relay import state as relay_state
+
+        self._resolve_running = False
+        if res:
+            self.render_event(SessionEvent(kind="output", text=res))
+
+        if did_resume:
+            self._close_resolve_flow()
+            return
+
+        if opt.id == "cancel":
+            self._close_resolve_flow()
+            return
+
+        if opt.id == "show" and self._resolve_problem is not None:
+            for ev in self._resolve_problem.evidence:
+                self.render_event(SessionEvent(kind="output", text=f"  {ev}"))
+
+        # Re-run recovery.diagnose for the same source
+        fails = self._current_fail_lines()
+        reason = ""
+        if self._resolve_source == "resume":
+            try:
+                st = relay_state.load(self.session.root)
+                if st and st.paused_reason:
+                    reason = st.paused_reason
+            except Exception:
+                pass
+
+        new_problems = recovery.diagnose(
+            self.session.root,
+            fail_lines=fails,
+            pause_reason=reason,
+        )
+
+        prev_id = self._resolve_problem.id if self._resolve_problem else None
+        problem_gone = not any(p.id == prev_id for p in new_problems)
+
+        if problem_gone:
+            if not new_problems:
+                self._resolve_problem = None
+                self._resolve_problems = []
+                if self._resolve_source == "setup":
+                    self.render_event(SessionEvent(kind="output", text="Resolved. Open Set up again and press Check."))
+                    self._show_resolve_setup_button()
+                else:
+                    self.render_event(SessionEvent(kind="output", text="Resolved. Press Resume."))
+                    self._resume_fail_lines = []
+                    try:
+                        self._main("#resolve-actions").display = False
+                    except (NoMatches, IndexError):
+                        pass
+                    self._sync_relay_buttons()
+                    try:
+                        self._main("#relay-resume", Button).disabled = False
+                    except (NoMatches, IndexError):
+                        pass
+            else:
+                next_prob = new_problems[0]
+                self._resolve_problems = new_problems
+                self._resolve_problem = next_prob
+                self._show_resolve_problem(next_prob, is_first=False, count=len(new_problems))
+                self._mount_resolve_buttons(next_prob)
+        else:
+            try:
+                for btn in self._main("#resolve-actions").query(Button):
+                    btn.disabled = False
+            except (NoMatches, IndexError):
+                pass
+            self._sync_relay_buttons()
+
+    def _resolve_relay_pause(self) -> None:
+        self._start_resolve_flow(source="resume")
 
     def _recover_auto_relay(self, pause_reason: str = "") -> None:
         if self._recovering_pause:
@@ -3277,6 +3524,7 @@ class WhylineConsoleApp(App):
         """Start/Resume, from a button or typed. One relay at a time: ours,
         or one started elsewhere (a terminal) that running.live still sees."""
         self._auto_relay = auto
+        self._last_relay_args = list(args)
         if self._refuse_in_home():
             return
         if args and args[0] == "start" and "--plan" not in args:
@@ -3346,6 +3594,11 @@ class WhylineConsoleApp(App):
         if not self._busy_text:
             self._main("#thinking", Static).display = False
             self._main("#stop", Button).disabled = True
+        fail_lines = [l.strip() for l in text.splitlines() if l.strip().startswith("FAIL")]
+        if fail_lines:
+            self._resume_fail_lines = fail_lines
+        elif code == 0:
+            self._resume_fail_lines = []
         # Only the relay's own final pause counts. Agents that print tui.py or
         # a plan echo "release task for you: " into the run's output, so the
         # marker anywhere else must never start a release task.

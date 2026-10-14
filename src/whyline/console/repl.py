@@ -91,6 +91,7 @@ def _help_text() -> str:
         "  Relay    Plan makes plan.md, Set up picks roles and starts; or type\n"
         "           doctor, status, start, resume",
         "  Agents   list, run/edit/delete/history <name>, pause/resume/accept <name>",
+        "  Resolve  explain a Set up or Resume problem and fix it with one click",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),
         "whyline commands (type them with /):",

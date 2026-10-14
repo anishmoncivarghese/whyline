@@ -14390,3 +14390,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6a17beb1c9ae40caa0b985083afec932 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T09:38:22.048Z"} -->
+
+## 2026-10-14 — Open Resolve flow in main window with action buttons and sequential problem re-diagnosis
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4D
+
+**Because:** Set up and Resume share the deterministic recovery catalogue, presenting problems with recommended options first and confirming mutating actions through ConfirmScreen without modal screens
+
+**Rejected:**
+
+- Open Resolve in a modal dialog — modals block the transcript and make it harder to see logs and command history
+- Apply fixes automatically without confirmation — destructive actions like stash or stop require explicit user consent
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, src/whyline/console/repl.py
+
+<!-- whyline-event: a07004c6024140e6a34b11217fd6ee4a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T10:20:27.852Z"} -->
+
+## 2026-10-14 — REC-4D passes focused and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4D
+
+**Because:** The required Resolve-focused test files and the complete project suite both completed with exit code 0, covering setup failures, resume recovery, confirmations, numeric selection, and sequential resolution
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: fff30c6b8d4d49dfabf3c3b9ad206105 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T10:26:16.645Z"} -->
+
+## 2026-10-14 — Approve REC-4D Resolve setup and resume flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4D
+
+**Because:** The diff implements setup FAIL gating, resume diagnosis gating, a shared main-window numbered action flow with confirmation and worker execution, sequential re-diagnosis, completion hints, and the required help text; focused and full test suites pass
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8d7ba0bf64a64cbca424de2b37c4a07d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T10:32:45.278Z"} -->

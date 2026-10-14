@@ -1210,6 +1210,7 @@ class RelaySetupScreen(ModalScreen):
         self._timeout = relay_ops.relay_timeout(root)
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
+        self._fail_lines: list[str] = []
 
     def _roles_line(self) -> str:
         r = self._configured_roles
@@ -1314,6 +1315,7 @@ class RelaySetupScreen(ModalScreen):
             Horizontal(
                 Button("Make a plan", id="rs-make-plan", variant="primary"),
                 Button("Check", id="rs-check", variant="primary", disabled=not self._plans),
+                Button("Resolve", id="rs-resolve", variant="warning", disabled=True),
                 Button("Start", id="rs-start", variant="success", disabled=True),
                 Button("Cancel", id="rs-cancel"),
                 id="rs-buttons",
@@ -1374,6 +1376,8 @@ class RelaySetupScreen(ModalScreen):
         self._token = object()
         self.query_one("#rs-checks", Static).update("")
         self.query_one("#rs-start", Button).disabled = True
+        self.query_one("#rs-resolve", Button).disabled = True
+        self._fail_lines = []
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         try:
@@ -1401,6 +1405,8 @@ class RelaySetupScreen(ModalScreen):
             self.dismiss(None)
         elif event.button.id == "rs-start":
             self.dismiss("start")
+        elif event.button.id == "rs-resolve":
+            self.dismiss(("resolve", list(self._fail_lines)))
         elif event.button.id == "rs-check":
             self._check()
         elif event.button.id == "rs-looks-good":
@@ -1418,6 +1424,8 @@ class RelaySetupScreen(ModalScreen):
         self._token = token
         self._error("")
         self.query_one("#rs-start", Button).disabled = True
+        self.query_one("#rs-resolve", Button).disabled = True
+        self._fail_lines = []
         self.query_one("#rs-checks", Static).update("Checking…")
         root, chosen = self._root, self._chosen()
         release = self.query_one("#rs-release", Select).value
@@ -1453,6 +1461,8 @@ class RelaySetupScreen(ModalScreen):
             return  # cancelled, re-checked, or the popup has closed
         try:
             self.query_one("#rs-checks", Static).update("")
+            self.query_one("#rs-resolve", Button).disabled = True
+            self._fail_lines = []
             self._error(str(error) or error.__class__.__name__)
         except NoMatches:
             return  # the popup's children were removed during teardown
@@ -1461,17 +1471,22 @@ class RelaySetupScreen(ModalScreen):
         if token is not self._token or not self.is_attached:
             return  # cancelled, re-checked, or the popup has closed
         lines = []
+        fail_lines = []
         for check in checks:
             line = f"{check.status:<4}  {check.message}"
             if check.status != "ok" and check.hint:
                 line += f"\n      fix: {check.hint}"
             lines.append(line)
+            if check.status == "FAIL":
+                fail_lines.append(f"{check.status:<4}  {check.message}")
         failures = sum(check.status == "FAIL" for check in checks)
         lines.append("All checks passed." if failures == 0 else f"{failures} problem(s) found.")
+        self._fail_lines = fail_lines
         try:
             self.query_one("#rs-checks", Static).update("\n".join(lines))
             if running:
                 self._error(f"A relay is already running here ({running}).")
             self.query_one("#rs-start", Button).disabled = failures > 0 or bool(running)
+            self.query_one("#rs-resolve", Button).disabled = failures == 0
         except NoMatches:
             return  # the popup's children were removed during teardown
