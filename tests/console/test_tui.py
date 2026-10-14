@@ -1017,7 +1017,7 @@ async def test_clicking_recommended_option_of_dirty_log_commits_and_prints_setup
         assert btn.variant == "success"
         await pilot.click("#resolve-commit-log")
 
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if not getattr(app, "_resolve_running", False):
                 break
@@ -1148,7 +1148,7 @@ async def test_choosing_resume_keep_calls_launcher_once(tmp_path, monkeypatch):
         await pilot.pause()
 
         await pilot.click("#resolve-resume-keep")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if launched:
                 break
@@ -1188,7 +1188,7 @@ async def test_two_problems_are_handled_one_after_the_other(tmp_path, monkeypatc
         # First problem is sticky-switch
         assert app.query_one("#resolve-reset-role", tui.Button).display is True
         await pilot.click("#resolve-reset-role")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if not getattr(app, "_resolve_running", False):
                 break
@@ -1201,7 +1201,7 @@ async def test_two_problems_are_handled_one_after_the_other(tmp_path, monkeypatc
         # Button for Problem 2 is commit-log
         assert app.query_one("#resolve-commit-log", tui.Button).display is True
         await pilot.click("#resolve-commit-log")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if not getattr(app, "_resolve_running", False):
                 break
@@ -1727,7 +1727,7 @@ async def test_ask_agent_recommendation_of_listed_id_is_offered_and_applies_only
         assert btn_ask.variant == "success"
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if app.query("#resolve-retry-stage"):
                 break
@@ -1745,7 +1745,7 @@ async def test_ask_agent_recommendation_of_listed_id_is_offered_and_applies_only
         assert launched == []
 
         await pilot.click("#resolve-retry-stage")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if launched:
                 break
@@ -1772,7 +1772,7 @@ async def test_ask_agent_unlisted_id_ignored_and_reported(tmp_path, monkeypatch)
         await pilot.pause()
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if not getattr(app, "_resolve_running", False):
                 break
@@ -1805,7 +1805,7 @@ async def test_ask_agent_turn_that_edits_file_discarded_and_names_file(tmp_path,
         await pilot.pause()
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if not getattr(app, "_resolve_running", False):
                 break
@@ -1857,7 +1857,7 @@ async def test_ask_agent_failing_selected_agent_falls_through_to_first_backup(tm
         await pilot.pause()
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if app.query("#resolve-wait"):
                 break
@@ -1889,7 +1889,7 @@ async def test_ask_agent_no_option_applied_without_click(tmp_path, monkeypatch):
         await pilot.pause()
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if app.query("#resolve-resume-keep"):
                 break
@@ -1916,7 +1916,7 @@ async def test_ask_agent_opt_prefixed_recommendation_in_tui(tmp_path, monkeypatc
         await pilot.pause()
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(30):
+        for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
             if not getattr(app, "_resolve_running", False):
                 break
