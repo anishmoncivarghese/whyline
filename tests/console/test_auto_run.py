@@ -1906,3 +1906,94 @@ def test_auto_failover_recovery_writes_override_and_resumes(tmp_path, monkeypatc
     assert "implementer" in overrides
     assert overrides["implementer"].agent == "grok"
 
+
+def test_auto_run_recover_pause_in_auto_mode_commits_decision_log(tmp_path, monkeypatch):
+    from whyline.console import relay_ops, recovery
+    from whyline_relay import gitcheck
+
+    root = _repo(tmp_path)
+    subprocess.run(["whyline", "init", "--yes"], cwd=root, check=True)
+    gitcheck.ensure_relay_ignored(root)
+    (root / "plan.md").write_text("# Plan\n- [ ] REC-4: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "setup"], cwd=root, check=True)
+
+    relay_ops.save_resolve_mode(root, "auto")
+
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "dirty",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    (root / ".whyline" / "decisions.md").write_text("# Decisions\n- [2026-10-15] Note\n", encoding="utf-8")
+
+    launched = []
+    lines = []
+
+    res = auto_run.recover_pause(
+        root,
+        task_id="REC-4",
+        round=1,
+        pause_reason="dirty",
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+
+    assert res.verdict == "resolved"
+    assert "resolve · auto · dirty-log · commit-log" in lines
+    assert launched == [["resume"]]
+    attempts = recovery.load_attempts(root)
+    assert any(a.get("kind") == "resolve-auto" for a in attempts)
+
+
+def test_auto_run_recover_pause_second_pause_in_same_round_stops_auto(tmp_path, monkeypatch):
+    from whyline.console import relay_ops, recovery
+
+    root = _repo(tmp_path)
+    subprocess.run(["whyline", "init", "--yes"], cwd=root, check=True)
+    relay_ops.save_resolve_mode(root, "auto")
+
+    # Record first attempt in round 1
+    recovery.record_attempt(root, task="REC-4", round=1, kind="resolve-auto", verdict="resolved")
+
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "dirty",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+
+    launched = []
+    lines = []
+
+    res = auto_run.recover_pause(
+        root,
+        task_id="REC-4",
+        round=1,
+        pause_reason="dirty",
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+
+    assert res.verdict == "human"
+    assert "recovery already attempted for REC-4 round 1" in res.reason
+    assert launched == []
+
+

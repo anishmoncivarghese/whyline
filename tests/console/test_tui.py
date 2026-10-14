@@ -1988,6 +1988,316 @@ async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monk
         assert cfg.roles.implementer == "claude"
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_auto_mode_dirty_log_pause_commits_and_resumes_without_click(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from whyline.console import relay_ops
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] REC-4F: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4F",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "dirty",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / ".whyline" / "decisions.md").write_text("# Decisions\n- [2026-10-15] Note\n", encoding="utf-8")
+
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, "Paused: dirty")
+        await pilot.pause()
+
+        assert launched == [["resume"]]
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("resolve · auto · dirty-log · commit-log" in line for line in lines)
+        assert any("Committed decision log for REC-4F." in line for line in lines)
+
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True).stdout
+        assert ".whyline/decisions.md" not in status
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_auto_mode_timeout_pause_raises_timeout_and_resumes(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from whyline.console import relay_ops
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] REC-4F: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+    relay_ops.save_timeout(tmp_path, 30)
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4F",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "agent exceeded 1800s and was terminated",
+            "log_path": "round.log",
+            "timeout_minutes": 30,
+        }),
+        encoding="utf-8",
+    )
+
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, "Paused: agent exceeded 1800s and was terminated")
+        await pilot.pause()
+
+        assert launched == [["resume"]]
+        assert relay_ops.relay_timeout(tmp_path) == 45
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("resolve · auto · timeout · resume-longer" in line for line in lines)
+        assert any("Saved timeout 45 minutes and resumed relay." in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_auto_mode_foreign_commits_pause_shows_buttons_with_move_aside_first(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from whyline.console import relay_ops
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "init.txt").write_text("initial", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    base_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] REC-4F: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "plan.md"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "plan: add plan"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4F",
+            "round": 1,
+            "base_commit": base_commit,
+            "paused_reason": f"HEAD moved before commit, reset to {base_commit}",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, f"Paused: HEAD moved before commit, reset to {base_commit}")
+        await pilot.pause()
+
+        assert launched == []
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Auto stopped:" in line for line in lines)
+
+        row = app.query_one("#resolve-actions", tui.Horizontal)
+        assert row.display is True
+        buttons = list(row.query(tui.Button))
+        assert buttons[0].id == "resolve-move-aside"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_auto_mode_auth_pause_applies_nothing(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from whyline.console import relay_ops
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] REC-4F: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    auth_reason = "codex is no longer logged in; try again once you've signed back in"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4F",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": auth_reason,
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, f"Paused: {auth_reason}")
+        await pilot.pause()
+
+        assert launched == []
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Auto stopped:" in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_auto_mode_second_pause_in_same_round_applies_nothing_and_shows_buttons(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from whyline.console import relay_ops, recovery
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] REC-4F: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+
+    recovery.record_attempt(tmp_path, task="REC-4F", round=1, kind="resolve-auto", verdict="resolved")
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4F",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "dirty",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / ".whyline" / "decisions.md").write_text("# Decisions\n- [2026-10-15] Note\n", encoding="utf-8")
+
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, "Paused: dirty")
+        await pilot.pause()
+
+        assert launched == []
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Auto stopped: recovery already attempted for REC-4F round 1" in line for line in lines)
+        assert app.query_one("#resolve-actions", tui.Horizontal).display is True
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_review_mode_applies_nothing_without_click(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from whyline.console import relay_ops
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] REC-4F: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "review")
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "REC-4F",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "dirty",
+            "log_path": "round.log",
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / ".whyline" / "decisions.md").write_text("# Decisions\n- [2026-10-15] Note\n", encoding="utf-8")
+
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, "Paused: dirty")
+        await pilot.pause()
+
+        assert launched == []
+        assert app.query_one("#resolve-actions", tui.Horizontal).display is False
+        btn_resolve = app.query_one("#relay-resolve", tui.Button)
+        assert btn_resolve.display is True
+        assert btn_resolve.disabled is False
+
+
+
 
 
 

@@ -550,3 +550,67 @@ async def test_resolve_closes_setup_with_resolve_tuple(tmp_path, monkeypatch, op
         assert results[0][0] == "resolve"
         assert any("FAIL" in line for line in results[0][1])
 
+
+async def test_missing_resolve_mode_file_reads_review(tmp_path):
+    assert relay_ops.resolve_mode(tmp_path) == "review"
+    mode_file = tmp_path / ".whyline" / "relay" / "resolve-mode.json"
+    mode_file.parent.mkdir(parents=True, exist_ok=True)
+    mode_file.write_text("corrupted json {", encoding="utf-8")
+    assert relay_ops.resolve_mode(tmp_path) == "review"
+    mode_file.write_text('{"schema": 1, "mode": "invalid"}', encoding="utf-8")
+    assert relay_ops.resolve_mode(tmp_path) == "review"
+
+
+async def test_save_writes_auto_and_reopening_setup_shows_it(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    save_calls = []
+    real_save_mode = relay_ops.save_resolve_mode
+
+    def tracking_save(root, mode):
+        save_calls.append((root, mode))
+        real_save_mode(root, mode)
+
+    monkeypatch.setattr(relay_ops, "save_resolve_mode", tracking_save)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        mode_select = screen.query_one("#rs-resolve-mode", tui.Select)
+        assert mode_select.value == "review"
+        assert [prompt for prompt, _ in mode_select._options if _ is not tui.Select.BLANK] == [
+            "Review: show the fix, wait for my click",
+            "Auto: apply the recommended fix and continue",
+        ]
+
+        # 1. First check untouched: does not write resolve_mode
+        start = screen.query_one("#rs-start", tui.Button)
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "first check")
+        assert len(save_calls) == 0
+
+        # 2. Change to auto and check: saves auto
+        mode_select.value = "auto"
+        await pilot.pause()
+        assert start.disabled
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "second check")
+        assert len(save_calls) == 1
+        assert save_calls[-1][1] == "auto"
+        assert relay_ops.resolve_mode(tmp_path) == "auto"
+
+        # 3. Dismiss popup
+        screen.dismiss(None)
+        await pilot.pause()
+
+        # 4. Reopen Set up: shows auto
+        screen2, _ = await _open(app, pilot)
+        assert screen2.query_one("#rs-resolve-mode", tui.Select).value == "auto"
+
+        # 5. Untouched check on reopening: does not write again
+        save_calls.clear()
+        start2 = screen2.query_one("#rs-start", tui.Button)
+        screen2.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start2.disabled, "third check")
+        assert len(save_calls) == 0
+
+

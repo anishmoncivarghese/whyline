@@ -2274,4 +2274,138 @@ def test_synthesized_role_options_legacy_round_2(tmp_path: Path) -> None:
     assert "implementer" in active_overrides
 
 
+def test_auto_option_returns_recommended_unconfirmed_and_none_for_confirm_unknown_or_human() -> None:
+    # 1. Unknown returns None
+    prob_unknown = recovery.Problem(
+        id="unknown",
+        summary="Mysterious pause",
+        evidence=[],
+        options=[
+            recovery.Option("ask-agent", "Ask agent", "ask agent", recommended=True, confirm=False),
+        ],
+    )
+    assert recovery.auto_option(prob_unknown) is None
+
+    # 2. REC-1 human kinds return None
+    for hk in ("auth", "blocked", "round-cap", "release", "sandbox", "visit-cap", "other"):
+        prob_human = recovery.Problem(
+            id=hk,
+            summary=f"Human problem {hk}",
+            evidence=[],
+            options=[
+                recovery.Option("dummy", "Dummy", "dummy", recommended=True, confirm=False),
+            ],
+        )
+        assert recovery.auto_option(prob_human) is None
+
+    # 3. Summary mapping to human returns None
+    prob_auth_summary = recovery.Problem(
+        id="custom-auth",
+        summary="codex is no longer logged in",
+        evidence=[],
+        options=[
+            recovery.Option("dummy", "Dummy", "dummy", recommended=True, confirm=False),
+        ],
+    )
+    assert recovery.auto_option(prob_auth_summary) is None
+
+    # 4. Any option with confirm=True returns None (stash, reset, move-aside, stop)
+    prob_foreign = recovery.Problem(
+        id="foreign-commits",
+        summary="Foreign commits",
+        evidence=[],
+        options=[
+            recovery.Option("move-aside", "Move aside", "git branch", recommended=True, confirm=True),
+            recovery.Option("reset-keep", "Reset to base", "git reset", recommended=False, confirm=True),
+        ],
+    )
+    assert recovery.auto_option(prob_foreign) is None
+
+    prob_stash = recovery.Problem(
+        id="dirty-other",
+        summary="Uncommitted paths",
+        evidence=[],
+        options=[
+            recovery.Option("stash", "Stash changes", "git stash", recommended=True, confirm=True),
+        ],
+    )
+    assert recovery.auto_option(prob_stash) is None
+
+    prob_head_moved = recovery.Problem(
+        id="head-moved",
+        summary="HEAD moved",
+        evidence=[],
+        options=[
+            recovery.Option("reset-keep", "Reset to base commit", "git reset", recommended=True, confirm=True),
+        ],
+    )
+    assert recovery.auto_option(prob_head_moved) is None
+
+    # 5. Allowed auto options return the recommended option
+    prob_log = recovery.Problem(
+        id="dirty-log",
+        summary="Decisions log only",
+        evidence=[".whyline/decisions.md"],
+        options=[
+            recovery.Option("commit-log", "Commit decision log", "commit", recommended=True, confirm=False),
+            recovery.Option("show", "Show", "show", recommended=False, confirm=False),
+        ],
+    )
+    assert recovery.auto_option(prob_log) == prob_log.options[0]
+
+    prob_paused_work = recovery.Problem(
+        id="dirty-paused-work",
+        summary="Uncommitted changes during paused task",
+        evidence=["file.py"],
+        options=[
+            recovery.Option("resume-keep", "Resume and keep", "resume --allow-dirty", recommended=True, confirm=False),
+            recovery.Option("stash", "Stash", "stash", recommended=False, confirm=True),
+        ],
+    )
+    assert recovery.auto_option(prob_paused_work) == prob_paused_work.options[0]
+
+    prob_timeout = recovery.Problem(
+        id="timeout",
+        summary="Agent exceeded 1800s timeout",
+        evidence=[],
+        options=[
+            recovery.Option("resume-longer", "Resume with longer timeout (45m)", "timeout 45", recommended=True, confirm=False),
+            recovery.Option("resume", "Resume as is", "resume", recommended=False, confirm=False),
+        ],
+    )
+    assert recovery.auto_option(prob_timeout) == prob_timeout.options[0]
+
+    prob_sticky = recovery.Problem(
+        id="sticky-switch",
+        summary="Role on backup, original logged in",
+        evidence=[],
+        options=[
+            recovery.Option("reset-role", "Reset role", "roles reset", recommended=True, confirm=False),
+        ],
+    )
+    assert recovery.auto_option(prob_sticky) == prob_sticky.options[0]
+
+    prob_usage = recovery.Problem(
+        id="out-of-usage",
+        summary="Rate limit hit",
+        evidence=[],
+        options=[
+            recovery.Option("use-claude", "Use claude", "roles set", recommended=True, confirm=False),
+        ],
+    )
+    assert recovery.auto_option(prob_usage) == prob_usage.options[0]
+
+    prob_running = recovery.Problem(
+        id="relay-running",
+        summary="Relay is currently running",
+        evidence=[],
+        options=[
+            recovery.Option("wait", "Wait", "status", recommended=True, confirm=False),
+            recovery.Option("stop", "Stop", "stop", recommended=False, confirm=True),
+        ],
+    )
+    assert recovery.auto_option(prob_running) == prob_running.options[0]
+
+
+
 

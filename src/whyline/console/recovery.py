@@ -1140,6 +1140,43 @@ class Problem:
     options: list[Option]
 
 
+_HUMAN_KINDS = frozenset({
+    "auth",
+    "blocked",
+    "round-cap",
+    "release",
+    "sandbox",
+    "visit-cap",
+})
+
+
+def auto_option(problem: Problem) -> Option | None:
+    """The recommended option when it has confirm=False, else None.
+
+    Returns None for unknown, for any option with confirm=True, and for any
+    kind REC-1 routes to human (auth, blocked, round-cap, release, sandbox).
+    """
+    if problem.id == "unknown" or problem.id in _HUMAN_KINDS or problem.id == "other":
+        return None
+
+    try:
+        from whyline.console import adapters
+
+        summary_kind = adapters.failure_kind(problem.summary)
+        if summary_kind in _HUMAN_KINDS:
+            return None
+    except Exception:
+        pass
+
+    for opt in problem.options:
+        if opt.recommended:
+            if opt.confirm:
+                return None
+            return opt
+    return None
+
+
+
 def next_timeout(current: int) -> int:
     if current == 0:
         return 0
@@ -1656,6 +1693,8 @@ def diagnose(
             dirty_paths = [l[3:].strip() for l in status_p.stdout.splitlines() if l.strip()]
         except Exception:
             pass
+
+    dirty_paths = [p for p in dirty_paths if not p.startswith(".whyline/relay/")]
 
     has_dirty_fail = any("uncommitted changes" in line for line in fails)
 

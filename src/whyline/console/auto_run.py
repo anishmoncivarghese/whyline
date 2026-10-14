@@ -1545,6 +1545,66 @@ def recover_pause(
     else:
         kind = adapters.failure_kind(actual_pause_reason)
 
+    from whyline.console import relay_ops
+
+    mode = relay_ops.resolve_mode(root_path)
+    if mode == "auto":
+        if not recovery.allowed(root_path, actual_task_id, round_num):
+            reason = f"recovery already attempted for {actual_task_id} round {round_num}"
+            res = recovery.RecoveryResult("human", [reason], reason=reason)
+            _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+            return res
+
+        problems = recovery.diagnose(
+            root_path,
+            fail_lines=[],
+            pause_reason=actual_pause_reason,
+        )
+        if not problems:
+            res = recovery.RecoveryResult("human", [actual_pause_reason], reason=actual_pause_reason)
+            _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+            return res
+
+        for problem in problems:
+            opt = recovery.auto_option(problem)
+            if opt is None:
+                reason = problem.summary
+                res = recovery.RecoveryResult("human", [reason], reason=reason)
+                _apply_recovery_outcome_to_pause(root_path, checkpoint, st, actual_pause_reason, res)
+                return res
+
+            _emit(progress, f"resolve · auto · {problem.id} · {opt.id}")
+            did_resume = False
+
+            def auto_launcher(args: list[str]) -> None:
+                nonlocal did_resume
+                did_resume = True
+                if launcher is not None:
+                    launcher(args)
+
+            res_line = recovery.apply(
+                root_path,
+                problem,
+                opt.id,
+                launch=auto_launcher,
+            )
+            if res_line:
+                _emit(progress, res_line)
+
+            recovery.record_attempt(
+                root_path,
+                task=actual_task_id,
+                round=round_num,
+                kind="resolve-auto",
+                agent="",
+                verdict="resolved",
+            )
+            if not did_resume and opt.id != "wait" and launcher is not None:
+                launcher(["resume"])
+
+            _clear_pause_in_checkpoint_and_state(root_path, checkpoint)
+            return recovery.RecoveryResult("resolved", [], reason="resolved")
+
     route = recovery.route(kind, dirty_files)
 
     if not recovery.allowed(root_path, actual_task_id, round_num):

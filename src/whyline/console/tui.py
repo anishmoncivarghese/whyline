@@ -3649,6 +3649,93 @@ class WhylineConsoleApp(App):
     def _resolve_relay_pause(self) -> None:
         self._start_resolve_flow(source="resume")
 
+    def _auto_resolve(self, pause_reason: str = "", fail_lines: list[str] | None = None) -> None:
+        from whyline.console import recovery
+        from whyline_relay import state as relay_state
+
+        st = None
+        try:
+            st = relay_state.load(self.session.root)
+        except Exception:
+            pass
+
+        task_id = (st.task_id if st and st.task_id else "") or "REC"
+        round_num = (st.round if st and hasattr(st, "round") and st.round is not None else 1) or 1
+        reason = pause_reason or (st.paused_reason if st and st.paused_reason else "")
+
+        fails = list(fail_lines) if fail_lines is not None else list(getattr(self, "_resume_fail_lines", []))
+        problems = recovery.diagnose(self.session.root, fail_lines=fails, pause_reason=reason)
+
+        if not problems:
+            self._sync_relay_buttons()
+            return
+
+        is_auto = getattr(self, "_auto_relay", False)
+
+        if not recovery.allowed(self.session.root, task_id, round_num):
+            stop_reason = f"recovery already attempted for {task_id} round {round_num}"
+            self.render_event(SessionEvent(kind="output", text=f"Auto stopped: {stop_reason}"))
+            self._resolve_problem = problems[0]
+            self._resolve_problems = problems
+            self._resolve_source = "resume"
+            self._show_resolve_problem(problems[0], is_first=True, count=len(problems))
+            self._mount_resolve_buttons(problems[0])
+            if is_auto:
+                self._auto_relay = False
+                self._end_run_flow("Auto run stopped.")
+            self._sync_relay_buttons()
+            return
+
+        for problem in problems:
+            opt = recovery.auto_option(problem)
+            if opt is None:
+                stop_reason = problem.summary
+                self.render_event(SessionEvent(kind="output", text=f"Auto stopped: {stop_reason}"))
+                self._resolve_problem = problem
+                self._resolve_problems = problems
+                self._resolve_source = "resume"
+                self._show_resolve_problem(problem, is_first=True, count=len(problems))
+                self._mount_resolve_buttons(problem)
+                if is_auto:
+                    self._auto_relay = False
+                    self._end_run_flow("Auto run stopped.")
+                self._sync_relay_buttons()
+                return
+
+            self.render_event(
+                SessionEvent(kind="output", text=f"resolve · auto · {problem.id} · {opt.id}")
+            )
+            did_resume = False
+
+            def launcher(args: list[str]) -> None:
+                nonlocal did_resume
+                did_resume = True
+                self._launch_relay(args, auto=is_auto)
+
+            res_line = recovery.apply(
+                self.session.root,
+                problem,
+                opt.id,
+                launch=launcher,
+            )
+            if res_line:
+                self.render_event(SessionEvent(kind="output", text=res_line))
+
+            recovery.record_attempt(
+                self.session.root,
+                task=task_id,
+                round=round_num,
+                kind="resolve-auto",
+                agent="",
+                verdict="resolved",
+            )
+
+            self._resume_fail_lines = []
+            if not did_resume and opt.id != "wait":
+                self._launch_relay(["resume"], auto=is_auto)
+
+            return
+
     def _recover_auto_relay(self, pause_reason: str = "") -> None:
         if self._recovering_pause:
             return
@@ -3830,6 +3917,7 @@ class WhylineConsoleApp(App):
             self._sync_relay_buttons()
             return
 
+        mode = relay_ops.resolve_mode(self.session.root)
         is_auto = getattr(self, "_auto_relay", False)
         event = adapters.classify_relay_output(self.session.root, text, code)
         is_pause = bool(pause_text) or event.kind == "pause"
@@ -3838,6 +3926,11 @@ class WhylineConsoleApp(App):
             "working tree has uncommitted changes" in text
             or "uncommitted changes" in text
         )
+        is_preflight_fail = bool(fail_lines) or is_dirty_fail
+
+        if mode == "auto" and (is_pause or is_preflight_fail):
+            self._auto_resolve(pause_reason=pause_text or text, fail_lines=fail_lines)
+            return
 
         if is_auto and (is_pause or is_dirty_fail):
             self._recover_auto_relay(pause_reason=pause_text or text)

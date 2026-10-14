@@ -14574,3 +14574,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 54c0268e24dc49afad80ced558368597 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T20:04:32.128Z"} -->
+
+## 2026-10-14 — Resolve mode in Set up: auto applies safe recommended fixes once per round, review waits for click
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** REC-4F
+
+**Because:** Auto runs shouldn't stop on known deterministic issues like dirty log or timeout, while destructive actions like stash and reset stay manual
+
+**Rejected:**
+
+- Auto applies all recommended options — would stash or reset without user consent
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: d3b050dce9624540a89e99f318c59a09 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T20:49:13.832Z"} -->
+
+## 2026-10-14 — REC-4F passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** REC-4F
+
+**Because:** The targeted recovery, setup, auto-run, and TUI suite and the complete project suite both exited successfully, covering resolve-mode persistence, safe auto-option selection, unsafe and human-routed fallback, and the once-per-round guard
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: af6a69b6747e435bbd2bc56829baa3ae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T20:55:26.832Z"} -->
+
+## 2026-10-14 — Approve REC-4F resolve-mode persistence and guarded auto recovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** REC-4F
+
+**Because:** The requested mode storage and Set up behavior are implemented atomically, auto_option excludes unknown, human-routed, and confirming actions, Relay and Auto-run paths apply only safe recommendations once per task round, the specified UI fallbacks are covered, and both targeted and full pytest suites passed
+
+**Rejected:**
+
+- Request changes — no functional or safety defect was found in the scoped diff
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: e920fefc34034f6b8d114f220f88c135 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-14T21:02:51.201Z"} -->

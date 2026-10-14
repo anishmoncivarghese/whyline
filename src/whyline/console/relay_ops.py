@@ -4,6 +4,8 @@ presentation. whyline_relay is imported inside each function, like
 adapters.py does, so the console imports without it."""
 from __future__ import annotations
 
+import json
+import os
 import re
 import shutil
 import tempfile
@@ -568,6 +570,45 @@ def save_timeout(root: Path, minutes: int) -> None:
     from whyline_relay import setup
 
     setup.write_timeout_minutes(root, minutes)
+
+
+def resolve_mode_path(root: Path | str) -> Path:
+    return Path(root) / ".whyline" / "relay" / "resolve-mode.json"
+
+
+def resolve_mode(root: Path | str) -> str:
+    path = resolve_mode_path(root)
+    if not path.is_file():
+        return "review"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            mode = data.get("mode")
+            if mode in ("auto", "review"):
+                return mode
+    except Exception:
+        pass
+    return "review"
+
+
+def save_resolve_mode(root: Path | str, mode: str) -> None:
+    if mode not in ("auto", "review"):
+        raise ValueError(f"Invalid resolve mode: {mode!r}; must be 'auto' or 'review'")
+    path = resolve_mode_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary_path = Path(temporary)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump({"schema": 1, "mode": mode}, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def release_role(root: Path) -> str:

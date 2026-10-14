@@ -1208,6 +1208,7 @@ class RelaySetupScreen(ModalScreen):
         self._summary = self._guided and self._configured
         self._backup = list(self._roles.get("backup") or [])
         self._timeout = relay_ops.relay_timeout(root)
+        self._resolve_mode = relay_ops.resolve_mode(root)
         self._token: object | None = None
         self._filling = True  # ignore change events while the form is built
         self._fail_lines: list[str] = []
@@ -1303,6 +1304,18 @@ class RelaySetupScreen(ModalScreen):
                         allow_blank=False,
                         id="rs-timeout",
                     ).with_tooltip("How long one agent may run before the relay stops it"),
+                ),
+                Horizontal(
+                    Label("Resolve:", classes="field-label"),
+                    Select(
+                        [
+                            ("Review: show the fix, wait for my click", "review"),
+                            ("Auto: apply the recommended fix and continue", "auto"),
+                        ],
+                        value=self._resolve_mode,
+                        allow_blank=False,
+                        id="rs-resolve-mode",
+                    ),
                 ),
                 Label("Backup, used when an agent fails:"),
                 chain,
@@ -1430,6 +1443,7 @@ class RelaySetupScreen(ModalScreen):
         root, chosen = self._root, self._chosen()
         release = self.query_one("#rs-release", Select).value
         timeout = self.query_one("#rs-timeout", Select).value
+        resolve_mode = self.query_one("#rs-resolve-mode", Select).value
         plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
 
         def in_thread() -> None:
@@ -1441,6 +1455,8 @@ class RelaySetupScreen(ModalScreen):
                 # Only on a change: each write is its own config commit.
                 if timeout != relay_ops.relay_timeout(root):
                     relay_ops.save_timeout(root, timeout)
+                if resolve_mode != relay_ops.resolve_mode(root):
+                    relay_ops.save_resolve_mode(root, resolve_mode)
                 agents_to_prepare = [chosen[0], chosen[1], chosen[2], *chosen[3]]
                 if release != "human":
                     agents_to_prepare.append(release)
