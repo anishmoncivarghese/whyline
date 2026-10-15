@@ -14917,3 +14917,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 58dd95df1b3a4d93ae609de35587c267 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:02:50.372Z"} -->
+
+## 2026-10-15 — Pure standard library change detection and follow candidate selection
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FIL-1
+
+**Because:** Decouples file following logic from UI widget layer and ensures reads in hints with unchanged snaps are never treated as writes
+
+**Rejected:**
+
+- Importing Textual in file_follow — couples data logic with UI
+- Treating all ledger hints as writes — would cause read-only file access to take over the follow pane
+
+**Files:** src/whyline/console/file_follow.py
+
+<!-- whyline-event: b0f23f4b0946469782a2be1508d84a7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:15:03.482Z"} -->
+
+## 2026-10-15 — Pass FIL-1 behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIL-1
+
+**Because:** The focused file-follow suite passed all 11 tests and the complete project suite finished with exit code 0; required change detection, notices, path parsing, baseline updates, and changed-line behavior are covered
+
+**Files:** src/whyline/console/file_follow.py, tests/console/test_file_follow.py
+
+<!-- whyline-event: 168729f751904709b35b42667761b965 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:21:43.051Z"} -->
+
+## 2026-10-15 — Approve FIL-1 file-follow change detection
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIL-1
+
+**Because:** The implementation satisfies the specified standard-library API and edge cases, the 11 focused tests genuinely exercise every required behavior, and the full project suite passes
+
+**Files:** src/whyline/console/file_follow.py, tests/console/test_file_follow.py
+
+<!-- whyline-event: af68cda8240b4e799d803c2d0d192951 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:27:14.174Z"} -->
