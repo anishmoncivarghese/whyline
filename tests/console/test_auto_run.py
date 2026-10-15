@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import threading
+import traceback
 from pathlib import Path
 
 import pytest
@@ -1543,7 +1544,7 @@ def test_close_during_research_sets_cancel_and_stops(tmp_path, monkeypatch):
     auto_run.close_console(root, cancel)
     thread.join(5)
     assert not thread.is_alive()
-    assert "error" not in holder
+    assert "error" not in holder, "".join(traceback.format_exception(holder["error"]))
     assert cancel.is_set()
     assert holder["result"]["phase"] == "stopped"
     assert _checkpoint(root)["phase"] == "stopped"

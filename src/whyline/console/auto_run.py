@@ -31,7 +31,7 @@ from pathlib import Path
 from whyline import account, model
 from whyline.console import relay_ops
 from whyline.console.plan_job import AutoRunRequest
-from whyline.state import atomic_write_json, load_object
+from whyline.state import atomic_write_json, load_object, unlink_busy_safe
 
 SCHEMA = 1
 
@@ -279,10 +279,9 @@ def release_lock(root: Path) -> None:
     path = lock_path(root)
     if _read_pid(path) != os.getpid():
         return
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        pass
+    # Closing during a run releases from the UI thread and the worker at
+    # once; on Windows the other thread's _read_pid can hold the file open.
+    unlink_busy_safe(path)
 
 
 def _matches(fresh: dict, dismissed: str, saved: dict | None) -> bool:

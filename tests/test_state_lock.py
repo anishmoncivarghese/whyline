@@ -144,3 +144,42 @@ def test_atomic_write_does_not_retry_off_windows(tmp_path: Path, monkeypatch):
         state.atomic_write_json(tmp_path / "auto-run.json", {"phase": "stopped"})
     assert calls[0] == 1
     assert list(tmp_path.iterdir()) == []
+
+
+def _flaky_unlink(monkeypatch, failures: int) -> list[int]:
+    calls = [0]
+    real = Path.unlink
+
+    def unlink(self, missing_ok=False):
+        calls[0] += 1
+        if calls[0] <= failures:
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        real(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    monkeypatch.setattr(state, "_POLL_INTERVAL_SECONDS", 0.001)
+    return calls
+
+
+def test_unlink_busy_safe_retries_an_open_file_on_windows(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(state, "_WINDOWS", True)
+    target = tmp_path / "auto-run.lock"
+    target.write_text("1\n")
+    calls = _flaky_unlink(monkeypatch, failures=2)
+    state.unlink_busy_safe(target)
+    assert calls[0] == 3
+    assert not target.exists()
+
+
+def test_unlink_busy_safe_ignores_a_missing_file(tmp_path: Path):
+    state.unlink_busy_safe(tmp_path / "gone.lock")
+
+
+def test_unlink_busy_safe_does_not_retry_off_windows(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(state, "_WINDOWS", False)
+    target = tmp_path / "auto-run.lock"
+    target.write_text("1\n")
+    calls = _flaky_unlink(monkeypatch, failures=1)
+    with pytest.raises(PermissionError):
+        state.unlink_busy_safe(target)
+    assert calls[0] == 1

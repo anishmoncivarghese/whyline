@@ -27,6 +27,23 @@ def atomic_write_json(path: Path, payload: dict) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
+def unlink_busy_safe(path: Path, timeout: float = 2.0) -> None:
+    """Path.unlink that tolerates a missing file and, on Windows, retries
+    while another thread or process has the file open (PermissionError,
+    "being used by another process"), which POSIX never reports."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            path.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if not _WINDOWS or time.monotonic() >= deadline:
+                raise
+            time.sleep(_POLL_INTERVAL_SECONDS)
+
+
 def _replace(source: Path, target: Path, timeout: float = 2.0) -> None:
     """os.replace, retried on Windows while another thread or process has
     `target` open: Windows refuses to replace an open file with
