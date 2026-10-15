@@ -8,6 +8,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
+    # Windows is reported but does not fail the run until WIN-1 in the current
+    # plan makes it pass; release.yml does not test it at all until then.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

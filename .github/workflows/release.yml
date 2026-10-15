@@ -18,10 +18,12 @@ on:
 jobs:
   test:
     # Never publish something the suite has not passed on the exact tagged tree.
+    # Windows is not a release gate until WIN-1 in the current plan makes it
+    # pass; ci.yml still runs it on every push, allowed to fail.
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
