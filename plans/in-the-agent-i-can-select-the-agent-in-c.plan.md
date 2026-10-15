@@ -382,7 +382,7 @@ Recovery acts on a relay pause or a dirty-tree preflight FAIL, in Auto and in Re
 
 ## Console, no agents installed, after whyline 0.3.42
 
-- [ ] NOA-1: Set up and Plan explain a missing agent instead of crashing
+- [x] NOA-1: Set up and Plan explain a missing agent instead of crashing
   Edit only `src/whyline/console/relay_screens.py`, `src/whyline/console/tui.py`, and their tests.
   Today, with no relay agent CLI on PATH (`relay_ops.relay_agents(root)` is empty), opening Set up raises `EmptySelectError` from the role `Select`s (`allow_blank=False` with no options), and the plan form raises `IndexError` in `_agent_select` (`self._agents[0]`). Both have been true since Set up was added; CI found them on a runner with no agents.
   In `tui.py`, `_open_relay_setup` and `_open_relay_plan` first check `relay_ops.relay_agents(self.session.root)`. When it is empty, do not push the screen: print `No agent is installed here, so the relay has nobody to run. Install one of claude, codex, antigravity or grok, log in, then press Set up again.` (or `Plan again.`), followed by the output of `whyline relay doctor`'s agent lines, and leave the buttons as they were.
