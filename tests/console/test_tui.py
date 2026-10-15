@@ -871,7 +871,7 @@ async def test_thinking_line_shows_brackets_literally(tmp_path):
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
 @pytest.mark.asyncio
-async def test_bottom_bar_run_opens_plan_when_no_plan_exists(tmp_path, monkeypatch):
+async def test_bottom_bar_run_opens_plan_when_no_plan_exists(tmp_path, monkeypatch, installed_agents):
     from whyline.console import relay_ops
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
     app = tui.WhylineConsoleApp(root=tmp_path)

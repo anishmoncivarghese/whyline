@@ -320,12 +320,16 @@ async def test_fake_relay_state_adds_relay_repo_and_shows_file_as_repo_name_path
 
     # Initialize root git repo
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.local"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "--allow-empty", "-m", "init root"], cwd=tmp_path, check=True, capture_output=True)
 
     # Initialize task git repo
     task_repo = tmp_path / "sub_repo"
     task_repo.mkdir()
     subprocess.run(["git", "init"], cwd=task_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=task_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.local"], cwd=task_repo, check=True, capture_output=True)
     subprocess.run(["git", "commit", "--allow-empty", "-m", "init task repo"], cwd=task_repo, check=True, capture_output=True)
 
     # Write plan and fake relay state
@@ -404,6 +408,8 @@ async def test_gather_follow_detects_real_changes_and_ledger_hints(tmp_path):
     from whyline.events import FILE_TOUCHED, new_event
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.local"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
 
     app = tui.WhylineConsoleApp(root=tmp_path)

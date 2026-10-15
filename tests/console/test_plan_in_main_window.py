@@ -209,7 +209,7 @@ async def test_escape_leaves_plan_review(tmp_path, monkeypatch):
         assert any("Left the plan" in l for l in _lines(app))
 
 
-async def test_open_relay_plan_refused_while_plan_in_progress(tmp_path, monkeypatch):
+async def test_open_relay_plan_refused_while_plan_in_progress(tmp_path, monkeypatch, installed_agents):
     monkeypatch.setattr(plan_job, "run_request",
                         lambda root, req, progress: plan_job.Outcome("draft", _draft(tmp_path)))
     app = tui.WhylineConsoleApp(root=tmp_path)

@@ -191,7 +191,7 @@ async def test_quitting_after_relay_finishes_while_modal_open_exits_safely(tmp_p
         await _click_quit(app, pilot, button_id)
 
 
-async def test_typed_start_without_any_plan_opens_plan_form(tmp_path, monkeypatch):
+async def test_typed_start_without_any_plan_opens_plan_form(tmp_path, monkeypatch, installed_agents):
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
