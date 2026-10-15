@@ -14773,3 +14773,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5f33f91f9f7940dd95dc5fda1ddccf1b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-14T22:14:18.538Z"} -->
+
+## 2026-10-15 — Quit-dialog tests press the button and wait on app.return_code instead of pilot.click + pause
+
+**Actor:** claude
+**Role:** developer
+**Task:** REC-5
+
+**Because:** Both buttons call app.exit(); pilot.pause and pilot.click's per-event pause wait for the screen to drain, which raced shutdown and hit Textual's 30 s WaitForScreenTimeout on windows-latest in two release runs. A mutation that removes exit() still fails the tests
+
+**Rejected:**
+
+- Skip on Windows — drops coverage of the quit-while-relay-runs path where it is slowest
+- Raise the pause timeout — the hang is a lost callback, not slowness, so a longer wait still times out
+
+**Files:** tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 29f86cdfdbba47b78fd6e25ca6d387f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T03:35:51.278Z"} -->
