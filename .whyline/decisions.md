@@ -14808,3 +14808,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 41a2a031d404492ea8b3ecdec73fb28c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T04:02:34.541Z"} -->
+
+## 2026-10-15 — Stop gating releases on Windows until WIN-1; keep it running in CI with continue-on-error
+
+**Actor:** claude
+**Role:** release
+**Task:** WIN-1
+
+**Because:** Windows-only failures (shutdown race, Windows file locking, slow UI waits) blocked three v0.3.42 release attempts and none affected macOS or Linux, where whyline's launchd and Mail features run. The user asked to do Windows once at the end of the plan
+
+**Rejected:**
+
+- Remove Windows from CI entirely — hides regressions until WIN-1
+- Keep fixing Windows per release — each round cost a 13-minute CI cycle and repeated investigation
+
+**Files:** .github/workflows/release.yml
+
+<!-- whyline-event: 1e61b290736a4aebb3a8081fb78a276f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T04:25:17.860Z"} -->
