@@ -845,3 +845,18 @@ async def test_every_bar_control_is_one_row_and_on_screen(tmp_path, width):
             assert child.region.height == 1, f"{child.id} is {child.region.height} rows"
             assert child.region.right <= width, f"{child.id} runs past column {width}"
         assert app.query_one("#cb-save").region.width >= 4
+
+
+async def test_files_on_at_160_columns_shrinks_labels(tmp_path):
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(160, 40)) as pilot:
+        assert _plain(app.query_one("#cb-agent-label")) == "Agent"
+        assert _plain(app.query_one("#cb-model-label")) == "Model"
+        assert _plain(app.query_one("#cb-repo-label")) == "Repo"
+        assert _plain(app.query_one("#cb-backup-label")) == "Backup"
+        await pilot.click("#see-files")
+        await pilot.pause()
+        assert _plain(app.query_one("#cb-agent-label")) == "A"
+        assert _plain(app.query_one("#cb-model-label")) == "M"
+        assert _plain(app.query_one("#cb-repo-label")) == "R"
+        assert _plain(app.query_one("#cb-backup-label")) == "Bak"

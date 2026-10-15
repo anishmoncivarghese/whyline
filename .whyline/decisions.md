@@ -14961,3 +14961,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: af68cda8240b4e799d803c2d0d192951 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:27:14.174Z"} -->
+
+## 2026-10-15 — Split console into console-column and file-pane under Horizontal split with stacked responsive layout
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FIL-2
+
+**Because:** Preserves all existing widget hierarchy and IDs within console-column while providing side-by-side split at 120+ columns and vertical stacked view below 120
+
+**Rejected:**
+
+- Separate screens for console and files — loses live conversation context while following writes
+- Hardcoding fixed character column widths — fails responsiveness across 80x24 to 160x40
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 39dcfccb0cb84d0b8182699c00b31b23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:59:51.950Z"} -->
+
+## 2026-10-15 — Include see-files in test_mode_buttons expected visible controls
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FIL-2
+
+**Because:** see-files was added to _SHARED_BUTTONS and is present in chat and relay modes across all widths, updating the CB-5 expectation
+
+**Rejected:**
+
+- Leaving test_mode_buttons unupdated — causes complete pytest suite to fail on assertion of visible button set
+
+**Files:** tests/console/test_mode_buttons.py
+
+<!-- whyline-event: ef2970982a5049488309659b7282a228 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:59:57.297Z"} -->
+
+## 2026-10-15 — Pass FIL-2 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIL-2
+
+**Because:** The required focused console tests and the full project suite both exited successfully; responsive file-pane behavior, context-bar fitting, controls, and help coverage passed
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d076f9d8b8a54d3e9a2a4ae784567a74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:06:29.392Z"} -->
+
+## 2026-10-15 — Approve FIL-2 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIL-2
+
+**Because:** The implementation matches the requested hidden responsive file pane, shared Files control, console-column sizing, and help text; focused and full test suites pass, and the test_mode_buttons expectation update is necessary to reconcile its exact visible-button assertion with the required new shared control
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8f077a198f06429da19a3e8b366e5680 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:13:12.226Z"} -->

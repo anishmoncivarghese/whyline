@@ -26,12 +26,13 @@ try:
     from rich.text import Text
     from textual.widgets import (
         Button, Checkbox, Footer, Header, Input, Label, RichLog, Select, Static,
+        TextArea,
     )
     from textual.widgets._select import SelectOverlay
 
     TUI_AVAILABLE = True
 except ImportError:
-    App = ModalScreen = Input = Message = object  # placeholder bases so the classes can still be defined
+    App = ModalScreen = Input = Message = TextArea = object  # placeholder bases so the classes can still be defined
     NoMatches = LookupError
     ComposeResult = None
     Horizontal = Vertical = VerticalScroll = None
@@ -91,7 +92,7 @@ _MODE_BUTTONS = {
     "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume"),
     "agents": ("agents-new", "agents-list", "agents-runs", "agents-scheduler"),
 }
-_SHARED_BUTTONS = ("stop", "help", "copy")
+_SHARED_BUTTONS = ("see-files", "stop", "help", "copy")
 _SLASH_HINT = "/status /timeline /note /decisions /handoff /model /repo /help"
 
 # Brainstorming makes one full agent turn per selected model and phase. Keep
@@ -476,6 +477,22 @@ class PromptInput(Input):
             self.post_message(self.Dropped(event.text, paths))
 
 
+class FollowView(TextArea):
+    """File viewer that notifies the app when the user scrolls."""
+
+    def watch_scroll_x(self, old_value: float = 0.0, new_value: float = 0.0) -> None:
+        if hasattr(super(), "watch_scroll_x"):
+            super().watch_scroll_x(old_value, new_value)
+        if hasattr(self, "app") and hasattr(self.app, "_note_file_scroll"):
+            self.app._note_file_scroll()
+
+    def watch_scroll_y(self, old_value: float = 0.0, new_value: float = 0.0) -> None:
+        if hasattr(super(), "watch_scroll_y"):
+            super().watch_scroll_y(old_value, new_value)
+        if hasattr(self, "app") and hasattr(self.app, "_note_file_scroll"):
+            self.app._note_file_scroll()
+
+
 def _retire_replaced_agent(repo_root: Path | None, agent_id: str, keep: Path) -> None:
     """Drop the definition and activation a rename left behind.
 
@@ -587,6 +604,13 @@ class WhylineConsoleApp(App):
     #resolve-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
+    #split { height: 1fr; }
+    #split.stacked { layout: vertical; }
+    #console-column { width: 1fr; height: 1fr; }
+    #file-pane { width: 1fr; height: 1fr; display: none; }
+    #file-path { width: 1fr; height: 1; padding: 0 1; }
+    #file-view { height: 1fr; }
+    #file-pane Horizontal { height: auto; }
     """
 
     def __init__(self, *, root: Path, runner: Any = None) -> None:
@@ -595,6 +619,7 @@ class WhylineConsoleApp(App):
         super().__init__()
         self.session = ConsoleSession(root=root)
         self.session.agent = model.resolve(root)[0]
+        self._files_on: bool = False
         self._dispatch_token: object | None = None
         self._exec_after: tuple[str, list[str]] | None = None
         self._login_fn = _run_login
@@ -638,12 +663,34 @@ class WhylineConsoleApp(App):
         self._resolve_running: bool = False
         self._resume_fail_lines: list[str] = []
 
+    def _note_file_scroll(self) -> None:
+        """Called by FollowView on scroll; implemented in follow task."""
+        pass
+
+    def _sync_split(self) -> None:
+        try:
+            split = self._main("#split")
+            pane = self._main("#file-pane")
+            col = self._main("#console-column")
+        except (NoMatches, IndexError):
+            return
+        pane.display = self._files_on
+        stacked = self.size.width < 120
+        split.set_class(stacked, "stacked")
+        if stacked:
+            if split.children and split.children[0] is not pane:
+                split.move_child(pane, before=col)
+        else:
+            if split.children and split.children[0] is not col:
+                split.move_child(col, before=pane)
+
     def on_mount(self) -> None:
         """Mirrors the plain REPL's own onboarding line (repl.py's `run`).
         The subtitle and the highlighted mode button say which mode is
         active; the console opens in Chat."""
         self.run_worker(lambda: att.clean_old(self.session.root), thread=True)
         self._sync_mode_indicator()
+        self._sync_split()
         self._cb_fit()
         self.set_interval(0.1, self._tick)
         self.set_interval(1.0, self._watch_external_relay)
@@ -1739,6 +1786,17 @@ class WhylineConsoleApp(App):
         """Below 100 columns the labels shrink so Save stays on screen."""
         try:
             width = self.size.width
+            try:
+                col = self._main("#console-column")
+                if self._files_on and self.size.width >= 120:
+                    if 0 < col.size.width < self.size.width:
+                        width = col.size.width
+                    else:
+                        width = self.size.width // 2
+                elif col.size.width > 0:
+                    width = col.size.width
+            except (NoMatches, IndexError):
+                pass
             narrow = width < 100
             compact = width < 80
             self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
@@ -1960,79 +2018,93 @@ class WhylineConsoleApp(App):
         self._with_antigravity("antigravity" in installed, lambda ok: None)
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield Horizontal(
-            Static("Mode:", id="modes-label"),
-            Button("Chat", id="mode-chat"),
-            Button("Relay", id="mode-relay"),
-            Button("Agents", id="mode-agents"),
-            id="modes",
-        )
         from whyline import account
 
         options = _cb_options(account.agent_status(self.session.root)) or [("claude", "claude")]
-        yield Horizontal(
-            Label("Agent", id="cb-agent-label"),
-            Select(options, allow_blank=False, id="cb-agent"),
-            Label("", id="cb-failover"),
-            Label("Backup", id="cb-backup-label").with_tooltip(
-                "Shared fallback: chat, brainstorm, and the relay"
-            ),
-            Select(
-                [("None — no fallback", "none")],
-                allow_blank=False,
-                id="cb-backup",
-            ),
-            Static("", id="cb-backup-more"),
-            Label("Model", id="cb-model-label"),
-            Input(placeholder="default", id="cb-model"),
-            Label("Repo", id="cb-repo-label"),
-            Input(id="cb-repo"),
-            Checkbox("all repos", id="cb-global"),
-            Button("Save", id="cb-save", disabled=True),
-            id="context-bar",
-        )
         self._transcript = RichLog(id="transcript", wrap=True)
-        yield self._transcript
-        # Plain text: progress labels contain brackets ("[1/3] Codex ...")
-        # that Textual would otherwise parse as markup and crash on.
-        yield Static("", id="thinking", markup=False)
-        yield Static("", id="agents-status")
-        yield Horizontal(
-            Button("Approve", id="plan-approve", variant="success"),
-            Button("View draft", id="plan-view"),
-            Button("Discard", id="plan-discard", variant="warning"),
-            id="plan-actions",
+        console_column = Vertical(
+            Horizontal(
+                Static("Mode:", id="modes-label"),
+                Button("Chat", id="mode-chat"),
+                Button("Relay", id="mode-relay"),
+                Button("Agents", id="mode-agents"),
+                id="modes",
+            ),
+            Horizontal(
+                Label("Agent", id="cb-agent-label"),
+                Select(options, allow_blank=False, id="cb-agent"),
+                Label("", id="cb-failover"),
+                Label("Backup", id="cb-backup-label").with_tooltip(
+                    "Shared fallback: chat, brainstorm, and the relay"
+                ),
+                Select(
+                    [("None — no fallback", "none")],
+                    allow_blank=False,
+                    id="cb-backup",
+                ),
+                Static("", id="cb-backup-more"),
+                Label("Model", id="cb-model-label"),
+                Input(placeholder="default", id="cb-model"),
+                Label("Repo", id="cb-repo-label"),
+                Input(id="cb-repo"),
+                Checkbox("all repos", id="cb-global"),
+                Button("Save", id="cb-save", disabled=True),
+                id="context-bar",
+            ),
+            self._transcript,
+            # Plain text: progress labels contain brackets ("[1/3] Codex ...")
+            # that Textual would otherwise parse as markup and crash on.
+            Static("", id="thinking", markup=False),
+            Static("", id="agents-status"),
+            Horizontal(
+                Button("Approve", id="plan-approve", variant="success"),
+                Button("View draft", id="plan-view"),
+                Button("Discard", id="plan-discard", variant="warning"),
+                id="plan-actions",
+            ),
+            Horizontal(id="resolve-actions"),
+            AttachmentTray(id="tray"),
+            Static("", id="slash-hint"),
+            Horizontal(
+                PromptInput(id="prompt"),
+                Button("Attach", id="attach"),
+                Button("Send", id="send", variant="success"),
+                id="input-row",
+            ),
+            # Shared buttons stay last so each mode's own buttons lead the row.
+            Horizontal(
+                Button("Model", id="model"),
+                Button("Brainstorm", id="brainstorm"),
+                Button("History", id="history"),
+                Button("Run", id="relay-run", disabled=True),
+                Button("Plan", id="relay-plan", disabled=True),
+                Button("Set up", id="relay-setup", disabled=True),
+                Button("Resume", id="relay-resume", disabled=True),
+                Button("Retry stage", id="relay-retry-stage", disabled=True),
+                Button("Resolve", id="relay-resolve", disabled=True),
+                Button("New", id="agents-new"),
+                Button("Agents", id="agents-list"),
+                Button("Runs", id="agents-runs"),
+                Button("Scheduler", id="agents-scheduler"),
+                Button("Files", id="see-files"),
+                Button("Stop", id="stop", disabled=True),
+                Button("Help", id="help"),
+                Button("Copy", id="copy"),
+                id="controls",
+            ),
+            id="console-column",
         )
-        yield Horizontal(id="resolve-actions")
-        yield AttachmentTray(id="tray")
-        yield Static("", id="slash-hint")
-        yield Horizontal(
-            PromptInput(id="prompt"),
-            Button("Attach", id="attach"),
-            Button("Send", id="send", variant="success"),
-            id="input-row",
+        file_pane = Vertical(
+            Horizontal(
+                Static("No file yet. A file opens here when an agent writes one.", id="file-path"),
+                Button("Earlier", id="file-earlier", disabled=True),
+                Button("Later", id="file-later", disabled=True),
+            ),
+            FollowView(id="file-view", read_only=True, soft_wrap=False, show_line_numbers=True),
+            id="file-pane",
         )
-        # Shared buttons stay last so each mode's own buttons lead the row.
-        yield Horizontal(
-            Button("Model", id="model"),
-            Button("Brainstorm", id="brainstorm"),
-            Button("History", id="history"),
-            Button("Run", id="relay-run", disabled=True),
-            Button("Plan", id="relay-plan", disabled=True),
-            Button("Set up", id="relay-setup", disabled=True),
-            Button("Resume", id="relay-resume", disabled=True),
-            Button("Retry stage", id="relay-retry-stage", disabled=True),
-            Button("Resolve", id="relay-resolve", disabled=True),
-            Button("New", id="agents-new"),
-            Button("Agents", id="agents-list"),
-            Button("Runs", id="agents-runs"),
-            Button("Scheduler", id="agents-scheduler"),
-            Button("Stop", id="stop", disabled=True),
-            Button("Help", id="help"),
-            Button("Copy", id="copy"),
-            id="controls",
-        )
+        yield Header()
+        yield Horizontal(console_column, file_pane, id="split")
         yield Footer()
 
     def render_event(self, event: SessionEvent) -> None:
@@ -2057,6 +2129,11 @@ class WhylineConsoleApp(App):
             self._send()
         elif button_id == "attach":
             self._open_attach_menu()
+        elif button_id == "see-files":
+            self._files_on = not self._files_on
+            self._sync_split()
+            self._cb_fit()
+            self.call_after_refresh(self._cb_fit)
         elif button_id == "stop":
             other = None if self._relay_running() else self._live_relay()
             if self._relay_running():
@@ -2210,6 +2287,7 @@ class WhylineConsoleApp(App):
         self._cb_mark_save()
 
     def on_resize(self, event) -> None:
+        self._sync_split()
         self._cb_fit()
 
     def _main(self, selector: str, expect_type=None):
