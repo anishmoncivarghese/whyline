@@ -2,6 +2,23 @@ import pytest
 from whyline.console import tui
 
 
+def _clickable(app, selector: str) -> bool:
+    """The Resolve row swaps its buttons in place: a new button is in the DOM
+    before it has a size, and the ask-agent worker may still be finishing.
+    `pilot.click` on it then lands on nothing (seen on windows-latest), so
+    wait until it is laid out, enabled, and no Resolve step is running."""
+    found = app.query(selector)
+    if not found:
+        return False
+    button = found.first()
+    return (
+        button.is_mounted
+        and button.region.area > 0
+        and not button.disabled
+        and not getattr(app, "_resolve_running", False)
+    )
+
+
 def test_tui_available_flag_exists():
     assert isinstance(tui.TUI_AVAILABLE, bool)
 
@@ -1729,7 +1746,7 @@ async def test_ask_agent_recommendation_of_listed_id_is_offered_and_applies_only
         await pilot.click("#resolve-ask-agent")
         for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
-            if app.query("#resolve-retry-stage"):
+            if _clickable(app, "#resolve-retry-stage"):
                 break
 
         btn_retry = app.query_one("#resolve-retry-stage", tui.Button)
@@ -1859,7 +1876,7 @@ async def test_ask_agent_failing_selected_agent_falls_through_to_first_backup(tm
         await pilot.click("#resolve-ask-agent")
         for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
-            if app.query("#resolve-wait"):
+            if _clickable(app, "#resolve-wait"):
                 break
 
         assert called == ["grok", "claude"]
@@ -1891,7 +1908,7 @@ async def test_ask_agent_no_option_applied_without_click(tmp_path, monkeypatch):
         await pilot.click("#resolve-ask-agent")
         for _ in range(300):  # 15 s ceiling; Windows git is slow
             await pilot.pause(0.05)
-            if app.query("#resolve-resume-keep"):
+            if _clickable(app, "#resolve-resume-keep"):
                 break
 
         assert app.query_one("#resolve-resume-keep", tui.Button).display is True
@@ -1969,7 +1986,7 @@ async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monk
         await pilot.click("#resolve-ask-agent")
         for _ in range(300):  # 15 s ceiling; Windows CI is slow
             await pilot.pause(0.05)
-            if app.query("#resolve-use-claude"):
+            if _clickable(app, "#resolve-use-claude"):
                 break
 
         btn_use = app.query_one("#resolve-use-claude", tui.Button)
