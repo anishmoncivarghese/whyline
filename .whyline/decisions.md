@@ -15022,3 +15022,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8f077a198f06429da19a3e8b366e5680 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:13:12.226Z"} -->
+
+## 2026-10-15 — Resolve watched repositories from relay state plan and run file gather in thread worker
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FIL-3
+
+**Because:** Resolves active relay task repo without blocking the TUI event loop on git subprocesses and ledger reads
+
+**Rejected:**
+
+- Polling git synchronously on the main thread — causes UI freezing during active relay runs
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 62939f4ba4374b108005836445a6852c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:39:34.105Z"} -->
+
+## 2026-10-15 — Preserve scroll coordinates on same-file updates when scrolled and track navigation order via Earlier/Later
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** FIL-3
+
+**Because:** Prevents jarring cursor jumps when user is reading earlier lines of an updated file while enabling stepping through history
+
+**Rejected:**
+
+- Always jumping cursor to changed line — disrupts user reading when file updates
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: fd259832fba54def8ed5635d63bd98f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:39:39.135Z"} -->
+
+## 2026-10-15 — Pass FIL-3 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIL-3
+
+**Because:** The required focused file-follow and TUI tests and the full project suite both completed with exit 0; the full suite reached 100 percent with one skip and no failures
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: db456a98f915486c8e0d6d1a2bf5104c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:45:55.956Z"} -->
+
+## 2026-10-15 — Approve FIL-3 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIL-3
+
+**Because:** The diff implements busy and relay-aware multi-repository file following, threaded gather and app-thread apply behavior, held history navigation, scroll preservation, and non-disruptive errors; the focused suites and full project suite both exit 0
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 91db4e745b3c4dccbedf05a048cf9c75 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:52:39.011Z"} -->

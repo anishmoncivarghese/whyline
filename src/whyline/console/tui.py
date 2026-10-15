@@ -44,6 +44,7 @@ except ImportError:
 from whyline.console import (
     adapters,
     attachments as att,
+    file_follow,
     mac_input,
     plan_job,
     relay_ops,
@@ -620,6 +621,17 @@ class WhylineConsoleApp(App):
         self.session = ConsoleSession(root=root)
         self.session.agent = model.resolve(root)[0]
         self._files_on: bool = False
+        self._follow_base: dict[str, file_follow.Snap] = {}
+        self._follow_order: list[str] = []
+        self._follow_index: int | None = None
+        self._follow_hold: bool = False
+        self._follow_shown: dict[str, str] = {}
+        self._follow_offset: int = 0
+        self._follow_flying: bool = False
+        self._follow_user_scrolled: bool = False
+        self._follow_moving: bool = False
+        self._follow_timer: Any = None
+        self._follow_last_error: str | None = None
         self._dispatch_token: object | None = None
         self._exec_after: tuple[str, list[str]] | None = None
         self._login_fn = _run_login
@@ -663,9 +675,379 @@ class WhylineConsoleApp(App):
         self._resolve_running: bool = False
         self._resume_fail_lines: list[str] = []
 
+    def _main_widget(self, selector: str, expect_type=None):
+        try:
+            return self._main(selector, expect_type)
+        except Exception:
+            try:
+                return self.query_one(selector, expect_type)
+            except Exception:
+                return None
+
+    def _set_file_path(self, text: str) -> None:
+        label = self._main_widget("#file-path", Static)
+        if label is not None:
+            label.update(text)
+
+    def _sync_follow_buttons(self) -> None:
+        earlier = self._main_widget("#file-earlier", Button)
+        later = self._main_widget("#file-later", Button)
+        if earlier is None or later is None:
+            return
+        if not self._follow_order or self._follow_index is None:
+            earlier.disabled = True
+            later.disabled = True
+            return
+        earlier.disabled = (self._follow_index <= 0)
+        later.disabled = (self._follow_index >= len(self._follow_order) - 1)
+
     def _note_file_scroll(self) -> None:
-        """Called by FollowView on scroll; implemented in follow task."""
-        pass
+        """Called by FollowView on scroll."""
+        if not getattr(self, "_follow_moving", False):
+            self._follow_user_scrolled = True
+
+    def _on_file_earlier(self) -> None:
+        if not self._follow_order:
+            return
+        if self._follow_index is None:
+            self._follow_index = len(self._follow_order) - 1
+        if self._follow_index > 0:
+            self._follow_index -= 1
+            self._follow_hold = True
+            self._follow_user_scrolled = False
+            path = self._follow_order[self._follow_index]
+            newer = len(self._follow_order) - 1 - self._follow_index
+            self._set_file_path(f"{path} · held · {newer} newer" if newer > 0 else path)
+            text = self._follow_shown.get(path, "")
+            view = self._main_widget("#file-view", FollowView)
+            if view is not None:
+                self._follow_moving = True
+                try:
+                    view.load_text(text)
+                    view.move_cursor((0, 0))
+                    view.scroll_cursor_visible()
+                finally:
+                    self._follow_moving = False
+            self._sync_follow_buttons()
+
+    def _on_file_later(self) -> None:
+        if not self._follow_order or self._follow_index is None:
+            return
+        if self._follow_index < len(self._follow_order) - 1:
+            self._follow_index += 1
+            self._follow_user_scrolled = False
+            path = self._follow_order[self._follow_index]
+            if self._follow_index == len(self._follow_order) - 1:
+                self._follow_hold = False
+                self._set_file_path(path)
+            else:
+                newer = len(self._follow_order) - 1 - self._follow_index
+                self._set_file_path(f"{path} · held · {newer} newer")
+            text = self._follow_shown.get(path, "")
+            view = self._main_widget("#file-view", FollowView)
+            if view is not None:
+                self._follow_moving = True
+                try:
+                    view.load_text(text)
+                    view.move_cursor((0, 0))
+                    view.scroll_cursor_visible()
+                finally:
+                    self._follow_moving = False
+            self._sync_follow_buttons()
+
+    def _watched_repos(self) -> list[Path]:
+        root = self.session.root
+        repos = [root]
+        if self._relay_running() or (self._live_relay() is not None) or bool(getattr(self, "_external_relay", None)):
+            try:
+                from whyline_relay import loop as relay_loop, plan as relay_plan, state as relay_state
+
+                st = relay_state.load(root)
+                if st and st.plan and st.task_id:
+                    plan_path = Path(st.plan)
+                    if not plan_path.is_absolute():
+                        plan_path = root / plan_path
+                    if plan_path.is_file():
+                        tasks = relay_plan.parse(plan_path.read_text(encoding="utf-8"))
+                        task = relay_plan.find(tasks, st.task_id)
+                        if task is not None:
+                            t_repo = relay_loop.task_repo(root, task)
+                            if t_repo:
+                                t_res = t_repo.resolve()
+                                if t_res != root.resolve() and t_res not in [r.resolve() for r in repos]:
+                                    repos.append(t_repo)
+            except Exception:
+                pass
+        return repos
+
+    def _arm_follow(self) -> None:
+        if self._follow_timer is not None:
+            return
+        self._follow_base = {}
+        for repo in self._watched_repos():
+            try:
+                res = subprocess.run(
+                    ["git", "-C", str(repo), *file_follow.porcelain_argv()],
+                    capture_output=True,
+                    check=True,
+                )
+                paths = file_follow.parse_porcelain_z(res.stdout)
+                repo_res = repo.resolve()
+                for rel in paths:
+                    if file_follow.is_ignored(rel):
+                        continue
+                    cand = (repo / rel).resolve()
+                    if not cand.is_relative_to(repo_res):
+                        continue
+                    try:
+                        st = cand.stat()
+                    except OSError:
+                        continue
+                    disp = file_follow.display_path(self.session.root, repo, rel)
+                    self._follow_base[disp] = file_follow.Snap(st.st_mtime_ns, st.st_size)
+            except Exception:
+                pass
+        ledger = self.session.root / ".whyline" / "ledger.jsonl"
+        try:
+            self._follow_offset = ledger.stat().st_size if ledger.is_file() else 0
+        except OSError:
+            self._follow_offset = 0
+        self._follow_flying = False
+        try:
+            self._follow_timer = self.set_interval(0.4, self._follow_tick)
+        except RuntimeError:
+            self._follow_timer = "active"
+
+    def _disarm_follow(self) -> None:
+        if self._follow_timer is not None:
+            if hasattr(self._follow_timer, "stop"):
+                self._follow_timer.stop()
+            self._follow_timer = None
+        self._follow_flying = False
+
+    def _follow_tick(self) -> None:
+        if self._follow_flying:
+            return
+        self._follow_flying = True
+        self.run_worker(self._run_gather_follow, thread=True)
+
+    def _run_gather_follow(self) -> None:
+        try:
+            baseline, offset, update = self._gather_follow()
+        except Exception as exc:
+            self.call_from_thread(self._on_gather_error, str(exc))
+        else:
+            self.call_from_thread(self._on_gather_result, baseline, offset, update)
+
+    def _on_gather_error(self, reason: str) -> None:
+        self._follow_flying = False
+        if reason and reason != getattr(self, "_follow_last_error", None):
+            self._follow_last_error = reason
+            self._set_file_path(reason)
+
+    def _on_gather_result(
+        self,
+        baseline: dict[str, file_follow.Snap],
+        offset: int,
+        update: file_follow.FollowUpdate | None,
+    ) -> None:
+        self._follow_flying = False
+        self._follow_base = baseline
+        self._follow_offset = offset
+        self._follow_last_error = None
+        if update is not None:
+            self._apply_follow(update)
+
+    def _gather_follow(self) -> tuple[dict[str, file_follow.Snap], int, file_follow.FollowUpdate | None]:
+        import json
+
+        root = self.session.root
+        baseline = dict(self._follow_base)
+        offset = self._follow_offset
+        watched_repos = self._watched_repos()
+
+        found_snaps: dict[str, tuple[Path, str, file_follow.Snap]] = {}
+        for repo in watched_repos:
+            argv = ["git", "-C", str(repo), *file_follow.porcelain_argv()]
+            res = subprocess.run(argv, capture_output=True)
+            if res.returncode != 0:
+                err = res.stderr.decode("utf-8", errors="replace").strip() or f"git exit code {res.returncode}"
+                raise RuntimeError(err)
+            paths = file_follow.parse_porcelain_z(res.stdout)
+            repo_res = repo.resolve()
+            for rel in paths:
+                if file_follow.is_ignored(rel):
+                    continue
+                try:
+                    cand = (repo / rel).resolve()
+                except OSError as exc:
+                    raise RuntimeError(f"{rel}: {exc}")
+                if not cand.is_relative_to(repo_res):
+                    continue
+                try:
+                    st = cand.stat()
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    raise RuntimeError(f"{rel}: {exc}")
+                disp = file_follow.display_path(root, repo, rel)
+                found_snaps[disp] = (repo, rel, file_follow.Snap(st.st_mtime_ns, st.st_size))
+
+        ledger_path = root / ".whyline" / "ledger.jsonl"
+        hints: list[str] = []
+        new_offset = offset
+        if ledger_path.is_file():
+            try:
+                sz = ledger_path.stat().st_size
+                read_offset = offset if offset <= sz else 0
+                with open(ledger_path, "rb") as f:
+                    f.seek(read_offset)
+                    blob = f.read()
+                if blob:
+                    last_nl = blob.rfind(b"\n")
+                    if last_nl != -1:
+                        complete = blob[:last_nl + 1]
+                        new_offset = read_offset + len(complete)
+                        for line in complete.splitlines():
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                record = json.loads(line.decode("utf-8", errors="replace"))
+                                if record.get("type") == "FileTouched" and record.get("path"):
+                                    raw_p = record["path"]
+                                    p = Path(raw_p)
+                                    resolved_p = p if p.is_absolute() else (root / p).resolve()
+                                    disp = None
+                                    for repo in watched_repos:
+                                        try:
+                                            repo_res = repo.resolve()
+                                            if resolved_p.is_relative_to(repo_res):
+                                                rel_p = str(resolved_p.relative_to(repo_res))
+                                                disp = file_follow.display_path(root, repo, rel_p)
+                                                break
+                                        except Exception:
+                                            pass
+                                    if disp is None:
+                                        try:
+                                            if resolved_p.is_relative_to(root.resolve()):
+                                                disp = str(resolved_p.relative_to(root.resolve()))
+                                            else:
+                                                disp = raw_p
+                                        except Exception:
+                                            disp = raw_p
+                                    hints.append(disp)
+                            except Exception:
+                                pass
+            except OSError as exc:
+                raise RuntimeError(f"ledger: {exc}")
+
+        found: dict[str, tuple[file_follow.Snap, bytes]] = {}
+        head: dict[str, str] = {}
+        for disp, (repo, rel, snap) in found_snaps.items():
+            if disp not in baseline or baseline[disp] != snap:
+                full_path = repo / rel
+                try:
+                    raw = full_path.read_bytes()
+                except OSError as exc:
+                    raise RuntimeError(f"{disp}: {exc}")
+                found[disp] = (snap, raw)
+                try:
+                    show_res = subprocess.run(
+                        ["git", "-C", str(repo), "show", f"HEAD:{rel}"],
+                        capture_output=True,
+                        text=True,
+                    )
+                    head[disp] = show_res.stdout if show_res.returncode == 0 else ""
+                except OSError:
+                    head[disp] = ""
+
+        new_baseline, update = file_follow.poll(baseline, found, hints, head)
+        return new_baseline, new_offset, update
+
+    def _apply_follow(self, update: file_follow.FollowUpdate) -> None:
+        if update.notice is not None:
+            self._set_file_path(f"{update.path} — {update.notice}")
+            view = self._main_widget("#file-view", FollowView)
+            if view is not None:
+                self._follow_moving = True
+                try:
+                    view.load_text("")
+                finally:
+                    self._follow_moving = False
+            return
+
+        if update.text is None:
+            return
+
+        if update.path not in self._follow_order:
+            self._follow_order.append(update.path)
+
+        held_path = (
+            self._follow_order[self._follow_index]
+            if (
+                self._follow_hold
+                and self._follow_index is not None
+                and 0 <= self._follow_index < len(self._follow_order)
+            )
+            else None
+        )
+
+        if self._follow_hold and held_path and held_path != update.path:
+            self._follow_shown[update.path] = update.text
+            newer = len(self._follow_order) - 1 - self._follow_index
+            self._set_file_path(f"{held_path} · held · {newer} newer")
+            self._sync_follow_buttons()
+            return
+
+        current_path = (
+            self._follow_order[self._follow_index]
+            if (self._follow_index is not None and 0 <= self._follow_index < len(self._follow_order))
+            else None
+        )
+
+        if current_path != update.path:
+            self._follow_user_scrolled = False
+
+        self._follow_index = self._follow_order.index(update.path)
+        if self._follow_index == len(self._follow_order) - 1:
+            self._follow_hold = False
+
+        is_same = (current_path == update.path)
+        previous = self._follow_shown.get(update.path)
+        self._follow_shown[update.path] = update.text
+
+        if is_same and self._follow_user_scrolled:
+            self._set_file_path(f"{update.path} — updated")
+            view = self._main_widget("#file-view", FollowView)
+            if view is not None:
+                sx = view.scroll_x
+                sy = view.scroll_y
+                self._follow_moving = True
+                try:
+                    view.load_text(update.text)
+                    view.scroll_x = sx
+                    view.scroll_y = sy
+                finally:
+                    self._follow_moving = False
+        else:
+            if previous is None:
+                target_line = update.changed_line
+            else:
+                target_line = file_follow.first_changed_line(previous, update.text)
+            self._set_file_path(update.path)
+            view = self._main_widget("#file-view", FollowView)
+            if view is not None:
+                self._follow_moving = True
+                try:
+                    view.load_text(update.text)
+                    row = max(0, target_line - 1)
+                    view.move_cursor((row, 0))
+                    view.scroll_cursor_visible()
+                finally:
+                    self._follow_moving = False
+
+        self._sync_follow_buttons()
 
     def _sync_split(self) -> None:
         try:
@@ -2131,10 +2513,20 @@ class WhylineConsoleApp(App):
             self._open_attach_menu()
         elif button_id == "see-files":
             self._files_on = not self._files_on
+            if self._files_on:
+                if bool(self._busy_text) or self._relay_running() or (self._live_relay() is not None):
+                    self._arm_follow()
+            else:
+                self._disarm_follow()
             self._sync_split()
             self._cb_fit()
             self.call_after_refresh(self._cb_fit)
+        elif button_id == "file-earlier":
+            self._on_file_earlier()
+        elif button_id == "file-later":
+            self._on_file_later()
         elif button_id == "stop":
+            self._disarm_follow()
             other = None if self._relay_running() else self._live_relay()
             if self._relay_running():
                 self._auto_relay = False
@@ -2458,6 +2850,7 @@ class WhylineConsoleApp(App):
             self._auto_relay = False
         for worker in self.workers:
             worker.cancel()
+        self._disarm_follow()
         self._set_busy(False)
 
     def _set_busy(self, busy: bool, label: str | None = None) -> None:
@@ -2473,10 +2866,13 @@ class WhylineConsoleApp(App):
             self._busy_since = time.monotonic()
             thinking.display = True
             self._tick()
+            if self._files_on:
+                self._arm_follow()
         else:
             self._busy_text = ""
             if not self._relay_running():
                 thinking.display = False
+                self._disarm_follow()
 
     def _tick(self) -> None:
         label = self._busy_text or self._relay_label
@@ -3355,6 +3751,7 @@ class WhylineConsoleApp(App):
         """A relay outlives the console that started it. Keep Stop usable for
         one started by another console or a terminal."""
         live = None if self._relay_running() else self._live_relay()
+        was_live = self._external_relay
         if live == self._external_relay or not self.screen_stack:
             return
         self._external_relay = live
@@ -3363,6 +3760,12 @@ class WhylineConsoleApp(App):
         except NoMatches:
             return
         stop.disabled = not (self._busy_text or self._relay_running() or live)
+        if live and not was_live:
+            if self._files_on:
+                self._arm_follow()
+        elif not live and was_live:
+            if not self._busy_text and not self._relay_running():
+                self._disarm_follow()
 
     def _current_fail_lines(self) -> list[str]:
         fails = list(getattr(self, "_resolve_source_fail_lines", []))
@@ -4005,6 +4408,8 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(
                 kind="error", text=f"Could not start the relay ({' '.join(args)}): {error}"))
             return
+        if self._files_on:
+            self._arm_follow()
         self._relay_label = f"relay: {' '.join(args)}"
         self._busy_since = time.monotonic()
         self.render_event(SessionEvent(
@@ -4025,6 +4430,7 @@ class WhylineConsoleApp(App):
         if not self._busy_text:
             self._main("#thinking", Static).display = False
             self._main("#stop", Button).disabled = True
+            self._disarm_follow()
         fail_lines = [l.strip() for l in text.splitlines() if l.strip().startswith("FAIL")]
         if fail_lines:
             self._resume_fail_lines = fail_lines
