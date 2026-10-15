@@ -14791,3 +14791,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 29f86cdfdbba47b78fd6e25ca6d387f5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T03:35:51.278Z"} -->
+
+## 2026-10-15 — Retry os.replace in atomic_write_json for up to 2 s on Windows only
+
+**Actor:** claude
+**Role:** developer
+**Task:** REC-5
+
+**Because:** Windows refuses to replace a file another thread has open (WinError 5); closing the console during Auto made a reader and writer meet on auto-run.json. POSIX swaps names atomically, so the retry is limited to Windows like the module's lock helper
+
+**Rejected:**
+
+- Hold the state lock around every read and write — broad change to many callers for one platform's rename rule
+
+**Files:** src/whyline/state.py
+
+<!-- whyline-event: 41a2a031d404492ea8b3ecdec73fb28c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T04:02:34.541Z"} -->
