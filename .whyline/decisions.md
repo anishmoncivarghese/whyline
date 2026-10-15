@@ -15082,3 +15082,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 91db4e745b3c4dccbedf05a048cf9c75 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T07:52:39.011Z"} -->
+
+## 2026-10-15 — Run the suite locally with agent CLIs off PATH and no global git config before each release push
+
+**Actor:** claude
+**Role:** release
+**Task:** FIL-4
+
+**Because:** Tests written by relay agents keep passing on the developer Mac and failing on CI for these two reasons (REC-4 Resolve tests, FIL-3, and older Plan tests after NOA-1); the CI-like local run reproduced all five 0.3.43 failures exactly
+
+**Rejected:**
+
+- Rely on CI alone — each miss costs a full CI cycle after the release is prepared
+
+**Files:** tests/console/conftest.py
+
+<!-- whyline-event: cb80415f7fd34b1791ded0f21799a3d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T09:33:38.962Z"} -->
