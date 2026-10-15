@@ -614,3 +614,41 @@ async def test_save_writes_auto_and_reopening_setup_shows_it(tmp_path, monkeypat
         assert len(save_calls) == 0
 
 
+async def test_relay_setup_screen_with_no_agents(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: [])
+    from whyline.console.relay_screens import NO_AGENTS_SETUP
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        # mounts without raising and shows the message
+        assert any(NO_AGENTS_SETUP in str(label.renderable) for label in screen.query(tui.Label))
+        assert screen.query_one("#rs-check", tui.Button).disabled
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert screen.query_one("#rs-make-plan", tui.Button).disabled
+        assert not screen.query_one("#rs-cancel", tui.Button).disabled
+        screen.query_one("#rs-cancel", tui.Button).press()
+        await pilot.pause()
+        assert results == [None]
+
+
+async def test_relay_setup_screen_with_one_agent(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["codex"])
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "codex",
+            "tester": "codex",
+            "reviewer": "codex",
+            "backup": ["codex"],
+        },
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        assert screen.query_one("#rs-implementer", tui.Select).value == "codex"
+        assert not screen.query_one("#rs-check", tui.Button).disabled
+
+
+

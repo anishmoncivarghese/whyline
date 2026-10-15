@@ -27,6 +27,14 @@ _SOURCES = [
     ("I have a plan already", "paste"),
     ("Auto — brainstorm to implementation", "auto"),
 ]
+NO_AGENTS_SETUP = (
+    "No agent is installed here, so the relay has nobody to run. "
+    "Install one of claude, codex, antigravity or grok, log in, then press Set up again."
+)
+NO_AGENTS_PLAN = (
+    "No agent is installed here, so the relay has nobody to run. "
+    "Install one of claude, codex, antigravity or grok, log in, then press Plan again."
+)
 # Fields that belong to the unsaved Auto request. A change drops the check.
 _AUTO_SELECTS = frozenset({
     "bs-final",
@@ -145,7 +153,7 @@ class RelayPlanScreen(ModalScreen):
         self._root = root
         self._status = status
         self._active = active
-        self._agents = relay_ops.relay_agents(root) or ["claude", "codex"]
+        self._agents = relay_ops.relay_agents(root)
         self._planner = relay_ops.planner_agents(root)
         self._final_writer: str | None = None
         self._token: object | None = None
@@ -155,12 +163,33 @@ class RelayPlanScreen(ModalScreen):
         self._filling = False
         self._load_execution_defaults()
 
-    def _agent_select(self, wanted: str, select_id: str) -> Select:
+    def _agent_select(self, wanted: str, select_id: str) -> Select | Label:
+        if not self._agents:
+            return Label(NO_AGENTS_PLAN, id=select_id)
         value = wanted if wanted in self._agents else self._agents[0]
         return Select([(a, a) for a in self._agents], value=value, allow_blank=False, id=select_id)
 
     def compose(self) -> ComposeResult:
         drafter, reviewer = self._planner
+        if self._agents:
+            roles_row = Vertical(
+                Horizontal(
+                    Label("Drafter:", classes="field-label"),
+                    self._agent_select(drafter, "rp-drafter"),
+                    id="rp-drafter-row",
+                ),
+                Horizontal(
+                    Label("Reviewer:", classes="field-label"),
+                    self._agent_select(reviewer, "rp-reviewer"),
+                    id="rp-reviewer-row",
+                ),
+                id="rp-roles-row",
+            )
+        else:
+            roles_row = Vertical(
+                Label(NO_AGENTS_PLAN),
+                id="rp-roles-row",
+            )
         form = VerticalScroll(
             Label("Plan: make a plan the relay works through, saved under plans/."),
             Horizontal(
@@ -187,23 +216,11 @@ class RelayPlanScreen(ModalScreen):
             # brainstorm_field_widgets hard-codes #bs-* ids, so Auto and a new
             # brainstorm share this one mount instead of composing a second copy.
             Vertical(*self._research_widgets(), id="rp-new-group"),
-            Vertical(
-                Horizontal(
-                    Label("Drafter:", classes="field-label"),
-                    self._agent_select(drafter, "rp-drafter"),
-                    id="rp-drafter-row",
-                ),
-                Horizontal(
-                    Label("Reviewer:", classes="field-label"),
-                    self._agent_select(reviewer, "rp-reviewer"),
-                    id="rp-reviewer-row",
-                ),
-                id="rp-roles-row",
-            ),
+            roles_row,
             self._auto_group(),
             id="rp-form",
         )
-        check = Button("Check", id="rp-check", variant="primary")
+        check = Button("Check", id="rp-check", variant="primary", disabled=not self._agents)
         check.display = False
         run_btn = Button("Run", id="rp-run", variant="success", disabled=True)
         run_btn.display = False
@@ -214,7 +231,7 @@ class RelayPlanScreen(ModalScreen):
             Horizontal(
                 check,
                 run_btn,
-                Button("Make the plan", id="rp-go", variant="success"),
+                Button("Make the plan", id="rp-go", variant="success", disabled=not self._agents),
                 Button("Resume draft", id="rp-resume-draft", variant="primary"),
                 Button("Discard it", id="rp-discard-draft", variant="warning"),
                 Button("Cancel", id="rp-cancel"),
@@ -225,7 +242,7 @@ class RelayPlanScreen(ModalScreen):
     def _research_default(self) -> str:
         from whyline.console.repl import BRAINSTORM_AGENTS
 
-        usable = [a for a in BRAINSTORM_AGENTS if self._status[a]["available"]]
+        usable = [a for a in BRAINSTORM_AGENTS if self._status.get(a, {}).get("available")]
         return self._active if self._active in usable else (usable or ["claude"])[0]
 
     def _brainstorm_widgets(self) -> list:
@@ -233,7 +250,7 @@ class RelayPlanScreen(ModalScreen):
         default = self._research_default()
         from whyline.console.repl import BRAINSTORM_AGENTS
 
-        usable = [a for a in BRAINSTORM_AGENTS if self._status[a]["available"]]
+        usable = [a for a in BRAINSTORM_AGENTS if self._status.get(a, {}).get("available")]
         return [
             Horizontal(
                 Label("From:", classes="field-label"),
@@ -285,7 +302,7 @@ class RelayPlanScreen(ModalScreen):
     def _role_value(self, wanted: str) -> str:
         if wanted in self._agents:
             return wanted
-        return self._agents[0]
+        return self._agents[0] if self._agents else ""
 
     def _auto_group(self) -> Vertical:
         group = Vertical(*self._auto_widgets(), id="rp-auto-group")
@@ -293,6 +310,8 @@ class RelayPlanScreen(ModalScreen):
         return group
 
     def _auto_widgets(self) -> list:
+        if not self._agents:
+            return [Label(NO_AGENTS_PLAN)]
         rows = [
             Horizontal(
                 Label(label, classes="field-label"),
@@ -356,11 +375,16 @@ class RelayPlanScreen(ModalScreen):
             self._error(f'A plan draft for "{pending}" was left unfinished.')
         # The chain's own on_mount sync returns while is_mounted is still false.
         # Nothing saved yet: open on Automatic rather than on no backup.
-        self.query_one("#rp-chain", OrderedChain).load(self._chain or self._fill_backup())
+        if self.query("#rp-chain"):
+            self.query_one("#rp-chain", OrderedChain).load(self._chain or self._fill_backup())
         self._sync_planner_agents()
         self._sync_brainstorm_agents()
         self._refresh_auto_summary()
         self._watch_auto_attachments()
+        if not self._agents:
+            self.query_one("#rp-check", Button).disabled = True
+            self.query_one("#rp-run", Button).disabled = True
+            self.query_one("#rp-go", Button).disabled = True
 
     def _sync_planner_agents(self) -> None:
         try:
@@ -391,13 +415,16 @@ class RelayPlanScreen(ModalScreen):
         self._sync_from(source)
         roles_shown = source in ("draft", "brainstorm", "auto")
         self.query_one("#rp-roles-row").display = roles_shown
-        self.query_one("#rp-drafter-row").display = roles_shown
-        self.query_one("#rp-reviewer-row").display = roles_shown
-        self.query_one("#rp-drafter").display = roles_shown
-        self.query_one("#rp-reviewer").display = roles_shown
+        if self._agents:
+            self.query_one("#rp-drafter-row").display = roles_shown
+            self.query_one("#rp-reviewer-row").display = roles_shown
+            self.query_one("#rp-drafter").display = roles_shown
+            self.query_one("#rp-reviewer").display = roles_shown
         go = self.query_one("#rp-go", Button)
         go.display = source != "auto"
-        if source != "auto":
+        if not self._agents:
+            go.disabled = True
+        elif source != "auto":
             go.label = "Save" if source == "paste" else "Make the plan"
         self.query_one("#rp-check", Button).display = source == "auto"
         self.query_one("#rp-run", Button).display = source == "auto"
@@ -559,6 +586,8 @@ class RelayPlanScreen(ModalScreen):
         The worker starts only after that dialog returns. Tests spy on
         `_start_check_worker`.
         """
+        if not self._agents:
+            return
         from whyline.console.auto_run import named_agents
 
         named = "antigravity" in named_agents(self._auto_view())
@@ -568,6 +597,8 @@ class RelayPlanScreen(ModalScreen):
         self._start_check_worker()
 
     def _on_rp_run(self) -> None:
+        if not self._agents:
+            return
         from whyline.console import auto_run
 
         try:
@@ -966,6 +997,8 @@ class RelayPlanScreen(ModalScreen):
             return
 
     def _on_rp_go(self) -> None:
+        if not self._agents:
+            return
         source = self._source()
         if source == "paste":
             self._save_paste()
@@ -1050,6 +1083,14 @@ class RelayPlanScreen(ModalScreen):
         )
 
     def _refresh_auto_summary(self) -> None:
+        if not self._agents:
+            if self.query("#rp-auto-summary"):
+                self.query_one("#rp-auto-summary", Static).update("")
+            if self.query("#rp-check"):
+                self.query_one("#rp-check", Button).disabled = True
+            if self.query("#rp-run"):
+                self.query_one("#rp-run", Button).disabled = True
+            return
         try:
             text = relay_ops.auto_summary(self._auto_view())
         except NoMatches:
@@ -1205,7 +1246,7 @@ class RelaySetupScreen(ModalScreen):
             self._unusable = []
 
         self._release = relay_ops.release_role(root)
-        self._summary = self._guided and self._configured
+        self._summary = self._guided and self._configured and bool(self._agents)
         self._backup = list(self._roles.get("backup") or [])
         self._timeout = relay_ops.relay_timeout(root)
         self._resolve_mode = relay_ops.resolve_mode(root)
@@ -1231,57 +1272,24 @@ class RelaySetupScreen(ModalScreen):
         return " · ".join(part for part in parts if part)
 
     def compose(self) -> ComposeResult:
-        rows = [
-            Horizontal(
-                Label(label, classes="field-label"),
-                Select(
-                    [(a, a) for a in self._agents],
-                    value=self._roles.get(role)
-                    if self._roles.get(role) in self._agents
-                    else (self._agents[0] if self._agents else None),
-                    allow_blank=False,
-                    id=f"rs-{role}",
-                ),
-            )
-            for role, label in self.ROLES
-        ]
-        chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
-        chain.load(self._backup)
-        title = (
-            "Run: check who does what, then start."
-            if self._guided
-            else "Set up: who does what, then check everything is ready."
-        )
-        # The fields scroll; the check results, error line and buttons stay
-        # pinned below, so Check and Start are reachable on an 80x24 terminal.
-        yield Vertical(VerticalScroll(
-            Label(title),
-            (
+        if self._agents:
+            rows = [
                 Horizontal(
-                    Label("Plan:", classes="field-label"),
+                    Label(label, classes="field-label"),
                     Select(
-                        [(self._plan_label(p), str(p.path)) for p in self._plans],
-                        value=self._plan_default,
+                        [(a, a) for a in self._agents],
+                        value=self._roles.get(role)
+                        if self._roles.get(role) in self._agents
+                        else (self._agents[0] if self._agents else None),
                         allow_blank=False,
-                        id="rs-plan",
+                        id=f"rs-{role}",
                     ),
                 )
-                if self._plans
-                else Static("No plan yet. Make one first.", id="rs-no-plan")
-            ),
-            *(
-                [
-                    Horizontal(
-                        Static(self._roles_line(), id="rs-summary"),
-                        Button("Looks good", id="rs-looks-good", variant="success"),
-                        Button("Change", id="rs-change"),
-                        id="rs-summary-row",
-                    )
-                ]
-                if self._summary
-                else []
-            ),
-            Vertical(
+                for role, label in self.ROLES
+            ]
+            chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
+            chain.load(self._backup)
+            roles_body = [
                 Static("Recommended for the agents you have.", id="rs-recommended"),
                 *rows,
                 Horizontal(
@@ -1320,14 +1328,54 @@ class RelaySetupScreen(ModalScreen):
                 Label("Backup, used when an agent fails:"),
                 chain,
                 Static("", id="rs-meaning"),
+            ]
+        else:
+            roles_body = [Label(NO_AGENTS_SETUP)]
+
+        title = (
+            "Run: check who does what, then start."
+            if self._guided
+            else "Set up: who does what, then check everything is ready."
+        )
+        # The fields scroll; the check results, error line and buttons stay
+        # pinned below, so Check and Start are reachable on an 80x24 terminal.
+        yield Vertical(VerticalScroll(
+            Label(title),
+            (
+                Horizontal(
+                    Label("Plan:", classes="field-label"),
+                    Select(
+                        [(self._plan_label(p), str(p.path)) for p in self._plans],
+                        value=self._plan_default,
+                        allow_blank=False,
+                        id="rs-plan",
+                    ),
+                )
+                if self._plans
+                else Static("No plan yet. Make one first.", id="rs-no-plan")
+            ),
+            *(
+                [
+                    Horizontal(
+                        Static(self._roles_line(), id="rs-summary"),
+                        Button("Looks good", id="rs-looks-good", variant="success"),
+                        Button("Change", id="rs-change"),
+                        id="rs-summary-row",
+                    )
+                ]
+                if self._summary
+                else []
+            ),
+            Vertical(
+                *roles_body,
                 id="rs-roles",
             ),
             id="rs-fields"),
             VerticalScroll(Static("", id="rs-checks"), id="rs-results"),
             Static("", id="rs-error", classes="-empty"),
             Horizontal(
-                Button("Make a plan", id="rs-make-plan", variant="primary"),
-                Button("Check", id="rs-check", variant="primary", disabled=not self._plans),
+                Button("Make a plan", id="rs-make-plan", variant="primary", disabled=not self._agents),
+                Button("Check", id="rs-check", variant="primary", disabled=(not self._plans or not self._agents)),
                 Button("Resolve", id="rs-resolve", variant="warning", disabled=True),
                 Button("Start", id="rs-start", variant="success", disabled=True),
                 Button("Cancel", id="rs-cancel"),
@@ -1343,6 +1391,16 @@ class RelaySetupScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#rs-make-plan").display = not self._plans
+        if not self._agents:
+            self.query_one("#rs-check", Button).disabled = True
+            self.query_one("#rs-start", Button).disabled = True
+            self.query_one("#rs-make-plan", Button).disabled = True
+            if self.query("#rs-summary-row"):
+                self.query_one("#rs-summary-row").display = False
+            self.query_one("#rs-roles").display = True
+            self.call_after_refresh(self._ready)
+            return
+
         if self._configured or not self._guided:
             self.query_one("#rs-recommended").display = False
         if self._summary:
@@ -1368,6 +1426,10 @@ class RelaySetupScreen(ModalScreen):
         return relay_ops.staged_backup(primary, usable)
 
     def _update_meaning(self) -> None:
+        if not self._agents:
+            if self.query("#rs-meaning"):
+                self.query_one("#rs-meaning", Static).update("")
+            return
         i, t, r, _ = self._chosen()
         try:
             rel = self.query_one("#rs-release", Select).value
@@ -1405,6 +1467,8 @@ class RelaySetupScreen(ModalScreen):
         self._invalidate()
 
     def _chosen(self) -> tuple[str, str, str, list[str]]:
+        if not self._agents:
+            return ("", "", "", [])
         implementer, tester, reviewer = (
             self.query_one(f"#rs-{role}", Select).value for role, _ in self.ROLES
         )
@@ -1417,6 +1481,8 @@ class RelaySetupScreen(ModalScreen):
             self._token = object()
             self.dismiss(None)
         elif event.button.id == "rs-start":
+            if not self._agents:
+                return
             self.dismiss("start")
         elif event.button.id == "rs-resolve":
             self.dismiss(("resolve", list(self._fail_lines)))
@@ -1429,10 +1495,14 @@ class RelaySetupScreen(ModalScreen):
             self.query_one("#rs-roles").display = True
             self.query_one("#rs-check").display = True
         elif event.button.id == "rs-make-plan":
+            if not self._agents:
+                return
             self.dismiss("plan")
 
 
     def _check(self) -> None:
+        if not self._agents:
+            return
         token = object()
         self._token = token
         self._error("")

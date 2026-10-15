@@ -2749,8 +2749,77 @@ class WhylineConsoleApp(App):
             return True
         return False
 
+    def _doctor_agent_lines(self) -> list[str]:
+        root = self.session.root
+        try:
+            from whyline_relay import config, preflight
+
+            agent_kw = ("on PATH", "logged in", "login", "generic agent", "permission-bypass")
+            checks = []
+            try:
+                all_checks = preflight.run(root)
+                checks = [
+                    c for c in all_checks
+                    if any(kw in c.message for kw in agent_kw)
+                ]
+            except Exception:
+                checks = []
+
+            if not checks:
+                settings = None
+                try:
+                    _, settings = preflight._relay_setup(root)
+                except Exception:
+                    settings = None
+                if settings is None:
+                    try:
+                        settings = config.load(root)
+                    except Exception:
+                        settings = None
+                if settings is not None:
+                    try:
+                        pchecks, _ = preflight._programs(settings)
+                        checks.extend(pchecks)
+                    except Exception:
+                        pass
+                    try:
+                        runner = getattr(self, "runner", None)
+                        lchecks = preflight._logins(
+                            root,
+                            settings,
+                            runner=runner if callable(runner) else subprocess.run,
+                        )
+                        checks.extend(lchecks)
+                    except Exception:
+                        pass
+                    try:
+                        rchecks = preflight._role_checks(root, settings)
+                        checks.extend(rchecks)
+                    except Exception:
+                        pass
+
+            lines = []
+            for check in checks:
+                line = f"  {check.status:<4}  {check.message}"
+                if check.status != "ok" and check.hint:
+                    line += f"\n        fix: {check.hint}"
+                lines.append(line)
+            return lines
+        except Exception:
+            return []
+
     def _open_relay_plan(self) -> None:
         if self._refuse_in_home():
+            return
+        if not relay_ops.relay_agents(self.session.root):
+            self._run_flow = False
+            from whyline.console.relay_screens import NO_AGENTS_PLAN
+
+            msg = NO_AGENTS_PLAN
+            doctor_lines = self._doctor_agent_lines()
+            if doctor_lines:
+                msg = f"{msg}\n" + "\n".join(doctor_lines)
+            self.render_event(SessionEvent(kind="output", text=msg))
             return
         if self._plan_state:
             self.render_event(SessionEvent(
@@ -3163,6 +3232,16 @@ class WhylineConsoleApp(App):
 
     def _open_relay_setup(self, guided: bool = False, plan: Path | None = None) -> None:
         if self._refuse_in_home():
+            return
+        if not relay_ops.relay_agents(self.session.root):
+            self._run_flow = False
+            from whyline.console.relay_screens import NO_AGENTS_SETUP
+
+            msg = NO_AGENTS_SETUP
+            doctor_lines = self._doctor_agent_lines()
+            if doctor_lines:
+                msg = f"{msg}\n" + "\n".join(doctor_lines)
+            self.render_event(SessionEvent(kind="output", text=msg))
             return
         from whyline.console.relay_screens import RelaySetupScreen
 

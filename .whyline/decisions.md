@@ -14826,3 +14826,94 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1e61b290736a4aebb3a8081fb78a276f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T04:25:17.860Z"} -->
+
+## 2026-10-15 — Guard Set up and Plan with guidance when no agent CLIs are installed
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** NOA-1
+
+**Because:** EmptySelectError in RelaySetupScreen and IndexError in RelayPlanScreen crash the TUI when relay_ops.relay_agents is empty; displaying instructions and relay doctor agent lines explains how to fix it
+
+**Rejected:**
+
+- Push screen with empty options — crashes Select validation
+- Silently disable buttons without message — leaves user confused about why Set up or Plan does nothing
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: ad186d28694049a49cb1590a89323917 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T05:29:40.793Z"} -->
+
+## 2026-10-15 — NOA-1 passes focused and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** NOA-1
+
+**Because:** The required relay setup/TUI tests and the complete pytest suite both reached 100 percent with exit code 0, covering the missing-agent guards and broader regressions
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 985116cd2cc14644b4717088a7ee16aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T05:35:40.380Z"} -->
+
+## 2026-10-15 — NOA-1 needs a narrow Auto-summary exception before approval
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOA-1
+
+**Because:** The requested no-agent guards pass focused and full tests, but RelayPlanScreen._refresh_auto_summary now catches Exception for installed-agent flows, silently masking unrelated auto_summary failures even though the no-agent branch already returns before the try block
+
+**Rejected:**
+
+- Approve as-is — broad exception swallowing is an unrelated regression and violates the task's change-nothing-else constraint
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: d087965493694491b029a6c7451d8646 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T05:42:14.751Z"} -->
+
+## 2026-10-15 — Catch only NoMatches in RelayPlanScreen._refresh_auto_summary
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** NOA-1
+
+**Because:** No-agent branch already returns before try-block; catching Exception broadly masks installed-agent auto_summary failures
+
+**Rejected:**
+
+- Catch Exception — hides unexpected errors during installed-agent auto-summary refresh
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: ffb58336dc18419d808026994e183fe3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T05:50:08.893Z"} -->
+
+## 2026-10-15 — NOA-1 round 5 passes focused and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** NOA-1
+
+**Because:** The required setup/TUI tests and complete pytest suite both reached 100 percent with exit code 0 after the auto-summary exception was narrowed, covering missing-agent guards and installed-agent behavior
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: ea021b55a7134aaebfa07baf39660413 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T05:56:02.258Z"} -->
+
+## 2026-10-15 — Approve NOA-1 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOA-1
+
+**Because:** The no-agent TUI entry guards and direct screen fallbacks match the requested behavior, installed-agent behavior remains covered, the required focused tests passed at 100 percent, and the full pytest suite passed at 100 percent with one skip
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 58dd95df1b3a4d93ae609de35587c267 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-15T06:02:50.372Z"} -->

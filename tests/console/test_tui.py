@@ -2314,6 +2314,89 @@ async def test_review_mode_applies_nothing_without_click(tmp_path, monkeypatch):
         assert btn_resolve.disabled is False
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_relay_setup_and_plan_with_no_agents_prints_message_and_pushes_no_screen(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+    from whyline.console.relay_screens import NO_AGENTS_SETUP, NO_AGENTS_PLAN
+
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        btn_setup = app.query_one("#relay-setup", tui.Button)
+        btn_plan = app.query_one("#relay-plan", tui.Button)
+        assert not btn_setup.disabled
+        assert not btn_plan.disabled
+
+        # Press Set up
+        await pilot.click("#relay-setup")
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+        assert any(NO_AGENTS_SETUP in e.text for e in app.session.transcript)
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("No agent is installed here" in line for line in lines)
+        assert any("Set up again" in line for line in lines)
+        assert not btn_setup.disabled
+        assert not btn_plan.disabled
+
+        # Press Plan
+        await pilot.click("#relay-plan")
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+        assert any(NO_AGENTS_PLAN in e.text for e in app.session.transcript)
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("No agent is installed here" in line for line in lines)
+        assert any("Plan again" in line for line in lines)
+        assert not btn_setup.disabled
+        assert not btn_plan.disabled
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_relay_setup_and_plan_with_one_agent_opens_screens(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+    from whyline.console.relay_screens import RelayPlanScreen, RelaySetupScreen
+
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["codex"])
+    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex"))
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "codex",
+            "tester": "codex",
+            "reviewer": "codex",
+            "backup": ["codex"],
+        },
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        # Press Set up
+        await pilot.click("#relay-setup")
+        await pilot.pause()
+        assert isinstance(app.screen, RelaySetupScreen)
+        app.screen.dismiss(None)
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+
+        # Press Plan
+        await pilot.click("#relay-plan")
+        await pilot.pause()
+        assert isinstance(app.screen, RelayPlanScreen)
+        app.screen.dismiss(None)
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+
+
+
 
 
 

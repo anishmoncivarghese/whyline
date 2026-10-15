@@ -1564,3 +1564,43 @@ async def test_checkpoint_dirty_tree_disables_resume(tmp_path, monkeypatch):
         assert run_btn.disabled is True
 
 
+async def test_relay_plan_screen_with_no_agents(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: [])
+    from whyline.console.relay_screens import NO_AGENTS_PLAN
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        # Brainstorm / draft mode: roles row shows NO_AGENTS_PLAN
+        assert any(NO_AGENTS_PLAN in str(label.renderable) for label in screen.query(tui.Label))
+        assert screen.query_one("#rp-check", tui.Button).disabled
+        assert screen.query_one("#rp-go", tui.Button).disabled
+
+        # Switch to Auto: auto widgets also show NO_AGENTS_PLAN
+        screen.query_one("#rp-source", tui.Select).value = "auto"
+        await pilot.pause()
+        assert any(NO_AGENTS_PLAN in str(label.renderable) for label in screen.query(tui.Label))
+        assert screen.query_one("#rp-check", tui.Button).disabled
+        assert screen.query_one("#rp-run", tui.Button).disabled
+
+        # Cancel works
+        assert not screen.query_one("#rp-cancel", tui.Button).disabled
+        screen.query_one("#rp-cancel", tui.Button).press()
+        await pilot.pause()
+        assert results == [None]
+
+
+async def test_relay_plan_screen_with_one_agent(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["codex"])
+    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        # Selects are present and enabled
+        drafter = screen.query_one("#rp-drafter", tui.Select)
+        assert drafter.value == "codex"
+        assert not screen.query_one("#rp-go", tui.Button).disabled
+
+
+
