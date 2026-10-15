@@ -37,6 +37,23 @@ def fake_relay(monkeypatch):
     monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: ["x"])
+async def _click_quit(app, pilot, button_id: str) -> None:
+    """Press a quit-dialog button and wait until the app has been told to exit.
+
+    Both buttons end in `app.exit()`. Anything that waits for the screen to
+    drain after that (`pilot.pause()`, and `pilot.click()`, which pauses after
+    each mouse event) races the shutdown: on windows-latest it hung for
+    Textual's 30 s timeout in the 0.3.41 and 0.3.42 release runs. So press the
+    button directly (the same `Button.Pressed` a click sends) and wait on
+    `return_code`, which stays None until `exit()` runs."""
+    app.screen.query_one(button_id, tui.Button).press()
+    for _ in range(1000):
+        if app.return_code is not None:
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"{button_id} did not quit the app")
+
+
 def _lines(app):
     return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 async def _relay_mode(app, pilot):
@@ -142,8 +159,7 @@ async def test_quitting_while_the_relay_runs_asks_first(tmp_path):
         await app.action_quit()
         await pilot.pause()
         assert isinstance(app.screen, tui.QuitRelayScreen)
-        await pilot.click("#quit-leave")
-        await pilot.pause()
+        await _click_quit(app, pilot, "#quit-leave")
     proc = FakeProcess.instances[-1]
     assert proc.unfollowed and not proc.stopped
 async def test_quitting_while_the_relay_runs_stop_choice(tmp_path):
@@ -155,8 +171,7 @@ async def test_quitting_while_the_relay_runs_stop_choice(tmp_path):
         await app.action_quit()
         await pilot.pause()
         assert isinstance(app.screen, tui.QuitRelayScreen)
-        await pilot.click("#quit-stop")
-        await pilot.pause()
+        await _click_quit(app, pilot, "#quit-stop")
     proc = FakeProcess.instances[-1]
     assert proc.interrupted and proc.unfollowed
 @pytest.mark.parametrize("button_id", ["#quit-leave", "#quit-stop"])
@@ -173,8 +188,7 @@ async def test_quitting_after_relay_finishes_while_modal_open_exits_safely(tmp_p
         await asyncio.to_thread(proc.finish, 0, "Plan complete: 1 task(s)\n")
         await pilot.pause()
         assert app._relay is None
-        await pilot.click(button_id)
-        await pilot.pause()
+        await _click_quit(app, pilot, button_id)
 
 
 async def test_typed_start_without_any_plan_opens_plan_form(tmp_path, monkeypatch):
