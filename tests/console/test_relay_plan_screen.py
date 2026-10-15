@@ -1022,12 +1022,12 @@ def _status_words(text: str) -> list[str]:
     return words
 
 
-async def _wait_for(pilot, condition, what: str) -> None:
+async def _wait_for(pilot, condition, what: str, detail=lambda: "") -> None:
     for _ in range(600):  # 30 s ceiling; CI runners are slow
         if condition():
             return
         await pilot.pause(0.05)
-    raise AssertionError(f"never happened: {what}")
+    raise AssertionError(f"never happened: {what} {detail()}".rstrip())
 
 
 async def _fill_auto(screen, pilot) -> None:
@@ -1037,11 +1037,15 @@ async def _fill_auto(screen, pilot) -> None:
 
 
 async def _run_check(pilot, screen) -> str:
-    await pilot.click("#rp-check")
+    # Press rather than click: the form scrolls and earlier steps add and
+    # remove rows, so a click by position missed Check on CI (ubuntu, twice)
+    # and the result never came. A press still runs Check's real handler.
+    screen.query_one("#rp-check", tui.Button).press()
     await _wait_for(
         pilot,
         lambda: _checks_text(screen) not in ("", "Checking…"),
         "check result",
+        lambda: f"(checks={_checks_text(screen)!r}, screen={type(pilot.app.screen).__name__})",
     )
     return _checks_text(screen)
 
