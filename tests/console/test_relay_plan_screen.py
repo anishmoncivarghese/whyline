@@ -1023,7 +1023,7 @@ def _status_words(text: str) -> list[str]:
 
 
 async def _wait_for(pilot, condition, what: str) -> None:
-    for _ in range(200):
+    for _ in range(600):  # 30 s ceiling; CI runners are slow
         if condition():
             return
         await pilot.pause(0.05)

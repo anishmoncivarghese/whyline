@@ -1967,7 +1967,7 @@ async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monk
         await pilot.pause()
 
         await pilot.click("#resolve-ask-agent")
-        for _ in range(80):
+        for _ in range(300):  # 15 s ceiling; Windows CI is slow
             await pilot.pause(0.05)
             if app.query("#resolve-use-claude"):
                 break
@@ -1978,7 +1978,7 @@ async def test_ask_agent_synthesized_role_option_and_apply_in_tui(tmp_path, monk
         assert launched == []
 
         await pilot.click("#resolve-use-claude")
-        for _ in range(80):
+        for _ in range(300):  # 15 s ceiling; Windows CI is slow
             await pilot.pause(0.05)
             if launched:
                 break
