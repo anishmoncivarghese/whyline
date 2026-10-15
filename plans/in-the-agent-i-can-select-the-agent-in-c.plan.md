@@ -420,7 +420,7 @@ Design: `docs/superpowers/specs/2026-10-11-console-see-files-design.md`. The ste
   Tests: a write opens on the right and a second path replaces it; Earlier holds the first file and a newer write only updates the path line; a same-file save after the user scrolls keeps `scroll_y` and says updated; a notice shows no bytes; busy arms and idle disarms only with Files on; a fake relay state whose task has a `relay-repo` adds that repo to the watched list and shows its file as `repo-name:path`; a gather error sets the path line and leaves the transcript.
   Verify with `uv run pytest -q tests/console/test_see_files.py tests/console/test_file_follow.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] FIL-4: Publish whyline 0.3.43
+- [x] FIL-4: Publish whyline 0.3.43
   relay-profile: release
   In this whyline checkout, bump `pyproject.toml` from `0.3.42` to `0.3.43`. Write `docs/releases/v0.3.43.md` in the same shape as `docs/releases/v0.3.42.md`: Set up and Plan explain a missing agent instead of crashing when no agent CLI is installed; a Files button splits the console and follows, read-only, the file an agent is writing, in every mode; reads and files that were already dirty stay off the pane; Earlier and Later step through this run's files; a relay task in another repository is followed there too; below 120 columns the split stacks. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.43`, push, and publish to PyPI the same way `v0.3.42` was published. Confirm `uv tool upgrade whyline` installs `0.3.43`.
 
