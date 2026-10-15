@@ -22,9 +22,25 @@ def atomic_write_json(path: Path, payload: dict) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
+        _replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def _replace(source: Path, target: Path, timeout: float = 2.0) -> None:
+    """os.replace, retried on Windows while another thread or process has
+    `target` open: Windows refuses to replace an open file with
+    PermissionError (WinError 5) where POSIX just swaps the name. Closing the
+    console during an Auto run hit this when its reader and writer met."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if not _WINDOWS or time.monotonic() >= deadline:
+                raise
+            time.sleep(_POLL_INTERVAL_SECONDS)
 
 
 def load_object(path: Path) -> dict | None:

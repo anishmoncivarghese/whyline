@@ -100,3 +100,47 @@ def test_permission_errors_elsewhere_are_still_errors(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):
         with state.file_lock(tmp_path / "x.json"):
             pass
+
+
+def _flaky_replace(monkeypatch, failures: int) -> list[int]:
+    """os.replace that is refused `failures` times, like Windows replacing a
+    file another thread still has open."""
+    calls = [0]
+    real = os.replace
+
+    def replace(src, dst):
+        calls[0] += 1
+        if calls[0] <= failures:
+            raise PermissionError(5, "Access is denied")
+        real(src, dst)
+
+    monkeypatch.setattr(state.os, "replace", replace)
+    monkeypatch.setattr(state, "_POLL_INTERVAL_SECONDS", 0.001)
+    return calls
+
+
+def test_atomic_write_retries_a_busy_target_on_windows(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(state, "_WINDOWS", True)
+    calls = _flaky_replace(monkeypatch, failures=3)
+    target = tmp_path / "auto-run.json"
+    state.atomic_write_json(target, {"phase": "stopped"})
+    assert calls[0] == 4
+    assert state.load_object(target) == {"phase": "stopped"}
+    assert [p.name for p in tmp_path.iterdir()] == ["auto-run.json"]
+
+
+def test_atomic_write_gives_up_on_a_target_that_stays_busy(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(state, "_WINDOWS", True)
+    _flaky_replace(monkeypatch, failures=10**9)
+    target = tmp_path / "auto-run.json"
+    with pytest.raises(PermissionError):
+        state._replace(tmp_path / "missing.tmp", target, timeout=0.05)
+
+
+def test_atomic_write_does_not_retry_off_windows(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(state, "_WINDOWS", False)
+    calls = _flaky_replace(monkeypatch, failures=1)
+    with pytest.raises(PermissionError):
+        state.atomic_write_json(tmp_path / "auto-run.json", {"phase": "stopped"})
+    assert calls[0] == 1
+    assert list(tmp_path.iterdir()) == []
