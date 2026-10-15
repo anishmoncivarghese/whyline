@@ -557,3 +557,14 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
 - [ ] TPL-10: Publish whyline 0.3.45
   relay-profile: release
   In this whyline checkout, bump `pyproject.toml` from `0.3.44` to `0.3.45`. Write `docs/releases/v0.3.45.md` in the same shape as `docs/releases/v0.3.44.md`: the plan, brainstorm and Auto forms have an optional Test planner that writes a test plan beside the plan, which the Reviewer reviews with it; each phase ends with a Verify task that automates its scenarios; a release waits on its manual checks, which you pass or fail from the console with a note. Needs whyline-relay 0.2.38. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.45`, push, publish to PyPI the way `v0.3.44` was published, and confirm `uv tool upgrade whyline` installs `0.3.45`.
+
+## Windows, after whyline 0.3.45
+
+Windows stopped being a release gate on 2026-10-15 after Windows-only test failures blocked three v0.3.42 release attempts. `ci.yml` still runs it on every push with `continue-on-error`, and `release.yml` does not run it.
+
+- [ ] WIN-1: Make the suite pass on Windows and make Windows a release gate again
+  Edit only tests and source files that a Windows failure points at, plus `.github/workflows/ci.yml` and `.github/workflows/release.yml`.
+  Start from the latest `ci` run on this branch: list every failing test in the `windows-latest` jobs, for Python 3.11 and 3.13, across at least three runs (re-run the Windows jobs to separate intermittent failures from consistent ones). Known causes so far, all fixed only where noted: a `pilot.pause()` after a button that calls `app.exit()` (fixed in `tests/console/test_tui_relay_run.py`); `os.replace` and `unlink` on a file another thread has open (fixed in `whyline.state` for JSON state and the Auto lock); UI waits shorter than a slow runner needs. Fix each by its cause: wait on the real condition, never a longer sleep, and never skip a test on Windows unless the feature itself is macOS-only (launchd, Mail.app), in which case skip with that reason.
+  When three consecutive `windows-latest` runs pass on both Python versions, remove `continue-on-error` from `ci.yml`, add `windows-latest` back to `release.yml`'s matrix, and delete the comments that point at this task.
+  Verify with three green `ci` runs including Windows, and `uv run pytest -q`. Change nothing else.
+
