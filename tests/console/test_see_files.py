@@ -307,6 +307,9 @@ async def test_busy_arms_and_idle_disarms_only_with_files_on(tmp_path):
         # Turning Files off during run disarms
         app._set_busy(True, "agent working")
         assert app._follow_timer is not None
+        # Busy shows the thinking line, which moves the controls row down;
+        # let that layout land before clicking, or the click can miss Files.
+        await pilot.pause()
         await pilot.click("#see-files")
         await pilot.pause()
         assert app._files_on is False
