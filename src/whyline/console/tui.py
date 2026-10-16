@@ -154,6 +154,13 @@ def _short_path(path: Path) -> str:
 _CB_SHORT_LABELS = {"installed (login not checked)": "login unchecked"}
 # Action row on the agent menu once Backup has left the row.
 _CB_BACKUP_MENU = "backup-menu"
+_CB_TIMEOUT_OPTIONS: list[tuple[str, int]] = [
+    ("5m", 300),
+    ("15m", 900),
+    ("30m", 1800),
+    ("45m", 2700),
+    ("60m", 3600),
+]
 
 
 def _cb_options(status: dict) -> list[tuple[str, str]]:
@@ -584,6 +591,8 @@ class WhylineConsoleApp(App):
     #cb-backup > SelectOverlay { width: 56; }
     #cb-backup-more { width: auto; height: 1; min-width: 2; }
     #cb-model { width: 18; }
+    #cb-timeout { width: 10; }
+    #cb-timeout > SelectOverlay { width: 14; }
     #cb-repo { width: 1fr; }
     #context-bar Label { padding: 0 0 0 1; height: 1; }
     #context-bar SelectCurrent { height: 1; text-wrap: nowrap; }
@@ -2183,6 +2192,7 @@ class WhylineConsoleApp(App):
             compact = width < 80
             self._main("#cb-agent-label", Label).update("A" if narrow else "Agent")
             self._main("#cb-model-label", Label).update("M" if narrow else "Model")
+            self._main("#cb-timeout-label", Label).update("T" if narrow else "Timeout")
             self._main("#cb-repo-label", Label).update("R" if narrow else "Repo")
             try:
                 failover_on = bool(self._main("#cb-failover", Label).display)
@@ -2190,8 +2200,8 @@ class WhylineConsoleApp(App):
                 failover_on = False
             # Wide agent box is 24. A visible failover label needs those columns
             # back or Save leaves a 120-column row. Narrow rows are already 14.
-            # The timeout plan's 10 and 12 stay out of this task.
             self._main("#cb-agent", Select).styles.width = 14 if narrow or failover_on else 24
+            self._main("#cb-timeout", Select).styles.width = 8 if narrow else 10
             backup_label = self._main("#cb-backup-label", Label)
             backup_label.update("Bak" if narrow else "Backup")
             backup_label.display = not compact
@@ -2200,10 +2210,9 @@ class WhylineConsoleApp(App):
             backup.display = not compact
             if compact:
                 self._main("#cb-backup-more", Static).display = False
-            # Backup at 14 plus the full labels passes column 108, and on an
-            # 80-column row the timeout slot (a label plus 8) needs the same
-            # room. The checkbox returns once Backup is the wide 18.
-            self._main("#cb-global", Checkbox).display = width >= 110
+            # Backup at 18 plus the full labels and Timeout passes column 110;
+            # the checkbox returns once the row has room for all of them.
+            self._main("#cb-global", Checkbox).display = width >= 130
         except (NoMatches, IndexError):
             return
         if compact:
@@ -2427,6 +2436,13 @@ class WhylineConsoleApp(App):
                 Static("", id="cb-backup-more"),
                 Label("Model", id="cb-model-label"),
                 Input(placeholder="default", id="cb-model"),
+                Label("Timeout", id="cb-timeout-label"),
+                Select(
+                    _CB_TIMEOUT_OPTIONS,
+                    value=self.session.chat_timeout_seconds,
+                    allow_blank=False,
+                    id="cb-timeout",
+                ),
                 Label("Repo", id="cb-repo-label"),
                 Input(id="cb-repo"),
                 Checkbox("all repos", id="cb-global"),
@@ -2651,6 +2667,10 @@ class WhylineConsoleApp(App):
         select = event.select
         if select.id == "cb-backup":
             self._cb_on_backup_changed(event)
+            return
+        if select.id == "cb-timeout":
+            if event.value is not Select.BLANK and event.value is not None:
+                self.session.chat_timeout_seconds = int(event.value)
             return
         if select.id != "cb-agent":
             return

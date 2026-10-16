@@ -168,34 +168,49 @@ async def test_a_new_folder_is_set_up_after_one_confirmation(tmp_path, monkeypat
 
 
 async def test_the_bar_fits_80_columns(tmp_path):
-    """Backup stays visible at 80, with room for the timeout plan's narrow control."""
+    """Backup and timeout stay visible at 80."""
     app = tui.WhylineConsoleApp(root=_repo(tmp_path))
     async with app.run_test(size=(80, 24)) as pilot:
-        bar = app.query_one("#context-bar")
-        mounted = False
-        stand_label = stand_select = None
-        if not bar.query("#cb-timeout") and not bar.query("#cb-timeout-label"):
-            stand_label = tui.Label("T", id="cb-timeout-label")
-            stand_select = tui.Select([("5m", "5m")], allow_blank=False, id="cb-timeout")
-            stand_select.styles.width = 8
-            await bar.mount(stand_label, stand_select, before=bar.query_one("#cb-repo-label"))
-            mounted = True
-            await pilot.pause()
         assert app.query_one("#cb-backup").display
         assert app.query_one("#cb-backup-label").display
         assert app.query_one("#cb-backup").region.width == 14
         assert app.query_one("#cb-agent").region.width == 14
         assert app.query_one("#cb-model").region.width == 18
+        assert _plain(app.query_one("#cb-timeout-label")) == "T"
+        assert app.query_one("#cb-timeout").region.width == 8
+        assert app.query_one("#cb-timeout").region.right <= 80
         assert app.query_one("#cb-save").region.right <= 80
         prompts = _option_map(app.query_one("#cb-agent", tui.Select))
         assert "backup-menu" not in prompts
         assert all("bak" not in prompt for prompt in prompts.values())
-        if mounted:
-            await stand_select.remove()
-            await stand_label.remove()
-            await pilot.pause()
-            assert not bar.query("#cb-timeout")
-            assert not bar.query("#cb-timeout-label")
+
+
+async def test_changing_timeout_does_not_dirty_save_or_write_files(tmp_path):
+    root = _repo(tmp_path)
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(120, 40)) as pilot:
+        assert app.session.chat_timeout_seconds == 300
+        assert _plain(app.query_one("#cb-timeout-label")) == "Timeout"
+        timeout = app.query_one("#cb-timeout", tui.Select)
+        assert timeout.region.width == 10
+        assert timeout.value == 300
+        assert _option_map(timeout) == {
+            300: "5m",
+            900: "15m",
+            1800: "30m",
+            2700: "45m",
+            3600: "60m",
+        }
+        save = app.query_one("#cb-save", tui.Button)
+        assert save.disabled
+
+        timeout.value = 900
+        await pilot.pause()
+
+        assert app.session.chat_timeout_seconds == 900
+        assert save.disabled
+        assert not (root / ".whyline" / "relay" / "config.toml").exists()
+        assert not (root / ".whyline" / "model.json").exists()
 
 
 def _status_grok_unavailable() -> dict:

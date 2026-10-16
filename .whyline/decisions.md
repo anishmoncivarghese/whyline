@@ -15099,3 +15099,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cb80415f7fd34b1791ded0f21799a3d0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-15T09:33:38.962Z"} -->
+
+## 2026-10-16 — Preserve BAR-5 narrow Agent (14) and Model (18) widths when adding #cb-timeout and raise #cb-global display threshold to 130 columns
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CTO-1
+
+**Because:** BAR-5's 80-column layout already reserved 8 columns for #cb-timeout alongside Agent (14), Backup (14), and Model (18), while adding Timeout (18 cols total with label) at >=110 columns requires 130 columns before showing the 'all repos' checkbox so Save stays within 120 columns
+
+**Rejected:**
+
+- Shrinking #cb-agent to 10 and #cb-model to 12 below 100 columns — conflicts with BAR-5 width guarantees and existing 80-column assertions
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/session.py, tests/console/test_context_bar.py
+
+<!-- whyline-event: 311d683b9f3946b9a0c9813f90cf5a67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T11:53:57.304Z"} -->
+
+## 2026-10-16 — Pass CTO-1 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** CTO-1
+
+**Because:** The focused context-bar suite passed all 31 tests, including 80-column timeout and Save fit plus timeout non-dirty/no-write behavior, and the full project suite completed at 100 percent with one skip and no failures
+
+**Files:** tests/console/test_context_bar.py
+
+<!-- whyline-event: ca3582a17c7b4b4791b46a9a63768102 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:04:32.152Z"} -->
+
+## 2026-10-16 — Approve CTO-1 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CTO-1
+
+**Because:** The diff adds the five-value nonblank timeout selector and immediate session-only update, preserves BAR-5 responsive widths and console-column measurement, leaves timeout outside dirty and Save persistence, and both the 31-test focused suite and full suite passed
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: df19cf61251643559dbbd27a6fbd7ee7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:10:37.910Z"} -->
