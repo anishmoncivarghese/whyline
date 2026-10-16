@@ -442,7 +442,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Extend `tests/console/test_tui.py` and `tests/console/test_adapters_whyline.py` (or the existing chat-adapter test module if the turn tests live there). Cover Send passing 300, 900, 1800, 2700, and 3600 into `run_chat_turn`; the select disabling while the worker runs; and the value captured at Send being the one passed when the select changes before the fake run returns.
   Verify with `uv run pytest -q tests/console/test_tui.py tests/console/test_adapters_whyline.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] CTO-3: Add /timeout with none refused
+- [x] CTO-3: Add /timeout with none refused
   Handle `/timeout` in `repl.handle_slash_command` so the TUI and the keyboard console share it. Add it to `_SLASH_HINT` in `tui.py`, and to `SLASH_COMMANDS` and `_COMMAND_HELP` in `repl.py`.
   `/timeout` prints `Chat timeout: 5m. Each attempt gets this limit.` for 300 seconds, and the same sentence with `15m`, `30m`, `45m`, or `60m` for the other stored values. `/timeout 5`, `5m`, and the same forms for 15, 30, 45, and 60 set `session.chat_timeout_seconds` and move `#cb-timeout` when it is mounted. `/timeout none`, `unlimited`, `0`, and `no limit` reply `No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes.` and leave the previous value. They do not call the relay. Any other argument replies `Usage: /timeout [5|15|30|45|60|none]` and leaves the previous value.
   Keyboard `/stop` stays as it is. A foreground REPL turn is interrupted by Ctrl+C. The user cannot type `/stop` while that turn blocks the prompt.
