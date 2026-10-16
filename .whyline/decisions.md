@@ -15228,3 +15228,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 519e9aac20584098a71d82fee1f62fc2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-16T20:48:17.670Z"} -->
+
+## 2026-10-16 — CTO-4 Round 2 passes boundary regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** CTO-4
+
+**Because:** The added test verifies exact DefinitionError behavior for timeout_minutes 0, -1, and 241 and successful loading at 1 and 240; the focused and full test suites both exited 0, and only tests/agents/test_definitions.py is modified.
+
+**Rejected:**
+
+- fail the task — all required boundary behavior and both mandated test runs pass
+
+**Files:** tests/agents/test_definitions.py
+
+<!-- whyline-event: 4cb0e1c6f3f7444f837bcbf98518213d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:00:37.460Z"} -->
+
+## 2026-10-16 — Approve CTO-4 Round 3 boundary regression coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CTO-4
+
+**Because:** The new test rejects timeout_minutes 0, -1, and 241 with the exact required DefinitionError, accepts 1 and 240, definitions.py is unchanged, and both the focused and full test suites pass.
+
+**Rejected:**
+
+- request changes — the implementation and regression coverage satisfy every stated boundary and scope requirement
+
+**Files:** tests/agents/test_definitions.py
+
+<!-- whyline-event: a7f4a36828c643919d9e562847248f7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:06:03.064Z"} -->

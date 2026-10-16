@@ -144,3 +144,21 @@ def test_discover_reports_a_non_table_trigger_as_broken(repo, home):
         "Broken", "Broken", "Broken", "Broken", "AgentDef"]
     assert [x.error for x in found[:4]] == ["trigger must be a table"] * 4
     assert found[4].name == "e"
+
+
+def test_load_enforces_timeout_minutes_between_1_and_240(repo):
+    path = repo / ".whyline/agents/ok.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base = 'name = "ok"\ninstructions = "x"\nrunner = "claude"\n'
+    for bad in (0, -1, 241):
+        path.write_text(f"{base}timeout_minutes = {bad}\n", encoding="utf-8")
+        with pytest.raises(
+            d.DefinitionError,
+            match=r"^timeout_minutes must be between 1 and 240$",
+        ):
+            d.load(path, kind="repo", repo_root=repo)
+    for valid in (1, 240):
+        path.write_text(f"{base}timeout_minutes = {valid}\n", encoding="utf-8")
+        loaded = d.load(path, kind="repo", repo_root=repo)
+        assert loaded.timeout_minutes == valid
+
