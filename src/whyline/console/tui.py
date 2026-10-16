@@ -96,7 +96,7 @@ _MODE_BUTTONS = {
     "agents": ("agents-new", "agents-list", "agents-runs", "agents-scheduler"),
 }
 _SHARED_BUTTONS = ("see-files", "stop", "help", "copy")
-_SLASH_HINT = "/status /timeline /note /decisions /handoff /model /repo /help"
+_SLASH_HINT = "/status /timeline /note /decisions /handoff /model /timeout /repo /help"
 
 # Brainstorming makes one full agent turn per selected model and phase. Keep
 # the bound explicit in the UI so a single stalled provider cannot hold the
@@ -631,6 +631,7 @@ class WhylineConsoleApp(App):
         super().__init__()
         self.session = ConsoleSession(root=root)
         self.session.agent = model.resolve(root)[0]
+        self.session._sync_timeout = self._cb_sync_timeout
         self._files_on: bool = False
         self._follow_base: dict[str, file_follow.Snap] = {}
         self._follow_order: list[str] = []
@@ -1164,12 +1165,26 @@ class WhylineConsoleApp(App):
                 self._cb_refresh()
             else:
                 self._cb_refresh_status()
+        self._cb_sync_timeout()
         self._main("#attach", Button).disabled = self.session.mode != "chat"
         self._refresh_tray()
         if mode == "agents":
             self._refresh_agents_status()
         self._sync_relay_buttons()
         self._sync_mode_buttons()
+
+    def _cb_sync_timeout(self) -> None:
+        try:
+            select = self._main("#cb-timeout", Select)
+        except (NoMatches, IndexError):
+            return
+        if not getattr(select, "is_mounted", False):
+            return
+        legal = set(getattr(select, "_legal_values", ()))
+        target = self.session.chat_timeout_seconds
+        if (not legal or target in legal) and select.value != target:
+            with self.prevent(Select.Changed):
+                select.value = target
 
     def _sync_mode_buttons(self) -> None:
         """One place decides which bottom-bar buttons are on screen.

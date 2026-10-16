@@ -1000,3 +1000,62 @@ def test_plain_console_done_and_skip_use_the_saved_release_pause(monkeypatch, tm
     event = repl.dispatch(session, "done")
     assert calls == [["done", "T-2"], ["skip", "T-2"]]
     assert "not paused on a release task" in event.text
+
+
+def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.repl import _COMMAND_HELP, SLASH_COMMANDS, handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    assert "/timeout" in SLASH_COMMANDS
+    assert "/timeout" in _COMMAND_HELP
+
+    monkeypatch.setattr(
+        adapters,
+        "run_chat_turn",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("relay must not be called")),
+    )
+    session = ConsoleSession(root=tmp_path)
+    assert session.chat_timeout_seconds == 300
+
+    # Bare /timeout reports the default 300s as 5m.
+    ev = handle_slash_command(session, "/timeout")
+    assert ev is not None and ev.kind == "output"
+    assert ev.text == "Chat timeout: 5m. Each attempt gets this limit."
+
+    # /timeout none (and unlimited, 0, no limit) leaves 300 and returns the not-available error.
+    for token in ("none", "unlimited", "0", "no limit"):
+        err = handle_slash_command(session, f"/timeout {token}")
+        assert err is not None and err.kind == "error"
+        assert err.text == "No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes."
+        assert session.chat_timeout_seconds == 300
+
+    # All finite forms (5/5m, 15/15m, 30/30m, 45/45m, 60/60m) update session and report the sentence.
+    cases = [
+        ("30", 1800, "30m"),
+        ("45m", 2700, "45m"),
+        ("5", 300, "5m"),
+        ("5m", 300, "5m"),
+        ("15", 900, "15m"),
+        ("15m", 900, "15m"),
+        ("30m", 1800, "30m"),
+        ("45", 2700, "45m"),
+        ("60", 3600, "60m"),
+        ("60m", 3600, "60m"),
+    ]
+    for arg, expected_seconds, label in cases:
+        out = handle_slash_command(session, f"/timeout {arg}")
+        assert out is not None and out.kind == "output"
+        assert session.chat_timeout_seconds == expected_seconds
+        assert out.text == f"Chat timeout: {label}. Each attempt gets this limit."
+        shown = handle_slash_command(session, "/timeout")
+        assert shown is not None and shown.kind == "output"
+        assert shown.text == f"Chat timeout: {label}. Each attempt gets this limit."
+
+    # Unknown value leaves the previous choice and replies with Usage.
+    session.chat_timeout_seconds = 1800
+    for bad in ("10", "20m", "bogus", "-5", "30 extra"):
+        bad_ev = handle_slash_command(session, f"/timeout {bad}")
+        assert bad_ev is not None and bad_ev.kind == "error"
+        assert bad_ev.text == "Usage: /timeout [5|15|30|45|60|none]"
+        assert session.chat_timeout_seconds == 1800

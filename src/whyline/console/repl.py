@@ -29,6 +29,7 @@ _RELAY_MISSING = (
 SLASH_COMMANDS = (
     "/model",
     "/login",
+    "/timeout",
     "/brainstorm",
     "/repo",
     "/backups",
@@ -49,6 +50,7 @@ _COMMAND_HELP = {
     "/model": "/model claude opus      pick the chat agent (and model); /model alone lists them,\n"
     "                          /model refresh re-checks what's installed and logged in",
     "/login": "/login claude           sign in with the agent's own login, then re-check",
+    "/timeout": "/timeout 30             per-attempt chat timeout (5, 15, 30, 45, or 60m); /timeout alone shows it",
     "/brainstorm": "/brainstorm             several models research a topic, one writes it up",
     "/repo": "/repo ~/other-project   show or switch the repository (clears this transcript)",
     "/backups": "/backups               shared fallback chain, and any sticky failover",
@@ -106,9 +108,61 @@ def _print_event(event: SessionEvent, print_fn) -> None:
     print_fn(f"{_PREFIX.get(event.kind, '')}{event.text}")
 
 
+_CHAT_TIMEOUT_MINUTES: dict[str, int] = {
+    "5": 300,
+    "5m": 300,
+    "15": 900,
+    "15m": 900,
+    "30": 1800,
+    "30m": 1800,
+    "45": 2700,
+    "45m": 2700,
+    "60": 3600,
+    "60m": 3600,
+}
+_CHAT_TIMEOUT_LABELS: dict[int, str] = {
+    300: "5m",
+    900: "15m",
+    1800: "30m",
+    2700: "45m",
+    3600: "60m",
+}
+_TIMEOUT_NO_LIMIT_TOKENS = ("none", "unlimited", "0", "no limit")
+_TIMEOUT_NO_LIMIT_ERROR = (
+    "No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes."
+)
+_TIMEOUT_USAGE = "Usage: /timeout [5|15|30|45|60|none]"
+
+
+def _timeout_sentence(seconds: object) -> str:
+    label = _CHAT_TIMEOUT_LABELS.get(seconds if isinstance(seconds, int) and not isinstance(seconds, bool) else 300, "5m")
+    return f"Chat timeout: {label}. Each attempt gets this limit."
+
+
+def _timeout_event(session: ConsoleSession, text: str) -> SessionEvent:
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) == 1:
+        return SessionEvent(
+            kind="output", text=_timeout_sentence(session.chat_timeout_seconds)
+        )
+    arg = " ".join(parts[1].split()).lower()
+    if arg in _CHAT_TIMEOUT_MINUTES:
+        session.chat_timeout_seconds = _CHAT_TIMEOUT_MINUTES[arg]
+        sync = getattr(session, "_sync_timeout", None)
+        if callable(sync):
+            sync()
+        return SessionEvent(
+            kind="output", text=_timeout_sentence(session.chat_timeout_seconds)
+        )
+    if arg in _TIMEOUT_NO_LIMIT_TOKENS:
+        return SessionEvent(kind="error", text=_TIMEOUT_NO_LIMIT_ERROR)
+    return SessionEvent(kind="error", text=_TIMEOUT_USAGE)
+
+
 def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | None:
     """Handles /help, /status, /handoff, /history, /route, /model,
-    /backups, and /reset-backup uniformly for both console flavors.
+    /timeout, /backups, and /reset-backup uniformly for both console
+    flavors.
     Returns the event to render, or None if `text` isn't one of these at
     all -- the caller should fall through to ordinary dispatch() in that
     case. /exit and /stop stay outside this function on purpose: each
@@ -151,6 +205,8 @@ def handle_slash_command(session: ConsoleSession, text: str) -> SessionEvent | N
         return _model_event(session, text)
     if text.startswith("/login"):
         return _login_event(text)
+    if text.split(maxsplit=1)[:1] == ["/timeout"]:
+        return _timeout_event(session, text)
     if text == "/brainstorm" and _is_home(session.root):
         return SessionEvent(kind="error", text=_HOME_REFUSAL)
     if text == "/brainstorm":

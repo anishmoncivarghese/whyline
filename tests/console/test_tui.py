@@ -2584,6 +2584,71 @@ async def test_send_captures_timeout_before_select_changes_mid_run(tmp_path, mon
         assert seen == [("first", 900), ("second", 2700)]
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_timeout_slash_command_updates_session_and_select_and_refuses_none(
+    tmp_path, monkeypatch
+):
+    from whyline.console import adapters
+
+    assert "/timeout" in tui._SLASH_HINT
+    monkeypatch.setattr(
+        adapters,
+        "run_chat_turn",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("relay must not be called")),
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 30)) as pilot:
+        select = app.query_one("#cb-timeout", tui.Select)
+        prompt = app.query_one("#prompt", tui.Input)
+        assert app.session.chat_timeout_seconds == 300
+        assert select.value == 300
+
+        # /timeout reports the current value.
+        prompt.value = "/timeout"
+        app._send()
+        await pilot.pause()
+        assert app.session.transcript[-1].text == "Chat timeout: 5m. Each attempt gets this limit."
+
+        # /timeout none (and unlimited, 0, no limit) leaves 300 and returns the not-available error.
+        for token in ("none", "unlimited", "0", "no limit"):
+            prompt.value = f"/timeout {token}"
+            app._send()
+            await pilot.pause()
+            assert app.session.chat_timeout_seconds == 300
+            assert select.value == 300
+            assert app.session.transcript[-1].kind == "error"
+            assert (
+                app.session.transcript[-1].text
+                == "No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes."
+            )
+
+        # /timeout 30 and /timeout 45m update both the session and #cb-timeout.
+        prompt.value = "/timeout 30"
+        app._send()
+        await pilot.pause()
+        assert app.session.chat_timeout_seconds == 1800
+        assert select.value == 1800
+        assert app.session.transcript[-1].text == "Chat timeout: 30m. Each attempt gets this limit."
+
+        prompt.value = "/timeout 45m"
+        app._send()
+        await pilot.pause()
+        assert app.session.chat_timeout_seconds == 2700
+        assert select.value == 2700
+        assert app.session.transcript[-1].text == "Chat timeout: 45m. Each attempt gets this limit."
+
+        # Unknown value leaves the previous choice and replies with Usage.
+        prompt.value = "/timeout 20"
+        app._send()
+        await pilot.pause()
+        assert app.session.chat_timeout_seconds == 2700
+        assert select.value == 2700
+        assert app.session.transcript[-1].kind == "error"
+        assert app.session.transcript[-1].text == "Usage: /timeout [5|15|30|45|60|none]"
+
+
 
 
 

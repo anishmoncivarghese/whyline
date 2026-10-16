@@ -15185,3 +15185,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 560e46575f0c48ac97c854150a8f064f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:49:22.484Z"} -->
+
+## 2026-10-16 — Sync #cb-timeout from both _timeout_event callback and _sync_mode_indicator with prevent(Select.Changed)
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CTO-3
+
+**Because:** Both TUI _handle_slash and direct handle_slash_command(app.session, '/timeout ...') calls move #cb-timeout when mounted without queueing a redundant Select.Changed message
+
+**Rejected:**
+
+- Syncing only inside _cb_refresh — _cb_refresh only runs when the saved agent/model/repo/chain tuple changes
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 09c79fa073634c008192506dfbc5d486 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T13:04:06.536Z"} -->
+
+## 2026-10-16 — Pass CTO-3 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** CTO-3
+
+**Because:** The focused REPL/TUI suite and full project suite passed; coverage verifies timeout reporting, all finite spellings, mounted selector synchronization, invalid-value preservation, and no-limit refusal without relay invocation
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py, tests/console/test_repl.py, tests/console/test_tui.py
+
+<!-- whyline-event: a483513f3a9a4d70a92a6876261ca12c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T20:42:03.283Z"} -->
+
+## 2026-10-16 — Approve CTO-3 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CTO-3
+
+**Because:** The scoped implementation adds shared /timeout reporting and finite updates, refuses no-limit and invalid values without mutation or relay dispatch, synchronizes the mounted TUI selector safely, preserves keyboard /stop and Ctrl+C behavior, and both required test suites pass
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py, tests/console/test_repl.py, tests/console/test_tui.py
+
+<!-- whyline-event: 519e9aac20584098a71d82fee1f62fc2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T20:48:17.670Z"} -->
