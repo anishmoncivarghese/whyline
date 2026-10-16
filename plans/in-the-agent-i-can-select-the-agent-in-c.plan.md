@@ -436,7 +436,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Extend `tests/console/test_context_bar.py`. `test_the_bar_fits_80_columns` asserts both `#cb-timeout` and `#cb-save` have `region.right <= 80`. A second test changes `#cb-timeout` and asserts `#cb-save` stays disabled when agent, model, and repo are unchanged, and that neither `.whyline/relay/config.toml` nor `.whyline/model.json` is written.
   Verify with `uv run pytest -q tests/console/test_context_bar.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] CTO-2: Pass the timeout captured at Send
+- [x] CTO-2: Pass the timeout captured at Send
   Edit only `src/whyline/console/adapters.py`, `repl.py`, and `tui.py` in this checkout. `adapters.run_chat_turn` gains `timeout_seconds`. An `int` is forwarded to `chat.run_turn`. Any other value is forwarded as `300`. Do not map `"none"` in this task.
   The TUI and `repl._dispatch` pass `session.chat_timeout_seconds`. Send captures that field into the worker closure, so a change after Send does not rewrite an armed watchdog. `#cb-timeout` is disabled while that Chat or Brainstorm worker runs and enabled when busy clears. A Relay run does not disable it and does not read it. Gate the disable so `_relay_running()` leaves the select enabled.
   Extend `tests/console/test_tui.py` and `tests/console/test_adapters_whyline.py` (or the existing chat-adapter test module if the turn tests live there). Cover Send passing 300, 900, 1800, 2700, and 3600 into `run_chat_turn`; the select disabling while the worker runs; and the value captured at Send being the one passed when the select changes before the fake run returns.
