@@ -15142,3 +15142,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: df19cf61251643559dbbd27a6fbd7ee7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:10:37.910Z"} -->
+
+## 2026-10-16 — Check signature support before forwarding timeout_seconds across monkeypatched dispatch and run_chat_turn boundaries
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** CTO-2
+
+**Because:** Existing tests in test_repl.py, test_tui.py, and test_antigravity_trust.py monkeypatch run_chat_turn, dispatch, and _dispatch_in_thread with fixed positional/keyword lambdas that lack timeout_seconds or **kwargs, while CTO-2 restricts edits to adapters.py, repl.py, tui.py, test_tui.py, and test_adapters_whyline.py
+
+**Rejected:**
+
+- Editing test_repl.py and test_antigravity_trust.py stubs — violates CTO-2's file scope restriction
+
+**Files:** src/whyline/console/repl.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 152acb5824cb476393478b387365f01f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:35:07.656Z"} -->
+
+## 2026-10-16 — Pass CTO-2 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** CTO-2
+
+**Because:** The focused TUI and adapter suites and the full project suite passed; coverage verifies all five timeout values, non-int fallback to 300, REPL forwarding, Chat and Brainstorm disabling, Relay remaining enabled, and Send-time capture across later selector changes
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: a0fa22ae52d84dc4908b14d66efc2043 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:41:43.160Z"} -->
+
+## 2026-10-16 — Approve CTO-2 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CTO-2
+
+**Because:** The scoped diff forwards integer chat timeouts with a 300 fallback for all other values, captures the TUI value at Send, keeps Relay from reading or disabling the selector, and both the focused and full test suites passed
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 560e46575f0c48ac97c854150a8f064f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T12:49:22.484Z"} -->

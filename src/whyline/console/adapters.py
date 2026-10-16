@@ -224,7 +224,14 @@ def run_whyline_command(argv: list[str]) -> SessionEvent:
 
 
 def run_chat_turn(
-    root: Path, *, agent: str, prompt: str, attachments=(), run_fn=None, runner=None
+    root: Path,
+    *,
+    agent: str,
+    prompt: str,
+    attachments=(),
+    timeout_seconds: object = 300,
+    run_fn=None,
+    runner=None,
 ) -> SessionEvent:
     """Calls whyline-relay's chat.run_turn directly -- already the exact
     structured, reusable core chat's own REPL is built on. run_fn/runner
@@ -234,6 +241,11 @@ def run_chat_turn(
     from whyline_relay import config as relay_config
 
     settings = relay_config.load(root)
+    resolved_timeout = (
+        timeout_seconds
+        if isinstance(timeout_seconds, int) and not isinstance(timeout_seconds, bool)
+        else 300
+    )
     kwargs = {}
     if run_fn is not None:
         kwargs["run_fn"] = run_fn
@@ -241,7 +253,13 @@ def run_chat_turn(
         kwargs["runner"] = runner
     try:
         record = chat.run_turn(
-            root, agent=agent, prompt=prompt, settings=settings, attachments=list(attachments), **kwargs
+            root,
+            agent=agent,
+            prompt=prompt,
+            settings=settings,
+            attachments=list(attachments),
+            timeout_seconds=resolved_timeout,
+            **kwargs,
         )
     except chat.AgentUnavailable as error:
         return SessionEvent(kind="error", text=str(error), accepted=False)

@@ -102,3 +102,59 @@ def test_relay_is_configured_true_when_config_toml_exists(tmp_path):
 def test_relay_is_configured_false_when_absent(tmp_path):
     from whyline.console import adapters
     assert adapters.relay_is_configured(tmp_path) is False
+
+
+def test_run_chat_turn_forwards_int_timeout_seconds_and_defaults_other_values_to_300(tmp_path, monkeypatch):
+    from whyline_relay import chat
+
+    seen = []
+
+    def fake_run_turn(root, *, agent, prompt, settings, attachments, timeout_seconds=None, **kwargs):
+        seen.append(timeout_seconds)
+        return {"agent": agent, "response": "ok", "ok": True, "rate_limited": False}
+
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
+
+    for value in (300, 900, 1800, 2700, 3600):
+        event = adapters.run_chat_turn(
+            tmp_path, agent="claude", prompt="ping", timeout_seconds=value
+        )
+        assert event.kind == "output"
+
+    for non_int in (None, "none", "15m", True, False):
+        event = adapters.run_chat_turn(
+            tmp_path, agent="claude", prompt="ping", timeout_seconds=non_int
+        )
+        assert event.kind == "output"
+
+    event = adapters.run_chat_turn(tmp_path, agent="claude", prompt="ping")
+    assert event.kind == "output"
+
+    assert seen == [300, 900, 1800, 2700, 3600, 300, 300, 300, 300, 300, 300]
+
+
+def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch):
+    from whyline.console import repl
+    from whyline.console.session import ConsoleSession, SessionEvent
+
+    seen = []
+
+    def fake_run_chat_turn(root, *, agent, prompt, timeout_seconds=None, **kwargs):
+        seen.append((prompt, timeout_seconds))
+        return SessionEvent(kind="output", text="ok")
+
+    monkeypatch.setattr(adapters, "run_chat_turn", fake_run_chat_turn)
+
+    session = ConsoleSession(root=tmp_path)
+    for seconds in (300, 900, 1800, 2700, 3600):
+        session.chat_timeout_seconds = seconds
+        repl.dispatch(session, f"msg-{seconds}")
+
+    assert seen == [
+        ("msg-300", 300),
+        ("msg-900", 900),
+        ("msg-1800", 1800),
+        ("msg-2700", 2700),
+        ("msg-3600", 3600),
+    ]
+

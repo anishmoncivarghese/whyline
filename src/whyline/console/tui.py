@@ -62,6 +62,8 @@ from whyline.console.repl import (
     BRAINSTORM_AGENTS,
     RESET_BUSY_TEXT,
     _HOME_REFUSAL,
+    _UNSET,
+    _accepts_kwarg,
     _agents_command as agents_command_event,
     _is_home,
     _run_login,
@@ -2880,6 +2882,12 @@ class WhylineConsoleApp(App):
         self._main("#stop", Button).disabled = (
             not busy and not self._relay_running() and not self._external_relay
         )
+        try:
+            self._main("#cb-timeout", Select).disabled = (
+                busy and not self._relay_running()
+            )
+        except (NoMatches, IndexError):
+            pass
         thinking = self._main("#thinking", Static)
         if busy:
             self._busy_text = label or busy_label(self.session)
@@ -3191,7 +3199,11 @@ class WhylineConsoleApp(App):
         self._sync_mode_indicator()
 
     def _dispatch_text(self, text: str, attachments=()) -> None:
-        uses = self.session.mode == "chat" and (self.session.agent or "claude") == "antigravity"
+        in_chat = self.session.mode == "chat"
+        uses = in_chat and (self.session.agent or "claude") == "antigravity"
+        timeout_seconds = (
+            self.session.chat_timeout_seconds if in_chat else _UNSET
+        )
 
         def proceed(allowed: bool) -> None:
             if not allowed:
@@ -3201,21 +3213,40 @@ class WhylineConsoleApp(App):
             token = object()
             self._dispatch_token = token
             self._set_busy(True)
-            if attachments:
-                work = lambda: self._dispatch_in_thread(text, token, attachments=attachments)
-            else:
-                work = lambda: self._dispatch_in_thread(text, token)
+            def work(timeout=timeout_seconds) -> None:
+                kwargs = {}
+                if attachments:
+                    kwargs["attachments"] = attachments
+                if (
+                    timeout is not _UNSET
+                    and _accepts_kwarg(self._dispatch_in_thread, "timeout_seconds")
+                ):
+                    kwargs["timeout_seconds"] = timeout
+                self._dispatch_in_thread(text, token, **kwargs)
+
             self.run_worker(work, thread=True)
 
         self._with_antigravity(uses, proceed)
 
-    def _dispatch_in_thread(self, text: str, token: object, attachments=()) -> None:
+    def _dispatch_in_thread(
+        self,
+        text: str,
+        token: object,
+        attachments=(),
+        *,
+        timeout_seconds: object = _UNSET,
+    ) -> None:
         launched = True
         try:
+            kwargs = {}
             if attachments:
-                result = dispatch(self.session, text, attachments=attachments)
-            else:
-                result = dispatch(self.session, text)
+                kwargs["attachments"] = attachments
+            if (
+                timeout_seconds is not _UNSET
+                and _accepts_kwarg(dispatch, "timeout_seconds")
+            ):
+                kwargs["timeout_seconds"] = timeout_seconds
+            result = dispatch(self.session, text, **kwargs)
         except Exception as error:  # a safety net beyond adapters.py's own handling
             result = SessionEvent(kind="error", text=str(error), accepted=False)
             launched = False

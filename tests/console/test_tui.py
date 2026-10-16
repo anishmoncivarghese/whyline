@@ -2396,6 +2396,194 @@ async def test_relay_setup_and_plan_with_one_agent_opens_screens(tmp_path, monke
         assert len(app.screen_stack) == 1
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_send_passes_300_900_1800_2700_and_3600_into_run_chat_turn(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    seen = []
+
+    def fake_run_chat_turn(root, *, agent, prompt, timeout_seconds=None, **kwargs):
+        seen.append((prompt, timeout_seconds))
+        return SessionEvent(kind="output", text=f"ok {timeout_seconds}")
+
+    monkeypatch.setattr(adapters, "run_chat_turn", fake_run_chat_turn)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 30)) as pilot:
+        select = app.query_one("#cb-timeout", tui.Select)
+        prompt = app.query_one("#prompt", tui.Input)
+        for seconds in (300, 900, 1800, 2700, 3600):
+            select.value = seconds
+            await pilot.pause()
+            prompt.value = f"turn-{seconds}"
+            app._send()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+    assert seen == [
+        ("turn-300", 300),
+        ("turn-900", 900),
+        ("turn-1800", 1800),
+        ("turn-2700", 2700),
+        ("turn-3600", 3600),
+    ]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_timeout_select_disables_while_chat_or_brainstorm_runs_and_stays_enabled_during_relay(
+    tmp_path, monkeypatch
+):
+    import threading
+    from whyline.console import adapters, relay_ops
+    from whyline.console.session import SessionEvent
+
+    chat_started = threading.Event()
+    chat_release = threading.Event()
+
+    def slow_chat_turn(root, *, agent, prompt, timeout_seconds=None, **kwargs):
+        chat_started.set()
+        chat_release.wait(timeout=2.0)
+        return SessionEvent(kind="output", text="chat done")
+
+    bs_started = threading.Event()
+    bs_release = threading.Event()
+
+    def slow_brainstorm(root, *, progress, **choice):
+        bs_started.set()
+        bs_release.wait(timeout=2.0)
+        return SessionEvent(kind="output", text="brainstorm done")
+
+    monkeypatch.setattr(adapters, "run_chat_turn", slow_chat_turn)
+    monkeypatch.setattr(adapters, "run_brainstorm", slow_brainstorm)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 30)) as pilot:
+        select = app.query_one("#cb-timeout", tui.Select)
+        assert not select.disabled
+
+        # Chat worker disables #cb-timeout while running and re-enables when busy clears.
+        app.query_one("#prompt", tui.Input).value = "hello"
+        app._send()
+        assert select.disabled
+        await pilot.pause()
+        assert chat_started.wait(timeout=2.0)
+        assert select.disabled
+        chat_release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert not select.disabled
+
+        # Brainstorm worker disables #cb-timeout while running and re-enables when busy clears.
+        app._run_brainstorm_choice({
+            "topic": "t",
+            "agents": ["claude"],
+            "passes": 1,
+            "final_agent": "claude",
+            "timeout_minutes": 15,
+            "attachments": [],
+        })
+        assert select.disabled
+        await pilot.pause()
+        assert bs_started.wait(timeout=2.0)
+        assert select.disabled
+        bs_release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert not select.disabled
+
+        # Relay run leaves #cb-timeout enabled and does not read session.chat_timeout_seconds.
+        class FakeRelay:
+            def __init__(self, root, args, *, on_line, on_exit):
+                self._running = False
+
+            def start(self):
+                self._running = True
+
+            def running(self):
+                return self._running
+
+        monkeypatch.setattr(tui, "RelayProcess", FakeRelay)
+        monkeypatch.setattr(relay_ops, "list_plans", lambda root: [tmp_path / "plan.md"])
+        monkeypatch.setattr(
+            relay_ops,
+            "current_roles",
+            lambda root: {
+                "implementer": "claude",
+                "tester": "codex",
+                "reviewer": "claude",
+                "backup": [],
+            },
+        )
+        monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
+
+        app._launch_relay(["start"])
+        await pilot.pause()
+        assert app._relay_running()
+        assert not select.disabled
+        # Even if _set_busy(True) runs while _relay_running(), gate keeps #cb-timeout enabled.
+        app._set_busy(True, "auto")
+        assert not select.disabled
+        app._set_busy(False)
+        app._relay_finished(0, "Plan complete")
+        await pilot.pause()
+        assert not select.disabled
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_send_captures_timeout_before_select_changes_mid_run(tmp_path, monkeypatch):
+    import threading
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    started = threading.Event()
+    release = threading.Event()
+    seen = []
+
+    def slow_chat_turn(root, *, agent, prompt, timeout_seconds=None, **kwargs):
+        started.set()
+        release.wait(timeout=2.0)
+        seen.append((prompt, timeout_seconds))
+        return SessionEvent(kind="output", text="done")
+
+    monkeypatch.setattr(adapters, "run_chat_turn", slow_chat_turn)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 30)) as pilot:
+        select = app.query_one("#cb-timeout", tui.Select)
+        select.value = 900
+        await pilot.pause()
+        assert app.session.chat_timeout_seconds == 900
+
+        app.query_one("#prompt", tui.Input).value = "first"
+        app._send()
+        select.value = 1800
+        await pilot.pause()
+        assert started.wait(timeout=2.0)
+
+        # Change the select again before the fake run returns.
+        select.value = 2700
+        await pilot.pause()
+        assert app.session.chat_timeout_seconds == 2700
+
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        assert seen == [("first", 900)]
+
+        # A subsequent Send uses the newly selected value.
+        app.query_one("#prompt", tui.Input).value = "second"
+        app._send()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        assert seen == [("first", 900), ("second", 2700)]
+
+
 
 
 

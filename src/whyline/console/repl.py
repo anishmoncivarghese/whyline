@@ -812,9 +812,33 @@ def strip_relay_prefix(text: str) -> str:
     return text
 
 
-def dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
+_UNSET = object()
+
+
+def _accepts_kwarg(fn, name: str) -> bool:
+    import inspect
+
     try:
-        return _dispatch(session, text, attachments=attachments)
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return True
+    return any(
+        p.name == name or p.kind is inspect.Parameter.VAR_KEYWORD
+        for p in params
+    )
+
+
+def dispatch(
+    session: ConsoleSession,
+    text: str,
+    attachments=(),
+    *,
+    timeout_seconds: object = _UNSET,
+) -> SessionEvent:
+    try:
+        return _dispatch(
+            session, text, attachments=attachments, timeout_seconds=timeout_seconds
+        )
     except ModuleNotFoundError as error:
         # A raw "No module named 'whyline_relay'" told the user nothing
         # about how to fix it.
@@ -823,7 +847,13 @@ def dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent
         return SessionEvent(kind="error", text=_RELAY_MISSING, accepted=False)
 
 
-def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEvent:
+def _dispatch(
+    session: ConsoleSession,
+    text: str,
+    attachments=(),
+    *,
+    timeout_seconds: object = _UNSET,
+) -> SessionEvent:
     # "command" never arrives here: ConsoleSession stores it as "chat".
     if session.mode == "agents":
         return _agents_command(session, text)
@@ -831,11 +861,19 @@ def _dispatch(session: ConsoleSession, text: str, attachments=()) -> SessionEven
         return SessionEvent(kind="error", text=_HOME_REFUSAL, accepted=False)
     if session.mode == "chat":
         agent = session.agent or "claude"
+        timeout = (
+            session.chat_timeout_seconds
+            if timeout_seconds is _UNSET
+            else timeout_seconds
+        )
+        kwargs = {}
         if attachments:
-            return adapters.run_chat_turn(
-                session.root, agent=agent, prompt=text, attachments=attachments
-            )
-        return adapters.run_chat_turn(session.root, agent=agent, prompt=text)
+            kwargs["attachments"] = attachments
+        if _accepts_kwarg(adapters.run_chat_turn, "timeout_seconds"):
+            kwargs["timeout_seconds"] = timeout
+        return adapters.run_chat_turn(
+            session.root, agent=agent, prompt=text, **kwargs
+        )
     # relay mode
     text = strip_relay_prefix(text) or text
     first = text.split(maxsplit=1)[0]
