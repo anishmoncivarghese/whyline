@@ -128,14 +128,16 @@ _CHAT_TIMEOUT_LABELS: dict[int, str] = {
     3600: "60m",
 }
 _TIMEOUT_NO_LIMIT_TOKENS = ("none", "unlimited", "0", "no limit")
-_TIMEOUT_NO_LIMIT_ERROR = (
-    "No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes."
-)
 _TIMEOUT_USAGE = "Usage: /timeout [5|15|30|45|60|none]"
 
 
 def _timeout_sentence(seconds: object) -> str:
-    label = _CHAT_TIMEOUT_LABELS.get(seconds if isinstance(seconds, int) and not isinstance(seconds, bool) else 300, "5m")
+    if seconds == "none":
+        return "Chat timeout: none. Each attempt has no whyline kill timer."
+    label = _CHAT_TIMEOUT_LABELS.get(
+        seconds if isinstance(seconds, int) and not isinstance(seconds, bool) else 300,
+        "5m",
+    )
     return f"Chat timeout: {label}. Each attempt gets this limit."
 
 
@@ -155,7 +157,13 @@ def _timeout_event(session: ConsoleSession, text: str) -> SessionEvent:
             kind="output", text=_timeout_sentence(session.chat_timeout_seconds)
         )
     if arg in _TIMEOUT_NO_LIMIT_TOKENS:
-        return SessionEvent(kind="error", text=_TIMEOUT_NO_LIMIT_ERROR)
+        session.chat_timeout_seconds = "none"
+        sync = getattr(session, "_sync_timeout", None)
+        if callable(sync):
+            sync()
+        return SessionEvent(
+            kind="output", text=_timeout_sentence(session.chat_timeout_seconds)
+        )
     return SessionEvent(kind="error", text=_TIMEOUT_USAGE)
 
 

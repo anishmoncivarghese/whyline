@@ -31,7 +31,7 @@ class ConsoleSession:
     mode: str = "chat"  # "chat" | "relay" | "agents"
     agent: str | None = None
     transcript: list[SessionEvent] = field(default_factory=list)
-    chat_timeout_seconds: int = 300
+    chat_timeout_seconds: int | str = 300
 
     def __setattr__(self, name: str, value: object) -> None:
         # Command mode is gone. A leftover "command" is chat, including one

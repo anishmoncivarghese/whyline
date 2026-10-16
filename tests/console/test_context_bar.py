@@ -200,6 +200,7 @@ async def test_changing_timeout_does_not_dirty_save_or_write_files(tmp_path):
             1800: "30m",
             2700: "45m",
             3600: "60m",
+            "none": "none",
         }
         save = app.query_one("#cb-save", tui.Button)
         assert save.disabled

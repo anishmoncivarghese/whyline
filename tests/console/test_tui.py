@@ -2398,26 +2398,30 @@ async def test_relay_setup_and_plan_with_one_agent_opens_screens(tmp_path, monke
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_send_passes_300_900_1800_2700_and_3600_into_run_chat_turn(tmp_path, monkeypatch):
-    from whyline.console import adapters
-    from whyline.console.session import SessionEvent
+async def test_send_passes_300_900_1800_2700_3600_and_none_into_chat_run_turn(tmp_path, monkeypatch):
+    from whyline_relay import chat
 
     seen = []
 
-    def fake_run_chat_turn(root, *, agent, prompt, timeout_seconds=None, **kwargs):
+    def fake_run_turn(root, *, agent, prompt, settings, attachments, timeout_seconds=None, **kwargs):
         seen.append((prompt, timeout_seconds))
-        return SessionEvent(kind="output", text=f"ok {timeout_seconds}")
+        return {"agent": agent, "response": f"ok {timeout_seconds}", "ok": True, "rate_limited": False}
 
-    monkeypatch.setattr(adapters, "run_chat_turn", fake_run_chat_turn)
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 30)) as pilot:
         select = app.query_one("#cb-timeout", tui.Select)
         prompt = app.query_one("#prompt", tui.Input)
-        for seconds in (300, 900, 1800, 2700, 3600):
-            select.value = seconds
+        for choice in (300, 900, 1800, 2700, 3600, "none", 900):
+            select.value = choice
             await pilot.pause()
-            prompt.value = f"turn-{seconds}"
+            if choice == "none":
+                closed = select.query_one("#label").renderable
+                closed_text = closed.plain if hasattr(closed, "plain") else str(closed)
+                assert closed_text == "none"
+                assert app.session.chat_timeout_seconds == "none"
+            prompt.value = f"turn-{choice}"
             app._send()
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -2428,7 +2432,10 @@ async def test_send_passes_300_900_1800_2700_and_3600_into_run_chat_turn(tmp_pat
         ("turn-1800", 1800),
         ("turn-2700", 2700),
         ("turn-3600", 3600),
+        ("turn-none", chat.NO_LIMIT),
+        ("turn-900", 900),
     ]
+    assert seen[5][1] is chat.NO_LIMIT
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -2586,17 +2593,19 @@ async def test_send_captures_timeout_before_select_changes_mid_run(tmp_path, mon
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_timeout_slash_command_updates_session_and_select_and_refuses_none(
+async def test_timeout_slash_command_updates_session_and_select_including_none(
     tmp_path, monkeypatch
 ):
-    from whyline.console import adapters
+    from whyline_relay import chat
 
     assert "/timeout" in tui._SLASH_HINT
-    monkeypatch.setattr(
-        adapters,
-        "run_chat_turn",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("relay must not be called")),
-    )
+    seen_turns = []
+
+    def fake_run_turn(root, *, agent, prompt, settings, attachments, timeout_seconds=None, **kwargs):
+        seen_turns.append((prompt, timeout_seconds))
+        return {"agent": agent, "response": "ok", "ok": True, "rate_limited": False}
+
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 30)) as pilot:
@@ -2611,26 +2620,52 @@ async def test_timeout_slash_command_updates_session_and_select_and_refuses_none
         await pilot.pause()
         assert app.session.transcript[-1].text == "Chat timeout: 5m. Each attempt gets this limit."
 
-        # /timeout none (and unlimited, 0, no limit) leaves 300 and returns the not-available error.
+        # /timeout none (and unlimited, 0, no limit) sets "none", moves the select, and reports the sentence.
         for token in ("none", "unlimited", "0", "no limit"):
+            app.session.chat_timeout_seconds = 300
+            select.value = 300
+            await pilot.pause()
             prompt.value = f"/timeout {token}"
             app._send()
             await pilot.pause()
-            assert app.session.chat_timeout_seconds == 300
-            assert select.value == 300
-            assert app.session.transcript[-1].kind == "error"
+            assert app.session.chat_timeout_seconds == "none"
+            assert select.value == "none"
+            closed = select.query_one("#label").renderable
+            closed_text = closed.plain if hasattr(closed, "plain") else str(closed)
+            assert closed_text == "none"
+            assert app.session.transcript[-1].kind == "output"
             assert (
                 app.session.transcript[-1].text
-                == "No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes."
+                == "Chat timeout: none. Each attempt has no whyline kill timer."
             )
 
-        # /timeout 30 and /timeout 45m update both the session and #cb-timeout.
+        # Bare /timeout when stored value is "none" prints the no-limit sentence.
+        prompt.value = "/timeout"
+        app._send()
+        await pilot.pause()
+        assert (
+            app.session.transcript[-1].text
+            == "Chat timeout: none. Each attempt has no whyline kill timer."
+        )
+
+        # Sending after /timeout none passes chat.NO_LIMIT into chat.run_turn.
+        prompt.value = "after-none"
+        app._send()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # /timeout 30 and /timeout 45m update both the session and #cb-timeout, and Send passes seconds again.
         prompt.value = "/timeout 30"
         app._send()
         await pilot.pause()
         assert app.session.chat_timeout_seconds == 1800
         assert select.value == 1800
         assert app.session.transcript[-1].text == "Chat timeout: 30m. Each attempt gets this limit."
+
+        prompt.value = "after-30"
+        app._send()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
 
         prompt.value = "/timeout 45m"
         app._send()
@@ -2647,6 +2682,10 @@ async def test_timeout_slash_command_updates_session_and_select_and_refuses_none
         assert select.value == 2700
         assert app.session.transcript[-1].kind == "error"
         assert app.session.transcript[-1].text == "Usage: /timeout [5|15|30|45|60|none]"
+
+    assert len(seen_turns) == 2
+    assert seen_turns[0][0] == "after-none" and seen_turns[0][1] is chat.NO_LIMIT
+    assert seen_turns[1] == ("after-30", 1800)
 
 
 

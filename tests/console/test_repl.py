@@ -1023,12 +1023,16 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
     assert ev is not None and ev.kind == "output"
     assert ev.text == "Chat timeout: 5m. Each attempt gets this limit."
 
-    # /timeout none (and unlimited, 0, no limit) leaves 300 and returns the not-available error.
+    # /timeout none (and unlimited, 0, no limit) sets "none" and prints the no-limit sentence.
     for token in ("none", "unlimited", "0", "no limit"):
-        err = handle_slash_command(session, f"/timeout {token}")
-        assert err is not None and err.kind == "error"
-        assert err.text == "No limit is not available yet. Choose 5, 15, 30, 45, or 60 minutes."
-        assert session.chat_timeout_seconds == 300
+        session.chat_timeout_seconds = 300
+        out = handle_slash_command(session, f"/timeout {token}")
+        assert out is not None and out.kind == "output"
+        assert out.text == "Chat timeout: none. Each attempt has no whyline kill timer."
+        assert session.chat_timeout_seconds == "none"
+        shown = handle_slash_command(session, "/timeout")
+        assert shown is not None and shown.kind == "output"
+        assert shown.text == "Chat timeout: none. Each attempt has no whyline kill timer."
 
     # All finite forms (5/5m, 15/15m, 30/30m, 45/45m, 60/60m) update session and report the sentence.
     cases = [
@@ -1059,3 +1063,25 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
         assert bad_ev is not None and bad_ev.kind == "error"
         assert bad_ev.text == "Usage: /timeout [5|15|30|45|60|none]"
         assert session.chat_timeout_seconds == 1800
+
+    # /timeout none passes chat.NO_LIMIT into chat.run_turn, and a later finite choice passes seconds again.
+    from whyline_relay import chat
+
+    monkeypatch.undo()
+    seen_timeouts = []
+
+    def fake_run_turn(root, *, agent, prompt, settings, attachments, timeout_seconds=None, **kwargs):
+        seen_timeouts.append((prompt, timeout_seconds))
+        return {"agent": agent, "response": "ok", "ok": True, "rate_limited": False}
+
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
+
+    handle_slash_command(session, "/timeout none")
+    repl.dispatch(session, "unlimited-turn")
+    handle_slash_command(session, "/timeout 15")
+    repl.dispatch(session, "finite-turn")
+
+    assert len(seen_timeouts) == 2
+    assert seen_timeouts[0][0] == "unlimited-turn" and seen_timeouts[0][1] is chat.NO_LIMIT
+    assert seen_timeouts[1] == ("finite-turn", 900)
+

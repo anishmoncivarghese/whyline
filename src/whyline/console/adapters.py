@@ -241,11 +241,12 @@ def run_chat_turn(
     from whyline_relay import config as relay_config
 
     settings = relay_config.load(root)
-    resolved_timeout = (
-        timeout_seconds
-        if isinstance(timeout_seconds, int) and not isinstance(timeout_seconds, bool)
-        else 300
-    )
+    if timeout_seconds == "none":
+        resolved_timeout: object = chat.NO_LIMIT
+    elif isinstance(timeout_seconds, int) and not isinstance(timeout_seconds, bool):
+        resolved_timeout = timeout_seconds
+    else:
+        resolved_timeout = 300
     kwargs = {}
     if run_fn is not None:
         kwargs["run_fn"] = run_fn

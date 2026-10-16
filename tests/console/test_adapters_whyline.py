@@ -104,7 +104,7 @@ def test_relay_is_configured_false_when_absent(tmp_path):
     assert adapters.relay_is_configured(tmp_path) is False
 
 
-def test_run_chat_turn_forwards_int_timeout_seconds_and_defaults_other_values_to_300(tmp_path, monkeypatch):
+def test_run_chat_turn_maps_none_to_no_limit_forwards_int_and_defaults_other_values_to_300(tmp_path, monkeypatch):
     from whyline_relay import chat
 
     seen = []
@@ -121,7 +121,17 @@ def test_run_chat_turn_forwards_int_timeout_seconds_and_defaults_other_values_to
         )
         assert event.kind == "output"
 
-    for non_int in (None, "none", "15m", True, False):
+    event = adapters.run_chat_turn(
+        tmp_path, agent="claude", prompt="ping", timeout_seconds="none"
+    )
+    assert event.kind == "output"
+
+    event = adapters.run_chat_turn(
+        tmp_path, agent="claude", prompt="ping", timeout_seconds=900
+    )
+    assert event.kind == "output"
+
+    for non_int in (None, "15m", "unlimited", True, False):
         event = adapters.run_chat_turn(
             tmp_path, agent="claude", prompt="ping", timeout_seconds=non_int
         )
@@ -130,7 +140,22 @@ def test_run_chat_turn_forwards_int_timeout_seconds_and_defaults_other_values_to
     event = adapters.run_chat_turn(tmp_path, agent="claude", prompt="ping")
     assert event.kind == "output"
 
-    assert seen == [300, 900, 1800, 2700, 3600, 300, 300, 300, 300, 300, 300]
+    assert seen == [
+        300,
+        900,
+        1800,
+        2700,
+        3600,
+        chat.NO_LIMIT,
+        900,
+        300,
+        300,
+        300,
+        300,
+        300,
+        300,
+    ]
+    assert seen[5] is chat.NO_LIMIT
 
 
 def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch):
@@ -146,7 +171,7 @@ def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch
     monkeypatch.setattr(adapters, "run_chat_turn", fake_run_chat_turn)
 
     session = ConsoleSession(root=tmp_path)
-    for seconds in (300, 900, 1800, 2700, 3600):
+    for seconds in (300, 900, 1800, 2700, 3600, "none", 900):
         session.chat_timeout_seconds = seconds
         repl.dispatch(session, f"msg-{seconds}")
 
@@ -156,5 +181,7 @@ def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch
         ("msg-1800", 1800),
         ("msg-2700", 2700),
         ("msg-3600", 3600),
+        ("msg-none", "none"),
+        ("msg-900", 900),
     ]
 

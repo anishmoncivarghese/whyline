@@ -15262,3 +15262,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a7f4a36828c643919d9e562847248f7c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:06:03.064Z"} -->
+
+## 2026-10-16 — Store 'none' in ConsoleSession.chat_timeout_seconds and map it to chat.NO_LIMIT at adapters.run_chat_turn
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** UTO-2
+
+**Because:** Allows #cb-timeout and /timeout to share the string 'none' representation on ConsoleSession while translating to chat.NO_LIMIT at the relay boundary and defaulting any other non-int value to 300
+
+**Rejected:**
+
+- Storing chat.NO_LIMIT directly on ConsoleSession — #cb-timeout option values and UTO-2 require the string 'none' on ConsoleSession.chat_timeout_seconds
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/repl.py, src/whyline/console/session.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 1b6b35970ef84635805770e8d3b345dd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:19:02.715Z"} -->
+
+## 2026-10-16 — Pass UTO-2 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** UTO-2
+
+**Because:** The required focused timeout, TUI, and adapter suite and the full project suite both completed with exit 0, covering no-limit selection and restoration of finite timeout forwarding
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/repl.py, src/whyline/console/tui.py, tests/console/test_adapters_whyline.py, tests/console/test_repl.py, tests/console/test_tui.py
+
+<!-- whyline-event: cfa9551a60c646ab9f3a3e16fbfc8422 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:25:10.417Z"} -->
+
+## 2026-10-16 — Approve UTO-2 round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UTO-2
+
+**Because:** The implementation matches the requested timeout semantics and selector behavior, the tests genuinely cover no-limit forwarding plus a later finite selection, and both the focused suite and full project suite passed with exit 0
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/repl.py, src/whyline/console/session.py, src/whyline/console/tui.py, tests/console/test_adapters_whyline.py, tests/console/test_repl.py, tests/console/test_tui.py
+
+<!-- whyline-event: 47dc871055364b299276a842c60f9cc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:31:27.069Z"} -->

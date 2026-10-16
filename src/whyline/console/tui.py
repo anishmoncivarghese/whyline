@@ -156,12 +156,13 @@ def _short_path(path: Path) -> str:
 _CB_SHORT_LABELS = {"installed (login not checked)": "login unchecked"}
 # Action row on the agent menu once Backup has left the row.
 _CB_BACKUP_MENU = "backup-menu"
-_CB_TIMEOUT_OPTIONS: list[tuple[str, int]] = [
+_CB_TIMEOUT_OPTIONS: list[tuple[str, int | str]] = [
     ("5m", 300),
     ("15m", 900),
     ("30m", 1800),
     ("45m", 2700),
     ("60m", 3600),
+    ("none", "none"),
 ]
 
 
@@ -2687,7 +2688,9 @@ class WhylineConsoleApp(App):
             return
         if select.id == "cb-timeout":
             if event.value is not Select.BLANK and event.value is not None:
-                self.session.chat_timeout_seconds = int(event.value)
+                self.session.chat_timeout_seconds = (
+                    "none" if event.value == "none" else int(event.value)
+                )
             return
         if select.id != "cb-agent":
             return
