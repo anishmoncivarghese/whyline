@@ -449,7 +449,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Extend `tests/console/test_repl.py` and a TUI test. Cover `/timeout`, `/timeout 30`, and `/timeout 45m` updating the session and the select; an unknown value leaving the previous choice; and `/timeout none` leaving 300 and returning the not-available error.
   Verify with `uv run pytest -q tests/console/test_repl.py tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] CTO-4: Keep Scheduled Agents on 1 to 240 minutes
+- [x] CTO-4: Keep Scheduled Agents on 1 to 240 minutes
   Do not change `src/whyline/agents/definitions.py`. `definitions.load` still raises `DefinitionError("timeout_minutes must be between 1 and 240")` for 0, negatives, and values above 240. The Agents screens keep a finite integer field. They do not gain `none`.
   Add a regression test in `tests/agents/test_definitions.py` that `timeout_minutes = 0`, a negative, and `241` each raise that `DefinitionError`, and that `1` and `240` still load.
   Verify with `uv run pytest -q tests/agents/test_definitions.py` and `uv run pytest -q`. Change nothing else.
