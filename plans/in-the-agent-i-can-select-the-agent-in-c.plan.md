@@ -454,7 +454,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Add a regression test in `tests/agents/test_definitions.py` that `timeout_minutes = 0`, a negative, and `241` each raise that `DefinitionError`, and that `1` and `240` still load.
   Verify with `uv run pytest -q tests/agents/test_definitions.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] UTO-2: Offer none on the Chat timeout control
+- [x] UTO-2: Offer none on the Chat timeout control
   Add the row `none` → the string `"none"` to `#cb-timeout`. The closed label is `none`. `ConsoleSession.chat_timeout_seconds` may now be that string. `adapters.run_chat_turn` maps `"none"` to `chat.NO_LIMIT`, forwards an `int` as seconds, and treats any other stored value as `300`.
   `/timeout none`, `unlimited`, `0`, and `no limit` set `"none"` and move the select. `/timeout` with no argument prints `Chat timeout: none. Each attempt has no whyline kill timer.` when that is the stored value. The finite sentences from `CTO-3` stay. The usage line stays `Usage: /timeout [5|15|30|45|60|none]`.
   Extend the `/timeout` and Send tests. Cover `/timeout none` and the `none` row passing `chat.NO_LIMIT` into `chat.run_turn`, and a later finite choice passing that many seconds again.
