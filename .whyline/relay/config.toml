@@ -96,4 +96,4 @@ draft = "grok"
 review = "codex"
 
 [backup]
-chain = ["claude"]
+chain = ["grok"]
