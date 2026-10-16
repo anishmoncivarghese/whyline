@@ -1,0 +1,7 @@
+- [ ] RSV-1: A failed Resume opens Resolve by itself
+  Edit only `src/whyline/console/tui.py` and `tests/console/test_tui.py`.
+  Today a Resume (or `resume`, or Release done…) that the relay refuses prints the FAIL lines and stops, and the user has to press Resolve. In `_relay_finished`, when the launch was a resume (args start with `resume`), the exit code is non-zero, and either the output has preflight `FAIL` lines or the saved pause has a non-empty `recovery.diagnose`, call `_start_resolve_flow(source="resume", fail_lines=<those FAIL lines>)` straight away, so the problem, its evidence and the option buttons appear under the failure without a second click. Print `Resume could not start; here is what Resolve found.` above it.
+  It only opens the flow; it never applies an option. In Set up's Resolve mode `auto` (REC-4F) the existing automatic path runs instead, so the flow is not opened twice. A failure Resolve does not recognise keeps today's output and the Resolve button. A resume that succeeds, or a non-resume launch, never opens it.
+  Tests: a resume that exits with `FAIL  working tree has uncommitted changes` during a paused task shows `Resume could not start` and the `Resume and keep changes` button without pressing Resolve, and the launcher is not called again; in auto mode the flow is not opened a second time; a `start` launch that fails does not open it; an unrecognised failure shows no Resolve row.
+  Verify with `uv run pytest -q tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
+
