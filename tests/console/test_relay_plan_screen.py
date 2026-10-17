@@ -492,7 +492,9 @@ async def test_other_sources_do_not_show_auto_execution_fields(tmp_path):
         )
         timeout = screen.query_one("#bs-timeout", tui.Select)
         assert timeout.value == 15
-        assert [value for _label, value in timeout._options] == list(tui.BRAINSTORM_TIMEOUT_OPTIONS)
+        assert [value for _label, value in timeout._options] == [
+            *tui.BRAINSTORM_TIMEOUT_OPTIONS, "none",
+        ]
         assert not screen.query_one("#rp-run").display
         assert not screen.query("#cb-timeout")
         for source in ("brainstorm", "draft", "paste"):

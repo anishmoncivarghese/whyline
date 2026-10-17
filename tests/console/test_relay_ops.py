@@ -531,6 +531,57 @@ def test_final_synthesis_and_revise_synthesis(repo, monkeypatch):
     ]
 
 
+def test_plan_from_brainstorm_zero_timeout_passes_no_limit(repo, monkeypatch):
+    from whyline_relay import brainstorm, chat
+
+    seen = []
+    draft_path = repo / "plan.md"
+    draft_path.write_text("- [ ] T-1: x\n")
+    monkeypatch.setattr(
+        brainstorm, "generate_plan_from_synthesis",
+        lambda *a, **k: seen.append(k) or draft_path,
+    )
+    relay_ops.plan_from_brainstorm(
+        repo, "topic", "claude", progress=lambda l: None, timeout_minutes=0,
+    )
+    assert seen[0]["timeout_seconds"] is chat.NO_LIMIT
+
+
+def test_plan_from_brainstorm_none_omits_timeout_and_positive_passes_seconds(repo, monkeypatch):
+    from whyline_relay import brainstorm
+
+    seen = []
+    draft_path = repo / "plan.md"
+    draft_path.write_text("- [ ] T-1: x\n")
+    monkeypatch.setattr(
+        brainstorm, "generate_plan_from_synthesis",
+        lambda *a, **k: seen.append(k) or draft_path,
+    )
+    relay_ops.plan_from_brainstorm(
+        repo, "topic", "claude", progress=lambda l: None, timeout_minutes=None,
+    )
+    assert "timeout_seconds" not in seen[0]
+    relay_ops.plan_from_brainstorm(
+        repo, "topic", "claude", progress=lambda l: None, timeout_minutes=15,
+    )
+    assert seen[1]["timeout_seconds"] == 900
+
+
+def test_revise_synthesis_zero_timeout_passes_no_limit(repo, monkeypatch):
+    from whyline_relay import brainstorm, chat
+
+    seen = []
+    monkeypatch.setattr(
+        brainstorm, "revise_synthesis",
+        lambda *a, **k: seen.append(k),
+    )
+    relay_ops.revise_synthesis(
+        repo, "topic", "claude", ["claude"], "more details",
+        progress=lambda l: None, timeout_minutes=0,
+    )
+    assert seen[0]["timeout_seconds"] is chat.NO_LIMIT
+
+
 def test_interrupt_live_run_signals_the_running_relay(tmp_path, monkeypatch):
     import os
     import signal

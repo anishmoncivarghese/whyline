@@ -299,6 +299,29 @@ def test_run_synthesis_change_revises_synthesis(tmp_path, monkeypatch):
     )
 
 
+def test_run_synthesis_change_forwards_unlimited_timeout_as_zero(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        relay_ops,
+        "revise_synthesis",
+        lambda *a, **kw: seen.append(kw),
+    )
+    monkeypatch.setattr(relay_ops, "final_synthesis", lambda root, topic: "Revised.")
+    req = plan_job.PlanRequest(
+        "brainstorm",
+        "p",
+        brainstorm={
+            "topic": "top",
+            "agents": ["claude"],
+            "final_agent": "claude",
+            "timeout_unlimited": True,
+        },
+    )
+    prev_out = plan_job.Outcome("draft", stage="synthesis", text="Old", topic="top", writer="claude")
+    plan_job.run_synthesis_change(tmp_path, req, prev_out, "Prefer Postgres", lambda l: None)
+    assert seen[0]["timeout_minutes"] == 0
+
+
 def test_run_synthesis_change_with_open_questions(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_ops, "revise_synthesis", lambda *a, **k: None)
     monkeypatch.setattr(

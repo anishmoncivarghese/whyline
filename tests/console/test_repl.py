@@ -791,7 +791,7 @@ def test_repl_brainstorm_asks_then_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(
         editor, "build_session",
         lambda r: FakePromptSession(
-            ["/brainstorm", "retry policy", "bogus", "1,2", "2", "codex", "/exit"]
+            ["/brainstorm", "retry policy", "bogus", "1,2", "2", "codex", "", "/exit"]
         ),
     )
     lines = []
@@ -815,12 +815,46 @@ def test_repl_brainstorm_failure_does_not_end_the_console(tmp_path, monkeypatch)
     monkeypatch.setattr(adapters, "run_brainstorm", boom)
     monkeypatch.setattr(
         editor, "build_session",
-        lambda r: FakePromptSession(["/brainstorm", "t", "1", "", "", "/help", "/exit"]),
+        lambda r: FakePromptSession(["/brainstorm", "t", "1", "", "", "", "/help", "/exit"]),
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
     assert any("Brainstorm stopped: agent crashed" in line for line in lines)
     assert any("Commands:" in line for line in lines)  # still running afterwards
+
+
+def test_repl_brainstorm_timeout_defaults_to_15_when_chat_session_is_none(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.session import ConsoleSession
+
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    calls = []
+    prompts = []
+    monkeypatch.setattr(
+        adapters, "run_brainstorm",
+        lambda root, **kw: calls.append(kw) or SessionEvent(kind="output", text="ok"),
+    )
+
+    class Recorder:
+        def __init__(self, inputs):
+            self._inputs = iter(inputs)
+
+        def prompt(self, message=""):
+            prompts.append(message)
+            return next(self._inputs)
+
+    session = ConsoleSession(root=tmp_path, mode="chat")
+    session.chat_timeout_seconds = "none"
+    repl._brainstorm_prompts(
+        session, Recorder(["retry policy", "1", "1", "claude", ""]), lambda line: None,
+    )
+    timeout_prompt = next(p for p in prompts if p.startswith("Per-agent timeout:"))
+    assert timeout_prompt == (
+        "Per-agent timeout: 15 (default), 30, 45, 60 minutes, or none [15]: "
+    )
+    assert calls[0]["timeout_unlimited"] is False
+    assert calls[0]["timeout_minutes"] == 15
 
 
 # --- home-directory repo guard and unknown commands ------------------------------------

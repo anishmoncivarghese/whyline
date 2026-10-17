@@ -592,7 +592,7 @@ async def test_brainstorm_form_validates_then_runs_with_progress(tmp_path, monke
     monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
     calls = []
 
-    def fake_run(root, *, progress, **choice):
+    def fake_run(root, *, progress, cancel_event=None, **choice):
         calls.append(choice)
         progress("Researching independently: Claude, Codex")
         return SessionEvent(kind="output", text="final synthesis")
@@ -624,6 +624,7 @@ async def test_brainstorm_form_validates_then_runs_with_progress(tmp_path, monke
     assert calls == [{
         "topic": "retry policy", "agents": ["claude", "codex"],
         "passes": 2, "final_agent": "claude", "timeout_minutes": 45,
+        "timeout_unlimited": False,
         "attachments": [],
     }]
     assert any("· Researching independently" in line for line in lines)

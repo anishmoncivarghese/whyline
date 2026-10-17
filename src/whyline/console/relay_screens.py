@@ -806,7 +806,10 @@ class RelayPlanScreen(ModalScreen):
                 pass
         if "timeout_minutes" in saved_req:
             try:
-                self.query_one("#bs-timeout", Select).value = saved_req["timeout_minutes"]
+                minutes = saved_req["timeout_minutes"]
+                self.query_one("#bs-timeout", Select).value = (
+                    "none" if minutes == 0 else minutes
+                )
             except Exception:
                 pass
         if "drafter" in saved_req and saved_req["drafter"]:
@@ -903,6 +906,7 @@ class RelayPlanScreen(ModalScreen):
         raw_passes = self.query_one("#bs-passes", Input).value.strip() or "0"
         if not raw_passes.isdigit():
             raise ValueError("Review passes must be a whole number (0 or more).")
+        timeout = self.query_one("#bs-timeout", Select).value
         return AutoRunRequest(
             name=self.query_one("#rp-name", Input).value.strip(),
             topic=self.query_one("#bs-topic", Input).value.strip(),
@@ -915,7 +919,7 @@ class RelayPlanScreen(ModalScreen):
             ),
             passes=int(raw_passes),
             final_agent=str(self.query_one("#bs-final", Select).value),
-            timeout_minutes=self.query_one("#bs-timeout", Select).value,
+            timeout_minutes=0 if timeout == "none" else timeout,
             attachments=tuple(
                 self.query_one("#bs-attachments", AttachmentsField).pending.paths()
             ),

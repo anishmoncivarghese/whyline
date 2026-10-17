@@ -323,8 +323,11 @@ def brainstorm_field_widgets(
         ),
         Horizontal(
             Label("Per-agent timeout:", classes="field-label"),
-            Select([(f"{m} minutes", m) for m in BRAINSTORM_TIMEOUT_OPTIONS],
-                   value=15, allow_blank=False, id="bs-timeout"),
+            Select(
+                [(f"{m} minutes", m) for m in BRAINSTORM_TIMEOUT_OPTIONS]
+                + [("none", "none")],
+                value=15, allow_blank=False, id="bs-timeout",
+            ),
         ),
         AttachmentsField(root or Path("."), session or "", id="bs-attachments"),
     ]
@@ -344,16 +347,22 @@ def collect_brainstorm(query_one) -> "dict | str":
         return "Review passes must be a whole number (0 or more)."
     final = query_one("#bs-final", Select).value
     timeout = query_one("#bs-timeout", Select).value
-    if timeout not in BRAINSTORM_TIMEOUT_OPTIONS:
-        return "Choose a timeout of 15, 30, 45, or 60 minutes."
-    return {
+    attachments = query_one("#bs-attachments", AttachmentsField).pending.paths()
+    choice = {
         "topic": topic,
         "agents": agents,
         "passes": int(raw),
         "final_agent": final if final in agents else agents[0],
-        "timeout_minutes": timeout,
-        "attachments": query_one("#bs-attachments", AttachmentsField).pending.paths(),
+        "attachments": attachments,
     }
+    if timeout == "none":
+        choice["timeout_unlimited"] = True
+        return choice
+    if timeout not in BRAINSTORM_TIMEOUT_OPTIONS:
+        return "Choose a timeout of 15, 30, 45, or 60 minutes, or none."
+    choice["timeout_minutes"] = timeout
+    choice["timeout_unlimited"] = False
+    return choice
 
 
 class BrainstormScreen(ModalScreen):
@@ -3188,10 +3197,12 @@ class WhylineConsoleApp(App):
         # Replace the Chat cancel identity before this dispatch is current.
         # Stop leaves that event in place so the Chat worker can still report
         # Stopped.; once Brainstorm owns the turn, a late report must not
-        # match and clear this busy state. None, not a fresh Event:
-        # Brainstorm does not observe a cancel event, and Stop clears busy
-        # immediately only when _cancel_event is None.
-        self._cancel_event = None
+        # match and clear this busy state. A fresh Event: Brainstorm now
+        # observes cancel between phases, and Stop waits for Stopped.
+        import threading
+
+        cancel_event = threading.Event()
+        self._cancel_event = cancel_event
         names = ", ".join(choice["agents"])
         self.render_event(SessionEvent(
             kind="output",
@@ -3201,17 +3212,25 @@ class WhylineConsoleApp(App):
         token = object()
         self._dispatch_token = token
         self._set_busy(True, "brainstorming")
-        self.run_worker(lambda: self._brainstorm_in_thread(choice, token), thread=True)
+        self.run_worker(
+            lambda: self._brainstorm_in_thread(choice, token, cancel_event),
+            thread=True,
+        )
 
-    def _brainstorm_in_thread(self, choice: dict, token: object) -> None:
+    def _brainstorm_in_thread(self, choice: dict, token: object, cancel_event=None) -> None:
         def progress(line: str) -> None:
             self.call_from_thread(self._brainstorm_progress, line, token)
 
         try:
-            result = adapters.run_brainstorm(self.session.root, progress=progress, **choice)
+            result = adapters.run_brainstorm(
+                self.session.root,
+                progress=progress,
+                cancel_event=cancel_event,
+                **choice,
+            )
         except Exception as error:  # an agent failure mid-run must not end the console
             result = SessionEvent(kind="error", text=f"Brainstorm stopped: {error}")
-        self.call_from_thread(self._finish_dispatch, result, token)
+        self.call_from_thread(self._finish_dispatch, result, token, True, cancel_event)
 
     def _brainstorm_progress(self, line: str, token: object) -> None:
         if token is not self._dispatch_token:
@@ -3306,9 +3325,11 @@ class WhylineConsoleApp(App):
         # Checked here, on the main thread, rather than in the worker: a
         # Stop or newer dispatch that lands between the worker's check and
         # this call would otherwise still let a stale result through.
+        text = getattr(result, "text", None)
         if (
             getattr(result, "kind", None) == "error"
-            and getattr(result, "text", None) == "Stopped."
+            and isinstance(text, str)
+            and text.startswith("Stopped.")
         ):
             if cancel_event is not getattr(self, "_cancel_event", None):
                 return

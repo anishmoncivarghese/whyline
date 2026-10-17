@@ -425,6 +425,16 @@ def brainstorm_docs(root: Path) -> list[str]:
     return sorted(path.stem for path in folder.glob("*.md"))
 
 
+def _timeout_seconds_kwarg(timeout_minutes: int | None) -> dict:
+    if timeout_minutes is None:
+        return {}
+    if timeout_minutes == 0:
+        from whyline_relay import chat
+
+        return {"timeout_seconds": chat.NO_LIMIT}
+    return {"timeout_seconds": timeout_minutes * 60}
+
+
 def plan_from_brainstorm(
     root: Path,
     topic: str,
@@ -437,7 +447,7 @@ def plan_from_brainstorm(
     from whyline_relay import brainstorm
 
     progress(f"{BRAINSTORM_LABELS[agent]} is turning the brainstorm into a plan")
-    kwargs = {"timeout_seconds": timeout_minutes * 60} if timeout_minutes else {}
+    kwargs = _timeout_seconds_kwarg(timeout_minutes)
     path = brainstorm.generate_plan_from_synthesis(
         root, _settings(root), agent, _models(agent), topic, attachments=attachments, **kwargs
     )
@@ -476,7 +486,7 @@ def revise_synthesis(
         item if isinstance(item, tuple) else (item, BRAINSTORM_LABELS.get(item, item))
         for item in agents
     ]
-    kwargs = {"timeout_seconds": timeout_minutes * 60} if timeout_minutes else {}
+    kwargs = _timeout_seconds_kwarg(timeout_minutes)
     brainstorm.revise_synthesis(
         root,
         _settings(root),

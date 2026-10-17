@@ -451,9 +451,11 @@ def run_brainstorm(
     passes: int,
     final_agent: str,
     timeout_minutes: int = 15,
+    timeout_unlimited: bool = False,
     progress=None,
     run_fn=None,
     attachments: Sequence[Path] = (),
+    cancel_event=None,
 ) -> SessionEvent:
     """Multi-model brainstorming via whyline-relay's own brainstorm module:
     each model researches independently, the drafts are merged, `passes`
@@ -463,7 +465,8 @@ def run_brainstorm(
     Agents are passed by whyline's names ("antigravity"), which relay's
     chat resolves -- not relay brainstorm's own menu key "agy", which its
     chat rejects."""
-    from whyline_relay import brainstorm, config as relay_config
+    from whyline_relay import agents as relay_agents, brainstorm, chat
+    from whyline_relay import config as relay_config
 
     # relay prints each model's start/finish/failure line through print_fn
     # itself; also passing progress_fn printed every line twice.
@@ -483,40 +486,58 @@ def run_brainstorm(
     if final_agent not in {key for key, _ in models}:
         final_agent = models[0][0]
         progress(f"Final synthesis will come from {models[0][1]} instead.")
+    timeout_seconds = chat.NO_LIMIT if timeout_unlimited else timeout_minutes * 60
     kwargs = {"run_fn": run_fn} if run_fn is not None else {}
     names = ", ".join(label for _, label in models)
-    progress(f"Researching independently: {names}")
-    actual = brainstorm.run_pass_zero(
-        root, models, topic, settings=settings, print_fn=progress,
-        timeout_seconds=timeout_minutes * 60, attachments=attachments, **kwargs
-    )
-    researched = [
-        label for key, label in models
-        if brainstorm.temp_path(root, key).exists()
-        and brainstorm.temp_path(root, key).read_text(encoding="utf-8").strip()
-    ]
-    if not researched:
-        # Reviewing and synthesising nothing just burns more agent turns
-        # before failing anyway.
-        return SessionEvent(
-            kind="error",
-            text="No model finished its research, so there is nothing to review or "
-            "synthesise. The lines above say why for each model.",
+
+    def cancelled() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    def stopped(phase: str) -> SessionEvent:
+        return SessionEvent(kind="error", text=f"Stopped. {phase} did not start.")
+
+    try:
+        progress(f"Researching independently: {names}")
+        actual = brainstorm.run_pass_zero(
+            root, models, topic, settings=settings, print_fn=progress,
+            timeout_seconds=timeout_seconds, attachments=attachments,
+            cancel_event=cancel_event, **kwargs
         )
-    brainstorm.merge_pass_zero(root, models, topic, actual_agents=actual)
-    for number in range(1, passes + 1):
-        progress(f"Review pass {number} of {passes}")
-        actual = brainstorm.run_review_pass(
-            root, models, topic, number, settings=settings, print_fn=progress,
-            actual_agents=actual, timeout_seconds=timeout_minutes * 60,
-            attachments=attachments, **kwargs,
+        researched = [
+            label for key, label in models
+            if brainstorm.temp_path(root, key).exists()
+            and brainstorm.temp_path(root, key).read_text(encoding="utf-8").strip()
+        ]
+        if cancelled():
+            return stopped("Review" if passes > 0 else "Final synthesis")
+        if not researched:
+            # Reviewing and synthesising nothing just burns more agent turns
+            # before failing anyway.
+            return SessionEvent(
+                kind="error",
+                text="No model finished its research, so there is nothing to review or "
+                "synthesise. The lines above say why for each model.",
+            )
+        brainstorm.merge_pass_zero(root, models, topic, actual_agents=actual)
+        for number in range(1, passes + 1):
+            if cancelled():
+                return stopped("Review")
+            progress(f"Review pass {number} of {passes}")
+            actual = brainstorm.run_review_pass(
+                root, models, topic, number, settings=settings, print_fn=progress,
+                actual_agents=actual, timeout_seconds=timeout_seconds,
+                attachments=attachments, cancel_event=cancel_event, **kwargs,
+            )
+        if cancelled():
+            return stopped("Final synthesis")
+        progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
+        record = brainstorm.run_final_synthesis(
+            root, final_agent, models, topic, settings=settings, print_fn=progress,
+            actual_agents=actual, timeout_seconds=timeout_seconds,
+            attachments=attachments, cancel_event=cancel_event, **kwargs
         )
-    progress(f"Final synthesis by {BRAINSTORM_LABELS[final_agent]}")
-    record = brainstorm.run_final_synthesis(
-        root, final_agent, models, topic, settings=settings, print_fn=progress,
-        actual_agents=actual, timeout_seconds=timeout_minutes * 60,
-        attachments=attachments, **kwargs
-    )
+    except relay_agents.AgentCancelled:
+        return SessionEvent(kind="error", text="Stopped.")
     path = brainstorm.shared_path(root, topic)
     try:
         shown = path.relative_to(root)

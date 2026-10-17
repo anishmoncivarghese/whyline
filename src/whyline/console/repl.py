@@ -837,12 +837,57 @@ def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> No
     passes = int(raw) if raw.isdigit() else 1
     raw = (_ask(prompt_session, f"Who writes the final synthesis? [{agents[0]}] ") or agents[0]).lower()
     final_agent = raw if raw in agents else agents[0]
+    from whyline_relay import brainstorm, chat
+
+    loaded = brainstorm.load_timeout(session.root, topic)
+    if loaded is chat.NO_LIMIT:
+        timeout_default = chat.NO_LIMIT
+        shown_default = "none"
+    elif (
+        isinstance(loaded, int)
+        and not isinstance(loaded, bool)
+        and loaded // 60 in brainstorm.TIMEOUT_OPTIONS
+    ):
+        timeout_default = loaded // 60
+        shown_default = str(timeout_default)
+    else:
+        timeout_default = 15
+        shown_default = "15"
+    timeout_unlimited = False
+    timeout_minutes = 15
+    while True:
+        raw_timeout = _ask(
+            prompt_session,
+            "Per-agent timeout: 15 (default), 30, 45, 60 minutes, or none "
+            f"[{shown_default}]: ",
+        )
+        if raw_timeout is None:
+            print_fn("Brainstorm cancelled.")
+            return
+        parsed = brainstorm.parse_timeout_selection(raw_timeout, default=timeout_default)
+        if parsed is chat.NO_LIMIT:
+            timeout_unlimited = True
+            break
+        if parsed is not None:
+            timeout_unlimited = False
+            timeout_minutes = parsed
+            break
+        print_fn(
+            "Enter a valid timeout: 15 (default), 30, 45, 60 minutes, or none."
+        )
     print_fn("Brainstorming -- this runs several full agent turns, so it takes a while.")
     try:
-        event = adapters.run_brainstorm(
-            session.root, topic=topic, agents=agents, passes=passes,
-            final_agent=final_agent, progress=print_fn,
-        )
+        kwargs = {
+            "topic": topic,
+            "agents": agents,
+            "passes": passes,
+            "final_agent": final_agent,
+            "progress": print_fn,
+            "timeout_unlimited": timeout_unlimited,
+        }
+        if not timeout_unlimited:
+            kwargs["timeout_minutes"] = timeout_minutes
+        event = adapters.run_brainstorm(session.root, **kwargs)
     except KeyboardInterrupt:
         event = SessionEvent(kind="error", text="Brainstorm cancelled.")
     except Exception as error:  # an agent failure mid-run must not end the console

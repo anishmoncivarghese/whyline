@@ -125,3 +125,118 @@ def test_skipped_models_say_how_to_set_them_up(tmp_path, monkeypatch):
     )
     line = next(line for line in progress if line.startswith("Skipping"))
     assert "Grok" in line and "whyline relay doctor" in line
+
+
+def test_collect_brainstorm_none_sets_timeout_unlimited_without_reading_chat_select():
+    from types import SimpleNamespace
+
+    from whyline.console.repl import BRAINSTORM_AGENTS
+    from whyline.console.tui import collect_brainstorm
+
+    values = {
+        "#bs-topic": "retry policy",
+        "#bs-passes": "1",
+        "#bs-final": "claude",
+        "#bs-timeout": "none",
+    }
+    for agent in BRAINSTORM_AGENTS:
+        values[f"#bs-{agent}"] = agent == "claude"
+
+    def query_one(selector, cls=None):
+        assert selector != "#cb-timeout"
+        if selector == "#bs-attachments":
+            return SimpleNamespace(pending=SimpleNamespace(paths=lambda: []))
+        return SimpleNamespace(value=values[selector])
+
+    choice = collect_brainstorm(query_one)
+    assert choice["timeout_unlimited"] is True
+    assert "timeout_minutes" not in choice
+
+    values["#bs-timeout"] = 30
+    finite = collect_brainstorm(query_one)
+    assert finite["timeout_minutes"] == 30
+    assert finite["timeout_unlimited"] is False
+
+
+def test_run_brainstorm_unlimited_passes_no_limit(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm, chat
+
+    calls = _fake_relay(monkeypatch)
+    seen = []
+
+    def pass_zero(root, models, topic, *, settings, print_fn=None, **kw):
+        seen.append(("zero", kw.get("timeout_seconds")))
+        for key, _ in models:
+            target = brainstorm.temp_path(root, key)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("research\n")
+        return {}
+
+    def review(root, models, topic, number, *, settings, print_fn=None, actual_agents=None, **kw):
+        seen.append(("review", kw.get("timeout_seconds")))
+        return {}
+
+    def final(root, agent, models, topic, *, settings, **kw):
+        seen.append(("final", kw.get("timeout_seconds")))
+        return {"agent": agent, "response": "the synthesis"}
+
+    monkeypatch.setattr(brainstorm, "run_pass_zero", pass_zero)
+    monkeypatch.setattr(brainstorm, "run_review_pass", review)
+    monkeypatch.setattr(brainstorm, "run_final_synthesis", final)
+    adapters.run_brainstorm(
+        tmp_path, topic="t", agents=["claude"], passes=1, final_agent="claude",
+        timeout_unlimited=True,
+    )
+    assert [seconds for _name, seconds in seen] == [chat.NO_LIMIT, chat.NO_LIMIT, chat.NO_LIMIT]
+    assert calls[0][0] == "merge"
+
+
+def test_run_brainstorm_stop_between_phases_does_not_start_the_next_model(tmp_path, monkeypatch):
+    import threading
+
+    from whyline_relay import brainstorm
+
+    calls = _fake_relay(monkeypatch)
+    cancel = threading.Event()
+
+    def pass_zero(root, models, topic, *, settings, print_fn=None, **kw):
+        calls.append(("zero", [k for k, _ in models], kw.get("cancel_event")))
+        for key, _ in models:
+            target = brainstorm.temp_path(root, key)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("research\n")
+        cancel.set()
+        return {}
+
+    monkeypatch.setattr(brainstorm, "run_pass_zero", pass_zero)
+    event = adapters.run_brainstorm(
+        tmp_path, topic="t", agents=["claude"], passes=1, final_agent="claude",
+        cancel_event=cancel,
+    )
+    assert event.kind == "error"
+    assert event.text == "Stopped. Review did not start."
+    assert calls == [("zero", ["claude"], cancel)]
+
+
+def test_run_brainstorm_stop_after_review_does_not_start_synthesis(tmp_path, monkeypatch):
+    import threading
+
+    from whyline_relay import brainstorm
+
+    calls = _fake_relay(monkeypatch)
+    cancel = threading.Event()
+
+    def review(root, models, topic, number, *, settings, print_fn=None, actual_agents=None, **kw):
+        calls.append(("review", number))
+        cancel.set()
+        return {}
+
+    monkeypatch.setattr(brainstorm, "run_review_pass", review)
+    event = adapters.run_brainstorm(
+        tmp_path, topic="t", agents=["claude"], passes=1, final_agent="claude",
+        cancel_event=cancel,
+    )
+    assert event.kind == "error"
+    assert event.text == "Stopped. Final synthesis did not start."
+    assert ("final", "claude") not in calls
+    assert ("review", 1) in calls

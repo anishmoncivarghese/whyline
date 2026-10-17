@@ -15423,3 +15423,65 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cd137bfaf1d549f791fa5e15390ecbc9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T07:52:57.238Z"} -->
+
+## 2026-10-17 — Brainstorm Stop uses a fresh cancel Event and treats Stopped. prefixes as the cancel result
+
+**Actor:** grok
+**Role:** implementer
+**Task:** UTO-4
+
+**Because:** UTO-4 requires run_brainstorm to observe the app cancel_event between phases, and Stop replaces the dispatch token before the worker returns. A phase suffix such as Stopped. Review did not start. must still match so busy clears and the line renders.
+
+**Rejected:**
+
+- Keep _cancel_event as None — Stop would clear busy immediately and the adapter would never see the event.
+- Return only Stopped. and progress the phase — Stop already dropped that token, so the phase would not appear.
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: 0c1e757ad7db457eb0ced3a5a6a486c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:19:36.306Z"} -->
+
+## 2026-10-17 — none on #bs-timeout is timeout_unlimited for Brainstorm and 0 for Auto
+
+**Actor:** grok
+**Role:** implementer
+**Task:** UTO-4
+
+**Because:** collect_brainstorm must omit a fake minute count when the dialog is none. Auto shares that widget and AutoRunRequest stores an int, so the Plan screen maps none to 0, which is already its unlimited value.
+
+**Rejected:**
+
+- Put timeout_minutes 0 in collect_brainstorm — the task says omit a fake minute count.
+- Leave Auto reading the string none — AutoRunRequest would TypeError.
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: d7c57fbcd37c49e1a0af1a3da1fd3647 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:19:41.738Z"} -->
+
+## 2026-10-17 — Pass UTO-4 round 2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** UTO-4
+
+**Because:** The exact focused pytest command and the full project pytest suite both exited 0; coverage includes none selection, keyboard defaults, cancellation between phases, and NO_LIMIT plan synthesis.
+
+**Files:** tests/console/test_adapters_brainstorm.py, tests/console/test_repl.py, tests/console/test_relay_ops.py, tests/console/test_plan_job.py
+
+<!-- whyline-event: 5d03e996f8644ad9b1541e4d1ea2498b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:25:29.484Z"} -->
+
+## 2026-10-17 — Approve UTO-4 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UTO-4
+
+**Because:** The working-tree diff implements Brainstorm none selection, per-topic keyboard defaults, NO_LIMIT propagation, phase-boundary cancellation, and synthesis timeout forwarding; the focused 175-test suite and full project suite both exited 0 with no failures.
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/plan_job.py, src/whyline/console/relay_ops.py, src/whyline/console/repl.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 39c80d83f53b40339561136c44071aae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:32:38.356Z"} -->

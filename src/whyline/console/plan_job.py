@@ -190,6 +190,14 @@ def run_request(root: Path, request: PlanRequest, progress) -> Outcome:
     return Outcome("draft", stage="synthesis", text=text, topic=topic, writer=writer)
 
 
+def _brainstorm_timeout_minutes(choice: dict | None) -> int | None:
+    if not choice:
+        return None
+    if choice.get("timeout_unlimited"):
+        return 0
+    return choice.get("timeout_minutes")
+
+
 def run_synthesis_change(
     root: Path,
     request: PlanRequest,
@@ -200,7 +208,7 @@ def run_synthesis_change(
     topic = outcome.topic or request.topic or ((request.brainstorm or {}).get("topic", ""))
     writer = outcome.writer or request.writer or ((request.brainstorm or {}).get("final_agent", ""))
     agents = (request.brainstorm or {}).get("agents") or ([writer] if writer else [])
-    timeout_minutes = (request.brainstorm or {}).get("timeout_minutes")
+    timeout_minutes = _brainstorm_timeout_minutes(request.brainstorm)
     attachments = list(request.attachments) or list((request.brainstorm or {}).get("attachments", ()))
 
     relay_ops.revise_synthesis(
