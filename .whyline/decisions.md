@@ -16117,3 +16117,114 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1e9da654f79f476185410b4ff5b42fc5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:36:10.168Z"} -->
+
+## 2026-10-17 — A failed manual check commits as test: fail <id>
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-5
+
+**Because:** The pass commit is test: confirm <id>, and a failure is not a confirmation. The history has to say which outcome was recorded.
+
+**Rejected:**
+
+- Reuse test — confirm <id> for fail: the commit subject would claim a failed check was confirmed
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: def1924798644b72a7a9f1fb117478a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:58:05.755Z"} -->
+
+## 2026-10-17 — A manual-check pause stores an empty base commit
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-5
+
+**Because:** The release has not started, so resume must come back through the gate and then start it fresh. A saved base would make the agent resume a turn that never ran.
+
+**Rejected:**
+
+- Save HEAD as the base — resume would treat the release as already in progress
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 2010c527cca5415f92612e75ad6cda2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:58:05.788Z"} -->
+
+## 2026-10-17 — Each open manual check is one line: TP-n: title | steps: a; b | expected: c; d
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-5
+
+**Because:** The pause reason has to carry the id, title, steps, and expected lines on a single line. Pipes and semicolons keep the fields separable for the console.
+
+**Rejected:**
+
+- A wrapped block under each scenario — the task asks for one line per scenario
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py
+
+<!-- whyline-event: f476c773f9e74f1397f76f59ce256e5b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:58:05.820Z"} -->
+
+## 2026-10-17 — done refuses once manual checks are confirmed and tells you to resume
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-5
+
+**Because:** Those checks only unblock the release. done means the release work itself is finished, and that work has not started.
+
+**Rejected:**
+
+- Let done mark the release complete — that would skip the release
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/cli.py
+
+<!-- whyline-event: 3617ae60a2914eb7909505e28b385b6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:58:05.852Z"} -->
+
+## 2026-10-17 — Manual checks use the tasks since the previous release, not the release task
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-5
+
+**Because:** That is the phase window ids_since_previous_release already defines for verify, and the release task text is the release checklist.
+
+**Rejected:**
+
+- Include the release task id — a scenario that only covers the release would block on the release steps
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: f41cb31241494c30a73ace9005e2f53b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:58:05.883Z"} -->
+
+## 2026-10-17 — TPL-5 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-5
+
+**Because:** The full pytest suite exited 0, and scratch-repo tests verify release pausing, listing, pass/fail commits, done/resume refusal, human and agent release continuation, and no-test-plan behavior.
+
+**Files:** /Users/anish/whyline-relay/tests/test_manual_checks.py
+
+<!-- whyline-event: e7d5699b2bcf4b4da6d1e3d0e536dbec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T16:00:52.019Z"} -->
+
+## 2026-10-17 — TPL-5 is approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-5
+
+**Because:** The release gate runs before human or agent release execution, manual pass and fail update and commit only the test plan as required, resume and done enforce open checks, the scratch-repository tests cover every requested behavior, and uv run pytest -q exited 0.
+
+**Files:** /Users/anish/whyline-relay/tests/test_manual_checks.py
+
+<!-- whyline-event: c919700f41d146e38d617289c7ab0738 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T16:04:07.855Z"} -->
