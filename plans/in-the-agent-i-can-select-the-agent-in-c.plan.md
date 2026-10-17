@@ -492,7 +492,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
 
 A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>.plan.md`. The test plan is written by an optional Test planner, a different agent from the Drafter where possible, so the tests do not share the plan writer's blind spots. The Reviewer reviews both files together. Each phase ends with a Verify task that turns the automatic scenarios into tests and runs them, and a release cannot continue while a manual check that covers its tasks is still unconfirmed. With no Test planner configured, everything behaves exactly as today.
 
-- [ ] TPL-1: The test plan format and its validator
+- [x] TPL-1: The test plan format and its validator
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/testplan.py` (new) and `/Users/anish/whyline-relay/tests/test_testplan.py` (new). Leave this whyline checkout untouched.
   A test plan is Markdown. Each scenario is `- [ ] TP-<n>: <title>` with indented lines `covers: <task id>, <task id>`, `kind: auto` or `kind: manual`, `steps:` (one or more following `  - ` lines), and `expected:` (one or more following `  - ` lines). Optional `not-covered: <task id> — <reason>` lines at top level name plan tasks deliberately left without a scenario.
   Add `path_for(plan_path) -> Path` (`x.plan.md` → `x.tests.md`, any other `x.md` → `x.tests.md`), `parse(text) -> list[Scenario]` with frozen `Scenario(id, title, covers, kind, steps, expected, checked, note)`, `validate(test_text, plan_text) -> list[str]`, and `open_manual(test_text, task_ids) -> list[Scenario]`.
