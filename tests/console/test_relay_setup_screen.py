@@ -501,6 +501,22 @@ async def test_none_is_saved_as_zero(tmp_path, monkeypatch, ops):
     assert ("timeout", 0) in ops
 
 
+async def test_changing_the_timeout_and_pressing_cancel_writes_nothing(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "relay_timeout", lambda root: 30)
+    monkeypatch.setattr(
+        relay_ops, "save_timeout", lambda root, minutes: ops.append(("timeout", minutes))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rs-timeout", tui.Select).value = 60
+        await pilot.pause()
+        screen.query_one("#rs-cancel", tui.Button).press()
+        await _wait_for(pilot, lambda: results, "popup to close")
+    assert results == [None]
+    assert not [op for op in ops if op[0] == "timeout"]
+
+
 async def test_relay_timeout_reads_the_config_and_falls_back_to_30(tmp_path):
     assert relay_ops.relay_timeout(tmp_path) == 30
     relay = tmp_path / ".whyline" / "relay"

@@ -15485,3 +15485,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 39c80d83f53b40339561136c44071aae -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:32:38.356Z"} -->
+
+## 2026-10-17 — UTO-5 timeout Cancel coverage passes testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** UTO-5
+
+**Because:** The added test changes the saved timeout from 30 to 60, presses Cancel, observes dismissal with None, and confirms save_timeout is never called; both the focused relay suites and full project suite passed
+
+**Files:** tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 5cd1e008f9b749b796e7db20b5513d9f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:45:56.359Z"} -->
+
+## 2026-10-17 — Approve UTO-5 Cancel timeout persistence coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UTO-5
+
+**Because:** The sole test change selects a timeout different from the saved value, presses Cancel, verifies dismissal with None, and proves save_timeout was not called; focused and full test suites both exited 0
+
+**Files:** tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: cb04bdac5092418bb33da7ab7be23b32 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:51:50.563Z"} -->
