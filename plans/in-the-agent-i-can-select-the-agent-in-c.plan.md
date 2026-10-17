@@ -479,7 +479,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Add only the missing test in `tests/console/test_relay_setup_screen.py`: changing the select and pressing Cancel writes nothing. If the tests the 0.3.41 change added already cover a case, do not duplicate it. The Chat control never calls `save_timeout`.
   Verify with `uv run pytest -q tests/console/test_relay_setup_screen.py tests/console/test_relay_ops.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] UTO-6: Describe the per-attempt limit in /help
+- [x] UTO-6: Describe the per-attempt limit in /help
   Update `_help_text` / `_COMMAND_HELP` in `src/whyline/console/repl.py` so `/help` states that the limit is per attempt, that provider limits still apply, and that Scheduled Agents accept only 1–240 minutes. The `/timeout` help line lists `5`, `15`, `30`, `45`, `60`, and `none`. Do not add `none` to the Agents screens in `src/whyline/console/agents_screens.py`.
   Extend `tests/console/test_repl.py` so `/help` contains those three statements.
   Verify with `uv run pytest -q tests/console/test_repl.py` and `uv run pytest -q`. Change nothing else.
