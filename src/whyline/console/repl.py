@@ -50,7 +50,9 @@ _COMMAND_HELP = {
     "/model": "/model claude opus      pick the chat agent (and model); /model alone lists them,\n"
     "                          /model refresh re-checks what's installed and logged in",
     "/login": "/login claude           sign in with the agent's own login, then re-check",
-    "/timeout": "/timeout 30             per-attempt chat timeout (5, 15, 30, 45, or 60m); /timeout alone shows it",
+    "/timeout": "/timeout 30             the limit is per attempt (5, 15, 30, 45, 60, or none);\n"
+    "                          provider limits still apply. Scheduled Agents accept only 1–240 minutes.\n"
+    "                          /timeout alone shows it",
     "/brainstorm": "/brainstorm             several models research a topic, one writes it up",
     "/repo": "/repo ~/other-project   show or switch the repository (clears this transcript)",
     "/backups": "/backups               shared fallback chain, and any sticky failover",

@@ -15511,3 +15511,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cb04bdac5092418bb33da7ab7be23b32 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T08:51:50.563Z"} -->
+
+## 2026-10-17 — Put the per-attempt timeout facts on the /timeout help entry
+
+**Actor:** grok
+**Role:** implementer
+**Task:** UTO-6
+
+**Because:** The three facts describe /timeout, and _help_text already prints every _COMMAND_HELP line.
+
+**Rejected:**
+
+- A separate Modes paragraph — it would split the command from the limits it sets.
+- Keep per-attempt and 1-240 — /help has to say per attempt and 1–240 minutes.
+
+**Files:** src/whyline/console/repl.py, tests/console/test_repl.py
+
+<!-- whyline-event: 1cb32bf57f0d4bce968e586cb007fa49 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T09:00:18.874Z"} -->
+
+## 2026-10-17 — Pass UTO-6 round 2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** UTO-6
+
+**Because:** The /help output contains the per-attempt statement, provider-limit caveat, Scheduled Agents 1–240 minute range, and the required timeout choices; agents_screens.py is unchanged, and both mandated pytest runs exited 0.
+
+**Files:** src/whyline/console/repl.py, tests/console/test_repl.py
+
+<!-- whyline-event: 4280d039f0b443e9bfabc7a451e08b61 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T09:06:10.878Z"} -->
+
+## 2026-10-17 — Approve UTO-6 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UTO-6
+
+**Because:** The scoped help change states the limit is per attempt, preserves the provider-limit caveat, documents the Scheduled Agents 1–240 minute restriction, and lists 5, 15, 30, 45, 60, and none; the focused and full test suites both exited 0, and agents_screens.py is unchanged.
+
+**Files:** src/whyline/console/repl.py, tests/console/test_repl.py
+
+<!-- whyline-event: 60b3e3b592ea45a7afd0de22502e2217 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T09:12:08.965Z"} -->

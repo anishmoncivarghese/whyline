@@ -365,6 +365,22 @@ def test_help_explains_modes_and_what_each_command_does(tmp_path):
         assert len(line.strip()) > len(command) + 5
 
 
+def test_help_states_per_attempt_limit_and_scheduled_agent_range(tmp_path):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/help")
+    assert event is not None
+    text = event.text
+    assert "the limit is per attempt" in text
+    assert "provider limits still apply" in text
+    assert "Scheduled Agents accept only 1–240 minutes" in text
+    timeout_line = next(
+        line for line in text.splitlines() if line.strip().startswith("/timeout")
+    )
+    assert "(5, 15, 30, 45, 60, or none)" in timeout_line
+
+
 def test_route_to_the_current_mode_says_so_instead_of_repeating(tmp_path):
     from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
