@@ -523,7 +523,7 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
   Tests with fake agents: a verify task's prompt lists exactly the in-range auto scenarios; scenarios for tasks after the release are excluded; a plan without a test plan runs verify as an ordinary task.
   Verify with `uv run pytest -q` in `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] TPL-5: Manual checks block the release until you confirm them
+- [x] TPL-5: Manual checks block the release until you confirm them
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/loop.py`, `cli.py`, `testplan.py`, and their tests. Leave this whyline checkout untouched.
   Before any `relay-profile: release` task, whoever runs the release (the user or an agent set as the release role, including the agent path in `_with_release_implementer`), the relay computes `testplan.open_manual` for the tasks since the previous release. If any are open it pauses with reason `Manual checks before <task id>:` followed by one line per scenario (`TP-n title`, its steps and expected lines), and does not start the release.
   Add `whyline relay manual` (lists open manual checks for the paused release), `whyline relay manual <TP-id> pass [note]`, and `whyline relay manual <TP-id> fail <note>`. `pass` ticks the scenario in the test plan, adds `note:` when given, and commits only that file with `test: confirm <TP-id>`. `fail` records `note: FAILED <note>` without ticking, commits only that file, and keeps the release blocked. `whyline relay done` and `resume` refuse with the open list while any remain; when none remain, `resume` continues into the release as today.
