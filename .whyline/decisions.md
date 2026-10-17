@@ -15718,3 +15718,102 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b98a3b052a68476ebbd095ca1f7c9bda -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:27:09.180Z"} -->
+
+## 2026-10-17 — approve checks the draft test plan before writing the plan or the test plan
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-2
+
+**Because:** A refusal must leave the tree without a half-written plan
+
+**Rejected:**
+
+- Writing the plan first — a failed test plan would leave plan.md uncommitted
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/planner.py
+
+<!-- whyline-event: d1f744b48d044d278a67c2ecba7cc4a6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:50:13.059Z"} -->
+
+## 2026-10-17 — Plan drafts gain a tests stage; spec drafts stay draft then review
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-2
+
+**Because:** The test plan sits beside a plan and plan-tests writes draft-plan.tests.md, so a spec session would be told to write a plan file
+
+**Rejected:**
+
+- Adding the tests stage for every kind — spec drafting would ask for draft-plan.tests.md
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/planner.py
+
+<!-- whyline-event: a8671bc54e944fdca2d8d169db86bf8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:50:13.059Z"} -->
+
+## 2026-10-17 — write_planner always writes the test key, including an empty string
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-2
+
+**Because:** A later read round-trips, and a call with no test agent clears one that was set before
+
+**Rejected:**
+
+- Omitting the key when empty — an old test agent line would survive
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/setup.py
+
+<!-- whyline-event: 4e55679ceef74ba7b7408c0600205e40 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:50:13.059Z"} -->
+
+## 2026-10-17 — Test-planner sentences are appended after the unchanged plan prompts
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-2
+
+**Because:** An empty test planner must keep plan-draft and plan-review byte-for-byte, and a user override of those files still loads
+
+**Rejected:**
+
+- Editing PLAN_DRAFT and PLAN_REVIEW in place — the empty-test prompt would change
+- A separate draft prompt name — the stage would stop using plan-draft and skip a user override
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py
+
+<!-- whyline-event: 80bddff3bb2e4766995d1ab78ab92771 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:50:13.059Z"} -->
+
+## 2026-10-17 — TPL-2 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-2
+
+**Because:** The required focused suite and full project suite both passed, and the tested behavior covers compatibility mode, the three-stage pipeline, revise routing, prompt requirements, config/setup round-tripping, and atomic approval validation
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/planner.py
+
+<!-- whyline-event: 6161b96e9ee442d0a525ceea384015cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:53:20.330Z"} -->
+
+## 2026-10-17 — TPL-2 approved after independent review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-2
+
+**Because:** The implementation satisfies optional Test planner configuration, preserves two-stage and one-file behavior when disabled, adds correct draft-tests-review routing and prompts when enabled, validates before writing, commits both outputs together, and both required test suites pass
+
+**Rejected:**
+
+- Request changes — no task-relevant correctness, safety, scope, or coverage defect was found
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/planner.py
+
+<!-- whyline-event: a2b6a5fe9d3049d782370d226060c9d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:56:51.754Z"} -->
