@@ -484,7 +484,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Extend `tests/console/test_repl.py` so `/help` contains those three statements.
   Verify with `uv run pytest -q tests/console/test_repl.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] UTO-7: Publish whyline 0.3.44
+- [x] UTO-7: Publish whyline 0.3.44
   relay-profile: release
   In this whyline checkout, bump `pyproject.toml` from `0.3.43` to `0.3.44`. Write `docs/releases/v0.3.44.md` in the same shape as `docs/releases/v0.3.43.md`: Chat has a per-attempt timeout on the bar (5, 15, 30, 45, 60 minutes, or none), captured at Send; `/timeout` reads and sets it; Stop cancels the in-flight Chat or Brainstorm attempt; Brainstorm and plan synthesis accept none; Relay Set up writes `timeout_minutes`, including none; Scheduled Agents stay 1 to 240 minutes. Needs whyline-relay 0.2.35. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.44`, push, and publish to PyPI the same way `v0.3.43` was published. Confirm `uv tool upgrade whyline` installs `0.3.44`.
 
