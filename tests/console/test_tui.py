@@ -2688,6 +2688,181 @@ async def test_timeout_slash_command_updates_session_and_select_including_none(
     assert seen_turns[1] == ("after-30", 1800)
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_stop_cancels_the_in_flight_chat_attempt(tmp_path, monkeypatch):
+    import threading
+
+    from whyline.console.session import SessionEvent
+    from whyline_relay import agents
+
+    _init_test_repo(tmp_path)
+
+    started = threading.Event()
+    release = threading.Event()
+    seen_cancel = []
+
+    def fake_run(command, prompt, **kwargs):
+        cancel_event = kwargs.get("cancel_event")
+        seen_cancel.append(cancel_event)
+        started.set()
+        if cancel_event is not None:
+            cancel_event.wait(timeout=2.0)
+            release.wait(timeout=2.0)
+            if cancel_event.is_set():
+                raise agents.AgentCancelled(f"{command[0]} cancelled by user")
+        return agents.RunResult(0, '{"type":"result","result":"too late"}\n')
+
+    monkeypatch.setattr(agents, "run", fake_run)
+    monkeypatch.setattr(
+        "whyline_relay.init.ensure_permission_files", lambda *a, **k: []
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 30)) as pilot:
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "hello"
+        app._send()
+        await pilot.pause()
+        assert started.wait(timeout=2.0), [
+            (e.kind, e.text) for e in app.session.transcript
+        ]
+        held = seen_cancel[0]
+        assert held is app._cancel_event
+        assert not held.is_set()
+
+        old_token = app._dispatch_token
+        await pilot.click("#stop")
+        await pilot.pause()
+        assert held.is_set()
+        assert app._dispatch_token is not old_token
+        assert app._busy_text
+        texts = [e.text for e in app.session.transcript]
+        assert "Stopping…" in texts
+
+        app._finish_dispatch(
+            SessionEvent(kind="output", text="too late"), old_token
+        )
+        assert not any(e.text == "too late" for e in app.session.transcript)
+        assert "Stopped." not in [e.text for e in app.session.transcript]
+
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        texts = [e.text for e in app.session.transcript]
+        assert texts.count("Stopped.") == 1
+        assert not any("too late" in (e.text or "") for e in app.session.transcript)
+        assert not app._busy_text
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_newer_brainstorm_ignores_a_late_chat_stop(tmp_path, monkeypatch):
+    """A slash-triggered Brainstorm replaces the Chat cancel identity, so
+    that worker's late Stopped. neither renders nor clears Brainstorm busy."""
+    import threading
+
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+    from whyline_relay import agents
+
+    _init_test_repo(tmp_path)
+
+    started = threading.Event()
+    chat_release = threading.Event()
+    chat_done = threading.Event()
+    bs_started = threading.Event()
+    bs_release = threading.Event()
+    finished = []
+
+    def fake_run(command, prompt, **kwargs):
+        cancel_event = kwargs.get("cancel_event")
+        try:
+            started.set()
+            if cancel_event is not None:
+                cancel_event.wait(timeout=2.0)
+                chat_release.wait(timeout=10.0)
+                if cancel_event.is_set():
+                    raise agents.AgentCancelled(f"{command[0]} cancelled by user")
+            return agents.RunResult(0, '{"type":"result","result":"too late"}\n')
+        finally:
+            chat_done.set()
+
+    def slow_brainstorm(root, *, progress, **choice):
+        bs_started.set()
+        progress("Researching independently: Claude")
+        bs_release.wait(timeout=10.0)
+        return SessionEvent(kind="output", text="brainstorm done")
+
+    monkeypatch.setattr(agents, "run", fake_run)
+    monkeypatch.setattr(adapters, "run_brainstorm", slow_brainstorm)
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    monkeypatch.setattr(
+        "whyline_relay.init.ensure_permission_files", lambda *a, **k: []
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+
+    def record_finish(result, token, launched=True, cancel_event=None):
+        finished.append(getattr(result, "text", None))
+        return tui.WhylineConsoleApp._finish_dispatch(
+            app, result, token, launched, cancel_event
+        )
+
+    app._finish_dispatch = record_finish
+
+    async with app.run_test(size=(110, 40)) as pilot:
+        try:
+            prompt = app.query_one("#prompt", tui.Input)
+            prompt.value = "hello"
+            app._send()
+            await pilot.pause()
+            assert started.wait(timeout=2.0), [
+                (e.kind, e.text) for e in app.session.transcript
+            ]
+            held = app._cancel_event
+            assert held is not None and not held.is_set()
+
+            await pilot.click("#stop")
+            await pilot.pause()
+            assert held.is_set()
+            assert app._cancel_event is held
+
+            app._handle_slash("/brainstorm")
+            await pilot.pause()
+            assert isinstance(app.screen, tui.BrainstormScreen)
+            app.screen.query_one("#bs-topic", tui.Input).value = "late cancel"
+            await pilot.click("#bs-start")
+            for _ in range(50):
+                if bs_started.is_set():
+                    break
+                await pilot.pause(0.05)
+            assert bs_started.is_set(), "brainstorm dispatch never started"
+            assert app._cancel_event is not held
+            assert "brainstorm" in app._busy_text
+
+            chat_release.set()
+            for _ in range(50):
+                if "Stopped." in finished:
+                    break
+                await pilot.pause(0.05)
+            assert chat_done.is_set()
+            assert "Stopped." in finished
+            texts = [e.text for e in app.session.transcript]
+            assert texts.count("Stopped.") == 0
+            assert "brainstorm" in app._busy_text
+        finally:
+            chat_release.set()
+            bs_release.set()
+            await app.workers.wait_for_complete()
+        await pilot.pause()
+        texts = [e.text for e in app.session.transcript]
+        assert texts.count("Stopped.") == 0
+        assert any(text == "brainstorm done" for text in texts)
+        assert not app._busy_text
+
+
 
 
 

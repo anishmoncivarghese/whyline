@@ -898,10 +898,15 @@ def dispatch(
     attachments=(),
     *,
     timeout_seconds: object = _UNSET,
+    cancel_event=None,
 ) -> SessionEvent:
     try:
         return _dispatch(
-            session, text, attachments=attachments, timeout_seconds=timeout_seconds
+            session,
+            text,
+            attachments=attachments,
+            timeout_seconds=timeout_seconds,
+            cancel_event=cancel_event,
         )
     except ModuleNotFoundError as error:
         # A raw "No module named 'whyline_relay'" told the user nothing
@@ -917,6 +922,7 @@ def _dispatch(
     attachments=(),
     *,
     timeout_seconds: object = _UNSET,
+    cancel_event=None,
 ) -> SessionEvent:
     # "command" never arrives here: ConsoleSession stores it as "chat".
     if session.mode == "agents":
@@ -935,6 +941,8 @@ def _dispatch(
             kwargs["attachments"] = attachments
         if _accepts_kwarg(adapters.run_chat_turn, "timeout_seconds"):
             kwargs["timeout_seconds"] = timeout
+        if _accepts_kwarg(adapters.run_chat_turn, "cancel_event"):
+            kwargs["cancel_event"] = cancel_event
         return adapters.run_chat_turn(
             session.root, agent=agent, prompt=text, **kwargs
         )

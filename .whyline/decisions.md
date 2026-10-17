@@ -15305,3 +15305,121 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 47dc871055364b299276a842c60f9cc8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:31:27.069Z"} -->
+
+## 2026-10-16 — Hold Chat cancel on a dedicated Event and finish Stopped. by event identity
+
+**Actor:** grok
+**Role:** implementer
+**Task:** UTO-3
+
+**Because:** Stop must set that Event, write Stopping…, and replace the dispatch token so a success cannot render, without clearing busy yet. The worker then renders Stopped. and clears busy only if the app still holds that same Event object, so a later dispatch cannot be unstuck by a late cancel.
+
+**Rejected:**
+
+- Reuse _auto_cancel_event — auto-run Stop Nones it and calls _end_run_flow, which would steal Chat's identity check and print a run-stopped line
+- Clear busy inside _stop — a second Send could start before AgentCancelled returns, and the late cancel would then clear the new turn
+- Gate Stopped. on _dispatch_token — Stop replaces that token so success cannot render, which would also drop Stopped.
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/adapters.py, src/whyline/console/repl.py
+
+<!-- whyline-event: 94d9020e480e47cc8157d3b02827370b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T21:56:24.171Z"} -->
+
+## 2026-10-16 — Passed UTO-3 cancellation behavior and regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** UTO-3
+
+**Because:** The focused console tests verified the active cancel event is set, stale success is suppressed, Stopped. renders once after AgentCancelled, and timeout wording is preserved; the full pytest suite exited 0.
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or regression was observed in either mandated test run
+
+**Files:** tests/console/test_tui.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 1c065aaf8f5e4c0cbaa8f4c3e5b08d72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T22:02:32.171Z"} -->
+
+## 2026-10-16 — Reject UTO-3 because Brainstorm does not replace the active Chat cancel event
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UTO-3
+
+**Because:** A slash-triggered Brainstorm can become the newer dispatch while the stopped Chat worker still owns _cancel_event; its late AgentCancelled result then passes the identity check, renders Stopped., and clears the Brainstorm busy state, contrary to the required newer-dispatch invariant.
+
+**Rejected:**
+
+- Approve — focused and full tests pass, but they do not exercise a newer Brainstorm dispatch before the old Chat cancellation completes
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: d1ff829f887441aca1f166897400fb0d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T22:09:12.773Z"} -->
+
+## 2026-10-16 — Brainstorm dispatch replaces the Chat cancel event with None
+
+**Actor:** grok
+**Role:** implementer
+**Task:** UTO-3
+
+**Because:** A newer Brainstorm must not keep the stopped Chat event. That object still matches the late Stopped. identity check, which renders it and clears the Brainstorm busy state. None is a different identity, and Stop clears busy immediately only when no cancel event is held. Brainstorm does not observe one.
+
+**Rejected:**
+
+- A fresh threading.Event — Stop would wait for a Stopped. result Brainstorm never sends, and the replaced token drops the real result, so busy would stick
+- Leave the Chat event until its worker finishes — the late Stopped. then clears the newer Brainstorm
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: a0cbc781d1ff4b8a9d7d4df45d0ef705 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T22:23:34.221Z"} -->
+
+## 2026-10-16 — Pass UTO-3 round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** UTO-3
+
+**Because:** The focused cancellation suite and full project suite pass; tests verify Stop sets the active Chat event, stale success is dropped, Stopped. renders once after AgentCancelled, and a late Chat cancellation neither renders nor clears a newer Brainstorm dispatch
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py, src/whyline/console/adapters.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 97ca57b40eba4443a4568d235cf0a5ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T22:29:35.750Z"} -->
+
+## 2026-10-16 — Approve UTO-3 round 6 Chat cancellation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** UTO-3
+
+**Because:** The implementation passes a per-turn event from the TUI through dispatch to chat.run_turn, maps AgentCancelled to Stopped., suppresses stale success and cancellation results by token/event identity, preserves timeout wording and Relay SIGINT behavior, and both focused and full pytest suites pass
+
+**Rejected:**
+
+- Request changes — no unsafe behavior, contract violation, or inadequate cancellation coverage was found
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py, src/whyline/console/adapters.py, tests/console/test_tui.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 4ec4bdd367c24214a71af14e54ed9949 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-16T22:36:04.266Z"} -->
+
+## 2026-10-17 — Moved UTO-3's base past the user's Set up commit (backup chain claude -> grok) instead of resetting it
+
+**Actor:** claude
+**Role:** operator
+**Task:** UTO-3
+
+**Because:** Set up commits config.toml; it landed mid-task, so the relay saw HEAD move and paused after codex approved UTO-3. Moving the base keeps the settings commit separate from the task commit
+
+**Rejected:**
+
+- Resolve's reset-keep — would un-commit the backup change and fold config.toml into UTO-3's commit
+
+**Files:** .whyline/relay/state.json
+
+<!-- whyline-event: cd137bfaf1d549f791fa5e15390ecbc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T07:52:57.238Z"} -->

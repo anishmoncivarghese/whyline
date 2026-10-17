@@ -158,6 +158,64 @@ def test_run_chat_turn_maps_none_to_no_limit_forwards_int_and_defaults_other_val
     assert seen[5] is chat.NO_LIMIT
 
 
+def test_run_chat_turn_forwards_cancel_event_and_maps_cancelled_to_stopped(
+    tmp_path, monkeypatch
+):
+    import threading
+
+    from whyline_relay import agents, chat
+
+    seen = []
+
+    def fake_run_turn(
+        root,
+        *,
+        agent,
+        prompt,
+        settings,
+        attachments,
+        timeout_seconds=None,
+        cancel_event=None,
+        **kwargs,
+    ):
+        seen.append(cancel_event)
+        raise agents.AgentCancelled("claude cancelled by user")
+
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
+    cancel_event = threading.Event()
+    event = adapters.run_chat_turn(
+        tmp_path, agent="claude", prompt="ping", cancel_event=cancel_event
+    )
+    assert seen == [cancel_event]
+    assert seen[0] is cancel_event
+    assert event.kind == "error"
+    assert event.text == "Stopped."
+
+
+def test_run_chat_turn_keeps_agent_timeout_wording(tmp_path, monkeypatch):
+    from whyline_relay import agents, chat
+
+    def fake_run_turn(
+        root,
+        *,
+        agent,
+        prompt,
+        settings,
+        attachments,
+        timeout_seconds=None,
+        **kwargs,
+    ):
+        raise agents.AgentTimeout("claude exceeded 300s and was terminated")
+
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
+    event = adapters.run_chat_turn(tmp_path, agent="claude", prompt="ping")
+    assert event.kind == "error"
+    assert (
+        event.text
+        == "claude exceeded 300s and was terminated -- try again, or /model another agent."
+    )
+
+
 def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch):
     from whyline.console import repl
     from whyline.console.session import ConsoleSession, SessionEvent

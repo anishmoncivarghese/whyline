@@ -646,6 +646,7 @@ class WhylineConsoleApp(App):
         self._follow_timer: Any = None
         self._follow_last_error: str | None = None
         self._dispatch_token: object | None = None
+        self._cancel_event = None
         self._exec_after: tuple[str, list[str]] | None = None
         self._login_fn = _run_login
         self._busy_text = ""
@@ -2874,6 +2875,10 @@ class WhylineConsoleApp(App):
         Textual's own scheduler; verify its exact call shape (iterating
         self.workers vs. a single self.workers.cancel_all()) against your
         installed version."""
+        cancel_event = getattr(self, "_cancel_event", None)
+        if cancel_event is not None:
+            cancel_event.set()
+            self.render_event(SessionEvent(kind="output", text="Stopping…"))
         self._dispatch_token = object()
         self._sent_attachments = []
         if getattr(self, "_release_task", None):
@@ -2891,7 +2896,8 @@ class WhylineConsoleApp(App):
         for worker in self.workers:
             worker.cancel()
         self._disarm_follow()
-        self._set_busy(False)
+        if cancel_event is None:
+            self._set_busy(False)
 
     def _set_busy(self, busy: bool, label: str | None = None) -> None:
         """Enables Stop and shows the thinking line ("⠋ claude is thinking…
@@ -3179,6 +3185,13 @@ class WhylineConsoleApp(App):
         self._with_antigravity("antigravity" in choice["agents"], proceed)
 
     def _run_brainstorm_choice(self, choice: dict) -> None:
+        # Replace the Chat cancel identity before this dispatch is current.
+        # Stop leaves that event in place so the Chat worker can still report
+        # Stopped.; once Brainstorm owns the turn, a late report must not
+        # match and clear this busy state. None, not a fresh Event:
+        # Brainstorm does not observe a cancel event, and Stop clears busy
+        # immediately only when _cancel_event is None.
+        self._cancel_event = None
         names = ", ".join(choice["agents"])
         self.render_event(SessionEvent(
             kind="output",
@@ -3228,10 +3241,14 @@ class WhylineConsoleApp(App):
                 self.render_event(SessionEvent(
                     kind="error", text="Antigravity can't run here until this repo is trusted."))
                 return
+            import threading
+
+            cancel_event = threading.Event() if in_chat else None
+            self._cancel_event = cancel_event
             token = object()
             self._dispatch_token = token
             self._set_busy(True)
-            def work(timeout=timeout_seconds) -> None:
+            def work(timeout=timeout_seconds, cancel_event=cancel_event) -> None:
                 kwargs = {}
                 if attachments:
                     kwargs["attachments"] = attachments
@@ -3240,6 +3257,8 @@ class WhylineConsoleApp(App):
                     and _accepts_kwarg(self._dispatch_in_thread, "timeout_seconds")
                 ):
                     kwargs["timeout_seconds"] = timeout
+                if _accepts_kwarg(self._dispatch_in_thread, "cancel_event"):
+                    kwargs["cancel_event"] = cancel_event
                 self._dispatch_in_thread(text, token, **kwargs)
 
             self.run_worker(work, thread=True)
@@ -3253,6 +3272,7 @@ class WhylineConsoleApp(App):
         attachments=(),
         *,
         timeout_seconds: object = _UNSET,
+        cancel_event=None,
     ) -> None:
         launched = True
         try:
@@ -3264,20 +3284,45 @@ class WhylineConsoleApp(App):
                 and _accepts_kwarg(dispatch, "timeout_seconds")
             ):
                 kwargs["timeout_seconds"] = timeout_seconds
+            if _accepts_kwarg(dispatch, "cancel_event"):
+                kwargs["cancel_event"] = cancel_event
             result = dispatch(self.session, text, **kwargs)
         except Exception as error:  # a safety net beyond adapters.py's own handling
             result = SessionEvent(kind="error", text=str(error), accepted=False)
             launched = False
         else:
             launched = getattr(result, "accepted", True) and getattr(result, "launched", True)
-        self.call_from_thread(self._finish_dispatch, result, token, launched)
+        self.call_from_thread(
+            self._finish_dispatch, result, token, launched, cancel_event
+        )
 
-    def _finish_dispatch(self, result: SessionEvent, token: object, launched: bool = True) -> None:
+    def _finish_dispatch(
+        self,
+        result: SessionEvent,
+        token: object,
+        launched: bool = True,
+        cancel_event=None,
+    ) -> None:
         # Checked here, on the main thread, rather than in the worker: a
         # Stop or newer dispatch that lands between the worker's check and
         # this call would otherwise still let a stale result through.
+        if (
+            getattr(result, "kind", None) == "error"
+            and getattr(result, "text", None) == "Stopped."
+        ):
+            if cancel_event is not getattr(self, "_cancel_event", None):
+                return
+            self._cancel_event = None
+            self._set_busy(False)
+            self.render_event(result)
+            return
         if token is not self._dispatch_token:
             return
+        if (
+            cancel_event is not None
+            and cancel_event is getattr(self, "_cancel_event", None)
+        ):
+            self._cancel_event = None
         self._set_busy(False)
         self.render_event(result)
         if launched and self._sent_attachments:

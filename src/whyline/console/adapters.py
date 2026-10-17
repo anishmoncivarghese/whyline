@@ -230,6 +230,7 @@ def run_chat_turn(
     prompt: str,
     attachments=(),
     timeout_seconds: object = 300,
+    cancel_event=None,
     run_fn=None,
     runner=None,
 ) -> SessionEvent:
@@ -260,12 +261,15 @@ def run_chat_turn(
             settings=settings,
             attachments=list(attachments),
             timeout_seconds=resolved_timeout,
+            cancel_event=cancel_event,
             **kwargs,
         )
     except chat.AgentUnavailable as error:
         return SessionEvent(kind="error", text=str(error), accepted=False)
     except agents.AgentMissing as error:
         return SessionEvent(kind="error", text=str(error), accepted=False)
+    except agents.AgentCancelled:
+        return SessionEvent(kind="error", text="Stopped.")
     except agents.AgentTimeout as error:
         return SessionEvent(
             kind="error", text=f"{error} -- try again, or /model another agent."
