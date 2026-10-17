@@ -15555,3 +15555,67 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 60b3e3b592ea45a7afd0de22502e2217 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T09:12:08.965Z"} -->
+
+## 2026-10-17 — Switched implementer to grok by hand with the relay's own sticky override after antigravity's quota ran out (resets about 2026-10-23)
+
+**Actor:** claude
+**Role:** operator
+**Task:** UTO-3
+
+**Because:** The relay did not recognise 'Individual quota reached' / RESOURCE_EXHAUSTED (code 429) as a usage limit, so it paused instead of failing over; failover.write_override is what automatic failover writes and active-roles.json is git-excluded. The user chose grok over claude
+
+**Rejected:**
+
+- roles set implementer grok — permanently rewrites config.toml, which the relay sweeps into the task commit
+
+**Files:** .whyline/relay/active-roles.json
+
+<!-- whyline-event: 50a71daf05fa4bb99f386deb469c5abd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T11:17:16.339Z"} -->
+
+## 2026-10-17 — Overload errors fail over for one turn only; quota messages fail over with today's sticky switch; config-only commits mid-task move the base
+
+**Actor:** claude
+**Role:** planner
+**Task:** REL-1
+
+**Because:** Capacity and 503 errors clear in minutes, and a sticky switch once left codex's reviewer replaced for days; antigravity's 429 quota lasts days; Set up's Save commit paused an already-approved UTO-3
+
+**Rejected:**
+
+- Treat overload exactly like a usage limit — sticky switch outlives a transient error
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: f411f1ccee684094bdd3016931acedc4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T11:17:16.380Z"} -->
+
+## 2026-10-17 — A failed Resume opens Resolve itself and Resolve offers the agent's own login, but never applies a fix or starts a login without a click
+
+**Actor:** claude
+**Role:** planner
+**Task:** LGN-1
+
+**Because:** Resolve recognised both 2026-10-16/17 problems but needed a second click, and the existing /login was never suggested; a login always needs a person
+
+**Files:** plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 7329fd0efb784856bca79e75e459b7fd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T11:17:16.411Z"} -->
+
+## 2026-10-17 — Render Set up check lines and form error lines without Textual markup
+
+**Actor:** claude
+**Role:** developer
+**Task:** UTO-7
+
+**Because:** Tool and config text contains square brackets ([agents.antigravity]); parsed as markup it raised MarkupError and crashed the console. The Plan form's check box already used markup=False
+
+**Rejected:**
+
+- Escape brackets at each call site — every new message would need remembering
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: eb5429359cec447ea3bbfe52a4c79eca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T11:17:16.442Z"} -->
