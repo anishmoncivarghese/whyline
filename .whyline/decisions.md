@@ -15619,3 +15619,102 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: eb5429359cec447ea3bbfe52a4c79eca -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T11:17:16.442Z"} -->
+
+## 2026-10-17 — path_for strips a trailing .plan.md before a trailing .md
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-1
+
+**Because:** Path.with_suffix only replaces the final suffix, so x.plan.md would become x.plan.tests.md
+
+**Rejected:**
+
+- Path.with_suffix — it leaves .plan in the file name
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py
+
+<!-- whyline-event: 59aaea061b6641aebeecc0956cbc2bc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:20:03.036Z"} -->
+
+## 2026-10-17 — not-covered splits the reason on an em dash, en dash, double hyphen, or a spaced hyphen
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-1
+
+**Because:** Task ids such as WL-1 already contain hyphens, and the spec separates the reason with an em dash
+
+**Rejected:**
+
+- splitting the line on every hyphen — WL-1 would be read as WL
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py
+
+<!-- whyline-event: 6ef556621c834bb7a1cd77fb8a292aa1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:20:03.069Z"} -->
+
+## 2026-10-17 — validate reads tasks with plan.parse and reports PlanError as one problem line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-1
+
+**Because:** release and verify must match the plan reader's relay-profile rule, and validate promises a list of lines
+
+**Rejected:**
+
+- a raw text scan for relay-profile — indented detail would not match plan.parse
+- raising PlanError — callers use the returned lines as the whole result
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py
+
+<!-- whyline-event: 330d14a21c0c4df4bc7fc88e3f7f021d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:20:03.101Z"} -->
+
+## 2026-10-17 — parse returns duplicate scenario ids and validate reports them
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-1
+
+**Because:** the duplicate check belongs to validate, which needs every copy in file order
+
+**Rejected:**
+
+- raising from parse the way plan.parse does — the other problems in the file would not be reported as lines
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py
+
+<!-- whyline-event: ca9d90f08eb9455c8812a8016c2a811f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:20:03.132Z"} -->
+
+## 2026-10-17 — TPL-1 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-1
+
+**Because:** The focused 11-test suite covers every requested behavior and passes, and the full project suite also exits successfully
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py, /Users/anish/whyline-relay/tests/test_testplan.py
+
+<!-- whyline-event: 7325989c381c43f1bc61884df4e0f311 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:23:41.225Z"} -->
+
+## 2026-10-17 — TPL-1 approved after independent review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-1
+
+**Because:** The implementation matches the requested test-plan parsing, validation, manual-selection, and path-mapping behavior; the focused 11-test suite and full project suite both pass
+
+**Rejected:**
+
+- Request changes — no task-relevant correctness, coverage, or safety defect was found
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/testplan.py, /Users/anish/whyline-relay/tests/test_testplan.py
+
+<!-- whyline-event: b98a3b052a68476ebbd095ca1f7c9bda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:27:09.180Z"} -->
