@@ -15979,3 +15979,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4c3aab70784f496eaa5c9c816521479a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:59:51.642Z"} -->
+
+## 2026-10-17 — A verify task uses the default pipeline profile unless one is named verify
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-4
+
+**Because:** The drafter emits relay-profile: verify and the shipped pipeline only defines full, so the marker cannot require its own stage list.
+
+**Rejected:**
+
+- Requiring a pipeline profile named verify — doctor would fail every generated plan, and the default config has no such profile.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 8cf93095b73f459b990e2e9607d3568e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:17:36.363Z"} -->
+
+## 2026-10-17 — A verify scenario is in range when it covers any task after the previous release and before the verify task
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-4
+
+**Because:** The task asks for auto scenarios that cover any task above the verify task and below the previous release, the same intersection open_manual uses.
+
+**Rejected:**
+
+- Stopping the window at the previous verify task — that would drop scenarios for tasks between the release and the earlier verify.
+- Dropping a scenario that also covers a later task — that would hide an in-range behaviour this verify task is responsible for.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/plan.py
+
+<!-- whyline-event: 0473ee7b0ee34894863c8117a6b3a8d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:17:42.247Z"} -->
+
+## 2026-10-17 — A verify task's test plan is in the finishing commit when it lives in the task repo, and in the tick commit when it is still dirty beside the plan
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-4
+
+**Because:** commit_all only sees the task repository, and a cross-repo test plan sits next to the plan, where a dirty file would pause the relay.
+
+**Rejected:**
+
+- Leaving the test plan to commit_all alone — that commit never includes a test plan that lives in the relay repo.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: d1449cf920374aae81487185fd411d74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:17:49.088Z"} -->
+
+## 2026-10-17 — Checked automatic scenarios stay in the verify prompt
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-4
+
+**Because:** The task says the test plan's auto scenarios, and a ticked box is not a passing automated test.
+
+**Rejected:**
+
+- Skipping checked scenarios — the phase could ship with no test under tests/acceptance.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 37279af536194af79e07ac2ea1fc62a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:17:49.088Z"} -->
+
+## 2026-10-17 — TPL-4 fails because verify tasks are rejected by preflight before execution
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-4
+
+**Because:** The full suite exits 0, but a focused preflight probe with a default-only configured pipeline returns FAIL for relay-profile verify; cmd_start aborts on that failure, so the required ordinary-pipeline fallback is unreachable in normal use.
+
+**Rejected:**
+
+- Passing based on the suite alone — existing tests call loop.run_plan directly and do not cover relay start preflight.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py
+
+<!-- whyline-event: 38663b1eb26d4a538a64111d6d4b4448 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:21:32.427Z"} -->
+
+## 2026-10-17 — Preflight accepts a verify marker by resolving it with loop._profile_for
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-4
+
+**Because:** A verify task with no profile of that name runs the default profile, and failing it at startup made that fallback unreachable.
+
+**Rejected:**
+
+- A separate special case beside release — verify is a real profile when one is configured, so the run's own resolver has to stay the source of the rule.
+- Warning instead of accepting — the fallback is how an ordinary pipeline is meant to run a verify task, not something the operator must change.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: a4829661ba8e437598980b7a6c415f66 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:28:54.983Z"} -->
+
+## 2026-10-17 — TPL-4 passes round-four behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-4
+
+**Because:** The full pytest suite exits 0, and focused fake-agent tests confirm exact in-range automatic scenarios, ordinary verify behavior without a test plan, test-plan commit inclusion, and default-profile preflight acceptance.
+
+**Rejected:**
+
+- Failing for the prior preflight defect — relay start now accepts the verify marker while unknown non-verify profiles remain covered by the suite.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: 2f7ab7b6b2a5423786b582d6cc335afd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:32:05.087Z"} -->
+
+## 2026-10-17 — TPL-4 round-five review approves verify-task execution
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-4
+
+**Because:** The full pytest suite exits 0; focused fake-agent coverage proves exact in-range automatic scenario prompts, exclusion of later scenarios, ordinary behavior without a test plan, test-plan commit inclusion including cross-repository tasks, and successful start preflight. The minimal preflight integration is necessary because otherwise relay start rejects the verify marker before loop._profile_for can select the default configured profile.
+
+**Rejected:**
+
+- Rejecting solely for the preflight.py scope deviation — that change is required to make the requested configured-pipeline behavior reachable through the normal start command and is covered by a regression test.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/loop.py, /Users/anish/whyline-relay/src/whyline_relay/preflight.py
+
+<!-- whyline-event: 1e9da654f79f476185410b4ff5b42fc5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T15:36:10.168Z"} -->
