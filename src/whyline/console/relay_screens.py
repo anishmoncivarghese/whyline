@@ -226,7 +226,7 @@ class RelayPlanScreen(ModalScreen):
         run_btn.display = False
         yield Vertical(
             form,
-            Static("", id="rp-error", classes="-empty"),
+            Static("", id="rp-error", classes="-empty", markup=False),
             Static("", id="rp-checks", classes="-empty", markup=False),
             Horizontal(
                 check,
@@ -1375,8 +1375,8 @@ class RelaySetupScreen(ModalScreen):
                 id="rs-roles",
             ),
             id="rs-fields"),
-            VerticalScroll(Static("", id="rs-checks"), id="rs-results"),
-            Static("", id="rs-error", classes="-empty"),
+            VerticalScroll(Static("", id="rs-checks", markup=False), id="rs-results"),
+            Static("", id="rs-error", classes="-empty", markup=False),
             Horizontal(
                 Button("Make a plan", id="rs-make-plan", variant="primary", disabled=not self._agents),
                 Button("Check", id="rs-check", variant="primary", disabled=(not self._plans or not self._agents)),

@@ -414,7 +414,7 @@ class BrainstormScreen(ModalScreen):
         )
         yield Vertical(
             fields,
-            Static("", id="bs-error", classes="-empty"),
+            Static("", id="bs-error", classes="-empty", markup=False),
             Horizontal(
                 Button("Start", id="bs-start", variant="success"),
                 Button("Cancel", id="bs-cancel"),

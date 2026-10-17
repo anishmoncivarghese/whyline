@@ -668,3 +668,26 @@ async def test_relay_setup_screen_with_one_agent(tmp_path, monkeypatch):
 
 
 
+
+
+async def test_check_text_with_square_brackets_does_not_crash_set_up(tmp_path, monkeypatch, ops):
+    # 2026-10-17: the relay's antigravity hint "set dir_flag in [agents.antigravity]"
+    # was parsed as Textual markup and the MarkupError took the whole console down.
+    hint = "fix: set dir_flag in [agents.antigravity] or allow that path in its command"
+    monkeypatch.setattr(
+        relay_ops,
+        "run_checks",
+        lambda root, plan=None: [
+            relay_ops.CheckLine("ok", "codex is logged in"),
+            relay_ops.CheckLine("warn", f"antigravity sandbox [/red] may refuse writes\n{hint}"),
+        ],
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.click("#rs-check")
+        await _wait_for(pilot, lambda: "[agents.antigravity]" in _checks_text(screen), "the hint")
+        assert "[/red]" in _checks_text(screen)
+        screen._error("bad table [agents.grok] in config.toml")
+        await pilot.pause()
+        assert "[agents.grok]" in str(screen.query_one("#rs-error", tui.Static).renderable)
