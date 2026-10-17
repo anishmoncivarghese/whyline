@@ -516,7 +516,7 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
   Tests with a fake runner: the test plan is written beside the brainstorm plan draft; a synthesis with three acceptance criteria produces a prompt listing all three; with `test` empty no extra turn runs; a failing Test planner falls through to the backup and an exhausted chain reports it.
   Verify with `uv run pytest -q tests/test_brainstorm_plan.py` and `uv run pytest -q` in `/Users/anish/whyline-relay`. Change nothing else.
 
-- [ ] TPL-4: Verify tasks run the automatic scenarios
+- [x] TPL-4: Verify tasks run the automatic scenarios
   Edit only `/Users/anish/whyline-relay/src/whyline_relay/loop.py`, `plan.py`, `prompts.py`, and their tests. Leave this whyline checkout untouched.
   Add task profile `verify` (`relay-profile: verify`). A verify task runs through the configured pipeline like any task, with this added to its prompt: the test plan's auto scenarios that cover any task above it and below the previous release, each turned into an automated test under `tests/acceptance/` named after its scenario id, and run; the task is ready only when they pass. A scenario that cannot be automated must be changed to `kind: manual` in the test plan with the reason, not skipped. The relay's commit for a verify task includes the test plan file.
   A plan with no test plan beside it treats `verify` tasks as ordinary tasks.
