@@ -474,7 +474,7 @@ These are `CTO-1` to `CTO-4` and `UTO-2` to `UTO-6` of `plans/in-chat-therr-is-h
   Extend `tests/console/test_adapters_brainstorm.py`, `tests/console/test_repl.py`, and `tests/console/test_relay_ops.py`. Cover a dialog choice of `none` setting `timeout_unlimited` without reading the Chat select, the keyboard prompt defaulting to 15 when the Chat session is `none`, Stop between phases not starting the next model, and plan synthesis with `0` passing `NO_LIMIT`.
   Verify with `uv run pytest -q tests/console/test_adapters_brainstorm.py tests/console/test_repl.py tests/console/test_relay_ops.py tests/console/test_plan_job.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] UTO-5: Confirm Relay setup's timeout, shipped in 0.3.41
+- [x] UTO-5: Confirm Relay setup's timeout, shipped in 0.3.41
   `#rs-timeout` already exists in `RelaySetupScreen` (`src/whyline/console/relay_screens.py`), shipped in whyline 0.3.41 at the user's request with rows 30, 45, and 60 minutes plus `none (no limit)`; 30 is the floor, so do not add 15. An off-menu saved value such as 20 is an extra selected row, and `0` selects none. Check writes the choice through `relay_ops.save_timeout` only when it differs from the file. Do not change that behaviour.
   Add only the missing test in `tests/console/test_relay_setup_screen.py`: changing the select and pressing Cancel writes nothing. If the tests the 0.3.41 change added already cover a case, do not duplicate it. The Chat control never calls `save_timeout`.
   Verify with `uv run pytest -q tests/console/test_relay_setup_screen.py tests/console/test_relay_ops.py` and `uv run pytest -q`. Change nothing else.
