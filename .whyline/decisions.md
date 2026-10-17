@@ -15817,3 +15817,165 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a2b6a5fe9d3049d782370d226060c9d5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T13:56:51.754Z"} -->
+
+## 2026-10-17 — Exhausted Test planner chain keeps the plan draft and reports that no test plan was written
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-3
+
+**Because:** Raising PlanError would be printed as a parse failure of the plan itself, and returning success with no report would let approve look like a plan-only win. Printing and returning the draft leaves the plan for the human and leaves approve to refuse a missing test plan.
+
+**Rejected:**
+
+- raise PlanError — setup would say the drafted plan did not parse
+- return the draft silently — a Test planner failure would look like success until a later approve
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 276a0a01bb264c908e06ea20e6231169 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:28:06.519Z"} -->
+
+## 2026-10-17 — Brainstorm Test planner prompt shares PLAN_TESTS_RULES and lists every synthesis criterion
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-3
+
+**Because:** TPL-2 already defined the scenario format; extracting the rules keeps the two paths identical, and listing each 'is successful when' item is the only way the Test planner is told every criterion must become a scenario.
+
+**Rejected:**
+
+- Reuse PLAN_TESTS as-is — it hardcodes draft-plan.md and the pipeline handoff footer, which a brainstorm chat turn does not use
+- Edit PLAN_DRAFT/PLAN_TESTS in place — an empty Test planner must keep those templates unchanged
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/prompts.py
+
+<!-- whyline-event: 26091565ca604ed8a39258275abf385b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:28:12.201Z"} -->
+
+## 2026-10-17 — Test planner failover is chat.run_turn's backup chain, same as the plan draft
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-3
+
+**Because:** The plan draft already failovers inside chat.run_turn; walking that chain again in brainstorm would double-retry after exhaustion. Exclude still skips other selected brainstorm models so a backup has to be a real backup, not another researcher.
+
+**Rejected:**
+
+- A second explicit backup loop in brainstorm — it would replay the chain after chat.run_turn already exhausted it
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 8696f3e30e8441cda278a7c4a8eebac1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:28:19.003Z"} -->
+
+## 2026-10-17 — TPL-3 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-3
+
+**Because:** The focused 11-test brainstorm-plan suite and the full project suite both pass; the exercised behavior covers adjacent test-plan output, explicit listing of three synthesis criteria, no extra turn when disabled, backup failover, exhausted-chain reporting, shared TPL-2 prompt rules, and testplan.validate enforcement
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 10dbf4c4cd1d4468ada86b4deaa86fc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:31:26.955Z"} -->
+
+## 2026-10-17 — TPL-3 needs changes because a failed Test planner can silently reuse a stale valid test plan
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-3
+
+**Because:** _write_test_plan_from_synthesis validates the adjacent test file before checking record.ok; when an earlier valid test plan exists and the Test planner fails, the function returns successfully with no failure report, violating the exhausted-chain requirement and allowing later approval to reuse stale output
+
+**Rejected:**
+
+- Approve based on the passing suites — the required tests do not cover regeneration or revision with an existing adjacent test plan
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: c5f8cd037bd34b2aaf35f77555933d19 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:35:36.943Z"} -->
+
+## 2026-10-17 — A failed Test planner turn drops a valid adjacent test plan
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-3
+
+**Because:** Validation ran before record.ok, so an exhausted turn treated a pre-existing valid test file as this turn's output and a later approve would commit it. The turn has to succeed before the file is accepted, and a still-valid file is removed when it did not.
+
+**Rejected:**
+
+- Print the notice and leave the file — approve reads the file, not the notice, so the stale plan would still be committed
+- Raise PlanError — setup would report that the drafted plan did not parse
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: d4497ec259d6491b92b58c54f472a26f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:44:19.435Z"} -->
+
+## 2026-10-17 — TPL-3 fails the required behavioral test suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-3
+
+**Because:** The focused suite and full suite both fail test_a_failing_test_planner_falls_through_to_the_backup: the successful fake claude draft turn performs the default real login check and spuriously falls through to aider, producing claude,aider,codex,aider instead of claude,codex,aider. The fake-runner test must isolate login checking or the implementation must avoid failover after a successful turn.
+
+**Rejected:**
+
+- Pass based on prior green runs — the required commands fail reproducibly in an isolated rerun on the current checkout
+
+**Files:** /Users/anish/whyline-relay/tests/test_brainstorm_plan.py
+
+<!-- whyline-event: 5c569a3c61014457bf34906a9646346a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:48:20.128Z"} -->
+
+## 2026-10-17 — Failover tests fake the login check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TPL-3
+
+**Because:** A successful brainstorm draft still runs the real login check inside chat.run_turn. The fake claude command is the real binary, so a logged-out machine switches the draft to aider before the Test planner runs and the agent list becomes claude, aider, codex, aider.
+
+**Rejected:**
+
+- Skip auth failover after a successful turn in chat.py — TPL-3 may only edit brainstorm.py, prompts.py, and their tests, and that check is shared chat behavior.
+- Leave the default runner — claude auth status is non-zero here, so the required test fails.
+
+**Files:** /Users/anish/whyline-relay/tests/test_brainstorm_plan.py
+
+<!-- whyline-event: e330d650059c49e68af7895de56a1b6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:53:50.570Z"} -->
+
+## 2026-10-17 — TPL-3 passes round 7 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-3
+
+**Because:** The focused 12-test brainstorm-plan suite and the full project suite both exit 0; coverage verifies adjacent test-plan output, explicit listing of three synthesis criteria, no extra turn when disabled, backup failover, exhausted-chain reporting without silent approval, stale-plan rejection, and testplan.validate enforcement.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 000385002c3b4f8e9e4d24888916bbb2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:56:38.583Z"} -->
+
+## 2026-10-17 — TPL-3 passes Round 8 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-3
+
+**Because:** The task-scoped diff adds the configured Test planner turn after brainstorm plan drafting, explicitly lists all three synthesis acceptance criteria in the prompt, shares TPL-2 format rules and testplan.validate enforcement, uses normal backup failover, reports exhausted failure without losing the draft or reusing a stale valid test plan, and both required test suites pass.
+
+**Files:** /Users/anish/whyline-relay/src/whyline_relay/brainstorm.py
+
+<!-- whyline-event: 4c3aab70784f496eaa5c9c816521479a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-17T14:59:51.642Z"} -->
