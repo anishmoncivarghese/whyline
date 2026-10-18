@@ -1605,6 +1605,57 @@ def test_timeout_steps_30_to_45_45_to_60_and_60_to_none(tmp_path: Path) -> None:
     assert launched == [["resume"]]
 
 
+def test_timeout_offers_longer_timeout_or_another_agent(
+    tmp_path: Path, monkeypatch, installed_agents
+) -> None:
+    import subprocess
+    from whyline import account
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n'
+        "[agents.antigravity]\n"
+        'adapter = "generic"\n'
+        'command = ["agy", "-p"]\n'
+        "[roles]\n"
+        'implementer = "antigravity"\n'
+        'reviewer = "codex"\n'
+        "[backup]\n"
+        'chain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "antigravity implements"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "antigravity": {"available": True},
+            "claude": {"available": False},
+            "codex": {"available": True},
+            "grok": {"available": True},
+        },
+    )
+
+    probs = recovery.diagnose(repo, [], "agy exceeded 3600s and was terminated")
+    assert probs[0].id == "timeout"
+    option_ids = [opt.id for opt in probs[0].options]
+    # Longer timeout stays the recommendation; the backup chain comes first
+    # among the switches, the timed-out agent and logged-out agents are absent.
+    assert option_ids == [
+        "resume-longer", "use-grok", "use-codex", "resume", "show", "cancel"
+    ]
+    assert probs[0].options[0].recommended is True
+    assert not any(opt.recommended for opt in probs[0].options[1:])
+    assert probs[0].options[1].label == "Use grok instead of antigravity"
+
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "use-grok", launched.append)
+    assert launched == [["resume"]]
+    assert "Set role implementer to grok" in res
+    cfg_text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert 'implementer = "grok"' in cfg_text
+
+
 def test_out_of_usage_offers_only_usable_agents(tmp_path: Path, monkeypatch, installed_agents) -> None:
     import subprocess
     from whyline import account
