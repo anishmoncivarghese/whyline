@@ -958,6 +958,12 @@ class WhylineConsoleApp(App):
                     self._follow_base[disp] = file_follow.Snap(st.st_mtime_ns, st.st_size)
             except Exception:
                 pass
+        # Files turned on mid-run: the agent's earlier writes are all in the
+        # baseline, so the pane would wait for the next write. Leave the
+        # newest one out and the first tick opens it.
+        if self._follow_base:
+            newest = max(self._follow_base, key=lambda p: self._follow_base[p].mtime_ns)
+            del self._follow_base[newest]
         ledger = self.session.root / ".whyline" / "ledger.jsonl"
         try:
             self._follow_offset = ledger.stat().st_size if ledger.is_file() else 0

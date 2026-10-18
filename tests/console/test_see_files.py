@@ -442,3 +442,36 @@ def test_gather_follow_error_on_bad_repo(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     with pytest.raises(RuntimeError):
         app._gather_follow()
+
+
+@pytest.mark.asyncio
+async def test_turning_files_on_mid_run_shows_the_newest_changed_file(tmp_path):
+    import os
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    (tmp_path / "old.py").write_text("a = 1\n", encoding="utf-8")
+    (tmp_path / "new.py").write_text("b = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+    # The agent already wrote both before Files was pressed; new.py last.
+    (tmp_path / "old.py").write_text("a = 2\n", encoding="utf-8")
+    (tmp_path / "new.py").write_text("b = 2\n", encoding="utf-8")
+    os.utime(tmp_path / "old.py", (1_000_000_000, 1_000_000_000))
+    os.utime(tmp_path / "new.py", (1_000_000_100, 1_000_000_100))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(160, 40)) as pilot:
+        await pilot.click("#see-files")
+        await pilot.pause()
+        app._arm_follow()  # what a running relay or reply does
+        path_label = app.query_one("#file-path", tui.Static)
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if "new.py" in str(path_label.renderable):
+                break
+        assert str(path_label.renderable) == "new.py"
+        assert app.query_one("#file-view", tui.FollowView).text == "b = 2\n"
+        app._disarm_follow()
