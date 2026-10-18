@@ -557,7 +557,7 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
   Tests: None is the default and saves `test = ""`; choosing codex saves it and reopening shows it; the same agent as the Drafter shows the tip and still saves; the brainstorm and Auto forms carry the value into the planner call; an approved plan with a test plan prints both paths.
   Verify with `uv run pytest -q tests/console` and `uv run pytest -q`. Change nothing else.
 
-- [ ] TPL-9: Confirm manual checks from the console
+- [x] TPL-9: Confirm manual checks from the console
   Edit only `src/whyline/console/tui.py`, `src/whyline/console/repl.py` (`_help_text`), and their tests.
   When the relay pauses with a `Manual checks before` reason, the transcript lists each open check with its steps and expected lines, and a row `#manual-actions`, shaped like `#plan-actions`, shows Pass and Fail for the first open check. Pass runs `whyline relay manual <id> pass` through the relay launcher; Fail asks for a note in the prompt, then runs `manual <id> fail <note>`. After each, the list is re-read and the next open check is shown. When none remain, print `All manual checks passed. Press Resume to release.` and enable Resume. Typing `manual`, `manual TP-3 pass`, or `manual TP-3 fail <note>` in the Relay prompt does the same. `_help_text` gains `manual  confirm a release's manual checks`.
   Tests: a manual-check pause shows the first check with Pass and Fail; Pass launches `manual TP-1 pass` and moves to the next check; Fail requires a note; the last Pass enables Resume and prints the hint; a release pause with no manual checks shows no row.
