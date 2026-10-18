@@ -3204,8 +3204,7 @@ async def test_failed_resume_opens_resolve_automatically_without_calling_launche
         assert keep_btn.label.plain == "Resume and keep changes"
 
         # A resume that succeeds never opens it
-        await pilot.click("#relay-resume")
-        await pilot.pause()
+        app._launch_relay(["resume"])
         assert launched == [["resume"], ["resume"]]
         app._relay_finished(0, "Relay finished.\n")
         await pilot.pause()

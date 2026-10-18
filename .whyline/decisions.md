@@ -16834,3 +16834,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 920d7c37c0c64207b5d0f82d25588c41 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:36:32.534Z"} -->
+
+## 2026-10-18 — Use the direct relay launcher for the second Resume outcome in the auto-Resolve test
+
+**Actor:** codex
+**Role:** release
+**Task:** TPL-10
+
+**Because:** The first click already proves the Resume button dispatches; after Resolve mounts, Ubuntu can move the controls row while the redundant second synthetic click lands, so the test should invoke the launcher directly when it is testing successful completion cleanup
+
+**Rejected:**
+
+- add a longer pause — elapsed time does not prove the moving control is ready and would preserve the race
+- skip the test on Linux — the release must keep coverage for automatic Resolve and successful resume cleanup
+
+**Files:** tests/console/test_tui.py
+
+<!-- whyline-event: 06564d0c0913493ca4134722c6e0423d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:59:12.786Z"} -->
