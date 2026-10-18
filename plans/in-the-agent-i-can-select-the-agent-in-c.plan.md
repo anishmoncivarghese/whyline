@@ -546,7 +546,7 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
 
 ## Console, test plans, after whyline-relay 0.2.38
 
-- [ ] TPL-7: Depend on whyline-relay 0.2.38
+- [x] TPL-7: Depend on whyline-relay 0.2.38
   In this whyline checkout, raise both `whyline-relay` bounds in `pyproject.toml` to `>=0.2.38,<0.3`. Refresh `uv.lock`. Install the published `0.2.38` and confirm `whyline_relay.testplan` imports and `setup.write_planner` accepts `test`. Do not add UI. Do not tag or publish whyline.
   Verify with `uv run pytest -q`. Change nothing else.
 
