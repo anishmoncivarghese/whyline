@@ -570,7 +570,7 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
   Tests: a resume that exits with `FAIL  working tree has uncommitted changes` during a paused task shows `Resume could not start` and the `Resume and keep changes` button without pressing Resolve, and the launcher is not called again; in auto mode the flow is not opened a second time; a `start` launch that fails does not open it; an unrecognised failure shows no Resolve row.
   Verify with `uv run pytest -q tests/console/test_tui.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] LGN-1: Resolve offers the agent's own login when one has lapsed
+- [x] LGN-1: Resolve offers the agent's own login when one has lapsed
   Edit only `src/whyline/console/recovery.py`, `src/whyline/console/tui.py`, `src/whyline/account.py`, and their tests.
   On 2026-10-16 claude's command-line login expired ("OAuth session expired and could not be refreshed"); Set up's Check said `claude (backup for the chain) is not logged in`, and the fix was `/login claude`, which the console already has (`tui._login`, `account.LOGIN_COMMANDS`) but nothing pointed to.
   Add a `logged-out` problem to `recovery.diagnose`, matched from: a Check or Resume FAIL line `<agent> ... is not logged in` (the agent is the first word after `FAIL`), a pause reason whose `adapters.failure_kind` is `auth`, and a reason containing `OAuth session expired`, `not logged in`, `Failed to authenticate`, or `Please run /login`. Evidence is the matching line and, for claude and codex, the output of their status command (`claude auth status`, `codex login status`). One problem per agent named.
