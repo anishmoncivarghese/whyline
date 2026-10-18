@@ -2363,7 +2363,7 @@ async def test_relay_setup_and_plan_with_one_agent_opens_screens(tmp_path, monke
     from whyline.console.relay_screens import RelayPlanScreen, RelaySetupScreen
 
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["codex"])
-    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex"))
+    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex", ""))
     monkeypatch.setattr(
         relay_ops,
         "current_roles",
@@ -2864,11 +2864,98 @@ async def test_newer_brainstorm_ignores_a_late_chat_stop(tmp_path, monkeypatch):
         assert not app._busy_text
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_approved_plan_with_test_plan_prints_both_paths(tmp_path):
+    from whyline.console import plan_job, relay_ops
+
+    _init_test_repo(tmp_path)
+    relay_ops.save_planner(tmp_path, "codex", "claude", "codex")
+    draft_path = tmp_path / ".whyline" / "relay" / "draft-plan.md"
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("- [ ] T-1: build it\n", encoding="utf-8")
+    tests_draft = tmp_path / ".whyline" / "relay" / "draft-plan.tests.md"
+    tests_draft.write_text(
+        "- [ ] S-1: check T-1\n"
+        "  covers: T-1\n"
+        "  kind: auto\n"
+        "  steps:\n"
+        "  - run pytest\n"
+        "  expected:\n"
+        "  - passes\n",
+        encoding="utf-8",
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        draft = relay_ops.Draft(
+            path=draft_path,
+            text="- [ ] T-1: build it\n",
+            drafted_by="codex (reviewed by claude)",
+            source="planner",
+        )
+        app._plan_outcome = plan_job.Outcome("draft", draft, stage="plan")
+        app._plan_request = plan_job.PlanRequest("draft", "My Plan", spec_first=False)
+        app._approve_plan()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        texts = [e.text for e in app.session.transcript]
+        assert any(
+            "plans/my-plan.plan.md" in text and "plans/my-plan.tests.md" in text
+            for text in texts
+        ), texts
+        assert (tmp_path / "plans" / "my-plan.plan.md").is_file()
+        assert (tmp_path / "plans" / "my-plan.tests.md").is_file()
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_brainstorm_screen_saves_and_restores_test_planner_and_shows_tip(
+    tmp_path, monkeypatch
+):
+    from whyline import account
+    from whyline.console import adapters, relay_ops
+    from whyline.console.session import SessionEvent
 
+    _init_test_repo(tmp_path)
+    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    monkeypatch.setattr(
+        adapters,
+        "run_brainstorm",
+        lambda root, *, progress, cancel_event=None, **choice: SessionEvent(
+            kind="output", text="done"
+        ),
+    )
 
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, tui.BrainstormScreen)
+        select = form.query_one("#bs-test-planner", tui.Select)
+        tip = form.query_one("#bs-test-planner-tip", tui.Static)
+        assert select.value == ""
+        assert not tip.display
 
+        select.value = "codex"
+        await pilot.pause()
+        assert tip.display
+        assert str(tip.renderable) == "Tip: a different agent from the Drafter catches more."
 
+        form.query_one("#bs-topic", tui.Input).value = "retry policy"
+        await pilot.click("#bs-start")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
 
+        assert relay_ops.planner_agents(tmp_path) == ("codex", "claude", "codex")
+
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        reopened = app.screen
+        assert isinstance(reopened, tui.BrainstormScreen)
+        assert reopened.query_one("#bs-test-planner", tui.Select).value == "codex"
+        assert reopened.query_one("#bs-test-planner-tip", tui.Static).display
 

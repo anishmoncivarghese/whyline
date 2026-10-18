@@ -25,13 +25,20 @@ class PlanExists(RuntimeError):
 
 @pytest.fixture(autouse=True)
 def quiet_ops(monkeypatch):
+    real_planner_agents = relay_ops.planner_agents
     monkeypatch.setattr(relay_ops, "pending_draft", lambda root: None)
     monkeypatch.setattr(relay_ops, "brainstorm_docs", lambda root: [])
     monkeypatch.setattr(relay_ops, "plan_exists_error", lambda: PlanExists)
     monkeypatch.setattr(
         relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok"]
     )
-    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "claude"))
+    monkeypatch.setattr(
+        relay_ops,
+        "planner_agents",
+        lambda root: real_planner_agents(root)
+        if (Path(root) / ".whyline" / "relay" / "config.toml").is_file()
+        else ("codex", "claude", ""),
+    )
 
 
 # Antigravity's checkbox starts checked, so the research set names it.
@@ -237,6 +244,7 @@ async def test_only_the_chosen_sources_fields_show(tmp_path):
         assert not screen.query_one("#rp-paste-group").display
         assert not screen.query_one("#rp-auto-group").display
         assert screen.query_one("#rp-drafter").display
+        assert screen.query_one("#rp-test-planner").display
         assert screen.query_one("#rp-reviewer").display
         assert screen.query_one("#rp-go").display
         assert not screen.query_one("#rp-check").display
@@ -250,6 +258,7 @@ async def test_only_the_chosen_sources_fields_show(tmp_path):
         assert not screen.query_one("#rp-auto-group").display
         assert screen.query_one("#rp-spec-first", tui.Checkbox).value is True
         assert screen.query_one("#rp-drafter").display
+        assert screen.query_one("#rp-test-planner").display
         assert screen.query_one("#rp-reviewer").display
 
         source_select.value = "paste"
@@ -260,6 +269,7 @@ async def test_only_the_chosen_sources_fields_show(tmp_path):
         assert not screen.query_one("#rp-new-group").display
         assert not screen.query_one("#rp-auto-group").display
         assert not screen.query_one("#rp-drafter").display
+        assert not screen.query_one("#rp-test-planner").display
         assert not screen.query_one("#rp-reviewer").display
 
         source_select.value = "auto"
@@ -270,6 +280,7 @@ async def test_only_the_chosen_sources_fields_show(tmp_path):
         assert not screen.query_one("#rp-draft-group").display
         assert not screen.query_one("#rp-paste-group").display
         assert screen.query_one("#rp-drafter").display
+        assert screen.query_one("#rp-test-planner").display
         assert screen.query_one("#rp-reviewer").display
         assert not screen.query_one("#rp-go").display
         assert screen.query_one("#rp-check").display
@@ -1598,7 +1609,7 @@ async def test_relay_plan_screen_with_no_agents(tmp_path, monkeypatch):
 
 async def test_relay_plan_screen_with_one_agent(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["codex"])
-    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex"))
+    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex", ""))
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
@@ -1609,4 +1620,199 @@ async def test_relay_plan_screen_with_one_agent(tmp_path, monkeypatch):
         assert not screen.query_one("#rp-go", tui.Button).disabled
 
 
+async def test_test_planner_none_is_default_and_saves_empty_string(tmp_path):
+    repo = _repo(tmp_path / "repo")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
+        test_select = screen.query_one("#rp-test-planner", tui.Select)
+        assert test_select.value == ""
+        assert test_select._options == [
+            ("None", ""),
+            ("claude", "claude"),
+            ("codex", "codex"),
+        ]
+        assert not screen.query_one("#rp-test-planner-tip", tui.Static).display
+        screen.query_one("#rp-name", tui.Input).value = "Default Plan"
+        screen.query_one("#rp-description").load_text("Build the feature")
+        await pilot.click("#rp-go")
+        await pilot.pause()
 
+    assert len(results) == 1
+    assert getattr(results[0], "test_planner", None) == ""
+    cfg_text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert 'test = ""' in cfg_text
+    assert relay_ops.planner_agents(repo) == ("codex", "claude", "")
+
+
+async def test_choosing_codex_saves_test_planner_and_reopening_shows_it(tmp_path):
+    repo = _repo(tmp_path / "repo")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
+        screen.query_one("#rp-drafter", tui.Select).value = "claude"
+        screen.query_one("#rp-test-planner", tui.Select).value = "codex"
+        await pilot.pause()
+        assert not screen.query_one("#rp-test-planner-tip", tui.Static).display
+        screen.query_one("#rp-name", tui.Input).value = "Codex Plan"
+        screen.query_one("#rp-description").load_text("Build the feature")
+        await pilot.click("#rp-go")
+        await pilot.pause()
+
+        assert len(results) == 1
+        assert getattr(results[0], "test_planner", None) == "codex"
+        assert relay_ops.planner_agents(repo) == ("claude", "claude", "codex")
+
+        reopened, _ = await _open(app, pilot)
+        assert reopened.query_one("#rp-drafter", tui.Select).value == "claude"
+        assert reopened.query_one("#rp-test-planner", tui.Select).value == "codex"
+
+
+async def test_same_agent_as_drafter_shows_tip_and_still_saves(tmp_path):
+    repo = _repo(tmp_path / "repo")
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rp-source", tui.Select).value = "draft"
+        await pilot.pause()
+        assert screen.query_one("#rp-drafter", tui.Select).value == "codex"
+        tip = screen.query_one("#rp-test-planner-tip", tui.Static)
+        assert not tip.display
+
+        screen.query_one("#rp-test-planner", tui.Select).value = "codex"
+        await pilot.pause()
+        assert tip.display
+        assert str(tip.renderable) == "Tip: a different agent from the Drafter catches more."
+
+        screen.query_one("#rp-name", tui.Input).value = "Same Agent Plan"
+        screen.query_one("#rp-description").load_text("Build it")
+        await pilot.click("#rp-go")
+        await pilot.pause()
+
+    assert len(results) == 1
+    assert getattr(results[0], "test_planner", None) == "codex"
+    assert relay_ops.planner_agents(repo) == ("codex", "claude", "codex")
+
+
+async def test_brainstorm_and_auto_forms_carry_test_planner_into_planner_call(
+    tmp_path, monkeypatch
+):
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    repo = _repo(tmp_path / "repo")
+    seen_brainstorm_planner: list[tuple[str, str, str]] = []
+    seen_auto_planner: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(
+        adapters,
+        "run_brainstorm",
+        lambda *a, **k: SessionEvent("output", "saved"),
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "final_synthesis",
+        lambda root, topic: "# Agreed\n\nBuild it.\n",
+    )
+    draft_file = repo / ".whyline" / "relay" / "draft-plan.md"
+    draft_file.parent.mkdir(parents=True, exist_ok=True)
+    draft_file.write_text("- [ ] T-1: task\n", encoding="utf-8")
+
+    def fake_brainstorm_draft_plan(root, _description, _attachments=(), *, progress, spec=None):
+        seen_brainstorm_planner.append(relay_ops.planner_agents(root))
+        return relay_ops.Draft(
+            path=draft_file,
+            text="- [ ] T-1: task\n",
+            drafted_by="codex",
+            source="planner",
+        )
+
+    monkeypatch.setattr(relay_ops, "draft_plan", fake_brainstorm_draft_plan)
+
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        assert screen.query_one("#rp-source", tui.Select).value == "brainstorm"
+        screen.query_one("#bs-topic", tui.Input).value = "Search indexing"
+        screen.query_one("#bs-test-planner", tui.Select).value = "codex"
+        await pilot.pause()
+        assert screen.query_one("#rp-test-planner", tui.Select).value == "codex"
+        await pilot.click("#rp-go")
+        await pilot.pause()
+
+    assert len(results) == 1
+    synth_outcome = plan_job.run_request(repo, results[0], progress=lambda line: None)
+    assert synth_outcome.stage == "synthesis"
+    # Clear the saved planner before run_plan_from_spec to prove the request carries test_planner into the planner call.
+    relay_ops.save_planner(repo, "claude", "codex", "")
+    plan_job.run_plan_from_spec(
+        repo,
+        results[0],
+        repo / "docs" / "specs" / "search-indexing.md",
+        progress=lambda line: None,
+    )
+    assert seen_brainstorm_planner == [("codex", "claude", "codex")]
+
+    # Reset planner config and test the Auto form carrying the selected test planner.
+    relay_ops.save_planner(repo, "claude", "codex", "")
+    assert relay_ops.planner_agents(repo) == ("claude", "codex", "")
+
+    def fake_auto_brainstorm(_root, **_kwargs):
+        from whyline_relay import brainstorm
+
+        synth = brainstorm.shared_path(repo, "auto-topic")
+        synth.parent.mkdir(parents=True, exist_ok=True)
+        synth.write_text("# Auto\n\n## Final Synthesis\n\nShip it.\n", encoding="utf-8")
+        return SessionEvent("output", "saved")
+
+    spec_draft = repo / ".whyline" / "relay" / "draft-spec.md"
+    spec_draft.write_text("# Spec\n\n## Done\n", encoding="utf-8")
+
+    def fake_draft_spec(_root, _text, _attachments=(), *, progress):
+        return relay_ops.Draft(path=spec_draft, text="# Spec\n", drafted_by="claude", source="spec")
+
+    def fake_approve_spec(_root, draft, _name, *, replace=False):
+        target = repo / "docs" / "specs" / "auto-plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def fake_draft_plan(root, _description, _attachments=(), *, progress, spec=None):
+        seen_auto_planner.append(relay_ops.planner_agents(root))
+        return relay_ops.Draft(
+            path=draft_file,
+            text="- [ ] T-1: task\n",
+            drafted_by="claude",
+            source="planner",
+        )
+
+    def fake_approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        target = repo / "plans" / "auto-plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_auto_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", fake_draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", fake_approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", fake_draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", fake_approve_plan)
+
+    app2 = tui.WhylineConsoleApp(root=repo)
+    async with app2.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open_auto(app2, pilot)
+        screen.query_one("#bs-topic", tui.Input).value = "auto-topic"
+        screen.query_one("#rp-name", tui.Input).value = "auto-plan"
+        screen.query_one("#rp-drafter", tui.Select).value = "claude"
+        screen.query_one("#rp-test-planner", tui.Select).value = "codex"
+        await pilot.pause()
+        auto_req = screen._auto_request()
+
+    assert getattr(auto_req, "test_planner", None) == "codex"
+    fp = auto_run.fingerprint(repo, auto_req)
+    auto_run.run(repo, auto_req, fp, through="plan")
+    assert seen_auto_planner == [("claude", "codex", "codex")]

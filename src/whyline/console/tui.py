@@ -298,6 +298,16 @@ class QuitRelayScreen(ModalScreen):
         self.dismiss(choices.get(event.button.id))
 
 
+_TEST_PLANNER_TIP = "Tip: a different agent from the Drafter catches more."
+
+
+class _BrainstormChoice(dict):
+    """Brainstorm form dict with `.test_planner` attribute so `**choice` unpacks
+    only the kwargs `adapters.run_brainstorm` accepts."""
+
+    test_planner: str = ""
+
+
 def brainstorm_field_widgets(
     status: dict, default_final: str, root: Path | None = None, session: str | None = None
 ) -> list:
@@ -310,6 +320,20 @@ def brainstorm_field_widgets(
             Checkbox(f"{agent:<12} {info['label']}", value=info["available"],
                      disabled=not info["available"], id=f"bs-{agent}")
         )
+    usable = [a for a in BRAINSTORM_AGENTS if status.get(a, {}).get("available")]
+    if not usable:
+        usable = list(BRAINSTORM_AGENTS)
+    default_test = ""
+    if root is not None:
+        try:
+            planner_cfg = relay_ops.planner_agents(root)
+            if len(planner_cfg) >= 3 and planner_cfg[2]:
+                default_test = str(planner_cfg[2])
+        except Exception:
+            default_test = ""
+    test_options: list[tuple[str, str]] = [("None", ""), *((a, a) for a in usable)]
+    if default_test and default_test not in usable:
+        test_options.append((default_test, default_test))
     return [
         Input(placeholder="Topic, e.g. how the relay should handle a failed Codex run",
               id="bs-topic"),
@@ -321,6 +345,17 @@ def brainstorm_field_widgets(
             Select([(a, a) for a in BRAINSTORM_AGENTS], value=default_final,
                    allow_blank=False, id="bs-final"),
         ),
+        Horizontal(
+            Label("Test planner:", classes="field-label"),
+            Select(
+                test_options,
+                value=default_test if any(v == default_test for _, v in test_options) else "",
+                allow_blank=False,
+                id="bs-test-planner",
+            ),
+            id="bs-test-planner-row",
+        ),
+        Static(_TEST_PLANNER_TIP, id="bs-test-planner-tip", markup=False),
         Horizontal(
             Label("Per-agent timeout:", classes="field-label"),
             Select(
@@ -348,13 +383,23 @@ def collect_brainstorm(query_one) -> "dict | str":
     final = query_one("#bs-final", Select).value
     timeout = query_one("#bs-timeout", Select).value
     attachments = query_one("#bs-attachments", AttachmentsField).pending.paths()
-    choice = {
-        "topic": topic,
-        "agents": agents,
-        "passes": int(raw),
-        "final_agent": final if final in agents else agents[0],
-        "attachments": attachments,
-    }
+    test_planner = ""
+    try:
+        raw_test = query_one("#bs-test-planner", Select).value
+        if isinstance(raw_test, str):
+            test_planner = raw_test
+    except Exception:
+        test_planner = ""
+    choice = _BrainstormChoice(
+        {
+            "topic": topic,
+            "agents": agents,
+            "passes": int(raw),
+            "final_agent": final if final in agents else agents[0],
+            "attachments": attachments,
+        }
+    )
+    choice.test_planner = test_planner
     if timeout == "none":
         choice["timeout_unlimited"] = True
         return choice
@@ -386,6 +431,8 @@ class BrainstormScreen(ModalScreen):
     BrainstormScreen .field-label { width: 18; padding: 1 1 0 0; }
     BrainstormScreen #bs-passes { width: 10; }
     BrainstormScreen #bs-final { width: 30; }
+    BrainstormScreen #bs-test-planner { width: 30; }
+    BrainstormScreen #bs-test-planner-tip { color: $text-muted; height: auto; display: none; }
     BrainstormScreen #bs-timeout { width: 30; }
     BrainstormScreen #bs-error { color: $error; height: auto; }
     BrainstormScreen #bs-error.-empty { display: none; }
@@ -425,6 +472,47 @@ class BrainstormScreen(ModalScreen):
     def on_mount(self) -> None:
         self.query_one("#bs-topic", Input).focus()
         self._sync_attachment_agents()
+        self._sync_test_planner_tip()
+
+    def _sync_test_planner_tip(self) -> None:
+        try:
+            tip = self.query_one("#bs-test-planner-tip", Static)
+            test_val = self.query_one("#bs-test-planner", Select).value
+        except Exception:
+            return
+        drafter = "codex"
+        if getattr(self, "app", None) is not None and getattr(self.app, "session", None) is not None:
+            try:
+                drafter = relay_ops.planner_agents(self.app.session.root)[0]
+            except Exception:
+                drafter = "codex"
+        tip.display = bool(test_val) and test_val == drafter
+
+    def _save_test_planner(self, chosen: dict) -> None:
+        test_val = getattr(chosen, "test_planner", "")
+        try:
+            raw_val = self.query_one("#bs-test-planner", Select).value
+            if isinstance(raw_val, str):
+                test_val = raw_val
+        except Exception:
+            pass
+        if getattr(self, "app", None) is None or getattr(self.app, "session", None) is None:
+            return
+        root = self.app.session.root
+        try:
+            planner_cfg = relay_ops.planner_agents(root)
+            draft, review = planner_cfg[0], planner_cfg[1]
+        except Exception:
+            draft, review = "codex", "claude"
+        try:
+            relay_ops.save_planner(root, draft, review, test_val)
+        except TypeError:
+            try:
+                relay_ops.save_planner(root, draft, review)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _sync_attachment_agents(self) -> None:
         try:
@@ -433,6 +521,17 @@ class BrainstormScreen(ModalScreen):
             return
         agents = [a for a in BRAINSTORM_AGENTS if self.query_one(f"#bs-{a}", Checkbox).value]
         field.set_agents(agents)
+        try:
+            test_val = self.query_one("#bs-test-planner", Select).value
+            if isinstance(test_val, str) and test_val and test_val not in agents:
+                field.set_agents([*agents, test_val])
+        except Exception:
+            pass
+
+    def on_select_changed(self, event: "Select.Changed") -> None:
+        if event.select.id in ("bs-test-planner", "bs-final"):
+            self._sync_test_planner_tip()
+            self._sync_attachment_agents()
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         if event.checkbox.id and event.checkbox.id.startswith("bs-"):
@@ -458,6 +557,7 @@ class BrainstormScreen(ModalScreen):
         if risky:
             def answered(ok: bool) -> None:
                 if ok:
+                    self._save_test_planner(chosen)
                     self.dismiss(chosen)
 
             self.app.push_screen(
@@ -468,6 +568,7 @@ class BrainstormScreen(ModalScreen):
                 answered,
             )
             return
+        self._save_test_planner(chosen)
         self.dismiss(chosen)
 
     def collect(self) -> "dict | str":
@@ -3533,18 +3634,30 @@ class WhylineConsoleApp(App):
         if not self._relay_running():
             self._end_run_flow("Auto run finished.")
 
-    def _plan_saved(self, path: Path | None) -> None:
+    def _plan_saved(self, path: Path | None, *, has_test_plan: bool = False) -> None:
         if path is None:
             return
+        from whyline_relay import testplan
+
         self._setup_plan_hint = path
         shown = (path.relative_to(self.session.root) if path.is_relative_to(self.session.root) else path).as_posix()
-        self.render_event(
-            SessionEvent(
-                kind="output",
-                text=f"Saved {shown} and committed it. Next: Set up, to pick the plan and who "
-                     "implements, tests and reviews.",
+        test_path = testplan.path_for(path)
+        if has_test_plan or test_path.is_file():
+            shown_test = (
+                test_path.relative_to(self.session.root)
+                if test_path.is_relative_to(self.session.root)
+                else test_path
+            ).as_posix()
+            text = (
+                f"Saved {shown} and {shown_test} and committed them. Next: Set up, to pick the plan and who "
+                "implements, tests and reviews."
             )
-        )
+        else:
+            text = (
+                f"Saved {shown} and committed it. Next: Set up, to pick the plan and who "
+                "implements, tests and reviews."
+            )
+        self.render_event(SessionEvent(kind="output", text=text))
         self._sync_relay_buttons()
         if self._run_flow:
             self._open_relay_setup(guided=True, plan=path)
@@ -3572,7 +3685,12 @@ class WhylineConsoleApp(App):
             root = self.session.root
             self._run_plan(lambda progress: plan_job.run_request(root, request, progress))
 
-        agents = {request.drafter, request.reviewer, request.writer}
+        test_planner = getattr(request, "test_planner", "") or getattr(
+            getattr(request, "drafter", ""), "_test_planner", ""
+        )
+        agents = {str(request.drafter), str(request.reviewer), str(request.writer)}
+        if test_planner:
+            agents.add(str(test_planner))
         if request.brainstorm:
             agents |= set(request.brainstorm["agents"])
         self._with_antigravity("antigravity" in agents, proceed)
@@ -3743,7 +3861,15 @@ class WhylineConsoleApp(App):
             )
             return
 
+        from whyline_relay import testplan
+
         draft = outcome.draft
+        had_draft_testplan = (
+            bool(relay_ops.planner_agents(root)[2])
+            and draft is not None
+            and getattr(draft, "path", None) is not None
+            and testplan.path_for(draft.path).is_file()
+        )
         spec_str = ""
         if self._approved_spec:
             spec_str = (
@@ -3776,7 +3902,7 @@ class WhylineConsoleApp(App):
             )
             return
         self._leave_plan()
-        self._plan_saved(path)
+        self._plan_saved(path, has_test_plan=had_draft_testplan)
 
     def _discard_plan(self) -> None:
         if self._plan_outcome is not None:

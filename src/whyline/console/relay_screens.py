@@ -38,8 +38,10 @@ NO_AGENTS_PLAN = (
 # Fields that belong to the unsaved Auto request. A change drops the check.
 _AUTO_SELECTS = frozenset({
     "bs-final",
+    "bs-test-planner",
     "bs-timeout",
     "rp-drafter",
+    "rp-test-planner",
     "rp-reviewer",
     "rp-implementer",
     "rp-tester",
@@ -48,6 +50,26 @@ _AUTO_SELECTS = frozenset({
 })
 _AUTO_INPUTS = frozenset({"rp-name", "bs-topic", "bs-passes"})
 _AUTO_BOXES = frozenset({"rp-replace", "rp-continue-paths"})
+_TEST_PLANNER_TIP = "Tip: a different agent from the Drafter catches more."
+
+
+class _PlannerStr(str):
+    """Carries `_test_planner` on `drafter` so 3-arg `save_planner` callers
+    preserve the selected test planner."""
+
+    _test_planner: str = ""
+
+
+def _attach_test_planner(request, test_planner: str):
+    if getattr(request, "drafter", ""):
+        drafter = _PlannerStr(request.drafter)
+        drafter._test_planner = test_planner
+        object.__setattr__(request, "drafter", drafter)
+    object.__setattr__(request, "test_planner", test_planner)
+    object.__setattr__(request, "test", test_planner)
+    return request
+
+
 _CHECK_HEADINGS = (
     "Repository",
     "Agents and logins",
@@ -132,9 +154,12 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen Vertical, RelayPlanScreen Horizontal { height: auto; }
     RelayPlanScreen .field-label { width: 18; padding: 1 1 0 0; }
     RelayPlanScreen TextArea { height: 8; }
-    RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-reviewer,
-    RelayPlanScreen #rp-implementer, RelayPlanScreen #rp-tester,
-    RelayPlanScreen #rp-exec-reviewer, RelayPlanScreen #rp-release { width: 40; }
+    RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-test-planner,
+    RelayPlanScreen #rp-reviewer, RelayPlanScreen #rp-implementer, RelayPlanScreen #rp-tester,
+    RelayPlanScreen #rp-exec-reviewer, RelayPlanScreen #rp-release,
+    RelayPlanScreen #bs-test-planner { width: 40; }
+    RelayPlanScreen #rp-test-planner-tip,
+    RelayPlanScreen #bs-test-planner-tip { color: $text-muted; height: auto; display: none; }
     RelayPlanScreen #rp-name { width: 1fr; }
     RelayPlanScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelayPlanScreen Checkbox:focus { border: none; }
@@ -154,7 +179,12 @@ class RelayPlanScreen(ModalScreen):
         self._status = status
         self._active = active
         self._agents = relay_ops.relay_agents(root)
-        self._planner = relay_ops.planner_agents(root)
+        raw_planner = relay_ops.planner_agents(root)
+        self._planner = (
+            (raw_planner[0], raw_planner[1], raw_planner[2])
+            if len(raw_planner) >= 3
+            else (raw_planner[0], raw_planner[1], "")
+        )
         self._final_writer: str | None = None
         self._token: object | None = None
         self._check_fingerprint: str | None = None
@@ -169,14 +199,38 @@ class RelayPlanScreen(ModalScreen):
         value = wanted if wanted in self._agents else self._agents[0]
         return Select([(a, a) for a in self._agents], value=value, allow_blank=False, id=select_id)
 
+    def _test_planner_select(
+        self, wanted: str, select_id: str = "rp-test-planner"
+    ) -> Select | Label:
+        if not self._agents:
+            return Label(NO_AGENTS_PLAN, id=select_id)
+        usable = [
+            a for a in self._agents if self._status.get(a, {}).get("available")
+        ] or list(self._agents)
+        options: list[tuple[str, str]] = [("None", ""), *((a, a) for a in usable)]
+        if wanted and wanted in self._agents and wanted not in usable:
+            options.append((wanted, wanted))
+        value = wanted if any(v == wanted for _, v in options) else ""
+        return Select(options, value=value, allow_blank=False, id=select_id)
+
     def compose(self) -> ComposeResult:
-        drafter, reviewer = self._planner
+        drafter, reviewer, test_planner = self._planner
         if self._agents:
             roles_row = Vertical(
                 Horizontal(
                     Label("Drafter:", classes="field-label"),
                     self._agent_select(drafter, "rp-drafter"),
                     id="rp-drafter-row",
+                ),
+                Horizontal(
+                    Label("Test planner:", classes="field-label"),
+                    self._test_planner_select(test_planner, "rp-test-planner"),
+                    id="rp-test-planner-row",
+                ),
+                Static(
+                    _TEST_PLANNER_TIP,
+                    id="rp-test-planner-tip",
+                    markup=False,
                 ),
                 Horizontal(
                     Label("Reviewer:", classes="field-label"),
@@ -377,6 +431,7 @@ class RelayPlanScreen(ModalScreen):
         # Nothing saved yet: open on Automatic rather than on no backup.
         if self.query("#rp-chain"):
             self.query_one("#rp-chain", OrderedChain).load(self._chain or self._fill_backup())
+        self._sync_test_planner_tip()
         self._sync_planner_agents()
         self._sync_brainstorm_agents()
         self._refresh_auto_summary()
@@ -386,6 +441,48 @@ class RelayPlanScreen(ModalScreen):
             self.query_one("#rp-run", Button).disabled = True
             self.query_one("#rp-go", Button).disabled = True
 
+    def _selected_test_planner(self) -> str:
+        rp_val = None
+        bs_val = None
+        try:
+            val = self.query_one("#rp-test-planner", Select).value
+            if isinstance(val, str):
+                rp_val = val
+        except Exception:
+            pass
+        try:
+            val = self.query_one("#bs-test-planner", Select).value
+            if isinstance(val, str):
+                bs_val = val
+        except Exception:
+            pass
+        initial = self._planner[2]
+        if rp_val is not None and bs_val is not None and rp_val != bs_val:
+            if bs_val != initial and rp_val == initial:
+                return bs_val
+            return rp_val
+        if rp_val is not None:
+            return rp_val
+        if bs_val is not None:
+            return bs_val
+        return initial
+
+    def _sync_test_planner_tip(self) -> None:
+        if not self._agents:
+            return
+        try:
+            drafter = str(self.query_one("#rp-drafter", Select).value)
+        except Exception:
+            drafter = self._planner[0]
+        test_planner = self._selected_test_planner()
+        roles_shown = self._source() in ("draft", "brainstorm", "auto")
+        show_tip = roles_shown and bool(test_planner) and test_planner == drafter
+        for tip_id in ("#rp-test-planner-tip", "#bs-test-planner-tip"):
+            try:
+                self.query_one(tip_id, Static).display = show_tip
+            except Exception:
+                pass
+
     def _sync_planner_agents(self) -> None:
         try:
             drafter = self.query_one("#rp-drafter", Select).value
@@ -393,7 +490,8 @@ class RelayPlanScreen(ModalScreen):
             field = self.query_one("#rp-attachments", AttachmentsField)
         except Exception:
             return
-        agents = [a for a in (drafter, reviewer) if a]
+        test_planner = self._selected_test_planner()
+        agents = [a for a in (drafter, test_planner, reviewer) if a]
         field.set_agents(agents)
 
     def _sync_brainstorm_agents(self) -> None:
@@ -417,9 +515,12 @@ class RelayPlanScreen(ModalScreen):
         self.query_one("#rp-roles-row").display = roles_shown
         if self._agents:
             self.query_one("#rp-drafter-row").display = roles_shown
+            self.query_one("#rp-test-planner-row").display = roles_shown
             self.query_one("#rp-reviewer-row").display = roles_shown
             self.query_one("#rp-drafter").display = roles_shown
+            self.query_one("#rp-test-planner").display = roles_shown
             self.query_one("#rp-reviewer").display = roles_shown
+        self._sync_test_planner_tip()
         go = self.query_one("#rp-go", Button)
         go.display = source != "auto"
         if not self._agents:
@@ -452,6 +553,22 @@ class RelayPlanScreen(ModalScreen):
             self._follow_drafter(event.value)
             self._refresh_auto_summary()
         elif select_id in ("rp-drafter", "rp-reviewer"):
+            self._sync_test_planner_tip()
+            self._sync_planner_agents()
+            self._refresh_auto_summary()
+        elif select_id in ("rp-test-planner", "bs-test-planner"):
+            other_id = "#bs-test-planner" if select_id == "rp-test-planner" else "#rp-test-planner"
+            try:
+                other = self.query_one(other_id, Select)
+                if isinstance(event.value, str) and other.value != event.value:
+                    self._filling = True
+                    try:
+                        other.value = event.value
+                    finally:
+                        self._filling = False
+            except Exception:
+                pass
+            self._sync_test_planner_tip()
             self._sync_planner_agents()
             self._refresh_auto_summary()
         elif select_id in ("rp-implementer", "rp-tester", "rp-exec-reviewer", "rp-release"):
@@ -483,6 +600,7 @@ class RelayPlanScreen(ModalScreen):
         drafter = self.query_one("#rp-drafter", Select)
         if drafter.value == previous:
             drafter.value = current
+            self._sync_test_planner_tip()
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         if getattr(self, "_filling", False):
@@ -517,6 +635,26 @@ class RelayPlanScreen(ModalScreen):
             answered,
         )
 
+    def _save_form_planner(self, request: PlanRequest) -> None:
+        if not request.drafter or not request.reviewer:
+            return
+        test_planner = getattr(
+            request,
+            "test_planner",
+            getattr(request.drafter, "_test_planner", self._selected_test_planner()),
+        )
+        try:
+            relay_ops.save_planner(
+                self._root, str(request.drafter), str(request.reviewer), str(test_planner)
+            )
+        except TypeError:
+            try:
+                relay_ops.save_planner(self._root, request.drafter, request.reviewer)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def _submit(self, request: PlanRequest) -> None:
         source = self._source()
         if source == "draft":
@@ -547,8 +685,17 @@ class RelayPlanScreen(ModalScreen):
 
         path = relay_ops.plan_path(self._root, request.name)
         if path.exists() and not request.replace:
-            self._confirm_replace(path, lambda: self.dismiss(dc_replace(request, replace=True)))
+            def replace_and_dismiss() -> None:
+                replaced = _attach_test_planner(
+                    dc_replace(request, replace=True),
+                    getattr(request, "test_planner", self._selected_test_planner()),
+                )
+                self._save_form_planner(replaced)
+                self.dismiss(replaced)
+
+            self._confirm_replace(path, replace_and_dismiss)
             return
+        self._save_form_planner(request)
         self.dismiss(request)
 
     def _save_paste(self, replace: bool = False) -> None:
@@ -761,6 +908,7 @@ class RelayPlanScreen(ModalScreen):
         finally:
             self._filling = False
 
+        self._sync_test_planner_tip()
         self._refresh_auto_summary()
         self._sync_planner_agents()
         self._sync_brainstorm_agents()
@@ -817,6 +965,13 @@ class RelayPlanScreen(ModalScreen):
                 self.query_one("#rp-drafter", Select).value = saved_req["drafter"]
             except Exception:
                 pass
+        if "test_planner" in saved_req or "test" in saved_req:
+            test_val = str(saved_req.get("test_planner") or saved_req.get("test") or "")
+            for sel_id in ("#rp-test-planner", "#bs-test-planner"):
+                try:
+                    self.query_one(sel_id, Select).value = test_val
+                except Exception:
+                    pass
         if "reviewer" in saved_req and saved_req["reviewer"]:
             try:
                 self.query_one("#rp-reviewer", Select).value = saved_req["reviewer"]
@@ -907,7 +1062,7 @@ class RelayPlanScreen(ModalScreen):
         if not raw_passes.isdigit():
             raise ValueError("Review passes must be a whole number (0 or more).")
         timeout = self.query_one("#bs-timeout", Select).value
-        return AutoRunRequest(
+        req = AutoRunRequest(
             name=self.query_one("#rp-name", Input).value.strip(),
             topic=self.query_one("#bs-topic", Input).value.strip(),
             replace=bool(self.query_one("#rp-replace", Checkbox).value),
@@ -931,6 +1086,7 @@ class RelayPlanScreen(ModalScreen):
             release=str(self.query_one("#rp-release", Select).value),
             chain=tuple(self.query_one("#rp-chain", OrderedChain).order()),
         )
+        return _attach_test_planner(req, self._selected_test_planner())
 
     def _start_check_worker(self) -> None:
         """Same token as Set up. Reads the form, writes nothing, stores a
@@ -1018,7 +1174,7 @@ class RelayPlanScreen(ModalScreen):
             return None
         field = self.query_one("#rp-attachments", AttachmentsField)
         spec_first = self.query_one("#rp-spec-first", Checkbox).value
-        return PlanRequest(
+        req = PlanRequest(
             "draft",
             self._plan_name(description),
             description=description,
@@ -1027,6 +1183,7 @@ class RelayPlanScreen(ModalScreen):
             reviewer=self.query_one("#rp-reviewer", Select).value,
             spec_first=spec_first,
         )
+        return _attach_test_planner(req, self._selected_test_planner())
 
     def _brainstorm_request(self) -> PlanRequest | None:
         from whyline.console.tui import collect_brainstorm
@@ -1034,8 +1191,9 @@ class RelayPlanScreen(ModalScreen):
         chosen = self.query_one("#rp-from", Select).value
         drafter = self.query_one("#rp-drafter", Select).value
         reviewer = self.query_one("#rp-reviewer", Select).value
+        test_planner = self._selected_test_planner()
         if chosen != "new":
-            return PlanRequest(
+            req = PlanRequest(
                 "existing",
                 self._plan_name(chosen),
                 topic=chosen,
@@ -1043,17 +1201,23 @@ class RelayPlanScreen(ModalScreen):
                 drafter=drafter,
                 reviewer=reviewer,
             )
+            return _attach_test_planner(req, test_planner)
         choice = collect_brainstorm(self.query_one)
         if isinstance(choice, str):
             self._error(choice)
             return None
-        return PlanRequest(
+        if not test_planner and isinstance(choice, dict):
+            test_planner = str(
+                getattr(choice, "test_planner", "") or choice.get("test_planner") or ""
+            )
+        req = PlanRequest(
             "brainstorm",
             self._plan_name(choice["topic"]),
             brainstorm=choice,
             drafter=drafter,
             reviewer=reviewer,
         )
+        return _attach_test_planner(req, test_planner)
 
     def _on_rp_resume_draft(self) -> None:
         pending = relay_ops.pending_draft(self._root) or "plan"
@@ -1073,11 +1237,14 @@ class RelayPlanScreen(ModalScreen):
         agents = tuple(
             agent for agent in BRAINSTORM_AGENTS if self.query_one(f"#bs-{agent}", Checkbox).value
         )
+        test_planner = self._selected_test_planner()
         return SimpleNamespace(
             root=self._root,
             agents=agents,
             final_agent=self.query_one("#bs-final", Select).value,
             drafter=self.query_one("#rp-drafter", Select).value,
+            test_planner=test_planner,
+            test=test_planner,
             reviewer=self.query_one("#rp-reviewer", Select).value,
             implementer=self.query_one("#rp-implementer", Select).value,
             tester=self.query_one("#rp-tester", Select).value,

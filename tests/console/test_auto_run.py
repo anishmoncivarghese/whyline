@@ -826,12 +826,54 @@ def test_spec_and_plan_failures_walk_only_the_saved_chain(tmp_path, monkeypatch)
     finished = auto_run.run(root, request, dismissed, through="plan")
     assert finished["phase"] == "plan"
     assert seen == [
-        ("spec", ("claude", "codex")),
-        ("spec", ("codex", "codex")),
-        ("plan", ("claude", "codex")),
-        ("plan", ("codex", "codex")),
+        ("spec", ("claude", "codex", "")),
+        ("spec", ("codex", "codex", "")),
+        ("plan", ("claude", "codex", "")),
+        ("plan", ("codex", "codex", "")),
     ]
-    assert relay_ops.planner_agents(root) == ("claude", "codex")
+    assert relay_ops.planner_agents(root) == ("claude", "codex", "")
+
+
+def test_auto_carries_test_planner_into_planner_call(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    request = _request(drafter="claude", reviewer="codex")
+    object.__setattr__(request, "test_planner", "grok")
+    dismissed = auto_run.fingerprint(root, request)
+    seen_planner: list[tuple[str, str, str]] = []
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN)
+        return SessionEvent("output", "saved")
+
+    def draft_spec(_root, _text, _attachments=(), *, progress):
+        return _draft(root / ".whyline" / "relay" / "draft-spec.md", _SPEC, "spec")
+
+    def approve_spec(_root, draft, _name, *, replace=False):
+        target = root / "docs" / "specs" / "plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    def draft_plan(_root, _description, _attachments=(), *, progress, spec=None):
+        seen_planner.append(relay_ops.planner_agents(root))
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", _PLAN, "planner")
+
+    def approve_plan(_root, draft, _name, *, replace=False, spec=""):
+        target = root / "plans" / "plan.plan.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(draft.text, encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+    monkeypatch.setattr(relay_ops, "draft_spec", draft_spec)
+    monkeypatch.setattr(relay_ops, "approve_spec", approve_spec)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
+
+    finished = auto_run.run(root, request, dismissed, through="plan")
+    assert finished["phase"] == "plan"
+    assert seen_planner == [("claude", "codex", "grok")]
+    assert relay_ops.planner_agents(root) == ("claude", "codex", "grok")
 
 
 def _planner_no_handoff(agent: str):
@@ -854,7 +896,7 @@ def test_nonzero_exit_without_handoff_walks_only_the_saved_chain(tmp_path, monke
     root = _repo(tmp_path)
     request = _request(chain=("codex",))
     dismissed = auto_run.fingerprint(root, request)
-    seen: list[tuple[str, tuple[str, str]]] = []
+    seen: list[tuple[str, tuple[str, str, str]]] = []
 
     def fake_brainstorm(_root, **_kwargs):
         _write_synthesis(root, _CLEAN)
@@ -898,12 +940,12 @@ def test_nonzero_exit_without_handoff_walks_only_the_saved_chain(tmp_path, monke
     assert finished["phase"] == "plan"
     assert "pause" not in finished
     assert seen == [
-        ("spec", ("claude", "codex")),
-        ("spec", ("codex", "codex")),
-        ("plan", ("claude", "codex")),
-        ("plan", ("codex", "codex")),
+        ("spec", ("claude", "codex", "")),
+        ("spec", ("codex", "codex", "")),
+        ("plan", ("claude", "codex", "")),
+        ("plan", ("codex", "codex", "")),
     ]
-    assert relay_ops.planner_agents(root) == ("claude", "codex")
+    assert relay_ops.planner_agents(root) == ("claude", "codex", "")
     assert "grok" not in {agent for _phase, roles in seen for agent in roles}
 
 
@@ -911,8 +953,8 @@ def test_nonzero_exit_without_handoff_pauses_with_every_agent_tried(tmp_path, mo
     root = _repo(tmp_path)
     request = _request(chain=("codex",))
     dismissed = auto_run.fingerprint(root, request)
-    spec_roles: list[tuple[str, str]] = []
-    plan_roles: list[tuple[str, str]] = []
+    spec_roles: list[tuple[str, str, str]] = []
+    plan_roles: list[tuple[str, str, str]] = []
 
     def fake_brainstorm(_root, **kwargs):
         _write_synthesis(root, _CLEAN, topic=kwargs["topic"])
@@ -936,7 +978,7 @@ def test_nonzero_exit_without_handoff_pauses_with_every_agent_tried(tmp_path, mo
     monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
 
     paused = auto_run.run(root, request, dismissed)
-    assert spec_roles == [("claude", "codex"), ("codex", "codex")]
+    assert spec_roles == [("claude", "codex", ""), ("codex", "codex", "")]
     assert "grok" not in {agent for roles in spec_roles for agent in roles}
     assert "antigravity" not in {agent for roles in spec_roles for agent in roles}
     assert paused["phase"] == "spec"
@@ -974,7 +1016,7 @@ def test_nonzero_exit_without_handoff_pauses_with_every_agent_tried(tmp_path, mo
     monkeypatch.setattr(relay_ops, "approve_plan", approve_plan)
 
     plan_pause = auto_run.run(root, plan_request, plan_dismissed)
-    assert plan_roles == [("claude", "codex"), ("codex", "codex")]
+    assert plan_roles == [("claude", "codex", ""), ("codex", "codex", "")]
     assert "grok" not in {agent for roles in plan_roles for agent in roles}
     assert plan_pause["phase"] == "plan"
     assert "claude" in plan_pause["pause"]["reason"]

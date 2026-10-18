@@ -156,23 +156,37 @@ def list_plans(root: Path) -> list[PlanInfo]:
 def _approve_marked(
     root: Path, text: str, *, name: str, source: str, drafted_by: str,
     replace: bool, clear_checkpoint: bool = False, spec: str = "",
+    draft_path: Path | None = None,
 ) -> Path:
-    from whyline_relay import config, planner
+    from whyline_relay import config, planner, testplan
 
+    settings = _settings(root)
+    if draft_path is None and settings.planner.test:
+        settings = dc_replace(
+            settings,
+            planner=dc_replace(settings.planner, test=""),
+        )
     staged = config.relay_dir(root) / "approved-plan.md"
     staged.parent.mkdir(parents=True, exist_ok=True)
     staged.write_text(
         with_marker(text, source=source, drafted_by=drafted_by, spec=spec), encoding="utf-8"
     )
+    staged_tests = testplan.path_for(staged)
+    draft_tests = testplan.path_for(draft_path) if draft_path is not None else None
+    if settings.planner.test and draft_tests is not None and draft_tests.is_file():
+        staged_tests.write_text(draft_tests.read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        staged_tests.unlink(missing_ok=True)
     try:
         target = planner.approve(
-            root, _settings(root), staged, drafted_by=drafted_by, replace=replace,
+            root, settings, staged, drafted_by=drafted_by, replace=replace,
             clear_checkpoint=clear_checkpoint, target=plan_path(root, name),
         )
         commit_planning_decisions(root)
         return target
     finally:
         staged.unlink(missing_ok=True)
+        staged_tests.unlink(missing_ok=True)
 
 
 def configured_plan(root: Path) -> Path | None:
@@ -188,18 +202,23 @@ def select_plan(root: Path, path: Path) -> None:
     setup.write_plan(root, path.relative_to(root).as_posix())
 
 
-def planner_agents(root: Path) -> tuple[str, str]:
+def planner_agents(root: Path) -> tuple[str, str, str]:
     try:
         planner_cfg = _settings(root).planner
     except Exception:
-        return ("codex", "claude")
-    return planner_cfg.draft, planner_cfg.review
+        return ("codex", "claude", "")
+    return planner_cfg.draft, planner_cfg.review, planner_cfg.test
 
 
-def save_planner(root: Path, draft: str, review: str) -> None:
+def save_planner(root: Path, draft: str, review: str, test: str = "") -> None:
     from whyline_relay import setup
 
-    setup.write_planner(root, draft, review)
+    actual_test = (
+        test
+        if test
+        else getattr(draft, "_test_planner", "") or getattr(review, "_test_planner", "")
+    )
+    setup.write_planner(root, str(draft), str(review), str(actual_test))
 
 
 def plan_questions_error():
@@ -415,6 +434,7 @@ def approve_plan(
         replace=replace,
         clear_checkpoint=draft.source == "planner",
         spec=spec,
+        draft_path=draft.path,
     )
 
 
@@ -1019,10 +1039,21 @@ def _candidate_toml(root: Path, request) -> str:
             content = setup._set_keys(content, "roles", {"release": existing_release})
     chain = [name for name in tuple(request.chain or ()) if name]
     content = setup._set_backup(content, chain)
-    content = setup._set_keys(content, "planner", {
-        "draft": str(request.drafter or ""),
-        "review": str(request.reviewer or ""),
-    })
+    test_planner = str(
+        getattr(request, "test_planner", "")
+        or getattr(request, "test", "")
+        or getattr(getattr(request, "drafter", ""), "_test_planner", "")
+        or ""
+    )
+    content = setup._set_keys(
+        content,
+        "planner",
+        {
+            "draft": str(request.drafter or ""),
+            "review": str(request.reviewer or ""),
+            "test": test_planner,
+        },
+    )
     content = setup._set_keys(content, "roles", {"release": str(request.release or "")})
     return _set_unquoted_timeout(content, request.timeout_minutes)
 
@@ -1119,6 +1150,7 @@ def _delivery_agents(request) -> list[str]:
     names = [
         *tuple(getattr(request, "agents", ()) or ()),
         str(getattr(request, "drafter", "") or ""),
+        str(getattr(request, "test_planner", "") or getattr(request, "test", "") or ""),
         str(getattr(request, "reviewer", "") or ""),
     ]
     return list(dict.fromkeys(name for name in names if str(name).strip()))

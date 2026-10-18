@@ -16405,3 +16405,223 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2ee3edd20ec344ceac14afd4db94e0d5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T05:44:23.185Z"} -->
+
+## 2026-10-18 — Resolve's timeout problem offers Use <agent> switches beside Resume with longer timeout
+
+**Actor:** claude
+**Role:** developer
+**Task:** TPL-8
+
+**Because:** A timed-out agent may be slow rather than hung, or simply the wrong pick; the user should choose between more time and another logged-in agent. Reuses the existing use-<agent> apply path (roles set, then resume), mapping the pause's command name (agy) back to its agent (antigravity).
+
+**Rejected:**
+
+- Recommend switching — more time keeps the agent's context and was the prior default
+- A single generic Switch agent option — would need a second picker step; Use <agent> already exists for out-of-usage
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: bcf0168484fd4792a848957d0ccff3d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T11:47:04.859Z"} -->
+
+## 2026-10-18 — Attach _test_planner on drafter and test_planner on requests and brainstorm choices
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** TPL-8
+
+**Because:** PlanRequest and AutoRunRequest keep their existing frozen constructor signatures while save_planner, candidate_checks, and auto_run receive the selected Test planner from #rp-test-planner and #bs-test-planner
+
+**Rejected:**
+
+- Require a positional test_planner argument on PlanRequest and AutoRunRequest — breaks existing 2-arg save_planner monkeypatches and positional test fixtures
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py, src/whyline/console/auto_run.py
+
+<!-- whyline-event: 2e2b9224fdbe460eb3d5377711ed97c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T14:56:29.360Z"} -->
+
+## 2026-10-18 — TPL-8 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-8
+
+**Because:** The targeted console suite and full project suite both completed with exit 0, covering the Test planner defaults, persistence, planner propagation, non-blocking same-Drafter tip, and approved-plan transcript paths.
+
+**Files:** tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 3995962e85f64582b3c4ce6584b490e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:06:37.474Z"} -->
+
+## 2026-10-18 — Idea Inbox: brainstorm is the main path; one-agent scoring and Excel stay as an optional quick check
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-PLAN
+
+**Because:** User chose it 2026-10-18: a cheap triage before spending a full multi-agent brainstorm, and Excel keeps the idea log
+
+**Rejected:**
+
+- Drop scoring and Excel — every idea would cost a full multi-agent run
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: e826207fbb84410ab08e2df2ad8cd8bb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:16:49.067Z"} -->
+
+## 2026-10-18 — Idea Inbox: email intake ships after Telegram, reusing the same intake
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-PLAN
+
+**Because:** Email is easier to spoof and has no buttons, so it needs a reply-to-confirm step; Telegram's allowlisted chat comes first
+
+**Rejected:**
+
+- Email in the first release — more upfront security work
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 2542f9d95d1c4ba9a57122135dfc8dee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:16:49.102Z"} -->
+
+## 2026-10-18 — Idea Inbox: the free-text agent proposes a settings card; nothing changes until the user taps Confirm
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-PLAN
+
+**Because:** One misread reply must never start a relay or change roles; Start, Stop, Release and Resolve always need a tap
+
+**Rejected:**
+
+- Act directly on safe actions — a misread reply could change settings silently
+- Always act directly — unsafe remote control of code-writing agents
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: a6c897d1e73c4a27a007a30ddee32d55 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:16:49.135Z"} -->
+
+## 2026-10-18 — TPL-8 needs changes because approval can revive a stale test plan when None is selected
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-8
+
+**Because:** _approve_marked enables a synthetic Test planner whenever an adjacent draft test file exists, so a leftover draft-plan.tests.md can block or be committed even though planner.test is empty; approval must use the saved planner selection and the regression test must configure a Test planner explicitly
+
+**Rejected:**
+
+- Approve the green suite — the added approval test creates a test-plan file without selecting a Test planner and therefore codifies the incorrect inference
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 6eea4a73b164494c91e80a2e8d50e575 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:17:39.747Z"} -->
+
+## 2026-10-18 — Idea Inbox Phase 3 reuses Auto mode (auto_run) for spec, plan, preflight and launch instead of a separate planner path
+
+**Actor:** claude
+**Role:** planner
+**Task:** IDEA-PLAN
+
+**Because:** Auto already drafts spec and plan with failover, pauses on questions, runs final preflight and launches; the inbox adds only two hooks (accept an existing synthesis, redraft a plan from feedback) and drives it from Telegram. Pause alerts reuse recovery.diagnose/apply so Telegram buttons match Resolve exactly.
+
+**Rejected:**
+
+- Call whyline_relay.planner directly as the old IDEA-14 did — would duplicate failover, spec drafting, preflight and pause handling
+- Re-run a one-pass brainstorm inside Auto — wastes the brainstorm already done in the inbox workspace
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: f6b4bf8861d8480fb64b0e076ed34ed1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:20:48.077Z"} -->
+
+## 2026-10-18 — Honor configured planner.test during plan approval instead of inferring a Test planner from adjacent draft-plan.tests.md
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** TPL-8
+
+**Because:** A leftover draft-plan.tests.md on disk should not revive a stale test plan or block approval when None (test='') is selected
+
+**Rejected:**
+
+- Synthesize planner.test whenever draft-plan.tests.md exists — commits or validates a stale test plan even when the user selected None
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, tests/console/test_relay_ops.py, tests/console/test_tui.py
+
+<!-- whyline-event: 8729ef4952b24a26965e6590c200f272 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:34:39.253Z"} -->
+
+## 2026-10-18 — TPL-8 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-8
+
+**Because:** The console and full suites pass, including coverage for empty Test planner defaults, saved/restored selections, the same-agent tip, brainstorm and Auto propagation, dual-file approval output, and ignoring stale test plans when planner.test is empty
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed in either required suite
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py, src/whyline/console/auto_run.py
+
+<!-- whyline-event: e47c43ce1276441784d2a22cbfa23269 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:45:02.326Z"} -->
+
+## 2026-10-18 — TPL-8 round 6 rejected for out-of-scope recovery behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-8
+
+**Because:** The TPL-8 implementation passes both required suites, but the working-tree diff also adds timeout-agent switching in src/whyline/console/recovery.py and tests/console/test_recovery.py even though the task permits source edits only in relay_ops.py, relay_screens.py, tui.py, auto_run.py, and their tests
+
+**Rejected:**
+
+- Approve — green tests do not override the explicit edit-only boundary or justify bundling an unrelated recovery feature
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 12303baf3f884e0db4283b303771b78c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T15:55:51.377Z"} -->
+
+## 2026-10-18 — TPL-8 round 8 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-8
+
+**Because:** The permitted-file boundary is clean and both required pytest suites completed with exit 0; coverage exercises the Test planner default, persistence, same-agent tip, brainstorm and Auto propagation, and dual-path approval transcript
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py, src/whyline/console/auto_run.py
+
+<!-- whyline-event: 99d9bdd895a940efb1617a0712b6ebd3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T17:43:23.837Z"} -->
+
+## 2026-10-18 — TPL-8 round 9 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-8
+
+**Because:** The working-tree diff stays within the permitted implementation and test files plus Whyline bookkeeping; the Test planner selector defaults, persistence, non-blocking same-Drafter tip, brainstorm and Auto propagation, and paired approved-plan transcript are implemented and covered, and both required pytest suites completed without failures
+
+**Rejected:**
+
+- Request changes — no requirement-level defect, unsafe behavior, or scope violation was found
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py, src/whyline/console/auto_run.py
+
+<!-- whyline-event: f119c4d9a92e4f0bbce6e58990e143ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T18:16:55.998Z"} -->

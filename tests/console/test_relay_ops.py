@@ -248,9 +248,11 @@ def test_select_plan_and_configured_plan(repo):
 
 
 def test_planner_agents_default_and_saved(repo):
-    assert relay_ops.planner_agents(repo) == ("codex", "claude")
+    assert relay_ops.planner_agents(repo) == ("codex", "claude", "")
     relay_ops.save_planner(repo, "claude", "codex")
-    assert relay_ops.planner_agents(repo) == ("claude", "codex")
+    assert relay_ops.planner_agents(repo) == ("claude", "codex", "")
+    relay_ops.save_planner(repo, "claude", "codex", "grok")
+    assert relay_ops.planner_agents(repo) == ("claude", "codex", "grok")
 
 
 def test_open_questions_reads_only_that_section():
@@ -287,6 +289,68 @@ def test_approve_plan(repo):
     lines = path.read_text().splitlines()
     assert lines[0].startswith("<!-- whyline-plan v1 | source: draft | drafted-by: codex (reviewed by claude)")
     assert lines[1] == "- [ ] T-1: approved"
+
+
+def test_approve_plan_with_test_plan_commits_both(repo):
+    relay_ops.save_planner(repo, "codex", "claude", "codex")
+    draft_path = repo / ".whyline" / "relay" / "draft-plan.md"
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("- [ ] T-1: approved\n", encoding="utf-8")
+    tests_draft = repo / ".whyline" / "relay" / "draft-plan.tests.md"
+    tests_draft.write_text(
+        "- [ ] S-1: check T-1\n"
+        "  covers: T-1\n"
+        "  kind: auto\n"
+        "  steps:\n"
+        "  - run pytest\n"
+        "  expected:\n"
+        "  - passes\n",
+        encoding="utf-8",
+    )
+    draft = relay_ops.Draft(
+        path=draft_path,
+        text="- [ ] T-1: approved\n",
+        drafted_by="codex (reviewed by claude)",
+        source="planner",
+    )
+    path = relay_ops.approve_plan(repo, draft, "Approved Plan")
+    assert path == repo / "plans" / "approved-plan.plan.md"
+    tests_path = repo / "plans" / "approved-plan.tests.md"
+    assert tests_path.is_file()
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        "plans/approved-plan.plan.md",
+        "plans/approved-plan.tests.md",
+    ]
+
+
+def test_approve_plan_ignores_stale_draft_test_plan_when_test_planner_is_empty(repo):
+    relay_ops.save_planner(repo, "codex", "claude", "")
+    draft_path = repo / ".whyline" / "relay" / "draft-plan.md"
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("- [ ] T-1: approved\n", encoding="utf-8")
+    stale_tests = repo / ".whyline" / "relay" / "draft-plan.tests.md"
+    stale_tests.write_text(
+        "- [ ] S-1: stale test plan for another task\n"
+        "  covers: OLD-1\n"
+        "  kind: auto\n"
+        "  steps:\n"
+        "  - run pytest\n"
+        "  expected:\n"
+        "  - passes\n",
+        encoding="utf-8",
+    )
+    draft = relay_ops.Draft(
+        path=draft_path,
+        text="- [ ] T-1: approved\n",
+        drafted_by="codex (reviewed by claude)",
+        source="planner",
+    )
+    path = relay_ops.approve_plan(repo, draft, "Approved Plan")
+    assert path == repo / "plans" / "approved-plan.plan.md"
+    assert not (repo / "plans" / "approved-plan.tests.md").exists()
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        "plans/approved-plan.plan.md",
+    ]
 
 
 def test_planner_draft_drafted_by(repo):

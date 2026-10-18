@@ -64,8 +64,17 @@ _PREFLIGHT_PROGRESS = "auto · final preflight"
 _SETUP_CAN_OPEN = "Set up can open on that plan."
 
 _PLANNER_LINE = re.compile(
-    r"^(?P<agent>\S+) is (?P<action>drafting the spec|drafting the plan|reviewing the draft)$"
+    r"^(?P<agent>\S+) is (?P<action>drafting the spec|drafting the plan|drafting the test plan|reviewing the draft)$"
 )
+
+
+def _request_test_planner(request: AutoRunRequest) -> str:
+    return str(
+        getattr(request, "test_planner", "")
+        or getattr(request, "test", "")
+        or getattr(getattr(request, "drafter", ""), "_test_planner", "")
+        or ""
+    )
 
 
 def named_agents(request: AutoRunRequest) -> tuple[str, ...]:
@@ -78,6 +87,7 @@ def named_agents(request: AutoRunRequest) -> tuple[str, ...]:
         *request.agents,
         request.final_agent,
         request.drafter,
+        _request_test_planner(request),
         request.reviewer,
         request.implementer,
         request.tester,
@@ -154,7 +164,8 @@ def document(root: Path, request: AutoRunRequest) -> dict:
     """The schema-1 mapping `fingerprint` hashes."""
     names = named_agents(request)
     status = account.agent_status(root)
-    return {
+    test_planner = _request_test_planner(request)
+    doc = {
         "schema": SCHEMA,
         "name": request.name,
         "topic": request.topic,
@@ -165,8 +176,8 @@ def document(root: Path, request: AutoRunRequest) -> dict:
         "final_agent": request.final_agent,
         "timeout_minutes": request.timeout_minutes,
         "attachments": [_attachment(path) for path in request.attachments],
-        "drafter": request.drafter,
-        "reviewer": request.reviewer,
+        "drafter": str(request.drafter),
+        "reviewer": str(request.reviewer),
         "implementer": request.implementer,
         "tester": request.tester,
         "reviewer_role": request.reviewer_role,
@@ -178,6 +189,9 @@ def document(root: Path, request: AutoRunRequest) -> dict:
         "porcelain": _git_stdout(root, "status", "--porcelain"),
         "antigravity": _antigravity(root, names),
     }
+    if test_planner:
+        doc["test_planner"] = test_planner
+    return doc
 
 
 def fingerprint(root: Path, request: AutoRunRequest) -> str:
@@ -363,7 +377,13 @@ def _persist(root: Path, request: AutoRunRequest) -> str:
     """
     from whyline_relay import gitcheck, setup
 
-    setup.write_planner(root, request.drafter, request.reviewer, commit=False)
+    setup.write_planner(
+        root,
+        str(request.drafter),
+        str(request.reviewer),
+        _request_test_planner(request),
+        commit=False,
+    )
     written = setup.write_roles(
         root,
         request.implementer,
@@ -773,10 +793,12 @@ def _restore_config(root: Path, text: str) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def _use_planner(root: Path, drafter: str, reviewer: str) -> None:
+def _use_planner(
+    root: Path, drafter: str, reviewer: str, test_planner: str = ""
+) -> None:
     from whyline_relay import setup
 
-    setup.write_planner(root, drafter, reviewer, commit=False)
+    setup.write_planner(root, str(drafter), str(reviewer), str(test_planner), commit=False)
 
 
 def _spec_draft_path(root: Path) -> Path:
@@ -975,14 +997,15 @@ def _draft_spec_once(root, request, text, progress, last_agent):
 
 
 def _spec_with_failover(root, request, text, progress):
-    drafter = request.drafter
-    reviewer = request.reviewer
+    drafter = str(request.drafter)
+    reviewer = str(request.reviewer)
+    test_planner = _request_test_planner(request)
     tried: list[str] = []
     last_agent = {"name": drafter}
     substituted = False
     while True:
         if substituted:
-            _use_planner(root, drafter, reviewer)
+            _use_planner(root, drafter, reviewer, test_planner)
         try:
             return _draft_spec_once(root, request, text, progress, last_agent)
         except _ModelFailure:
@@ -1055,14 +1078,15 @@ def _draft_plan_once(root, request, spec_path: Path, progress, last_agent):
 
 
 def _plan_with_failover(root, request, spec_path: Path, progress):
-    drafter = request.drafter
-    reviewer = request.reviewer
+    drafter = str(request.drafter)
+    reviewer = str(request.reviewer)
+    test_planner = _request_test_planner(request)
     tried: list[str] = []
     last_agent = {"name": drafter}
     substituted = False
     while True:
         if substituted:
-            _use_planner(root, drafter, reviewer)
+            _use_planner(root, drafter, reviewer, test_planner)
         try:
             return _draft_plan_once(root, request, spec_path, progress, last_agent)
         except _ModelFailure:
@@ -1075,6 +1099,8 @@ def _plan_with_failover(root, request, spec_path: Path, progress):
             _emit(progress, f"{failed} failed; trying {backup}")
             if failed == reviewer and failed != drafter:
                 reviewer = backup
+            elif failed == test_planner and failed != drafter:
+                test_planner = backup
             else:
                 drafter = backup
             last_agent["name"] = backup
