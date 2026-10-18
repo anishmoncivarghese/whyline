@@ -550,7 +550,7 @@ A plan may have a test plan beside it: `plans/<name>.tests.md` for `plans/<name>
   In this whyline checkout, raise both `whyline-relay` bounds in `pyproject.toml` to `>=0.2.38,<0.3`. Refresh `uv.lock`. Install the published `0.2.38` and confirm `whyline_relay.testplan` imports and `setup.write_planner` accepts `test`. Do not add UI. Do not tag or publish whyline.
   Verify with `uv run pytest -q`. Change nothing else.
 
-- [ ] TPL-8: A Test planner select in the plan, brainstorm and Auto forms
+- [x] TPL-8: A Test planner select in the plan, brainstorm and Auto forms
   Edit only `src/whyline/console/relay_ops.py`, `src/whyline/console/relay_screens.py`, `src/whyline/console/tui.py`, `src/whyline/console/auto_run.py`, and their tests.
   `relay_ops.planner_agents(root)` returns `(draft, review, test)`; `relay_ops.save_planner(root, draft, review, test="")` passes `test` through to `setup.write_planner`. Update every caller.
   The plan form gains `Test planner:` (`Select` id `rp-test-planner`) below Drafter: `None` (default, value `""`) followed by the usable agents, shown and hidden with the Drafter and Reviewer rows. When it equals the Drafter, a dim line under it says `Tip: a different agent from the Drafter catches more.` and does not block. The brainstorm form and the Auto form gain the same select with their own ids (`bs-test-planner`, the Auto form's next id in its pattern), saved and restored with the other planner choices. After a plan is approved with a test plan, the transcript names both files.
