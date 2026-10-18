@@ -16379,3 +16379,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d9b2f3690a924354afc74cc62ae73c37 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-17T20:17:43.854Z"} -->
+
+## 2026-10-18 — Pass TPL-7 dependency and relay API compatibility testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-7
+
+**Because:** Both dependency bounds and the lock resolve whyline-relay 0.2.38; the installed published package imports whyline_relay.testplan, write_planner accepts and persists test, and the full pytest suite exits 0
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: c6c80f5ea76b4bcfa66c3f4259565ebb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T02:05:39.949Z"} -->
+
+## 2026-10-18 — Approve TPL-7 dependency update to whyline-relay 0.2.38
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-7
+
+**Because:** Both dependency bounds and the lock resolve published whyline-relay 0.2.38, the installed package imports whyline_relay.testplan, write_planner accepts and persists test, uv lock --check passes, and the full pytest suite exits 0 with no UI or unrelated implementation changes
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: 2ee3edd20ec344ceac14afd4db94e0d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T05:44:23.185Z"} -->
