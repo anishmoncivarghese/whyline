@@ -1135,3 +1135,8 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
     assert seen_timeouts[0][0] == "unlimited-turn" and seen_timeouts[0][1] is chat.NO_LIMIT
     assert seen_timeouts[1] == ("finite-turn", 900)
 
+
+def test_help_text_includes_manual_checks_line():
+    assert "manual  confirm a release's manual checks" in repl._help_text()
+
+

@@ -93,7 +93,8 @@ def _help_text() -> str:
         "Modes:",
         "  Chat     talk to the active agent (see /model)",
         "  Relay    Plan makes plan.md, Set up picks roles and starts; or type\n"
-        "           doctor, status, start, resume",
+        "           doctor, status, start, resume\n"
+        "           manual  confirm a release's manual checks",
         "  Agents   list, run/edit/delete/history <name>, pause/resume/accept <name>",
         "  Resolve  explain a Set up or Resume problem and fix it with one click",
         "  Files    split the console and follow the file the agent is writing",

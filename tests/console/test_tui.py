@@ -2959,3 +2959,180 @@ async def test_brainstorm_screen_saves_and_restores_test_planner_and_shows_tip(
         assert reopened.query_one("#bs-test-planner", tui.Select).value == "codex"
         assert reopened.query_one("#bs-test-planner-tip", tui.Static).display
 
+
+MANUAL_PAUSE_TWO_CHECKS = (
+    "Paused: Manual checks before REL-1:\n"
+    "TP-1: Check login flow | steps: open /login; submit credentials | expected: dashboard loads\n"
+    "TP-2: Check logout flow | steps: click logout | expected: redirected to /login\n"
+)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_manual_check_pause_shows_checks_and_pass_advances_to_next_and_last_enables_resume(
+    tmp_path, monkeypatch
+):
+    from whyline.console import relay_ops
+
+    launched: list[list[str]] = []
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        manual_row = app.query_one("#manual-actions", tui.Horizontal)
+        resume_btn = app.query_one("#relay-resume", tui.Button)
+        assert not manual_row.display
+
+        # Relay pauses with Manual checks before reason
+        app._relay_finished(3, MANUAL_PAUSE_TWO_CHECKS)
+        await pilot.pause()
+
+        assert manual_row.display
+        buttons = [str(b.label) for b in manual_row.query(tui.Button)]
+        assert buttons == ["Pass", "Fail"]
+        assert resume_btn.disabled
+        assert app._manual_check is not None and app._manual_check.id == "TP-1"
+
+        texts = [e.text for e in app.session.transcript]
+        assert any(
+            "TP-1: Check login flow | steps: open /login; submit credentials | expected: dashboard loads" in t
+            and "TP-2: Check logout flow | steps: click logout | expected: redirected to /login" in t
+            and "Check TP-1: Pass or Fail." in t
+            for t in texts
+        )
+
+        # Clicking Pass launches `manual TP-1 pass` and moves to TP-2
+        await pilot.click("#manual-pass")
+        await pilot.pause()
+
+        assert launched == [["manual", "TP-1", "pass"]]
+        assert manual_row.display
+        assert resume_btn.disabled
+        assert app._manual_check is not None and app._manual_check.id == "TP-2"
+        assert "Check TP-2: Pass or Fail." in app.session.transcript[-1].text
+
+        # Clicking Pass on the last check launches `manual TP-2 pass`, prints hint, and enables Resume
+        await pilot.click("#manual-pass")
+        await pilot.pause()
+
+        assert launched == [
+            ["manual", "TP-1", "pass"],
+            ["manual", "TP-2", "pass"],
+        ]
+        assert not manual_row.display
+        assert not resume_btn.disabled
+        assert str(resume_btn.label) == "Resume"
+        assert app.session.transcript[-1].text == "All manual checks passed. Press Resume to release."
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_manual_check_fail_requires_a_note_and_runs_manual_fail_with_note(
+    tmp_path, monkeypatch
+):
+    from whyline.console import relay_ops
+
+    launched: list[list[str]] = []
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        app._relay_finished(3, MANUAL_PAUSE_TWO_CHECKS)
+        await pilot.pause()
+
+        # Click Fail: asks for a note in the prompt and does not launch yet
+        await pilot.click("#manual-fail")
+        await pilot.pause()
+
+        assert launched == []
+        assert app._manual_fail_id == "TP-1"
+        assert any("Why did TP-1 fail?" in e.text for e in app.session.transcript)
+
+        # Submitting an empty prompt requires a note and still does not launch
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "   "
+        app._send()
+        await pilot.pause()
+
+        assert launched == []
+        assert app.session.transcript[-1].kind == "error"
+        assert "fail needs a note" in app.session.transcript[-1].text
+
+        # Typing a note and sending runs `manual TP-1 fail <note>` and moves to next check
+        prompt.value = "login button misaligned"
+        app._send()
+        await pilot.pause()
+
+        assert launched == [["manual", "TP-1", "fail", "login button misaligned"]]
+        assert app._manual_fail_id is None
+        assert app._manual_check is not None and app._manual_check.id == "TP-2"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_typing_manual_commands_in_relay_prompt_and_release_pause_without_manual_checks(
+    tmp_path, monkeypatch
+):
+    from whyline.console import relay_ops
+
+    launched: list[list[str]] = []
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+
+        # A release pause with no manual checks shows no #manual-actions row
+        app._relay_finished(
+            3,
+            "Paused: release task for you: REL-1\n1. Bump version\n2. Tag release\n",
+        )
+        await pilot.pause()
+        manual_row = app.query_one("#manual-actions", tui.Horizontal)
+        assert not manual_row.display
+
+        # Now pause with manual check TP-3
+        app._relay_finished(
+            3,
+            "Paused: Manual checks before REL-1:\n"
+            "TP-3: Verify banner | steps: open home | expected: banner visible\n",
+        )
+        await pilot.pause()
+        assert manual_row.display
+
+        prompt = app.query_one("#prompt", tui.Input)
+
+        # Typing `manual` lists checks
+        prompt.value = "manual"
+        app._send()
+        await pilot.pause()
+        assert launched[-1] == ["manual"]
+        assert manual_row.display
+
+        # Typing `manual TP-3 fail <note>` runs fail with note
+        prompt.value = "manual TP-3 fail banner missing"
+        app._send()
+        await pilot.pause()
+        assert launched[-1] == ["manual", "TP-3", "fail", "banner missing"]
+        assert manual_row.display
+
+        # Typing `manual TP-3 pass` passes the last check, prints hint, and enables Resume
+        prompt.value = "manual TP-3 pass"
+        app._send()
+        await pilot.pause()
+        assert launched[-1] == ["manual", "TP-3", "pass"]
+        assert not manual_row.display
+        assert not app.query_one("#relay-resume", tui.Button).disabled
+        assert app.session.transcript[-1].text == "All manual checks passed. Press Resume to release."
+
+

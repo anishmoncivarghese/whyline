@@ -724,6 +724,7 @@ class WhylineConsoleApp(App):
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
+    #manual-actions { height: auto; display: none; }
     #resolve-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
@@ -768,6 +769,15 @@ class WhylineConsoleApp(App):
         self._external_relay: str | None = None  # a relay another console started
         self._antigravity_ok = False
         self._release_task: tuple[str, list[str]] | None = None
+        self._manual_task_id: str | None = None
+        self._manual_checks: list[Any] = []
+        self._manual_check: Any = None
+        self._manual_fail_id: str | None = None
+        self._manual_passed: bool = False
+        self._passed_manual_ids: set[str] = set()
+        self._failed_manual_ids: set[str] = set()
+        self._manual_exited: bool = False
+        self._relay_launch_aborted: bool = False
         self._plan_state = ""  # "", "working", "review", "answering"
         self._plan_request: plan_job.PlanRequest | None = None
         self._plan_outcome: plan_job.Outcome | None = None
@@ -1244,6 +1254,8 @@ class WhylineConsoleApp(App):
             suffix = " · answering"
         elif getattr(self, "_release_task", None):
             suffix = " · release"
+        elif getattr(self, "_manual_checks", None):
+            suffix = f" · manual {self._manual_checks[0].id}"
         else:
             suffix = ""
         self.sub_title = f"mode: {mode}{suffix}"
@@ -1259,6 +1271,13 @@ class WhylineConsoleApp(App):
                 placeholder = 'Type "approve", or say what to change (Enter to send)'
         elif self._plan_state == "answering":
             placeholder = "Type your answers (Enter to send)"
+        elif getattr(self, "_manual_fail_id", None):
+            placeholder = f"Failure note for {self._manual_fail_id} (Enter to send)"
+        elif getattr(self, "_manual_checks", None):
+            placeholder = (
+                f"Manual check {self._manual_checks[0].id}: Pass or Fail, "
+                f"or type manual {self._manual_checks[0].id} pass / fail <note>"
+            )
         elif getattr(self, "_release_task", None):
             placeholder = 'Type "done" when finished, or "skip"'
         else:
@@ -1331,6 +1350,14 @@ class WhylineConsoleApp(App):
         resume = self._main("#relay-resume", Button)
         if getattr(self, "_release_task", None):
             resume.label = "Release done…"
+            resume.disabled = running
+            self._stale_pause = None
+        elif getattr(self, "_manual_checks", None):
+            resume.label = "Resume"
+            resume.disabled = True
+            self._stale_pause = None
+        elif getattr(self, "_manual_passed", False):
+            resume.label = "Resume"
             resume.disabled = running
             self._stale_pause = None
         elif stale:
@@ -2589,6 +2616,11 @@ class WhylineConsoleApp(App):
                 Button("Discard", id="plan-discard", variant="warning"),
                 id="plan-actions",
             ),
+            Horizontal(
+                Button("Pass", id="manual-pass", variant="success"),
+                Button("Fail", id="manual-fail", variant="warning"),
+                id="manual-actions",
+            ),
             Horizontal(id="resolve-actions"),
             AttachmentTray(id="tray"),
             Static("", id="slash-hint"),
@@ -2731,6 +2763,7 @@ class WhylineConsoleApp(App):
                     kind="output", text=f"Cleared the finished run {task}."))
                 self._sync_relay_buttons()
             else:
+                self._manual_passed = False
                 self._launch_relay(["resume"])
         elif button_id == "relay-retry-stage":
             self._launch_relay(["resume", "--retry-stage"])
@@ -2764,6 +2797,10 @@ class WhylineConsoleApp(App):
                     self.push_screen(PlanDraftScreen(text))
         elif button_id == "plan-discard":
             self._discard_plan()
+        elif button_id == "manual-pass":
+            self._pass_manual_check()
+        elif button_id == "manual-fail":
+            self._start_fail_manual_check()
         elif button_id in ("model", "history", "help", "brainstorm"):
             self._handle_slash(f"/{button_id}")
 
@@ -3054,6 +3091,13 @@ class WhylineConsoleApp(App):
         prompt = self._main("#prompt", Input)
         text = prompt.value.strip()
         if not text:
+            if getattr(self, "_manual_fail_id", None):
+                self.render_event(
+                    SessionEvent(
+                        kind="error",
+                        text=f"A failure note is required for {self._manual_fail_id} (fail needs a note).",
+                    )
+                )
             return
         if self._busy_text and not text.startswith("/"):
             # A new dispatch would replace the pending one's token, silently
@@ -3108,6 +3152,18 @@ class WhylineConsoleApp(App):
             input_text = text
             attachments = ()
         self.render_event(SessionEvent(kind="input", text=input_text))
+        stripped_relay = strip_relay_prefix(text) or text
+        first_word = stripped_relay.split(maxsplit=1)[0] if stripped_relay.strip() else ""
+        if (
+            getattr(self, "_manual_fail_id", None)
+            and not text.startswith("/")
+            and first_word != "manual"
+        ):
+            fail_id = self._manual_fail_id
+            self._manual_fail_id = None
+            self._sync_mode_indicator()
+            self._run_manual_command(["manual", fail_id, "fail", text.strip()])
+            return
         if (
             self.session.mode == "relay"
             and text.strip().lower() in ("done", "skip")
@@ -3140,11 +3196,15 @@ class WhylineConsoleApp(App):
             return
         if self.session.mode == "relay":
             text = strip_relay_prefix(text) or text
+        if (self.session.mode == "relay" or getattr(self, "_manual_checks", None)) and first_word == "manual":
+            self._handle_manual_input(stripped_relay)
+            return
         if self.session.mode == "relay" and (text.strip() == "run" or text.split() == ["start"]):
             self._run_flow_start()
             return
         first = text.split(maxsplit=1)[0]
         if self.session.mode == "relay" and first in ("start", "resume"):
+            self._manual_passed = False
             self._launch_relay(text.split())
             return
         # Slash commands stay available in every mode, including Agents.
@@ -4615,11 +4675,262 @@ class WhylineConsoleApp(App):
 
         self.run_worker(in_thread, thread=True)
 
+    def _parse_manual_pause(self, text: str) -> tuple[str, list[Any]] | None:
+        from whyline_relay import testplan
+
+        lines = text.strip().splitlines()
+        start_idx = None
+        task_id = ""
+        for idx, raw in enumerate(lines):
+            cleaned = raw.strip()
+            if cleaned.startswith("Paused:"):
+                cleaned = cleaned.removeprefix("Paused:").strip()
+            if cleaned.startswith(testplan.MANUAL_PREFIX):
+                task_id = cleaned.removeprefix(testplan.MANUAL_PREFIX).rstrip(":").strip()
+                start_idx = idx + 1
+                break
+        if start_idx is None:
+            return None
+        scenarios: list[Any] = []
+        for raw in lines[start_idx:]:
+            line = raw.strip()
+            if not line or line.startswith("Check ") or line.startswith("Resume with:"):
+                continue
+            head, sep, rest = line.partition(":")
+            if not sep or " " in head.strip():
+                continue
+            scenario_id = head.strip()
+            title_part, sep_steps, after_steps = rest.partition("| steps:")
+            if sep_steps:
+                steps_part, _sep_exp, exp_part = after_steps.partition("| expected:")
+                steps = tuple(s.strip() for s in steps_part.split(";") if s.strip())
+                expected = tuple(e.strip() for e in exp_part.split(";") if e.strip())
+            else:
+                steps = ()
+                expected = ()
+            scenarios.append(
+                testplan.Scenario(
+                    id=scenario_id,
+                    title=title_part.strip(),
+                    covers=(task_id,) if task_id else (),
+                    kind="manual",
+                    steps=steps,
+                    expected=expected,
+                    checked=False,
+                )
+            )
+        return task_id, scenarios
+
+    def _load_open_manual_checks(self, pause_text: str = "") -> tuple[str, list[Any]] | None:
+        try:
+            from whyline_relay import loop as relay_loop, testplan
+
+            is_patched = getattr(relay_loop.manual_checks, "__module__", "") != "whyline_relay.loop"
+            found = relay_loop.manual_checks(self.session.root)
+            if found is not None:
+                saved, pending = found
+                task_id = getattr(saved, "task_id", "") or self._manual_task_id or "release"
+                has_disk_tests = False
+                try:
+                    plan_path = relay_loop._plan_file(self.session.root, saved)
+                    has_disk_tests = testplan.path_for(plan_path).is_file()
+                except Exception:
+                    has_disk_tests = True
+                if pending or has_disk_tests or is_patched:
+                    return task_id, list(pending)
+        except Exception:
+            pass
+        if pause_text:
+            return self._parse_manual_pause(pause_text)
+        return None
+
+    def _order_manual_checks(self, checks: list[Any]) -> list[Any]:
+        remaining = [c for c in checks if c.id not in self._passed_manual_ids]
+        unfailed = [
+            c
+            for c in remaining
+            if c.id not in self._failed_manual_ids
+            and not (getattr(c, "note", None) or "").startswith("FAILED ")
+        ]
+        failed = [
+            c
+            for c in remaining
+            if c.id in self._failed_manual_ids
+            or (getattr(c, "note", None) or "").startswith("FAILED ")
+        ]
+        return unfailed + failed
+
+    def _format_manual_pause(self, task_id: str, checks: list[Any]) -> str:
+        from whyline_relay import testplan
+
+        base = testplan.pause_reason(task_id or "release", checks)
+        if checks:
+            return f"{base}\nCheck {checks[0].id}: Pass or Fail."
+        return base
+
+    def _show_manual_checks(self, task_id: str, checks: list[Any]) -> None:
+        ordered = self._order_manual_checks(checks)
+        self._manual_fail_id = None
+        if ordered:
+            self._manual_task_id = task_id or self._manual_task_id or "release"
+            self._manual_checks = ordered
+            self._manual_check = ordered[0]
+            self._manual_passed = False
+            self.render_event(
+                SessionEvent(
+                    kind="pause",
+                    text=self._format_manual_pause(self._manual_task_id, ordered),
+                )
+            )
+            try:
+                row = self._main("#manual-actions")
+                row.display = True
+                for btn in row.query(Button):
+                    btn.active_effect_duration = 0
+                    btn.remove_class("-active")
+            except (NoMatches, IndexError):
+                pass
+        else:
+            self._manual_task_id = None
+            self._manual_checks = []
+            self._manual_check = None
+            self._manual_passed = True
+            try:
+                self._main("#manual-actions").display = False
+            except (NoMatches, IndexError):
+                pass
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="All manual checks passed. Press Resume to release.",
+                )
+            )
+        self._sync_mode_indicator()
+        self._sync_relay_buttons()
+
+    def _clear_manual_checks(self) -> None:
+        self._manual_task_id = None
+        self._manual_checks = []
+        self._manual_check = None
+        self._manual_fail_id = None
+        self._manual_passed = False
+        self._passed_manual_ids.clear()
+        self._failed_manual_ids.clear()
+        try:
+            self._main("#manual-actions").display = False
+        except (NoMatches, IndexError):
+            pass
+
+    def _pass_manual_check(self) -> None:
+        if not self._manual_checks or self._relay_running():
+            return
+        check = self._manual_checks[0]
+        self._manual_fail_id = None
+        self._sync_mode_indicator()
+        self._run_manual_command(["manual", check.id, "pass"])
+
+    def _start_fail_manual_check(self) -> None:
+        if not self._manual_checks or self._relay_running():
+            return
+        check = self._manual_checks[0]
+        self._manual_fail_id = check.id
+        self.render_event(
+            SessionEvent(
+                kind="output",
+                text=f"Why did {check.id} fail? Type a note in the prompt.",
+            )
+        )
+        self._sync_mode_indicator()
+        try:
+            self._main("#prompt", Input).focus()
+        except (NoMatches, IndexError):
+            pass
+
+    def _handle_manual_input(self, text: str) -> None:
+        self._manual_fail_id = None
+        parts = text.split(maxsplit=3)
+        if len(parts) == 1:
+            self._run_manual_command(["manual"])
+            return
+        if len(parts) == 2:
+            self.render_event(
+                SessionEvent(
+                    kind="error",
+                    text=f"say pass or fail, for example: whyline relay manual {parts[1]} pass",
+                )
+            )
+            self._sync_mode_indicator()
+            return
+        scenario_id, action = parts[1], parts[2].lower()
+        note = parts[3].strip() if len(parts) > 3 else ""
+        if action == "pass":
+            args = ["manual", scenario_id, "pass"] + ([note] if note else [])
+            self._run_manual_command(args)
+            return
+        if action == "fail":
+            if not note:
+                self._manual_fail_id = scenario_id
+                self.render_event(
+                    SessionEvent(
+                        kind="error",
+                        text=f"A failure note is required for {scenario_id} (fail needs a note).",
+                    )
+                )
+                self._sync_mode_indicator()
+                return
+            self._run_manual_command(["manual", scenario_id, "fail", note])
+            return
+        self.render_event(
+            SessionEvent(
+                kind="error",
+                text=f"say pass or fail, for example: whyline relay manual {scenario_id} pass",
+            )
+        )
+        self._sync_mode_indicator()
+
+    def _run_manual_command(self, args: list[str]) -> None:
+        self._manual_exited = False
+        self._relay_launch_aborted = False
+        self._launch_relay(args)
+        if (
+            not self._relay_running()
+            and not self._manual_exited
+            and not self._relay_launch_aborted
+        ):
+            self._refresh_manual_after_command(args, code=0, text="")
+
+    def _refresh_manual_after_command(
+        self, args: list[str], *, code: int, text: str
+    ) -> None:
+        if code != 0:
+            err = text.strip() or f"The relay stopped with exit code {code}."
+            self.render_event(SessionEvent(kind="error", text=err))
+            self._sync_relay_buttons()
+            return
+        if len(args) >= 3 and args[0] == "manual":
+            scenario_id, action = args[1], args[2].lower()
+            if action == "pass":
+                self._passed_manual_ids.add(scenario_id)
+                self._failed_manual_ids.discard(scenario_id)
+            elif action == "fail":
+                self._failed_manual_ids.add(scenario_id)
+        loaded = self._load_open_manual_checks(pause_text=text)
+        if loaded is not None:
+            task_id, checks = loaded
+        elif "All manual checks passed" in text or "No open manual checks" in text:
+            task_id = self._manual_task_id or "release"
+            checks = []
+        else:
+            task_id = self._manual_task_id or "release"
+            checks = list(self._manual_checks)
+        self._show_manual_checks(task_id, checks)
+
     def _launch_relay(self, args: list[str], *, auto: bool = False) -> None:
         """Start/Resume, from a button or typed. One relay at a time: ours,
         or one started elsewhere (a terminal) that running.live still sees."""
         self._auto_relay = auto
         self._last_relay_args = list(args)
+        self._relay_launch_aborted = True
         if self._refuse_in_home():
             return
         if args and args[0] == "start" and "--plan" not in args:
@@ -4669,6 +4980,7 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(
                 kind="error", text=f"Could not start the relay ({' '.join(args)}): {error}"))
             return
+        self._relay_launch_aborted = False
         if self._files_on:
             self._arm_follow()
         self._relay_label = f"relay: {' '.join(args)}"
@@ -4688,10 +5000,16 @@ class WhylineConsoleApp(App):
     def _relay_finished(self, code: int, text: str) -> None:
         self._relay = None
         self._relay_label = ""
+        self._manual_exited = True
         if not self._busy_text:
             self._main("#thinking", Static).display = False
             self._main("#stop", Button).disabled = True
             self._disarm_follow()
+        last_args = list(getattr(self, "_last_relay_args", ()))
+        if last_args and last_args[0] == "manual":
+            self._last_relay_args = []
+            self._refresh_manual_after_command(last_args, code=code, text=text)
+            return
         fail_lines = [l.strip() for l in text.splitlines() if l.strip().startswith("FAIL")]
         if fail_lines:
             self._resume_fail_lines = fail_lines
@@ -4708,18 +5026,34 @@ class WhylineConsoleApp(App):
                     [lines[index].removeprefix("Paused:").strip(), *lines[index + 1:]]
                 ).strip()
                 break
-        if not pause_text and text.strip().startswith("release task for you: "):
+        if not pause_text and text.strip().startswith(("release task for you: ", "Manual checks before ")):
             pause_text = text.strip()
         if not pause_text and code != 0:
             try:
                 from whyline_relay import state as relay_state
                 saved = relay_state.load(self.session.root)
                 if saved and saved.paused_reason and (
-                    saved.paused_reason.startswith("release task for you: ") or code == 2
+                    saved.paused_reason.startswith(("release task for you: ", "Manual checks before "))
+                    or code == 2
                 ):
                     pause_text = saved.paused_reason
             except Exception:
                 pass
+
+        if pause_text.startswith("Manual checks before "):
+            self._auto_relay = False
+            self._release_task = None
+            self._passed_manual_ids.clear()
+            self._failed_manual_ids.clear()
+            loaded = self._load_open_manual_checks(pause_text=pause_text)
+            if loaded is not None:
+                task_id, checks = loaded
+            else:
+                task_id, checks = "release", []
+            self._show_manual_checks(task_id, checks)
+            return
+
+        self._clear_manual_checks()
 
         if pause_text.startswith("release task for you: "):
             self._auto_relay = False

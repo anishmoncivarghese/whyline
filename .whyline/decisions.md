@@ -16625,3 +16625,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f119c4d9a92e4f0bbce6e58990e143ee -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T18:16:55.998Z"} -->
+
+## 2026-10-18 — Re-read open manual checks from disk when testplan exists and fall back to parsed pause text or in-memory state when _launch_relay is mocked
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** TPL-9
+
+**Because:** Console tests either run with a real test plan on disk or mock _launch_relay/RelayProcess with synthetic pause output, so supporting both keeps Pass/Fail state transitions consistent in unit and integration paths
+
+**Rejected:**
+
+- Relying only on whyline_relay.loop.manual_checks on disk — synthetic pause tests without a .tests.md file or with a stubbed _launch_relay would not advance to the next check
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d2e70c97b95d4494b5f6bb6105ed3fb1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T18:44:25.920Z"} -->
+
+## 2026-10-18 — TPL-9 round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** TPL-9
+
+**Because:** The focused console suite and full project suite both exited 0, and the tested Relay flows cover displaying open checks, Pass advancement, required Fail notes, typed manual commands, final Resume enablement, and release pauses without manual checks
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py
+
+<!-- whyline-event: 53b58f07df5947348ca8552449867476 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T18:51:25.607Z"} -->
+
+## 2026-10-18 — TPL-9 round 3 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TPL-9
+
+**Because:** The scoped diff implements manual-check rendering and Pass/Fail controls, requires failure notes, routes typed manual commands through the relay launcher, re-reads pending checks, enables Resume only after all checks pass, and both the focused console suite and full project suite exited 0
+
+**Rejected:**
+
+- Request changes — no requirement-level defect, unsafe behavior, or substantive test gap was found
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/repl.py
+
+<!-- whyline-event: 70712ab8e20c4432961dcb5f755bf84d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T18:58:27.074Z"} -->
