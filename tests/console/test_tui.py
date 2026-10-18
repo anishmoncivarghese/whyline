@@ -3136,3 +3136,245 @@ async def test_typing_manual_commands_in_relay_prompt_and_release_pause_without_
         assert app.session.transcript[-1].text == "All manual checks passed. Press Resume to release."
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_failed_resume_opens_resolve_automatically_without_calling_launcher_again(
+    tmp_path, monkeypatch
+):
+    import json
+    import subprocess
+    from textual.containers import Horizontal
+    from whyline.console import relay_ops
+
+    _init_test_repo(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "plan.md"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add plan"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "extra.txt").write_text("extra\n", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps(
+            {
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "TASK-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "paused",
+                "log_path": "round.log",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    launched: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        await pilot.click("#relay-resume")
+        await pilot.pause()
+        assert launched == [["resume"]]
+
+        app._relay_finished(1, "FAIL  working tree has uncommitted changes\n")
+        await pilot.pause()
+
+        # Launcher must not be called again automatically
+        assert launched == [["resume"]]
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        header_idx = next(
+            i for i, l in enumerate(lines) if "Resume could not start; here is what Resolve found." in l
+        )
+        resolve_idx = next(i for i, l in enumerate(lines) if "Resolve: 1 problem(s)" in l)
+        assert header_idx < resolve_idx
+        assert any("Uncommitted changes during paused task TASK-1" in l for l in lines)
+        assert any("extra.txt" in l for l in lines)
+
+        row = app.query_one("#resolve-actions", Horizontal)
+        assert row.display is True
+        keep_btn = app.query_one("#resolve-resume-keep", tui.Button)
+        assert keep_btn.display is True
+        assert keep_btn.label.plain == "Resume and keep changes"
+
+        # A resume that succeeds never opens it
+        await pilot.click("#relay-resume")
+        await pilot.pause()
+        assert launched == [["resume"], ["resume"]]
+        app._relay_finished(0, "Relay finished.\n")
+        await pilot.pause()
+        assert row.display is False
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_failed_resume_in_auto_mode_does_not_open_resolve_twice(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    from textual.containers import Horizontal
+    from whyline.console import recovery, relay_ops
+    from whyline_relay import gitcheck
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "tester@test.com"], cwd=tmp_path, check=True)
+    gitcheck.ensure_relay_ignored(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] RSV-1: Task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+    recovery.record_attempt(
+        tmp_path, task="RSV-1", round=1, kind="resolve-auto", verdict="resolved"
+    )
+
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps(
+            {
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "RSV-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "dirty",
+                "log_path": "round.log",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "extra.txt").write_text("dirty\n", encoding="utf-8")
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    launched: list[list[str]] = []
+    start_flow_calls: list[tuple[str, list[str] | None]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+    orig_start = app._start_resolve_flow
+    monkeypatch.setattr(
+        app,
+        "_start_resolve_flow",
+        lambda source, fail_lines=None: (
+            start_flow_calls.append((source, fail_lines)),
+            orig_start(source=source, fail_lines=fail_lines),
+        ),
+    )
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        app._launch_relay(["resume"])
+        app._relay_finished(1, "FAIL  working tree has uncommitted changes\n")
+        await pilot.pause()
+
+        assert start_flow_calls == []
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert not any("Resume could not start; here is what Resolve found." in l for l in lines)
+        assert sum(1 for l in lines if "Resolve: 1 problem(s)" in l) == 1
+        assert app.query_one("#resolve-actions", Horizontal).display is True
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_failed_start_launch_and_unrecognised_resume_failure_do_not_open_resolve_row(
+    tmp_path, monkeypatch
+):
+    import json
+    import subprocess
+    from textual.containers import Horizontal
+    from whyline.console import relay_ops
+
+    _init_test_repo(tmp_path)
+    (tmp_path / "plan.md").write_text("# Plan\n- [ ] TASK-1: Do task\n", encoding="utf-8")
+    subprocess.run(["git", "add", "plan.md"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add plan"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "extra.txt").write_text("extra\n", encoding="utf-8")
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps(
+            {
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "TASK-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "paused",
+                "log_path": "round.log",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+
+    launched: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+
+        # 1. A `start` launch that fails does not open Resolve
+        app._launch_relay(["start"])
+        app._relay_finished(1, "FAIL  working tree has uncommitted changes\n")
+        await pilot.pause()
+
+        row = app.query_one("#resolve-actions", Horizontal)
+        assert row.display is False
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert not any("Resume could not start; here is what Resolve found." in l for l in lines)
+
+        # 2. A resume launch with an unrecognised failure shows no Resolve row,
+        #    keeps today's output and the Resolve button
+        app._launch_relay(["resume"])
+        app._relay_finished(1, "FAIL  unrecognised preflight check failed\n")
+        await pilot.pause()
+
+        assert row.display is False
+        btn_resolve = app.query_one("#relay-resolve", tui.Button)
+        assert btn_resolve.display is True
+        assert btn_resolve.disabled is False
+        lines2 = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert not any("Resume could not start; here is what Resolve found." in l for l in lines2)
+        assert any("The relay stopped with exit code 1" in l for l in lines2)
+
+        # 3. A resume launch that fails without FAIL lines when the saved pause has
+        #    a non-empty recovery.diagnose opens Resolve
+        (tmp_path / "extra.txt").unlink(missing_ok=True)
+        state_file.write_text(
+            json.dumps(
+                {
+                    "plan": "plan.md",
+                    "branch": "main",
+                    "task_id": "TASK-1",
+                    "round": 1,
+                    "base_commit": "abc",
+                    "paused_reason": "agent exceeded 1800s and was terminated",
+                    "log_path": "round.log",
+                }
+            ),
+            encoding="utf-8",
+        )
+        app._launch_relay(["resume"])
+        app._relay_finished(2, "Paused: agent exceeded 1800s and was terminated\n")
+        await pilot.pause()
+
+        assert row.display is True
+        assert app.query_one("#resolve-resume-longer", tui.Button).display is True
+        lines3 = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Resume could not start; here is what Resolve found." in l for l in lines3)
+
+
+
+

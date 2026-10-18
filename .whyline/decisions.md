@@ -16672,3 +16672,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 70712ab8e20c4432961dcb5f755bf84d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T18:58:27.074Z"} -->
+
+## 2026-10-18 — Open Resolve flow automatically in _relay_finished only when a resume launch exits non-zero with a problem recognised by recovery.diagnose
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RSV-1
+
+**Because:** recovery.diagnose returns an unknown fallback problem whenever fail_lines or pause_reason is non-empty, so filtering out id=='unknown' keeps unrecognised failures on the existing output and Resolve button without opening #resolve-actions
+
+**Rejected:**
+
+- Calling _start_resolve_flow unconditionally whenever diagnose is non-empty — would open the Resolve row with Ask agent on unrecognised failures instead of keeping today's output and the Resolve button
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 77f917fc9a034c21a75c18489205f266 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T19:19:16.271Z"} -->
+
+## 2026-10-18 — RSV-1 round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-1
+
+**Because:** The focused console suite and full project suite both exited 0, covering automatic Resolve for recognised failed resumes, no duplicate flow in auto mode, and no flow for successful resumes, failed starts, or unrecognised failures
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 18c5e298bcb745019e369888911f6080 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T19:33:04.014Z"} -->
+
+## 2026-10-18 — RSV-1 round 3 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-1
+
+**Because:** The scoped diff auto-opens the recognised Resolve flow only after failed resume or done launches, preserves the existing auto-mode path and unrecognised-failure behavior, and the focused console suite plus full project suite both exited 0
+
+**Rejected:**
+
+- Request changes — no requirement-level defect, unsafe behavior, or substantive test gap was found
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 924bc0993ee54680933c15e838b07128 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T19:40:35.607Z"} -->

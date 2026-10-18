@@ -808,6 +808,23 @@ class WhylineConsoleApp(App):
         self._resolve_problem: Any = None
         self._resolve_running: bool = False
         self._resume_fail_lines: list[str] = []
+        self._last_relay_args: list[str] = []
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if (
+            name == "_launch_relay"
+            and callable(value)
+            and not getattr(value, "_is_launch_relay_wrapper", False)
+        ):
+            orig = value
+
+            def _wrapped(args: list[str], *a: Any, **kw: Any) -> Any:
+                self._last_relay_args = list(args)
+                return orig(args, *a, **kw)
+
+            _wrapped._is_launch_relay_wrapper = True  # type: ignore[attr-defined]
+            value = _wrapped
+        super().__setattr__(name, value)
 
     def _main_widget(self, selector: str, expect_type=None):
         try:
@@ -1381,10 +1398,10 @@ class WhylineConsoleApp(App):
 
         show_resolve = False
         show_retry_stage = False
-        if in_relay and not getattr(self, "_release_task", None) and not stale:
+        if in_relay and not getattr(self, "_release_task", None):
             has_preflight_fails = bool(getattr(self, "_resume_fail_lines", None))
             has_diagnosed_pause = False
-            if paused:
+            if paused and not stale:
                 try:
                     from whyline_relay import state as relay_state
                     from whyline.console import recovery
@@ -4134,8 +4151,14 @@ class WhylineConsoleApp(App):
                     reason = st.paused_reason
             except Exception:
                 pass
+            if not reason:
+                reason = getattr(self, "_last_pause_text", "")
 
-        fails = self._current_fail_lines()
+        fails = (
+            list(self._resolve_source_fail_lines)
+            if fail_lines is not None
+            else self._current_fail_lines()
+        )
         problems = recovery.diagnose(
             self.session.root,
             fail_lines=fails,
@@ -4156,6 +4179,61 @@ class WhylineConsoleApp(App):
         self._resolve_problem = problems[0]
         self._show_resolve_problem(problems[0], is_first=True, count=len(problems))
         self._mount_resolve_buttons(problems[0])
+
+    def _has_recognised_resume_problem(
+        self, fail_lines: list[str], pause_text: str, text: str, code: int
+    ) -> bool:
+        from whyline.console import recovery
+        from whyline_relay import state as relay_state
+
+        saved_reason = ""
+        try:
+            st = relay_state.load(self.session.root)
+            if st and st.paused_reason:
+                saved_reason = st.paused_reason
+        except Exception:
+            pass
+
+        reason = pause_text or saved_reason
+        if fail_lines:
+            diag = recovery.diagnose(
+                self.session.root,
+                fail_lines=fail_lines,
+                pause_reason="",
+            )
+            has_dirty_line = any("uncommitted changes" in l for l in fail_lines)
+            return any(
+                p.id != "unknown"
+                and (not p.id.startswith("dirty-") or has_dirty_line)
+                for p in diag
+            )
+
+        if not reason:
+            return False
+
+        diag = recovery.diagnose(
+            self.session.root,
+            fail_lines=[],
+            pause_reason=reason,
+        )
+        has_unrecognised_text = (
+            bool(text.strip())
+            and not pause_text
+            and code != 2
+            and "uncommitted changes" not in text.lower()
+        )
+        has_dirty_reason = (
+            "dirty" in reason.lower() or "uncommitted changes" in reason.lower()
+        )
+        return any(
+            p.id != "unknown"
+            and (
+                not p.id.startswith("dirty-")
+                or not has_unrecognised_text
+                or has_dirty_reason
+            )
+            for p in diag
+        )
 
     def _show_resolve_problem(self, problem: Any, *, is_first: bool = False, count: int = 1) -> None:
         lines: list[str] = []
@@ -5006,10 +5084,17 @@ class WhylineConsoleApp(App):
             self._main("#stop", Button).disabled = True
             self._disarm_follow()
         last_args = list(getattr(self, "_last_relay_args", ()))
+        self._last_relay_args = []
         if last_args and last_args[0] == "manual":
-            self._last_relay_args = []
             self._refresh_manual_after_command(last_args, code=code, text=text)
             return
+        if not getattr(self, "_resolve_running", False):
+            self._resolve_problem = None
+            self._resolve_problems = []
+            try:
+                self._main("#resolve-actions").display = False
+            except (NoMatches, IndexError):
+                pass
         fail_lines = [l.strip() for l in text.splitlines() if l.strip().startswith("FAIL")]
         if fail_lines:
             self._resume_fail_lines = fail_lines
@@ -5039,6 +5124,7 @@ class WhylineConsoleApp(App):
                     pause_text = saved.paused_reason
             except Exception:
                 pass
+        self._last_pause_text = pause_text
 
         if pause_text.startswith("Manual checks before "):
             self._auto_relay = False
@@ -5120,6 +5206,21 @@ class WhylineConsoleApp(App):
                      ".whyline/relay/logs/console-run.log.",
             ))
         self._sync_relay_buttons()
+
+        is_resume_launch = bool(last_args) and last_args[0] in ("resume", "done")
+        if (
+            is_resume_launch
+            and code != 0
+            and mode != "auto"
+            and self._has_recognised_resume_problem(fail_lines, pause_text, text, code)
+        ):
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Resume could not start; here is what Resolve found.",
+                )
+            )
+            self._start_resolve_flow(source="resume", fail_lines=fail_lines)
 
     async def action_quit(self) -> None:
         if self._relay_running():
