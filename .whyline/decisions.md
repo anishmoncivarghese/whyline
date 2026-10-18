@@ -16816,3 +16816,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b3e1994934a24361a5b3902d53d30391 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:26:24.256Z"} -->
+
+## 2026-10-18 — Release whyline 0.3.45 from the current plan branch after full-suite and artifact verification
+
+**Actor:** codex
+**Role:** release
+**Task:** TPL-10
+
+**Because:** This branch contains the complete TPL-1 through TPL-9, recovery, and login work after v0.3.44; the full suite exits 0 and the isolated wheel reports 0.3.45 without internal paths
+
+**Rejected:**
+
+- switch to local main — main is still at 0.3.40.1 and would omit the release contents
+- publish without inspecting artifacts — PyPI uploads cannot be withdrawn
+
+**Files:** pyproject.toml, docs/releases/v0.3.45.md
+
+<!-- whyline-event: 920d7c37c0c64207b5d0f82d25588c41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:36:32.534Z"} -->
