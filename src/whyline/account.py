@@ -276,10 +276,18 @@ LOGIN_COMMANDS = {
     "grok": ["grok", "login"],
 }
 
+# Non-interactive status probes. Antigravity and Grok have none: "available"
+# for those two still means only "installed".
+STATUS_COMMANDS = {
+    "claude": ["claude", "auth", "status"],
+    "codex": ["codex", "login", "status"],
+}
+
 # Only these two have a non-interactive login check (see detect_claude /
 # detect_codex); for the others "available" can honestly mean only
 # "installed".
 _LOGIN_CHECKED = ("claude", "codex")
+LOGIN_CHECKED = _LOGIN_CHECKED
 
 
 def login_hint(agent: str) -> str:

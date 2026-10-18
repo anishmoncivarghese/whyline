@@ -4364,11 +4364,16 @@ class WhylineConsoleApp(App):
 
         self.run_worker(in_thread, thread=True)
 
-    def _resolve_option_finished(self, opt: Any, res: str, did_resume: bool) -> None:
+    def _resolve_option_finished(self, opt: Any, res: Any, did_resume: bool) -> None:
         from whyline.console import recovery
         from whyline_relay import state as relay_state
 
         self._resolve_running = False
+        login_agent = ""
+        if isinstance(res, recovery.LoginRequest):
+            login_agent = res.agent
+            self._login(res.agent)
+            res = ""
         if res:
             self.render_event(SessionEvent(kind="output", text=res))
 
@@ -4400,6 +4405,16 @@ class WhylineConsoleApp(App):
             fail_lines=fails,
             pause_reason=reason,
         )
+        if login_agent:
+            from whyline import account
+
+            info = account.agent_status(self.session.root).get(login_agent) or {}
+            if info.get("available"):
+                new_problems = [
+                    p
+                    for p in new_problems
+                    if p.id != "logged-out" or login_agent not in p.summary
+                ]
 
         prev_id = self._resolve_problem.id if self._resolve_problem else None
         problem_gone = not any(p.id == prev_id for p in new_problems)
@@ -4677,6 +4692,21 @@ class WhylineConsoleApp(App):
                 opt.id,
                 launch=launcher,
             )
+            if isinstance(res_line, recovery.LoginRequest):
+                # Auto never starts a login; a login always needs a click.
+                self.render_event(
+                    SessionEvent(kind="output", text=f"Auto stopped: {problem.summary}")
+                )
+                self._resolve_problem = problem
+                self._resolve_problems = problems
+                self._resolve_source = "resume"
+                self._show_resolve_problem(problem, is_first=True, count=len(problems))
+                self._mount_resolve_buttons(problem)
+                if is_auto:
+                    self._auto_relay = False
+                    self._end_run_flow("Auto run stopped.")
+                self._sync_relay_buttons()
+                return
             if res_line:
                 self.render_event(SessionEvent(kind="output", text=res_line))
 

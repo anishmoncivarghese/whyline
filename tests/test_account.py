@@ -11,6 +11,20 @@ import pytest
 from whyline import account
 
 
+def test_login_and_status_commands_cover_the_known_agents() -> None:
+    assert account.LOGIN_COMMANDS == {
+        "claude": ["claude", "auth", "login"],
+        "codex": ["codex", "login"],
+        "grok": ["grok", "login"],
+    }
+    assert "antigravity" not in account.LOGIN_COMMANDS
+    assert account.STATUS_COMMANDS == {
+        "claude": ["claude", "auth", "status"],
+        "codex": ["codex", "login", "status"],
+    }
+    assert "antigravity" not in account.STATUS_COMMANDS
+    assert "grok" not in account.STATUS_COMMANDS
+
 
 def _fake_jwt(claims: dict) -> str:
     payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")

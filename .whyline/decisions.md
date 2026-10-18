@@ -16719,3 +16719,100 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 924bc0993ee54680933c15e838b07128 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T19:40:35.607Z"} -->
+
+## 2026-10-18 — Resolve treats a no-handoff pause carrying quota text as out-of-usage, and ask_agent falls back to the log when the run result has no output
+
+**Actor:** claude
+**Role:** developer
+**Task:** LGN-1
+
+**Because:** Under whyline-relay 0.2.37 antigravity's 429 paused as no-handoff, Resolve offered only Ask agent, and ask_agent parsed RunResult's repr instead of codex's logged 'RECOMMEND: use-grok'
+
+**Rejected:**
+
+- Rely only on relay 0.2.38's own failover — the installed console still ran 0.2.37 and any future unrecognised quota line would hit the same dead end
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 39a72267eeee481ba6ed4198f33cd4cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T19:54:04.900Z"} -->
+
+## 2026-10-18 — FAIL/reason is the source of truth for logged-out; status output is evidence only
+
+**Actor:** grok
+**Role:** implementer
+**Task:** LGN-1
+
+**Because:** claude auth status can still report loggedIn while OAuth is expired, which is the 2026-10-16 failure; after a clicked login the TUI drops that agent's logged-out problem only when after_login's agent_status says available
+
+**Rejected:**
+
+- skip logged-out when status exits 0 — hides a real lapse and turned an auth pause into no problem on a logged-in developer machine
+- skip when cached agent_status.available is true — Check's FAIL line is newer than the cache
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 8b09f87c24c74edb8da9e977224e9007 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:12:13.831Z"} -->
+
+## 2026-10-18 — apply login-<agent> returns LoginRequest; Auto never starts a login
+
+**Actor:** grok
+**Role:** implementer
+**Task:** LGN-1
+
+**Because:** a login needs the real terminal via tui._login/suspend, and a login always needs a person
+
+**Rejected:**
+
+- run the login command inside recovery.apply — no TTY, and Auto would start it without a click
+- confirm=True on login-claude so auto_option skips it — that would add a second click after picking the button
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: bc33481511bc4b36982fbb0c819e7a7a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:12:18.662Z"} -->
+
+## 2026-10-18 — sticky-switch offers reset-role only for login-checked agents whose resets_at is missing or past
+
+**Actor:** grok
+**Role:** implementer
+**Task:** LGN-1
+
+**Because:** antigravity/grok 'logged in' means installed, and on 2026-10-17 Resolve recommended resetting to antigravity six days before quota reset
+
+**Rejected:**
+
+- always recommend reset-role when agent_status.available — repeats the 2026-10-17 mistake
+- invent a login command for antigravity — LOGIN_COMMANDS stays claude/codex/grok
+
+**Files:** src/whyline/console/recovery.py, src/whyline/account.py
+
+<!-- whyline-event: 2587483282f1447c94336191cfc039c6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:12:23.337Z"} -->
+
+## 2026-10-18 — LGN-1 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** LGN-1
+
+**Because:** The targeted recovery/TUI tests and the full project suite both exited successfully, covering logged-out diagnosis, explicit login handling, auto-mode safety, and sticky-switch behavior
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: e5e79982e0aa4e0fae8d358042e13493 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:19:14.469Z"} -->
+
+## 2026-10-18 — LGN-1 approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LGN-1
+
+**Because:** The diff implements per-agent logged-out diagnosis, explicit terminal login handling, auto-mode safeguards, and sticky-switch quota guards; targeted and full test suites pass and the tests exercise every requested behavior
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: b3e1994934a24361a5b3902d53d30391 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:26:24.256Z"} -->

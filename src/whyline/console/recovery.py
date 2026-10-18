@@ -1140,6 +1140,13 @@ class Problem:
     options: list[Option]
 
 
+@dataclass(frozen=True)
+class LoginRequest:
+    """A login the console must run in the real terminal. apply never starts it."""
+
+    agent: str
+
+
 _HUMAN_KINDS = frozenset({
     "auth",
     "blocked",
@@ -1149,14 +1156,30 @@ _HUMAN_KINDS = frozenset({
     "visit-cap",
 })
 
+_GENERIC_AGENTS = frozenset({"antigravity", "grok"})
+
+_LOGGED_OUT_PHRASES = (
+    "OAuth session expired",
+    "not logged in",
+    "Failed to authenticate",
+    "Please run /login",
+)
+
+_SIGN_IN_DETAIL = "Open {agent} in a terminal and sign in, then press Check again."
+
 
 def auto_option(problem: Problem) -> Option | None:
     """The recommended option when it has confirm=False, else None.
 
-    Returns None for unknown, for any option with confirm=True, and for any
-    kind REC-1 routes to human (auth, blocked, round-cap, release, sandbox).
+    Returns None for unknown, logged-out (a login always needs a click), for
+    any option with confirm=True, and for any kind REC-1 routes to human
+    (auth, blocked, round-cap, release, sandbox).
     """
-    if problem.id == "unknown" or problem.id in _HUMAN_KINDS or problem.id == "other":
+    if (
+        problem.id == "unknown"
+        or problem.id in _HUMAN_KINDS
+        or problem.id in ("other", "logged-out")
+    ):
         return None
 
     try:
@@ -1395,6 +1418,131 @@ def make_rec_4c_option(
     )
 
 
+def run_login_status(agent: str) -> tuple[int, str]:
+    """Run the agent's non-interactive status command. Missing agents yield exit 1."""
+    from whyline import account
+
+    cmd = account.STATUS_COMMANDS.get(agent)
+    if not cmd:
+        return 1, ""
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except Exception as exc:
+        return 1, str(exc)
+    out = (result.stdout or "").strip()
+    err = (result.stderr or "").strip()
+    combined = "\n".join(part for part in (out, err) if part)
+    return result.returncode, combined
+
+
+def _looks_logged_out(text: str) -> bool:
+    if not text:
+        return False
+    from whyline.console import adapters
+
+    if adapters.failure_kind(text) == "auth":
+        return True
+    return any(phrase in text for phrase in _LOGGED_OUT_PHRASES)
+
+
+def _agent_after_fail(line: str) -> str:
+    rest = re.sub(r"^FAIL\s+", "", line.strip(), count=1, flags=re.I)
+    if not rest:
+        return ""
+    return rest.split()[0].strip("()[]{},:").lower()
+
+
+def _agents_named_in(text: str) -> list[str]:
+    from whyline import account
+
+    named: list[str] = []
+    if not text:
+        return named
+    first = text.split()[0].strip("()[]{},.:") if text.split() else ""
+    if first.lower() in account.AGENT_ORDER:
+        named.append(first.lower())
+    login = re.search(r"/login\s+(\S+)", text, re.I)
+    if login:
+        agent = login.group(1).lower().strip(".,;:")
+        if agent in account.AGENT_ORDER:
+            named.append(agent)
+    for agent in account.AGENT_ORDER:
+        if re.search(rf"\b{re.escape(agent)}\b", text, re.I):
+            named.append(agent)
+    # Preserve first-seen order.
+    return list(dict.fromkeys(named))
+
+
+def _collect_logged_out_agents(
+    fail_lines: list[str], reason: str
+) -> dict[str, list[str]]:
+    """Map each named agent to the evidence lines that identified it.
+
+    An empty-string key means the text matched a logged-out phrase but named
+    no agent.
+    """
+    found: dict[str, list[str]] = {}
+
+    def add(agent: str, line: str) -> None:
+        found.setdefault(agent, [])
+        if line and line not in found[agent]:
+            found[agent].append(line)
+
+    for line in fail_lines:
+        if "is not logged in" in line:
+            agent = _agent_after_fail(line)
+            if agent:
+                add(agent, line)
+    if _looks_logged_out(reason):
+        named = _agents_named_in(reason)
+        if named:
+            for agent in named:
+                add(agent, reason)
+        elif not found:
+            add("", reason)
+    return found
+
+
+def _logged_out_options(agent: str) -> list[Option]:
+    from whyline import account
+
+    opts: list[Option] = []
+    if agent and agent in account.LOGIN_COMMANDS:
+        opts.append(
+            Option(
+                f"login-{agent}",
+                f"Log in to {agent}",
+                f"run {agent}'s own login in the real terminal",
+                recommended=True,
+                confirm=False,
+            )
+        )
+    opts.extend(
+        [
+            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ]
+    )
+    return opts
+
+
+def _override_reset_in_future(override: Any) -> bool:
+    resets_at = getattr(override, "resets_at", "") or ""
+    if not resets_at:
+        return False
+    try:
+        when = datetime.fromisoformat(resets_at)
+    except (TypeError, ValueError):
+        return False
+    now = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
+    return when > now
+
+
 def diagnose(
     root: Path | str,
     fail_lines: list[str] | None = None,
@@ -1470,17 +1618,29 @@ def diagnose(
                     evidence_lines = [
                         f"Role {role} overridden to {override.agent}; configured agent {configured} is logged in again"
                     ]
-                    opts = [
-                        Option(
-                            "reset-role",
-                            f"Reset {role}",
-                            f"whyline relay roles reset {role}",
-                            recommended=True,
-                            confirm=False,
-                        ),
-                        Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
-                        Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
-                    ]
+                    generic = configured in _GENERIC_AGENTS
+                    reset_future = _override_reset_in_future(override)
+                    if generic or reset_future:
+                        reset_label = getattr(override, "resets_at", "") or "unknown"
+                        evidence_lines.append(
+                            f"{configured} may still be out of quota (resets {reset_label})"
+                        )
+                        opts = [
+                            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                        ]
+                    else:
+                        opts = [
+                            Option(
+                                "reset-role",
+                                f"Reset {role}",
+                                f"whyline relay roles reset {role}",
+                                recommended=True,
+                                confirm=False,
+                            ),
+                            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                        ]
                     problems.append(
                         Problem(
                             id="sticky-switch",
@@ -1969,7 +2129,35 @@ def diagnose(
             )
         )
 
-    # 8. unknown fallback
+    # 8. logged-out
+    from whyline import account as account_mod
+
+    logged_out = _collect_logged_out_agents(fails, reason)
+    for agent, match_lines in logged_out.items():
+        status_out = ""
+        if agent in account_mod.STATUS_COMMANDS:
+            _, status_out = run_login_status(agent)
+        evidence_lines = list(match_lines)
+        if status_out:
+            evidence_lines.append(status_out)
+        if agent and agent not in account_mod.LOGIN_COMMANDS:
+            sign_in = _SIGN_IN_DETAIL.format(agent=agent)
+            if sign_in not in evidence_lines:
+                evidence_lines.append(sign_in)
+        if agent:
+            summary = f"{agent} is not logged in"
+        else:
+            summary = reason or (fails[0] if fails else "An agent is not logged in")
+        problems.append(
+            Problem(
+                id="logged-out",
+                summary=summary,
+                evidence=evidence_lines,
+                options=_logged_out_options(agent),
+            )
+        )
+
+    # 9. unknown fallback
     if not problems and (reason or fails):
         opts = [
             Option(
@@ -1999,7 +2187,7 @@ def apply(
     problem: Problem,
     option_id: str,
     launch: Callable[[list[str]], None],
-) -> str:
+) -> str | LoginRequest:
     root_path = Path(root).resolve()
     if not any(opt.id == option_id for opt in problem.options):
         raise ValueError(
@@ -2144,6 +2332,10 @@ def apply(
 
     if option_id == "ask-agent":
         return "Asked agent for recommendation."
+
+    if option_id.startswith("login-"):
+        agent = option_id[len("login-") :]
+        return LoginRequest(agent)
 
     if option_id == "show":
         print("\n".join(problem.evidence))

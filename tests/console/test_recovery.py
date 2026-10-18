@@ -2406,5 +2406,172 @@ def test_auto_option_returns_recommended_unconfirmed_and_none_for_confirm_unknow
     assert recovery.auto_option(prob_running) == prob_running.options[0]
 
 
+def test_sticky_switch_from_antigravity_is_not_offered_reset_role(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_agy")
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "claude",
+            "antigravity",
+            "rate-limit",
+            "2026-10-14",
+            [],
+            resets_at="2026-10-23T00:00:00",
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True, "label": "installed", "hint": None}},
+    )
+    probs = recovery.diagnose(repo, [], "")
+    assert probs[0].id == "sticky-switch"
+    assert all(opt.id != "reset-role" for opt in probs[0].options)
+    assert [opt.id for opt in probs[0].options] == ["show", "cancel"]
+    assert any(
+        "antigravity may still be out of quota (resets 2026-10-23T00:00:00)" in line
+        for line in probs[0].evidence
+    )
+
+
+def test_sticky_switch_from_claude_whose_reset_has_passed_offers_reset_role(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_claude_reset")
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "grok",
+            "claude",
+            "rate-limit",
+            "2026-10-14",
+            [],
+            resets_at="2020-01-01T00:00:00",
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"claude": {"available": True, "label": "pro", "hint": None}},
+    )
+    probs = recovery.diagnose(repo, [], "")
+    assert probs[0].id == "sticky-switch"
+    assert probs[0].options[0].id == "reset-role"
+    assert probs[0].options[0].recommended is True
+
+
+def test_fail_line_not_logged_in_is_logged_out_with_login_claude_first(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo_logout")
+    monkeypatch.setattr(
+        recovery,
+        "run_login_status",
+        lambda agent: (1, '{"loggedIn": false}'),
+    )
+    probs = recovery.diagnose(
+        repo, ["FAIL  claude (backup for the chain) is not logged in"], ""
+    )
+    logged = [p for p in probs if p.id == "logged-out"]
+    assert len(logged) == 1
+    assert logged[0].summary == "claude is not logged in"
+    assert logged[0].options[0].id == "login-claude"
+    assert logged[0].options[0].label == "Log in to claude"
+    assert logged[0].options[0].recommended is True
+    assert logged[0].options[-2].id == "show"
+    assert logged[0].options[-1].id == "cancel"
+    assert any("is not logged in" in line for line in logged[0].evidence)
+
+
+def test_oauth_session_expired_pause_is_logged_out(tmp_path: Path, monkeypatch) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo_oauth")
+    monkeypatch.setattr(
+        recovery,
+        "run_login_status",
+        lambda agent: (1, '{"loggedIn": false}'),
+    )
+    probs = recovery.diagnose(repo, [], "OAuth session expired and could not be refreshed")
+    assert probs[0].id == "logged-out"
+
+    probs_named = recovery.diagnose(
+        repo, [], "claude: OAuth session expired and could not be refreshed"
+    )
+    assert probs_named[0].id == "logged-out"
+    assert probs_named[0].options[0].id == "login-claude"
+
+
+def test_antigravity_logged_out_has_no_login_option_and_sign_in_detail(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo_agy_out")
+    monkeypatch.setattr(
+        recovery,
+        "run_login_status",
+        lambda agent: (1, ""),
+    )
+    probs = recovery.diagnose(
+        repo, ["FAIL  antigravity (backup for the chain) is not logged in"], ""
+    )
+    logged = [p for p in probs if p.id == "logged-out"]
+    assert len(logged) == 1
+    assert all(not opt.id.startswith("login-") for opt in logged[0].options)
+    assert [opt.id for opt in logged[0].options] == ["show", "cancel"]
+    assert any(
+        "Open antigravity in a terminal and sign in, then press Check again." in line
+        for line in logged[0].evidence
+    )
+
+
+def test_auto_option_is_none_for_logged_out_and_apply_does_not_run_login(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo_auto_login")
+    monkeypatch.setattr(
+        recovery,
+        "run_login_status",
+        lambda agent: (1, '{"loggedIn": false}'),
+    )
+    probs = recovery.diagnose(
+        repo, ["FAIL  claude (backup for the chain) is not logged in"], ""
+    )
+    problem = next(p for p in probs if p.id == "logged-out")
+    assert recovery.auto_option(problem) is None
+
+    launched: list[list[str]] = []
+    ran: list[object] = []
+    monkeypatch.setattr(
+        recovery.subprocess,
+        "run",
+        lambda *args, **kwargs: ran.append((args, kwargs)) or None,
+    )
+    result = recovery.apply(repo, problem, "login-claude", launched.append)
+    assert isinstance(result, recovery.LoginRequest)
+    assert result.agent == "claude"
+    assert launched == []
+    assert ran == []
+
+
+def test_auth_pause_reason_is_logged_out(tmp_path: Path, monkeypatch) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo_auth")
+    monkeypatch.setattr(
+        recovery,
+        "run_login_status",
+        lambda agent: (1, '{"loggedIn": false}'),
+    )
+    probs = recovery.diagnose(repo, [], "claude is no longer logged in")
+    assert probs[0].id == "logged-out"
+    assert probs[0].options[0].id == "login-claude"
+
+
 
 

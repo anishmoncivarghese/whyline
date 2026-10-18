@@ -3376,5 +3376,174 @@ async def test_failed_start_launch_and_unrecognised_resume_failure_do_not_open_r
         assert any("Resume could not start; here is what Resolve found." in l for l in lines3)
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_picking_login_claude_that_succeeds_prints_ready_and_resolved(
+    tmp_path, monkeypatch
+):
+    import contextlib
+    from whyline import account
+    from whyline.console import recovery, relay_ops
+
+    _init_test_repo(tmp_path)
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    logged_in = {"claude": False}
+
+    def fake_status(agent):
+        if logged_in.get(agent):
+            return 0, '{"loggedIn": true}'
+        return 1, '{"loggedIn": false}'
+
+    monkeypatch.setattr(recovery, "run_login_status", fake_status)
+    available: set[str] = set()
+    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(
+        account, "refresh", lambda: available.add("claude") if logged_in.get("claude") else {}
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    suspended: list[str] = []
+
+    @contextlib.contextmanager
+    def fake_suspend():
+        suspended.append("in")
+        yield
+        suspended.append("out")
+
+    ran: list[list[str]] = []
+
+    def fake_login(argv):
+        ran.append(list(argv))
+        logged_in["claude"] = True
+        return 0
+
+    async with app.run_test() as pilot:
+        monkeypatch.setattr(app, "suspend", fake_suspend)
+        app._login_fn = fake_login
+        app.session.mode = "relay"
+        app._start_resolve_flow(
+            source="resume",
+            fail_lines=["FAIL  claude (backup for the chain) is not logged in"],
+        )
+        await pilot.pause()
+
+        assert app.query_one("#resolve-login-claude", tui.Button).display is True
+        for _ in range(80):
+            if _clickable(app, "#resolve-login-claude"):
+                break
+            await pilot.pause(0.05)
+        await pilot.click("#resolve-login-claude")
+        for _ in range(300):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False) and ran:
+                break
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert ran == [["claude", "auth", "login"]]
+        assert suspended == ["in", "out"]
+        assert any("claude is ready" in line for line in lines)
+        assert any("Resolved. Press Resume." in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_picking_login_claude_that_fails_keeps_the_problem_shown(
+    tmp_path, monkeypatch
+):
+    import contextlib
+    from textual.containers import Horizontal
+    from whyline import account
+    from whyline.console import recovery, relay_ops
+
+    _init_test_repo(tmp_path)
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(
+        recovery, "run_login_status", lambda agent: (1, '{"loggedIn": false}')
+    )
+    monkeypatch.setattr(account, "available_agents", lambda root: set())
+    monkeypatch.setattr(account, "refresh", lambda: {})
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+
+    @contextlib.contextmanager
+    def fake_suspend():
+        yield
+
+    async with app.run_test() as pilot:
+        monkeypatch.setattr(app, "suspend", fake_suspend)
+        app._login_fn = lambda argv: 1
+        app.session.mode = "relay"
+        app._start_resolve_flow(
+            source="resume",
+            fail_lines=["FAIL  claude (backup for the chain) is not logged in"],
+        )
+        await pilot.pause()
+
+        for _ in range(80):
+            if _clickable(app, "#resolve-login-claude"):
+                break
+            await pilot.pause(0.05)
+        await pilot.click("#resolve-login-claude")
+        for _ in range(300):
+            await pilot.pause(0.05)
+            if not getattr(app, "_resolve_running", False):
+                break
+
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("still isn't available" in line for line in lines)
+        assert not any("Resolved. Press Resume." in line for line in lines)
+        assert app.query_one("#resolve-actions", Horizontal).display is True
+        assert app.query_one("#resolve-login-claude", tui.Button).display is True
+        assert app.query_one("#resolve-login-claude", tui.Button).disabled is False
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_auto_mode_logged_out_does_not_run_login_without_a_click(
+    tmp_path, monkeypatch
+):
+    import json
+    from textual.containers import Horizontal
+    from whyline.console import recovery, relay_ops
+
+    _init_test_repo(tmp_path)
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps(
+            {
+                "plan": "plan.md",
+                "branch": "main",
+                "task_id": "LGN-1",
+                "round": 1,
+                "base_commit": "abc",
+                "paused_reason": "claude is no longer logged in",
+                "log_path": "round.log",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(
+        recovery, "run_login_status", lambda agent: (1, '{"loggedIn": false}')
+    )
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+
+    ran: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._login_fn = lambda argv: ran.append(list(argv)) or 0
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(2, "Paused: claude is no longer logged in")
+        await pilot.pause()
+
+        assert ran == []
+        assert app.query_one("#resolve-actions", Horizontal).display is True
+        assert app.query_one("#resolve-login-claude", tui.Button).display is True
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Auto stopped" in line for line in lines)
+
+
 
 
