@@ -1656,6 +1656,60 @@ def test_timeout_offers_longer_timeout_or_another_agent(
     assert 'implementer = "grok"' in cfg_text
 
 
+def test_no_handoff_with_quota_text_offers_another_agent(
+    tmp_path: Path, monkeypatch, installed_agents
+) -> None:
+    import subprocess
+    from whyline import account
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n'
+        "[agents.antigravity]\n"
+        'adapter = "generic"\n'
+        'command = ["agy", "-p"]\n'
+        "[roles]\n"
+        'implementer = "antigravity"\n'
+        'reviewer = "codex"\n'
+        "[backup]\n"
+        'chain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "antigravity implements"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "antigravity": {"available": True},
+            "codex": {"available": True},
+            "grok": {"available": True},
+        },
+    )
+
+    # The pause a relay older than 0.2.38 wrote for antigravity's 429.
+    reason = (
+        'antigravity exited without handing off; its last output was: '
+        '"{"status":"ERROR","response":"","error":"Individual quota reached. '
+        'Please upgrade your subscription to "; nothing was routed'
+    )
+    probs = recovery.diagnose(repo, [], reason)
+    assert probs[0].id == "out-of-usage"
+    assert "antigravity is out of quota" in probs[0].summary
+    option_ids = [opt.id for opt in probs[0].options]
+    assert option_ids == ["use-grok", "use-codex", "show", "cancel"]
+    assert probs[0].options[0].recommended is True
+
+    launched: list[list[str]] = []
+    recovery.apply(repo, probs[0], "use-grok", launched.append)
+    assert launched == [["resume"]]
+    cfg_text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert 'implementer = "grok"' in cfg_text
+
+    # A no-handoff without quota text stays an ordinary no-handoff.
+    plain = recovery.diagnose(repo, [], "antigravity exited without handing off; nothing was routed")
+    assert all(p.id != "out-of-usage" for p in plain)
+
+
 def test_out_of_usage_offers_only_usable_agents(tmp_path: Path, monkeypatch, installed_agents) -> None:
     import subprocess
     from whyline import account
@@ -1977,6 +2031,30 @@ def test_ask_agent_recommendation_of_listed_id(tmp_path: Path) -> None:
     assert res.option.id == "stash"
     assert res.option.recommended is True
     assert res.option.confirm is True
+
+
+def test_ask_agent_reads_the_log_when_the_run_result_has_no_output(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    # whyline_relay.agents.run streams the reply to log_path and returns
+    # RunResult(exit_code=0, output=None); the repr is not the reply.
+    def fake_runner(command, prompt, **kwargs):
+        kwargs["log_path"].write_text(
+            "codex\nEXPLANATION: Dirty changes need to be stashed away.\n"
+            "RECOMMEND: stash\ntokens used\n",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(exit_code=0, output=None)
+
+    session = ConsoleSession(root=repo, agent="codex")
+    res = recovery.ask_agent(session, runner=fake_runner)
+
+    assert res.status == "recommended"
+    assert res.recommendation == "stash"
+    assert res.explanation == "Dirty changes need to be stashed away."
 
 
 def test_ask_agent_unlisted_id_ignored_and_reported(tmp_path: Path) -> None:

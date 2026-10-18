@@ -1774,6 +1774,51 @@ async def test_ask_agent_recommendation_of_listed_id_is_offered_and_applies_only
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
+async def test_ask_agent_shows_it_is_working_until_the_answer_lands(tmp_path):
+    import threading
+
+    _init_test_repo(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_runner(command, prompt, **kwargs):
+        started.set()
+        release.wait(10)
+        return "EXPLANATION: Retry the failed stage.\nRECOMMEND: retry-stage\n"
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unclassified preflight check"])
+        await pilot.pause()
+
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(200):
+            await pilot.pause(0.05)
+            if started.is_set():
+                break
+        await pilot.pause(0.2)
+
+        # A slow agent must not look like a frozen console.
+        thinking = app.query_one("#thinking", tui.Static)
+        assert thinking.display is True
+        agent = app.session.agent
+        assert f"{agent} is analysing the problem" in str(thinking.render())
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any(f"Asking {agent} to analyse the problem" in l for l in lines)
+
+        release.set()
+        for _ in range(300):
+            await pilot.pause(0.05)
+            if _clickable(app, "#resolve-retry-stage"):
+                break
+        assert _clickable(app, "#resolve-retry-stage")
+        assert app._busy_text == ""
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
 async def test_ask_agent_unlisted_id_ignored_and_reported(tmp_path, monkeypatch):
     _init_test_repo(tmp_path)
 

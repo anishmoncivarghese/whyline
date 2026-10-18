@@ -4339,6 +4339,13 @@ class WhylineConsoleApp(App):
                 finally:
                     self.call_from_thread(self._ask_agent_finished, ask_res)
 
+            # The turn can take minutes; without the thinking line the
+            # disabled buttons look like a frozen console.
+            agent = self.session.agent or "the agent"
+            self.render_event(
+                SessionEvent(kind="output", text=f"Asking {agent} to analyse the problem…")
+            )
+            self._set_busy(True, f"{agent} is analysing the problem")
             self.run_worker(ask_thread, thread=True)
             return
 
@@ -4441,6 +4448,7 @@ class WhylineConsoleApp(App):
         from whyline.console import recovery
 
         self._resolve_running = False
+        self._set_busy(False)
 
         if res is None:
             self.render_event(SessionEvent(kind="output", text="Agent inquiry failed."))
