@@ -1,3 +1,4 @@
+<!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-10-18T12:00:00+05:30 -->
 # Idea Inbox: drop an idea in Telegram, brainstorm it, plan it, and run it on your say-so
 
 Source: `docs/brainstorm/now-i-am-thinking-of-creating-an-analayser-say-i-send-an-ema.md` (Final Synthesis), rewritten on 2026-10-18 to the user's full flow.
