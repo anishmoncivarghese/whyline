@@ -17841,3 +17841,166 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a1ed184a2a024061be19e85427c967e5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:55:27.315Z"} -->
+
+## 2026-10-19 — Route callback, then command, then settings, then an open-question answer, then capture or free
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** A button, a slash command, and a key-value edit are exact, so they must not be stored as the planner answer or filed as a new idea
+
+**Rejected:**
+
+- open question first — /stop and a settings edit would become the answer
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: 0f85f77860c14d4585782025ef7b0f5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:23:36.712Z"} -->
+
+## 2026-10-19 — A command matches only when the whole line is that command plus at most one numeric id
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** First-token matching would take plan a garden and new phone app as commands. A bare drop still matches with empty args so the bot can ask which idea without a model
+
+**Rejected:**
+
+- first word wins — those messages are ideas
+- bare drop is free — a recognised command would be sent to the assistant
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: 3d1ac120f0684892842c22e43ebb3cda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:23:39.810Z"} -->
+
+## 2026-10-19 — Unknown agent tokens stay on the field as AgentWord with name None
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** The card has to name the word that failed. release human is kept as human, and backup none is an empty list whose raw text is still none
+
+**Rejected:**
+
+- drop unknown tokens — banana would disappear from models
+- fuzzy-match human onto an agent — human is the release value this plan allows
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: 7bfb7ee7ceb345d5beb644e39032f630 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:23:42.730Z"} -->
+
+## 2026-10-19 — Prose is free only for an exact agent or alias beside an operating verb, or give it beside a time
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** use grok to implement and give it an hour must reach the assistant, while an idea that contains the word code must be captured. code is within 0.75 of codex, so the fuzzy pass stays on settings tokens
+
+**Rejected:**
+
+- fuzzy-scan prose — ideas containing code would go to the assistant
+- treat all prose as capture — the instruction example would be filed as a new idea
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: 523445977d734c38ae5ef61cdcf6876d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:23:46.324Z"} -->
+
+## 2026-10-19 — Settings require every line to be a known key; a known key beside an unknown one is free
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** Idea: a bot that files receipts is an idea, and models plus an unknown key is a broken edit that must not be captured as a new idea
+
+**Rejected:**
+
+- any colon line is settings — idea titles would be parsed as settings
+- any unknown key is prose — a bad line next to models would be filed as a new idea
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: d3ea578399bc46fcbb9029cf52ed68ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:23:50.981Z"} -->
+
+## 2026-10-19 — passes accepts any non-negative integer in the router
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** IDEA-12 is the place that refuses a pass count outside 1 to 3 and names the line. An unaccepted timeout stays on the field with value None and its raw text
+
+**Rejected:**
+
+- reject passes outside 1 to 3 here — the router would hide a value the card is specified to report
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: c98335341545401fa34516e55a4b5a47 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:23:53.948Z"} -->
+
+## 2026-10-19 — IDEA-9 fails testing because drop accepts a missing required id
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-9
+
+**Because:** The specified grammar is /drop <id>, but both /drop and drop currently return command('drop', ()); the added test incorrectly enshrines that deviation even though the focused and full suites pass.
+
+**Files:** src/whyline/ideas/intent.py
+
+<!-- whyline-event: 16f004b2670f4dcca9ee2b204de4cf5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:30:19.332Z"} -->
+
+## 2026-10-19 — A drop without an id is capture, not a command
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-9
+
+**Because:** The grammar is /drop <id>. Bare /drop and drop were a drop command with empty args. Once they are not commands, the existing prose rule captures them.
+
+**Rejected:**
+
+- keep bare drop as a command with empty args — the grammar requires an id and the review rejected that
+- route bare drop to free — it is not an instruction, and prose that is not an instruction is capture
+
+**Files:** src/whyline/ideas/intent.py, tests/ideas/test_intent.py
+
+<!-- whyline-event: c41622d4598b43cdbe7fd1f4f941ac7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:39:06.958Z"} -->
+
+## 2026-10-19 — IDEA-9 passes Round 4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-9
+
+**Because:** The focused ideas suite and full project suite exit successfully, and direct checks confirm bare drop routes to answer under an open question, capture otherwise, while drop with a numeric id remains a command.
+
+**Files:** src/whyline/ideas/intent.py, tests/ideas/test_intent.py
+
+<!-- whyline-event: 8d6111d71f6e4fd58da8d518e26ef2e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:45:54.675Z"} -->
+
+## 2026-10-19 — IDEA-9 is approved after Round 5 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-9
+
+**Because:** The router follows the specified callback, command, settings, answer, capture, and free precedence; malformed inputs and unknown agents remain visible; both the focused ideas suite and full project suite pass.
+
+**Files:** src/whyline/ideas/intent.py, tests/ideas/test_intent.py
+
+<!-- whyline-event: 1c974e6f083f4943bd197758b4edce5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:52:10.150Z"} -->
