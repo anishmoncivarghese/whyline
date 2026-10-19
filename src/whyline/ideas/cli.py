@@ -78,6 +78,14 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         help="Folder, schema, unattended agents, workbook, and cupsfilter",
     )
 
+    tg = sub.add_parser("telegram", help="Chats the inbox may read")
+    tg_sub = tg.add_subparsers(dest="idea_telegram_command", required=True)
+    allow = tg_sub.add_parser("allow", help="Read a private known chat")
+    allow.add_argument("chat_id", type=int)
+    deny = tg_sub.add_parser("deny", help="Stop reading a chat")
+    deny.add_argument("chat_id", type=int)
+    tg_sub.add_parser("list", help="Known chats, and which are allowed")
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -85,7 +93,7 @@ def run(args: argparse.Namespace) -> int:
     if handler is None:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
-            "export|documents|agents|doctor",
+            "export|documents|agents|doctor|telegram",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -606,6 +614,46 @@ def _cupsfilter_check() -> _Check:
     return _Check("cupsfilter", False, f"cupsfilter is missing ({location})")
 
 
+def cmd_telegram(args: argparse.Namespace) -> int:
+    from whyline.agents import telegram
+    from whyline.ideas import telegram_in
+
+    action = getattr(args, "idea_telegram_command", None)
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        if action == "list":
+            chats = telegram.known_chats()
+            if not chats:
+                print("No Telegram chats yet. Run: whyline agents telegram setup")
+                return EXIT_OK
+            allowed = set(telegram_in.allowed_chats(conn))
+            for cid, label in chats.items():
+                mark = "  allowed" if cid in allowed else ""
+                print(f"{label}  ({cid}){mark}")
+            return EXIT_OK
+        if action == "allow":
+            try:
+                label = telegram_in.allow(conn, args.chat_id)
+            except telegram_in.AllowError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{label}  ({args.chat_id})  allowed")
+            return EXIT_OK
+        if action == "deny":
+            telegram_in.deny(conn, args.chat_id)
+            print(f"{args.chat_id}  denied")
+            return EXIT_OK
+        print(
+            "usage: whyline idea telegram allow|deny|list",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    finally:
+        conn.close()
+
+
 def cmd_doctor(_args: argparse.Namespace) -> int:
     checks = (
         _folder_check(),
@@ -632,4 +680,5 @@ _COMMANDS = {
     "documents": cmd_documents,
     "agents": cmd_agents,
     "doctor": cmd_doctor,
+    "telegram": cmd_telegram,
 }

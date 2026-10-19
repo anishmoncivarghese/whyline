@@ -1,4 +1,4 @@
-"""SQLite ledger for ideas: schema 1, statuses, and the allowed moves."""
+"""SQLite ledger for ideas: schema 2, statuses, and the allowed moves."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from whyline.ideas import paths
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 STATUSES = (
     "captured",
@@ -116,6 +116,24 @@ _SCHEMA = (
     """,
 )
 
+# Schema 2: Telegram inbound updates. Applied on connect when the stored
+# version is older than SCHEMA_VERSION. CREATE IF NOT EXISTS so a crash
+# between the table and the version bump is safe to retry.
+_SCHEMA_2 = (
+    """
+    CREATE TABLE IF NOT EXISTS inbound (
+      update_id INTEGER PRIMARY KEY,
+      chat_id INTEGER,
+      at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '',
+      callback_data TEXT,
+      reply_to_message_id INTEGER,
+      handled INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+)
+
 
 class IllegalMove(Exception):
     pass
@@ -207,27 +225,44 @@ def _analysis(row: sqlite3.Row) -> Analysis:
     return Analysis(**{field.name: row[field.name] for field in fields(Analysis)})
 
 
+def _apply_schema_2(conn: sqlite3.Connection) -> None:
+    for statement in _SCHEMA_2:
+        conn.execute(statement)
+
+
 def _check_schema(conn: sqlite3.Connection) -> None:
     row = conn.execute(
         "SELECT value FROM kv WHERE key = 'schema_version'"
     ).fetchone()
     if row is None:
-        conn.execute(
-            "INSERT INTO kv (key, value) VALUES ('schema_version', ?)",
-            (str(SCHEMA_VERSION),),
-        )
-        return
-    try:
-        version = int(row["value"])
-    except (TypeError, ValueError) as exc:
-        raise SchemaError(
-            f"ideas database has an invalid schema_version: {row['value']!r}"
-        ) from exc
-    if version > SCHEMA_VERSION:
-        raise SchemaError(
-            f"ideas database is schema version {version}; "
-            f"this whyline supports version {SCHEMA_VERSION}"
-        )
+        version = 0
+    else:
+        try:
+            version = int(row["value"])
+        except (TypeError, ValueError) as exc:
+            raise SchemaError(
+                f"ideas database has an invalid schema_version: {row['value']!r}"
+            ) from exc
+        if version > SCHEMA_VERSION:
+            raise SchemaError(
+                f"ideas database is schema version {version}; "
+                f"this whyline supports version {SCHEMA_VERSION}"
+            )
+        if version == SCHEMA_VERSION:
+            return
+    with _txn(conn):
+        if version < 2:
+            _apply_schema_2(conn)
+        if version == 0:
+            conn.execute(
+                "INSERT INTO kv (key, value) VALUES ('schema_version', ?)",
+                (str(SCHEMA_VERSION),),
+            )
+        else:
+            conn.execute(
+                "UPDATE kv SET value = ? WHERE key = 'schema_version'",
+                (str(SCHEMA_VERSION),),
+            )
 
 
 def connect() -> sqlite3.Connection:

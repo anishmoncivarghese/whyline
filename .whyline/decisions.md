@@ -17726,3 +17726,118 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: aaf81bd4f27642b281683c857346af4e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T12:16:13.627Z"} -->
+
+## 2026-10-19 — Schema 2 inbound is a migration from 1, not part of the original CREATE set
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-8
+
+**Because:** a schema 1 database has no inbound table; connect applies _SCHEMA_2 then bumps kv schema_version to 2, and CREATE IF NOT EXISTS makes a crash between the table and the version bump safe to retry
+
+**Rejected:**
+
+- put inbound in _SCHEMA only — a v1 file would gain the table while schema_version stayed 1
+- rebuild the database — that would drop ideas already captured in schema 1
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: 239acf2a9e674e718204b1a39428e7c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:42:48.519Z"} -->
+
+## 2026-10-19 — Disallowed chats are stored handled with no outbound send; allowed chats stay unhandled
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-8
+
+**Because:** IDEA-13 handles unhandled inbound rows, and this task forbids a reply to chats not on telegram_allow
+
+**Rejected:**
+
+- drop updates from other chats — the cursor would still need to move, and the row is the audit of what arrived
+- reply with an error — the spec says no reply
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: 807a5bd73b1c4de0aa5ec63144200fd4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:42:53.469Z"} -->
+
+## 2026-10-19 — Only known_chats labels ending in (private) may be allowed
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-8
+
+**Because:** find_chats writes that suffix for private chats and (group) for the rest, so the allow command can refuse groups from the same list the CLI offers
+
+**Rejected:**
+
+- allow any positive chat id — groups and unknown senders would slip in
+- inspect chat.type at allow time — known_chats only stores a label, not the type
+
+**Files:** src/whyline/ideas/telegram_in.py, src/whyline/ideas/cli.py
+
+<!-- whyline-event: 39ed8ec2d3214fe89d00a36112051ebc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:42:59.263Z"} -->
+
+## 2026-10-19 — telegram allow/deny/list do not rebuild the workbook
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-8
+
+**Because:** the allow list is kv, not a workbook sheet, and printing ideas.xlsx after a chat-id change would look like an idea had been written
+
+**Rejected:**
+
+- call xlsx.export like documents/agents — IDEA-6 rebuilds after idea mutations, and this command does not change ideas
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: fda0b9210c804f35ba688ad0b90a01a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:43:04.744Z"} -->
+
+## 2026-10-19 — poll_once forwards sleep to _call and returns 0 on TelegramError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-8
+
+**Because:** getUpdates uses the existing _call retry, which sleeps 30s on a network error; tests pass sleep=lambda s: None, and a failed getUpdates must leave telegram_cursor untouched
+
+**Rejected:**
+
+- call http directly — the task requires telegram._call
+- re-raise TelegramError — the next tick would keep failing and the spec only requires the cursor stay put
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: 5d58edf051b148e28145e5e8a9139203 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:43:14.031Z"} -->
+
+## 2026-10-19 — IDEA-8 passes required behavioral test suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-8
+
+**Because:** uv run pytest -q tests/ideas and uv run pytest -q both completed successfully; coverage includes inbound deduplication, allow-list handling, cursor behavior on network errors, long messages, and schema-1 migration
+
+**Files:** tests/ideas/test_telegram_in.py
+
+<!-- whyline-event: 5fff0b9aa50546699d8624c6e6ca05c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:49:19.506Z"} -->
+
+## 2026-10-19 — IDEA-8 approved in reviewer round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-8
+
+**Because:** The implementation satisfies the Telegram allow-list, atomic inbound persistence and cursor semantics, deduplication, network-error behavior, long-message preservation, and schema-1 migration requirements; the focused ideas suite and full project suite both pass
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: a1ed184a2a024061be19e85427c967e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T20:55:27.315Z"} -->
