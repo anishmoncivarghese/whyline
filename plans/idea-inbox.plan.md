@@ -58,7 +58,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests with a fake `run_fn`: a valid answer stores version 1 and moves to `scored`; a second analysis is version 2; a malformed answer falls through to the next agent; antigravity is skipped unattended with its reason; all failing returns the idea to `captured` naming every agent; the fake sees `cwd` equal to the workspace.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-4: Word and PDF documents
+- [x] IDEA-4: Word and PDF documents
   Add `src/whyline/ideas/documents.py` and `tests/ideas/test_documents.py`. Add no dependency.
   `export(md_path, *, formats=None) -> Exported(docx: Path | None, pdf: Path | None, notes: list[str])` writes beside each other in `paths.documents_dir()`, named after the Markdown file. Word uses `whyline.agents.convert.to_docx`. PDF renders `convert.to_html` to a temp `.html` and converts it with macOS `/usr/sbin/cupsfilter` (argv list, no shell, 60-second timeout); when `cupsfilter` is missing, fails, or writes an empty file, `pdf` is None and `notes` says "PDF not available on this machine; sent Word only". `formats` defaults to `kv` key `doc_formats` (`word`, `pdf`, or `both`; default `both`), set by `whyline idea documents word|pdf|both`. When both fail, `notes` says so and callers send the Markdown file.
   Tests: Word is written and opens as a zip with `word/document.xml`; a fake `cupsfilter` runner writing bytes gives a PDF; a missing `cupsfilter` gives Word only with the note; `formats="word"` never calls the PDF runner; a Markdown table survives into the Word file.
