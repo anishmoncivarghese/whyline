@@ -100,7 +100,7 @@ Review point: use the CLI for real ideas for a few days before starting this pha
   Tests: each command and its near-misses route correctly; callback data parses and malformed data is `free`; a settings message parses and normalises typos, and `banana` as an agent is reported, not dropped silently; a reply to an open question is `answer`; plain prose is `capture`.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-10: The inbox assistant proposes; a button confirms
+- [x] IDEA-10: The inbox assistant proposes; a button confirms
   Add `src/whyline/ideas/assistant.py` and `tests/ideas/test_assistant.py`.
   The assistant is one agent plus one backup, set by `whyline idea assistant <agent> [--backup <agent>]` (`kv` keys `assistant`, `assistant_backup`). Defaults: the console Chat agent and its backup from Chat's saved settings, falling back to the first two unattended-capable agents installed and logged in. Both must pass `can_run_unattended`.
   `propose(conn, text, *, idea=None, context, run_fn=None) -> Proposal`: one read-only turn (`capabilities.read_only_command`, `cwd=paths.workspace()`, 120-second timeout) with the message, the idea's title and status, the card the user is looking at, and the allowed values (agents, repos, timeouts, actions). It must end with a fenced `inbox-proposal` block of JSON: `kind` one of `brainstorm_settings`, `plan_setup`, `status`, `stop`, `resolve`, `capture`, `none`, plus `fields` and a one-line `summary`. A failure or a malformed block tries the backup; when both fail the bot replies "I couldn't read that. Use the buttons or a `key: value` message" with `/help`.
