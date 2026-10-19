@@ -17355,3 +17355,98 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 54b1b0e4404b4ba9b71f37c5d7589480 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:48:47.821Z"} -->
+
+## 2026-10-19 — Take PDF bytes from cupsfilter stdout
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-4
+
+**Because:** cupsfilter has no output-path flag and the spec forbids a shell redirect; tests pass a fake run so a machine without the binary still proves the PDF path
+
+**Rejected:**
+
+- shell redirect — the spec requires an argv list and no shell
+- isfile check before run — the fake runner would never be called where cupsfilter is absent
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: d0642aa55f0146618ce0cffa42a39d3d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:35:27.794Z"} -->
+
+## 2026-10-19 — An unknown doc_formats value exports both
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-4
+
+**Because:** a bad kv value should still produce documents; the documents command is what writes the key
+
+**Rejected:**
+
+- raise — export would fail closed on a typo and the caller would send only Markdown
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: 75dd322e94df4acdbc8511d4cb6bbae2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:35:27.828Z"} -->
+
+## 2026-10-19 — Ask cupsfilter to convert text/html to application/pdf
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-4
+
+**Because:** the temp file is the HTML from convert.to_html, and a PDF should be that document; this Mac has no such filter so cupsfilter exits 1 and export sends Word only
+
+**Rejected:**
+
+- force -i text/plain — cgtexttopdf exits 0 and writes a PDF of the HTML source, which hides the failure
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: fd639d988f894fa5b5aac249b4a2847c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:35:27.860Z"} -->
+
+## 2026-10-19 — When neither file is written, the note names the Markdown fallback
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-4
+
+**Because:** the spec says notes say so and callers send the Markdown file, but gives no exact sentence
+
+**Rejected:**
+
+- reuse the Word-only PDF note — it would claim Word was sent
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: 1771caabd3904c63838df2f69b9270a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:35:27.892Z"} -->
+
+## 2026-10-19 — IDEA-4 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-4
+
+**Because:** The targeted ideas suite and the full repository suite both completed successfully, covering DOCX structure, fake PDF conversion, missing cupsfilter fallback, word-only suppression, and Markdown table preservation
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: ee165e4ca44a43b49e4c6e3e64a5a9d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:41:15.547Z"} -->
+
+## 2026-10-19 — Approve IDEA-4 document export implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-4
+
+**Because:** The exporter meets the Word/PDF, kv-default, fallback-note, timeout, and no-shell requirements; its tests genuinely cover the specified behaviors; and both the targeted ideas suite and full repository suite pass
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: 5416e9b76c5b4aa4891f5eff05d61311 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:47:21.133Z"} -->
