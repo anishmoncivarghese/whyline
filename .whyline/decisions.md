@@ -17450,3 +17450,120 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5416e9b76c5b4aa4891f5eff05d61311 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T09:47:21.133Z"} -->
+
+## 2026-10-19 — Ideas sheet shows the latest analysis; spec_path and original_text stay in the ledger
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-5
+
+**Because:** The plan names latest usefulness on Ideas and one Scores row per version, and its column list omits spec_path and the original text.
+
+**Rejected:**
+
+- Repeat every version on Ideas — the plan says latest.
+- Add spec_path and original_text — the plan lists the columns.
+
+**Files:** src/whyline/ideas/xlsx.py
+
+<!-- whyline-event: 67a3fa5e383b4bfa91533dbcac6e53bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:08:05.442Z"} -->
+
+## 2026-10-19 — Scores lists analysis fields and History lists event fields; Sources expands sources_json
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-5
+
+**Because:** The plan names the row grain for Scores and History but not their columns, and Sources is idea id, version, title, and url.
+
+**Rejected:**
+
+- Put sources_json on Scores — Sources is its own sheet.
+- Omit agent and created — a version row then does not say who scored it or when.
+
+**Files:** src/whyline/ideas/xlsx.py
+
+<!-- whyline-event: f2a72d3847584ab7bb9fe1411e47ae57 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:08:05.475Z"} -->
+
+## 2026-10-19 — Dates are UTC Excel serials and formula text keeps a stored leading apostrophe
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-5
+
+**Because:** The plan asks for real date cells, and ledger timestamps are UTC. Text starting with =, +, -, @, tab, or CR is written with a leading apostrophe. A raw CR would become a line feed in XML, so it is stored as character reference 13.
+
+**Rejected:**
+
+- Store ISO text — that is not a date cell.
+- Convert dates to local time — the workbook would change across machines.
+- quotePrefix — the apostrophe would not be in the stored text.
+
+**Files:** src/whyline/ideas/xlsx.py
+
+<!-- whyline-event: 32bc3774c4f2440aa6cf5d340cd9e1f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:08:05.507Z"} -->
+
+## 2026-10-19 — A locked workbook stays put and a timestamped copy is written beside it
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-5
+
+**Because:** The plan says to os.replace only after the temp file is reopened and its row counts match the ledger, and never to delete the old workbook first. Any OSError from that replace writes ideas-YYYYmmdd-HHMMSS.xlsx in the same folder, using the local clock.
+
+**Rejected:**
+
+- Delete the old file then write — a failed write would lose the open workbook.
+- UTC stamp — it would not match the clock of the person who has the file open.
+
+**Files:** src/whyline/ideas/xlsx.py
+
+<!-- whyline-event: 2327f5b4d5ea4df69b90f8a8defcabaf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:08:05.539Z"} -->
+
+## 2026-10-19 — Read the four sheets in one deferred transaction and release it before writing the zip
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-5
+
+**Because:** A score can commit between the ideas query and the analyses query, and holding the lock for the zip write would block the next ledger change. Invalid sources_json raises before replace so a workbook is not published with dropped evidence.
+
+**Rejected:**
+
+- Three autocommit queries — the sheets could disagree.
+- Skip a bad sources row — the export would succeed and hide the loss.
+
+**Files:** src/whyline/ideas/xlsx.py
+
+<!-- whyline-event: e2c0f13a57e34087a56462b07ebb3dab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:08:05.570Z"} -->
+
+## 2026-10-19 — IDEA-5 passes functional testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-5
+
+**Because:** The ideas suite and full repository suite passed, and the OOXML assertions cover package reopening, four sheets, ledger row counts, numeric date formatting, frozen bold headers, safe formula-like text, locked-target fallback, empty ledgers, and unscored ideas.
+
+**Files:** src/whyline/ideas/xlsx.py
+
+<!-- whyline-event: 206542f3dc404af28e12fd424a299a88 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:14:15.632Z"} -->
+
+## 2026-10-19 — Approve IDEA-5 standard-library workbook export
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-5
+
+**Because:** The implementation satisfies all requested workbook structure, date-cell, formula-safety, verification, and locked-target fallback behavior; the tests genuinely cover the acceptance cases, and both the ideas suite and full repository suite pass.
+
+**Files:** src/whyline/ideas/xlsx.py, tests/ideas/test_xlsx.py
+
+<!-- whyline-event: 32cf2e08f3a749acbe524d8859f72ba6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:20:31.065Z"} -->
