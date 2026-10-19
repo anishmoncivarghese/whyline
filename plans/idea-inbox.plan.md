@@ -33,7 +33,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
 
 ## Phase 1: ledger, quick score, documents, Excel, CLI (whyline 0.3.46)
 
-- [ ] IDEA-1: Idea ledger and state machine
+- [x] IDEA-1: Idea ledger and state machine
   Add package `src/whyline/ideas/` with `__init__.py`, `paths.py`, and `store.py`, plus `tests/ideas/test_store.py`.
   `paths.home()` is `~/.whyline/ideas` (0700), `paths.db_path()` is `home()/ideas.sqlite3`, `paths.reports_dir()`, `paths.documents_dir()`, `paths.workspace()`, and `paths.workbook()` (`home()/ideas.xlsx`). Honour `WHYLINE_IDEAS_HOME` for tests.
   `store.connect()` creates schema 1 with tables `ideas(id INTEGER PRIMARY KEY, created_at, source, source_ref, original_text, title, status, revision INTEGER, repo, brainstorm_path, spec_path, plan_path)`, a unique index on `(source, source_ref)` when `source_ref` is not null, `events(id, idea_id, at, from_status, to_status, actor, note)` (append-only), `analyses(id, idea_id, version, agent, report_path, usefulness, complexity_mvp, complexity_full, verdict, confidence, sources_json, created_at)`, and `kv(key PRIMARY KEY, value)`. Store a `schema_version` in `kv`; a database with a newer version raises a clear error.
