@@ -942,10 +942,12 @@ def recover(
         # Extract output
         if isinstance(res, str):
             raw_output = res
-        elif hasattr(res, "output") and res.output is not None:
-            raw_output = res.output
-        elif hasattr(res, "stdout") and res.stdout is not None:
-            raw_output = res.stdout
+        elif hasattr(res, "output"):
+            # agents.run streams the reply to log_path and returns
+            # RunResult(output=None); its repr is not the reply.
+            raw_output = res.output or ""
+        elif hasattr(res, "stdout"):
+            raw_output = res.stdout or ""
         elif isinstance(res, dict):
             raw_output = res.get("output") or res.get("response") or ""
         else:
@@ -1207,6 +1209,71 @@ def next_timeout(current: int) -> int:
         if candidate > current:
             return candidate
     return 0
+
+
+def _quota_text(reason: str) -> bool:
+    try:
+        from whyline_relay import agents as relay_agents
+
+        return relay_agents.rate_limited(reason)
+    except Exception:
+        return False
+
+
+def _timeout_switch_options(root_path: Path, reason: str, stage_name: str) -> list[Option]:
+    """`Use <agent>` options for a timed-out stage: hand the role to another
+    logged-in agent instead of giving the same one more time. The pause names
+    the command (`agy exceeded ...`), so map it back to its agent first."""
+    try:
+        from whyline import account
+        from whyline.console import relay_ops
+        from whyline_relay import config as relay_config, failover as relay_failover
+
+        cfg = relay_config.load(root_path)
+        usable = relay_ops.usable_agents(root_path, account.agent_status(root_path))
+    except Exception:
+        return []
+
+    m_cmd = re.search(r"(\S+)\s+exceeded\s+\d+s", reason)
+    command = Path(m_cmd.group(1)).name if m_cmd else ""
+    timed_out = next(
+        (name for name, argv in cfg.agents.items() if argv and Path(argv[0]).name == command),
+        command,
+    )
+
+    if cfg.pipeline is not None:
+        roles_by_name = {name: r.agent for name, r in cfg.pipeline.roles.items()}
+    else:
+        roles_by_name = {"implementer": cfg.roles.implementer, "reviewer": cfg.roles.reviewer}
+    for name, override in relay_failover.read_overrides(root_path).items():
+        if name in roles_by_name:
+            roles_by_name[name] = override.agent
+
+    role = ""
+    if cfg.pipeline is not None and stage_name in cfg.pipeline.stages:
+        role = cfg.pipeline.stages[stage_name].role
+    if not role:
+        role = next((r for r, a in roles_by_name.items() if a == timed_out), "")
+    if not role:
+        role = "implementer" if "implementer" in roles_by_name else next(iter(roles_by_name), "")
+    if not role:
+        return []
+
+    chain = list(cfg.backup_chain)
+    candidates = sorted(
+        (a for a in usable if a != timed_out),
+        key=lambda a: (chain.index(a) if a in chain else len(chain), a),
+    )
+    return [
+        Option(
+            f"use-{agent}",
+            f"Use {agent} instead of {timed_out}" if timed_out else f"Use {agent}",
+            f"whyline relay roles set {role} {agent}, then resume",
+            recommended=False,
+            confirm=False,
+        )
+        for agent in candidates
+    ]
 
 
 def _read_state_dict(root_path: Path) -> dict[str, Any]:
@@ -1984,6 +2051,7 @@ def diagnose(
                 recommended=True,
                 confirm=False,
             ),
+            *_timeout_switch_options(root_path, reason or " ".join(fails), saved_stage),
             Option("resume", "Resume as is", "resume with current timeout", recommended=False, confirm=False),
             Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
             Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
@@ -2000,9 +2068,12 @@ def diagnose(
     # 6. out-of-usage
     from whyline.console import adapters
 
-    if adapters.failure_kind(reason) == "rate-limit":
+    # A relay older than 0.2.38 did not know antigravity's "Individual quota
+    # reached" line, so it paused as no-handoff with the quota text inside.
+    quota_no_handoff = adapters.failure_kind(reason) == "no-handoff" and _quota_text(reason)
+    if adapters.failure_kind(reason) == "rate-limit" or quota_no_handoff:
         failed_agent = ""
-        m_fa = re.search(r"(\S+)\s+hit a usage or rate limit", reason)
+        m_fa = re.search(r"(\S+)\s+(?:hit a usage or rate limit|exited without handing off)", reason)
         if m_fa:
             failed_agent = m_fa.group(1)
 
@@ -2075,7 +2146,7 @@ def diagnose(
             tried.add(failed_agent)
 
         next_backup = relay_failover.next_backup(chain, tried)
-        if next_backup is None:
+        if next_backup is None or quota_no_handoff:
             from whyline import account
             from whyline.console import relay_ops
 
@@ -2101,7 +2172,11 @@ def diagnose(
             problems.append(
                 Problem(
                     id="out-of-usage",
-                    summary=f"Rate limit hit by {failed_agent or 'agent'} and backup chain is exhausted",
+                    summary=(
+                        f"{failed_agent or 'Agent'} is out of quota; switch its role to another agent"
+                        if quota_no_handoff
+                        else f"Rate limit hit by {failed_agent or 'agent'} and backup chain is exhausted"
+                    ),
                     evidence=[reason] if reason else fails,
                     options=opts,
                 )
@@ -2769,10 +2844,12 @@ def ask_agent(
 
         if isinstance(res, str):
             raw_output = res
-        elif hasattr(res, "output") and res.output is not None:
-            raw_output = res.output
-        elif hasattr(res, "stdout") and res.stdout is not None:
-            raw_output = res.stdout
+        elif hasattr(res, "output"):
+            # agents.run streams the reply to log_path and returns
+            # RunResult(output=None); its repr is not the reply.
+            raw_output = res.output or ""
+        elif hasattr(res, "stdout"):
+            raw_output = res.stdout or ""
         elif isinstance(res, dict):
             raw_output = res.get("output") or res.get("response") or ""
         else:
