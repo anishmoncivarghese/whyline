@@ -1275,3 +1275,25 @@ def test_non_positive_max_visits_fails_in_planning(tmp_path, agents, guard):
         and line.message == "[planner] max_visits must be a positive integer"
         for line in lines
     )
+
+
+def test_saving_resolve_mode_leaves_the_working_tree_clean(tmp_path: Path) -> None:
+    # Set up's Check saves the Resolve choice. A dirty tree then failed Check,
+    # Resolve stashed the file, and the next Check wrote it again: a loop.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+    relay_ops.save_resolve_mode(tmp_path, "review")
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=tmp_path, capture_output=True, text=True, check=True,
+    ).stdout
+    assert status == ""
+    assert relay_ops.resolve_mode(tmp_path) == "review"
+    exclude = (tmp_path / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert exclude.splitlines().count(".whyline/relay/resolve-mode.json") == 1
+
+
+def test_saving_resolve_mode_outside_git_still_works(tmp_path: Path) -> None:
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+    assert relay_ops.resolve_mode(tmp_path) == "auto"
