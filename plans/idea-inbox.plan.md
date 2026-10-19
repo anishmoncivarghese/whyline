@@ -77,7 +77,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests: add then list shows the idea; drop then reopen round-trips; score with a fake runner prints the scores; `doctor` reports an unwritable workbook and a missing `cupsfilter`; an unknown id exits 1 with a clear message.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-7: Publish whyline 0.3.46
+- [x] IDEA-7: Publish whyline 0.3.46
   relay-profile: release
   Bump `pyproject.toml` to `0.3.46`. Write `docs/releases/v0.3.46.md` in the shape of the previous release notes: `whyline idea` keeps every idea in a local database and `~/.whyline/ideas/ideas.xlsx`; a quick score runs one read-only agent turn that lists the sources it checked and rates usefulness and complexity 1-9 with a YES / NO / NOT YET verdict; reports come as Word and, where the Mac can make one, PDF. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.46`, push, publish to PyPI the way the previous release was published, and confirm `uv tool install whyline@0.3.46` installs it.
 
