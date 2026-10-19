@@ -85,7 +85,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
 
 Review point: use the CLI for real ideas for a few days before starting this phase.
 
-- [ ] IDEA-8: Read Telegram messages from allowed chats only
+- [x] IDEA-8: Read Telegram messages from allowed chats only
   Add `src/whyline/ideas/telegram_in.py` and `tests/ideas/test_telegram_in.py`. Use `whyline.agents.telegram`'s token and `_call`; add nothing to that module.
   Allowed chats are a list in `kv` key `telegram_allow`, managed by `whyline idea telegram allow <chat-id>` / `deny <chat-id>` / `list` (add these to `ideas/cli.py`), offered from `telegram.known_chats()`. Only private chats may be allowed.
   `poll_once(conn, *, http=None) -> int` calls `getUpdates` with `offset` = stored cursor + 1 and `timeout=0`. In one transaction per update: store it in a new `inbound(update_id UNIQUE, chat_id, at, kind, text, callback_data, reply_to_message_id, handled INTEGER)` table (schema 2 migration in `store.py`), then advance the cursor. Updates from chats not allowed are recorded as handled with no reply. Messages over 4000 characters are kept whole. A network error leaves the cursor where it was.
