@@ -92,7 +92,7 @@ Review point: use the CLI for real ideas for a few days before starting this pha
   Tests with a fake `http`: two updates are stored once each and the cursor advances; a repeated update id is ignored; a message from another chat gets no reply and is marked handled; a network error stores nothing and keeps the cursor; schema 1 databases migrate to 2.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-9: Route a message without a model when possible
+- [x] IDEA-9: Route a message without a model when possible
   Add `src/whyline/ideas/intent.py` and `tests/ideas/test_intent.py`.
   `route(text, callback_data, *, open_question) -> Intent` returns one of `capture(text)`, `action(name, idea_id, revision)`, `command(name, args)`, `settings(fields)`, `answer(text)`, or `free(text)`. Button callbacks are `<action>:<idea_id>:<revision>` and are parsed exactly. Commands are `/new`, `/list`, `/status [id]`, `/excel`, `/brainstorm [id]`, `/plan [id]`, `/stop [id]`, `/drop <id>`, `/help`, with or without the slash, matched case-insensitively and with `difflib.get_close_matches(cutoff=0.8)` so `exel` and `/staus` work.
   `settings(fields)` is a message made only of `key: value` lines with keys `models`, `passes`, `final`, `backup`, `timeout`, `repo`, `implementer`, `tester`, `reviewer`, `release`, `drafter`, `plan_reviewer`, in any order and case. Agent names go through `normalise_agent(word)`: aliases `agy`→`antigravity`, `claud`/`cluade`→`claude`, `codx`→`codex`, `grock`→`grok`, then `get_close_matches(cutoff=0.75)` over `claude`, `codex`, `antigravity`, `grok`; no match returns None. `timeout` accepts `15`, `30`, `45`, `60`, `none`, with or without `m`.
