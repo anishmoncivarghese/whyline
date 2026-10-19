@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import tomllib
 from collections.abc import Sequence
@@ -621,9 +622,37 @@ def resolve_mode(root: Path | str) -> str:
     return "review"
 
 
+_RESOLVE_MODE_IGNORE = ".whyline/relay/resolve-mode.json"
+
+
+def _ignore_resolve_mode(root: Path) -> None:
+    """Keep the saved choice out of `git status`, the way the relay keeps its
+    own runtime files out: in .git/info/exclude, which is never committed.
+    Tracked, every Check dirtied the tree and failed its own clean-tree check."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-path", "info/exclude"],
+            capture_output=True, text=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return  # not a git repository: nothing to keep clean
+    target = Path(res.stdout.strip())
+    if not target.is_absolute():
+        target = root / target
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    if _RESOLVE_MODE_IGNORE in existing.splitlines():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(_RESOLVE_MODE_IGNORE + "\n")
+
+
 def save_resolve_mode(root: Path | str, mode: str) -> None:
     if mode not in ("auto", "review"):
         raise ValueError(f"Invalid resolve mode: {mode!r}; must be 'auto' or 'review'")
+    _ignore_resolve_mode(Path(root))
     path = resolve_mode_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
