@@ -16852,3 +16852,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 06564d0c0913493ca4134722c6e0423d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-18T20:59:12.786Z"} -->
+
+## 2026-10-19 — Defer WIN-1 to plans/windows-release-gate.plan.md and close the 0.3.45 plan
+
+**Actor:** claude
+**Role:** operator
+**Task:** WIN-1
+
+**Because:** User does not want the Windows gate now; moving the task out lets the plan complete and frees the relay for the next plan. The relay state was cleared the way the relay itself does when no unchecked task remains.
+
+**Rejected:**
+
+- Leave WIN-1 paused in the plan — blocks starting the next plan and keeps a stale pause in Resolve
+
+**Files:** plans/windows-release-gate.plan.md, plans/in-the-agent-i-can-select-the-agent-in-c.plan.md
+
+<!-- whyline-event: 71d1a62c497f4675b4afe4d2ba4e2a3c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:33:57.678Z"} -->
+
+## 2026-10-19 — Merge brainstorm/idea-analyser only up to 9e952f9 and give idea-inbox.plan.md the whyline-plan header
+
+**Actor:** claude
+**Role:** operator
+**Task:** IDEA-PLAN
+
+**Because:** The branch tip held an in-progress Repo browser Brainstorm commit; Set up's list_plans skips plans without the header line
+
+**Rejected:**
+
+- Merge the branch tip — would bring half-written brainstorm scratch files
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 3a411894f2664087b1e2164214419c86 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:33:57.716Z"} -->
