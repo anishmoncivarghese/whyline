@@ -17208,3 +17208,150 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d6c34e7581884dae9fb7fabb14578cea -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:50:26.980Z"} -->
+
+## 2026-10-19 — The quick-score prompt lists the idea-report JSON fields
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-3
+
+**Because:** report.parse rejects any other shape, and the rubric does not name the fields
+
+**Rejected:**
+
+- rubric text only — the model would invent a JSON shape that ReportError rejects
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: ac050e356bb74b7ab9b537fb0ec67cd7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:13:46.156Z"} -->
+
+## 2026-10-19 — Quick score builds the relay command, then locks it read-only
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-3
+
+**Because:** The ideas workspace is not a relay repo: Claude's settings file is absent, and Codex writes the reply to -o while stdout is the session
+
+**Rejected:**
+
+- a short hand-written argv — it would drift from the command the relay runs
+- parsing Codex stdout — the session log is not the reply
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: 658bd7463bb746d282484a30e762ffa3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:13:46.189Z"} -->
+
+## 2026-10-19 — A failed quick score raises AnalyseError after returning the idea to captured
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-3
+
+**Because:** analyse returns Analysis only when a report was stored, so a total failure has to be visible to the caller
+
+**Rejected:**
+
+- return None — a caller could treat a missing report as a scored idea
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: 7b2f55d2b8bb4bd09c298b9cdd484779 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:13:46.221Z"} -->
+
+## 2026-10-19 — Skip and failure reasons are recorded on the next status event
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-3
+
+**Because:** The ledger appends events only inside store.transition, and this task does not change store.py
+
+**Rejected:**
+
+- a new store.add_event helper — IDEA-3 adds only analyse.py and its tests
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: 9953daf65f534ed3948779b717840cae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:13:46.252Z"} -->
+
+## 2026-10-19 — Quick-score reports are written mode 0600
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-3
+
+**Because:** The markdown quotes the original idea, and the ideas database is already private
+
+**Rejected:**
+
+- leave the umask — on a shared machine the idea text would be world-readable
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: 399663abc61941c8979e7f3d06294010 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:13:46.284Z"} -->
+
+## 2026-10-19 — IDEA-3 fails testing because Codex can reuse a stale answer file
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-3
+
+**Because:** The fixed per-idea Codex -o path is not cleared before a run; a malformed later attempt therefore parsed the prior valid report and stored version 2 instead of falling through
+
+**Rejected:**
+
+- Pass based only on mandated suites — the full suite misses a reproducible stateful violation of the malformed-answer requirement
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: 6acf3b10eb754e25b397b5d927049e5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:22:22.484Z"} -->
+
+## 2026-10-19 — Each Codex quick-score attempt gets a new answer file, cleared before the run
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-3
+
+**Because:** A fixed per-idea -o path kept the previous reply, so a later exit 0 that did not rewrite the file was stored as the next version
+
+**Rejected:**
+
+- Unlink only the fixed path — a failed unlink, or a later edit that drops it, scores the old report again
+- Prefer stdout over -o — the session log is not the reply
+
+**Files:** src/whyline/ideas/analyse.py, tests/ideas/test_analyse.py
+
+<!-- whyline-event: 65ef1b77283a474dadbaa4a902983f17 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:34:24.861Z"} -->
+
+## 2026-10-19 — IDEA-3 passes Round 4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-3
+
+**Because:** The ideas suite and full suite pass, and the stateful regression confirms a Codex rerun that does not rewrite its fresh output file falls through instead of reusing a prior report
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: dc371bf4f3c74da1960983173aec5267 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:41:36.723Z"} -->
+
+## 2026-10-19 — IDEA-3 approved in Round 5 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-3
+
+**Because:** The implementation meets the quick-score contract, uses read-only commands in the private ideas workspace, prevents stale Codex answer reuse, covers the required scenarios, and both mandated test suites pass
+
+**Files:** src/whyline/ideas/analyse.py
+
+<!-- whyline-event: 54b1b0e4404b4ba9b71f37c5d7589480 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T07:48:47.821Z"} -->
