@@ -13,11 +13,20 @@ def _private_dir(path: Path) -> Path:
     return path
 
 
-def home() -> Path:
+def configured_home() -> Path:
+    """Ideas folder from the environment or the default.
+
+    Does not create the folder or change its mode. ``home`` is the call
+    that prepares a private directory; diagnosis must use this one.
+    """
     override = os.environ.get(_ENV)
     if override:
-        return _private_dir(Path(override))
-    return _private_dir(Path.home() / ".whyline" / "ideas")
+        return Path(override)
+    return Path.home() / ".whyline" / "ideas"
+
+
+def home() -> Path:
+    return _private_dir(configured_home())
 
 
 def db_path() -> Path:

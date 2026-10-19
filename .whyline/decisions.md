@@ -17567,3 +17567,145 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 32cf2e08f3a749acbe524d8859f72ba6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:20:31.065Z"} -->
+
+## 2026-10-19 — refine appends context onto the idea text and as a same-status event, then analyse scores
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-6
+
+**Because:** analyse scores original_text and records scored to scoring with an empty note; events are append-only, so the context cannot be written onto that move
+
+**Rejected:**
+
+- updating the scored-to-scoring note — events are append-only
+- teaching analyse to take a note — IDEA-6 only allows the CLI files
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: e143175dab904bc2979bb7bdc93d51c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:42:41.820Z"} -->
+
+## 2026-10-19 — tests/ideas is a package so test_cli can sit beside tests/test_cli.py
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-6
+
+**Because:** pytest default import mode names a module after the file, and the plan requires tests/ideas/test_cli.py
+
+**Rejected:**
+
+- renaming the test file — the plan names that path
+- importlib mode in pyproject.toml — it would change collection for the whole suite
+
+**Files:** tests/ideas/__init__.py
+
+<!-- whyline-event: 784aa5eb6f4047cca123a356464c98d2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:42:47.310Z"} -->
+
+## 2026-10-19 — documents and agents rebuild the workbook after writing kv
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-6
+
+**Because:** those commands change the ledger database, and every ledger change republishes and prints the workbook path
+
+**Rejected:**
+
+- skipping the export — they would be the only writes that do not print a path
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 791e719c78074415b8daa2cf3f6ba876 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:42:47.310Z"} -->
+
+## 2026-10-19 — IDEA-6 passes tester round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-6
+
+**Because:** The focused 96-test idea suite and the full project suite passed, and the required CLI behaviors and workbook publication paths are covered without a behavioral failure.
+
+**Rejected:**
+
+- Failing the task — no acceptance behavior or regression failed under test
+
+**Files:** tests/ideas/test_cli.py, src/whyline/ideas/cli.py
+
+<!-- whyline-event: de48b08e46db44ddbca891cd0f57c095 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:49:00.112Z"} -->
+
+## 2026-10-19 — Reject IDEA-6 because idea doctor repairs and initializes what it should diagnose
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-6
+
+**Because:** A direct run against a 0755 empty ideas home changed it to 0700, created ideas.sqlite3 and reported folder and schema healthy without exporting or printing a workbook; doctor must observe permission and schema state without hiding defects or else publish every ledger mutation.
+
+**Rejected:**
+
+- Approve based on green tests — the focused and full suites pass but do not cover doctor's folder and database side effects
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 75eceb8c776540cc98ca8884757449f4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T10:56:03.864Z"} -->
+
+## 2026-10-19 — idea doctor inspects folder mode and an existing ledger without creating or chmodding either
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-6
+
+**Because:** paths.home and store.connect turn a 0755 folder into 0700 and create ideas.sqlite3, so doctor was reporting defects it had just repaired
+
+**Rejected:**
+
+- calling paths.home and store.connect — those prepare a private ledger and hide the defect
+- a read-only flag on store.connect — connect exists to initialize a writable database
+
+**Test:** uv run pytest -q tests/ideas: exit 0
+**Test:** uv run pytest -q: exit 0, one skip
+
+**Files:** src/whyline/ideas/cli.py, src/whyline/ideas/paths.py, tests/ideas/test_cli.py
+
+<!-- whyline-event: bfadb3585c724b9f88f3a39359245bee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T11:08:11.032Z"} -->
+
+## 2026-10-19 — IDEA-6 passes tester round 5
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-6
+
+**Because:** The 99-test ideas suite and full project suite pass, and an isolated 0755 empty ideas home remains 0755 and empty after doctor reports both the insecure mode and missing schema
+
+**Rejected:**
+
+- Failing the task — no acceptance behavior or regression failed, including the previously rejected doctor side-effect case
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 2d92bdb31484480185f79b65b78bd69a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T11:14:22.433Z"} -->
+
+## 2026-10-19 — Approve IDEA-6 command suite in reviewer round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-6
+
+**Because:** The command surface, state transitions, agent defaults, exports, diagnostics, and requested failure handling match the task; the focused ideas suite and full project suite both pass, and doctor now diagnoses without modifying or initializing the inbox
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior remains in the reviewed diff
+
+**Files:** src/whyline/ideas/cli.py, tests/ideas/test_cli.py
+
+<!-- whyline-event: e0c9130bea3741b689f0be6c9067e36c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T11:20:34.612Z"} -->

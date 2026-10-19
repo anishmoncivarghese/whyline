@@ -533,6 +533,12 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     scheduler_sub.add_parser("status", help="Whether the scheduler is loaded, and when it last ran")
 
 
+def _add_idea(subparsers: "argparse._SubParsersAction") -> None:
+    from whyline.ideas.cli import add_parser
+
+    add_parser(subparsers)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -561,6 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_model(subparsers)
     _add_console(subparsers)
     _add_agents(subparsers)
+    _add_idea(subparsers)
     return parser
 
 
@@ -1744,6 +1751,12 @@ def _cmd_agents_telegram(args, *, input_fn=input, getpass_fn=None) -> int:
         print("   No messages yet. Send one to the bot and try again.")
 
 
+def cmd_idea(args: argparse.Namespace) -> int:
+    from whyline.ideas.cli import run
+
+    return run(args)
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1848,6 +1861,7 @@ COMMANDS = {
     "model": cmd_model,
     "console": cmd_console,
     "agents": cmd_agents,
+    "idea": cmd_idea,
 }
 
 
