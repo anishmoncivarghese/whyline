@@ -64,7 +64,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests: Word is written and opens as a zip with `word/document.xml`; a fake `cupsfilter` runner writing bytes gives a PDF; a missing `cupsfilter` gives Word only with the note; `formats="word"` never calls the PDF runner; a Markdown table survives into the Word file.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-5: The Excel workbook, written with the standard library
+- [x] IDEA-5: The Excel workbook, written with the standard library
   Add `src/whyline/ideas/xlsx.py` and `tests/ideas/test_xlsx.py`. Write SpreadsheetML with `zipfile` and `xml.sax.saxutils`, the way `whyline/agents/docx.py` writes Word files; add no dependency.
   `export(conn, target=None) -> Path` writes four sheets from the ledger: `Ideas` (id, created, source, title, status, latest usefulness, MVP complexity, full complexity, verdict, confidence, report path, brainstorm path, repo, plan path), `Scores` (one row per analysis version), `Sources` (idea id, version, title, url), `History` (every event). Bold frozen header row, sensible column widths, dates as real date cells. An idea with no score leaves its score cells empty.
   Any text starting with `=`, `+`, `-`, `@`, a tab, or a carriage return is written with a leading `'` so Excel never evaluates it. Write to a temp file in the same folder, reopen it with `zipfile`, parse each sheet, and check the row counts match the ledger before `os.replace`. If the replace fails because the file is open or locked, write `ideas-<YYYYmmdd-HHMMSS>.xlsx` beside it and return that path; never delete the old workbook first.
