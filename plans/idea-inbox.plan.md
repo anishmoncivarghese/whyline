@@ -71,7 +71,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests: the workbook opens as a zip with the four sheets and the right row counts; a title `=HYPERLINK("x")` is stored as text; a failing `os.replace` leaves the old file and returns the timestamped one; an empty ledger writes headers only; an unscored idea has empty score cells.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-6: `whyline idea` commands
+- [x] IDEA-6: `whyline idea` commands
   Edit `src/whyline/cli.py` and add `src/whyline/ideas/cli.py` and `tests/ideas/test_cli.py`.
   Commands: `whyline idea add "<text>"` (prints the id; `--score` runs `IDEA-3` straight away), `list [--status S]`, `show <id>` (latest report, document paths and history), `score <id> [--agent A ...]`, `refine <id> "<extra context>"` (appends the context as an event, moves scored→scoring and scores again), `drop <id>`, `reopen <id>`, `export` (prints the workbook path), `documents word|pdf|both`, `doctor` (folder permissions, database schema, which agents can run unattended, workbook writable, whether `cupsfilter` is present). Default agents for `score` come from `kv` key `default_agents`, set by `whyline idea agents claude codex grok`, defaulting to every unattended-capable agent installed and logged in. Every command that changes the ledger calls `xlsx.export` afterwards and prints the workbook path.
   Tests: add then list shows the idea; drop then reopen round-trips; score with a fake runner prints the scores; `doctor` reports an unwritable workbook and a missing `cupsfilter`; an unknown id exits 1 with a clear message.
