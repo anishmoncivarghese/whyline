@@ -17072,3 +17072,139 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 63baac6230e84b23b38997be63de865d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:15:00.203Z"} -->
+
+## 2026-10-19 — Extra JSON keys are ignored, and the first ReportError follows the spec field order
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-2
+
+**Because:** A model that adds a note should not fail a valid score, and the named field has to stay the same if the object keys are reordered
+
+**Rejected:**
+
+- Reject unknown keys — one extra field would throw away a good score
+- Walk keys in JSON order — a reordered object would name a different field
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: 10307409e8fd452b941247cc504ff367 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:32:44.550Z"} -->
+
+## 2026-10-19 — Empty sources still parses; both empty lists fail on existing
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-2
+
+**Because:** The spec forces low confidence and adds the risk line when nothing was opened, and it allows an empty existing list only when sources is not empty
+
+**Rejected:**
+
+- Reject an empty sources list — the spec says to force low confidence, not to fail the turn
+- Allow both lists to be empty — that would record that nothing exists without any evidence
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: a03a57f5a48246418b7f12591bf14fd7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:32:48.346Z"} -->
+
+## 2026-10-19 — Scores are JSON integers from 1 to 9 and the two complexity scores are independent
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-2
+
+**Because:** bool is a subclass of int, so a bare range check would accept true, and the spec does not order the full build against the MVP
+
+**Rejected:**
+
+- Accept integral floats such as 7.0 — the contract asks for an integer score
+- Require complexity_full to be at least complexity_mvp — a narrower MVP can still be the harder piece
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: 37cde8ffeb634266b437543db870a38d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:32:52.475Z"} -->
+
+## 2026-10-19 — RUBRIC v1 is one usefulness scale and one complexity scale shared by both scores
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-2
+
+**Because:** IDEA-3 pastes RUBRIC into the prompt, and the MVP and full scores differ by scope rather than by what a point means
+
+**Rejected:**
+
+- A second complexity rubric — the contract asks for one complexity definition
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: 9ddf42c4499c4020be6636a324a888ff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:32:56.234Z"} -->
+
+## 2026-10-19 — The last closed idea-report fence is parsed, and next_step and source urls stay plain strings
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-2
+
+**Because:** A turn can draft the block twice, an unclosed tail is not a block, and counting sentences or parsing URLs rejects ordinary prose and non-http citations
+
+**Rejected:**
+
+- Parse the first fence — a corrected second block would be ignored
+- Reject next_step when it has two periods — abbreviations and version numbers are not two sentences
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: dea4f502df3b4eaa8a79e976bc1a590c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:32:59.997Z"} -->
+
+## 2026-10-19 — Report stores existing, sources, and risks as tuples
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-2
+
+**Because:** The dataclass is frozen, and a list left inside it could still gain a risk after validation
+
+**Rejected:**
+
+- Plain lists — a caller could change the empty-sources result after parse
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: d0edae51d90c46c4ad57bd6973343846 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:33:04.291Z"} -->
+
+## 2026-10-19 — IDEA-2 scoring contract passes behavioral and regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-2
+
+**Because:** The parser enforces required fields and score ranges in contract order, applies the empty-source confidence and risk rule, selects the last report block, and rendering quotes the original text; both required pytest commands exited 0
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: c751ffbd0c6349df84661b57e4ca99dc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:40:39.333Z"} -->
+
+## 2026-10-19 — Approve the idea-report scoring contract
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** IDEA-2
+
+**Because:** The parser takes the last closed idea-report block, names the first bad field in contract order, forces low confidence and the no-sources risk, and render_markdown quotes the original text before Sources checked. RUBRIC v1 defines both 1-9 scales. uv run pytest -q tests/ideas and uv run pytest -q both exited 0.
+
+**Rejected:**
+
+- Count sentences in next_step — abbreviations and version numbers are not two sentences
+
+**Files:** src/whyline/ideas/report.py
+
+<!-- whyline-event: d6c34e7581884dae9fb7fabb14578cea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:50:26.980Z"} -->
