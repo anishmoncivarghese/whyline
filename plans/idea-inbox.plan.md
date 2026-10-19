@@ -50,7 +50,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests: a valid block parses; the last of two blocks wins; out-of-range scores, an unknown verdict, and missing fields raise naming the field; no sources forces low confidence; the rendered report quotes the original text.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-3: Quick score: one read-only agent turn
+- [x] IDEA-3: Quick score: one read-only agent turn
   Add `src/whyline/ideas/analyse.py` and `tests/ideas/test_analyse.py`.
   `analyse(conn, idea_id, *, agents: list[str], run_fn=None, timeout_minutes=15, unattended=True) -> Analysis`. Move the idea to `scoring`. Try each agent in order: skip, with a recorded reason, any agent where `capabilities.can_run_unattended` is False when `unattended`, or `can_run` is False otherwise. Build its command with `capabilities.read_only_command` and run it through `whyline_relay.agents.run` (or `run_fn`) with `cwd=paths.workspace()`, never a user repository.
   The prompt holds the original text, the `report.RUBRIC`, the titles and verdicts of the 50 most recent other ideas (so it can flag a repeat), and these instructions: search the web and GitHub for existing products, libraries and repositories that do this; list only sources it opened; "not found" is not "does not exist"; end with the `idea-report` block.
