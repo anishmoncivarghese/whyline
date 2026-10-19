@@ -16886,3 +16886,189 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3a411894f2664087b1e2164214419c86 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:33:57.716Z"} -->
+
+## 2026-10-19 — Keep .whyline/relay/resolve-mode.json in .git/info/exclude when Set up saves it
+
+**Actor:** claude
+**Role:** developer
+**Task:** IDEA-PLAN
+
+**Because:** Every Check saved it and then failed the clean-tree check; Resolve's stash only moved the file until the next Check rewrote it
+
+**Rejected:**
+
+- Commit it with the setup commit — a per-user Resolve preference, and a commit per toggle would trip the relay's mid-task commit rule
+- Add it to whyline-relay's RELAY_IGNORE — the file belongs to the console, and the fix would wait for a relay release
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 54e6719497ad4c438ab22d4dfe302883 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:46:54.492Z"} -->
+
+## 2026-10-19 — Honour WHYLINE_IDEAS_HOME as the ideas home itself
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-1
+
+**Because:** Tests need an isolated tree; the task names this env var, and agents already create a private 0700 folder at home()
+
+**Rejected:**
+
+- Treat it as Path.home() — tests would still nest .whyline/ideas and touch a real home if the override was missed
+
+**Files:** src/whyline/ideas/paths.py
+
+<!-- whyline-event: 116d0068cbca4ac7a5f9be2c9b7283c2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:55:17.656Z"} -->
+
+## 2026-10-19 — Cancel from brainstorm_configuring is a listed edge to captured or scored
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-1
+
+**Because:** The spec names both destinations and says the event records the return; the caller already knows where it came from
+
+**Rejected:**
+
+- Walk prior events to allow only the origin — extra coupling, and the allowed-move table already lists both
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: c76e9ba4139241dea65178c17f4d4ca8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:55:22.322Z"} -->
+
+## 2026-10-19 — A repeated (source, source_ref) returns the existing idea unchanged
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-1
+
+**Because:** The unique index is for idempotent intake; mutating original_text would rewrite a captured idea on a Telegram retry
+
+**Rejected:**
+
+- Update the text on conflict — a retry would silently replace what was captured
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: 556e9b22d45b4d99b8ce809249549c23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:55:26.847Z"} -->
+
+## 2026-10-19 — reports, documents, and workspace live as subfolders of home()
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-1
+
+**Because:** The plan names workspace as ~/.whyline/ideas/workspace; later tasks write reports and documents beside it, so the three functions create matching 0700 dirs
+
+**Rejected:**
+
+- Defer mkdir until IDEA-3/4/12 — connect() and tests already need a real home, and private dirs are cheap
+
+**Files:** src/whyline/ideas/paths.py
+
+<!-- whyline-event: 0e84d7832f4445e4a5e415b45f57b3f6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:55:31.786Z"} -->
+
+## 2026-10-19 — Use MCP-backed, locally approved tool profiles for Telegram-triggered saved agents
+
+**Actor:** codex
+**Role:** researcher
+**Task:** AGENT-TOOLS-BRAINSTORM
+
+**Because:** Whyline can reuse its existing runner, activation, scheduler, audit, and delivery layers while keeping tool permissions, credentials, and unattended execution default-deny
+
+**Rejected:**
+
+- Store MCP commands and API keys in agent TOML — committed repo agents could leak secrets or execute configuration introduced by a pull
+- Let the routing model choose tools and permissions — language-model interpretation is not an authorization boundary
+- Start with write or purchase tools — the first vertical slice should prove isolated read-only retrieval and artifact delivery
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: e189e06371d3418bbf7d41e3abb815b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T05:57:39.385Z"} -->
+
+## 2026-10-19 — IDEA-1 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-1
+
+**Because:** The focused ideas suite passed all 9 tests and the full repository suite exited 0 with one skip; required state transitions, rollback behavior, idempotency, event ordering, paths, analysis versions, permissions, and schema-version refusal behaved correctly
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: 662b08ad6a9a4f63b62b4e635791671c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:03:09.038Z"} -->
+
+## 2026-10-19 — Use locally accepted tool profiles with shared Telegram ingress and secret-holding launchers
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** brainstorm-agent-tools
+
+**Because:** The combined review showed that a second Telegram poller would conflict with Idea Inbox, ambient CLI MCP config may already leak tools into saved-agent runs, and Keychain alone does not hide keys from a shell-capable process
+
+**Rejected:**
+
+- Separate light LLM dispatcher — deterministic routing in the existing poller is safer and avoids competing getUpdates consumers
+- Pass API keys through the runner environment or MCP config — the agent or concurrent runs could observe them
+- Enable every MCP-capable CLI immediately — each CLI must first pass headless isolation, write-denial, and credential-access tests
+
+**Files:** docs/brainstorm/i-am-thinking-of-updating-the-agent-funtcion-in-reaaly-when-.md
+
+<!-- whyline-event: ca040e80e40046fa8a54e44222ca7949 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:04:52.489Z"} -->
+
+## 2026-10-19 — Claude brainstorm view: adopt Codex's profile/grant model, plus a no-shell eligibility rule, allowlist enforcement inside tool-exec, and built-in web search as first slice
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** brainstorm-agent-tools
+
+**Because:** Keychain items, the tool-exec child's environment, and the tool-exec command itself are all reachable by any same-user shell, so 'no general shell' is the actual secret boundary; enforcing the allowlist in whyline's own MCP proxy makes it uniform across CLIs and gives one audit source; built-in web search ships shopper with no key
+
+**Rejected:**
+
+- Rely only on per-CLI --allowedTools flags — semantics differ per CLI and version, and there is no common audit
+- Keep two separate Claude sections — both came from one Claude session, so they were never independent and they contradicted each other on how to frame Telegram text
+
+**Files:** docs/brainstorm/i-am-thinking-of-updating-the-agent-funtcion-in-reaaly-when-.md
+
+<!-- whyline-event: d21377efbbc4408fb0f174032c9f9492 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:08:52.463Z"} -->
+
+## 2026-10-19 — Brainstorm synthesis: tool agents ship builtin-web first, tool-exec as enforcing MCP proxy, no-shell eligibility rule
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** brainstorm-agent-tools
+
+**Because:** Codex and Claude sections agreed on profile/grant/hash model and Idea Inbox ingress; Claude's additions close the same-user shell hole and remove per-CLI flag dependence, and builtin-web ships shopper with no key
+
+**Rejected:**
+
+- Separate light LLM dispatcher for Telegram — second getUpdates consumer steals updates
+- Rely only on per-CLI --allowedTools — semantics vary by CLI version and give no single audit source
+
+**Files:** docs/brainstorm/i-am-thinking-of-updating-the-agent-funtcion-in-reaaly-when-.md
+
+<!-- whyline-event: 758dd4e27e79463b8d43098fa06eba82 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:10:36.640Z"} -->
+
+## 2026-10-19 — IDEA-1 approved after round-2 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-1
+
+**Because:** The implementation matches the requested ledger schema, state machine, atomic revisioned transitions, idempotent intake, path helpers, and analysis versioning; focused tests passed 9/9 and the full suite exited 0 with one skip
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: 63baac6230e84b23b38997be63de865d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T06:15:00.203Z"} -->
