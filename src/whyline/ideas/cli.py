@@ -73,6 +73,13 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     agents.add_argument("names", nargs="+", metavar="agent")
 
+    assistant = sub.add_parser(
+        "assistant",
+        help="Agent and backup that propose inbox cards",
+    )
+    assistant.add_argument("agent", help="Primary agent")
+    assistant.add_argument("--backup", default=None, help="Backup agent")
+
     sub.add_parser(
         "doctor",
         help="Folder, schema, unattended agents, workbook, and cupsfilter",
@@ -93,7 +100,7 @@ def run(args: argparse.Namespace) -> int:
     if handler is None:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
-            "export|documents|agents|doctor|telegram",
+            "export|documents|agents|assistant|doctor|telegram",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -490,6 +497,28 @@ def _reject_agents(names: list[str]) -> str | None:
     return None
 
 
+def cmd_assistant(args: argparse.Namespace) -> int:
+    from whyline.ideas import assistant
+
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        try:
+            assistant.save(conn, str(args.agent), getattr(args, "backup", None))
+        except assistant.AssistantError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_ERROR
+        backup = getattr(args, "backup", None)
+        if backup is not None and str(backup).strip():
+            print(f"{str(args.agent).strip()} {str(backup).strip()}")
+        else:
+            print(str(args.agent).strip())
+        return _finish(conn)
+    finally:
+        conn.close()
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     names: list[str] = []
     for name in args.names:
@@ -679,6 +708,7 @@ _COMMANDS = {
     "export": cmd_export,
     "documents": cmd_documents,
     "agents": cmd_agents,
+    "assistant": cmd_assistant,
     "doctor": cmd_doctor,
     "telegram": cmd_telegram,
 }

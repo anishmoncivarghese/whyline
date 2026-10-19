@@ -18004,3 +18004,123 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1c974e6f083f4943bd197758b4edce5a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T21:52:10.150Z"} -->
+
+## 2026-10-19 — Allowlist rejection does not try the backup
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-10
+
+**Because:** Only a failed turn or a malformed block falls through, and the refusal has to name the value.
+
+**Rejected:**
+
+- Retrying the backup after a bad repo — the name would be lost if the backup fails or proposes something else.
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 69ed422578e94995bda8c92c2419827e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:15:49.374Z"} -->
+
+## 2026-10-19 — Assistant read-only argv reuses the scorer command builder
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-10
+
+**Because:** Codex -o and Claude missing settings are already handled there, and this task cannot edit analyse.py.
+
+**Rejected:**
+
+- Copying those helpers into assistant.py — the copies would drift.
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 74ff2f79cdac48cf94d6951ab7a58de1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:15:49.436Z"} -->
+
+## 2026-10-19 — Keep a usable Chat agent when its saved backup cannot run unattended
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-10
+
+**Because:** The backup chain often names an agent that is not cleared, and the Chat agent is still the saved default.
+
+**Rejected:**
+
+- Replacing the whole pair when either side fails — grok with an antigravity backup would become claude and codex.
+- Using Chat settings only when both sides are unattended — there is no global backup chain, so a Chat agent outside a repo would be ignored.
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: c378f3b8030c414e831cad00d45b2c74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:15:49.496Z"} -->
+
+## 2026-10-19 — release human is not checked as an agent
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-10
+
+**Because:** The plan keeps release as human, while any other release value is an agent name.
+
+**Rejected:**
+
+- Checking every release value against the agent allowlist — human would be rejected as an unknown agent.
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 665815cd4e8e443c9bd8f598ba8000f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:15:49.558Z"} -->
+
+## 2026-10-19 — Proposal agents are the unattended-capable CLIs and repos come only from kv repos
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-10
+
+**Because:** Naming grok must not depend on who is logged in this minute, and a repo that was never allowed must not become a card.
+
+**Rejected:**
+
+- Limiting named agents to those account.detect marks available — plan setup with grok would fail where grok is not logged in.
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 723f6ad9b7304de9b48eb74557116830 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:15:49.617Z"} -->
+
+## 2026-10-19 — IDEA-10 passes Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-10
+
+**Because:** The focused ideas suite and full project suite both exit successfully; fake-runner coverage verifies read-only workspace execution, fallback, named allowlist rejection, help fallback, and non-mutating Confirm cards for plan, stop, and resolve.
+
+**Rejected:**
+
+- Failing the task — no acceptance behavior or regression failed under the required suites
+
+**Files:** src/whyline/ideas/assistant.py, src/whyline/ideas/cli.py, tests/ideas/test_assistant.py
+
+<!-- whyline-event: a4f6c1face804c60bf38e9980772a81b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:23:00.774Z"} -->
+
+## 2026-10-19 — Approve IDEA-10 inbox assistant proposal flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-10
+
+**Because:** The diff implements stored primary and backup selection, read-only workspace proposals with fallback, named allowlist validation, and non-mutating confirmation cards; focused and full test suites pass.
+
+**Rejected:**
+
+- Request changes — no task-breaking correctness, safety, or coverage defect was found
+
+**Files:** src/whyline/ideas/assistant.py, src/whyline/ideas/cli.py, tests/ideas/test_assistant.py
+
+<!-- whyline-event: 3bdbd11bcb8e4748b7da12a88ee17094 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:29:31.996Z"} -->
