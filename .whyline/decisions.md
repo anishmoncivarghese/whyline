@@ -17709,3 +17709,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e0c9130bea3741b689f0be6c9067e36c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T11:20:34.612Z"} -->
+
+## 2026-10-19 — Release 0.3.46 at the IDEA-7 pause with fix/resolve-mode-ignored merged first
+
+**Actor:** claude
+**Role:** release
+**Task:** IDEA-7
+
+**Because:** The release pause is the one point with no agent running, so the merge commit cannot trip the relay; the notes also cover the Resolve, Ask agent and Files fixes merged after 0.3.45
+
+**Rejected:**
+
+- Add the fix as a plan task — agents would redo work already written and tested
+
+**Files:** docs/releases/v0.3.46.md
+
+<!-- whyline-event: aaf81bd4f27642b281683c857346af4e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T12:16:13.627Z"} -->
