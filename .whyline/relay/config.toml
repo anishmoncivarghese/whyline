@@ -94,6 +94,7 @@ rejected = "draft"
 [planner]
 draft = "grok"
 review = "codex"
+test = ""
 
 [backup]
 chain = ["grok", "claude"]
