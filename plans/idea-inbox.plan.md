@@ -43,7 +43,7 @@ The SQLite ledger is the record. The Excel workbook is rebuilt from it after eve
   Tests: every allowed move works and one disallowed move (captured→running) raises; a stale revision raises and writes nothing; a repeated source_ref returns the same id; events are appended in order; a newer schema_version is refused.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-2: The scoring contract
+- [x] IDEA-2: The scoring contract
   Add `src/whyline/ideas/report.py` and `tests/ideas/test_report.py`. No model calls here.
   A quick-score turn must end with a fenced block tagged `idea-report` holding JSON: `title` (≤80 chars), `problem`, `users`, `usefulness` 1-9, `complexity_mvp` 1-9, `complexity_full` 1-9, `verdict` one of `YES`, `NO`, `NOT YET`, `confidence` one of `low`, `medium`, `high`, `existing` (list of `{name, url, how_it_differs}`), `sources` (list of `{url, title}` the agent actually opened), `deploy` (where it would run and why), `risks` (list), `next_step` (one sentence).
   `parse(text) -> Report` takes the last such block, validates every field and range, and raises `ReportError` naming the first bad field. `existing` may be empty only when `sources` is not; an empty `sources` forces `confidence` to `low` and adds a risk line "no sources were checked". `render_markdown(report, original_text)` gives the report a reader sees, with the original text quoted first and a `Sources checked` list. `RUBRIC` is a module constant with the 1-9 definitions for usefulness and complexity that `IDEA-3`'s prompt includes; changing it needs a new `RUBRIC_VERSION`.
