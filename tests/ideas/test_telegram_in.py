@@ -106,6 +106,7 @@ def test_two_updates_are_stored_once_each_and_the_cursor_advances(conn, token):
     assert [row["chat_id"] for row in rows] == [CHAT, CHAT]
     assert [row["kind"] for row in rows] == ["message", "message"]
     assert rows[0]["handled"] == 0 and rows[1]["handled"] == 0
+    assert rows[0]["message_id"] == 10
     assert rows[1]["reply_to_message_id"] == 10
     assert rows[0]["at"] == "2023-11-14T22:13:20Z"
     assert _cursor(conn) == 11
@@ -163,7 +164,7 @@ def test_a_network_error_stores_nothing_and_keeps_the_cursor(conn, token):
     assert _rows(conn) == []
 
 
-def test_schema_1_databases_migrate_to_2(ideas_home):
+def test_schema_1_databases_migrate_to_3(ideas_home):
     paths.home()
     path = paths.db_path()
     raw = sqlite3.connect(path)
@@ -190,7 +191,7 @@ def test_schema_1_databases_migrate_to_2(ideas_home):
         version = conn.execute(
             "SELECT value FROM kv WHERE key = 'schema_version'"
         ).fetchone()[0]
-        assert version == "2"
+        assert version == "3"
         cols = [
             row[1]
             for row in conn.execute("PRAGMA table_info(inbound)")
@@ -204,6 +205,23 @@ def test_schema_1_databases_migrate_to_2(ideas_home):
             "callback_data",
             "reply_to_message_id",
             "handled",
+            "message_id",
+            "callback_id",
+        ]
+        outbox = [
+            row[1]
+            for row in conn.execute("PRAGMA table_info(outbox)")
+        ]
+        assert outbox[:9] == [
+            "id",
+            "chat_id",
+            "kind",
+            "text",
+            "buttons_json",
+            "document_path",
+            "attempts",
+            "next_try_at",
+            "sent_at",
         ]
         idea = store.add(conn, "still here", source="test")
         assert idea.id == 1
@@ -220,6 +238,32 @@ def test_messages_over_4000_characters_are_kept_whole(conn, token):
 
     assert _rows(conn)[0]["text"] == text
     assert len(_rows(conn)[0]["text"]) == 5001
+
+
+def test_a_callback_keeps_its_id_and_the_message_id(conn, token):
+    _allow(conn, CHAT)
+    update = {
+        "update_id": 3,
+        "callback_query": {
+            "id": "cb-1",
+            "data": "score:1:0",
+            "message": {
+                "message_id": 42,
+                "date": 1_700_000_000,
+                "chat": {"id": CHAT, "type": "private"},
+                "text": "card",
+            },
+        },
+    }
+    http, _ = fake([_ok([update])])
+
+    telegram_in.poll_once(conn, http=http, sleep=lambda s: None)
+
+    row = _rows(conn)[0]
+    assert row["callback_data"] == "score:1:0"
+    assert row["callback_id"] == "cb-1"
+    assert row["message_id"] == 42
+    assert row["handled"] == 0
 
 
 def _known(monkeypatch):

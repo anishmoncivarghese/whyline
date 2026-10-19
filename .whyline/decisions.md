@@ -18124,3 +18124,165 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3bdbd11bcb8e4748b7da12a88ee17094 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:29:31.996Z"} -->
+
+## 2026-10-19 — Keep the schema 3 outbox migration in store.py
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** connect refuses a schema version it does not know, so the outbox has to be created there
+
+**Rejected:**
+
+- creating the table only from bot.py — the next connect would treat version 3 as too new
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: c80a743a5ee54564b047bfa61010e1cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:22.980Z"} -->
+
+## 2026-10-19 — Store message_id and callback_id on inbound in schema 3
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** source_ref is chat:message_id and answerCallbackQuery needs the callback id
+
+**Rejected:**
+
+- using update_id as the message id — Telegram update ids and message ids differ
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: 3a0f4f08435a48afba5aa4093a347ec3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.041Z"} -->
+
+## 2026-10-19 — Add idea_id to the outbox
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** a give-up writes an events note and events.idea_id is required
+
+**Rejected:**
+
+- parsing the idea id from button callbacks — a document or a scoring line has no buttons
+
+**Files:** src/whyline/ideas/store.py
+
+<!-- whyline-event: f29ffbbb75f448efa79321e095efa851 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.101Z"} -->
+
+## 2026-10-19 — Create the jobs table on the first score tap, not in schema 3
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** IDEA-13 owns that table as schema 4, and Quick score still needs a row
+
+**Rejected:**
+
+- adding jobs to schema 3 — the plan says schema 4 creates it
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 08e45a860a5b4e53bfae4a5376598a36 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.161Z"} -->
+
+## 2026-10-19 — Leave the idea captured when Quick score queues the job
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** analyse moves it to scoring when the job runs and rejects a second move
+
+**Rejected:**
+
+- moving to scoring on the tap — analyse would then raise IllegalMove
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 0a8ec37d7245464ab47a0d27063fe9b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.221Z"} -->
+
+## 2026-10-19 — Cancel on the capture card drops the idea; Cancel on any other card does not
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** captured to dropped is the dismiss, and a settings card must not throw the idea away
+
+**Rejected:**
+
+- dropping on every Cancel — Drop already asks, and a confirm card Cancel only dismisses that card
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 9a87a137716f48708f7095ebd6a1f526 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.281Z"} -->
+
+## 2026-10-19 — Retry outbox sends on the 1, 5, 15, 60 minute backoff without telegram._call 30 second sleep
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** the outbox owns the retry, and a 30 second sleep would block the scheduler tick
+
+**Rejected:**
+
+- keeping the inline sleep — IDEA-13 flushes from the tick
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 40215f0972c9402d9b7b6eb179495743 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.340Z"} -->
+
+## 2026-10-19 — Store refine replies on original_text with a same-status event
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-11
+
+**Because:** the scorer reads original_text and events are append-only, matching idea refine
+
+**Rejected:**
+
+- a side table — the next score would not see the context
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: cba33232924349a69ae727a9dcfc0e4b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T22:57:23.401Z"} -->
+
+## 2026-10-19 — IDEA-11 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-11
+
+**Because:** The dedicated ideas suite and the complete repository suite both exited 0, covering the requested card, job deduplication, stale callback, document export, and outbox retry behaviors
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 5f97f9aee17c479890089fa914f04d52 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T23:03:21.604Z"} -->
+
+## 2026-10-19 — Approve IDEA-11 cards, callbacks, exports, and retrying outbox
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-11
+
+**Because:** The implementation matches the requested schema-3 flow and behavioral cases, its tests genuinely exercise the acceptance paths, the focused ideas suite and full repository suite both pass, and diff checking found no errors
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: de42dffb61154e1fbe6dfbc9f872733c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-19T23:09:50.362Z"} -->

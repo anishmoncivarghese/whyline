@@ -1,4 +1,4 @@
-"""SQLite ledger for ideas: schema 2, statuses, and the allowed moves."""
+"""SQLite ledger for ideas: schema 3, statuses, and the allowed moves."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from whyline.ideas import paths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 STATUSES = (
     "captured",
@@ -134,6 +134,29 @@ _SCHEMA_2 = (
     """,
 )
 
+# Schema 3: outgoing Telegram messages. idea_id is extra so a give-up can
+# write an events note (that table requires an idea). /help leaves it null.
+# message_id and callback_id are added to inbound: source_ref is
+# chat:message_id, and answerCallbackQuery needs the callback id. Schema 2
+# did not store either.
+_SCHEMA_3 = (
+    """
+    CREATE TABLE IF NOT EXISTS outbox (
+      id INTEGER PRIMARY KEY,
+      chat_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '',
+      buttons_json TEXT,
+      document_path TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_try_at TEXT,
+      sent_at TEXT,
+      idea_id INTEGER,
+      FOREIGN KEY (idea_id) REFERENCES ideas(id)
+    )
+    """,
+)
+
 
 class IllegalMove(Exception):
     pass
@@ -230,6 +253,19 @@ def _apply_schema_2(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _apply_schema_3(conn: sqlite3.Connection) -> None:
+    for statement in _SCHEMA_3:
+        conn.execute(statement)
+    _add_column(conn, "inbound", "message_id", "INTEGER")
+    _add_column(conn, "inbound", "callback_id", "TEXT")
+
+
+def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    found = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in found:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def _check_schema(conn: sqlite3.Connection) -> None:
     row = conn.execute(
         "SELECT value FROM kv WHERE key = 'schema_version'"
@@ -253,6 +289,8 @@ def _check_schema(conn: sqlite3.Connection) -> None:
     with _txn(conn):
         if version < 2:
             _apply_schema_2(conn)
+        if version < 3:
+            _apply_schema_3(conn)
         if version == 0:
             conn.execute(
                 "INSERT INTO kv (key, value) VALUES ('schema_version', ?)",

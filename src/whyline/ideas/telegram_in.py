@@ -141,6 +141,8 @@ def _parse(update: dict) -> dict | None:
         callback_data = body.get("data")
         date = message.get("date")
         reply_id = None
+        message_id = message.get("message_id")
+        callback_id = body.get("id")
     else:
         chat = body.get("chat") if isinstance(body.get("chat"), dict) else {}
         reply = (
@@ -152,6 +154,8 @@ def _parse(update: dict) -> dict | None:
         callback_data = None
         date = body.get("date")
         reply_id = reply.get("message_id")
+        message_id = body.get("message_id")
+        callback_id = None
     chat_id = chat.get("id")
     if chat_id is not None:
         try:
@@ -169,6 +173,8 @@ def _parse(update: dict) -> dict | None:
         text = str(text)
     if callback_data is not None:
         callback_data = str(callback_data)
+    if callback_id is not None:
+        callback_id = str(callback_id) or None
     return {
         "update_id": update_id,
         "chat_id": chat_id,
@@ -177,8 +183,19 @@ def _parse(update: dict) -> dict | None:
         "text": text,
         "callback_data": callback_data,
         "reply_to_message_id": reply_id,
+        "message_id": _optional_int(message_id),
+        "callback_id": callback_id,
         "chat_type": chat.get("type"),
     }
+
+
+def _optional_int(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_allowed(parsed: dict, allowed: set[int]) -> bool:
@@ -202,8 +219,8 @@ def _ingest(conn: sqlite3.Connection, update: dict, allowed: set[int]) -> bool:
             """
             INSERT OR IGNORE INTO inbound (
               update_id, chat_id, at, kind, text, callback_data,
-              reply_to_message_id, handled
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              reply_to_message_id, handled, message_id, callback_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 parsed["update_id"],
@@ -214,6 +231,8 @@ def _ingest(conn: sqlite3.Connection, update: dict, allowed: set[int]) -> bool:
                 parsed["callback_data"],
                 parsed["reply_to_message_id"],
                 handled,
+                parsed["message_id"],
+                parsed["callback_id"],
             ),
         )
         inserted = cursor.rowcount == 1
