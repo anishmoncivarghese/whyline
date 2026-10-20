@@ -18683,3 +18683,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 15dcb702e3844bb6a1ad3111ad0a81b9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T08:12:23.532Z"} -->
+
+## 2026-10-20 — Add TGS-7 so the Telegram inbox is honest about the Mac being asleep or off
+
+**Actor:** claude
+**Role:** planner
+**Task:** TGS-7
+
+**Because:** The bot is the Mac: it cannot reply while asleep or off, a sleeping Mac killed jobs, a dead job waited up to timeout+30 min to retry, and gaps were never explained; caffeinate, pid-based recovery, an offline notice and the bot description fix those without a server
+
+**Rejected:**
+
+- A hosted relay that answers while the Mac is off — needs a server; stays under Later until real use shows the 24-hour catch-up is not enough
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: b2cce60c7be44c17b376bdfea0aaa4d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T08:34:01.709Z"} -->
