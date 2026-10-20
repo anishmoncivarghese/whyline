@@ -43,3 +43,8 @@ Keep shared project instructions in this file. Record decision history with
 `whyline note`, not by appending to this file — the earlier declarative form of
 this line was measured being ignored, so it is stated here as a direction rather
 than as a description.
+
+Console first: anything a user sets up, checks or runs in whyline must be
+reachable from `whyline console` without a terminal. When a plan or task adds
+a CLI command or setting, give it a console counterpart in the same task,
+saving through the same function the command calls. The CLI stays for scripts.
