@@ -18700,3 +18700,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b2cce60c7be44c17b376bdfea0aaa4d3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T08:34:01.709Z"} -->
+
+## 2026-10-20 — JSON-encode non-string multipart fields in telegram._http, fixed during the IDEA-14 release pause
+
+**Actor:** claude
+**Role:** developer
+**Task:** IDEA-14
+
+**Because:** Every document sent with buttons (the brainstorm result) was rejected by Telegram because reply_markup went out as Python repr; found in the first real brainstorm test
+
+**Rejected:**
+
+- Wait for TGS-5 — the bug blocks every brainstorm result, and the fix is one guarded line with a test
+
+**Files:** src/whyline/agents/telegram.py
+
+<!-- whyline-event: 98bccef7c0e34d8abc1653af7ebf2363 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:20:47.789Z"} -->
