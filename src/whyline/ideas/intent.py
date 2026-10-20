@@ -11,7 +11,7 @@ from __future__ import annotations
 import difflib
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 # Fuzzy order is part of the match. difflib breaks a tie by the later name,
@@ -136,7 +136,9 @@ class Intent:
     idea_id: int | None = None
     revision: int | None = None
     args: tuple[str, ...] = ()
-    fields: Mapping[str, Field] = _EMPTY_FIELDS
+    # A factory, not the proxy itself: Python 3.11 rejects any unhashable
+    # dataclass default, and a mappingproxy is unhashable.
+    fields: Mapping[str, Field] = field(default_factory=lambda: _EMPTY_FIELDS)
 
 
 def capture(text: str) -> Intent:
