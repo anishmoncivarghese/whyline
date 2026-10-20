@@ -774,6 +774,9 @@ def _telegram_setup(conn, *, input_fn, getpass_fn) -> int:
                 return EXIT_ERROR
             print(f"{label}  ({chosen})  allowed")
 
+    # Same call as turning the service on. A failure stays in kv for doctor.
+    telegram_in.publish_description(conn)
+
     if worker.enabled(conn):
         print("Inbox already on.")
         return EXIT_OK
@@ -982,6 +985,18 @@ def _service_check() -> _Check:
     )
 
 
+def _description_check() -> _Check:
+    """The last failed setMyDescription, if setup or service on recorded one."""
+    from whyline.ideas import telegram_in, worker
+
+    message = worker.read_kv(telegram_in.DESCRIPTION_ERROR_KEY)
+    if message:
+        return _Check("bot description", False, message)
+    if worker.read_kv(telegram_in.DESCRIPTION_KEY):
+        return _Check("bot description", True, "set")
+    return _Check("bot description", True, "not set")
+
+
 def _webhook_check() -> _Check:
     from whyline.agents import telegram
 
@@ -1015,6 +1030,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         _allowed_chats_check(),
         _service_check(),
         _webhook_check(),
+        _description_check(),
     )
     for check in checks:
         print(f"{check.level:<6} {check.name}: {check.detail}")

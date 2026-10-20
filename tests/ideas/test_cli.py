@@ -393,6 +393,8 @@ def test_setup_without_a_token_allows_the_only_private_chat_and_turns_the_servic
         monkeypatch,
         {
             "getMe": {"ok": True, "result": {"username": "InboxBot"}},
+            "setMyDescription": {"ok": True, "result": True},
+            "setMyShortDescription": {"ok": True, "result": True},
             "getUpdates": {
                 "ok": True,
                 "result": [
@@ -429,7 +431,12 @@ def test_setup_without_a_token_allows_the_only_private_chat_and_turns_the_servic
     assert "Connected to @InboxBot" in out
     assert "Keeping it" not in out
     assert secrets and "hidden" in secrets[0]
-    assert methods == ["getMe", "getUpdates"]
+    assert methods == [
+        "getMe",
+        "getUpdates",
+        "setMyDescription",
+        "setMyShortDescription",
+    ]
     allow = [prompt for prompt in prompts if prompt.startswith("Allow ")]
     assert len(allow) == 1
     assert "(11)" in allow[0]
@@ -457,7 +464,11 @@ def test_setup_with_a_token_asks_which_private_chat_and_never_offers_a_group(
     secrets = _secret(monkeypatch)
     methods = _http(
         monkeypatch,
-        {"getMe": {"ok": True, "result": {"username": "InboxBot"}}},
+        {
+            "getMe": {"ok": True, "result": {"username": "InboxBot"}},
+            "setMyDescription": {"ok": True, "result": True},
+            "setMyShortDescription": {"ok": True, "result": True},
+        },
     )
     monkeypatch.setattr(
         telegram,
@@ -476,7 +487,7 @@ def test_setup_with_a_token_asks_which_private_chat_and_never_offers_a_group(
     assert code == 0, err
     assert TOKEN not in text
     assert secrets == []
-    assert methods == ["getMe"]
+    assert methods == ["getMe", "setMyDescription", "setMyShortDescription"]
     assert "Keeping it" in out
     assert "@InboxBot" in out
     assert any(
@@ -511,7 +522,14 @@ def test_setup_again_changes_nothing(ideas_home, capsys, monkeypatch):
             -100: "Family (group)",
         },
     )
-    _http(monkeypatch, {"getMe": {"ok": True, "result": {"username": "InboxBot"}}})
+    _http(
+        monkeypatch,
+        {
+            "getMe": {"ok": True, "result": {"username": "InboxBot"}},
+            "setMyDescription": {"ok": True, "result": True},
+            "setMyShortDescription": {"ok": True, "result": True},
+        },
+    )
     turned = _quiet_launchd(monkeypatch)
     conn = store.connect()
     try:
@@ -779,3 +797,145 @@ def test_doctor_fails_the_service_check_while_a_poll_error_is_set(
     assert "fail   service: Last Telegram error at 2026-10-20T12:00:00.000Z: " in text
     assert _CONFLICT in text
     assert "ok     service" not in text
+
+
+_DESCRIPTION = (
+    "Replies only while Studio's Mac is on and awake. "
+    "Messages wait about a day."
+)
+
+
+def test_computer_name_falls_back_to_your():
+    def refuse(*_args, **_kwargs):
+        raise OSError("no scutil")
+
+    assert telegram_in.computer_name(run=refuse) == "your"
+    assert telegram_in.expectation("your") == (
+        "Replies only while your Mac is on and awake. "
+        "Messages wait about a day."
+    )
+
+    def failed(argv, **_kwargs):
+        assert argv == ["scutil", "--get", "ComputerName"]
+        return SimpleNamespace(returncode=1, stdout="\n", stderr="")
+
+    assert telegram_in.computer_name(run=failed) == "your"
+
+
+def test_setup_sets_the_bot_description_once(ideas_home, capsys, monkeypatch):
+    _token_box(monkeypatch, TOKEN)
+    monkeypatch.setattr(telegram_in, "computer_name", lambda **_kwargs: "Studio")
+    monkeypatch.setattr(telegram, "known_chats", lambda: {11: "Anish V (private)"})
+    _answers(monkeypatch, ["", "n", "n"])
+    calls = []
+
+    def http(method, _token, fields, _files):
+        calls.append((method, dict(fields)))
+        if method == "getMe":
+            return {"ok": True, "result": {"username": "InboxBot"}}
+        return {"ok": True, "result": True}
+
+    monkeypatch.setattr(telegram, "_http", http)
+    _quiet_launchd(monkeypatch)
+
+    code, _out, err = invoke(["idea", "telegram", "setup"], capsys)
+
+    assert code == 0, err
+    assert [item for item in calls if item[0] != "getMe"] == [
+        ("setMyDescription", {"description": _DESCRIPTION}),
+        ("setMyShortDescription", {"short_description": _DESCRIPTION}),
+    ]
+    conn = store.connect()
+    try:
+        stored = conn.execute(
+            "SELECT value FROM kv WHERE key = ?",
+            (telegram_in.DESCRIPTION_KEY,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert stored == _DESCRIPTION
+
+    calls.clear()
+    code, _out, err = invoke(["idea", "telegram", "setup"], capsys)
+
+    assert code == 0, err
+    assert [method for method, _fields in calls] == ["getMe"]
+
+
+def test_service_on_sets_the_bot_description_once(ideas_home, capsys, monkeypatch):
+    _token_box(monkeypatch, TOKEN)
+    monkeypatch.setattr(telegram_in, "computer_name", lambda **_kwargs: "Studio")
+    calls = []
+
+    def http(method, _token, fields, _files):
+        calls.append((method, dict(fields)))
+        return {"ok": True, "result": True}
+
+    monkeypatch.setattr(telegram, "_http", http)
+    _quiet_launchd(monkeypatch)
+
+    code, out, err = invoke(["idea", "service", "on"], capsys)
+
+    assert code == 0, err
+    assert out.strip() == "Inbox on."
+    assert calls == [
+        ("setMyDescription", {"description": _DESCRIPTION}),
+        ("setMyShortDescription", {"short_description": _DESCRIPTION}),
+    ]
+
+    calls.clear()
+    code, out, err = invoke(["idea", "service", "on"], capsys)
+
+    assert code == 0, err
+    assert calls == []
+
+
+def test_a_description_failure_is_reported_by_doctor_and_not_raised(
+    ideas_home, capsys, monkeypatch
+):
+    ready = _ready_inbox(ideas_home, monkeypatch)
+    ready.close()
+    _token_box(monkeypatch, TOKEN)
+    monkeypatch.setattr(telegram_in, "computer_name", lambda **_kwargs: "Studio")
+    monkeypatch.setattr(telegram, "known_chats", lambda: {11: "Anish V (private)"})
+    _answers(monkeypatch, ["", "n"])
+
+    def http(method, _token, _fields, _files):
+        if method == "getMe":
+            return {"ok": True, "result": {"username": "InboxBot"}}
+        if method == "getWebhookInfo":
+            return {"ok": True, "result": {"url": ""}}
+        if method == "setMyDescription":
+            return {
+                "ok": False,
+                "error_code": 400,
+                "description": "Bad Request: too long",
+            }
+        raise AssertionError(method)
+
+    monkeypatch.setattr(telegram, "_http", http)
+
+    code, _out, err = invoke(["idea", "telegram", "setup"], capsys)
+
+    assert code == 0, err
+    conn = store.connect()
+    try:
+        saved = conn.execute(
+            "SELECT value FROM kv WHERE key = ?",
+            (telegram_in.DESCRIPTION_KEY,),
+        ).fetchone()
+        error = conn.execute(
+            "SELECT value FROM kv WHERE key = ?",
+            (telegram_in.DESCRIPTION_ERROR_KEY,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert saved is None
+    assert error == "Bad Request: too long"
+
+    code, out, err = invoke(["idea", "doctor"], capsys)
+
+    text = out + err
+    assert code == 1
+    assert TOKEN not in text
+    assert "fail   bot description: Bad Request: too long" in text

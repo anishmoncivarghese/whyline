@@ -29,12 +29,16 @@ def conn(ideas_home):
 
 
 def _enable(conn, value="on"):
+    _kv(conn, "enabled", value)
+
+
+def _kv(conn, key, value):
     conn.execute(
         """
-        INSERT INTO kv (key, value) VALUES ('enabled', ?)
+        INSERT INTO kv (key, value) VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """,
-        (value,),
+        (key, value),
     )
 
 
@@ -304,11 +308,15 @@ def test_one_queued_job_is_started_once_across_two_ticks(conn):
 
 
 def test_an_expired_lease_requeues_once_then_fails_with_a_chat_message(conn):
+    """A live pid past its lease takes the timeout path, not the sleep one."""
     _enable(conn)
     idea = _idea(conn, "Score this")
     job = _job(conn, idea, state="running", attempts=1, lease_until=PAST, pid=77)
 
-    first = _run()
+    def live(_pid):
+        return True
+
+    first = _run(pid_alive=live)
 
     row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job["id"],)).fetchone()
     assert first["spawn"] == [job["id"]]
@@ -320,7 +328,7 @@ def test_an_expired_lease_requeues_once_then_fails_with_a_chat_message(conn):
     conn.execute(
         "UPDATE jobs SET lease_until = ? WHERE id = ?", (PAST, job["id"])
     )
-    second = _run()
+    second = _run(pid_alive=live)
 
     row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job["id"],)).fetchone()
     assert second["spawn"] == []
@@ -456,6 +464,7 @@ def test_start_brainstorm_queues_one_job(conn, monkeypatch):
 def test_service_on_sets_enabled_and_status_says_catch_up(ideas_home, capsys, monkeypatch):
     turned = []
     monkeypatch.setattr(launchd, "supported", lambda: True)
+    monkeypatch.setattr(telegram, "token_get", lambda **_kwargs: None)
     monkeypatch.setattr(launchd, "turn_on", lambda: turned.append("on") or ideas_home / "agent.plist")
     monkeypatch.setattr(
         launchd,
@@ -859,3 +868,302 @@ def test_quick_score_edits_one_status_on_fallback_and_when_it_lands(conn, monkey
     assert seen == ["claude failed (rate limit); trying codex…"]
     assert texts[0] == "Quick score done ↓"
     assert "Usefulness: 5/9" in texts[-1]
+
+
+@pytest.mark.parametrize("kind", ["score", "brainstorm"])
+def test_work_starts_caffeinate_with_the_job_pid(conn, monkeypatch, kind):
+    monkeypatch.setattr(worker, "_execute", lambda _conn, _job: None)
+    monkeypatch.setattr(worker, "_publish", lambda _conn: None)
+    monkeypatch.setattr(worker, "_flush", lambda _conn: None)
+    idea = _idea(conn)
+    job = _job(conn, idea, kind=kind, state="running", attempts=1, pid=None)
+    launched = []
+
+    def popen(argv, **kwargs):
+        launched.append((list(argv), kwargs))
+
+    real_isfile = os.path.isfile
+
+    def isfile(path):
+        if path == worker._CAFFEINATE:
+            return True
+        return real_isfile(path)
+
+    monkeypatch.setattr(worker.os.path, "isfile", isfile)
+    monkeypatch.setattr(worker.subprocess, "Popen", popen)
+
+    assert worker.work(job["id"]) == 0
+
+    assert len(launched) == 1
+    argv, kwargs = launched[0]
+    pid = conn.execute(
+        "SELECT pid FROM jobs WHERE id = ?", (job["id"],)
+    ).fetchone()["pid"]
+    assert pid == os.getpid()
+    assert argv == ["/usr/bin/caffeinate", "-i", "-w", str(pid)]
+    assert kwargs["start_new_session"] is True
+    assert kwargs["stdin"] is worker.subprocess.DEVNULL
+
+
+def test_a_missing_caffeinate_does_not_fail_the_job(conn, monkeypatch):
+    monkeypatch.setattr(worker, "_execute", lambda _conn, _job: None)
+    monkeypatch.setattr(worker, "_publish", lambda _conn: None)
+    monkeypatch.setattr(worker, "_flush", lambda _conn: None)
+    idea = _idea(conn)
+    job = _job(conn, idea, kind="score", state="running", attempts=1, pid=None)
+    launched = []
+    real_isfile = os.path.isfile
+
+    def isfile(path):
+        if path == worker._CAFFEINATE:
+            return False
+        return real_isfile(path)
+
+    monkeypatch.setattr(worker.os.path, "isfile", isfile)
+    monkeypatch.setattr(
+        worker.subprocess, "Popen", lambda *_args, **_kwargs: launched.append(1)
+    )
+
+    assert worker.work(job["id"]) == 0
+    assert launched == []
+    assert conn.execute(
+        "SELECT state FROM jobs WHERE id = ?", (job["id"],)
+    ).fetchone()["state"] == "done"
+
+
+def test_a_dead_pid_with_an_unexpired_lease_is_requeued_at_once(conn):
+    _enable(conn)
+    idea = _idea(conn)
+    lease = (NOW + timedelta(minutes=30)).isoformat(timespec="seconds")
+    job = _job(
+        conn,
+        idea,
+        kind="brainstorm",
+        state="running",
+        attempts=1,
+        pid=77,
+        lease_until=lease,
+    )
+
+    seen = _run(pid_alive=lambda pid: False)
+
+    row = conn.execute("SELECT state, attempts FROM jobs WHERE id = ?", (job["id"],)).fetchone()
+    assert seen["spawn"] == [job["id"]]
+    assert seen["stop"] == [77]
+    assert (row["state"], row["attempts"]) == ("running", 2)
+    texts = [
+        item["text"]
+        for item in conn.execute("SELECT text FROM outbox ORDER BY id")
+    ]
+    assert texts == [
+        "Your brainstorm stopped when the Mac went to sleep or shut down; "
+        "starting it again."
+    ]
+
+
+def _gap(conn, previous, allowed=(CHAT,)):
+    _enable(conn)
+    _kv(conn, "last_tick_at", previous.isoformat(timespec="seconds"))
+    _kv(conn, telegram_in.ALLOW_KEY, json.dumps(list(allowed)))
+
+
+def _tick(conn, moment, poll, handle=None):
+    flushes = []
+
+    def flush(db):
+        flushes.append(
+            [row["text"] for row in db.execute("SELECT text FROM outbox ORDER BY id")]
+        )
+        return 0
+
+    worker.run_once(
+        now=moment,
+        clock=lambda: moment,
+        poll=poll,
+        handle=handle or (lambda _db, _row: None),
+        flush=flush,
+        spawn=lambda _job_id: 1,
+        pid_alive=lambda _pid: True,
+        stop=lambda _pid: None,
+    )
+    return flushes
+
+
+def test_a_two_minute_gap_sends_nothing(conn):
+    moment = datetime(2026, 10, 20, 15, 10, 0)
+    _gap(conn, moment - timedelta(minutes=2))
+    polls = {"n": 0}
+
+    def poll(db, timeout=0):
+        polls["n"] += 1
+        if polls["n"] > 1:
+            raise telegram.TelegramError("stop")
+        db.execute(
+            """
+            INSERT INTO inbound (update_id, chat_id, at, kind, text, handled)
+            VALUES (1, ?, '2026-10-20T15:10:00Z', 'message', 'hi', 0)
+            """,
+            (CHAT,),
+        )
+        return 1
+
+    def handle(db, row):
+        db.execute(
+            """
+            INSERT INTO outbox (chat_id, kind, text, attempts)
+            VALUES (?, 'message', 'reply', 0)
+            """,
+            (row["chat_id"],),
+        )
+        db.execute(
+            "UPDATE inbound SET handled = 1 WHERE update_id = ?",
+            (row["update_id"],),
+        )
+
+    flushes = _tick(conn, moment, poll, handle)
+
+    texts = [
+        row["text"]
+        for row in conn.execute("SELECT text FROM outbox ORDER BY id")
+    ]
+    assert texts == ["reply"]
+    assert all("I was offline" not in text for batch in flushes for text in batch)
+
+
+def test_an_80_minute_gap_says_so_before_any_reply(conn):
+    moment = datetime(2026, 10, 20, 15, 10, 0)
+    _gap(conn, datetime(2026, 10, 20, 13, 50, 0), allowed=(CHAT, 22))
+    polls = {"n": 0}
+
+    def poll(db, timeout=0):
+        polls["n"] += 1
+        if polls["n"] > 1:
+            raise telegram.TelegramError("stop")
+        for update_id in (1, 2):
+            db.execute(
+                """
+                INSERT INTO inbound (update_id, chat_id, at, kind, text, handled)
+                VALUES (?, ?, '2026-10-20T15:10:00Z', 'message', 'hi', 0)
+                """,
+                (update_id, CHAT),
+            )
+        return 2
+
+    def handle(db, row):
+        db.execute(
+            """
+            INSERT INTO outbox (chat_id, kind, text, attempts)
+            VALUES (?, 'message', 'reply', 0)
+            """,
+            (row["chat_id"],),
+        )
+        db.execute(
+            "UPDATE inbound SET handled = 1 WHERE update_id = ?",
+            (row["update_id"],),
+        )
+
+    flushes = _tick(conn, moment, poll, handle)
+
+    notice = (
+        "I was offline from 13:50 to 15:10 (Mac asleep or off). "
+        "Catching up on 2 messages."
+    )
+    assert flushes[0] == [notice, notice]
+    assert "reply" not in flushes[0]
+    assert flushes[-1] == [notice, notice, "reply", "reply"]
+
+
+def test_a_reply_queued_before_sleep_is_delivered_after_the_offline_notice(
+    conn, monkeypatch
+):
+    """Telegram call order, not outbox id order.
+
+    The reply is inserted first, so it has the smaller id. The notice
+    still has to leave before it.
+    """
+    moment = datetime(2026, 10, 20, 15, 10, 0)
+    _gap(conn, datetime(2026, 10, 20, 13, 50, 0), allowed=(CHAT, 22))
+    conn.execute(
+        """
+        INSERT INTO outbox (chat_id, kind, text, attempts)
+        VALUES (?, 'message', 'queued before sleep', 0)
+        """,
+        (CHAT,),
+    )
+    monkeypatch.setattr(telegram, "token_get", lambda **_kwargs: "123:secret")
+    calls = []
+
+    def http(_method, _token, fields, _files):
+        calls.append((fields["chat_id"], fields["text"]))
+        return {"ok": True, "result": {"message_id": len(calls)}}
+
+    polls = {"n": 0}
+
+    def poll(db, timeout=0):
+        polls["n"] += 1
+        if polls["n"] > 1:
+            raise telegram.TelegramError("stop")
+        db.execute(
+            """
+            INSERT INTO inbound (update_id, chat_id, at, kind, text, handled)
+            VALUES (1, ?, '2026-10-20T15:10:00Z', 'message', 'hi', 0)
+            """,
+            (CHAT,),
+        )
+        return 1
+
+    def handle(db, row):
+        db.execute(
+            """
+            INSERT INTO outbox (chat_id, kind, text, attempts)
+            VALUES (?, 'message', 'reply', 0)
+            """,
+            (row["chat_id"],),
+        )
+        db.execute(
+            "UPDATE inbound SET handled = 1 WHERE update_id = ?",
+            (row["update_id"],),
+        )
+
+    worker.run_once(
+        now=moment,
+        clock=lambda: moment,
+        poll=poll,
+        handle=handle,
+        flush=lambda db: bot.flush_outbox(db, http=http),
+        spawn=lambda _job_id: 1,
+        pid_alive=lambda _pid: True,
+        stop=lambda _pid: None,
+    )
+
+    notice = (
+        "I was offline from 13:50 to 15:10 (Mac asleep or off). "
+        "Catching up on 1 message."
+    )
+    assert calls == [
+        (CHAT, notice),
+        (22, notice),
+        (CHAT, "queued before sleep"),
+        (CHAT, "reply"),
+    ]
+
+
+def test_a_30_hour_gap_adds_the_day_limit(conn):
+    moment = datetime(2026, 10, 20, 15, 10, 0)
+    _gap(conn, moment - timedelta(hours=30))
+    polls = {"n": 0}
+
+    def poll(_db, timeout=0):
+        polls["n"] += 1
+        if polls["n"] > 1:
+            raise telegram.TelegramError("stop")
+        return 0
+
+    flushes = _tick(conn, moment, poll)
+
+    assert flushes[0] == [
+        "I was offline from 09:10 to 15:10 (Mac asleep or off). "
+        "Telegram keeps undelivered messages for about a day, "
+        "so anything older may be lost; please resend it."
+    ]
+    assert "Catching up" not in flushes[0][0]

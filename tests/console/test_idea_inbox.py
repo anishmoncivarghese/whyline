@@ -93,6 +93,11 @@ async def test_inbox_allows_only_the_chosen_private_chat_and_turns_the_service_o
     monkeypatch.setattr(
         launchd, "turn_on", lambda: turned.append("on") or ideas_home / "agent.plist"
     )
+    monkeypatch.setattr(
+        telegram,
+        "_http",
+        lambda *_args, **_kwargs: {"ok": True, "result": True},
+    )
     allowed = []
     real_allow = telegram_in.allow
 

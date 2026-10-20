@@ -1,13 +1,23 @@
 """Cards, buttons, and the retrying outbox."""
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from whyline.agents import telegram
-from whyline.ideas import analyse, bot, brainstorm, documents, paths, report, store
+from whyline.ideas import (
+    analyse,
+    bot,
+    brainstorm,
+    documents,
+    paths,
+    report,
+    store,
+    telegram_in,
+)
 from whyline_relay.agents import AgentCancelled
 
 CHAT = 11
@@ -960,3 +970,60 @@ def test_a_failed_synthesis_send_says_it_will_retry_then_where_it_is_saved(
     assert status == (
         f"Couldn't send the synthesis; it is saved at {saved} on the Mac"
     )
+
+
+def test_away_text_names_the_gap_the_count_and_the_day_limit():
+    start = datetime(2026, 10, 20, 13, 50)
+    end = datetime(2026, 10, 20, 15, 10)
+    assert bot.away_text(start, end, 0) == (
+        "I was offline from 13:50 to 15:10 (Mac asleep or off)."
+    )
+    assert bot.away_text(start, end, 1) == (
+        "I was offline from 13:50 to 15:10 (Mac asleep or off). "
+        "Catching up on 1 message."
+    )
+    assert bot.away_text(start, end, 2) == (
+        "I was offline from 13:50 to 15:10 (Mac asleep or off). "
+        "Catching up on 2 messages."
+    )
+    later = start + timedelta(hours=30)
+    day = (
+        "Telegram keeps undelivered messages for about a day, "
+        "so anything older may be lost; please resend it."
+    )
+    assert bot.away_text(start, later, 2) == (
+        "I was offline from 13:50 to 19:50 (Mac asleep or off). "
+        f"Catching up on 2 messages. {day}"
+    )
+
+
+def test_an_offline_notice_goes_to_each_allowed_chat_and_leaves_the_card(conn):
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?, ?)",
+        (telegram_in.ALLOW_KEY, json.dumps([11, 22])),
+    )
+    buttons = json.dumps([[{"text": "Drop", "callback_data": "drop:1:1"}]])
+    conn.execute(
+        """
+        INSERT INTO outbox (chat_id, kind, text, buttons_json, attempts)
+        VALUES (11, 'message', 'card', ?, 0)
+        """,
+        (buttons,),
+    )
+    text = bot.away_text(
+        datetime(2026, 10, 20, 13, 50),
+        datetime(2026, 10, 20, 15, 10),
+        2,
+    )
+
+    assert bot.tell_allowed(conn, text) == 2
+
+    rows = conn.execute(
+        "SELECT chat_id, text, buttons_json FROM outbox ORDER BY id"
+    ).fetchall()
+    assert rows[0]["text"] == "card"
+    assert rows[0]["buttons_json"] == buttons
+    assert [(row["chat_id"], row["text"], row["buttons_json"]) for row in rows[1:]] == [
+        (11, text, None),
+        (22, text, None),
+    ]

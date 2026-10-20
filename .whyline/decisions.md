@@ -19403,3 +19403,145 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d91b2339bfff4010b56ea5e3364cfb6e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:14:51.839Z"} -->
+
+## 2026-10-20 — Say your Mac when the computer has no name
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-7
+
+**Because:** The description is built as <name>'s Mac, and the fallback name your is already possessive, so your's Mac would be wrong
+
+**Rejected:**
+
+- your's Mac — it follows the template literally and reads as a typo in the bot description
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: a22b29de66c84bb581641e313f1215b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:38:09.318Z"} -->
+
+## 2026-10-20 — Report a failed bot description as its own doctor check
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-7
+
+**Because:** The service check already means the scheduler and the last poll error; a description failure is a different problem and must not look like the inbox is off
+
+**Rejected:**
+
+- Folding it into the service check — a poll error and a description error would hide each other
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: de49880443264cc8a340d3a4658cee4d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:38:13.000Z"} -->
+
+## 2026-10-20 — Stamp last_tick_at when a tick that held the poll lock finishes, including one Telegram cut short
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-7
+
+**Because:** The Mac was awake for that attempt; leaving the old stamp would repeat the offline notice every scheduler tick while Telegram is refusing us
+
+**Rejected:**
+
+- Stamp only after a quiet successful exit — a long gap followed by a Telegram error would announce again on every retry
+- Stamp a tick that could not take the lock — that tick did not poll, so it would hide a real gap
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: f5c2c8668b23405faf3e6c81dd682d5e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:38:17.425Z"} -->
+
+## 2026-10-20 — Treat generic MCP and API tool configuration as missing from the Idea Inbox plan
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-PLAN
+
+**Because:** The unfinished tasks configure agents, repositories, Telegram, email, documents and timeouts, but define no integration registry, credential reference, permission scope, health check or per-run tool selection
+
+**Rejected:**
+
+- Count tools already configured inside an agent as plan support — they may work indirectly, but the Idea Inbox cannot add, inspect, allow or select them
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 1854b8935de3401c9d8e96d78cf9db72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:42:38.021Z"} -->
+
+## 2026-10-20 — Pass TGS-7 sleep and offline recovery behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-7
+
+**Because:** The focused ideas suite and the full project suite both completed successfully, covering caffeinate startup, dead-job recovery, offline-gap notices, and Telegram descriptions
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 8cacf84cad7b49ca9104e0e5b54ac3e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:44:50.286Z"} -->
+
+## 2026-10-20 — Reject TGS-7 because the offline notice can be delivered after a pending reply
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-7
+
+**Because:** tell_allowed appends notice rows, then flush_outbox sends all due rows in ascending id order; a reply left unsent before sleep therefore reaches Telegram before the required gap notice, and the ordering test starts with an empty outbox
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 22a37cb091f142f8a07f9cb011f586cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:52:00.695Z"} -->
+
+## 2026-10-20 — Send a gap notice before any older due reply
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-7
+
+**Because:** flush_outbox sent due rows in ascending id order, so a reply queued before sleep reached Telegram ahead of the offline notice
+
+**Rejected:**
+
+- Flush only the new notice ids from the tick — a crash before that flush, or a later retry, sends the older reply first again
+- Hold older rows with next_try_at until the notice flush returns — a crash in that window leaves those replies stuck
+
+**Test:** uv run pytest -q tests/ideas: exit 0
+**Test:** uv run pytest -q: exit 0, one skip
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: 41a211ec18624715b7b88d09681e2f78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:04:29.323Z"} -->
+
+## 2026-10-20 — Pass TGS-7 round 5 test gate
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-7
+
+**Because:** The focused ideas suite and the full repository suite both exited 0, validating the offline-notice ordering fix without regressions; the full suite had one skip
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: bfa0be38dd6f4b799a0d76b860bb3f40 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:11:47.567Z"} -->
+
+## 2026-10-20 — Approve TGS-7 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-7
+
+**Because:** The diff meets the sleep, dead-job recovery, offline-notice ordering, and Telegram description requirements; focused and full test suites both exited 0 with one full-suite skip
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 52ddda208dd04634ab8468636368d4a6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:19:03.355Z"} -->

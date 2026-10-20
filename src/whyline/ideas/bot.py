@@ -25,6 +25,8 @@ REFINE_QUESTION = "What should I add?"
 MAX_ATTEMPTS = 8
 # Index by the attempt that just failed. Attempt 5 and later stay at 60.
 BACKOFF_MINUTES = (1, 5, 15, 60)
+# A gap explanation. flush_outbox sends this kind before every other due row.
+_NOTICE = "notice"
 _MESSAGE_LIMIT = 4096
 _AGENTS_KEY = "default_agents"
 _CARD_KEY = "telegram_card"
@@ -182,12 +184,51 @@ def buttons_for(status: str) -> tuple[tuple[str, str], ...]:
     return found
 
 
+def away_text(start: datetime, end: datetime, caught_up: int) -> str:
+    """What the chat hears when the previous tick is more than ten minutes old.
+
+    ``caught_up`` is how many updates this tick stored. Zero omits the
+    catching-up clause. A gap of more than 23 hours adds Telegram's
+    one-day limit, because older messages are gone.
+    """
+    text = (
+        f"I was offline from {start:%H:%M} to {end:%H:%M} "
+        "(Mac asleep or off)."
+    )
+    if caught_up:
+        noun = "message" if caught_up == 1 else "messages"
+        text += f" Catching up on {caught_up} {noun}."
+    if end - start > timedelta(hours=23):
+        text += (
+            " Telegram keeps undelivered messages for about a day, "
+            "so anything older may be lost; please resend it."
+        )
+    return text
+
+
+def tell_allowed(conn: sqlite3.Connection, text: str) -> int:
+    """Queue one plain message to each allowed chat. Returns how many.
+
+    The row kind is ``notice``. A reply queued before sleep has a smaller
+    id, and id order alone would deliver it first. No buttons, so this
+    does not retire the card those chats are using.
+    """
+    from whyline.ideas import telegram_in
+
+    chats = telegram_in.allowed_chats(conn)
+    for chat_id in chats:
+        _enqueue(conn, int(chat_id), _NOTICE, text)
+    return len(chats)
+
+
 def flush_outbox(conn: sqlite3.Connection, *, http=None) -> int:
     """Send due outbox rows. Return how many were sent.
 
     A row with ``sent_at`` set is not sent again. A row whose
     ``next_try_at`` is still ahead is left for a later call. The 30-second
     pause inside ``telegram._call`` is not used; this backoff is the retry.
+    A ``notice`` goes out before every other due row, whatever its id, so
+    a gap explanation is not stuck behind a reply queued before sleep.
     """
     token = telegram.token_get()
     if not token:
@@ -199,9 +240,9 @@ def flush_outbox(conn: sqlite3.Connection, *, http=None) -> int:
         WHERE sent_at IS NULL
           AND attempts < ?
           AND (next_try_at IS NULL OR next_try_at <= ?)
-        ORDER BY id
+        ORDER BY CASE WHEN kind = ? THEN 0 ELSE 1 END, id
         """,
-        (MAX_ATTEMPTS, moment),
+        (MAX_ATTEMPTS, moment, _NOTICE),
     ).fetchall()
     sent = 0
     for item in due:

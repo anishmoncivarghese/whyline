@@ -5,10 +5,11 @@ whose lease expired, start at most one queued job, and send the outbox.
 The job itself runs in a detached ``whyline idea work <id>`` process, the
 same way a scheduled agent is detached from the tick.
 
-A lease is the agent timeout plus 30 minutes. ``timeout: none`` stores no
-lease; that job is reclaimed only when its pid is gone. The first time a
-lease expires the job is queued again. The second time it fails and the
-chat is told.
+A lease is the agent timeout plus 30 minutes, and it applies only while
+the pid is still alive. A dead pid is reclaimed at once, whatever the
+lease says, and the chat is told the Mac slept. ``timeout: none`` stores
+no lease. The first time a live job runs past its lease it is queued
+again. The second time a stuck job fails and the chat is told.
 """
 
 from __future__ import annotations
@@ -32,6 +33,10 @@ CATCH_UP = (
     "Telegram keeps undelivered updates for about 24 hours, "
     "so a tick after the Mac was off catches up."
 )
+LAST_TICK_KEY = "last_tick_at"
+_CAFFEINATE = "/usr/bin/caffeinate"
+# A gap this long is the Mac having been asleep or off, not a slow poll.
+_AWAY = timedelta(minutes=10)
 # analyse() budgets a quick score 15 minutes. The lease adds the half hour
 # the plan allows past that, or past a brainstorm card's own timeout.
 SCORE_TIMEOUT_MINUTES = 15
@@ -102,6 +107,11 @@ def turn_on() -> None:
         raise ServiceError(str(exc)) from exc
     try:
         _kv_set(conn, ENABLED_KEY, "on")
+        # The same description `whyline idea telegram setup` publishes.
+        # A Telegram failure is stored for doctor and does not undo the on.
+        from whyline.ideas import telegram_in
+
+        telegram_in.publish_description(conn)
     finally:
         conn.close()
 
@@ -217,42 +227,66 @@ def _poll_while_in_use(
     stop,
 ) -> None:
     from whyline.agents import telegram
-    from whyline.ideas import telegram_in
+    from whyline.ideas import bot, telegram_in
 
-    quiet_from = clock()
+    started = clock()
+    away = _away(conn, started)
+    told = False
+    quiet_from = started
     first = True
     # A row whose handler raised stays for a later tick. Retrying it on
     # every long poll would reset the quiet window and hold this lock.
     failed: set[int] = set()
-    while True:
-        before = _kv(conn, telegram_in.LAST_ERROR_KEY)
-        timeout = 25 if (_job_live(conn) or not first) else 0
-        try:
-            stored = _invoke_poll(poll, conn, timeout)
-        except telegram.TelegramError as exc:
-            telegram_in._record_poll_error(conn, "", None, str(exc))
+
+    def announce(count: int) -> None:
+        # Once, before this tick handles anything. The count is what this
+        # tick stored. A reply already in the outbox has a smaller id;
+        # flush_outbox sends the notice first because its kind is notice.
+        nonlocal told
+        if told:
             return
-        stored = int(stored or 0)
-        after = _kv(conn, telegram_in.LAST_ERROR_KEY)
-        if after and after != before:
+        told = True
+        if away is None:
             return
-        handled = _handle_pending(conn, handle, failed)
-        # After the poll, not the tick's original timestamp. A 25s long
-        # poll, repeated while a job looks live, runs far past that instant.
-        moment = clock()
-        _recover(conn, moment, pid_alive, stop)
-        _start_one(conn, moment, spawn)
-        flush(conn)
-        # ``handled`` is rows that ran. A failure is not new activity.
-        activity = stored > 0 or handled > 0
-        live = _job_live(conn)
-        if activity or live:
-            quiet_from = moment
-        elif moment - quiet_from >= _QUIET:
-            return
-        elif first:
-            return
-        first = False
+        text = bot.away_text(away[0], away[1], count)
+        if bot.tell_allowed(conn, text):
+            flush(conn)
+
+    try:
+        while True:
+            before = _kv(conn, telegram_in.LAST_ERROR_KEY)
+            timeout = 25 if (_job_live(conn) or not first) else 0
+            try:
+                stored = _invoke_poll(poll, conn, timeout)
+            except telegram.TelegramError as exc:
+                telegram_in._record_poll_error(conn, "", None, str(exc))
+                announce(0)
+                return
+            stored = int(stored or 0)
+            after = _kv(conn, telegram_in.LAST_ERROR_KEY)
+            announce(stored)
+            if after and after != before:
+                return
+            handled = _handle_pending(conn, handle, failed)
+            # After the poll, not the tick's original timestamp. A 25s long
+            # poll, repeated while a job looks live, runs far past that instant.
+            moment = clock()
+            _recover(conn, moment, pid_alive, stop)
+            _start_one(conn, moment, spawn)
+            flush(conn)
+            # ``handled`` is rows that ran. A failure is not new activity.
+            activity = stored > 0 or handled > 0
+            live = _job_live(conn)
+            if activity or live:
+                quiet_from = moment
+            elif moment - quiet_from >= _QUIET:
+                return
+            elif first:
+                return
+            first = False
+    finally:
+        # A tick that took the lock ran, including one Telegram cut short.
+        _remember_tick(conn, clock())
 
 
 def _invoke_poll(poll, conn, timeout: int):
@@ -365,6 +399,8 @@ def work(job_id: int) -> int:
             return 1
         if not _claim_pid(conn, job_id):
             return 0
+        if job["kind"] in ("score", "brainstorm"):
+            _keep_awake(os.getpid())
         try:
             _execute(conn, job)
         except _AlreadyTold as exc:
@@ -448,24 +484,32 @@ def _recover(conn, now: datetime, pid_alive, stop) -> None:
     for row in rows:
         if not _stuck(row, now, pid_alive):
             continue
+        alive = bool(pid_alive(row["pid"]))
         if int(row["attempts"] or 0) >= _MAX_STARTS:
-            _fail_expired(conn, row, stop)
+            _fail_expired(conn, row, stop, alive=alive)
         else:
-            _requeue(conn, row, stop)
+            _requeue(conn, row, stop, slept=not alive)
 
 
 def _stuck(row, now: datetime, pid_alive) -> bool:
+    """True when the pid is gone, or a live one has run past its lease.
+
+    The lease is only a limit on a process that is still running. Sleep
+    and shutdown kill the pid while the lease is still in the future.
+    """
+    if not pid_alive(row["pid"]):
+        return True
     lease = row["lease_until"]
-    if lease:
-        try:
-            deadline = datetime.fromisoformat(str(lease))
-        except ValueError:
-            return True
-        return deadline <= now
-    return not pid_alive(row["pid"])
+    if not lease:
+        return False
+    try:
+        deadline = datetime.fromisoformat(str(lease))
+    except ValueError:
+        return True
+    return deadline <= now
 
 
-def _requeue(conn, row, stop) -> None:
+def _requeue(conn, row, stop, *, slept: bool = False) -> None:
     _stop_pid(row["pid"], stop)
     conn.execute(
         """
@@ -475,11 +519,14 @@ def _requeue(conn, row, stop) -> None:
         """,
         (row["id"],),
     )
+    if slept:
+        _tell(conn, int(row["idea_id"]), _sleep_message(row["kind"]))
 
 
-def _fail_expired(conn, row, stop) -> None:
+def _fail_expired(conn, row, stop, *, alive: bool = True) -> None:
     _stop_pid(row["pid"], stop)
-    timed_out = bool(row["lease_until"])
+    # A dead pid did not run past its lease. The lease is for a live one.
+    timed_out = alive and bool(row["lease_until"])
     text = _lease_message(row["kind"], timed_out=timed_out)
     conn.execute(
         """
@@ -490,6 +537,19 @@ def _fail_expired(conn, row, stop) -> None:
         (text, row["id"]),
     )
     _tell(conn, int(row["idea_id"]), text)
+
+
+def _sleep_message(kind: str) -> str:
+    if kind == "brainstorm":
+        name = "brainstorm"
+    elif kind == "score":
+        name = "quick score"
+    else:
+        name = "job"
+    return (
+        f"Your {name} stopped when the Mac went to sleep or shut down; "
+        "starting it again."
+    )
 
 
 def _lease_message(kind: str, *, timed_out: bool) -> str:
@@ -610,6 +670,44 @@ def _json_object(raw: str | None):
 
 def _stamp(moment: datetime) -> str:
     return moment.replace(microsecond=0).isoformat(timespec="seconds")
+
+
+def _away(conn, now: datetime):
+    """The previous completed tick and this one, when the gap is too long."""
+    raw = _kv(conn, LAST_TICK_KEY)
+    if not raw:
+        return None
+    try:
+        previous = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if now - previous > _AWAY:
+        return previous, now
+    return None
+
+
+def _remember_tick(conn, moment: datetime) -> None:
+    _kv_set(conn, LAST_TICK_KEY, _stamp(moment))
+
+
+def _keep_awake(pid: int) -> None:
+    """Idle-sleep waits for this job. Closing the lid still sleeps the Mac.
+
+    ``caffeinate -i -w`` holds idle sleep until ``pid`` exits. The binary
+    is missing on anything but macOS, and that is not a failed job.
+    """
+    if not os.path.isfile(_CAFFEINATE):
+        return
+    try:
+        subprocess.Popen(
+            [_CAFFEINATE, "-i", "-w", str(pid)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        log.warning("could not start caffeinate for pid %s", pid)
 
 
 def _spawn(job_id: int) -> int:

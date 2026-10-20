@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import subprocess
 import time
 from datetime import datetime, timezone
 
@@ -19,6 +20,8 @@ from whyline.ideas import store
 ALLOW_KEY = "telegram_allow"
 CURSOR_KEY = "telegram_cursor"
 LAST_ERROR_KEY = "telegram_last_error"
+DESCRIPTION_KEY = "telegram_description"
+DESCRIPTION_ERROR_KEY = "telegram_description_error"
 CONFLICT_MESSAGE = (
     "another program is reading this bot's messages, or it has a webhook"
 )
@@ -70,6 +73,64 @@ def private_chats(chats: dict) -> list[tuple[int, str]]:
     ]
     private.sort(key=lambda item: item[0])
     return private
+
+
+def computer_name(*, run=None) -> str:
+    """The Mac's name, or ``your`` when scutil has nothing to say."""
+    run = run or subprocess.run
+    try:
+        result = run(
+            ["scutil", "--get", "ComputerName"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return "your"
+    if result.returncode != 0:
+        return "your"
+    name = (result.stdout or "").strip()
+    return name or "your"
+
+
+def expectation(name: str) -> str:
+    """The bot description. ``your`` is already a possessive, so no ``'s``."""
+    whose = "your" if name == "your" else f"{name}'s"
+    return (
+        f"Replies only while {whose} Mac is on and awake. "
+        "Messages wait about a day."
+    )
+
+
+def publish_description(conn: sqlite3.Connection, *, http=None, run=None) -> None:
+    """Set the bot's description once. A failure is stored, never raised.
+
+    Setup and turning the inbox on both call this. When the stored text
+    already matches, Telegram is not called. Doctor reads
+    ``telegram_description_error``; this function does not print it.
+    """
+    token = telegram.token_get()
+    if not token:
+        return
+    text = expectation(computer_name(run=run))
+    if _kv(conn, DESCRIPTION_KEY) == text:
+        return
+    try:
+        for method, field in (
+            ("setMyDescription", "description"),
+            ("setMyShortDescription", "short_description"),
+        ):
+            telegram._call(
+                method,
+                token,
+                {field: text},
+                http=http,
+                sleep=lambda _seconds: None,
+            )
+    except telegram.TelegramError as exc:
+        _kv_set(conn, DESCRIPTION_ERROR_KEY, str(exc))
+        return
+    _kv_set(conn, DESCRIPTION_KEY, text)
+    conn.execute("DELETE FROM kv WHERE key = ?", (DESCRIPTION_ERROR_KEY,))
 
 
 def allowed_chats(conn: sqlite3.Connection) -> list[int]:
