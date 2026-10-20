@@ -18647,3 +18647,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b06f9ad5abe14a2896f0fc7391890abb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T07:57:13.551Z"} -->
+
+## 2026-10-20 — Add TGS-5: answer Telegram taps immediately, long-poll while in use, send progress messages, and drive card buttons from the idea's status
+
+**Actor:** claude
+**Role:** planner
+**Task:** TGS-5
+
+**Because:** First real use: a Quick score tap spun for the 2-minute tick, the late answerCallbackQuery failed and was queued for 8 pointless retries, no 'started' message reached the user in time, and the card kept stale buttons
+
+**Rejected:**
+
+- Shorten the launchd interval to a few seconds — wakes the Mac constantly when idle; long-polling only while in use is cheaper
+- A webhook — needs a public HTTPS server, which whyline deliberately does not run
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: c7e4c25670b64c818287cf59a257c58e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T08:06:47.922Z"} -->
