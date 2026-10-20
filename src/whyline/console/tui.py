@@ -93,7 +93,13 @@ _MODES = ("chat", "relay", "agents")
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
     "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume"),
-    "agents": ("agents-new", "agents-list", "agents-runs", "agents-scheduler"),
+    "agents": (
+        "agents-new",
+        "agents-list",
+        "agents-runs",
+        "agents-scheduler",
+        "agents-inbox",
+    ),
 }
 _SHARED_BUTTONS = ("see-files", "stop", "help", "copy")
 _SLASH_HINT = "/status /timeline /note /decisions /handoff /model /timeout /repo /help"
@@ -720,7 +726,7 @@ class WhylineConsoleApp(App):
     #context-bar Checkbox { padding: 0 1; background: transparent; }
     #context-bar Button { padding: 0 1; min-width: 6; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
-    /* Inbox sits here, not on #controls: that row is sized for 80 columns. */
+    /* Scheduler status. Inbox is an Agents-mode button on #controls. */
     #agents-bar { height: auto; display: none; }
     #agents-status { height: auto; width: 1fr; padding: 0 1; color: $text-muted; }
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
@@ -1489,7 +1495,7 @@ class WhylineConsoleApp(App):
             return
 
     def _open_idea_inbox(self) -> None:
-        from whyline.console.agents_screens import IdeaInboxScreen
+        from whyline.console.inbox_screen import IdeaInboxScreen
 
         self.push_screen(IdeaInboxScreen())
 
@@ -2641,7 +2647,6 @@ class WhylineConsoleApp(App):
             Static("", id="thinking", markup=False),
             Horizontal(
                 Static("", id="agents-status"),
-                Button("Inbox", id="agents-inbox"),
                 id="agents-bar",
             ),
             Horizontal(
@@ -2679,6 +2684,7 @@ class WhylineConsoleApp(App):
                 Button("Agents", id="agents-list"),
                 Button("Runs", id="agents-runs"),
                 Button("Scheduler", id="agents-scheduler"),
+                Button("Inbox", id="agents-inbox"),
                 Button("Files", id="see-files"),
                 Button("Stop", id="stop", disabled=True),
                 Button("Help", id="help"),

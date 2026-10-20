@@ -19625,3 +19625,183 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4ffc12dd60d54d4d89c069fe937ab7da -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:59:12.902Z"} -->
+
+## 2026-10-20 — Skip inbox writes when the control still shows the saved value
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-2
+
+**Because:** Open then Save must leave every key unchanged, and a missing doc_formats key already means both
+
+**Rejected:**
+
+- Always call the idea CLI setters — that inserts doc_formats and default_agents when the user changed nothing
+
+**Files:** src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: b6a0572c0c89445dbbd48a6df7bb6d14 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:31:26.201Z"} -->
+
+## 2026-10-20 — Clearing assistant backup deletes the assistant_backup key
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-2
+
+**Because:** assistant.save leaves a stored backup in place when backup is omitted, so None would not stick
+
+**Rejected:**
+
+- Store an empty string — selected() treats it as missing, but the key would exist and differ from an unset backup
+
+**Files:** src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: 84ac36a6b25d4f2e94877a53f86e0d63 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:31:34.070Z"} -->
+
+## 2026-10-20 — Put Inbox on the Agents controls row
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-2
+
+**Because:** TGS-2 asks for it beside New, Agents, Runs, and Scheduler, and the button still fits in 80 columns
+
+**Rejected:**
+
+- Leave it on the agents status bar — that bar was only a workaround for the 80-column row
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 84832c298f80442ca518f5dc6e2ed7bc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:31:39.245Z"} -->
+
+## 2026-10-20 — Draw the score-agent chain after the inbox screen refreshes
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-2
+
+**Because:** OrderedChain._sync does nothing until is_mounted, and Textual sets that flag only after on_mount returns, so the chain's own on_mount never draws the rows
+
+**Rejected:**
+
+- Change OrderedChain — TGS-2 only adds the inbox screen and the Agents button
+
+**Files:** src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: b725d73448c24666b7c341a67247b4a5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:31:39.251Z"} -->
+
+## 2026-10-20 — Diagnose the console crash as unsafe markup rendering after a transient file-follow race
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CONSOLE-CRASH
+
+**Because:** The Files watcher can see an agent temporary file in git status and lose it before read_bytes; _on_gather_error then passes the resulting [Errno 2] text to a markup-enabled Static, which raises MarkupError and crashes the app
+
+**Rejected:**
+
+- Treat the missing temporary file as the crash itself — it is an expected race that should be ignored or retried, while the uncaught markup parse is the fatal exception
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 2e45da2d1d454478908268b790a6dbb8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:36:02.764Z"} -->
+
+## 2026-10-20 — TGS-2 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-2
+
+**Because:** The 12 inbox-screen tests and the complete pytest suite both exited successfully, covering the required interactions, persistence behavior, service path, doctor output, and terminal sizing
+
+**Files:** tests/console/test_inbox_screen.py
+
+<!-- whyline-event: 98957402de164c06971ad2fcd96acfb8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:38:30.298Z"} -->
+
+## 2026-10-20 — Render Files-pane status as plain text and tolerate vanished temporary files
+
+**Actor:** codex
+**Role:** implementer
+**Task:** CONSOLE-CRASH
+
+**Because:** Agent atomic writes can remove a temporary path between the watcher stat and read; the resulting [Errno 2] must neither surface as an error nor be parsed as Rich markup
+
+**Rejected:**
+
+- Escape only square brackets — other markup-like paths could still break rendering and plain text is the intended contract
+- Retry the vanished temporary path — the final renamed path will appear on the next 400ms poll, so retrying the obsolete name adds races without benefit
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 3349f14d89f747e0a1bf31a8684295f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:43:46.675Z"} -->
+
+## 2026-10-20 — TGS-2 needs unrelated console-crash changes removed before approval
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-2
+
+**Because:** The inbox behavior and both required test suites pass, but tui.py also changes file-path markup handling and follow-mode FileNotFoundError behavior, with unrelated test_see_files coverage, despite TGS-2 limiting tui.py to Inbox wiring and requiring no other changes
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: bbcfda14f8894e42a582104171d5419e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:45:44.351Z"} -->
+
+## 2026-10-20 — Drop unrelated console-crash edits from the Inbox task
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-2
+
+**Because:** TGS-2 may change tui.py only to wire the Inbox button, and the review rejected the file-path markup conversion and the transient FileNotFoundError handler
+
+**Rejected:**
+
+- Keep the crash fixes on this branch — they belong to CONSOLE-CRASH and add test_see_files coverage the task forbids
+
+**Test:** uv run pytest -q tests/console/test_inbox_screen.py: exit 0, 12 passed
+**Test:** uv run pytest -q: exit 0, reached 100% with one skip and no failures
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 9f329fa75b3748988a0c0f8a065448fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T20:53:42.438Z"} -->
+
+## 2026-10-20 — TGS-2 passes round 5 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-2
+
+**Because:** The 12 Inbox screen tests and the complete pytest suite both exited successfully after the unrelated console-crash changes were removed; tui.py now changes only Inbox wiring and test_see_files.py matches HEAD
+
+**Files:** tests/console/test_inbox_screen.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 75f0cfcfc258441cb20cd3619fe54991 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:01:08.993Z"} -->
+
+## 2026-10-20 — TGS-2 approved: Inbox screen saves through the CLI and shows doctor with markup off
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** TGS-2
+
+**Because:** Agents mode opens IdeaInboxScreen from the Inbox button. Save uses telegram_in.allow/deny, cmd_agents, assistant.save, cmd_documents, and cmd_service, then cmd_doctor. Cancel writes nothing, open-then-save leaves kv unchanged, and the token is never shown. uv run pytest -q tests/console/test_inbox_screen.py exited 0 with 12 passed. uv run pytest -q exited 0 with one skip and no failures.
+
+**Rejected:**
+
+- Reject the assistant_backup DELETE — cmd_assistant cannot clear a backup, and the screen must allow None
+- Send back the test_idea_inbox.py edit — the Agents button now opens the new screen, so the old assertion would fail the required suite
+
+**Files:** src/whyline/console/inbox_screen.py, src/whyline/console/tui.py, tests/console/test_inbox_screen.py, tests/console/test_idea_inbox.py
+
+<!-- whyline-event: 82e86a7e7ebb46fcb8130ae4d7e46ad0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:16:54.278Z"} -->
