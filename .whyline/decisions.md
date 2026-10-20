@@ -18665,3 +18665,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c7e4c25670b64c818287cf59a257c58e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T08:06:47.922Z"} -->
+
+## 2026-10-20 — Render report PDFs with AppKit via osascript (TGS-6) and make every Telegram tap echo and report its outcome (TGS-5)
+
+**Actor:** claude
+**Role:** planner
+**Task:** TGS-6
+
+**Because:** On 2026-10-20 the first Full report went out as Word only: macOS cupsfilter has no HTML or RTF to PDF filter, yet doctor said ok because it only checked the binary exists; and the user saw no message between the tap and the document
+
+**Rejected:**
+
+- Add a PDF library dependency — the plan adds no dependencies, and AppKit is already on every Mac
+- Plain-text cupsfilter as the main route — works but loses tables and styling; kept as a fallback
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 15dcb702e3844bb6a1ad3111ad0a81b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T08:12:23.532Z"} -->
