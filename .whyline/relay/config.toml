@@ -1,6 +1,6 @@
 # whyline-relay configuration. Every key is optional.
 plan = "plans/idea-inbox.plan.md"
-max_rounds = 12
+max_rounds = 18
 timeout_minutes = 60
 branch_prefix = "relay/"
 
