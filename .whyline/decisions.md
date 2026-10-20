@@ -19805,3 +19805,102 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 82e86a7e7ebb46fcb8130ae4d7e46ad0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:16:54.278Z"} -->
+
+## 2026-10-20 — Score and refine queue bot.enqueue_score instead of running analyse in the console
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-3
+
+**Because:** A job started on the Ideas screen has to be the same jobs row Telegram's worker runs, and worker.py only exposes enqueue_brainstorm
+
+**Rejected:**
+
+- cli.cmd_score and cmd_refine — they call analyse.analyse in this process, so Telegram would not see the job
+- a new worker.enqueue_score — the insert already lives on bot.enqueue_score and this task cannot edit the worker
+
+**Files:** src/whyline/console/ideas_screen.py
+
+<!-- whyline-event: af8c0cc45b3444d4976514fdd30d326d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:43:59.703Z"} -->
+
+## 2026-10-20 — Report stays on the Ideas screen and loads the Files pane underneath
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-3
+
+**Because:** The task asks the console to show the report the way the Files pane shows a file, and dismissing the modal would drop the selected idea
+
+**Rejected:**
+
+- dismiss the modal and push a new screen — the user would lose the table and have to reopen Ideas
+
+**Files:** src/whyline/console/ideas_screen.py
+
+<!-- whyline-event: fa6b7489f1864585ad7c1333f5ea9a52 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:44:04.344Z"} -->
+
+## 2026-10-20 — Reopen is enabled only from dropped
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-3
+
+**Because:** whyline idea reopen is the dropped-idea command; scoring and brainstorming may also move to captured, and that move is Cancel
+
+**Rejected:**
+
+- enable Reopen whenever captured is an allowed destination — it would offer Reopen during a live score or brainstorm
+
+**Files:** src/whyline/console/ideas_screen.py
+
+<!-- whyline-event: 8926c85f6bc4450188af80f1e03cd626 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:44:04.344Z"} -->
+
+## 2026-10-20 — Opening brainstorm settings does not move the idea to brainstorm_configuring
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-3
+
+**Because:** brainstorm._begin makes that transition when the queued job runs, so Cancel leaves the ledger unchanged and Telegram sees the same job
+
+**Rejected:**
+
+- transition on open, matching the Telegram card — closing the settings would leave the idea stuck in brainstorm_configuring
+
+**Files:** src/whyline/console/ideas_screen.py
+
+<!-- whyline-event: 0758d6f8939f42a7b9c049c15722072f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:44:04.366Z"} -->
+
+## 2026-10-20 — Pass TGS-3 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-3
+
+**Because:** The focused Ideas screen suite passed all 9 tests and the full project suite completed at 100 percent with one skip and exit code 0
+
+**Files:** tests/console/test_ideas_screen.py
+
+<!-- whyline-event: dce0689bffff47fe93eac1cce84de1ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T21:50:23.357Z"} -->
+
+## 2026-10-20 — Approve the Ideas screen
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** TGS-3
+
+**Because:** The screen lists ideas newest first, gates Score, Brainstorm, Refine, Drop, and Reopen on the ledger moves, and calls the CLI commands and the Telegram job queues. The Ideas tests passed and the full suite exited 0 with one skip.
+
+**Rejected:**
+
+- demand worker.enqueue_score — the worker only queues brainstorms, and Telegram quick score inserts through bot.enqueue_score
+
+**Files:** src/whyline/console/ideas_screen.py
+
+<!-- whyline-event: b11b82c1d57e48adba047b66b3d17129 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T22:03:57.287Z"} -->

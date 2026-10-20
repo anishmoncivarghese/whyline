@@ -99,6 +99,7 @@ _MODE_BUTTONS = {
         "agents-runs",
         "agents-scheduler",
         "agents-inbox",
+        "agents-ideas",
     ),
 }
 _SHARED_BUTTONS = ("see-files", "stop", "help", "copy")
@@ -1499,6 +1500,11 @@ class WhylineConsoleApp(App):
 
         self.push_screen(IdeaInboxScreen())
 
+    def _open_ideas(self) -> None:
+        from whyline.console.ideas_screen import IdeasScreen
+
+        self.push_screen(IdeasScreen())
+
     def _open_new_agent(self, existing=None, delivery=None, *, editing_id=None,
                         lock_name: bool = False) -> None:
         from whyline import account
@@ -2685,6 +2691,7 @@ class WhylineConsoleApp(App):
                 Button("Runs", id="agents-runs"),
                 Button("Scheduler", id="agents-scheduler"),
                 Button("Inbox", id="agents-inbox"),
+                Button("Ideas", id="agents-ideas"),
                 Button("Files", id="see-files"),
                 Button("Stop", id="stop", disabled=True),
                 Button("Help", id="help"),
@@ -2786,6 +2793,8 @@ class WhylineConsoleApp(App):
             self._toggle_scheduler()
         elif button_id == "agents-inbox":
             self._open_idea_inbox()
+        elif button_id == "agents-ideas":
+            self._open_ideas()
         elif button_id == "copy":
             self._copy_transcript()
         elif button_id == "relay-run":
