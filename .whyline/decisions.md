@@ -19545,3 +19545,83 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 52ddda208dd04634ab8468636368d4a6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:19:03.355Z"} -->
+
+## 2026-10-20 — Feed the cupsfilter PDF fallback plain text
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-6
+
+**Because:** macOS cupsfilter has no text/html to PDF filter, which is why reports went out as Word only
+
+**Rejected:**
+
+- text/html cupsfilter — that filter is missing, so the command fails
+- A PDF library — the plan adds no dependencies, and AppKit is already on the Mac
+
+**Files:** src/whyline/ideas/documents.py
+
+<!-- whyline-event: 4ab00a3b415741e1ab62fa91bd1ad4fd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:44:48.437Z"} -->
+
+## 2026-10-20 — Turn off vertical centering when saving a report PDF
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-6
+
+**Because:** Shared NSPrintInfo centered a short report, first glyph at y=457 on an 842-point page; false starts it under the top margin, and a 120-item list paginates to 3 pages
+
+**Rejected:**
+
+- Leave centering on — the heading sat in the middle of the sheet
+- Fit the whole report onto one page — a long report needs automatic vertical pagination
+
+**Files:** src/whyline/ideas/html_to_pdf.js
+
+<!-- whyline-event: 1195117ee9c444aea579a5505134d63a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:44:52.512Z"} -->
+
+## 2026-10-20 — Use a 0.4em list padding and ship html_to_pdf.js with the existing package list
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-6
+
+**Because:** ul disc plus li padding-left 0.4em extracts as one bullet per item, and hatchling packages = src/whyline already placed the script at whyline/ideas/html_to_pdf.js in the wheel
+
+**Rejected:**
+
+- list-style none — the task asks for a disc marker
+- force-include the script — the built wheel already contains it
+
+**Files:** src/whyline/ideas/documents.py, src/whyline/ideas/html_to_pdf.js
+
+<!-- whyline-event: 60b85bde59364fa8a52ebcf55248df96 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:44:56.858Z"} -->
+
+## 2026-10-20 — TGS-6 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-6
+
+**Because:** The ideas suite and full project suite passed; real macOS AppKit rendering produced one bullet per item, the real plain-text fallback produced a PDF with its note, doctor proved AppKit, and the built wheel contains html_to_pdf.js
+
+**Files:** src/whyline/ideas/documents.py, src/whyline/ideas/cli.py, src/whyline/ideas/html_to_pdf.js
+
+<!-- whyline-event: 029777850a3e4330a462cb48f27491b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:52:20.501Z"} -->
+
+## 2026-10-20 — Approve TGS-6 macOS PDF renderer and doctor proof
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-6
+
+**Because:** The AppKit renderer, plain-text fallback, PDF signature validation, doctor route reporting, focused tests, full suite, and built-wheel contents all satisfy the task without review findings
+
+**Files:** src/whyline/ideas/documents.py, src/whyline/ideas/cli.py, src/whyline/ideas/html_to_pdf.js
+
+<!-- whyline-event: 4ffc12dd60d54d4d89c069fe937ab7da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T19:59:12.902Z"} -->

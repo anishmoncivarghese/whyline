@@ -1,6 +1,7 @@
 """CLI coverage for `whyline idea`."""
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -175,22 +176,25 @@ def test_refine_appends_context_and_scores_again(ideas_home, capsys, monkeypatch
     assert "# Second cut" in shown or "title: Second cut" in shown
 
 
-def test_doctor_reports_an_unwritable_workbook_and_a_missing_cupsfilter(
-    ideas_home, capsys, monkeypatch
-):
+def test_doctor_reports_an_unwritable_workbook(ideas_home, capsys, monkeypatch):
     ideas_home.mkdir()
     ideas_home.chmod(0o700)
     workbook = ideas_home / "ideas.xlsx"
     workbook.write_bytes(b"locked")
     workbook.chmod(0o444)
-    monkeypatch.setattr(documents, "CUPSFILTER", str(ideas_home / "missing-cupsfilter"))
+    monkeypatch.setattr(
+        documents,
+        "probe_pdf",
+        lambda run=None: documents.PdfResult(None, "PDF was empty"),
+    )
 
     code, out, err = invoke(["idea", "doctor"], capsys)
 
     text = out + err
     assert code == 1
     assert "workbook is not writable" in text
-    assert "cupsfilter is missing" in text
+    assert "fail   pdf: PDF was empty" in text
+    assert "Traceback" not in text
     assert ideas_home.stat().st_mode & 0o777 == 0o700
 
 
@@ -373,12 +377,9 @@ def _kv(conn, key, value):
     )
 
 
-def _ready_inbox(ideas_home, monkeypatch):
+def _ready_inbox(ideas_home, _monkeypatch):
     ideas_home.mkdir(exist_ok=True)
     ideas_home.chmod(0o700)
-    stub = ideas_home / "cupsfilter"
-    stub.write_text("x")
-    monkeypatch.setattr(documents, "CUPSFILTER", str(stub))
     return store.connect()
 
 
@@ -939,3 +940,63 @@ def test_a_description_failure_is_reported_by_doctor_and_not_raised(
     assert code == 1
     assert TOKEN not in text
     assert "fail   bot description: Bad Request: too long" in text
+
+
+def test_doctor_reports_the_appkit_route(ideas_home, capsys, monkeypatch):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    monkeypatch.setattr(
+        documents,
+        "probe_pdf",
+        lambda run=None: documents.PdfResult("appkit"),
+    )
+
+    _code, out, err = invoke(["idea", "doctor"], capsys)
+
+    assert "ok     pdf: AppKit" in out + err
+    assert "Traceback" not in err
+
+
+def test_doctor_warns_when_pdf_is_plain_text_only(ideas_home, capsys, monkeypatch):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    monkeypatch.setattr(
+        documents,
+        "probe_pdf",
+        lambda run=None: documents.PdfResult("plain"),
+    )
+
+    _code, out, err = invoke(["idea", "doctor"], capsys)
+
+    text = out + err
+    assert "warn   pdf: plain text only" in text
+    assert "fail   pdf:" not in text
+    assert "Traceback" not in text
+
+
+def test_doctor_fails_cleanly_when_no_pdf_route_works(ideas_home, capsys, monkeypatch):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    monkeypatch.setattr(
+        documents,
+        "probe_pdf",
+        lambda run=None: documents.PdfResult(None, "AppKit: PDF was empty; plain text: PDF was empty"),
+    )
+
+    code, out, err = invoke(["idea", "doctor"], capsys)
+
+    text = out + err
+    assert code == 1
+    assert "fail   pdf: AppKit: PDF was empty; plain text: PDF was empty" in text
+    assert "Traceback" not in text
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="AppKit PDF rendering needs macOS")
+def test_doctor_proves_the_pdf_route_on_this_mac(ideas_home, capsys):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+
+    _code, out, err = invoke(["idea", "doctor"], capsys)
+
+    assert "ok     pdf: AppKit" in out + err
+    assert "Traceback" not in err

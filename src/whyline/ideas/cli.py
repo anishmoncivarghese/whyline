@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -83,7 +84,7 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
 
     sub.add_parser(
         "doctor",
-        help="Folder, schema, agents, workbook, cupsfilter, and Telegram",
+        help="Folder, schema, agents, workbook, pdf, and Telegram",
     )
 
     tg = sub.add_parser("telegram", help="Chats the inbox may read")
@@ -674,11 +675,17 @@ def _workbook_check() -> _Check:
     return _Check("workbook", False, f"workbook is not writable ({target})")
 
 
-def _cupsfilter_check() -> _Check:
-    location = Path(documents.CUPSFILTER)
-    if location.is_file():
-        return _Check("cupsfilter", True, f"{location} is present")
-    return _Check("cupsfilter", False, f"cupsfilter is missing ({location})")
+def _pdf_check() -> _Check:
+    """Prove a PDF can be rendered, and say which route did it."""
+    try:
+        result = documents.probe_pdf()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _Check("pdf", False, " ".join(str(exc).split())[:300])
+    if result.route == "appkit":
+        return _Check("pdf", True, "AppKit")
+    if result.route == "plain":
+        return _Check("pdf", True, "plain text only", level="warn")
+    return _Check("pdf", False, result.reason or "PDF could not be written")
 
 
 def _report_allowed(conn, private: list[tuple[int, str]]) -> bool:
@@ -1025,7 +1032,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         _schema_check(),
         _agents_check(),
         _workbook_check(),
-        _cupsfilter_check(),
+        _pdf_check(),
         _telegram_token_check(),
         _allowed_chats_check(),
         _service_check(),
