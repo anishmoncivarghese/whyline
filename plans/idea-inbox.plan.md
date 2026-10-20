@@ -131,7 +131,7 @@ Review point: use the CLI for real ideas for a few days before starting this pha
   Tests: a disabled inbox does nothing; an exception in the inbox does not stop `run_tick` from starting due agents; one queued job is started once even across two ticks; an expired lease re-queues once then fails with a chat message; a `none`-timeout job with a live pid is not re-queued.
   Verify with `uv run pytest -q tests/ideas tests/agents` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-14: Publish whyline 0.3.47
+- [x] IDEA-14: Publish whyline 0.3.47
   relay-profile: release
   Bump `pyproject.toml` to `0.3.47`. Write `docs/releases/v0.3.47.md`: send an idea to your Telegram bot and brainstorm it with every available agent (or the models, passes, final writer, backup and timeout you choose) in the inbox's own workspace, and get the synthesis back as Word and PDF; a quick score is one tap away; plain-language replies are read by an assistant that proposes a card you confirm; only chats you allow are read; it runs from the existing scheduler while you are logged in and catches up on messages from up to about a day when the Mac was off. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.47`, push, publish to PyPI the way the previous release was published, and confirm `uv tool install whyline@0.3.47` installs it.
 
