@@ -18629,3 +18629,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d1f531f3ee8c4c9a920d4a7f34505902 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T07:55:26.474Z"} -->
+
+## 2026-10-20 — Console first: every user-facing setup, check or run must be reachable from whyline console; new CLI commands get a console counterpart in the same task
+
+**Actor:** claude
+**Role:** planner
+**Task:** TGS-3
+
+**Because:** The user set up the inbox by typing several whyline idea commands and wants no terminal step; the Idea Inbox plan gains TGS-3 (Ideas screen) and TGS-4 (update from the console), and IDEA-15/IDEA-21 add their settings to the Inbox screen
+
+**Rejected:**
+
+- Console wrappers that shell out to the CLI — duplicate parsing and hide errors; screens call the same functions instead
+- Drop the CLI — scripts and the relay's agents use it
+
+**Files:** AGENTS.md, plans/idea-inbox.plan.md
+
+<!-- whyline-event: b06f9ad5abe14a2896f0fc7391890abb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T07:57:13.551Z"} -->
