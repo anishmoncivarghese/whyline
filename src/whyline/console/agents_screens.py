@@ -1,5 +1,5 @@
-"""Agents mode popups: the list, one agent's detail, its runs, and the
-new-agent form with its review."""
+"""Agents mode popups: the list, one agent's detail, its runs, the
+new-agent form with its review, and the idea inbox."""
 from __future__ import annotations
 
 import json
@@ -475,6 +475,273 @@ class TelegramSetupScreen(ModalScreen):
             if self._poller is not None:
                 self._poller.stop()
             self.dismiss(self._known())
+
+
+class IdeaInboxScreen(ModalScreen):
+    """``whyline idea telegram setup`` in the console.
+
+    Allowing a chat calls ``telegram_in.allow``. Turning the inbox on calls
+    ``worker.turn_on``, the same function ``whyline idea service on`` uses.
+    When a private chat is already allowed, or the inbox is already on,
+    this screen says so and does not write that setting again.
+    """
+
+    DEFAULT_CSS = _CSS.format(name="IdeaInboxScreen") + """
+    IdeaInboxScreen Static { height: auto; }
+    IdeaInboxScreen Select { width: 1fr; }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._token: str | None = None
+        self._private: list[tuple[int, str]] = []
+        self._allowed_ids: list[int] = []
+        self._inbox_on = False
+        self._closed = False
+        self._generation = 0
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Idea inbox"),
+            Static("", id="ib-bot", markup=False),
+            Static("", id="ib-empty", markup=False),
+            Select([], prompt="Private chat", id="ib-chat"),
+            Static("", id="ib-allow-status", markup=False),
+            Static("", id="ib-service", markup=False),
+            Horizontal(
+                Button("Allow", id="ib-allow", disabled=True),
+                Button("Turn inbox on", id="ib-on", variant="success", disabled=True),
+                Button("Set up Telegram…", id="ib-telegram"),
+                Button("Close", id="ib-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self._refresh()
+
+    def on_unmount(self) -> None:
+        self._closed = True
+
+    def _later(self, app, callback, *args) -> None:
+        def apply() -> None:
+            if self._closed:
+                return
+            try:
+                callback(*args)
+            except NoMatches:
+                pass
+
+        try:
+            app.call_from_thread(apply)
+        except RuntimeError:
+            pass
+
+    def _guard(self, app, body, token: str | None):
+        """An uncaught worker error stops the console and prints locals,
+        including the bot token."""
+        def run() -> None:
+            from whyline.agents import telegram
+
+            try:
+                body()
+            except Exception as error:
+                text = telegram.redact(str(error), token) or "Something went wrong."
+                self._later(app, self._show_bot, text)
+
+        return run
+
+    def _show_bot(self, text: str) -> None:
+        self.query_one("#ib-bot", Static).update(text)
+
+    def _read_allowed(self) -> list[int]:
+        from whyline.ideas import paths, store, telegram_in
+
+        # Opening the screen is not a save. ``store.connect`` creates the
+        # database; a check must not.
+        if not (paths.configured_home() / "ideas.sqlite3").is_file():
+            return []
+        conn = store.connect()
+        try:
+            return telegram_in.allowed_chats(conn)
+        finally:
+            conn.close()
+
+    def _refresh(self) -> None:
+        if self._closed:
+            return
+        self._generation += 1
+        generation = self._generation
+        try:
+            self._load(generation)
+        except Exception as error:
+            from whyline.agents import telegram
+
+            self._show_bot(telegram.redact(str(error), self._token) or "Something went wrong.")
+
+    def _load(self, generation: int) -> None:
+        from whyline.agents import telegram
+        from whyline.ideas import telegram_in, worker
+
+        self._token = telegram.token_get()
+        self._private = telegram_in.private_chats(telegram.known_chats())
+        self._allowed_ids = self._read_allowed()
+        self._inbox_on = worker.enabled()
+        # Finding chats is the existing Telegram screen, which polls. This
+        # one does not call getUpdates. Offer that screen only when there
+        # is nothing private to allow yet.
+        self.query_one("#ib-telegram", Button).display = not self._token or (
+            not self._private and not self._allowed_ids
+        )
+        self.query_one("#ib-allow", Button).disabled = True
+        self.query_one("#ib-on", Button).disabled = True
+        self._show_private()
+        self._show_allowed()
+        self._show_service()
+        if not self._token:
+            self._show_bot("No bot token yet. Set up Telegram, then allow a private chat.")
+            return
+        self._show_bot("Checking the saved bot…")
+        self._name_bot(generation, self._token)
+
+    def _show_private(self) -> None:
+        empty = self.query_one("#ib-empty", Static)
+        select = self.query_one("#ib-chat", Select)
+        if not self._private:
+            select.display = False
+            empty.display = True
+            empty.update(
+                "No private chats yet. Send a direct message to the bot, "
+                "then open Inbox again."
+            )
+            return
+        empty.display = False
+        select.display = True
+        select.set_options([(f"{label}  ({cid})", cid) for cid, label in self._private])
+        select.value = self._private[0][0]
+
+    def _show_allowed(self) -> None:
+        status = self.query_one("#ib-allow-status", Static)
+        if not self._allowed_ids:
+            status.update("")
+            return
+        labels = {cid: label for cid, label in self._private}
+        lines = []
+        for cid in self._allowed_ids:
+            label = labels.get(cid)
+            if label:
+                lines.append(f"Already allowed: {label}  ({cid})")
+            else:
+                lines.append(f"Already allowed: {cid}")
+        status.update("\n".join(lines))
+
+    def _show_service(self) -> None:
+        text = "Inbox already on." if self._inbox_on else "Inbox off."
+        self.query_one("#ib-service", Static).update(text)
+
+    def _name_bot(self, generation: int, token: str) -> None:
+        app = self.app
+
+        def work() -> None:
+            from whyline.agents import telegram
+            from whyline.ideas.cli import _no_wait
+
+            try:
+                bot = telegram.check_token(token, sleep=_no_wait)
+            except Exception as error:
+                text = telegram.redact(str(error), token) or "Something went wrong."
+                self._later(app, self._apply_bot, generation, text, False)
+                return
+            text = telegram.redact(
+                f"Bot {bot} is already saved. Keeping it.", token
+            )
+            self._later(app, self._apply_bot, generation, text, True)
+
+        app.run_worker(self._guard(app, work, token), thread=True)
+
+    def _apply_bot(self, generation: int, text: str, ok: bool) -> None:
+        if generation != self._generation:
+            return
+        self._show_bot(text)
+        if not ok:
+            return
+        self.query_one("#ib-allow", Button).disabled = bool(self._allowed_ids) or not self._private
+        self.query_one("#ib-on", Button).disabled = self._inbox_on
+
+    def _allow(self) -> None:
+        if self._allowed_ids:
+            self._show_allowed()
+            return
+        chat = self.query_one("#ib-chat", Select).value
+        status = self.query_one("#ib-allow-status", Static)
+        if not isinstance(chat, int):
+            status.update("Choose a private chat.")
+            return
+        from whyline.agents import telegram
+        from whyline.ideas import store, telegram_in
+
+        try:
+            conn = store.connect()
+            try:
+                label = telegram_in.allow(conn, chat)
+            finally:
+                conn.close()
+        except telegram_in.AllowError as exc:
+            status.update(telegram.redact(str(exc), self._token))
+            return
+        except Exception as exc:
+            status.update(telegram.redact(str(exc), self._token) or "Something went wrong.")
+            return
+        self._allowed_ids = [chat]
+        self.query_one("#ib-allow", Button).disabled = True
+        status.update(f"{label}  ({chat})  allowed")
+
+    def _turn_on(self) -> None:
+        if self._inbox_on:
+            self._show_service()
+            return
+        self.query_one("#ib-on", Button).disabled = True
+        app = self.app
+        token = self._token
+
+        def work() -> None:
+            from whyline.ideas import worker
+
+            try:
+                worker.turn_on()
+            except worker.ServiceError as exc:
+                self._later(app, self._service_failed, str(exc))
+                return
+            self._later(app, self._service_started)
+
+        app.run_worker(self._guard(app, work, token), thread=True)
+
+    def _service_failed(self, text: str) -> None:
+        from whyline.agents import telegram
+
+        self.query_one("#ib-service", Static).update(telegram.redact(text, self._token))
+        if not self._inbox_on:
+            self.query_one("#ib-on", Button).disabled = False
+
+    def _service_started(self) -> None:
+        self._inbox_on = True
+        self.query_one("#ib-service", Static).update("Inbox on.")
+        self.query_one("#ib-on", Button).disabled = True
+
+    def _open_telegram(self) -> None:
+        self.app.push_screen(TelegramSetupScreen(), lambda _chats: self._refresh())
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id
+        if button_id == "ib-allow":
+            self._allow()
+        elif button_id == "ib-on":
+            self._turn_on()
+        elif button_id == "ib-telegram":
+            self._open_telegram()
+        elif button_id == "ib-close":
+            self._closed = True
+            self.dismiss(None)
 
 
 def _q(value: str) -> str:

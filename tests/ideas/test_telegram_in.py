@@ -1,5 +1,6 @@
 """Inbound Telegram polling and the allow-list CLI."""
 
+import json
 import sqlite3
 
 import pytest
@@ -147,6 +148,58 @@ def test_a_message_from_another_chat_gets_no_reply_and_is_marked_handled(conn, t
     assert row["text"] == "stranger"
     assert _cursor(conn) == 4
     assert [method for method, _fields, _files in calls] == ["getUpdates"]
+
+
+def _last_error(conn):
+    row = conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (telegram_in.LAST_ERROR_KEY,)
+    ).fetchone()
+    return None if row is None else row["value"]
+
+
+def test_a_conflict_is_recorded_and_the_next_poll_clears_it(conn, token):
+    http, _calls = fake([{
+        "ok": False,
+        "error_code": 409,
+        "description": f"Conflict: webhook {TOKEN}",
+    }])
+
+    stored = telegram_in.poll_once(conn, http=http, sleep=lambda s: None)
+
+    assert stored == 0
+    raw = _last_error(conn)
+    data = json.loads(raw)
+    assert data["code"] == 409
+    assert data["message"] == (
+        "another program is reading this bot's messages, or it has a webhook"
+    )
+    assert data["at"]
+    assert TOKEN not in raw
+    assert _cursor(conn) is None
+    assert _rows(conn) == []
+
+    http, _calls = fake([_ok([])])
+    assert telegram_in.poll_once(conn, http=http, sleep=lambda s: None) == 0
+    assert _last_error(conn) is None
+
+
+def test_a_poll_error_redacts_the_token_and_does_not_raise(conn, token):
+    http, _calls = fake([{
+        "ok": False,
+        "error_code": 400,
+        "description": f"Bad Request: bot{TOKEN}/getUpdates",
+    }])
+
+    stored = telegram_in.poll_once(conn, http=http, sleep=lambda s: None)
+
+    assert stored == 0
+    raw = _last_error(conn)
+    assert TOKEN not in raw
+    data = json.loads(raw)
+    assert "•••" in data["message"]
+    assert TOKEN not in data["message"]
+    assert data["code"] == 400
+    assert set(data) == {"at", "code", "message"}
 
 
 def test_a_network_error_stores_nothing_and_keeps_the_cursor(conn, token):

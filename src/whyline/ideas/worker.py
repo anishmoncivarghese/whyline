@@ -69,6 +69,80 @@ def is_on(value: object) -> bool:
     return _is_on(None if value is None else str(value))
 
 
+class ServiceError(Exception):
+    """The inbox could not be turned on. The message is safe to show."""
+
+
+def turn_on() -> None:
+    """Start the scheduler, then set kv ``enabled`` to ``on``.
+
+    ``whyline idea service on`` and the console's Inbox screen both call
+    this. The flag is written only after launchd accepts the scheduler, so
+    a failed start leaves no database behind. A schema error is raised
+    after the scheduler is on.
+    """
+    from whyline.agents import launchd
+
+    if not launchd.supported():
+        raise ServiceError(launchd.NEEDS_MACOS)
+    try:
+        launchd.turn_on()
+    except (RuntimeError, OSError) as exc:
+        raise ServiceError(str(exc)) from exc
+    try:
+        conn = store.connect()
+    except store.SchemaError as exc:
+        raise ServiceError(str(exc)) from exc
+    try:
+        _kv_set(conn, ENABLED_KEY, "on")
+    finally:
+        conn.close()
+
+
+def read_kv(key: str) -> str | None:
+    """One kv value, or None when the inbox database does not exist.
+
+    ``store.connect`` would create the database. Doctor and service status
+    are checks, so a machine that has no inbox stays that way.
+    """
+    path = paths.configured_home() / "ideas.sqlite3"
+    if not path.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(
+            f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=10
+        )
+    except sqlite3.Error:
+        return None
+    try:
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT value FROM kv WHERE key = ?", (key,)
+            ).fetchone()
+        except sqlite3.Error:
+            return None
+    finally:
+        conn.close()
+    return None if row is None else row["value"]
+
+
+def telegram_error_line() -> str | None:
+    """The last poll failure, or None after a poll that reached Telegram."""
+    from whyline.ideas import telegram_in
+
+    data = telegram_in.parse_last_error(read_kv(telegram_in.LAST_ERROR_KEY))
+    if not data:
+        return None
+    message = " ".join(str(data.get("message") or "").split())
+    if not message:
+        return None
+    at = str(data.get("at") or "").strip()
+    if at:
+        return f"Last Telegram error at {at}: {message}"
+    return f"Last Telegram error: {message}"
+
+
 def run_once(
     *,
     now: datetime | None = None,

@@ -1,7 +1,8 @@
 """`whyline idea`: the local inbox from the command line.
 
-Mutating commands rebuild the workbook afterwards and print its path.
-The Excel file is a view of the ledger; the ledger stays the record.
+Commands that change the ledger rebuild the workbook afterwards and print
+its path. The Excel file is a view of the ledger; the ledger stays the
+record. Commands that only change a setting print that setting.
 """
 
 from __future__ import annotations
@@ -82,11 +83,15 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
 
     sub.add_parser(
         "doctor",
-        help="Folder, schema, unattended agents, workbook, and cupsfilter",
+        help="Folder, schema, agents, workbook, cupsfilter, and Telegram",
     )
 
     tg = sub.add_parser("telegram", help="Chats the inbox may read")
     tg_sub = tg.add_subparsers(dest="idea_telegram_command", required=True)
+    tg_sub.add_parser(
+        "setup",
+        help="Connect a bot if needed, allow a private chat, and offer to turn the inbox on",
+    )
     allow = tg_sub.add_parser("allow", help="Read a private known chat")
     allow.add_argument("chat_id", type=int)
     deny = tg_sub.add_parser("deny", help="Stop reading a chat")
@@ -499,7 +504,7 @@ def cmd_documents(args: argparse.Namespace) -> int:
     try:
         _kv_set(conn, _FORMATS_KEY, args.format)
         print(args.format)
-        return _finish(conn)
+        return EXIT_OK
     finally:
         conn.close()
 
@@ -535,7 +540,7 @@ def cmd_assistant(args: argparse.Namespace) -> int:
             print(f"{str(args.agent).strip()} {str(backup).strip()}")
         else:
             print(str(args.agent).strip())
-        return _finish(conn)
+        return EXIT_OK
     finally:
         conn.close()
 
@@ -559,16 +564,28 @@ def cmd_agents(args: argparse.Namespace) -> int:
     try:
         _kv_set(conn, _AGENTS_KEY, json.dumps(names))
         print(" ".join(names))
-        return _finish(conn)
+        return EXIT_OK
     finally:
         conn.close()
 
 
 class _Check:
-    def __init__(self, name: str, ok: bool, detail: str):
+    def __init__(self, name: str, ok: bool, detail: str, *, level: str | None = None):
         self.name = name
         self.ok = ok
         self.detail = detail
+        self.level = level or ("ok" if ok else "fail")
+
+
+def _no_wait(_seconds: float) -> None:
+    """A check reports the failure. It does not pause for the poller's retry."""
+    return None
+
+
+_WEBHOOK_BLOCKED = (
+    "this bot has a webhook, so Telegram refuses polling; "
+    "use a separate bot for whyline, or remove the webhook if nothing else uses it"
+)
 
 
 def _folder_check() -> _Check:
@@ -664,7 +681,112 @@ def _cupsfilter_check() -> _Check:
     return _Check("cupsfilter", False, f"cupsfilter is missing ({location})")
 
 
+def _report_allowed(conn, private: list[tuple[int, str]]) -> bool:
+    """Say which private chats are already allowed. True means leave them."""
+    from whyline.ideas import telegram_in
+
+    current = telegram_in.allowed_chats(conn)
+    if not current:
+        return False
+    labels = {cid: label for cid, label in private}
+    for cid in current:
+        label = labels.get(cid)
+        if label:
+            print(f"Already allowed: {label}  ({cid})")
+        else:
+            print(f"Already allowed: {cid}")
+    return True
+
+
+_SKIP_CHAT = object()
+_BAD_CHAT = object()
+
+
+def _ask_chat(private: list[tuple[int, str]], input_fn):
+    """The private chat to allow, ``_SKIP_CHAT``, or ``_BAD_CHAT``."""
+    print("Private chats:")
+    for cid, label in private:
+        print(f"{label}  ({cid})")
+    if len(private) == 1:
+        cid, label = private[0]
+        answer = input_fn(f"Allow {label} ({cid})? [Y/n] ").strip().lower()
+        if answer in ("", "y", "yes"):
+            return cid
+        if answer in ("n", "no"):
+            print(f"Left {label}  ({cid}) not allowed.")
+            return _SKIP_CHAT
+    else:
+        answer = input_fn("Which private chat id should the inbox read? ").strip()
+    try:
+        return int(answer)
+    except ValueError:
+        print("Enter a private chat id.", file=sys.stderr)
+        return _BAD_CHAT
+
+
+def _agents_telegram_setup(input_fn, getpass_fn) -> int:
+    """The existing bot prompts: hidden token, Keychain on macOS, then chats."""
+    from whyline.cli import _cmd_agents_telegram
+
+    setup_args = argparse.Namespace(telegram_command="setup")
+    return _cmd_agents_telegram(
+        setup_args, input_fn=input_fn, getpass_fn=getpass_fn
+    )
+
+
+def _telegram_setup(conn, *, input_fn, getpass_fn) -> int:
+    from whyline.agents import telegram
+    from whyline.ideas import telegram_in, worker
+
+    token = telegram.token_get()
+    if not token:
+        code = _agents_telegram_setup(input_fn, getpass_fn)
+        if code != 0:
+            return code
+    else:
+        try:
+            bot = telegram.check_token(token, sleep=_no_wait)
+        except telegram.TelegramError as exc:
+            print(
+                f"error: {telegram.redact(str(exc), token)}",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        print(f"Bot {bot} is already saved. Keeping it.")
+
+    private = telegram_in.private_chats(telegram.known_chats())
+    if _report_allowed(conn, private):
+        pass
+    elif not private:
+        print(
+            "No private chats yet. Send a direct message to the bot, "
+            "then run whyline idea telegram setup again."
+        )
+    else:
+        chosen = _ask_chat(private, input_fn)
+        if chosen is _BAD_CHAT:
+            return EXIT_ERROR
+        if chosen is not _SKIP_CHAT:
+            try:
+                label = telegram_in.allow(conn, chosen)
+            except telegram_in.AllowError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{label}  ({chosen})  allowed")
+
+    if worker.enabled(conn):
+        print("Inbox already on.")
+        return EXIT_OK
+    answer = input_fn("Turn the inbox on now? [y/N] ").strip().lower()
+    if answer in ("y", "yes"):
+        return _service_on()
+    print("Inbox left off. Turn it on with: whyline idea service on")
+    return EXIT_OK
+
+
 def cmd_telegram(args: argparse.Namespace) -> int:
+    import getpass
+
     from whyline.agents import telegram
     from whyline.ideas import telegram_in
 
@@ -673,6 +795,10 @@ def cmd_telegram(args: argparse.Namespace) -> int:
     if conn is None:
         return EXIT_ERROR
     try:
+        if action == "setup":
+            return _telegram_setup(
+                conn, input_fn=input, getpass_fn=getpass.getpass
+            )
         if action == "list":
             chats = telegram.known_chats()
             if not chats:
@@ -696,12 +822,30 @@ def cmd_telegram(args: argparse.Namespace) -> int:
             print(f"{args.chat_id}  denied")
             return EXIT_OK
         print(
-            "usage: whyline idea telegram allow|deny|list",
+            "usage: whyline idea telegram setup|allow|deny|list",
             file=sys.stderr,
         )
         return EXIT_USAGE
     finally:
         conn.close()
+
+
+def _service_on() -> int:
+    """Turn the inbox on and make sure the scheduler is on.
+
+    ``whyline idea service on`` and the last step of telegram setup both
+    call this. The console calls ``worker.turn_on`` directly, which is the
+    save underneath, so the flag cannot be written a second way.
+    """
+    from whyline.ideas import worker
+
+    try:
+        worker.turn_on()
+    except worker.ServiceError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_ERROR
+    print("Inbox on.")
+    return EXIT_OK
 
 
 def cmd_service(args: argparse.Namespace) -> int:
@@ -716,23 +860,7 @@ def cmd_service(args: argparse.Namespace) -> int:
 
     action = getattr(args, "idea_service_command", None)
     if action == "on":
-        if not launchd.supported():
-            print(launchd.NEEDS_MACOS, file=sys.stderr)
-            return EXIT_ERROR
-        try:
-            launchd.turn_on()
-        except (RuntimeError, OSError) as exc:
-            print(str(exc), file=sys.stderr)
-            return EXIT_ERROR
-        conn = _connect()
-        if conn is None:
-            return EXIT_ERROR
-        try:
-            _kv_set(conn, worker.ENABLED_KEY, "on")
-            print("Inbox on.")
-            return EXIT_OK
-        finally:
-            conn.close()
+        return _service_on()
     if action == "off":
         conn = _connect()
         if conn is None:
@@ -765,6 +893,9 @@ def _print_service_status(launchd) -> None:
             state = "loaded" if info.loaded else "not loaded"
             print(f"Scheduler {state}.")
     print(worker.CATCH_UP)
+    line = worker.telegram_error_line()
+    if line:
+        print(line)
 
 
 def _inbox_enabled() -> bool:
@@ -788,6 +919,91 @@ def cmd_work(args: argparse.Namespace) -> int:
     return worker.work(int(args.job_id))
 
 
+def _id_count(raw: str | None) -> int:
+    if not raw:
+        return 0
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return 0
+    if not isinstance(parsed, list):
+        return 0
+    count = 0
+    for item in parsed:
+        try:
+            int(item)
+        except (TypeError, ValueError):
+            continue
+        count += 1
+    return count
+
+
+def _telegram_token_check() -> _Check:
+    from whyline.agents import telegram
+
+    token = telegram.token_get()
+    if not token:
+        return _Check(
+            "telegram token", False, "run whyline idea telegram setup"
+        )
+    try:
+        name = telegram.check_token(token, sleep=_no_wait)
+    except telegram.TelegramError as exc:
+        return _Check(
+            "telegram token", False, telegram.redact(str(exc), token)
+        )
+    return _Check("telegram token", True, telegram.redact(name, token))
+
+
+def _allowed_chats_check() -> _Check:
+    from whyline.ideas import telegram_in, worker
+
+    count = _id_count(worker.read_kv(telegram_in.ALLOW_KEY))
+    if count == 0:
+        return _Check("allowed chats", False, "none")
+    return _Check("allowed chats", True, str(count))
+
+
+def _service_check() -> _Check:
+    from whyline.ideas import worker
+
+    # A recorded poll failure outranks "off": the inbox is not healthy
+    # while Telegram is refusing it, whether or not the flag is on.
+    line = worker.telegram_error_line()
+    if line:
+        return _Check("service", False, line)
+    if worker.is_on(worker.read_kv(worker.ENABLED_KEY)):
+        return _Check("service", True, "on")
+    return _Check(
+        "service",
+        True,
+        "off; run whyline idea service on",
+        level="warn",
+    )
+
+
+def _webhook_check() -> _Check:
+    from whyline.agents import telegram
+
+    token = telegram.token_get()
+    if not token:
+        # The token check already fails. There is no bot to ask.
+        return _Check("webhook", True, "no bot token", level="warn")
+    try:
+        info = telegram.webhook_info(token, sleep=_no_wait)
+    except telegram.TelegramError as exc:
+        return _Check(
+            "webhook",
+            True,
+            telegram.redact(str(exc), token),
+            level="warn",
+        )
+    url = info.get("url") if isinstance(info, dict) else ""
+    if isinstance(url, str) and url.strip():
+        return _Check("webhook", False, _WEBHOOK_BLOCKED)
+    return _Check("webhook", True, "none")
+
+
 def cmd_doctor(_args: argparse.Namespace) -> int:
     checks = (
         _folder_check(),
@@ -795,10 +1011,13 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         _agents_check(),
         _workbook_check(),
         _cupsfilter_check(),
+        _telegram_token_check(),
+        _allowed_chats_check(),
+        _service_check(),
+        _webhook_check(),
     )
     for check in checks:
-        state = "ok" if check.ok else "fail"
-        print(f"{state:<6} {check.name}: {check.detail}")
+        print(f"{check.level:<6} {check.name}: {check.detail}")
     return EXIT_OK if all(check.ok for check in checks) else EXIT_ERROR
 
 

@@ -146,6 +146,12 @@ def check_token(token: str, *, http=None, sleep=time.sleep) -> str:
     return "@" + str(me.get("username", "bot"))
 
 
+def webhook_info(token: str, *, http=None, sleep=time.sleep) -> dict:
+    """What getWebhookInfo reports. An empty ``url`` means polling is allowed."""
+    info = _call("getWebhookInfo", token, {}, http=http, sleep=sleep) or {}
+    return info if isinstance(info, dict) else {}
+
+
 def find_chats(token: str, *, http=None, sleep=time.sleep) -> dict[int, str]:
     found: dict[int, str] = {}
     for update in _call("getUpdates", token, {}, http=http, sleep=sleep) or []:

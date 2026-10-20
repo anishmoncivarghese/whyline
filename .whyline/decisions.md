@@ -18717,3 +18717,269 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 98bccef7c0e34d8abc1653af7ebf2363 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:20:47.789Z"} -->
+
+## 2026-10-20 — Doctor skips the 30-second Telegram retry
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** A setup check should report a dead network at once
+
+**Rejected:**
+
+- Waiting out the poller retry — doctor would sit there and look stuck
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 6c7dcb7d92c9445eb0fa57d181b41fe1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:52:15.505Z"} -->
+
+## 2026-10-20 — poll_once reads the numeric code from the http payload
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** A 409 must be stored as a conflict, and TelegramError only carries the redacted text
+
+**Rejected:**
+
+- Adding a code field on TelegramError — TGS-1 allows only webhook_info in that module
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: afbbcff8a960467a94c4b2183f2ebad9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:52:15.568Z"} -->
+
+## 2026-10-20 — A second telegram setup does not ask again when a private chat is allowed and the service is on
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** Running it again must change nothing that is already set, and say so
+
+**Rejected:**
+
+- Asking every time and writing the same values — the prompts would still be a change
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 7dce165a6af04f979b42362bb2065706 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:52:15.631Z"} -->
+
+## 2026-10-20 — A doctor warning does not fail the command
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** Service off and a webhook network failure are warnings, separate from a fail
+
+**Rejected:**
+
+- Exiting 1 on a warning — an inbox that is simply not turned on yet would look broken
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 85875e65cf3840f1a1dbe1d5cc846b34 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:52:15.691Z"} -->
+
+## 2026-10-20 — The webhook check warns and does not call Telegram when no token is saved
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** There is no bot to ask, and the token check already names the setup command
+
+**Rejected:**
+
+- Calling getWebhookInfo with an empty token — that is a network call for a missing setting
+- Failing the webhook line as well — the missing token already has its own check
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 3bc9e91f73da47ada2ed8e3a1391003e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:52:15.752Z"} -->
+
+## 2026-10-20 — Service status and doctor share one sentence for the last poll error
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** Both must describe the same kv row
+
+**Rejected:**
+
+- Formatting the sentence only in the CLI — the two checks would drift
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: d2fe5eb2b88943878630d327348ce25b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:52:15.812Z"} -->
+
+## 2026-10-20 — TGS-1 passes tester round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-1
+
+**Because:** The idea suite and full project suite pass, the named Telegram setup, doctor, and poll-error scenarios are covered, and settings commands were verified not to create a workbook
+
+**Files:** tests/ideas/test_cli.py
+
+<!-- whyline-event: 86728ff0a7b84ae6b9178305ebb830f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T09:59:58.613Z"} -->
+
+## 2026-10-20 — TGS-1 round 3 requires a console counterpart
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-1
+
+**Because:** The new whyline idea telegram setup command configures the inbox allowlist and service, but whyline console only exposes the older Agents Telegram token/chat flow, violating the project's console-first requirement
+
+**Rejected:**
+
+- Approve based on passing CLI tests — the required setup operation would still be terminal-only
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: ba7a803a3f3e4fda994fd41712270add -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:07:10.688Z"} -->
+
+## 2026-10-20 — Console inbox saves through telegram_in.allow and worker.turn_on
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** The CLI and the console must write the allowlist and the enabled flag the same way
+
+**Rejected:**
+
+- Writing kv in the screen — the two setups would drift
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 8e7d66f5981644b298aec4eb16abee1f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:24:50.194Z"} -->
+
+## 2026-10-20 — The Inbox button sits on the agents status row
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** The controls row is sized to stay inside 80 columns
+
+**Rejected:**
+
+- Adding Inbox to the controls row — the button would sit past column 80, where a click cannot reach it
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 1205e7a6475d48a68d1269d5feddd890 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:24:50.257Z"} -->
+
+## 2026-10-20 — Opening Inbox does not create the database and does not poll Telegram
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** Looking at the screen is not a save, and polling would consume updates
+
+**Rejected:**
+
+- Connecting on open — an empty visit would create the inbox
+- Polling from this screen — the existing Telegram setup screen already finds chats
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: d8ace27fa91641bfa4c72060b542975a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:24:50.318Z"} -->
+
+## 2026-10-20 — A second Inbox visit does not write a chat or the service that is already set
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** Running whyline idea telegram setup again changes nothing that is already set
+
+**Rejected:**
+
+- Calling turn_on again — that reloads the scheduler even when the flag is already on
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: eb88908b78f647039d8adb934775a8de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:24:50.378Z"} -->
+
+## 2026-10-20 — Private chats are filtered once, beside allow
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** The CLI and the console must offer the same chats
+
+**Rejected:**
+
+- Filtering only in the screen — a group could be offered in one place and refused in the other
+
+**Files:** src/whyline/ideas/telegram_in.py
+
+<!-- whyline-event: c2219241ce7f45d0869d3de33853151c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:24:50.439Z"} -->
+
+## 2026-10-20 — Inbox offers only the telegram setup saves
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-1
+
+**Because:** The review asked for the private-chat allowlist and the inbox service
+
+**Rejected:**
+
+- Also editing agents, the assistant, documents and repositories here — that belongs to a later screen, and this task does not change those commands
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 3ef481607c73436d8cfdb84974acceaa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:24:50.499Z"} -->
+
+## 2026-10-20 — TGS-1 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-1
+
+**Because:** The task-specific ideas suite and the full project suite both completed with exit code 0, covering setup, doctor, poll error visibility, service status, and settings behavior
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 15dcfe1ad1cf4dad98ffe634d91813ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:30:59.819Z"} -->
+
+## 2026-10-20 — TGS-1 approved after round 6 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-1
+
+**Because:** The diff implements one-command Telegram inbox setup, read-only doctor checks, persisted redacted polling errors, workbook-free settings saves, the console counterpart, and the requested guide; both the focused ideas suite and full suite pass
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or test-coverage defect was found
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 5593873179a34b9c8093847355337f96 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:37:55.951Z"} -->

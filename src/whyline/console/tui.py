@@ -720,7 +720,9 @@ class WhylineConsoleApp(App):
     #context-bar Checkbox { padding: 0 1; background: transparent; }
     #context-bar Button { padding: 0 1; min-width: 6; }
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
-    #agents-status { height: auto; padding: 0 1; color: $text-muted; display: none; }
+    /* Inbox sits here, not on #controls: that row is sized for 80 columns. */
+    #agents-bar { height: auto; display: none; }
+    #agents-status { height: auto; width: 1fr; padding: 0 1; color: $text-muted; }
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
@@ -1350,7 +1352,7 @@ class WhylineConsoleApp(App):
             button.display = button.id in wanted
         self._main("#attach").display = self.session.mode == "chat"
         try:
-            self._main("#agents-status").display = self.session.mode == "agents"
+            self._main("#agents-bar").display = self.session.mode == "agents"
         except (NoMatches, IndexError):
             return
 
@@ -1485,6 +1487,11 @@ class WhylineConsoleApp(App):
             self._main("#agents-status", Static).update(text)
         except (NoMatches, IndexError):
             return
+
+    def _open_idea_inbox(self) -> None:
+        from whyline.console.agents_screens import IdeaInboxScreen
+
+        self.push_screen(IdeaInboxScreen())
 
     def _open_new_agent(self, existing=None, delivery=None, *, editing_id=None,
                         lock_name: bool = False) -> None:
@@ -2632,7 +2639,11 @@ class WhylineConsoleApp(App):
             # Plain text: progress labels contain brackets ("[1/3] Codex ...")
             # that Textual would otherwise parse as markup and crash on.
             Static("", id="thinking", markup=False),
-            Static("", id="agents-status"),
+            Horizontal(
+                Static("", id="agents-status"),
+                Button("Inbox", id="agents-inbox"),
+                id="agents-bar",
+            ),
             Horizontal(
                 Button("Approve", id="plan-approve", variant="success"),
                 Button("View draft", id="plan-view"),
@@ -2767,6 +2778,8 @@ class WhylineConsoleApp(App):
             self._open_agents_runs()
         elif button_id == "agents-scheduler":
             self._toggle_scheduler()
+        elif button_id == "agents-inbox":
+            self._open_idea_inbox()
         elif button_id == "copy":
             self._copy_transcript()
         elif button_id == "relay-run":

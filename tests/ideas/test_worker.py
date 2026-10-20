@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 import pytest
 
 from whyline import cli
-from whyline.agents import launchd
-from whyline.ideas import bot, brainstorm, paths, store, worker
+from whyline.agents import launchd, telegram
+from whyline.ideas import bot, brainstorm, paths, store, telegram_in, worker
 
 NOW = datetime(2026, 10, 20, 12, 0, 0)
 PAST = "2026-10-20T11:00:00"
@@ -487,6 +487,54 @@ def test_service_on_sets_enabled_and_status_says_catch_up(ideas_home, capsys, mo
         ).fetchone()[0] == "off"
     finally:
         conn.close()
+
+
+def test_service_status_shows_a_poll_conflict_until_the_next_poll(
+    ideas_home, capsys, monkeypatch
+):
+    monkeypatch.setattr(telegram, "token_get", lambda **_kwargs: "123:secret")
+    monkeypatch.setattr(launchd, "supported", lambda: True)
+    monkeypatch.setattr(
+        launchd,
+        "status",
+        lambda: launchd.Status(loaded=False, plist=None, last_tick=""),
+    )
+    conn = store.connect()
+
+    def http(method, _token, _fields, _files):
+        if method != "getUpdates":
+            raise AssertionError(method)
+        return {
+            "ok": False,
+            "error_code": 409,
+            "description": "Conflict: 123:secret",
+        }
+
+    assert telegram_in.poll_once(conn, http=http, sleep=lambda s: None) == 0
+    raw = conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (telegram_in.LAST_ERROR_KEY,)
+    ).fetchone()["value"]
+    data = json.loads(raw)
+    assert "123:secret" not in raw
+
+    assert cli.main(["idea", "service", "status"]) == 0
+    status = capsys.readouterr().out
+    assert data["message"] in status
+    assert data["at"] in status
+    assert "123:secret" not in status
+
+    def clear(_method, _token, _fields, _files):
+        return {"ok": True, "result": []}
+
+    assert telegram_in.poll_once(conn, http=clear, sleep=lambda s: None) == 0
+    assert conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (telegram_in.LAST_ERROR_KEY,)
+    ).fetchone() is None
+
+    assert cli.main(["idea", "service", "status"]) == 0
+    cleared = capsys.readouterr().out
+    assert "Last Telegram error" not in cleared
+    assert data["message"] not in cleared
 
 
 def test_service_on_stays_off_when_the_scheduler_cannot_start(ideas_home, capsys, monkeypatch):

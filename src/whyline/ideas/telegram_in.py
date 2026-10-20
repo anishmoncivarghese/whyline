@@ -2,6 +2,8 @@
 
 Uses ``whyline.agents.telegram``'s token and ``_call``. Allowed chats live
 in kv ``telegram_allow``; the getUpdates cursor lives in ``telegram_cursor``.
+A failed poll records ``telegram_last_error``; the next poll that reaches
+Telegram clears it.
 """
 from __future__ import annotations
 
@@ -15,6 +17,10 @@ from whyline.ideas import store
 
 ALLOW_KEY = "telegram_allow"
 CURSOR_KEY = "telegram_cursor"
+LAST_ERROR_KEY = "telegram_last_error"
+CONFLICT_MESSAGE = (
+    "another program is reading this bot's messages, or it has a webhook"
+)
 
 _BODY_KEYS = (
     "message",
@@ -49,6 +55,17 @@ def _kv_set(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 def _private_label(label: str) -> bool:
     return str(label).endswith("(private)")
+
+
+def private_chats(chats: dict) -> list[tuple[int, str]]:
+    """Known chats the inbox may offer. A group is never one of them."""
+    private = [
+        (int(cid), str(label))
+        for cid, label in chats.items()
+        if _private_label(label)
+    ]
+    private.sort(key=lambda item: item[0])
+    return private
 
 
 def allowed_chats(conn: sqlite3.Connection) -> list[int]:
@@ -242,21 +259,69 @@ def _ingest(conn: sqlite3.Connection, update: dict, allowed: set[int]) -> bool:
     return inserted
 
 
+def parse_last_error(raw: str | None) -> dict | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _status_code(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_poll_error(conn, token: str, code, message: str) -> None:
+    parsed = _status_code(code)
+    if parsed == 409:
+        text = CONFLICT_MESSAGE
+    else:
+        text = telegram.redact(str(message), token)
+    _kv_set(
+        conn,
+        LAST_ERROR_KEY,
+        json.dumps({"at": store._now(), "code": parsed, "message": text}),
+    )
+
+
+def _clear_poll_error(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM kv WHERE key = ?", (LAST_ERROR_KEY,))
+
+
 def poll_once(conn: sqlite3.Connection, *, http=None, sleep=time.sleep) -> int:
     token = telegram.token_get()
     if not token:
         return 0
     offset = _cursor(conn) + 1
+    seen: dict = {}
+
+    def watching(method, tok, fields, files):
+        # TelegramError carries the redacted text, not the numeric code.
+        caller = http or telegram._http
+        result = caller(method, tok, fields, files)
+        if isinstance(result, dict) and not result.get("ok"):
+            seen["code"] = result.get("error_code")
+        return result
+
     try:
         updates = telegram._call(
             "getUpdates",
             token,
             {"offset": offset, "timeout": 0},
-            http=http,
+            http=watching,
             sleep=sleep,
         ) or []
-    except telegram.TelegramError:
+    except telegram.TelegramError as exc:
+        _record_poll_error(conn, token, seen.get("code"), str(exc))
         return 0
+    _clear_poll_error(conn)
     allowed = set(allowed_chats(conn))
     stored = 0
     for update in updates:
