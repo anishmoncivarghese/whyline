@@ -18593,3 +18593,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ebf2992b3e7d4c9fa141e78119dc6360 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T06:24:31.233Z"} -->
+
+## 2026-10-20 — Add TGS-1 to the Idea Inbox plan as the first Phase 3 task
+
+**Actor:** claude
+**Role:** planner
+**Task:** TGS-1
+
+**Because:** A setup review found no single setup command, a doctor that ignores Telegram, and poll_once swallowing every TelegramError so a webhook conflict or revoked token looks like silence; Phase 3 lets the bot start relays, so setup must be checkable first
+
+**Rejected:**
+
+- A follow-up plan after 0.3.48 — Phase 3 would build Start and alerts on an inbox whose failures are invisible
+- Auto-delete a bot's webhook — it may belong to another service the user runs
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 15c3e832f651453c849396c201b29205 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T07:53:50.539Z"} -->
