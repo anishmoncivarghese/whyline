@@ -18611,3 +18611,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 15c3e832f651453c849396c201b29205 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T07:53:50.539Z"} -->
+
+## 2026-10-20 — Put the inbox settings on an Inbox screen in the console's Agents mode (TGS-2)
+
+**Actor:** claude
+**Role:** planner
+**Task:** TGS-2
+
+**Because:** User wants whyline idea agents/assistant/telegram/service set from the console like Set up; Agents mode already owns Telegram setup and the scheduler, and the screen reuses TelegramSetupScreen and OrderedChain and saves through the CLI's own functions
+
+**Rejected:**
+
+- Put it in Relay mode's Set up — Set up is per repository and per relay run, while the inbox is per Mac
+- A fourth top-level mode — one modal screen covers it without changing the mode bar
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: d1f531f3ee8c4c9a920d4a7f34505902 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T07:55:26.474Z"} -->
