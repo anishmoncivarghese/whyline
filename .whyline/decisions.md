@@ -18576,3 +18576,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2f5fc04fcc4d41658930275976f75606 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:35:03.506Z"} -->
+
+## 2026-10-20 — Release 0.3.47 at IDEA-14 after fixing a Python 3.11-only import failure in whyline.ideas.intent
+
+**Actor:** claude
+**Role:** release
+**Task:** IDEA-14
+
+**Because:** CI caught that 3.11 rejects an unhashable mappingproxy dataclass default; local runs used 3.13. Fixed with default_factory and verified with the full suite on a local 3.11 env before tagging
+
+**Rejected:**
+
+- Tag anyway since 3.13 passed — the package declares 3.11 support and every idea module failed to import there
+
+**Files:** src/whyline/ideas/intent.py, docs/releases/v0.3.47.md
+
+<!-- whyline-event: ebf2992b3e7d4c9fa141e78119dc6360 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T06:24:31.233Z"} -->
