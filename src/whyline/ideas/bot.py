@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from whyline.agents import capabilities, telegram
-from whyline.ideas import assistant, documents, intent, store, xlsx
+from whyline.ideas import assistant, brainstorm, documents, intent, store, xlsx
 
 OUT_OF_DATE = "This card is out of date"
 REFINE_QUESTION = "What should I add?"
@@ -248,7 +248,7 @@ def _dispatch(conn, row, routed: intent.Intent, run_fn) -> None:
     if kind == "capture":
         _capture(conn, row, routed)
     elif kind == "action":
-        _action(conn, row, routed)
+        _action(conn, row, routed, run_fn)
     elif kind == "command":
         _command(conn, row, routed)
     elif kind == "settings":
@@ -291,7 +291,15 @@ def _capture(conn, row, routed: intent.Intent) -> None:
         _remember_card_in(conn, chat_id, "capture", idea.id, None)
 
 
-def _action(conn, row, routed: intent.Intent) -> None:
+_BRAINSTORM_FROM = frozenset({
+    "captured",
+    "scored",
+    "brainstormed",
+    "brainstorm_configuring",
+})
+
+
+def _action(conn, row, routed: intent.Intent, run_fn) -> None:
     if routed.idea_id == 0:
         _unbound(conn, row, routed)
         return
@@ -324,8 +332,9 @@ def _action(conn, row, routed: intent.Intent) -> None:
     elif name == "edit":
         _edit(conn, row, idea)
     elif name == "brainstorm":
-        # IDEA-12 fills in the settings card.
-        return
+        _open_brainstorm(conn, row, idea)
+    elif name == "start_brainstorm":
+        _start_brainstorm(conn, row, idea, run_fn)
     else:
         _say(conn, row, "Not available yet.", idea_id=idea.id)
 
@@ -362,6 +371,14 @@ def _command(conn, row, routed: intent.Intent) -> None:
 
 
 def _settings(conn, row, routed: intent.Intent) -> None:
+    card = _card_for(conn, _field(row, "chat_id"))
+    if (
+        card
+        and card.get("kind") == "brainstorm"
+        and not _PLAN_KEYS.intersection(routed.fields)
+    ):
+        _update_brainstorm_card(conn, row, routed, card)
+        return
     plain, errors = _plain_fields(routed.fields)
     if errors:
         _say(conn, row, "\n".join(errors))
@@ -411,6 +428,12 @@ def _free(conn, row, routed: intent.Intent, run_fn) -> None:
         bound = idea
         if bound is None and proposal.card.idea_id is not None:
             bound = store.get(conn, proposal.card.idea_id)
+        if (
+            proposal.kind == "brainstorm_settings"
+            and proposal.error is None
+            and _apply_brainstorm_proposal(conn, row, bound, proposal)
+        ):
+            return
         _send_named_card(
             conn,
             row,
@@ -544,6 +567,24 @@ def _cancel(conn, row, idea: store.Idea) -> None:
     """
     card = _card_for(conn, _field(row, "chat_id"))
     kind = card.get("kind") if card else "capture"
+    if kind == "brainstorm" and idea.status == "brainstorm_configuring":
+        # brainstormed is not a cancel target. A second brainstorm returns
+        # to scored when a report exists, and to captured otherwise.
+        target = _brainstorm_return(conn, idea.id)
+        try:
+            store.transition(
+                conn,
+                idea.id,
+                target,
+                expected_revision=idea.revision,
+                actor="telegram",
+                note="cancelled",
+            )
+        except (store.IllegalMove, store.StaleRevision):
+            pass
+        _say(conn, row, "Cancelled.", idea_id=idea.id)
+        _clear_card(conn, _field(row, "chat_id"))
+        return
     if kind == "capture" and idea.status == "captured":
         try:
             store.transition(
@@ -569,12 +610,159 @@ def _confirm(conn, row, idea: store.Idea) -> None:
 
 
 def _edit(conn, row, idea: store.Idea) -> None:
+    card = _card_for(conn, _field(row, "chat_id"))
+    template = (
+        brainstorm.TEMPLATE
+        if card and card.get("kind") == "brainstorm"
+        else _SETTINGS_TEMPLATE
+    )
     _say(
         conn,
         row,
-        "Send a key: value message.\n\n" + _SETTINGS_TEMPLATE,
+        "Send a key: value message.\n\n" + template,
         idea_id=idea.id,
     )
+
+
+def _open_brainstorm(conn, row, idea: store.Idea) -> None:
+    if idea.status not in _BRAINSTORM_FROM:
+        _say(
+            conn,
+            row,
+            f"This idea can't be brainstormed from {idea.status}.",
+            idea_id=idea.id,
+        )
+        return
+    request, notes = brainstorm.defaults(conn)
+    if not request.models:
+        text = "No agent can brainstorm unattended."
+        if notes:
+            text = text + "\n" + "\n".join(notes)
+        _say(conn, row, text, idea_id=idea.id)
+        return
+    if idea.status != "brainstorm_configuring":
+        try:
+            idea = store.transition(
+                conn,
+                idea.id,
+                "brainstorm_configuring",
+                expected_revision=idea.revision,
+                actor="telegram",
+                note=idea.status,
+            )
+        except store.StaleRevision:
+            _say(conn, row, OUT_OF_DATE, idea_id=idea.id)
+            return
+        except store.IllegalMove as exc:
+            _say(conn, row, str(exc), idea_id=idea.id)
+            return
+    _show_brainstorm(conn, row, idea, request, notes)
+
+
+def _update_brainstorm_card(conn, row, routed: intent.Intent, card: dict) -> None:
+    idea_id = card.get("idea_id")
+    idea = store.get(conn, int(idea_id)) if idea_id else None
+    if idea is None:
+        _say(conn, row, "No idea is waiting for settings.")
+        return
+    try:
+        base, _stored_notes = brainstorm.request_from_fields(card.get("fields") or {})
+        request, notes = brainstorm.apply(base, routed.fields)
+    except brainstorm.SettingsError as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return
+    _show_brainstorm(conn, row, idea, request, notes)
+
+
+def _apply_brainstorm_proposal(conn, row, idea, proposal) -> bool:
+    """Update the Start card from an assistant proposal. False leaves the confirm card."""
+    if idea is None or idea.status not in _BRAINSTORM_FROM:
+        return False
+    card = _card_for(conn, _field(row, "chat_id"))
+    on_card = bool(
+        card and card.get("kind") == "brainstorm" and card.get("idea_id") == idea.id
+    )
+    try:
+        if on_card:
+            base, _stored_notes = brainstorm.request_from_fields(card.get("fields") or {})
+        else:
+            base, _stored_notes = brainstorm.defaults(conn)
+        request, notes = brainstorm.apply(base, proposal.fields)
+    except brainstorm.SettingsError as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return True
+    if idea.status != "brainstorm_configuring":
+        try:
+            idea = store.transition(
+                conn,
+                idea.id,
+                "brainstorm_configuring",
+                expected_revision=idea.revision,
+                actor="telegram",
+                note=idea.status,
+            )
+        except (store.IllegalMove, store.StaleRevision) as exc:
+            _say(conn, row, str(exc), idea_id=idea.id)
+            return True
+    _show_brainstorm(conn, row, idea, request, notes)
+    return True
+
+
+def _start_brainstorm(conn, row, idea: store.Idea, run_fn) -> None:
+    if idea.status != "brainstorm_configuring":
+        _say(
+            conn,
+            row,
+            f"This idea can't be brainstormed from {idea.status}.",
+            idea_id=idea.id,
+        )
+        return
+    card = _card_for(conn, _field(row, "chat_id"))
+    fields = {}
+    if card and card.get("kind") == "brainstorm":
+        fields = card.get("fields") or {}
+    try:
+        if fields:
+            request, _notes = brainstorm.request_from_fields(fields)
+        else:
+            request, _notes = brainstorm.defaults(conn)
+    except brainstorm.SettingsError as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return
+    if not request.models or not request.final:
+        _say(conn, row, "No agent can brainstorm unattended.", idea_id=idea.id)
+        return
+    try:
+        brainstorm.run(conn, idea.id, request, run_fn=run_fn)
+    except brainstorm.BrainstormError:
+        return
+
+
+def _show_brainstorm(conn, row, idea: store.Idea, request, notes) -> None:
+    chat_id = int(_field(row, "chat_id"))
+    keyboard = _keyboard(
+        brainstorm.SETTINGS_BUTTONS, idea.id, idea.revision
+    )
+    _say(conn, row, brainstorm.render(request, notes), keyboard, idea_id=idea.id)
+    _remember_card(conn, chat_id, "brainstorm", idea.id, request.as_fields())
+
+
+def _brainstorm_return(conn, idea_id: int) -> str:
+    row = conn.execute(
+        """
+        SELECT from_status FROM events
+        WHERE idea_id = ? AND to_status = 'brainstorm_configuring'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (idea_id,),
+    ).fetchone()
+    origin = row["from_status"] if row is not None else "captured"
+    if origin in {"captured", "scored"}:
+        return origin
+    if _latest_analysis(conn, idea_id) is not None:
+        return "scored"
+    return "captured"
 
 
 def _command_drop(conn, row, routed: intent.Intent) -> None:
@@ -742,6 +930,9 @@ def _deliver(token: str, row, http) -> None:
         caption = row["text"] or ""
         if caption:
             fields["caption"] = caption[: telegram.CAPTION_LIMIT]
+        keyboard = _load_keyboard(row["buttons_json"])
+        if keyboard:
+            fields["reply_markup"] = {"inline_keyboard": keyboard}
         telegram._call(
             "sendDocument",
             token,

@@ -18286,3 +18286,165 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: de42dffb61154e1fbe6dfbc9f872733c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-19T23:09:50.362Z"} -->
+
+## 2026-10-20 — The inbox git repository is created in brainstorm.ensure_workspace
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** The empty commit exists so a later brainstorm commit has a parent, and only a brainstorm needs that repository.
+
+**Rejected:**
+
+- Putting git init in paths.workspace — a score or an assistant turn would commit an empty snapshot it does not need.
+
+**Files:** src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: d75c3dd710094a83a8bc1cd4f1a82098 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:51.990Z"} -->
+
+## 2026-10-20 — A failing final writer is retried only through the card backup chain
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** The synthesis call is limited to the requested writer, then the next named backup writes it, the same way Auto fails over research.
+
+**Rejected:**
+
+- Letting relay brainstorm pick the next research model — that writer is not the backup the card named.
+
+**Files:** src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: 515f06bbbb3d435896a2553fc8d68f55 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.052Z"} -->
+
+## 2026-10-20 — Start brainstorm runs in the update handler and does not insert a jobs row
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** IDEA-13 owns the worker, and the tests call run with a fake runner.
+
+**Rejected:**
+
+- Inserting a jobs row — nothing would run it yet.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 3c5bab6975434c31b2cb73649c1af612 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.111Z"} -->
+
+## 2026-10-20 — Cancel returns to the recorded entry status, or to scored when a second brainstorm has a report
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** brainstorm_configuring may move to captured or scored, and brainstormed is not an allowed cancel target.
+
+**Rejected:**
+
+- Always returning to captured — a scored idea would lose its scored status.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: fc93a6dd65fe4d64b49eb33abd5baf4a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.172Z"} -->
+
+## 2026-10-20 — A settings message updates the Start card only while that card is open and it has no plan keys
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** The same settings grammar still opens the IDEA-11 confirm card when the brainstorm card is not the one on screen.
+
+**Rejected:**
+
+- Treating every settings message as a brainstorm update — plan setup and the confirm card would stop matching.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: bd84b333ae28435893ccdb8be4cd9e7d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.233Z"} -->
+
+## 2026-10-20 — An explicit backup may also be one of the models
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** The settings template names codex as both a model and the backup.
+
+**Rejected:**
+
+- Dropping any backup that is already a model — the template line backup: codex would never stick.
+
+**Files:** src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: f4990937be87485e9ec608d56cd604dc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.293Z"} -->
+
+## 2026-10-20 — A final writer that is not in models is appended to them
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** adapters.run_brainstorm replaces a final agent missing from the model list with the first model.
+
+**Rejected:**
+
+- Leaving the list unchanged — the named writer would never run.
+
+**Files:** src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: 26362e00903f4210b643adc0995862d7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.353Z"} -->
+
+## 2026-10-20 — A document outbox row sends its keyboard when buttons_json is set
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-12
+
+**Because:** The synthesis is delivered as Word and PDF documents, and those documents carry Create spec and plan, Brainstorm again, and Drop.
+
+**Rejected:**
+
+- A separate text message for the buttons — the buttons belong on the documents.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 871dfd8285024d76b7c802e9c62cd5af -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:44:52.413Z"} -->
+
+## 2026-10-20 — IDEA-12 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-12
+
+**Because:** The IDEA-specific suite and full project suite both completed successfully, covering workspace isolation, defaults, unlimited timeout, final-writer failover, and document delivery behavior.
+
+**Files:** tests/ideas/test_brainstorm.py
+
+<!-- whyline-event: 795c98aeba6744629f3b67a63c0586c2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:50:59.955Z"} -->
+
+## 2026-10-20 — Approve IDEA-12 inbox-workspace brainstorming
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-12
+
+**Because:** The implementation matches the requested settings validation, private git workspace execution, timeout handling, final-writer backup chain, synthesis archival, and Word/PDF delivery; the focused ideas suite and full repository suite pass, and the added tests exercise every required acceptance path.
+
+**Files:** src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: 53db1c7853334e41a5bbf1c84cfd2eea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:57:11.758Z"} -->
