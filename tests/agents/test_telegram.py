@@ -104,3 +104,38 @@ def test_token_file_off_mac(home):
     assert tg.token_get(mac=False) == TOKEN
     if os.name != "nt":
         assert ((home / ".whyline/agents/settings/telegram-token").stat().st_mode & 0o777) == 0o600
+
+
+def test_multipart_fields_send_structured_values_as_json(tmp_path, monkeypatch):
+    # A document with buttons: reply_markup was written as Python repr
+    # ({'inline_keyboard': ...}), which Telegram cannot parse, so every
+    # brainstorm result (it has buttons) failed to send.
+    import json
+    import urllib.request
+
+    sent = {}
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"ok": true, "result": {}}'
+
+    def fake_urlopen(request, timeout=60):
+        sent["body"] = request.data.decode("utf-8", errors="replace")
+        return _Response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    doc = tmp_path / "r.docx"
+    doc.write_bytes(b"x")
+    keyboard = {"inline_keyboard": [[{"text": "Drop", "callback_data": "drop:1:5"}]]}
+    tg._http(
+        "sendDocument", "t", {"chat_id": 1, "reply_markup": keyboard}, {"document": doc}
+    )
+    part = sent["body"].split('name="reply_markup"\r\n\r\n', 1)[1].split("\r\n", 1)[0]
+    assert json.loads(part) == keyboard
+    assert 'name="chat_id"\r\n\r\n1\r\n' in sent["body"]

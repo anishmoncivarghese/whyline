@@ -82,6 +82,10 @@ def _http(method: str, token: str, fields: dict, files: dict | None) -> dict:
         boundary = uuid.uuid4().hex
         body = bytearray()
         for key, value in fields.items():
+            # Telegram reads structured fields (reply_markup) as JSON. An
+            # f-string would write Python repr, which it rejects.
+            if not isinstance(value, str):
+                value = json.dumps(value)
             body += (
                 f"--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\""
                 f"\r\n\r\n{value}\r\n"
