@@ -68,8 +68,12 @@ def _job(conn, idea, **fields):
 def _run(**overrides):
     seen = {"poll": 0, "handle": [], "flush": 0, "spawn": [], "stop": []}
 
-    def poll(conn):
+    def poll(conn, timeout=0):
         seen["poll"] += 1
+        # A live job keeps the tick polling. Stop the loop the way a
+        # Telegram error would, so these tests still return.
+        if seen["poll"] > 1:
+            raise telegram.TelegramError("stopped")
         return 0
 
     def handle(conn, row):
@@ -88,6 +92,9 @@ def _run(**overrides):
 
     kwargs = {
         "now": NOW,
+        # Lease checks follow the clock, which advances during a real tick.
+        # These tests pin both to NOW.
+        "clock": lambda: NOW,
         "poll": poll,
         "handle": handle,
         "flush": flush,
@@ -281,7 +288,7 @@ def test_one_queued_job_is_started_once_across_two_ticks(conn):
     second_pass = _run(**kwargs)
 
     assert spawned == [first["id"]]
-    assert first_pass["poll"] == 1 and second_pass["poll"] == 1
+    assert first_pass["poll"] == 2 and second_pass["poll"] == 2
     assert first_pass["flush"] == 1 and second_pass["flush"] == 1
     assert handled == [7]
     started = conn.execute(
@@ -416,8 +423,9 @@ def test_start_brainstorm_queues_one_job(conn, monkeypatch):
     bot.handle(conn, _message("  A quiet ledger  \nfor receipts"))
     idea = store.list_ideas(conn)[0]
     bot.handle(conn, _press(_button(conn, "Brainstorm"), "cb-open", update_id=2))
-    bot.handle(conn, _press(_button(conn, "Start brainstorm"), "cb-start", update_id=3))
-    bot.handle(conn, _press(_button(conn, "Start brainstorm"), "cb-again", update_id=4))
+    start = _button(conn, "Start")
+    bot.handle(conn, _press(start, "cb-start", update_id=3))
+    bot.handle(conn, _press(start, "cb-again", update_id=4))
 
     jobs = conn.execute("SELECT * FROM jobs").fetchall()
     assert len(jobs) == 1
@@ -438,7 +446,10 @@ def test_start_brainstorm_queues_one_job(conn, monkeypatch):
         row["text"]
         for row in conn.execute("SELECT text FROM outbox ORDER BY id")
     ]
-    assert texts.count("Brainstorming with claude…") == 1
+    assert texts.count(
+        "Brainstorm started with claude, 1 pass. "
+        "Usually 15-40 minutes; I'll message you when it's done."
+    ) == 1
     assert store.get(conn, idea.id).status == "brainstorm_configuring"
 
 
@@ -566,3 +577,285 @@ def test_work_fails_an_unknown_kind_and_tells_the_chat(conn, monkeypatch):
     assert sent["chat_id"] == CHAT
     assert sent["text"] == row["error"]
     assert not paths.workbook().exists()
+
+
+def test_a_fresh_tap_keeps_the_tick_awake_for_the_next_one(conn):
+    _enable(conn)
+    moment = {"at": NOW}
+    polls = []
+    handled = []
+
+    def clock():
+        return moment["at"]
+
+    def poll(db, timeout=0):
+        polls.append(timeout)
+        update_id = len(polls)
+        if update_id <= 2:
+            db.execute(
+                """
+                INSERT INTO inbound (
+                  update_id, chat_id, at, kind, text, callback_data, handled
+                ) VALUES (?, ?, '2026-10-20T12:00:00Z', 'callback_query', '', ?, 0)
+                """,
+                (update_id, CHAT, f"score:1:{update_id}"),
+            )
+            return 1
+        moment["at"] = NOW + timedelta(minutes=10)
+        return 0
+
+    def handle(db, row):
+        handled.append(row["update_id"])
+        db.execute(
+            "UPDATE inbound SET handled = 1 WHERE update_id = ?",
+            (row["update_id"],),
+        )
+
+    worker.run_once(
+        now=NOW,
+        clock=clock,
+        poll=poll,
+        handle=handle,
+        flush=lambda _db: 0,
+        spawn=lambda _job_id: 1,
+        pid_alive=lambda _pid: False,
+        stop=lambda _pid: None,
+    )
+
+    assert handled == [1, 2]
+    assert polls[0] == 0
+    assert polls[1] == 25
+    assert len(polls) == 3
+
+
+def test_a_failing_handler_does_not_keep_the_tick_awake(conn):
+    """A poison row stays unhandled and does not reset the quiet window.
+
+    The tick that stored it still waits out ten quiet minutes, then
+    releases the poll lock. The next tick is the one that tries again.
+    """
+    _enable(conn)
+    moment = {"at": NOW}
+    polls = []
+    attempts = []
+
+    def clock():
+        return moment["at"]
+
+    def poll(db, timeout=0):
+        polls.append(timeout)
+        if len(polls) > 3:
+            raise AssertionError("poison row reset the quiet window")
+        if len(polls) == 1:
+            db.execute(
+                """
+                INSERT INTO inbound (
+                  update_id, chat_id, at, kind, text, callback_data, handled
+                ) VALUES (?, ?, '2026-10-20T12:00:00Z', 'callback_query', '', ?, 0)
+                """,
+                (1, CHAT, "score:1:1"),
+            )
+            return 1
+        moment["at"] = NOW + timedelta(minutes=9 if len(polls) == 2 else 10)
+        return 0
+
+    def handle(_db, row):
+        attempts.append(row["update_id"])
+        raise RuntimeError("poison")
+
+    worker.run_once(
+        now=NOW,
+        clock=clock,
+        poll=poll,
+        handle=handle,
+        flush=lambda _db: 0,
+        spawn=lambda _job_id: 1,
+        pid_alive=lambda _pid: False,
+        stop=lambda _pid: None,
+    )
+
+    assert attempts == [1]
+    assert polls == [0, 25, 25]
+    assert moment["at"] - NOW == timedelta(minutes=10)
+    assert conn.execute(
+        "SELECT handled FROM inbound WHERE update_id = 1"
+    ).fetchone()["handled"] == 0
+
+    later = []
+
+    def later_poll(_db, timeout=0):
+        later.append(timeout)
+        return 0
+
+    worker.run_once(
+        now=moment["at"],
+        clock=lambda: moment["at"],
+        poll=later_poll,
+        handle=handle,
+        flush=lambda _db: 0,
+        spawn=lambda _job_id: 1,
+        pid_alive=lambda _pid: False,
+        stop=lambda _pid: None,
+    )
+
+    assert later == [0]
+    assert attempts == [1, 1]
+    assert conn.execute(
+        "SELECT handled FROM inbound WHERE update_id = 1"
+    ).fetchone()["handled"] == 0
+
+
+def test_a_hung_job_crosses_its_lease_while_the_tick_is_still_polling(conn):
+    """A finite lease expires on the poll clock, not the tick's timestamp.
+
+    The pid stays alive, so only the lease can reclaim the job. The tick's
+    ``now`` stays before that lease. If recovery kept using it, the job
+    would look live forever and this process would keep the poll lock.
+    """
+    _enable(conn)
+    idea = _idea(conn)
+    started = NOW + timedelta(minutes=20)
+    job = _job(
+        conn,
+        idea,
+        state="running",
+        attempts=1,
+        lease_until=started.isoformat(timespec="seconds"),
+        pid=77,
+    )
+    moment = {"at": NOW}
+    polls = []
+    stopped = []
+    restarted = {}
+
+    def clock():
+        return moment["at"]
+
+    def poll(db, timeout=0):
+        polls.append(timeout)
+        n = len(polls)
+        if n == 2:
+            moment["at"] = started
+        elif n == 3:
+            restarted["row"] = db.execute(
+                "SELECT state, attempts, lease_until, pid FROM jobs WHERE id = ?",
+                (job["id"],),
+            ).fetchone()
+            moment["at"] = started + timedelta(minutes=45)
+        elif n > 6:
+            raise telegram.TelegramError("lease was not applied")
+        return 0
+
+    def stop(pid):
+        stopped.append(pid)
+
+    worker.run_once(
+        now=NOW,
+        clock=clock,
+        poll=poll,
+        handle=lambda _db, _row: None,
+        flush=lambda _db: 0,
+        spawn=lambda _job_id: 4242,
+        pid_alive=lambda _pid: True,
+        stop=stop,
+    )
+
+    assert restarted["row"]["state"] == "running"
+    assert restarted["row"]["attempts"] == 2
+    assert restarted["row"]["pid"] == 4242
+    assert datetime.fromisoformat(restarted["row"]["lease_until"]) - started == timedelta(
+        minutes=45
+    )
+    row = conn.execute(
+        "SELECT state, error FROM jobs WHERE id = ?", (job["id"],)
+    ).fetchone()
+    assert row["state"] == "failed"
+    assert "time limit" in row["error"]
+    assert stopped == [77, 4242]
+    assert polls == [25, 25, 25]
+    assert conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (telegram_in.LAST_ERROR_KEY,)
+    ).fetchone() is None
+
+
+def test_two_ticks_do_not_poll_at_once(conn):
+    _enable(conn)
+    outer = {"n": 0}
+    inner = {"n": 0}
+
+    def poll(db, timeout=0):
+        outer["n"] += 1
+
+        def inner_poll(_db, timeout=0):
+            inner["n"] += 1
+            return 0
+
+        worker.run_once(
+            now=NOW,
+            poll=inner_poll,
+            handle=lambda _db, _row: None,
+            flush=lambda _db: 0,
+            spawn=lambda _job_id: 1,
+            pid_alive=lambda _pid: False,
+            stop=lambda _pid: None,
+        )
+        return 0
+
+    worker.run_once(
+        now=NOW,
+        poll=poll,
+        handle=lambda _db, _row: None,
+        flush=lambda _db: 0,
+        spawn=lambda _job_id: 1,
+        pid_alive=lambda _pid: False,
+        stop=lambda _pid: None,
+    )
+
+    assert outer["n"] == 1
+    assert inner["n"] == 0
+
+
+def test_quick_score_edits_one_status_on_fallback_and_when_it_lands(conn, monkeypatch):
+    idea = _idea(conn)
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude", "codex"]),),
+    )
+    monkeypatch.setattr(
+        bot.capabilities, "can_run_unattended", lambda name: name in {"claude", "codex"}
+    )
+    bot.begin_progress(
+        conn,
+        CHAT,
+        idea.id,
+        "Quick score started with claude. Usually 2-5 minutes; I'll message you when it's done.",
+    )
+    seen = []
+
+    def fake_analyse(db, idea_id, *, agents, on_fallback=None, **_kwargs):
+        on_fallback(agents[0], "rate limit — slow down", agents[1])
+        seen.append(db.execute("SELECT text FROM outbox ORDER BY id").fetchone()["text"])
+        md = paths.reports_dir() / "landed.md"
+        md.write_text("# Report\n", encoding="utf-8")
+        store.add_analysis(
+            db,
+            idea_id,
+            agent="codex",
+            report_path=str(md),
+            usefulness=5,
+            complexity_mvp=4,
+            complexity_full=6,
+            verdict="YES",
+            confidence="medium",
+        )
+
+    monkeypatch.setattr("whyline.ideas.analyse.analyse", fake_analyse)
+    worker._execute(conn, {"kind": "score", "idea_id": idea.id})
+
+    texts = [
+        row["text"]
+        for row in conn.execute("SELECT text FROM outbox ORDER BY id")
+    ]
+    assert seen == ["claude failed (rate limit); trying codex…"]
+    assert texts[0] == "Quick score done ↓"
+    assert "Usefulness: 5/9" in texts[-1]

@@ -11,7 +11,7 @@ ALLOWED = {
     "scoring": ("scored", "captured"),
     "scored": ("brainstorm_configuring", "dropped", "scoring"),
     "brainstorm_configuring": ("brainstorming", "captured", "scored"),
-    "brainstorming": ("brainstormed", "captured"),
+    "brainstorming": ("brainstormed", "captured", "scored"),
     "brainstormed": ("brainstorm_configuring", "setup_configuring", "dropped"),
     "dropped": ("captured",),
     "setup_configuring": ("plan_waiting", "planning", "brainstormed"),
@@ -56,11 +56,11 @@ def test_home_uses_env_and_is_private(ideas_home):
     assert paths.workbook() == ideas_home / "ideas.xlsx"
 
 
-def test_connect_creates_schema_4(conn, ideas_home):
+def test_connect_creates_schema_5(conn, ideas_home):
     version = conn.execute(
         "SELECT value FROM kv WHERE key = 'schema_version'"
     ).fetchone()[0]
-    assert version == "4"
+    assert version == "5"
     tables = {
         row[0]
         for row in conn.execute(
@@ -158,9 +158,9 @@ def test_events_are_appended_in_order(conn):
 
 def test_newer_schema_version_is_refused(ideas_home):
     conn = store.connect()
-    conn.execute("UPDATE kv SET value = '5' WHERE key = 'schema_version'")
+    conn.execute("UPDATE kv SET value = '6' WHERE key = 'schema_version'")
     conn.close()
-    with pytest.raises(store.SchemaError, match="schema version 5"):
+    with pytest.raises(store.SchemaError, match="schema version 6"):
         store.connect()
 
 

@@ -79,6 +79,26 @@ def _labels(row):
     return [cell["text"] for line in keyboard for cell in line]
 
 
+def _live(conn):
+    return [row for row in _outbox(conn) if row["buttons_json"]]
+
+
+def _card(conn):
+    row = conn.execute(
+        "SELECT value FROM kv WHERE key = 'telegram_card'"
+    ).fetchone()
+    return json.loads(row[0])[str(CHAT)]
+
+
+def _cell(row, label):
+    keyboard = json.loads(row["buttons_json"])
+    for line in keyboard:
+        for cell in line:
+            if cell["text"] == label:
+                return cell
+    raise AssertionError(label)
+
+
 def _capture(conn, text="Ship a quiet ledger"):
     bot.handle(conn, _message(text))
     return store.list_ideas(conn)[-1]
@@ -176,7 +196,8 @@ def test_defaults_are_every_usable_agent_with_one_pass(conn, monkeypatch):
     idea = _capture(conn)
     shown = _press_brainstorm(conn, idea)
     card = _outbox(conn, "message")[-1]
-    assert card["text"].startswith("Brainstorm\n")
+    assert card["text"].startswith("Start brainstorm will use:")
+    assert "To change any of these, reply with lines like:" in card["text"]
     assert "models: claude, codex, grok" in card["text"]
     assert "passes: 1" in card["text"]
     assert "final: claude" in card["text"]
@@ -184,7 +205,7 @@ def test_defaults_are_every_usable_agent_with_one_pass(conn, monkeypatch):
     assert "timeout: 15" in card["text"]
     assert "backup: codex" in card["text"]
     assert "timeout: 30" in card["text"]
-    assert _labels(card) == ["Start brainstorm", "Edit", "Cancel"]
+    assert _labels(card) == ["Start", "Edit", "Cancel"]
     assert shown.status == "brainstorm_configuring"
 
 
@@ -211,7 +232,7 @@ def test_a_settings_message_updates_the_card_or_names_the_line(conn, monkeypatch
     updated = _outbox(conn, "message")[-1]
     assert "passes: 2" in updated["text"]
     assert "timeout: none" in updated["text"]
-    assert _labels(updated) == ["Start brainstorm", "Edit", "Cancel"]
+    assert _labels(updated) == ["Start", "Edit", "Cancel"]
     assert store.get(conn, idea.id).revision == idea.revision
 
     bot.handle(conn, _message("passes: 9", update_id=4, message_id=7))
@@ -229,10 +250,11 @@ def test_a_settings_message_updates_the_card_or_names_the_line(conn, monkeypatch
         conn,
         _message("models: antigravity, claude", update_id=7, message_id=10),
     )
-    removed = _outbox(conn, "message")[-1]
+    cards = [row for row in _outbox(conn, "message") if row["buttons_json"]]
+    removed = cards[-1]
     assert "antigravity: not cleared for unattended runs" in removed["text"]
     assert "models: claude" in removed["text"]
-    assert _labels(removed) == ["Start brainstorm", "Edit", "Cancel"]
+    assert _labels(removed) == ["Start", "Edit", "Cancel"]
     kept = json.loads(
         conn.execute("SELECT value FROM kv WHERE key = 'telegram_card'").fetchone()[0]
     )
@@ -259,7 +281,7 @@ def test_an_assistant_proposal_updates_the_card(conn, monkeypatch):
     card = _outbox(conn, "message")[-1]
     assert "passes: 3" in card["text"]
     assert "backup: codex" in card["text"]
-    assert _labels(card) == ["Start brainstorm", "Edit", "Cancel"]
+    assert _labels(card) == ["Start", "Edit", "Cancel"]
     assert store.get(conn, idea.id).status == "brainstorm_configuring"
 
 
@@ -371,14 +393,79 @@ def test_the_synthesis_is_sent_as_word_and_pdf_with_the_three_buttons(conn, toke
         (fields, files) for method, fields, files in sent if method == "sendDocument"
     ]
     assert [files["document"] for _fields, files in documents_sent] == [str(docx), str(pdf)]
-    buttons = ["Create spec and plan", "Brainstorm again", "Drop"]
-    for fields, _files in documents_sent:
-        labels = [
-            cell["text"]
-            for line in fields["reply_markup"]["inline_keyboard"]
-            for cell in line
-        ]
-        assert labels == buttons
+    buttons = ["Spec and plan", "Again", "Drop"]
+    older, newer = documents_sent
+    assert older[0].get("caption") == "Moved to the newer card ↓"
+    assert "reply_markup" not in older[0]
+    labels = [
+        cell["text"]
+        for line in newer[0]["reply_markup"]["inline_keyboard"]
+        for cell in line
+    ]
+    assert labels == buttons
     stored = store.get(conn, idea.id)
     assert stored.status == "brainstormed"
     assert stored.brainstorm_path == str(paths.home() / "brainstorms" / f"{idea.id}.md")
+
+
+def test_again_after_synthesis_opens_one_settings_card(conn, token, monkeypatch):
+    """A finished brainstorm remembers the result, so Again does not revive the old card.
+
+    The pre-run settings row is retired when the synthesis is queued. Again
+    must open one newer settings card and take the buttons off the result.
+    """
+    _export(monkeypatch)
+    _install_detect(monkeypatch, claude=True)
+    monkeypatch.setattr(
+        brainstorm.capabilities, "can_run_unattended", lambda name: name == "claude"
+    )
+    idea = _press_brainstorm(conn, _capture(conn))
+    settings_id = _live(conn)[-1]["id"]
+    request, _notes = brainstorm.defaults(conn)
+    _calls, run_fn = _runner()
+
+    brainstorm.run(conn, idea.id, request, run_fn=run_fn)
+    bot.flush_outbox(conn, http=_http([]))
+
+    delivered = _live(conn)
+    assert len(delivered) == 1
+    result = delivered[0]
+    assert result["id"] != settings_id
+    assert result["kind"] == "document"
+    assert result["sent_at"] is not None
+    pointer = _card(conn)
+    assert pointer["kind"] == "brainstormed"
+    assert pointer["idea_id"] == idea.id
+    assert pointer["outbox_id"] == result["id"]
+    retired = conn.execute(
+        "SELECT * FROM outbox WHERE id = ?", (settings_id,)
+    ).fetchone()
+    assert retired["buttons_json"] is None
+    assert retired["text"] == "Moved to the newer card ↓"
+
+    bot.handle(
+        conn,
+        _press(_cell(result, "Again")["callback_data"], "cb-again", update_id=20),
+    )
+
+    live = _live(conn)
+    assert len(live) == 1
+    opened = live[0]
+    assert opened["id"] not in {settings_id, result["id"]}
+    assert opened["kind"] == "message"
+    assert opened["text"].startswith("Start brainstorm will use:")
+    assert _labels(opened) == ["Start", "Edit", "Cancel"]
+    result_after = conn.execute(
+        "SELECT * FROM outbox WHERE id = ?", (result["id"],)
+    ).fetchone()
+    assert result_after["buttons_json"] is None
+    settings_after = conn.execute(
+        "SELECT * FROM outbox WHERE id = ?", (settings_id,)
+    ).fetchone()
+    assert settings_after["buttons_json"] is None
+    assert settings_after["text"] == "Moved to the newer card ↓"
+    pointer = _card(conn)
+    assert pointer["kind"] == "brainstorm"
+    assert pointer["idea_id"] == idea.id
+    assert pointer["outbox_id"] == opened["id"]
+    assert store.get(conn, idea.id).status == "brainstorm_configuring"

@@ -18983,3 +18983,423 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5593873179a34b9c8093847355337f96 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T10:37:55.951Z"} -->
+
+## 2026-10-20 — Store Telegram message ids in schema 5 and delete unsent callback rows there
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** A sent card can be edited only if its message id is kept, and the plan says the schema step drops queued callback acknowledgements
+
+**Rejected:**
+
+- Leave schema 4 and delete callbacks from the poll — a database that is not polled would keep retrying them
+
+**Files:** src/whyline/ideas/store.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: d26f0b0626a340ecab22084cf9b6193b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:29:29.452Z"} -->
+
+## 2026-10-20 — Shorten Start, Spec and plan, and Again so every button label is at most 14 characters
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** Start brainstorm, Create spec and plan, and Brainstorm again are 16, 20, and 16 characters and a phone truncates them; the card heading still says Start brainstorm will use
+
+**Rejected:**
+
+- Keep the long labels — they break the 14-character limit the plan sets for every button
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: e62937359a8d4994b21dc57b2d332a32 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:29:29.515Z"} -->
+
+## 2026-10-20 — Cancel of a queued score stops the job even while the idea is still captured
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** analyse is what moves the idea to scoring, so the tap has to show scoring buttons and Cancel has to stop the job before that move
+
+**Rejected:**
+
+- Drop the idea on that Cancel — Drop is not on the scoring card, and the user asked to stop the score
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/store.py
+
+<!-- whyline-event: 989948ccf58a48a8ad6429816f3f2f2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:29:29.576Z"} -->
+
+## 2026-10-20 — The first file of a result replaces the old card; later files of that result keep their buttons
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** Word and PDF are one result, and retiring on every enqueue blanked the first file
+
+**Rejected:**
+
+- Retire on every button enqueue — the two synthesis files would remove each other's buttons
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: 741fc059f7af4348bd9e42222fc67ada -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:29:29.637Z"} -->
+
+## 2026-10-20 — Fix the carried-over final writer in brainstorm.apply, and let brainstorming return to scored
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** The card, the worker, and stored fields all merge through apply, and Cancel has to put a scored idea back where it came from
+
+**Rejected:**
+
+- Patch the merge only in the bot — the worker would rebuild the old final from the stored fields
+
+**Files:** src/whyline/ideas/brainstorm.py, src/whyline/ideas/store.py
+
+<!-- whyline-event: 377cf642e89547978a22f500ecbd0ba9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:29:29.699Z"} -->
+
+## 2026-10-20 — TGS-5 passes round-2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-5
+
+**Because:** The focused ideas suite and the complete project suite both exited successfully, covering the required Telegram callback, polling, status, card, settings, fallback, and document-send behaviors without regressions
+
+**Rejected:**
+
+- Fail the task — neither required suite exposed a behavioral defect
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 1f3f8592b97d4f65932c032c4f29c957 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:35:40.818Z"} -->
+
+## 2026-10-20 — Reject TGS-5 round 3 because live-job cards become stale
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-5
+
+**Because:** Quick score and brainstorm cards are retargeted before analyse/brainstorm transition the idea and increment its revision, so a real Cancel tap during scoring or brainstorming is rejected as out of date; the tests only cancel the queued pre-transition score, and the scoring Brainstorm button is also routed to a state that _open_brainstorm rejects
+
+**Rejected:**
+
+- Approve because both suites pass — the passing tests do not exercise the worker-driven revision change before the tap
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 359e13d482974afaa9e006d1ec6cabb6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T11:43:28.114Z"} -->
+
+## 2026-10-20 — Refresh the live card when a job enters scoring or brainstorming
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** The tap writes buttons before analyse or brainstorm increments the revision, so Cancel during the run was rejected as out of date. A cancel before the worker starts must still match the queued revision, and a failed run moves the revision again on the way back to captured.
+
+**Rejected:**
+
+- Stamp revision plus one when the job is queued — a cancel before entry would miss, and a transition that never happens would aim at a revision that does not exist.
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/analyse.py, src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: 05259047d619432ca9ed66b2974253c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:05:48.422Z"} -->
+
+## 2026-10-20 — Brainstorm on the scoring card stops the score and returns to where that score came from
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** The scoring card is required to offer Brainstorm, and scoring cannot move directly to brainstorm_configuring.
+
+**Rejected:**
+
+- Reject the tap while scoring — that is the defect this round was sent back for.
+- Add a scoring to brainstorm_configuring move in the ledger — a score in progress has not landed, and the allowed moves are a stored contract.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 9a257551c6044843b1be0dedb7862698 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:05:48.487Z"} -->
+
+## 2026-10-20 — The second synthesis file retires the first so only the newest keeps buttons
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** Exempting that file left two live keyboards on one Word and PDF result. Retirement is the path every older card already uses, so the earlier file also becomes Moved to the newer card.
+
+**Rejected:**
+
+- Keep buttons on both files — the review rejected that exemption.
+- Strip the buttons but keep the Word caption — that would be a second meaning of an older result.
+
+**Files:** src/whyline/ideas/brainstorm.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: f69891023eeb426996831e38f1a1bcea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:05:48.548Z"} -->
+
+## 2026-10-20 — TGS-5 passes the round 5 test gate
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-5
+
+**Because:** The complete ideas suite and the full repository suite both exited 0; the full suite had one expected skip and no failures
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 374a5e5eb3c043178ab53a3f66040357 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:12:12.537Z"} -->
+
+## 2026-10-20 — Reject TGS-5 round 6 because the awake loop freezes lease time
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-5
+
+**Because:** _poll_while_in_use passes the original run_once timestamp to _recover and _start_one on every iteration; a finite-timeout running job that dies or hangs never reaches its lease while _job_live keeps the loop alive, so the poll lock can be held forever even though both required suites pass
+
+**Rejected:**
+
+- Approve on passing tests — the tests advance only the quiet clock and do not cover lease expiry inside the awake loop
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 62b1f8584b4a4d79810cac041e3a7ab8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:20:15.467Z"} -->
+
+## 2026-10-20 — Lease recovery in the awake loop reads the poll clock
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** The scheduler passes one timestamp into run_once and the awake loop can long-poll for much longer than that. Recovery and job start were still using it, so a hung finite-timeout job stayed running and held the poll lock.
+
+**Rejected:**
+
+- Use the tick timestamp on the first pass and the clock after that — a lease can already be due when the first poll returns, and splitting the two clocks is what hid this.
+- Freeze the clock to now when the caller omits clock — the scheduler always passes now and omits clock, so the lock would stay stuck.
+
+**Files:** src/whyline/ideas/worker.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: e2e80cf9a0b7442a83509e8195f14dba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:38:16.987Z"} -->
+
+## 2026-10-20 — Pass TGS-5 round 8 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-5
+
+**Because:** The focused ideas suite and full repository suite pass, and the added fake-clock regression proves lease recovery advances during the awake polling loop, restarts once, then expires without retaining the poll lock
+
+**Rejected:**
+
+- Fail on the prior frozen-clock defect — the implementation now calls clock after every poll and the regression exercises expiry within one awake tick
+
+**Files:** src/whyline/ideas/worker.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: c5b5bf55fc424ad59fb54191cc66ef4d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:44:17.226Z"} -->
+
+## 2026-10-20 — Reject TGS-5 round 9 because export progress is never shown before the work
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-5
+
+**Because:** Full report and Excel queue their Preparing/Rebuilding status, perform the synchronous export, then overwrite the still-unsent outbox row before run_once flushes; Telegram therefore receives only the terminal status, so the required visible step-by-step feedback is absent even though both test suites pass
+
+**Rejected:**
+
+- Approve on passing tests — the added tests inspect final outbox text but do not assert Telegram delivery order or that the intermediate phase was sent
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 137787ab56f541f19217f4c056b98280 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T12:57:34.464Z"} -->
+
+## 2026-10-20 — Flush Full report and Excel status before the synchronous export
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** edit_progress overwrites the still-unsent Preparing/Rebuilding outbox row, so Telegram only received the terminal status
+
+**Rejected:**
+
+- Leave flush to run_once after handle — the overwrite happens first
+- Queue export as a job — the review asked to deliver then edit the synchronous path
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: e0e12d7b6d234817a76a3d0804fb33d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T16:19:12.720Z"} -->
+
+## 2026-10-20 — TGS-5 passes the round 10 test gate
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-5
+
+**Because:** The complete ideas suite and the full repository suite both exited 0; the full suite had one expected skip and no failures
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 98ef9ce7bdf841e1a7bd0ee6aa1c8423 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T16:26:02.712Z"} -->
+
+## 2026-10-20 — Reject TGS-5 round 11 because a failed inbound handler prevents the awake loop from ever going idle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-5
+
+**Because:** _handle_pending returns the number of all pending rows even when handle raises and leaves a row unhandled; _poll_while_in_use therefore resets quiet_from on every pass for the same poison row, retries it every 25 seconds, and holds the exclusive poll lock indefinitely instead of returning after ten minutes with no new update or live job
+
+**Rejected:**
+
+- Approve on passing tests — the awake-loop tests cover successful handling but not the explicit leave-unhandled-on-error path
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: b5c128e809b24ed58cdfef1a0d209550 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T16:32:50.759Z"} -->
+
+## 2026-10-20 — A failed inbound handler is not awake-loop activity and is retried on the next tick
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** Counting that still-pending row reset quiet_from on every 25s poll and held the poll lock. Skipping it for the rest of this tick lets the loop return after ten quiet minutes when no new update and no live job remain.
+
+**Rejected:**
+
+- Retry the poison row on every long poll but omit it from the activity count — the handler would still run every 25 seconds through the quiet window
+- Mark the row handled when the handler raises — a transient failure would drop the tap
+
+**Files:** src/whyline/ideas/worker.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: b322df7f71c44e9c96d891a240f9a65c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T16:43:42.678Z"} -->
+
+## 2026-10-20 — Pass TGS-5 round 12 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-5
+
+**Because:** The focused ideas suite and the full repository suite both completed with exit 0, covering the poison-row awake-loop regression and the complete Telegram behavior surface without observed failures
+
+**Rejected:**
+
+- Fail the round — no test failure or behavioral evidence supports returning it to implementation
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 8b103c2c0144448bb3b4d204c2da6340 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T16:49:41.357Z"} -->
+
+## 2026-10-20 — Reject TGS-5 round 12 because Brainstorm again revives the retired settings card
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-5
+
+**Because:** brainstorm._send queues the synthesis document with the brainstormed keyboard but never updates telegram_card; _show_brainstorm therefore treats the old pre-run settings outbox row as current on an Again tap, rewrites that retired message, and leaves the result document's keyboard live instead of moving to one newer settings card
+
+**Rejected:**
+
+- Approve on passing tests — neither suite completes a brainstorm and then taps Again, so the stale card pointer and two-live-keyboard state are untested
+
+**Files:** src/whyline/ideas/brainstorm.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: c750e2b3680b44f6b1d3e61b54565a72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T17:00:01.404Z"} -->
+
+## 2026-10-20 — Remember the queued synthesis as the telegram card with kind brainstormed
+
+**Actor:** grok
+**Role:** implementer
+**Task:** TGS-5
+
+**Because:** Again rewrites a card whose kind is brainstorm. Leaving the pointer on the pre-run settings row revives that retired message and leaves the result keyboard live.
+
+**Rejected:**
+
+- Remember it as kind brainstorm — Again would edit the result document into the settings text instead of sending a newer settings card and retiring the result keyboard
+- Update the pointer only after Telegram accepts the upload — the button lives on the outbox row as soon as it is queued, and Again compares that row
+
+**Files:** src/whyline/ideas/brainstorm.py, tests/ideas/test_brainstorm.py
+
+<!-- whyline-event: e6528da825394cac8fb69e0e740a6621 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T17:18:41.751Z"} -->
+
+## 2026-10-20 — Raise max_rounds from 12 to 18 so TGS-5 can finish instead of splitting it mid-task
+
+**Actor:** claude
+**Role:** operator
+**Task:** TGS-5
+
+**Because:** TGS-5 used all 12 rounds with each review finding a different, narrower real defect (scoring card, awake-loop clock, export order, poison row, card pointer); tests pass and the work is converging. Resolve only offered Resume, which re-hit the cap at once
+
+**Rejected:**
+
+- Split TGS-5 now — its ~2,600 changed lines are interleaved across bot.py and worker.py, so splitting mid-task would discard converging work
+- Resume as is — round 12 of 12 re-pauses immediately
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: d7c6a7f176fd487e90b110d6966088c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T17:56:38.621Z"} -->
+
+## 2026-10-20 — TGS-5 passes focused and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-5
+
+**Because:** uv run pytest -q tests/ideas exited 0, and uv run pytest -q exited 0 with one skipped test; no behavioral failure was observed
+
+**Files:** tests/ideas/test_brainstorm.py
+
+<!-- whyline-event: b8b08a0103f74290b11241221984144f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:04:23.354Z"} -->
+
+## 2026-10-20 — Approve TGS-5 round 13 after behavioral review and independent test gate
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-5
+
+**Because:** The implementation satisfies immediate callback acknowledgement, awake polling and locking, editable progress/status flows, current settings and card state, model/final merging, constrained keyboards, cancellation, and delivery failure reporting; uv run pytest -q tests/ideas and uv run pytest -q both exited 0, with one expected skip in the full suite
+
+**Rejected:**
+
+- Request more changes — no concrete functional, safety, or coverage defect remained after tracing the production paths and regression tests
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: d91b2339bfff4010b56ea5e3364cfb6e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T18:14:51.839Z"} -->

@@ -2,7 +2,8 @@
 
 ``handle`` turns one inbound row into ledger changes and outbox rows.
 ``flush_outbox`` is the only sender. A failed send waits 1, 5, 15, then
-60 minutes, and stops after 8 attempts with an events note.
+60 minutes, and stops after 8 attempts with an events note. A tap is
+answered in ``telegram_in.poll_once``, not from this outbox.
 
 Quick score inserts a ``jobs`` row for IDEA-13. It does not move the idea
 to ``scoring``: ``analyse`` does that when the job runs, and it refuses a
@@ -29,6 +30,47 @@ _AGENTS_KEY = "default_agents"
 _CARD_KEY = "telegram_card"
 _OPEN_KEY = "telegram_open"
 _SETTINGS_KEY = "telegram_settings"
+_PROGRESS_KEY = "telegram_progress"
+_DELIVERY_KEY = "telegram_delivery"
+_MOVED = "Moved to the newer card ↓"
+_ECHO = {
+    "report": "▶ Full report",
+    "excel": "▶ Excel",
+    "refine": "▶ Refine",
+    "drop": "▶ Drop",
+}
+# Labels stay within 14 characters so a phone does not truncate them.
+# "Start brainstorm", "Create spec and plan" and "Brainstorm again" do not fit.
+_STATUS_BUTTONS = {
+    "captured": (
+        ("Brainstorm", "brainstorm"),
+        ("Quick score", "score"),
+        ("Cancel", "cancel"),
+    ),
+    "scoring": (
+        ("Brainstorm", "brainstorm"),
+        ("Cancel", "cancel"),
+    ),
+    "scored": (
+        ("Brainstorm", "brainstorm"),
+        ("Full report", "report"),
+        ("Refine", "refine"),
+        ("Excel", "excel"),
+        ("Drop", "drop"),
+    ),
+    "brainstorm_configuring": (
+        ("Start", "start_brainstorm"),
+        ("Edit", "edit"),
+        ("Cancel", "cancel"),
+    ),
+    "brainstorming": (("Cancel", "cancel"),),
+    "brainstormed": (
+        ("Spec and plan", "plan"),
+        ("Again", "brainstorm"),
+        ("Drop", "drop"),
+    ),
+    "dropped": (("Reopen", "reopen"),),
+}
 _DETECT_ORDER = ("claude", "codex", "grok")
 _PLAN_KEYS = frozenset({
     "repo",
@@ -110,12 +152,13 @@ drafter: claude
 plan_reviewer: codex"""
 
 
-def handle(conn: sqlite3.Connection, inbound, *, run_fn=None) -> None:
+def handle(conn: sqlite3.Connection, inbound, *, run_fn=None, http=None) -> None:
     """Route one inbound row and queue the reply.
 
-    A row already marked handled is ignored. The callback is acknowledged
-    even when the button is stale. Nothing is sent here; ``flush_outbox``
-    does that.
+    A row already marked handled is ignored. The tap itself was answered
+    when the poll stored it. Full report and Excel send their echo and
+    status through ``flush_outbox`` before the export so Telegram can
+    show them; everything else waits for the caller's flush.
     """
     if _truthy(_field(inbound, "handled")):
         return
@@ -127,9 +170,16 @@ def handle(conn: sqlite3.Connection, inbound, *, run_fn=None) -> None:
     callback = _field(inbound, "callback_data")
     question = _open_for(conn, int(chat_id))
     routed = intent.route(text, callback, open_question=question)
-    _ack(conn, inbound, routed)
-    _dispatch(conn, inbound, routed, run_fn)
+    _dispatch(conn, inbound, routed, run_fn, http=http)
     _mark_handled(conn, inbound)
+
+
+def buttons_for(status: str) -> tuple[tuple[str, str], ...]:
+    """``(label, action)`` for a card in this status. Empty when none apply."""
+    found = _STATUS_BUTTONS.get(status)
+    if found is None:
+        return ()
+    return found
 
 
 def flush_outbox(conn: sqlite3.Connection, *, http=None) -> int:
@@ -179,19 +229,8 @@ def send_score(conn: sqlite3.Connection, idea_id: int, *, chat_id: int | None = 
         _enqueue(conn, chat_id, "message", "No score yet.", idea_id=idea.id)
         return
     idea = store.get(conn, idea_id)
-    keyboard = _keyboard(
-        (
-            ("Brainstorm", "brainstorm"),
-            ("Full report", "report"),
-            ("Refine", "refine"),
-            ("Drop", "drop"),
-            ("Excel", "excel"),
-        ),
-        idea.id,
-        idea.revision,
-        width=5,
-    )
-    _enqueue(
+    keyboard = _keyboard(buttons_for("scored"), idea.id, idea.revision)
+    outbox_id = _enqueue(
         conn,
         chat_id,
         "message",
@@ -199,7 +238,7 @@ def send_score(conn: sqlite3.Connection, idea_id: int, *, chat_id: int | None = 
         buttons=keyboard,
         idea_id=idea.id,
     )
-    _remember_card(conn, chat_id, "score", idea.id)
+    _remember_card(conn, chat_id, "score", idea.id, outbox_id=outbox_id)
 
 
 def enqueue_score(conn: sqlite3.Connection, idea_id: int) -> bool:
@@ -243,14 +282,14 @@ def score_agents(conn: sqlite3.Connection) -> list[str]:
     return chosen
 
 
-def _dispatch(conn, row, routed: intent.Intent, run_fn) -> None:
+def _dispatch(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
     kind = routed.kind
     if kind == "capture":
         _capture(conn, row, routed)
     elif kind == "action":
-        _action(conn, row, routed, run_fn)
+        _action(conn, row, routed, run_fn, http=http)
     elif kind == "command":
-        _command(conn, row, routed)
+        _command(conn, row, routed, http=http)
     elif kind == "settings":
         _settings(conn, row, routed)
     elif kind == "answer":
@@ -272,23 +311,15 @@ def _capture(conn, row, routed: intent.Intent) -> None:
         conn, routed.text, source="telegram", source_ref=source_ref
     )
     line = _normalised_first_line(idea.original_text)
-    keyboard = _keyboard(
-        (
-            ("Brainstorm", "brainstorm"),
-            ("Quick score", "score"),
-            ("Cancel", "cancel"),
-        ),
-        idea.id,
-        idea.revision,
-    )
+    keyboard = _keyboard(buttons_for("captured"), idea.id, idea.revision)
     # The flag and the card share a transaction, so a retry of this row
     # does not send a second card.
     with store._txn(conn):
         if _kv(conn, f"capture_card:{idea.id}"):
             return
-        _insert_outbox(conn, chat_id, "message", line, keyboard, None, idea.id)
+        outbox_id = _insert_outbox(conn, chat_id, "message", line, keyboard, None, idea.id)
         _kv_set(conn, f"capture_card:{idea.id}", "1")
-        _remember_card_in(conn, chat_id, "capture", idea.id, None)
+        _remember_card_in(conn, chat_id, "capture", idea.id, None, outbox_id=outbox_id)
 
 
 _BRAINSTORM_FROM = frozenset({
@@ -299,7 +330,7 @@ _BRAINSTORM_FROM = frozenset({
 })
 
 
-def _action(conn, row, routed: intent.Intent, run_fn) -> None:
+def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
     if routed.idea_id == 0:
         _unbound(conn, row, routed)
         return
@@ -316,13 +347,15 @@ def _action(conn, row, routed: intent.Intent, run_fn) -> None:
     if name == "score":
         _quick_score(conn, row, idea)
     elif name == "report":
-        _full_report(conn, row, idea)
+        _full_report(conn, row, idea, http=http)
     elif name == "excel":
-        _excel(conn, row, idea)
+        _excel(conn, row, idea, http=http)
     elif name == "drop":
         _ask_drop(conn, row, idea)
     elif name == "drop_yes":
         _drop(conn, row, idea)
+    elif name == "reopen":
+        _reopen(conn, row, idea)
     elif name == "refine":
         _ask_refine(conn, row, idea)
     elif name == "cancel":
@@ -354,14 +387,14 @@ def _unbound(conn, row, routed: intent.Intent) -> None:
         _say(conn, row, "Not available yet.")
 
 
-def _command(conn, row, routed: intent.Intent) -> None:
+def _command(conn, row, routed: intent.Intent, *, http=None) -> None:
     name = routed.name
     if name == "list":
         _list(conn, row)
     elif name == "help":
         _say(conn, row, HELP_TEXT)
     elif name == "excel":
-        _excel(conn, row, None)
+        _excel(conn, row, None, http=http)
     elif name == "drop":
         _command_drop(conn, row, routed)
     elif name == "new":
@@ -460,24 +493,62 @@ def _quick_score(conn, row, idea: store.Idea) -> None:
         _say(conn, row, "No agent can score unattended.", idea_id=idea.id)
         return
     if not enqueue_score(conn, idea.id):
+        _say(conn, row, "Already scoring.", idea_id=idea.id)
         return
-    _say(conn, row, f"Scoring with {agents[0]}…", idea_id=idea.id)
+    chat_id = int(_field(row, "chat_id"))
+    begin_progress(
+        conn,
+        chat_id,
+        idea.id,
+        (
+            f"Quick score started with {agents[0]}. "
+            "Usually 2-5 minutes; I'll message you when it's done."
+        ),
+    )
+    _retarget_buttons(conn, idea, "scoring")
 
 
-def _full_report(conn, row, idea: store.Idea) -> None:
+def _full_report(conn, row, idea: store.Idea, *, http=None) -> None:
+    _echo(conn, row, "report", idea.id)
     analysis = _latest_analysis(conn, idea.id)
-    if analysis is None:
+    if analysis is None or not Path(analysis["report_path"]).is_file():
         _say(conn, row, "No report yet.", idea_id=idea.id)
         return
     md = Path(analysis["report_path"])
-    if not md.is_file():
-        _say(conn, row, "No report yet.", idea_id=idea.id)
-        return
+    chat_id = int(_field(row, "chat_id"))
+    begin_progress(conn, chat_id, idea.id, "Preparing your report as Word and PDF…")
+    # Send now: edit_progress overwrites this row, and Telegram never
+    # sees Preparing if the export finishes before the caller's flush.
+    flush_outbox(conn, http=http)
     try:
         exported = documents.export(md)
     except (OSError, ValueError) as exc:
-        _say(conn, row, str(exc), idea_id=idea.id)
+        edit_progress(
+            conn, idea.id, f"Couldn't prepare the report: {exc}", chat_id=chat_id, http=http
+        )
         return
+    note = " ".join(item for item in exported.notes if item)
+    made = [path for path in (exported.docx, exported.pdf) if path is not None]
+    if not made:
+        edit_progress(
+            conn,
+            idea.id,
+            f"Couldn't prepare the report: {note or 'Word and PDF could not be written.'}",
+            chat_id=chat_id,
+            http=http,
+        )
+        _send_documents(conn, row, idea, exported, md)
+        return
+    if exported.docx is not None and exported.pdf is None:
+        edit_progress(
+            conn, idea.id, f"Sent Word only: {note}", chat_id=chat_id, http=http
+        )
+    elif exported.pdf is not None and exported.docx is None:
+        edit_progress(
+            conn, idea.id, f"Sent PDF only: {note}", chat_id=chat_id, http=http
+        )
+    else:
+        edit_progress(conn, idea.id, "Report sent ↓", chat_id=chat_id, http=http)
     _send_documents(conn, row, idea, exported, md)
 
 
@@ -486,49 +557,67 @@ def _send_documents(conn, row, idea: store.Idea, exported, md: Path) -> None:
     note = " ".join(item for item in exported.notes if item)
     made = [path for path in (exported.docx, exported.pdf) if path is not None]
     if not made:
-        _say(
+        outbox_id = _say(
             conn,
             row,
             note or "Report",
             document_path=str(md),
             idea_id=idea.id,
         )
+        if outbox_id is not None:
+            mark_delivery(conn, outbox_id, "report")
         return
     for index, path in enumerate(made):
         caption = note if index == 0 and note else ""
-        _say(conn, row, caption, document_path=str(path), idea_id=idea.id)
+        outbox_id = _say(conn, row, caption, document_path=str(path), idea_id=idea.id)
+        if outbox_id is not None:
+            mark_delivery(conn, outbox_id, "report")
 
 
-def _excel(conn, row, idea: store.Idea | None) -> None:
+def _excel(conn, row, idea: store.Idea | None, *, http=None) -> None:
+    if idea is not None:
+        _echo(conn, row, "excel", idea.id)
+    chat_id = _field(row, "chat_id")
+    if idea is not None and chat_id is not None:
+        begin_progress(conn, int(chat_id), idea.id, "Rebuilding your workbook…")
+        flush_outbox(conn, http=http)
     try:
         path = xlsx.export(conn)
     except OSError as exc:
-        _say(
-            conn,
-            row,
-            f"Could not write the workbook: {exc}",
-            idea_id=idea.id if idea is not None else None,
-        )
+        if idea is not None:
+            edit_progress(
+                conn,
+                idea.id,
+                f"Couldn't rebuild the workbook: {exc}",
+                chat_id=chat_id,
+                http=http,
+            )
+        else:
+            _say(conn, row, f"Could not write the workbook: {exc}")
         return
-    _say(
+    if idea is not None:
+        edit_progress(conn, idea.id, "Workbook sent ↓", chat_id=chat_id, http=http)
+    outbox_id = _say(
         conn,
         row,
         "Ideas",
         document_path=str(path),
         idea_id=idea.id if idea is not None else None,
     )
+    if outbox_id is not None and idea is not None:
+        mark_delivery(conn, outbox_id, "excel")
 
 
 def _ask_drop(conn, row, idea: store.Idea) -> None:
+    _echo(conn, row, "drop", idea.id)
     chat_id = int(_field(row, "chat_id"))
     keyboard = _keyboard(
         (("Drop", "drop_yes"), ("Cancel", "cancel")),
         idea.id,
         idea.revision,
-        width=2,
     )
-    _say(conn, row, "Drop this idea?", keyboard, idea_id=idea.id)
-    _remember_card(conn, chat_id, "drop_confirm", idea.id)
+    outbox_id = _say(conn, row, "Drop this idea?", keyboard, idea_id=idea.id)
+    _remember_card(conn, chat_id, "drop_confirm", idea.id, outbox_id=outbox_id)
 
 
 def _drop(conn, row, idea: store.Idea) -> None:
@@ -547,10 +636,38 @@ def _drop(conn, row, idea: store.Idea) -> None:
     except store.IllegalMove as exc:
         _say(conn, row, str(exc), idea_id=idea.id)
         return
-    _say(conn, row, "Dropped.", idea_id=idea.id)
+    fresh = store.get(conn, idea.id) or idea
+    _say(
+        conn,
+        row,
+        "Dropped. Reopen any time.",
+        _keyboard(buttons_for("dropped"), fresh.id, fresh.revision),
+        idea_id=fresh.id,
+    )
+
+
+def _reopen(conn, row, idea: store.Idea) -> None:
+    try:
+        fresh = store.transition(
+            conn,
+            idea.id,
+            "captured",
+            expected_revision=idea.revision,
+            actor="telegram",
+            note="reopened",
+        )
+    except store.StaleRevision:
+        _say(conn, row, OUT_OF_DATE, idea_id=idea.id)
+        return
+    except store.IllegalMove as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return
+    _say(conn, row, "Reopened.", idea_id=fresh.id)
+    _retarget_buttons(conn, fresh, "captured")
 
 
 def _ask_refine(conn, row, idea: store.Idea) -> None:
+    _echo(conn, row, "refine", idea.id)
     _set_open(
         conn,
         int(_field(row, "chat_id")),
@@ -560,44 +677,40 @@ def _ask_refine(conn, row, idea: store.Idea) -> None:
 
 
 def _cancel(conn, row, idea: store.Idea) -> None:
-    """Cancel on the capture card drops the idea. On any other card it does not.
+    """Stop a live job, or drop a captured idea that is sitting idle.
 
-    Drop has its own confirm button. A confirm card's Cancel only dismisses
-    that card, so a settings edit cannot throw the idea away.
+    Scoring's Cancel stops the job and restores the captured buttons even
+    when analyse has not moved the idea yet. A brainstorm Cancel returns
+    the idea to where it came from. A confirm card's Cancel does not drop.
     """
-    card = _card_for(conn, _field(row, "chat_id"))
-    kind = card.get("kind") if card else "capture"
-    if kind == "brainstorm" and idea.status == "brainstorm_configuring":
-        # brainstormed is not a cancel target. A second brainstorm returns
-        # to scored when a report exists, and to captured otherwise.
-        target = _brainstorm_return(conn, idea.id)
-        try:
-            store.transition(
-                conn,
-                idea.id,
-                target,
-                expected_revision=idea.revision,
-                actor="telegram",
-                note="cancelled",
-            )
-        except (store.IllegalMove, store.StaleRevision):
-            pass
+    score = _live_job(conn, idea.id, "score")
+    if score is not None or idea.status == "scoring":
+        if score is not None:
+            _stop_job(conn, score)
+        fresh = _move_or_keep(conn, idea, "captured", "cancelled")
         _say(conn, row, "Cancelled.", idea_id=idea.id)
+        _retarget_buttons(conn, fresh, "captured")
+        return
+    brain = _live_job(conn, idea.id, "brainstorm")
+    if brain is not None or idea.status in {"brainstorming", "brainstorm_configuring"}:
+        if brain is not None:
+            _stop_job(conn, brain)
+        target = _brainstorm_return(
+            conn, idea.id, allow_brainstormed=idea.status == "brainstorming"
+        )
+        fresh = _move_or_keep(conn, idea, target, "cancelled")
+        _say(conn, row, "Cancelled.", idea_id=idea.id)
+        _retarget_buttons(conn, fresh, fresh.status)
         _clear_card(conn, _field(row, "chat_id"))
         return
+    card = _card_for(conn, _field(row, "chat_id"))
+    kind = card.get("kind") if card else "capture"
+    fresh = idea
     if kind == "capture" and idea.status == "captured":
-        try:
-            store.transition(
-                conn,
-                idea.id,
-                "dropped",
-                expected_revision=idea.revision,
-                actor="telegram",
-                note="cancelled",
-            )
-        except (store.IllegalMove, store.StaleRevision):
-            pass
+        fresh = _move_or_keep(conn, idea, "dropped", "cancelled")
     _say(conn, row, "Cancelled.", idea_id=idea.id)
+    status = fresh.status if fresh.status in _STATUS_BUTTONS else "captured"
+    _retarget_buttons(conn, fresh, status)
     _clear_card(conn, _field(row, "chat_id"))
 
 
@@ -625,6 +738,9 @@ def _edit(conn, row, idea: store.Idea) -> None:
 
 
 def _open_brainstorm(conn, row, idea: store.Idea) -> None:
+    # The scoring card is required to offer Brainstorm. scoring cannot move
+    # straight to brainstorm_configuring, so the score stops first.
+    idea = _stop_score_for_brainstorm(conn, idea)
     if idea.status not in _BRAINSTORM_FROM:
         _say(
             conn,
@@ -737,21 +853,86 @@ def _start_brainstorm(conn, row, idea: store.Idea, _run_fn) -> None:
     from whyline.ideas import worker
 
     if not worker.enqueue_brainstorm(conn, idea.id, request):
+        _say(conn, row, "Already brainstorming.", idea_id=idea.id)
         return
     names = ", ".join(request.models)
-    _say(conn, row, f"Brainstorming with {names}…", idea_id=idea.id)
+    passes = "1 pass" if request.passes == 1 else f"{request.passes} passes"
+    chat_id = int(_field(row, "chat_id"))
+    begin_progress(
+        conn,
+        chat_id,
+        idea.id,
+        (
+            f"Brainstorm started with {names}, {passes}. "
+            "Usually 15-40 minutes; I'll message you when it's done."
+        ),
+    )
+    _retarget_buttons(conn, idea, "brainstorming")
 
 
 def _show_brainstorm(conn, row, idea: store.Idea, request, notes) -> None:
     chat_id = int(_field(row, "chat_id"))
-    keyboard = _keyboard(
-        brainstorm.SETTINGS_BUTTONS, idea.id, idea.revision
+    keyboard = _keyboard(buttons_for("brainstorm_configuring"), idea.id, idea.revision)
+    text = _settings_text(
+        conn,
+        idea.id,
+        "Start brainstorm will use:",
+        brainstorm._format(request),
+        brainstorm.TEMPLATE,
+        notes,
     )
-    _say(conn, row, brainstorm.render(request, notes), keyboard, idea_id=idea.id)
-    _remember_card(conn, chat_id, "brainstorm", idea.id, request.as_fields())
+    card = _card_for(conn, chat_id)
+    same = (
+        isinstance(card, dict)
+        and card.get("kind") == "brainstorm"
+        and card.get("idea_id") == idea.id
+        and card.get("outbox_id")
+    )
+    if same:
+        outbox_id = int(card["outbox_id"])
+        _rewrite_card(conn, outbox_id, text, keyboard)
+    else:
+        outbox_id = _enqueue(
+            conn, chat_id, "message", text, buttons=keyboard, idea_id=idea.id
+        )
+    _remember_card(
+        conn, chat_id, "brainstorm", idea.id, request.as_fields(), outbox_id=outbox_id
+    )
 
 
-def _brainstorm_return(conn, idea_id: int) -> str:
+def _stop_score_for_brainstorm(conn, idea: store.Idea) -> store.Idea:
+    """Stop a live score so Brainstorm on that card can open.
+
+    A queued score has not moved the idea yet. A running one is put back
+    where it came from, which is a status brainstorm is allowed to leave.
+    """
+    job = _live_job(conn, idea.id, "score")
+    if job is None and idea.status != "scoring":
+        return idea
+    if job is not None:
+        _stop_job(conn, job)
+    if idea.status != "scoring":
+        return store.get(conn, idea.id) or idea
+    return _move_or_keep(conn, idea, _score_origin(conn, idea.id), "brainstorm")
+
+
+def _score_origin(conn, idea_id: int) -> str:
+    row = conn.execute(
+        """
+        SELECT from_status FROM events
+        WHERE idea_id = ? AND to_status = 'scoring'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (idea_id,),
+    ).fetchone()
+    origin = row["from_status"] if row is not None else "captured"
+    if origin in {"captured", "scored"}:
+        return origin
+    return "captured"
+
+
+def _brainstorm_return(conn, idea_id: int, *, allow_brainstormed: bool = False) -> str:
     row = conn.execute(
         """
         SELECT from_status FROM events
@@ -764,6 +945,8 @@ def _brainstorm_return(conn, idea_id: int) -> str:
     origin = row["from_status"] if row is not None else "captured"
     if origin in {"captured", "scored"}:
         return origin
+    if allow_brainstormed and origin == "brainstormed":
+        return "brainstormed"
     if _latest_analysis(conn, idea_id) is not None:
         return "scored"
     return "captured"
@@ -803,21 +986,39 @@ def _send_named_card(conn, row, card: assistant.Card, idea, *, kind: str, fields
         if action is not None:
             pairs.append((label, action))
     keyboard = _keyboard(pairs, idea_id, revision)
-    text = f"{card.title}\n{card.body}"
-    _say(
-        conn,
-        row,
-        text,
-        keyboard,
-        idea_id=idea.id if idea is not None else None,
+    plain = fields if isinstance(fields, dict) else {}
+    if kind in {"brainstorm", "brainstorm_settings", "plan_setup"} and plain:
+        heading = (
+            "Start brainstorm will use:"
+            if kind in {"brainstorm", "brainstorm_settings"}
+            else f"{card.title} will use:"
+        )
+        values = "\n".join(f"{key}: {_show(value)}" for key, value in plain.items())
+        example = (
+            brainstorm.TEMPLATE
+            if kind in {"brainstorm", "brainstorm_settings"}
+            else _SETTINGS_TEMPLATE
+        )
+        text = _settings_text(conn, idea_id, heading, values, example)
+    else:
+        text = f"{card.title}\n{card.body}"
+    chat_id = int(_field(row, "chat_id"))
+    bound = idea.id if idea is not None else None
+    remembered = _card_for(conn, chat_id)
+    same = (
+        isinstance(remembered, dict)
+        and remembered.get("kind") == kind
+        and remembered.get("idea_id") == idea_id
+        and remembered.get("outbox_id")
     )
-    _remember_card(
-        conn,
-        int(_field(row, "chat_id")),
-        kind,
-        idea_id,
-        fields if isinstance(fields, dict) else None,
-    )
+    if same:
+        outbox_id = int(remembered["outbox_id"])
+        _rewrite_card(conn, outbox_id, text, keyboard)
+    else:
+        outbox_id = _enqueue(
+            conn, chat_id, "message", text, buttons=keyboard, idea_id=bound
+        )
+    _remember_card(conn, chat_id, kind, idea_id, plain or None, outbox_id=outbox_id)
 
 
 def _append_context(conn, idea: store.Idea, extra: str) -> None:
@@ -859,20 +1060,27 @@ def _attempt(conn, row_id: int, token: str, http, moment: str) -> bool:
         return False
     if not _due(row["next_try_at"], moment):
         return False
+    # Taps are answered in the poll. A leftover callback row is history
+    # we must not send, and must not retry.
+    if row["kind"] == "callback":
+        conn.execute("DELETE FROM outbox WHERE id = ?", (row_id,))
+        return False
     try:
-        _deliver(token, row, http)
+        message_id = _deliver(token, row, http)
     except telegram.TelegramError as exc:
-        _mark_failed(conn, row, moment, str(exc))
+        _mark_failed(conn, row, moment, str(exc), http=http)
         return False
     conn.execute(
-        "UPDATE outbox SET sent_at = ? WHERE id = ?",
-        (moment, row_id),
+        "UPDATE outbox SET sent_at = ?, tg_message_id = ? WHERE id = ?",
+        (moment, message_id, row_id),
     )
+    _remember_sent(conn, row_id, message_id)
     return True
 
 
-def _mark_failed(conn, row, moment: str, reason: str) -> None:
+def _mark_failed(conn, row, moment: str, reason: str, *, http=None) -> None:
     attempts = int(row["attempts"]) + 1
+    _note_delivery_failure(conn, row, attempts, reason, http=http)
     if attempts >= MAX_ATTEMPTS:
         _give_up(conn, row, moment, reason)
         conn.execute(
@@ -911,21 +1119,8 @@ def _give_up(conn, row, moment: str, reason: str) -> None:
     )
 
 
-def _deliver(token: str, row, http) -> None:
+def _deliver(token: str, row, http) -> int | None:
     kind = row["kind"]
-    if kind == "callback":
-        callback_id = row["text"]
-        if not callback_id:
-            raise telegram.TelegramError("callback is missing an id")
-        telegram._call(
-            "answerCallbackQuery",
-            token,
-            {"callback_query_id": callback_id},
-            None,
-            http=http,
-            sleep=_no_sleep,
-        )
-        return
     if kind == "document":
         path = row["document_path"]
         if not path:
@@ -937,7 +1132,7 @@ def _deliver(token: str, row, http) -> None:
         keyboard = _load_keyboard(row["buttons_json"])
         if keyboard:
             fields["reply_markup"] = {"inline_keyboard": keyboard}
-        telegram._call(
+        result = telegram._call(
             "sendDocument",
             token,
             fields,
@@ -945,7 +1140,7 @@ def _deliver(token: str, row, http) -> None:
             http=http,
             sleep=_no_sleep,
         )
-        return
+        return _result_message_id(result)
     text = (row["text"] or "").strip()
     if not text:
         raise telegram.TelegramError("message is empty")
@@ -953,7 +1148,7 @@ def _deliver(token: str, row, http) -> None:
     keyboard = _load_keyboard(row["buttons_json"])
     if keyboard:
         fields["reply_markup"] = {"inline_keyboard": keyboard}
-    telegram._call(
+    result = telegram._call(
         "sendMessage",
         token,
         fields,
@@ -961,6 +1156,7 @@ def _deliver(token: str, row, http) -> None:
         http=http,
         sleep=_no_sleep,
     )
+    return _result_message_id(result)
 
 
 def _load_keyboard(raw):
@@ -975,31 +1171,6 @@ def _load_keyboard(raw):
     return parsed
 
 
-def _ack(conn, row, routed: intent.Intent) -> None:
-    callback_id = _field(row, "callback_id")
-    if not callback_id:
-        return
-    idea_id = None
-    if routed.kind == "action" and routed.idea_id:
-        if store.get(conn, routed.idea_id) is not None:
-            idea_id = routed.idea_id
-    _enqueue_callback(conn, int(_field(row, "chat_id")), str(callback_id), idea_id)
-
-
-def _enqueue_callback(conn, chat_id: int, callback_id: str, idea_id: int | None) -> None:
-    with store._txn(conn):
-        found = conn.execute(
-            """
-            SELECT id FROM outbox
-            WHERE kind = 'callback' AND text = ?
-            """,
-            (callback_id,),
-        ).fetchone()
-        if found is not None:
-            return
-        _insert_outbox(conn, chat_id, "callback", callback_id, None, None, idea_id)
-
-
 def _say(
     conn,
     row,
@@ -1008,12 +1179,12 @@ def _say(
     *,
     idea_id: int | None = None,
     document_path: str | None = None,
-) -> None:
+) -> int | None:
     chat_id = _field(row, "chat_id")
     if chat_id is None:
-        return
+        return None
     kind = "document" if document_path else "message"
-    _enqueue(
+    return _enqueue(
         conn,
         int(chat_id),
         kind,
@@ -1033,9 +1204,23 @@ def _enqueue(
     buttons=None,
     document_path: str | None = None,
     idea_id: int | None = None,
-) -> None:
+    http=None,
+) -> int:
+    # Retire first, outside the insert transaction, so a Telegram edit is
+    # not held inside BEGIN. A settings rewrite must not come through here:
+    # it would blank the card it is trying to change. Every later buttoned
+    # message retires the previous one, including the second Word or PDF
+    # of one result, so only the newest keeps buttons.
+    if buttons and idea_id is not None:
+        _retire_older(conn, int(idea_id), http=http)
+    if conn.in_transaction:
+        return _insert_outbox(
+            conn, chat_id, kind, text, buttons, document_path, idea_id
+        )
     with store._txn(conn):
-        _insert_outbox(conn, chat_id, kind, text, buttons, document_path, idea_id)
+        return _insert_outbox(
+            conn, chat_id, kind, text, buttons, document_path, idea_id
+        )
 
 
 def _insert_outbox(
@@ -1046,9 +1231,9 @@ def _insert_outbox(
     buttons,
     document_path: str | None,
     idea_id: int | None,
-) -> None:
+) -> int:
     payload = json.dumps(buttons, ensure_ascii=False) if buttons else None
-    conn.execute(
+    cursor = conn.execute(
         """
         INSERT INTO outbox (
           chat_id, kind, text, buttons_json, document_path,
@@ -1057,9 +1242,12 @@ def _insert_outbox(
         """,
         (chat_id, kind, text, payload, document_path, idea_id),
     )
+    return int(cursor.lastrowid)
 
 
 def _keyboard(buttons, idea_id: int, revision: int, width: int = 3) -> list:
+    """At most three buttons on a row. Four or more puts the main one alone first."""
+    span = min(int(width) if width else 3, 3)
     cells = [
         {
             "text": label,
@@ -1067,7 +1255,405 @@ def _keyboard(buttons, idea_id: int, revision: int, width: int = 3) -> list:
         }
         for label, action in buttons
     ]
-    return [cells[index:index + width] for index in range(0, len(cells), width)]
+    if len(cells) >= 4:
+        rows = [cells[:1]]
+        rest = cells[1:]
+    else:
+        rows = []
+        rest = cells
+    rows.extend(rest[index:index + span] for index in range(0, len(rest), span))
+    return rows
+
+
+def _echo(conn, row, name: str, idea_id: int | None) -> None:
+    text = _ECHO.get(name)
+    if not text:
+        return
+    _say(conn, row, text, idea_id=idea_id)
+
+
+def begin_progress(conn, chat_id: int, idea_id: int, text: str) -> int:
+    """Queue a new status line and point later edits at that row.
+
+    A later action starts its own line, so "Quick score done ↓" is not
+    overwritten by the next report.
+    """
+    outbox_id = _enqueue(
+        conn, int(chat_id), "message", text[:_MESSAGE_LIMIT], idea_id=int(idea_id)
+    )
+    _remember_progress(conn, int(idea_id), int(chat_id), outbox_id, None)
+    return outbox_id
+
+
+def edit_progress(
+    conn,
+    idea_id: int,
+    text: str,
+    *,
+    chat_id: int | None = None,
+    http=None,
+) -> None:
+    """Change the current status line. A missing line starts one.
+
+    Called from the outbox transaction when a send fails, so this must not
+    open its own transaction. A Telegram edit that the server rejects
+    (the message is too old) is ignored.
+    """
+    text = text[:_MESSAGE_LIMIT]
+    pointer = _progress_for(conn, int(idea_id))
+    if pointer is None:
+        if chat_id is None:
+            chat_id = _chat_of_idea(conn, idea_id)
+        if chat_id is None:
+            return
+        begin_progress(conn, int(chat_id), int(idea_id), text)
+        return
+    row = conn.execute(
+        "SELECT * FROM outbox WHERE id = ?", (int(pointer["outbox_id"]),)
+    ).fetchone()
+    if row is None:
+        if chat_id is not None:
+            begin_progress(conn, int(chat_id), int(idea_id), text)
+        return
+    _replace_outbox_text(conn, row, text, http=http)
+
+
+def mark_delivery(conn, outbox_id: int | None, role: str) -> None:
+    """Remember why this row was queued, so a later failure can say so."""
+    if outbox_id is None:
+        return
+    data = _map(conn, _DELIVERY_KEY)
+    data[str(int(outbox_id))] = role
+    _kv_put(conn, _DELIVERY_KEY, json.dumps(data))
+
+
+def _progress_for(conn, idea_id: int) -> dict | None:
+    item = _map(conn, _PROGRESS_KEY).get(str(int(idea_id)))
+    if not isinstance(item, dict) or item.get("outbox_id") is None:
+        return None
+    return item
+
+
+def _remember_progress(conn, idea_id: int, chat_id: int, outbox_id: int, message_id) -> None:
+    data = _map(conn, _PROGRESS_KEY)
+    data[str(int(idea_id))] = {
+        "chat_id": int(chat_id),
+        "outbox_id": int(outbox_id),
+        "message_id": message_id,
+    }
+    _kv_put(conn, _PROGRESS_KEY, json.dumps(data))
+
+
+def _remember_sent(conn, outbox_id: int, message_id) -> None:
+    if message_id is None:
+        return
+    data = _map(conn, _PROGRESS_KEY)
+    changed = False
+    for item in data.values():
+        if isinstance(item, dict) and item.get("outbox_id") == outbox_id:
+            item["message_id"] = message_id
+            changed = True
+    if changed:
+        _kv_set(conn, _PROGRESS_KEY, json.dumps(data))
+
+
+def _replace_outbox_text(conn, row, text: str, *, http=None) -> None:
+    message_id = _tg_message_id(row)
+    if row["sent_at"] is not None and message_id is not None:
+        token = telegram.token_get()
+        if token:
+            _ignore_edit(
+                lambda: telegram.edit_message_text(
+                    token,
+                    int(row["chat_id"]),
+                    message_id,
+                    text,
+                    http=http,
+                    sleep=_no_sleep,
+                )
+            )
+    conn.execute("UPDATE outbox SET text = ? WHERE id = ?", (text, int(row["id"])))
+
+
+def refresh_running_card(conn, idea: store.Idea) -> None:
+    """Point the current card at this idea's status and revision.
+
+    Quick score and brainstorm rewrite the buttons when the job is queued,
+    before the worker enters the running status and increments the
+    revision. A Cancel tap during the run would otherwise carry the old
+    revision and be rejected as out of date. No card means nothing to do.
+    """
+    if idea.status not in _STATUS_BUTTONS:
+        return
+    _retarget_buttons(conn, idea, idea.status)
+
+
+def _retarget_buttons(conn, idea: store.Idea, status: str, *, http=None) -> None:
+    """Point the newest card for this idea at the buttons for ``status``."""
+    row = conn.execute(
+        """
+        SELECT * FROM outbox
+        WHERE idea_id = ? AND buttons_json IS NOT NULL
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (idea.id,),
+    ).fetchone()
+    if row is None:
+        return
+    keyboard = _keyboard(buttons_for(status), idea.id, idea.revision)
+    _write_buttons(conn, row, keyboard, http=http)
+
+
+def _write_buttons(conn, row, keyboard, *, http=None) -> None:
+    payload = json.dumps(keyboard, ensure_ascii=False) if keyboard else None
+    message_id = _tg_message_id(row)
+    if row["sent_at"] is not None and message_id is not None:
+        token = telegram.token_get()
+        if token:
+            _ignore_edit(
+                lambda: telegram.edit_reply_markup(
+                    token,
+                    int(row["chat_id"]),
+                    message_id,
+                    {"inline_keyboard": keyboard or []},
+                    http=http,
+                    sleep=_no_sleep,
+                )
+            )
+    conn.execute(
+        "UPDATE outbox SET buttons_json = ? WHERE id = ?",
+        (payload, int(row["id"])),
+    )
+
+
+def _retire_older(conn, idea_id: int, *, keep_id: int | None = None, http=None) -> None:
+    """Older cards for this idea lose their buttons and point at the new one."""
+    rows = conn.execute(
+        """
+        SELECT * FROM outbox
+        WHERE idea_id = ? AND buttons_json IS NOT NULL
+        ORDER BY id
+        """,
+        (int(idea_id),),
+    ).fetchall()
+    for row in rows:
+        if keep_id is not None and int(row["id"]) == int(keep_id):
+            continue
+        _blank_card(conn, row, http=http)
+
+
+def _blank_card(conn, row, *, http=None) -> None:
+    message_id = _tg_message_id(row)
+    if row["sent_at"] is not None and message_id is not None:
+        token = telegram.token_get()
+        if token:
+            _ignore_edit(
+                lambda: telegram.edit_message_text(
+                    token,
+                    int(row["chat_id"]),
+                    message_id,
+                    _MOVED,
+                    http=http,
+                    sleep=_no_sleep,
+                )
+            )
+            _ignore_edit(
+                lambda: telegram.edit_reply_markup(
+                    token,
+                    int(row["chat_id"]),
+                    message_id,
+                    {"inline_keyboard": []},
+                    http=http,
+                    sleep=_no_sleep,
+                )
+            )
+    conn.execute(
+        "UPDATE outbox SET text = ?, buttons_json = NULL WHERE id = ?",
+        (_MOVED, int(row["id"])),
+    )
+
+
+def _rewrite_card(conn, outbox_id: int, text: str, keyboard, *, http=None) -> None:
+    row = conn.execute(
+        "SELECT * FROM outbox WHERE id = ?", (int(outbox_id),)
+    ).fetchone()
+    if row is None:
+        return
+    message_id = _tg_message_id(row)
+    if row["sent_at"] is not None and message_id is not None:
+        token = telegram.token_get()
+        if token:
+            _ignore_edit(
+                lambda: telegram.edit_message_text(
+                    token,
+                    int(row["chat_id"]),
+                    message_id,
+                    text,
+                    http=http,
+                    sleep=_no_sleep,
+                )
+            )
+            _ignore_edit(
+                lambda: telegram.edit_reply_markup(
+                    token,
+                    int(row["chat_id"]),
+                    message_id,
+                    {"inline_keyboard": keyboard or []},
+                    http=http,
+                    sleep=_no_sleep,
+                )
+            )
+    payload = json.dumps(keyboard, ensure_ascii=False) if keyboard else None
+    conn.execute(
+        "UPDATE outbox SET text = ?, buttons_json = ? WHERE id = ?",
+        (text, payload, int(outbox_id)),
+    )
+
+
+def _settings_text(conn, idea_id: int, heading: str, values: str, example: str, notes=()) -> str:
+    """Current values, then either the example once or a one-line reminder."""
+    parts = [heading, "", values.rstrip()]
+    for note in notes:
+        if note:
+            parts.extend(["", str(note)])
+    flag = f"settings_example:{int(idea_id)}"
+    if _kv(conn, flag) == "1":
+        parts.extend(["", "Reply `key: value` to change a setting"])
+    else:
+        parts.extend(["", "To change any of these, reply with lines like:", "", example.rstrip()])
+        _kv_put(conn, flag, "1")
+    return "\n".join(parts)
+
+
+def _note_delivery_failure(conn, row, attempts: int, reason: str, *, http=None) -> None:
+    idea_id = row["idea_id"]
+    if idea_id is None:
+        return
+    role = _map(conn, _DELIVERY_KEY).get(str(int(row["id"])))
+    if role == "synthesis":
+        if attempts >= MAX_ATTEMPTS:
+            path = _saved_at(conn, row)
+            text = f"Couldn't send the synthesis; it is saved at {path} on the Mac"
+        else:
+            text = (
+                f"The synthesis is ready but sending it failed: {reason}; I'll retry"
+            )
+    elif role == "report":
+        text = f"Couldn't send the report: {reason}"
+    elif role == "excel":
+        text = f"Couldn't send the workbook: {reason}"
+    else:
+        return
+    edit_progress(conn, int(idea_id), text, http=http)
+
+
+def _saved_at(conn, row) -> str:
+    idea_id = row["idea_id"]
+    if idea_id is not None:
+        idea = store.get(conn, int(idea_id))
+        if idea is not None and idea.brainstorm_path:
+            return idea.brainstorm_path
+    if row["document_path"]:
+        return str(row["document_path"])
+    return "the inbox"
+
+
+def _live_job(conn, idea_id: int, kind: str):
+    found = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+    ).fetchone()
+    if found is None:
+        return None
+    return conn.execute(
+        """
+        SELECT * FROM jobs
+        WHERE idea_id = ? AND kind = ? AND state IN ('queued', 'running')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(idea_id), kind),
+    ).fetchone()
+
+
+def _stop_job(conn, job) -> None:
+    from whyline.ideas import worker
+
+    pid = _field(job, "pid")
+    if pid:
+        worker._stop(pid)
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = 'cancelled', lease_until = NULL, pid = NULL
+        WHERE id = ? AND state IN ('queued', 'running')
+        """,
+        (int(job["id"]),),
+    )
+
+
+def _move_or_keep(conn, idea: store.Idea, target: str, note: str) -> store.Idea:
+    if idea.status == target:
+        return idea
+    try:
+        return store.transition(
+            conn,
+            idea.id,
+            target,
+            expected_revision=idea.revision,
+            actor="telegram",
+            note=note,
+        )
+    except (store.IllegalMove, store.StaleRevision):
+        return store.get(conn, idea.id) or idea
+
+
+def _ignore_edit(action) -> None:
+    try:
+        action()
+    except telegram.TelegramError:
+        return
+
+
+def _tg_message_id(row) -> int | None:
+    if row is None:
+        return None
+    keys = row.keys() if isinstance(row, sqlite3.Row) else ()
+    if isinstance(row, sqlite3.Row) and "tg_message_id" not in keys:
+        return None
+    try:
+        value = row["tg_message_id"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _result_message_id(result) -> int | None:
+    if isinstance(result, dict) and result.get("message_id") is not None:
+        try:
+            return int(result["message_id"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _chat_of_idea(conn, idea_id) -> int | None:
+    idea = store.get(conn, int(idea_id))
+    if idea is None:
+        return None
+    return _chat_from_ref(idea.source_ref)
+
+
+def _kv_put(conn, key: str, value: str) -> None:
+    if conn.in_transaction:
+        _kv_set(conn, key, value)
+    else:
+        _kv_set_txn(conn, key, value)
 
 
 def _ensure_jobs(conn) -> None:
@@ -1263,18 +1849,27 @@ def _card_for(conn, chat_id) -> dict | None:
     return card if isinstance(card, dict) else None
 
 
-def _remember_card(conn, chat_id: int, kind: str, idea_id: int, fields=None) -> None:
+def _remember_card(
+    conn, chat_id: int, kind: str, idea_id: int, fields=None, *, outbox_id=None
+) -> None:
     with store._txn(conn):
-        _remember_card_in(conn, chat_id, kind, idea_id, fields)
+        _remember_card_in(
+            conn, chat_id, kind, idea_id, fields, outbox_id=outbox_id
+        )
 
 
-def _remember_card_in(conn, chat_id: int, kind: str, idea_id: int, fields) -> None:
+def _remember_card_in(
+    conn, chat_id: int, kind: str, idea_id: int, fields, *, outbox_id=None
+) -> None:
     data = _map(conn, _CARD_KEY)
-    data[str(int(chat_id))] = {
+    item = {
         "kind": kind,
         "idea_id": idea_id,
         "fields": fields or {},
     }
+    if outbox_id is not None:
+        item["outbox_id"] = int(outbox_id)
+    data[str(int(chat_id))] = item
     _kv_set(conn, _CARD_KEY, json.dumps(data))
 
 

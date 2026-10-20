@@ -1,4 +1,4 @@
-"""SQLite ledger for ideas: schema 4, statuses, and the allowed moves."""
+"""SQLite ledger for ideas: schema 5, statuses, and the allowed moves."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from whyline.ideas import paths
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 STATUSES = (
     "captured",
@@ -39,7 +39,7 @@ ALLOWED = {
     "scoring": frozenset({"scored", "captured"}),
     "scored": frozenset({"brainstorm_configuring", "dropped", "scoring"}),
     "brainstorm_configuring": frozenset({"brainstorming", "captured", "scored"}),
-    "brainstorming": frozenset({"brainstormed", "captured"}),
+    "brainstorming": frozenset({"brainstormed", "captured", "scored"}),
     "brainstormed": frozenset({"brainstorm_configuring", "setup_configuring", "dropped"}),
     "dropped": frozenset({"captured"}),
     "setup_configuring": frozenset({"plan_waiting", "planning", "brainstormed"}),
@@ -283,6 +283,18 @@ def _apply_schema_4(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _apply_schema_5(conn: sqlite3.Connection) -> None:
+    """Remember Telegram message ids, and drop unsent callback acknowledgements.
+
+    Taps are answered inside the poll, so a queued ``callback`` row would
+    only fail later and be retried. A sent row is left as history.
+    """
+    _add_column(conn, "outbox", "tg_message_id", "INTEGER")
+    conn.execute(
+        "DELETE FROM outbox WHERE kind = 'callback' AND sent_at IS NULL"
+    )
+
+
 def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
     found = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in found:
@@ -316,6 +328,8 @@ def _check_schema(conn: sqlite3.Connection) -> None:
             _apply_schema_3(conn)
         if version < 4:
             _apply_schema_4(conn)
+        if version < 5:
+            _apply_schema_5(conn)
         if version == 0:
             conn.execute(
                 "INSERT INTO kv (key, value) VALUES ('schema_version', ?)",

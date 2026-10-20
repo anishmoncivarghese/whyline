@@ -235,7 +235,7 @@ def test_doctor_reads_an_existing_ledger_without_changing_it(ideas_home, capsys)
     _code, out, err = invoke(["idea", "doctor"], capsys)
 
     text = out + err
-    assert "ok     schema: schema version 4" in text
+    assert "ok     schema: schema version 5" in text
     assert f"ok     folder: {ideas_home} mode 0700" in text
     assert database.read_bytes() == before
     assert database.stat().st_mode & 0o777 == mode

@@ -13,6 +13,8 @@ chat is told.
 
 from __future__ import annotations
 
+import fcntl
+import inspect
 import json
 import logging
 import os
@@ -39,6 +41,11 @@ _MAX_STARTS = 2
 _CARD_KEY = "telegram_card"
 _SETTINGS_PREFIX = "telegram_settings:"
 _TIMEOUTS = frozenset({15, 30, 45, 60})
+_QUIET = timedelta(minutes=10)
+_LOCK_NAME = "telegram-poll.lock"
+# flock is per-process on macOS, so a second tick in this process would
+# also obtain it. The flag makes that second tick return immediately.
+_held_lock = None
 
 log = logging.getLogger(__name__)
 
@@ -152,13 +159,23 @@ def run_once(
     flush=None,
     pid_alive=None,
     stop=None,
+    clock=None,
 ) -> None:
-    """One scheduler pass. Returns immediately when the inbox is off."""
+    """One scheduler pass. Returns immediately when the inbox is off.
+
+    Idle, this is one short poll. A tap, a message, or a live job keeps
+    the process long-polling until ten quiet minutes pass. A second tick
+    that cannot take the lock returns without polling.
+
+    ``now`` is the timestamp the scheduler tick started with. The awake
+    loop can outlive it, so lease recovery and job start read ``clock``
+    after every poll instead of reusing ``now``.
+    """
     if not _database_exists():
         return
     from whyline.ideas import bot, telegram_in
 
-    now = now or datetime.now().replace(microsecond=0)
+    clock = clock or datetime.now
     spawn = spawn or _spawn
     poll = poll or telegram_in.poll_once
     handle = handle or bot.handle
@@ -166,16 +183,139 @@ def run_once(
     pid_alive = pid_alive or _pid_alive
     stop = stop or _stop
     conn = store.connect()
+    lock = None
     try:
         if not enabled(conn):
             return
-        poll(conn)
-        _handle_pending(conn, handle)
-        _recover(conn, now, pid_alive, stop)
-        _start_one(conn, now, spawn)
-        flush(conn)
+        lock = _acquire_poll_lock()
+        if lock is None:
+            return
+        _poll_while_in_use(
+            conn,
+            clock=clock,
+            spawn=spawn,
+            poll=poll,
+            handle=handle,
+            flush=flush,
+            pid_alive=pid_alive,
+            stop=stop,
+        )
     finally:
+        _release_poll_lock(lock)
         conn.close()
+
+
+def _poll_while_in_use(
+    conn,
+    *,
+    clock,
+    spawn,
+    poll,
+    handle,
+    flush,
+    pid_alive,
+    stop,
+) -> None:
+    from whyline.agents import telegram
+    from whyline.ideas import telegram_in
+
+    quiet_from = clock()
+    first = True
+    # A row whose handler raised stays for a later tick. Retrying it on
+    # every long poll would reset the quiet window and hold this lock.
+    failed: set[int] = set()
+    while True:
+        before = _kv(conn, telegram_in.LAST_ERROR_KEY)
+        timeout = 25 if (_job_live(conn) or not first) else 0
+        try:
+            stored = _invoke_poll(poll, conn, timeout)
+        except telegram.TelegramError as exc:
+            telegram_in._record_poll_error(conn, "", None, str(exc))
+            return
+        stored = int(stored or 0)
+        after = _kv(conn, telegram_in.LAST_ERROR_KEY)
+        if after and after != before:
+            return
+        handled = _handle_pending(conn, handle, failed)
+        # After the poll, not the tick's original timestamp. A 25s long
+        # poll, repeated while a job looks live, runs far past that instant.
+        moment = clock()
+        _recover(conn, moment, pid_alive, stop)
+        _start_one(conn, moment, spawn)
+        flush(conn)
+        # ``handled`` is rows that ran. A failure is not new activity.
+        activity = stored > 0 or handled > 0
+        live = _job_live(conn)
+        if activity or live:
+            quiet_from = moment
+        elif moment - quiet_from >= _QUIET:
+            return
+        elif first:
+            return
+        first = False
+
+
+def _invoke_poll(poll, conn, timeout: int):
+    try:
+        parameters = inspect.signature(poll).parameters
+    except (TypeError, ValueError):
+        parameters = None
+    accepts = parameters is not None and (
+        "timeout" in parameters
+        or any(
+            item.kind == inspect.Parameter.VAR_KEYWORD for item in parameters.values()
+        )
+    )
+    if accepts:
+        return poll(conn, timeout=timeout)
+    try:
+        return poll(conn, timeout=timeout)
+    except TypeError:
+        return poll(conn)
+
+
+def _job_live(conn) -> bool:
+    found = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+    ).fetchone()
+    if found is None:
+        return False
+    row = conn.execute(
+        """
+        SELECT 1 FROM jobs
+        WHERE state IN ('queued', 'running')
+        LIMIT 1
+        """
+    ).fetchone()
+    return row is not None
+
+
+def _acquire_poll_lock():
+    global _held_lock
+    if _held_lock is not None:
+        return None
+    path = paths.home() / _LOCK_NAME
+    handle = path.open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    _held_lock = handle
+    return handle
+
+
+def _release_poll_lock(handle) -> None:
+    global _held_lock
+    if handle is None:
+        return
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    handle.close()
+    if _held_lock is handle:
+        _held_lock = None
 
 
 def enqueue_brainstorm(conn: sqlite3.Connection, idea_id: int, request) -> bool:
@@ -274,17 +414,31 @@ def _kv_set(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def _handle_pending(conn: sqlite3.Connection, handle) -> None:
+def _handle_pending(conn: sqlite3.Connection, handle, failed: set[int]) -> int:
+    """Run pending rows. Return how many finished without raising.
+
+    ``failed`` holds update ids already tried this tick. A row that raises
+    stays unhandled and is added there, so this tick does not call it
+    again. The next tick passes a new set and tries it once more.
+    """
     rows = conn.execute(
         "SELECT * FROM inbound WHERE handled = 0 ORDER BY update_id"
     ).fetchall()
+    done = 0
     for row in rows:
+        update_id = int(row["update_id"])
+        if update_id in failed:
+            continue
         try:
             handle(conn, row)
         except Exception:
-            # Leave the row unhandled so the next tick tries it again, and
+            # Leave the row unhandled so a later tick tries it again, and
             # keep going so one message cannot hold the queued job.
-            log.exception("idea inbox could not handle update %s", row["update_id"])
+            failed.add(update_id)
+            log.exception("idea inbox could not handle update %s", update_id)
+            continue
+        done += 1
+    return done
 
 
 def _recover(conn, now: datetime, pid_alive, stop) -> None:
@@ -555,7 +709,20 @@ def _execute(conn, job) -> None:
         agents = bot.score_agents(conn)
         if not agents:
             raise RuntimeError("No agent can score unattended.")
-        analyse.analyse(conn, idea_id, agents=agents)
+
+        def on_fallback(agent, reason, nxt):
+            short = str(reason).split("—", 1)[0].split(" - ", 1)[0]
+            short = " ".join(short.split()) or "it failed"
+            bot.edit_progress(
+                conn, idea_id, f"{agent} failed ({short}); trying {nxt}…"
+            )
+
+        try:
+            analyse.analyse(conn, idea_id, agents=agents, on_fallback=on_fallback)
+        except analyse.AnalyseError as exc:
+            bot.edit_progress(conn, idea_id, f"Quick score failed: {exc}")
+            raise
+        bot.edit_progress(conn, idea_id, "Quick score done ↓")
         bot.send_score(conn, idea_id)
         return
     if kind == "brainstorm":

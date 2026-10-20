@@ -8,6 +8,7 @@ Telegram clears it.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -36,6 +37,9 @@ _BODY_KEYS = (
 
 class AllowError(Exception):
     pass
+
+
+log = logging.getLogger(__name__)
 
 
 def _kv(conn: sqlite3.Connection, key: str) -> str | None:
@@ -225,10 +229,10 @@ def _is_allowed(parsed: dict, allowed: set[int]) -> bool:
     return True
 
 
-def _ingest(conn: sqlite3.Connection, update: dict, allowed: set[int]) -> bool:
+def _ingest(conn: sqlite3.Connection, update: dict, allowed: set[int]) -> tuple[bool, dict | None]:
     parsed = _parse(update)
     if parsed is None:
-        return False
+        return False, None
     handled = 0 if _is_allowed(parsed, allowed) else 1
     inserted = False
     with store._txn(conn):
@@ -256,7 +260,29 @@ def _ingest(conn: sqlite3.Connection, update: dict, allowed: set[int]) -> bool:
         current = _cursor(conn)
         if parsed["update_id"] > current:
             _kv_set(conn, CURSOR_KEY, str(parsed["update_id"]))
-    return inserted
+    return inserted, parsed
+
+
+def _query_expired(message: str) -> bool:
+    """Telegram refuses an answer once the button spinner has given up."""
+    text = message.lower()
+    return "too old" in text or "invalid" in text
+
+
+def _answer_callback(token: str, callback_id: str, http, sleep) -> None:
+    """Stop the button spinner now. A late or invalid query is not retried."""
+    try:
+        telegram._call(
+            "answerCallbackQuery",
+            token,
+            {"callback_query_id": callback_id},
+            http=http,
+            sleep=sleep,
+        )
+    except telegram.TelegramError as exc:
+        if _query_expired(str(exc)):
+            return
+        log.warning("could not answer a Telegram tap: %s", exc)
 
 
 def parse_last_error(raw: str | None) -> dict | None:
@@ -295,7 +321,19 @@ def _clear_poll_error(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM kv WHERE key = ?", (LAST_ERROR_KEY,))
 
 
-def poll_once(conn: sqlite3.Connection, *, http=None, sleep=time.sleep) -> int:
+def poll_once(
+    conn: sqlite3.Connection,
+    *,
+    http=None,
+    sleep=time.sleep,
+    timeout: int = 0,
+) -> int:
+    """Store new updates. A tap is answered in this call, never via the outbox.
+
+    ``timeout`` is Telegram's long-poll wait. The idle tick uses 0. The
+    awake loop uses 25 so a second tap is handled without another scheduler
+    wake. This function still never raises.
+    """
     token = telegram.token_get()
     if not token:
         return 0
@@ -314,7 +352,7 @@ def poll_once(conn: sqlite3.Connection, *, http=None, sleep=time.sleep) -> int:
         updates = telegram._call(
             "getUpdates",
             token,
-            {"offset": offset, "timeout": 0},
+            {"offset": offset, "timeout": int(timeout)},
             http=watching,
             sleep=sleep,
         ) or []
@@ -327,6 +365,11 @@ def poll_once(conn: sqlite3.Connection, *, http=None, sleep=time.sleep) -> int:
     for update in updates:
         if not isinstance(update, dict):
             continue
-        if _ingest(conn, update, allowed):
+        inserted, parsed = _ingest(conn, update, allowed)
+        if inserted:
             stored += 1
+        if parsed and parsed.get("kind") == "callback_query" and parsed.get("callback_id"):
+            # Answer with the caller's http, not ``watching``: a rejected
+            # answer is not a failed poll, and it is never queued.
+            _answer_callback(token, str(parsed["callback_id"]), http, sleep)
     return stored

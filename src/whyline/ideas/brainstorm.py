@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import time
@@ -144,8 +145,9 @@ def apply(
     A passes value outside 1–3, an unknown agent, or a timeout outside
     ``15, 30, 45, 60, none`` raises ``SettingsError`` naming that line.
     Antigravity, and any other agent that cannot run unattended, is removed.
-    The returned notes say why. A writer that is not one of the models is
-    added to them: the runner would otherwise swap in the first model.
+    The returned notes say why. An explicit ``final`` outside the models is
+    added to them. Changing ``models`` so the current writer is left out
+    makes the first of the new models the writer instead.
     """
     models = list(base.models)
     passes = base.passes
@@ -155,6 +157,7 @@ def apply(
     notes: list[str] = []
     errors: list[str] = []
     final_set = False
+    models_set = False
 
     for key, field in fields.items():
         if key not in _BRAINSTORM_KEYS:
@@ -180,6 +183,7 @@ def apply(
             notes.extend(dropped)
             if key == "models":
                 models = kept
+                models_set = True
             else:
                 backup = kept
         elif key == "final":
@@ -197,8 +201,17 @@ def apply(
         notes.append(f"{final}: {_block_reason(final)}")
         final = ""
     if final and final not in models:
-        # The console runner replaces a writer that is not in the model list.
-        models.append(final)
+        if final_set:
+            # Only an explicit final: may add an agent the models line omitted.
+            models.append(final)
+            notes.append(f"final: {final} (added; it is not one of the models)")
+        elif models_set and models:
+            previous = final
+            final = models[0]
+            notes.append(f"final: {final} ({previous} is no longer a model)")
+        else:
+            # The console runner replaces a writer that is not in the model list.
+            models.append(final)
     if not final and models:
         final = models[0]
     if final_set and not final and not models:
@@ -258,7 +271,7 @@ def run(
 
     The topic is the idea's original text plus refine notes that are not
     already in it. ``timeout`` ``none`` is an unlimited runner budget.
-    Progress lines go to the idea's chat, at most one a minute.
+    Phase lines edit one status message in the idea's chat.
     """
     root = ensure_workspace()
     idea = store.get(conn, idea_id)
@@ -352,7 +365,8 @@ def _attempts(
                 reason = str(exc) or "The final writer did not write a synthesis."
                 _fail(conn, idea.id, reason, chat_id)
                 raise BrainstormError(reason) from exc
-            progress(f"{final} failed; trying {backup}")
+            reason = str(exc).split("—", 1)[0].strip() or "it failed"
+            progress(f"{final} failed ({reason}); trying {backup}…")
             agents = _substitute(agents, final, backup)
             final = backup
             continue
@@ -505,13 +519,18 @@ def _begin(conn: sqlite3.Connection, idea: store.Idea) -> store.Idea:
         )
     if idea.status != "brainstorm_configuring":
         raise BrainstormError(f"cannot brainstorm from {idea.status}")
-    return store.transition(
+    entered = store.transition(
         conn,
         idea.id,
         "brainstorming",
         expected_revision=idea.revision,
         actor=_ACTOR,
     )
+    # Start wrote Cancel against the revision from before this move.
+    from whyline.ideas import bot
+
+    bot.refresh_running_card(conn, entered)
+    return entered
 
 
 def _fail(conn: sqlite3.Connection, idea_id: int, reason: str, chat_id: int | None) -> None:
@@ -521,7 +540,7 @@ def _fail(conn: sqlite3.Connection, idea_id: int, reason: str, chat_id: int | No
         if len(note) > 500:
             note = note[:500]
         try:
-            store.transition(
+            returned = store.transition(
                 conn,
                 idea_id,
                 "captured",
@@ -531,6 +550,10 @@ def _fail(conn: sqlite3.Connection, idea_id: int, reason: str, chat_id: int | No
             )
         except (store.IllegalMove, store.StaleRevision):
             pass
+        else:
+            from whyline.ideas import bot
+
+            bot.refresh_running_card(conn, returned)
     if chat_id is None:
         return
     text = " ".join(str(reason).split()) or "Brainstorm failed."
@@ -608,38 +631,169 @@ def _archive(idea_id: int, text: str) -> Path:
 def _send(conn, chat_id: int | None, idea: store.Idea, md: Path) -> None:
     if chat_id is None:
         return
+    from whyline.ideas import bot
+
+    bot.edit_progress(conn, idea.id, "Synthesis written; sending it ↓", chat_id=chat_id)
     try:
         exported = documents.export(md)
     except (OSError, ValueError) as exc:
+        bot.edit_progress(
+            conn,
+            idea.id,
+            f"The synthesis is ready but sending it failed: {exc}; I'll retry",
+            chat_id=chat_id,
+        )
         _enqueue(conn, chat_id, "message", str(exc), None, None, idea.id)
         return
-    keyboard = _keyboard(RESULT_BUTTONS, idea.id, idea.revision)
+    keyboard = bot._keyboard(bot.buttons_for("brainstormed"), idea.id, idea.revision)
     note = " ".join(item for item in exported.notes if item)
     made = [path for path in (exported.docx, exported.pdf) if path is not None]
+    queued: list[int] = []
     if not made:
-        _enqueue(conn, chat_id, "document", note or "Brainstorm", keyboard, str(md), idea.id)
-        return
-    for index, path in enumerate(made):
-        caption = note if index == 0 and note else ""
-        _enqueue(conn, chat_id, "document", caption, keyboard, str(path), idea.id)
+        outbox_id = bot._enqueue(
+            conn, chat_id, "document", note or "Brainstorm",
+            buttons=keyboard, document_path=str(md), idea_id=idea.id,
+        )
+        bot.mark_delivery(conn, outbox_id, "synthesis")
+        queued.append(outbox_id)
+    else:
+        for index, path in enumerate(made):
+            caption = note if index == 0 and note else ""
+            outbox_id = bot._enqueue(
+                conn, chat_id, "document", caption,
+                buttons=keyboard, document_path=str(path), idea_id=idea.id,
+            )
+            bot.mark_delivery(conn, outbox_id, "synthesis")
+            queued.append(outbox_id)
+    # Kind is brainstormed, not brainstorm. Again rewrites a brainstorm card
+    # in place, which would revive the retired pre-run settings message and
+    # leave this result keyboard live. The last queued row is the only one
+    # that still has buttons.
+    bot._remember_card(
+        conn, chat_id, "brainstormed", idea.id, outbox_id=queued[-1]
+    )
 
 
 def _progress(conn, chat_id: int | None, idea_id: int):
-    """Send the first line now, then at most one further line each minute."""
-    last = {"at": None}
+    """Edit one status message at each phase. Never throttle those edits.
+
+    A per-agent line updates the same board (who is done, who is current).
+    It is not also sent on its own: the board already shows it, and a
+    second copy would be the line the minute-throttle used to drop.
+    """
+    state: dict = {"order": [], "marks": {}, "phase": "", "review": ""}
 
     def emit(line="") -> None:
         text = line if isinstance(line, str) else str(line)
         text = " ".join(text.split())
         if not text or chat_id is None:
             return
-        now = time.monotonic()
-        if last["at"] is not None and now - last["at"] < _MINUTE:
+        status = _phase_text(text, state)
+        if status is None:
             return
-        last["at"] = now
-        _enqueue(conn, chat_id, "message", text[:4000], None, None, idea_id)
+        from whyline.ideas import bot
+
+        bot.edit_progress(conn, idea_id, status[:4000], chat_id=chat_id)
 
     return emit
+
+
+def _phase_text(line: str, state: dict) -> str | None:
+    """The status sentence for this progress line, or None when it is chatter."""
+    lower = line.lower()
+    if lower.startswith("researching"):
+        names = [
+            _agent_key(part)
+            for part in line.split(":", 1)[-1].split(",")
+            if part.strip()
+        ]
+        state["phase"] = "research"
+        state["order"] = names
+        state["marks"] = {}
+        if names:
+            state["marks"][names[0]] = "…"
+        return _board("Researching", state)
+    if lower.startswith("review pass"):
+        state["phase"] = "review"
+        state["review"] = line.rstrip(".")
+        state["marks"] = {}
+        return f"{state['review']}: …"
+    if lower.startswith("final synthesis by"):
+        agent = _agent_key(line.split()[-1])
+        state["phase"] = "write"
+        return f"Writing the final synthesis with {agent}…"
+    if "failed" in lower and "trying" in lower:
+        return line if line.endswith("…") else f"{line}…"
+    parsed = _AGENT_LINE.match(line)
+    if parsed is None:
+        return None
+    label = _agent_key(parsed.group(3))
+    status = parsed.group(4).lower()
+    scope = parsed.group(5).lower()
+    mark = {"succeeded": "✓", "starting": "…", "failed": "✗", "skipped": "✗"}.get(status, "")
+    if "final synthesis" in scope:
+        if status == "starting":
+            return f"Writing the final synthesis with {label}…"
+        if status == "succeeded":
+            return "Synthesis written; sending it ↓"
+        return None
+    if "review" in scope:
+        state["phase"] = "review"
+        if label:
+            state.setdefault("marks", {})[label] = mark
+        heading = state.get("review") or "Review"
+        if state.get("order"):
+            return _board(heading, state)
+        return f"{heading}: …"
+    state["phase"] = "research"
+    state.setdefault("marks", {})[label] = mark
+    if status in {"succeeded", "failed", "skipped"}:
+        _advance_current(state, label)
+    return _board("Researching", state)
+
+
+_AGENT_LINE = re.compile(
+    r"^\[(\d+)/(\d+)\]\s+(\S+)\s+(starting|succeeded|failed|skipped)\s+(.+)$",
+    re.IGNORECASE,
+)
+
+
+def _agent_key(label: str) -> str:
+    return label.strip().lower().rstrip(".,")
+
+
+def _board(heading: str, state: dict) -> str:
+    order = list(state.get("order") or [])
+    marks = state.get("marks") or {}
+    if not order:
+        parts = []
+        for name, mark in marks.items():
+            parts.append(f"{name} {mark}".strip() if mark else name)
+        body = ", ".join(parts) if parts else "…"
+        return f"{heading}: {body}"
+    shown = []
+    for name in order:
+        mark = marks.get(name, "")
+        if mark == "…":
+            shown.append(f"{name} …")
+        elif mark:
+            shown.append(f"{name} {mark}")
+        else:
+            shown.append(name)
+    return f"{heading}: {', '.join(shown)}"
+
+
+def _advance_current(state: dict, finished: str) -> None:
+    order = state.get("order") or []
+    marks = state.setdefault("marks", {})
+    found = False
+    for name in order:
+        if name == finished:
+            found = True
+            continue
+        if found and marks.get(name) not in {"✓", "✗"}:
+            marks[name] = "…"
+            return
 
 
 def _read(key: str, field) -> tuple[str, object, bool]:

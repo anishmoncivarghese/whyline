@@ -217,7 +217,7 @@ def test_a_network_error_stores_nothing_and_keeps_the_cursor(conn, token):
     assert _rows(conn) == []
 
 
-def test_schema_1_databases_migrate_to_4(ideas_home):
+def test_schema_1_databases_migrate_to_5(ideas_home):
     paths.home()
     path = paths.db_path()
     raw = sqlite3.connect(path)
@@ -244,7 +244,7 @@ def test_schema_1_databases_migrate_to_4(ideas_home):
         version = conn.execute(
             "SELECT value FROM kv WHERE key = 'schema_version'"
         ).fetchone()[0]
-        assert version == "4"
+        assert version == "5"
         cols = [
             row[1]
             for row in conn.execute("PRAGMA table_info(inbound)")
@@ -379,3 +379,108 @@ def test_allow_rejects_a_group_and_an_unknown_chat(ideas_home, capsys, monkeypat
     code, out, err = invoke(["idea", "telegram", "allow", "42"], capsys)
     assert code == 1
     assert "no known Telegram chat 42" in err
+
+
+def test_a_tap_is_answered_in_the_same_poll_and_not_queued(conn, token):
+    _allow(conn, CHAT)
+    update = {
+        "update_id": 3,
+        "callback_query": {
+            "id": "cb-1",
+            "data": "score:1:0",
+            "message": {
+                "message_id": 42,
+                "date": 1_700_000_000,
+                "chat": {"id": CHAT, "type": "private"},
+                "text": "card",
+            },
+        },
+    }
+    http, calls = fake([
+        _ok([update]),
+        {"ok": True, "result": True},
+    ])
+
+    stored = telegram_in.poll_once(conn, http=http, sleep=lambda s: None)
+
+    assert stored == 1
+    assert [method for method, _fields, _files in calls] == [
+        "getUpdates",
+        "answerCallbackQuery",
+    ]
+    assert calls[1][1]["callback_query_id"] == "cb-1"
+    queued = conn.execute(
+        "SELECT count(*) FROM outbox WHERE kind = 'callback'"
+    ).fetchone()[0]
+    assert queued == 0
+
+
+def test_a_too_old_callback_answer_is_not_retried(conn, token):
+    _allow(conn, CHAT)
+    update = {
+        "update_id": 4,
+        "callback_query": {
+            "id": "cb-old",
+            "data": "score:1:0",
+            "message": {
+                "message_id": 9,
+                "date": 1_700_000_000,
+                "chat": {"id": CHAT, "type": "private"},
+                "text": "card",
+            },
+        },
+    }
+    http, calls = fake([
+        _ok([update]),
+        {
+            "ok": False,
+            "error_code": 400,
+            "description": "Bad Request: query is too old and response timeout expired",
+        },
+    ])
+
+    stored = telegram_in.poll_once(conn, http=http, sleep=lambda s: None)
+
+    assert stored == 1
+    assert [method for method, _fields, _files in calls] == [
+        "getUpdates",
+        "answerCallbackQuery",
+    ]
+    assert conn.execute("SELECT count(*) FROM outbox").fetchone()[0] == 0
+
+    http2, calls2 = fake([_ok([])])
+    assert telegram_in.poll_once(conn, http=http2, sleep=lambda s: None) == 0
+    assert [method for method, _fields, _files in calls2] == ["getUpdates"]
+
+
+def test_schema_step_drops_unsent_callback_rows(conn):
+    conn.execute(
+        """
+        INSERT INTO outbox (chat_id, kind, text, attempts, sent_at)
+        VALUES (11, 'callback', 'cb-pending', 0, NULL)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO outbox (chat_id, kind, text, attempts, sent_at)
+        VALUES (11, 'callback', 'cb-sent', 1, '2026-10-20T00:00:00.000Z')
+        """
+    )
+    conn.execute("UPDATE kv SET value = '4' WHERE key = 'schema_version'")
+    conn.close()
+
+    again = store.connect()
+    try:
+        left = [
+            row["text"]
+            for row in again.execute(
+                "SELECT text FROM outbox WHERE kind = 'callback' ORDER BY id"
+            )
+        ]
+        assert left == ["cb-sent"]
+        version = again.execute(
+            "SELECT value FROM kv WHERE key = 'schema_version'"
+        ).fetchone()[0]
+        assert version == "5"
+    finally:
+        again.close()

@@ -201,6 +201,34 @@ def send_document(token: str, chat_id: int, path: Path, caption: str, *, label: 
         raise TelegramError(f"the bot can't reach {label or chat_id}") from None
 
 
+def edit_message_text(token: str, chat_id: int, message_id: int, text: str, *,
+                      http=None, sleep=time.sleep):
+    """Replace the text of a message this bot sent. Returns Telegram's result."""
+    return _call(
+        "editMessageText",
+        token,
+        {"chat_id": chat_id, "message_id": message_id, "text": text[:4096]},
+        http=http,
+        sleep=sleep,
+    )
+
+
+def edit_reply_markup(token: str, chat_id: int, message_id: int, reply_markup, *,
+                      http=None, sleep=time.sleep):
+    """Replace the inline keyboard of a message this bot sent."""
+    return _call(
+        "editMessageReplyMarkup",
+        token,
+        {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": reply_markup,
+        },
+        http=http,
+        sleep=sleep,
+    )
+
+
 def send_message(token: str, chat_id: int, text: str, *, label: str = "",
                  http=None, sleep=time.sleep) -> None:
     try:

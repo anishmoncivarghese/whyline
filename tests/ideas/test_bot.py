@@ -2,11 +2,13 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from whyline.agents import telegram
-from whyline.ideas import bot, documents, paths, report, store
+from whyline.ideas import analyse, bot, brainstorm, documents, paths, report, store
+from whyline_relay.agents import AgentCancelled
 
 CHAT = 11
 TOKEN = "123:secret"
@@ -146,7 +148,11 @@ def test_pressing_quick_score_twice_queues_one_job(conn, token, monkeypatch):
     assert jobs[0]["kind"] == "score"
     assert jobs[0]["state"] == "queued"
     texts = [row["text"] for row in _outbox(conn, "message")]
-    assert texts.count("Scoring with claude…") == 1
+    started = (
+        "Quick score started with claude. "
+        "Usually 2-5 minutes; I'll message you when it's done."
+    )
+    assert texts.count(started) == 1
     again = store.get(conn, idea.id)
     assert again.status == "captured"
     assert again.revision == 0
@@ -169,15 +175,27 @@ def test_a_stale_button_changes_nothing(conn, token):
     after = store.get(conn, idea.id)
     assert (after.status, after.revision, after.original_text, len(_jobs(conn))) == before
     assert [row["text"] for row in _outbox(conn, "message")].count(bot.OUT_OF_DATE) == 1
-    assert _outbox(conn, "callback")[0]["text"] == "cb-stale"
+    assert _outbox(conn, "callback") == []
 
 
-def test_excel_sends_a_document(conn, token):
+def test_excel_sends_a_document(conn, token, monkeypatch):
     idea = _capture(conn)
     calls = []
+    http = _http(calls)
+    during = {}
+    real_export = bot.xlsx.export
 
-    bot.handle(conn, _press(f"excel:{idea.id}:0", "cb-xl", update_id=8))
-    sent = bot.flush_outbox(conn, http=_http(calls))
+    def wrapped(db):
+        during["texts"] = [
+            fields.get("text")
+            for method, fields, _files in calls
+            if method == "sendMessage"
+        ]
+        return real_export(db)
+
+    monkeypatch.setattr(bot.xlsx, "export", wrapped)
+    bot.handle(conn, _press(f"excel:{idea.id}:0", "cb-xl", update_id=8), http=http)
+    sent = bot.flush_outbox(conn, http=http)
 
     documents_sent = [
         (method, fields, files) for method, fields, files in calls if method == "sendDocument"
@@ -188,6 +206,13 @@ def test_excel_sends_a_document(conn, token):
     assert path.suffix == ".xlsx"
     assert path.is_file()
     assert path == paths.workbook() or path.name.startswith("ideas-")
+    assert "▶ Excel" in during["texts"]
+    assert "Rebuilding your workbook…" in during["texts"]
+    assert "Workbook sent ↓" not in during["texts"]
+    edits = [
+        fields.get("text") for method, fields, _files in calls if method == "editMessageText"
+    ]
+    assert "Workbook sent ↓" in edits
 
 
 def test_a_report_sends_word_and_pdf_when_both_export(conn, token, monkeypatch):
@@ -209,9 +234,10 @@ def test_a_report_sends_word_and_pdf_when_both_export(conn, token, monkeypatch):
 
     monkeypatch.setattr(bot.documents, "export", fake_export)
     calls = []
+    http = _http(calls)
 
-    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-rp", update_id=9))
-    bot.flush_outbox(conn, http=_http(calls))
+    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-rp", update_id=9), http=http)
+    bot.flush_outbox(conn, http=http)
 
     assert seen == [md]
     sent = [files["document"] for method, _fields, files in calls if method == "sendDocument"]
@@ -230,9 +256,10 @@ def test_a_report_sends_word_with_the_note_when_pdf_is_missing(conn, token, monk
 
     monkeypatch.setattr(bot.documents, "export", fake_export)
     calls = []
+    http = _http(calls)
 
-    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-w", update_id=10))
-    bot.flush_outbox(conn, http=_http(calls))
+    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-w", update_id=10), http=http)
+    bot.flush_outbox(conn, http=http)
 
     sent = [(fields, files) for method, fields, files in calls if method == "sendDocument"]
     assert len(sent) == 1
@@ -251,9 +278,10 @@ def test_a_report_sends_markdown_when_both_exports_fail(conn, token, monkeypatch
 
     monkeypatch.setattr(bot.documents, "export", fake_export)
     calls = []
+    http = _http(calls)
 
-    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-md", update_id=11))
-    bot.flush_outbox(conn, http=_http(calls))
+    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-md", update_id=11), http=http)
+    bot.flush_outbox(conn, http=http)
 
     sent = [(fields, files) for method, fields, files in calls if method == "sendDocument"]
     assert len(sent) == 1
@@ -368,13 +396,11 @@ def test_a_landed_score_sends_the_summary_and_its_buttons(conn, token):
     assert "- Beta" in card["text"]
     assert "- Gamma" in card["text"]
     assert "Delta" not in card["text"]
-    labels = [
-        cell["text"]
-        for line in json.loads(card["buttons_json"])
-        for cell in line
-    ]
-    assert labels == ["Brainstorm", "Full report", "Refine", "Drop", "Excel"]
-    assert labels[0] == "Brainstorm"
+    keyboard = json.loads(card["buttons_json"])
+    assert [cell["text"] for cell in keyboard[0]] == ["Brainstorm"]
+    assert all(len(line) <= 3 for line in keyboard)
+    labels = [cell["text"] for line in keyboard for cell in line]
+    assert labels == ["Brainstorm", "Full report", "Refine", "Excel", "Drop"]
 
 
 def test_help_lists_commands_and_the_settings_template(conn, token):
@@ -408,7 +434,8 @@ def test_settings_open_the_matching_confirm_card(conn, token):
     _capture(conn)
     bot.handle(conn, _message("models: claude\ntimeout: 30", update_id=6, message_id=6))
     card = _outbox(conn, "message")[-1]
-    assert card["text"].startswith("Brainstorm\n")
+    assert card["text"].startswith("Start brainstorm will use:")
+    assert "To change any of these, reply with lines like:" in card["text"]
     assert "models: claude" in card["text"]
     assert "timeout: 30" in card["text"]
     labels = [cell["text"] for cell in json.loads(card["buttons_json"])[0]]
@@ -432,6 +459,7 @@ def test_refine_stores_the_reply_as_extra_context(conn, token, monkeypatch):
     idea = store.get(conn, idea.id)
 
     bot.handle(conn, _press(f"refine:{idea.id}:{idea.revision}", "cb-rf", update_id=12))
+    assert "▶ Refine" in [row["text"] for row in _outbox(conn, "message")]
     assert _outbox(conn, "message")[-1]["text"] == "What should I add?"
 
     bot.handle(conn, _message("mention the ledger", update_id=13, message_id=13))
@@ -444,3 +472,491 @@ def test_refine_stores_the_reply_as_extra_context(conn, token, monkeypatch):
     ).fetchall()
     assert [row["note"] for row in notes] == ["mention the ledger"]
     assert len(_jobs(conn)) == 1
+
+
+def _flat(row):
+    return [
+        cell["text"]
+        for line in json.loads(row["buttons_json"])
+        for cell in line
+    ]
+
+
+def _button_rows(conn):
+    return [
+        row for row in _outbox(conn, "message")
+        if row["buttons_json"]
+    ]
+
+
+def test_quick_score_buttons_are_brainstorm_and_cancel(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+
+    bot.handle(conn, _press(data, "cb-score", update_id=2))
+
+    card = _button_rows(conn)[-1]
+    assert _flat(card) == ["Brainstorm", "Cancel"]
+    started = (
+        "Quick score started with claude. "
+        "Usually 2-5 minutes; I'll message you when it's done."
+    )
+    assert started in [row["text"] for row in _outbox(conn, "message")]
+    assert store.get(conn, idea.id).status == "captured"
+
+
+def test_cancel_during_scoring_stops_the_job_and_restores_captured(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+    bot.handle(conn, _press(data, "cb-score", update_id=2))
+    cancel = _button(_button_rows(conn)[-1], "Cancel")["callback_data"]
+
+    bot.handle(conn, _press(cancel, "cb-stop", update_id=3))
+
+    job = _jobs(conn)[0]
+    assert job["state"] == "cancelled"
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "captured"
+    assert _flat(_button_rows(conn)[-1]) == ["Brainstorm", "Quick score", "Cancel"]
+
+
+def _tap_while_scoring(conn, idea, callback_id, label, action):
+    """Run the score until it has entered scoring, then tap ``label``."""
+    seen = {}
+
+    def run_fn(command, prompt, **kwargs):
+        fresh = store.get(conn, idea.id)
+        assert fresh.status == "scoring"
+        assert fresh.revision > idea.revision
+        data = _button(_button_rows(conn)[-1], label)["callback_data"]
+        assert data == f"{action}:{fresh.id}:{fresh.revision}"
+        seen["data"] = data
+        seen["revision"] = fresh.revision
+        bot.handle(conn, _press(data, callback_id, update_id=4))
+        raise AgentCancelled("stopped")
+
+    with pytest.raises(AgentCancelled):
+        analyse.analyse(conn, idea.id, agents=["claude"], run_fn=run_fn)
+    return seen
+
+
+def test_cancel_after_scoring_starts_uses_the_new_revision(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+    bot.handle(conn, _press(data, "cb-score", update_id=2))
+    queued = _button(_button_rows(conn)[-1], "Cancel")["callback_data"]
+
+    tapped = _tap_while_scoring(conn, idea, "cb-stop", "Cancel", "cancel")
+
+    assert tapped["data"] != queued
+    assert tapped["data"] == f"cancel:{idea.id}:{tapped['revision']}"
+    job = _jobs(conn)[0]
+    assert job["state"] == "cancelled"
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "captured"
+    assert fresh.revision == tapped["revision"] + 1
+    assert _flat(_button_rows(conn)[-1]) == ["Brainstorm", "Quick score", "Cancel"]
+    assert _button(_button_rows(conn)[-1], "Cancel")["callback_data"].endswith(
+        f":{fresh.revision}"
+    )
+
+
+def test_brainstorm_during_scoring_opens_the_settings_card(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+    bot.handle(conn, _press(data, "cb-score", update_id=2))
+
+    _tap_while_scoring(conn, idea, "cb-brain", "Brainstorm", "brainstorm")
+
+    job = _jobs(conn)[0]
+    assert job["state"] == "cancelled"
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "brainstorm_configuring"
+    card = _button_rows(conn)[-1]
+    assert card["text"].startswith("Start brainstorm will use:")
+    assert _flat(card) == ["Start", "Edit", "Cancel"]
+    assert _button(card, "Start")["callback_data"] == f"start_brainstorm:{fresh.id}:{fresh.revision}"
+    assert "can't be brainstormed from scoring" not in [
+        row["text"] for row in _outbox(conn, "message")
+    ]
+
+
+def test_brainstorm_during_a_rescore_returns_to_scored(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    idea = store.transition(
+        conn, idea.id, "scoring", expected_revision=idea.revision, actor="t"
+    )
+    idea = store.transition(
+        conn, idea.id, "scored", expected_revision=idea.revision, actor="t"
+    )
+    bot.handle(conn, _press(f"score:{idea.id}:{idea.revision}", "cb-score", update_id=3))
+
+    _tap_while_scoring(conn, idea, "cb-brain", "Brainstorm", "brainstorm")
+
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "brainstorm_configuring"
+    rows = conn.execute(
+        "SELECT from_status, to_status FROM events WHERE idea_id = ? ORDER BY id",
+        (idea.id,),
+    ).fetchall()
+    assert (rows[-2]["from_status"], rows[-2]["to_status"]) == ("scoring", "scored")
+    assert (rows[-1]["from_status"], rows[-1]["to_status"]) == (
+        "scored",
+        "brainstorm_configuring",
+    )
+
+
+def test_brainstorm_while_a_score_is_still_queued_stops_that_score(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+    bot.handle(conn, _press(data, "cb-score", update_id=2))
+    assert store.get(conn, idea.id).status == "captured"
+    brain = _button(_button_rows(conn)[-1], "Brainstorm")["callback_data"]
+
+    bot.handle(conn, _press(brain, "cb-brain", update_id=3))
+
+    assert _jobs(conn)[0]["state"] == "cancelled"
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "brainstorm_configuring"
+    assert _button_rows(conn)[-1]["text"].startswith("Start brainstorm will use:")
+
+
+def test_a_failed_score_puts_captured_buttons_on_the_new_revision(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+    bot.handle(conn, _press(data, "cb-score", update_id=2))
+
+    def run_fn(command, prompt, **kwargs):
+        return SimpleNamespace(exit_code=1, output="rate limit")
+
+    with pytest.raises(analyse.AnalyseError):
+        analyse.analyse(conn, idea.id, agents=["claude"], run_fn=run_fn)
+
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "captured"
+    assert fresh.revision > idea.revision
+    assert _flat(_button_rows(conn)[-1]) == ["Brainstorm", "Quick score", "Cancel"]
+    assert _button(_button_rows(conn)[-1], "Quick score")["callback_data"] == (
+        f"score:{fresh.id}:{fresh.revision}"
+    )
+
+
+def test_cancel_after_brainstorm_starts_uses_the_new_revision(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    opened = _button(_outbox(conn, "message")[0], "Brainstorm")["callback_data"]
+    bot.handle(conn, _press(opened, "cb-open", update_id=2))
+    start = _button(_button_rows(conn)[-1], "Start")["callback_data"]
+    bot.handle(conn, _press(start, "cb-start", update_id=3))
+    before = store.get(conn, idea.id)
+    assert before.status == "brainstorm_configuring"
+    queued = _button(_button_rows(conn)[-1], "Cancel")["callback_data"]
+    assert queued == f"cancel:{idea.id}:{before.revision}"
+
+    entered = brainstorm._begin(conn, before)
+
+    assert entered.status == "brainstorming"
+    assert entered.revision == before.revision + 1
+    cancel = _button(_button_rows(conn)[-1], "Cancel")["callback_data"]
+    assert cancel == f"cancel:{idea.id}:{entered.revision}"
+    assert cancel != queued
+
+    bot.handle(conn, _press(cancel, "cb-stop", update_id=4))
+
+    job = _jobs(conn)[0]
+    assert job["state"] == "cancelled"
+    fresh = store.get(conn, idea.id)
+    assert fresh.status == "captured"
+    assert _flat(_button_rows(conn)[-1]) == ["Brainstorm", "Quick score", "Cancel"]
+    assert _button(_button_rows(conn)[-1], "Cancel")["callback_data"].endswith(
+        f":{fresh.revision}"
+    )
+
+
+def test_every_status_has_the_buttons_for_that_moment():
+    expected = {
+        "captured": ["Brainstorm", "Quick score", "Cancel"],
+        "scoring": ["Brainstorm", "Cancel"],
+        "scored": ["Brainstorm", "Full report", "Refine", "Excel", "Drop"],
+        "brainstorm_configuring": ["Start", "Edit", "Cancel"],
+        "brainstorming": ["Cancel"],
+        "brainstormed": ["Spec and plan", "Again", "Drop"],
+        "dropped": ["Reopen"],
+    }
+    for status, labels in expected.items():
+        assert [label for label, _action in bot.buttons_for(status)] == labels
+        rows = bot._keyboard(bot.buttons_for(status), 1, 0)
+        assert rows
+        assert all(len(row) <= 3 for row in rows)
+        assert all(len(cell["text"]) <= 14 for row in rows for cell in row)
+    scored = bot._keyboard(bot.buttons_for("scored"), 1, 0)
+    assert [cell["text"] for cell in scored[0]] == ["Brainstorm"]
+    assert [cell["text"] for cell in scored[1]] == ["Full report", "Refine", "Excel"]
+    assert [cell["text"] for cell in scored[2]] == ["Drop"]
+
+
+def test_an_older_card_loses_its_buttons_when_a_newer_one_is_sent(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Brainstorm")["callback_data"]
+
+    bot.handle(conn, _press(data, "cb-open", update_id=2))
+
+    rows = _outbox(conn, "message")
+    assert rows[0]["text"] == "Moved to the newer card ↓"
+    assert rows[0]["buttons_json"] is None
+    assert rows[-1]["buttons_json"]
+    assert rows[-1]["text"].startswith("Start brainstorm will use:")
+
+
+def test_a_failing_edit_does_not_raise(conn, token):
+    idea = _capture(conn)
+    bot.flush_outbox(conn, http=_http([]))
+
+    def http(method, _token, _fields, _files):
+        return {
+            "ok": False,
+            "error_code": 400,
+            "description": "Bad Request: message is too old",
+        }
+
+    bot._retire_older(conn, idea.id, http=http)
+
+    row = _outbox(conn, "message")[0]
+    assert row["text"] == "Moved to the newer card ↓"
+    assert row["buttons_json"] is None
+
+
+def test_brainstorm_settings_edit_the_same_card(conn, token, monkeypatch):
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude", "codex", "grok"]),),
+    )
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda _name: True)
+    _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Brainstorm")["callback_data"]
+    bot.handle(conn, _press(data, "cb-open", update_id=2))
+    card = _button_rows(conn)[-1]
+    assert card["text"].startswith("Start brainstorm will use:")
+    assert "To change any of these, reply with lines like:" in card["text"]
+    assert "timeout: 15" in card["text"]
+    before = len(_outbox(conn))
+
+    bot.handle(conn, _message("timeout: 30", update_id=3, message_id=8))
+
+    assert len(_outbox(conn)) == before
+    edited = _button_rows(conn)[-1]
+    assert edited["id"] == card["id"]
+    assert "timeout: 30" in edited["text"]
+    assert "timeout: 15" not in edited["text"]
+    assert "Reply `key: value` to change a setting" in edited["text"]
+    assert "To change any of these, reply with lines like:" not in edited["text"]
+
+
+def test_changing_models_does_not_keep_the_old_final_writer(conn, token, monkeypatch):
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude", "codex", "grok"]),),
+    )
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda _name: True)
+    _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Brainstorm")["callback_data"]
+    bot.handle(conn, _press(data, "cb-open", update_id=2))
+
+    bot.handle(conn, _message("models: codex, grok", update_id=3, message_id=8))
+
+    card = _button_rows(conn)[-1]
+    assert "models: codex, grok" in card["text"]
+    assert "final: codex" in card["text"]
+    assert "claude is no longer a model" in card["text"]
+    stored = json.loads(
+        conn.execute("SELECT value FROM kv WHERE key = 'telegram_card'").fetchone()[0]
+    )
+    fields = stored[str(CHAT)]["fields"]
+    assert fields["models"] == ["codex", "grok"]
+    assert fields["final"] == "codex"
+
+    bot.handle(
+        conn,
+        _message("models: codex, grok\nfinal: claude", update_id=4, message_id=9),
+    )
+    card = _button_rows(conn)[-1]
+    assert "final: claude (added; it is not one of the models)" in card["text"]
+    stored = json.loads(
+        conn.execute("SELECT value FROM kv WHERE key = 'telegram_card'").fetchone()[0]
+    )
+    fields = stored[str(CHAT)]["fields"]
+    assert fields["models"] == ["codex", "grok", "claude"]
+    assert fields["final"] == "claude"
+
+
+def test_the_write_up_phase_edits_one_status_line(conn, token):
+    idea = store.add(conn, "A quiet ledger", source="telegram", source_ref=f"{CHAT}:5")
+    from whyline.ideas import brainstorm
+
+    emit = brainstorm._progress(conn, CHAT, idea.id)
+    emit("Researching independently: claude, codex, grok")
+    assert _outbox(conn, "message")[0]["text"] == "Researching: claude …, codex, grok"
+    emit("Review pass 1 of 1")
+    assert _outbox(conn, "message")[0]["text"] == "Review pass 1 of 1: …"
+    emit("Final synthesis by codex")
+    rows = _outbox(conn, "message")
+    assert len(rows) == 1
+    assert rows[0]["text"] == "Writing the final synthesis with codex…"
+
+
+def test_full_report_echoes_and_the_status_ends_sent(conn, token, monkeypatch):
+    idea = _capture(conn)
+    md = paths.reports_dir() / "1-v1.md"
+    md.write_text("# Report\n", encoding="utf-8")
+    store.add_analysis(conn, idea.id, agent="claude", report_path=str(md))
+    docx = paths.documents_dir() / "1-v1.docx"
+    pdf = paths.documents_dir() / "1-v1.pdf"
+    calls = []
+    http = _http(calls)
+    during = {}
+
+    def fake_export(_md_path, **_kwargs):
+        during["texts"] = [
+            fields.get("text")
+            for method, fields, _files in calls
+            if method == "sendMessage"
+        ]
+        return documents.Exported(docx=docx, pdf=pdf, notes=[])
+
+    monkeypatch.setattr(bot.documents, "export", fake_export)
+    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-rp2", update_id=20), http=http)
+    bot.flush_outbox(conn, http=http)
+
+    texts = [row["text"] for row in _outbox(conn, "message")]
+    assert "▶ Full report" in texts
+    assert "Report sent ↓" in texts
+    docs = [row["document_path"] for row in _outbox(conn, "document")]
+    assert docs == [str(docx), str(pdf)]
+    assert "▶ Full report" in during["texts"]
+    assert "Preparing your report as Word and PDF…" in during["texts"]
+    assert "Report sent ↓" not in during["texts"]
+    edits = [
+        fields.get("text") for method, fields, _files in calls if method == "editMessageText"
+    ]
+    assert "Report sent ↓" in edits
+
+
+def test_full_report_names_a_preparation_failure(conn, token, monkeypatch):
+    idea = _capture(conn)
+    md = paths.reports_dir() / "1-v1.md"
+    md.write_text("# Report\n", encoding="utf-8")
+    store.add_analysis(conn, idea.id, agent="claude", report_path=str(md))
+    calls = []
+    http = _http(calls)
+    during = {}
+
+    def fake_export(_md_path, **_kwargs):
+        during["texts"] = [
+            fields.get("text")
+            for method, fields, _files in calls
+            if method == "sendMessage"
+        ]
+        raise OSError("disk full")
+
+    monkeypatch.setattr(bot.documents, "export", fake_export)
+    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-bad", update_id=21), http=http)
+
+    texts = [row["text"] for row in _outbox(conn, "message")]
+    assert "▶ Full report" in texts
+    assert "Couldn't prepare the report: disk full" in texts
+    assert "Preparing your report as Word and PDF…" in during["texts"]
+    edits = [
+        fields.get("text") for method, fields, _files in calls if method == "editMessageText"
+    ]
+    assert "Couldn't prepare the report: disk full" in edits
+
+
+def test_a_failed_document_send_is_said_in_the_chat(conn, token, monkeypatch):
+    idea = _capture(conn)
+    md = paths.reports_dir() / "1-v1.md"
+    md.write_text("# Report\n", encoding="utf-8")
+    store.add_analysis(conn, idea.id, agent="claude", report_path=str(md))
+    docx = paths.documents_dir() / "1-v1.docx"
+    pdf = paths.documents_dir() / "1-v1.pdf"
+
+    def fake_export(_md_path, **_kwargs):
+        return documents.Exported(docx=docx, pdf=pdf, notes=[])
+
+    monkeypatch.setattr(bot.documents, "export", fake_export)
+
+    def http(method, _token, _fields, _files):
+        if method == "sendDocument":
+            return {"ok": False, "error_code": 400, "description": "upload failed"}
+        return {"ok": True, "result": {"message_id": 4}}
+
+    bot.handle(conn, _press(f"report:{idea.id}:0", "cb-send", update_id=22), http=http)
+
+    clock = {"i": 0}
+
+    def now():
+        stamp = f"2026-01-01T{clock['i'] * 2:02d}:00:00.000Z"
+        clock["i"] += 1
+        return stamp
+
+    monkeypatch.setattr(bot, "_now", now)
+    bot.flush_outbox(conn, http=http)
+    status = [
+        row["text"] for row in _outbox(conn, "message")
+        if "upload failed" in row["text"] or "Couldn't send the report" in row["text"]
+    ]
+    assert status
+    assert "Couldn't send the report: upload failed" in status[-1]
+
+
+def test_a_failed_synthesis_send_says_it_will_retry_then_where_it_is_saved(
+    conn, token, monkeypatch
+):
+    idea = store.add(conn, "Ship it", source="telegram", source_ref=f"{CHAT}:9")
+    saved = paths.home() / "brainstorms" / f"{idea.id}.md"
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_text("synthesis\n", encoding="utf-8")
+    store.set_paths(conn, idea.id, brainstorm_path=str(saved))
+    bot.begin_progress(conn, CHAT, idea.id, "Synthesis written; sending it ↓")
+    doc = paths.documents_dir() / "synth.docx"
+    doc.write_text("x", encoding="utf-8")
+    outbox_id = bot._enqueue(
+        conn, CHAT, "document", "Brainstorm", document_path=str(doc), idea_id=idea.id,
+    )
+    bot.mark_delivery(conn, outbox_id, "synthesis")
+    clock = {"i": 0}
+
+    def now():
+        stamp = f"2026-01-01T{clock['i'] * 2:02d}:00:00.000Z"
+        clock["i"] += 1
+        return stamp
+
+    monkeypatch.setattr(bot, "_now", now)
+
+    def http(method, _token, _fields, _files):
+        if method == "sendDocument":
+            return {"ok": False, "error_code": 400, "description": "upload failed"}
+        return {"ok": True, "result": {"message_id": 8}}
+
+    bot.flush_outbox(conn, http=http)
+    status = conn.execute(
+        "SELECT text FROM outbox WHERE kind = 'message'"
+    ).fetchone()["text"]
+    assert status == (
+        "The synthesis is ready but sending it failed: upload failed; I'll retry"
+    )
+    for _ in range(7):
+        bot.flush_outbox(conn, http=http)
+    status = conn.execute(
+        "SELECT text FROM outbox WHERE kind = 'message'"
+    ).fetchone()["text"]
+    assert status == (
+        f"Couldn't send the synthesis; it is saved at {saved} on the Mac"
+    )

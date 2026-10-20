@@ -52,6 +52,7 @@ def analyse(
     run_fn=None,
     timeout_minutes: int = 15,
     unattended: bool = True,
+    on_fallback=None,
 ) -> store.Analysis:
     """Score ``idea_id`` with the first agent that returns a valid report."""
     from whyline_relay import agents as relay_agents
@@ -59,6 +60,8 @@ def analyse(
     idea = store.get(conn, idea_id)
     if idea is None:
         raise LookupError(f"no idea {idea_id}")
+    from whyline.ideas import bot
+
     current = store.transition(
         conn,
         idea_id,
@@ -66,10 +69,12 @@ def analyse(
         expected_revision=idea.revision,
         actor=_ACTOR,
     )
+    # The tap wrote Cancel against the revision from before this move.
+    bot.refresh_running_card(conn, current)
     run_fn = run_fn or relay_agents.run
     prompt = _prompt(conn, idea)
     reasons: list[str] = []
-    for agent in agents:
+    for index, agent in enumerate(agents):
         outcome = _attempt(
             conn,
             idea,
@@ -91,8 +96,10 @@ def analyse(
             )
             return outcome
         reasons.append(f"{agent}: {outcome}")
+        if on_fallback is not None and index + 1 < len(agents):
+            on_fallback(agent, str(outcome), agents[index + 1])
     note = "; ".join(reasons) if reasons else "no agents"
-    store.transition(
+    returned = store.transition(
         conn,
         idea_id,
         "captured",
@@ -100,6 +107,7 @@ def analyse(
         actor=_ACTOR,
         note=note,
     )
+    bot.refresh_running_card(conn, returned)
     raise AnalyseError(note)
 
 
