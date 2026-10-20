@@ -123,7 +123,7 @@ Review point: use the CLI for real ideas for a few days before starting this pha
   Tests with a fake `run_fn`: the brainstorm writes inside the workspace only; defaults are every usable agent with one pass; `timeout: none` reaches the runner as no limit; a failing final writer hands the synthesis to the backup; the synthesis is sent as Word and PDF documents with the three buttons.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-13: Run the inbox from the existing scheduler, with leases
+- [x] IDEA-13: Run the inbox from the existing scheduler, with leases
   Edit `src/whyline/agents/tick.py` and add `src/whyline/ideas/worker.py` and `tests/ideas/test_worker.py`.
   `whyline idea service on|off|status` sets `kv` key `enabled` and, when turning on, makes sure the existing scheduler is on (`whyline.agents.launchd.turn_on`). `tick.run_tick` calls `ideas.worker.run_once()` when enabled, inside a try/except that logs and never breaks scheduled agents.
   `run_once` runs `telegram_in.poll_once`, handles unhandled inbound rows, starts at most one queued job in a detached subprocess (`whyline idea work <job-id>`, the way `tick._spawn` starts agents), and flushes the outbox. Jobs live in `jobs(id, idea_id, kind, state, lease_until, attempts, error, pid)` (schema 4) with kinds `score` and `brainstorm` (Phase 3 adds more); a job's lease is 30 minutes beyond its agent timeout (no lease limit for a `none` timeout, only a dead-pid check), and an expired lease is re-queued once, then failed with a message to the chat. On startup after the Mac was off, the same steps catch up: Telegram keeps undelivered updates for about 24 hours, and `whyline idea service status` says so.
