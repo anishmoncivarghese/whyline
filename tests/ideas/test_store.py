@@ -56,18 +56,29 @@ def test_home_uses_env_and_is_private(ideas_home):
     assert paths.workbook() == ideas_home / "ideas.xlsx"
 
 
-def test_connect_creates_schema_3(conn, ideas_home):
+def test_connect_creates_schema_4(conn, ideas_home):
     version = conn.execute(
         "SELECT value FROM kv WHERE key = 'schema_version'"
     ).fetchone()[0]
-    assert version == "3"
+    assert version == "4"
     tables = {
         row[0]
         for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         )
     }
-    assert {"ideas", "events", "analyses", "kv", "inbound", "outbox"} <= tables
+    assert {"ideas", "events", "analyses", "kv", "inbound", "outbox", "jobs"} <= tables
+    jobs = [row[1] for row in conn.execute("PRAGMA table_info(jobs)")]
+    assert jobs == [
+        "id",
+        "idea_id",
+        "kind",
+        "state",
+        "lease_until",
+        "attempts",
+        "error",
+        "pid",
+    ]
     if os.name != "nt":
         assert (paths.db_path().stat().st_mode & 0o777) == 0o600
 
@@ -147,9 +158,9 @@ def test_events_are_appended_in_order(conn):
 
 def test_newer_schema_version_is_refused(ideas_home):
     conn = store.connect()
-    conn.execute("UPDATE kv SET value = '4' WHERE key = 'schema_version'")
+    conn.execute("UPDATE kv SET value = '5' WHERE key = 'schema_version'")
     conn.close()
-    with pytest.raises(store.SchemaError, match="schema version 4"):
+    with pytest.raises(store.SchemaError, match="schema version 5"):
         store.connect()
 
 

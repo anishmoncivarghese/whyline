@@ -93,6 +93,27 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     deny.add_argument("chat_id", type=int)
     tg_sub.add_parser("list", help="Known chats, and which are allowed")
 
+    service = sub.add_parser(
+        "service",
+        help="Run the inbox from the agents scheduler",
+    )
+    service_sub = service.add_subparsers(dest="idea_service_command", required=True)
+    service_sub.add_parser(
+        "on",
+        help="Turn the inbox on and make sure the scheduler is on",
+    )
+    service_sub.add_parser("off", help="Turn the inbox off")
+    service_sub.add_parser(
+        "status",
+        help="Whether the inbox is on, and how catch-up works",
+    )
+
+    work = sub.add_parser(
+        "work",
+        help="Run one inbox job (called by the scheduler)",
+    )
+    work.add_argument("job_id", type=int)
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -100,7 +121,7 @@ def run(args: argparse.Namespace) -> int:
     if handler is None:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
-            "export|documents|agents|assistant|doctor|telegram",
+            "export|documents|agents|assistant|doctor|telegram|service|work",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -683,6 +704,90 @@ def cmd_telegram(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_service(args: argparse.Namespace) -> int:
+    """``on`` sets kv ``enabled`` and starts the existing scheduler.
+
+    ``off`` clears the flag and leaves the scheduler alone: other agents
+    still use it. ``status`` always says that Telegram keeps about a day of
+    undelivered updates, which is how a tick catches up after the Mac was off.
+    """
+    from whyline.agents import launchd
+    from whyline.ideas import worker
+
+    action = getattr(args, "idea_service_command", None)
+    if action == "on":
+        if not launchd.supported():
+            print(launchd.NEEDS_MACOS, file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            launchd.turn_on()
+        except (RuntimeError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_ERROR
+        conn = _connect()
+        if conn is None:
+            return EXIT_ERROR
+        try:
+            _kv_set(conn, worker.ENABLED_KEY, "on")
+            print("Inbox on.")
+            return EXIT_OK
+        finally:
+            conn.close()
+    if action == "off":
+        conn = _connect()
+        if conn is None:
+            return EXIT_ERROR
+        try:
+            _kv_set(conn, worker.ENABLED_KEY, "off")
+            print("Inbox off.")
+            return EXIT_OK
+        finally:
+            conn.close()
+    if action == "status":
+        _print_service_status(launchd)
+        return EXIT_OK
+    print("usage: whyline idea service on|off|status", file=sys.stderr)
+    return EXIT_USAGE
+
+
+def _print_service_status(launchd) -> None:
+    from whyline.ideas import worker
+
+    print(f"Inbox {'on' if _inbox_enabled() else 'off'}.")
+    if not launchd.supported():
+        print(launchd.NEEDS_MACOS)
+    else:
+        try:
+            info = launchd.status()
+        except (RuntimeError, OSError) as exc:
+            print(f"Scheduler: {exc}")
+        else:
+            state = "loaded" if info.loaded else "not loaded"
+            print(f"Scheduler {state}.")
+    print(worker.CATCH_UP)
+
+
+def _inbox_enabled() -> bool:
+    from whyline.ideas import worker
+
+    path = paths.configured_home() / "ideas.sqlite3"
+    if not path.is_file():
+        return False
+    conn = _connect()
+    if conn is None:
+        return False
+    try:
+        return worker.enabled(conn)
+    finally:
+        conn.close()
+
+
+def cmd_work(args: argparse.Namespace) -> int:
+    from whyline.ideas import worker
+
+    return worker.work(int(args.job_id))
+
+
 def cmd_doctor(_args: argparse.Namespace) -> int:
     checks = (
         _folder_check(),
@@ -711,4 +816,6 @@ _COMMANDS = {
     "assistant": cmd_assistant,
     "doctor": cmd_doctor,
     "telegram": cmd_telegram,
+    "service": cmd_service,
+    "work": cmd_work,
 }

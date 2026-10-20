@@ -164,7 +164,7 @@ def test_a_network_error_stores_nothing_and_keeps_the_cursor(conn, token):
     assert _rows(conn) == []
 
 
-def test_schema_1_databases_migrate_to_3(ideas_home):
+def test_schema_1_databases_migrate_to_4(ideas_home):
     paths.home()
     path = paths.db_path()
     raw = sqlite3.connect(path)
@@ -191,7 +191,7 @@ def test_schema_1_databases_migrate_to_3(ideas_home):
         version = conn.execute(
             "SELECT value FROM kv WHERE key = 'schema_version'"
         ).fetchone()[0]
-        assert version == "3"
+        assert version == "4"
         cols = [
             row[1]
             for row in conn.execute("PRAGMA table_info(inbound)")
@@ -222,6 +222,17 @@ def test_schema_1_databases_migrate_to_3(ideas_home):
             "attempts",
             "next_try_at",
             "sent_at",
+        ]
+        jobs = [row[1] for row in conn.execute("PRAGMA table_info(jobs)")]
+        assert jobs == [
+            "id",
+            "idea_id",
+            "kind",
+            "state",
+            "lease_until",
+            "attempts",
+            "error",
+            "pid",
         ]
         idea = store.add(conn, "still here", source="test")
         assert idea.id == 1

@@ -708,7 +708,7 @@ def _apply_brainstorm_proposal(conn, row, idea, proposal) -> bool:
     return True
 
 
-def _start_brainstorm(conn, row, idea: store.Idea, run_fn) -> None:
+def _start_brainstorm(conn, row, idea: store.Idea, _run_fn) -> None:
     if idea.status != "brainstorm_configuring":
         _say(
             conn,
@@ -732,10 +732,14 @@ def _start_brainstorm(conn, row, idea: store.Idea, run_fn) -> None:
     if not request.models or not request.final:
         _say(conn, row, "No agent can brainstorm unattended.", idea_id=idea.id)
         return
-    try:
-        brainstorm.run(conn, idea.id, request, run_fn=run_fn)
-    except brainstorm.BrainstormError:
+    # The tick handles this row. Running the brainstorm here would hold the
+    # scheduler for the whole timeout. The detached job runs it instead.
+    from whyline.ideas import worker
+
+    if not worker.enqueue_brainstorm(conn, idea.id, request):
         return
+    names = ", ".join(request.models)
+    _say(conn, row, f"Brainstorming with {names}…", idea_id=idea.id)
 
 
 def _show_brainstorm(conn, row, idea: store.Idea, request, notes) -> None:

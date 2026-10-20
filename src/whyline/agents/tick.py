@@ -4,6 +4,7 @@ key, so racing ticks can't double-run), records stale due times as missed,
 and starts runs as separate processes."""
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -100,7 +101,24 @@ def run_tick(*, now: datetime | None = None, spawn=None) -> TickReport:
                     start=lambda occ: _start(conn, act.agent_id, occ, spawn, report, now),
                 )
         _start_waiting(conn, spawn, report, now)
+        _run_inbox(now)
     return report
+
+
+def _run_inbox(now: datetime) -> None:
+    """One inbox pass on this tick.
+
+    A Telegram error or a bad job must not stop the agents this tick already
+    decided to start. The inbox stays quiet until ``whyline idea service on``
+    sets its ``enabled`` flag, and a missing ledger is left uncreated.
+    """
+    try:
+        from whyline.ideas import worker
+
+        if worker.enabled():
+            worker.run_once(now=now)
+    except Exception:
+        logging.getLogger(__name__).exception("idea inbox tick failed")
 
 
 def _start(conn, agent_id: str, occurrence_id: int, spawn, report: TickReport,

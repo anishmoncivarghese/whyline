@@ -1,4 +1,4 @@
-"""SQLite ledger for ideas: schema 3, statuses, and the allowed moves."""
+"""SQLite ledger for ideas: schema 4, statuses, and the allowed moves."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from whyline.ideas import paths
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 STATUSES = (
     "captured",
@@ -157,6 +157,24 @@ _SCHEMA_3 = (
     """,
 )
 
+# Schema 4: inbox jobs the scheduler claims. The same CREATE runs from the
+# score button, so a database that already has the table only bumps the
+# version. Kinds today are score and brainstorm; later phases add more.
+_SCHEMA_4 = (
+    """
+    CREATE TABLE IF NOT EXISTS jobs (
+      id INTEGER PRIMARY KEY,
+      idea_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      state TEXT NOT NULL,
+      lease_until TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      pid INTEGER
+    )
+    """,
+)
+
 
 class IllegalMove(Exception):
     pass
@@ -260,6 +278,11 @@ def _apply_schema_3(conn: sqlite3.Connection) -> None:
     _add_column(conn, "inbound", "callback_id", "TEXT")
 
 
+def _apply_schema_4(conn: sqlite3.Connection) -> None:
+    for statement in _SCHEMA_4:
+        conn.execute(statement)
+
+
 def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
     found = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in found:
@@ -291,6 +314,8 @@ def _check_schema(conn: sqlite3.Connection) -> None:
             _apply_schema_2(conn)
         if version < 3:
             _apply_schema_3(conn)
+        if version < 4:
+            _apply_schema_4(conn)
         if version == 0:
             conn.execute(
                 "INSERT INTO kv (key, value) VALUES ('schema_version', ?)",

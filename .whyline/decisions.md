@@ -18448,3 +18448,131 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 53db1c7853334e41a5bbf1c84cfd2eea -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T04:57:11.758Z"} -->
+
+## 2026-10-20 — One running inbox job at a time
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-13
+
+**Because:** A tick that kept starting queued jobs would pile up score and brainstorm processes, and the lease is that one slot's deadline.
+
+**Rejected:**
+
+- Starting another queued job on the next tick while one is still running — two brainstorms would share the Mac with no cap.
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 10445eb2f04343a2a91f7081a870b13f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:21:46.160Z"} -->
+
+## 2026-10-20 — Start brainstorm queues a job instead of running inside the tick
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-13
+
+**Because:** handle runs on the scheduler tick, and a brainstorm inside it would hold the tick lock for the whole agent timeout.
+
+**Rejected:**
+
+- Leaving the IDEA-12 inline call — the lease and the detached idea work process would never cover brainstorm.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 71a90dad92b44a83a6492f5b14028031 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:21:49.786Z"} -->
+
+## 2026-10-20 — A missing ideas database counts as disabled and a tick does not create it
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-13
+
+**Because:** Agent ticks run on machines that have never opened the inbox, and store.connect would create ~/.whyline/ideas.
+
+**Rejected:**
+
+- Always calling run_once — every agent tick would create the inbox folder.
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: cfe2d860e4054474870e278e5697d2f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:21:53.357Z"} -->
+
+## 2026-10-20 — A timed job is reclaimed only when its lease expires
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-13
+
+**Because:** The dead-pid check stands in for a missing lease when timeout is none, and the pid is empty for a moment after the claim.
+
+**Rejected:**
+
+- Also reclaiming a timed job whose pid has died — a second tick would start the same job again before its pid is stored.
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 679632d5b50c4189aa1ec1d842512b16 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:21:53.357Z"} -->
+
+## 2026-10-20 — A bad inbound update is logged and left unhandled
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-13
+
+**Because:** A message that keeps raising would otherwise sit in front of every queued score.
+
+**Rejected:**
+
+- Aborting the inbox pass on the first handler error — the job would wait until that message was fixed.
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 9518a4385c494cbba0aaec678bcc7d22 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:21:58.493Z"} -->
+
+## 2026-10-20 — service on and off do not rebuild the workbook
+
+**Actor:** grok
+**Role:** implementer
+**Task:** IDEA-13
+
+**Because:** The enabled flag is not in the workbook, and a locked xlsx must not stop the inbox from turning on.
+
+**Rejected:**
+
+- Calling xlsx.export like other idea commands — Excel holding the file would fail the command after the scheduler was already turned on.
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 3bee7e4f4e244b5a9ddcc69d6b894012 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:21:58.501Z"} -->
+
+## 2026-10-20 — IDEA-13 passes scheduler and lease behavior testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-13
+
+**Because:** The focused ideas and agents suites and the complete repository suite both exited successfully, covering disabled operation, tick isolation, single job spawning, lease retry and failure, and live none-timeout pid behavior.
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 41da36c6da4e4707a288dbad3210ec93 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:28:15.836Z"} -->
+
+## 2026-10-20 — Approve IDEA-13 scheduler integration and leased inbox worker
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-13
+
+**Because:** The diff implements service enablement, isolated tick execution, schema-4 jobs, detached single-job starts, timeout-aware lease retry and failure messaging, and the focused and full test suites both pass.
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 2f5fc04fcc4d41658930275976f75606 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-20T05:35:03.506Z"} -->
