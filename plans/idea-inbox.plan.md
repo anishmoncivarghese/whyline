@@ -210,7 +210,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: changing a role clears its override; saving the same role keeps it; removing an agent from the chain clears the override that used it; other roles' overrides are untouched; with no `active-roles.json`, nothing is created.
   Verify with `uv run pytest -q tests/console/test_relay_ops.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] AGS-2: Resolve never dead-ends on a backup switch
+- [x] AGS-2: Resolve never dead-ends on a backup switch
   Edit the sticky-switch problem in `src/whyline/console/recovery.py` (the `# 2. sticky-switch` block in the diagnosis, and the option handling beside `reset-role`), with tests in `tests/console/test_recovery.py`. Today it compares the override with `backup_for`, not with the role's configured agent now, and for a generic agent (grok, antigravity) it offers only Show evidence and Cancel. On 2026-10-21 that left the user with no way out.
   When the override's `backup_for` is not the role's configured agent in `config.toml`, the override is stale. Offer **Use <configured> (from Set up)**, recommended and safe for Auto mode, which clears it. Otherwise, for a generic agent or a reset time that is unknown or still ahead, keep the warning but also offer **Switch back to <agent> anyway** (not recommended, never applied by Auto) and **Choose agents…**, which opens `RelaySetupScreen`. Show evidence and Cancel are never the only options.
   Tests: a stale override gives the recommended Use option, and applying it clears the override; a generic agent offers Switch back anyway and Choose agents; Auto applies Use but never Switch back anyway; a non-generic agent past its reset keeps today's Reset option.
