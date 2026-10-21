@@ -20078,3 +20078,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cf5af9ff83b542208be262fc99429732 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T07:14:20.435Z"} -->
+
+## 2026-10-21 — Add AWK-1 (console Awake toggle running caffeinate -dis until turned off) after AGS-5, before IDEA-15
+
+**Actor:** claude
+**Role:** planner
+**Task:** AWK-PLAN
+
+**Because:** Long relays and brainstorms stop when the Mac sleeps; the user runs caffeinate -dis in a separate terminal today, and TGS-7's per-job hold covers only Telegram idea jobs. Console first: the user wants it in the console
+
+**Rejected:**
+
+- Hold caffeinate only while a relay runs (-w pid) — the user asked for on-until-turned-off, covering brainstorms and anything else
+- End it when the console quits — a relay outlives the console, so Awake does too; the quit dialog offers Let it sleep
+- Add it while TGS-4 ran — a plan commit pauses a running task at approval with HEAD moved; added at the AGS-2 pause, before any AGS-2 work
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 4c03c3c42c104dcba3f55722be37b487 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T07:41:09.867Z"} -->
