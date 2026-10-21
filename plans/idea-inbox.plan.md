@@ -216,7 +216,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a stale override gives the recommended Use option, and applying it clears the override; a generic agent offers Switch back anyway and Choose agents; Auto applies Use but never Switch back anyway; a non-generic agent past its reset keeps today's Reset option.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] AGS-3: Change agents from the pause itself
+- [x] AGS-3: Change agents from the pause itself
   Edit `src/whyline/console/relay_screens.py` (`RelaySetupScreen`) and `src/whyline/console/tui.py`, with tests in `tests/console/test_relay_setup_screen.py` and `tests/console/test_tui_relay_run.py`.
   A relay pause message gets a **Change agents** button that opens Set up. Under a role with an override, Set up shows "now on backup claude (grok hit a limit)", using `backup_for` (not the configured agent) for who hit the limit. While a run is paused, Set up's greyed **Start** becomes **Resume**: it saves through AGS-1, prints what AGS-1 cleared, then resumes the way the Resume button does. When the working tree holds the paused task's own uncommitted draft, Resume passes `--allow-dirty`.
   Typed relay commands with a space where a flag's hyphen belongs (`resume --allow dirty`) get "Did you mean --allow-dirty?" instead of argparse's usage dump.
