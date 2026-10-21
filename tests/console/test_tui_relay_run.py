@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 import pytest
 from whyline.console import relay_ops, tui
 from whyline.console.relay_screens import RelayPlanScreen, RunChoiceScreen
@@ -240,5 +241,156 @@ async def test_a_stale_paused_run_offers_clear_instead_of_resume(tmp_path, monke
         await pilot.pause()
         assert cleared == [tmp_path] and FakeProcess.instances == []
         assert any("Cleared the finished run CRS-4." in line for line in _lines(app))
+
+
+async def test_change_agents_opens_setup_from_a_pause(tmp_path, monkeypatch):
+    from whyline.console.relay_screens import RelaySetupScreen
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+        await asyncio.to_thread(FakeProcess.instances[-1].finish, 3, "Paused: tests failed\n")
+        await pilot.pause()
+
+        change_btn = app.query_one("#pause-change-agents", tui.Button)
+        assert change_btn.display
+        change_btn.press()
+        await pilot.pause()
+
+        assert isinstance(app.screen, RelaySetupScreen)
+        assert app.screen._paused
+
+
+async def test_resume_in_setup_saves_and_then_resumes(tmp_path, monkeypatch):
+    import subprocess
+    from whyline.console.relay_screens import RelaySetupScreen
+    from whyline_relay import failover
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, capture_output=True)
+    plan_file = tmp_path / "plans" / "myplan.plan.md"
+    plan_file.parent.mkdir(parents=True, exist_ok=True)
+    plan_file.write_text("- [ ] AGS-3: Test task\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True)
+
+    failover.write_override(
+        tmp_path, "implementer", failover.ActiveOverride("claude", "grok", "rate-limit", "2026-10-21T10:00:00")
+    )
+    plans = [
+        relay_ops.PlanInfo(Path(tmp_path / "plans/myplan.plan.md"), "myplan", "draft", "2026-10-21T10:00:00", 0, 1)
+    ]
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: plans)
+    monkeypatch.setattr(relay_ops, "select_plan", lambda *a: None)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "grok",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["claude"],
+        },
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "run_checks",
+        lambda root, plan=None: [relay_ops.CheckLine("ok", "ok message")],
+    )
+
+    def do_save(root, i, t, r, b):
+        return relay_ops.clear_stale_switches(
+            root,
+            saved={
+                "implementer": ("grok", i),
+                "tester": ("codex", t),
+                "reviewer": ("claude", r),
+            },
+        )
+
+    monkeypatch.setattr(relay_ops, "save_roles", do_save)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+        await asyncio.to_thread(FakeProcess.instances[-1].finish, 3, "Paused: limit hit\n")
+        await pilot.pause()
+
+        app.query_one("#pause-change-agents", tui.Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, RelaySetupScreen)
+        screen = app.screen
+
+        screen.query_one("#rs-implementer", tui.Select).value = "antigravity"
+        await pilot.pause()
+        await pilot.click("#rs-check")
+        for _ in range(50):
+            if not screen.query_one("#rs-start", tui.Button).disabled:
+                break
+            await pilot.pause(0.05)
+        assert not screen.query_one("#rs-start", tui.Button).disabled
+        assert str(screen.query_one("#rs-start", tui.Button).label) == "Resume"
+
+        await pilot.click("#rs-start")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, RelaySetupScreen)
+        lines = _lines(app)
+        assert any("implementer was on backup claude; it now uses antigravity" in l for l in lines)
+        assert FakeProcess.instances[-1].args[0] == "resume"
+
+
+async def test_resume_allow_dirty_with_space_gets_hint(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "resume --allow dirty"
+        await pilot.press("enter")
+        await pilot.pause()
+        lines = _lines(app)
+        assert any("Did you mean --allow-dirty?" in l for l in lines)
+        assert len(FakeProcess.instances) == 0
+
+
+async def test_resume_passes_allow_dirty_when_task_draft_in_tree(tmp_path, monkeypatch):
+    from whyline_relay import gitcheck, state as relay_state
+    from whyline_relay.state import RelayState
+
+    plan_file = tmp_path / "plans" / "myplan.plan.md"
+    plan_file.parent.mkdir(parents=True, exist_ok=True)
+    plan_file.write_text("- [ ] AGS-3: Test task\n")
+
+    state = RelayState(
+        task_id="AGS-3",
+        branch="relay/myplan",
+        plan="plans/myplan.plan.md",
+        paused_reason="Paused: fail",
+        round=1,
+        log_path="",
+        base_commit="abc",
+    )
+    relay_state.save(tmp_path, state)
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(gitcheck, "dirty_paths", lambda root: ["src/code.py"])
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._setup_done(("resume", []))
+        await pilot.pause()
+        assert FakeProcess.instances[-1].args == ["resume", "--allow-dirty"]
 
 

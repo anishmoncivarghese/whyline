@@ -1363,6 +1363,8 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelaySetupScreen Checkbox:focus { border: none; }
     RelaySetupScreen #rs-roles { height: auto; }
+    RelaySetupScreen .role-override { color: $accent; padding: 0 0 0 18; height: auto; }
+    RelaySetupScreen .role-override.-empty { display: none; }
     RelaySetupScreen #rs-committer { padding: 1 1 0 0; }
     RelaySetupScreen #rs-summary { width: 1fr; padding: 1 1 0 0; }
     RelaySetupScreen #rs-summary-row Button { margin-left: 1; }
@@ -1377,17 +1379,38 @@ class RelaySetupScreen(ModalScreen):
 
     ROLES = (("implementer", "Implementer:"), ("tester", "Tester:"), ("reviewer", "Reviewer:"))
 
-    def __init__(self, root: Path, *, guided: bool = False, plan: Path | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        guided: bool = False,
+        plan: Path | None = None,
+        paused: bool | None = None,
+    ) -> None:
         super().__init__()
         self._root = root
         self._guided = guided
+        if paused is not None:
+            self._paused = paused
+        else:
+            try:
+                self._paused = bool(relay_ops.paused_run(root))
+            except Exception:
+                self._paused = False
+        try:
+            from whyline_relay import failover
+
+            self._overrides = failover.read_overrides(root)
+        except Exception:
+            self._overrides = {}
+        self._cleared_info: dict[str, str] = {}
         self._agents = relay_ops.relay_agents(root)
         self._roles = relay_ops.current_roles(root)
         self._configured_roles = dict(self._roles)
         self._configured = relay_ops.roles_configured(root)
         self._plans = relay_ops.list_plans(root)
         current = relay_ops.configured_plan(root)
-        listed = [str(info.path) for info in self._plans]
+        listed = [str(getattr(info, "path", info)) for info in self._plans]
         if plan is not None and str(plan) in listed:
             self._plan_default = str(plan)
         elif current is not None and str(current) in listed:
@@ -1438,26 +1461,42 @@ class RelaySetupScreen(ModalScreen):
         return line
 
     @staticmethod
-    def _plan_label(info: "relay_ops.PlanInfo") -> str:
+    def _plan_label(info: "relay_ops.PlanInfo" | str) -> str:
+        if isinstance(info, str):
+            return info
         parts = [info.name, f"{info.done}/{info.total} done", info.source, info.created[:10]]
         return " · ".join(part for part in parts if part)
 
     def compose(self) -> ComposeResult:
         if self._agents:
-            rows = [
-                Horizontal(
-                    Label(label, classes="field-label"),
-                    Select(
-                        [(a, a) for a in self._agents],
-                        value=self._roles.get(role)
-                        if self._roles.get(role) in self._agents
-                        else (self._agents[0] if self._agents else None),
-                        allow_blank=False,
-                        id=f"rs-{role}",
-                    ),
+            rows = []
+            for role, label in self.ROLES:
+                rows.append(
+                    Horizontal(
+                        Label(label, classes="field-label"),
+                        Select(
+                            [(a, a) for a in self._agents],
+                            value=self._roles.get(role)
+                            if self._roles.get(role) in self._agents
+                            else (self._agents[0] if self._agents else None),
+                            allow_blank=False,
+                            id=f"rs-{role}",
+                        ),
+                    )
                 )
-                for role, label in self.ROLES
-            ]
+                override = self._overrides.get(role)
+                override_text = (
+                    f"now on backup {override.agent} ({override.backup_for} hit a limit)"
+                    if override is not None
+                    else ""
+                )
+                rows.append(
+                    Static(
+                        override_text,
+                        id=f"rs-{role}-override",
+                        classes="role-override" + ("" if override_text else " -empty"),
+                    )
+                )
             chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
             chain.load(self._backup)
             roles_body = [
@@ -1516,7 +1555,7 @@ class RelaySetupScreen(ModalScreen):
                 Horizontal(
                     Label("Plan:", classes="field-label"),
                     Select(
-                        [(self._plan_label(p), str(p.path)) for p in self._plans],
+                        [(self._plan_label(p), str(getattr(p, "path", p))) for p in self._plans],
                         value=self._plan_default,
                         allow_blank=False,
                         id="rs-plan",
@@ -1548,7 +1587,7 @@ class RelaySetupScreen(ModalScreen):
                 Button("Make a plan", id="rs-make-plan", variant="primary", disabled=not self._agents),
                 Button("Check", id="rs-check", variant="primary", disabled=(not self._plans or not self._agents)),
                 Button("Resolve", id="rs-resolve", variant="warning", disabled=True),
-                Button("Start", id="rs-start", variant="success", disabled=True),
+                Button("Resume" if self._paused else "Start", id="rs-start", variant="success", disabled=True),
                 Button("Cancel", id="rs-cancel"),
                 id="rs-buttons",
             ),
@@ -1624,6 +1663,7 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-start", Button).disabled = True
         self.query_one("#rs-resolve", Button).disabled = True
         self._fail_lines = []
+        self._cleared_info = None
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         try:
@@ -1654,7 +1694,22 @@ class RelaySetupScreen(ModalScreen):
         elif event.button.id == "rs-start":
             if not self._agents:
                 return
-            self.dismiss("start")
+            if self._paused:
+                cleared_lines = []
+                implementer, tester, reviewer, backup = self._chosen()
+                picked = {"implementer": implementer, "tester": tester, "reviewer": reviewer}
+                cleared = getattr(self, "_cleared_info", None)
+                if cleared is None:
+                    try:
+                        cleared = relay_ops.save_roles(self._root, implementer, tester, reviewer, backup) or {}
+                    except Exception:
+                        cleared = {}
+                for role, old_backup in (cleared or {}).items():
+                    now_agent = picked.get(role, "")
+                    cleared_lines.append(f"{role} was on backup {old_backup}; it now uses {now_agent}")
+                self.dismiss(("resume", cleared_lines))
+            else:
+                self.dismiss("start")
         elif event.button.id == "rs-resolve":
             self.dismiss(("resolve", list(self._fail_lines)))
         elif event.button.id == "rs-check":
@@ -1691,7 +1746,7 @@ class RelaySetupScreen(ModalScreen):
             try:
                 if "antigravity" in (chosen[0], chosen[1], chosen[2], release, *chosen[3]):
                     relay_ops.forget_antigravity_decline(root)
-                relay_ops.save_roles(root, *chosen)
+                cleared = relay_ops.save_roles(root, *chosen) or {}
                 relay_ops.save_release(root, release)
                 # Only on a change: each write is its own config commit.
                 if timeout != relay_ops.relay_timeout(root):
@@ -1709,7 +1764,7 @@ class RelaySetupScreen(ModalScreen):
             except Exception as error:
                 self.app.call_from_thread(self._check_failed, error, token)
                 return
-            self.app.call_from_thread(self._show_checks, checks, running, token)
+            self.app.call_from_thread(self._show_checks, checks, running, cleared, token)
 
         self.run_worker(in_thread, thread=True)
 
@@ -1724,9 +1779,32 @@ class RelaySetupScreen(ModalScreen):
         except NoMatches:
             return  # the popup's children were removed during teardown
 
-    def _show_checks(self, checks: list, running: str | None, token: object) -> None:
+    def _show_checks(
+        self, checks: list, running: str | None, cleared: dict[str, str], token: object
+    ) -> None:
         if token is not self._token or not self.is_attached:
             return  # cancelled, re-checked, or the popup has closed
+        self._cleared_info = cleared or {}
+        try:
+            from whyline_relay import failover
+
+            self._overrides = failover.read_overrides(self._root)
+        except Exception:
+            self._overrides = {}
+        for role, _ in self.ROLES:
+            try:
+                widget = self.query_one(f"#rs-{role}-override", Static)
+                override = self._overrides.get(role)
+                if override is not None:
+                    widget.update(
+                        f"now on backup {override.agent} ({override.backup_for} hit a limit)"
+                    )
+                    widget.remove_class("-empty")
+                else:
+                    widget.update("")
+                    widget.add_class("-empty")
+            except NoMatches:
+                pass
         lines = []
         fail_lines = []
         for check in checks:

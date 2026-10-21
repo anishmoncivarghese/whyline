@@ -691,3 +691,130 @@ async def test_check_text_with_square_brackets_does_not_crash_set_up(tmp_path, m
         screen._error("bad table [agents.grok] in config.toml")
         await pilot.pause()
         assert "[agents.grok]" in str(screen.query_one("#rs-error", tui.Static).renderable)
+
+
+async def test_backup_line_shows_and_disappears_after_save_clearing_it(tmp_path, monkeypatch):
+    from whyline_relay import failover
+
+    failover.write_override(
+        tmp_path, "implementer", failover.ActiveOverride("claude", "grok", "rate-limit", "2026-10-21T10:00:00")
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "grok",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["claude"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    def do_save(root, i, t, r, b):
+        return relay_ops.clear_stale_switches(
+            root,
+            saved={
+                "implementer": ("grok", i),
+                "tester": ("codex", t),
+                "reviewer": ("claude", r),
+            },
+        )
+
+    monkeypatch.setattr(relay_ops, "save_roles", do_save)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        results = []
+        screen = RelaySetupScreen(tmp_path, paused=True)
+        app.push_screen(screen, results.append)
+        await pilot.pause()
+
+        override_widget = screen.query_one("#rs-implementer-override", tui.Static)
+        assert "now on backup claude (grok hit a limit)" in str(override_widget.renderable)
+        assert not override_widget.has_class("-empty")
+
+        # Changing implementer to antigravity clears the stale switch when saved
+        screen.query_one("#rs-implementer", tui.Select).value = "antigravity"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot,
+            lambda: not screen.query_one("#rs-start", tui.Button).disabled,
+            "start enabled",
+        )
+
+        assert str(override_widget.renderable) == ""
+        assert override_widget.has_class("-empty")
+
+
+async def test_setup_popup_fits_80x24_with_resume_visible(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=True)
+        app.push_screen(screen)
+        await pilot.pause()
+        resume_btn = screen.query_one("#rs-start", tui.Button)
+        assert str(resume_btn.label) == "Resume"
+        region = resume_btn.region
+        assert region.height > 0 and region.bottom <= 24
+
+
+async def test_resume_in_setup_dismisses_with_cleared_switches(tmp_path, monkeypatch):
+    from whyline_relay import failover
+
+    failover.write_override(
+        tmp_path, "implementer", failover.ActiveOverride("claude", "grok", "rate-limit", "2026-10-21T10:00:00")
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "grok",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["claude"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    def do_save(root, i, t, r, b):
+        return relay_ops.clear_stale_switches(
+            root,
+            saved={
+                "implementer": ("grok", i),
+                "tester": ("codex", t),
+                "reviewer": ("claude", r),
+            },
+        )
+
+    monkeypatch.setattr(relay_ops, "save_roles", do_save)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        results = []
+        screen = RelaySetupScreen(tmp_path, paused=True)
+        app.push_screen(screen, results.append)
+        await pilot.pause()
+
+        screen.query_one("#rs-implementer", tui.Select).value = "antigravity"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot,
+            lambda: not screen.query_one("#rs-start", tui.Button).disabled,
+            "start enabled",
+        )
+
+        await pilot.click("#rs-start")
+        await pilot.pause()
+        assert results == [("resume", ["implementer was on backup claude; it now uses antigravity"])]

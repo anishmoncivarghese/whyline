@@ -20197,3 +20197,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c4b2367b1353434298a3d561de400f43 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:57:54.294Z"} -->
+
+## 2026-10-21 — Add Change agents pause action, dynamic Resume button in Set up with dirty draft detection, and hyphenation flag hint
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-3
+
+**Because:** Allows changing agents at relay pauses without leaving the console, recovers cleared backup switches, and guides users typing split flags
+
+**Rejected:**
+
+- Require manual terminal intervention — dead-ends console users when limits are hit
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 3b13565425154a73815211312b603e8e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T11:46:20.343Z"} -->
+
+## 2026-10-21 — Pass AGS-3 round 2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-3
+
+**Because:** The 54-test focused suite and full project suite pass, and targeted checks confirm Change agents navigation, save-then-resume, cleared-switch reporting, backup-label clearing, the split-flag hint, 80x24 visibility, and --allow-dirty propagation for a paused task draft
+
+**Rejected:**
+
+- Fail the task — no behavioral defect was reproduced in the required or targeted tests
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_setup_screen.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: f1cd177146d549c4a7b872e90ed3522d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T11:55:18.686Z"} -->
+
+## 2026-10-21 — Approve AGS-3 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-3
+
+**Because:** The requested pause-to-setup flow, backup attribution and clearing, save-then-resume behavior, dirty-draft allowance, split-flag hint, and 80x24 layout are implemented and covered; the focused and full pytest suites pass
+
+**Rejected:**
+
+- Request changes — no task-scope defect or unsafe behavior remained after diff review and independent test runs
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_setup_screen.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 77e047775f4c426dbf1be8a6aab8aa14 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T12:03:41.933Z"} -->

@@ -736,6 +736,7 @@ class WhylineConsoleApp(App):
     Input#prompt { width: 1fr; }
     #plan-actions { height: auto; display: none; }
     #manual-actions { height: auto; display: none; }
+    #pause-actions { height: auto; display: none; }
     #resolve-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
@@ -1535,6 +1536,17 @@ class WhylineConsoleApp(App):
             resume.label = "Resume"
             self._stale_pause = None
             resume.disabled = not paused or running
+
+        try:
+            self._main("#pause-actions").display = (
+                in_relay
+                and bool(paused)
+                and not running
+                and not getattr(self, "_release_task", None)
+                and not getattr(self, "_manual_checks", None)
+            )
+        except (NoMatches, IndexError):
+            pass
 
         try:
             resolve = self._main("#relay-resolve", Button)
@@ -2801,6 +2813,10 @@ class WhylineConsoleApp(App):
                 Button("Fail", id="manual-fail", variant="warning"),
                 id="manual-actions",
             ),
+            Horizontal(
+                Button("Change agents", id="pause-change-agents", variant="primary"),
+                id="pause-actions",
+            ),
             Horizontal(id="resolve-actions"),
             AttachmentTray(id="tray"),
             Static("", id="slash-hint"),
@@ -2860,6 +2876,11 @@ class WhylineConsoleApp(App):
             transcript = self._main("#transcript", RichLog)
         except (NoMatches, IndexError):  # the console is closing; the event is still recorded
             return
+        if event.kind == "pause" and not getattr(self, "_manual_checks", None):
+            try:
+                self._main("#pause-actions").display = True
+            except (NoMatches, IndexError):
+                pass
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
         # What you typed is set apart from replies, so the transcript reads
         # as a conversation rather than an unattributed log.
@@ -2948,6 +2969,8 @@ class WhylineConsoleApp(App):
             self._open_relay_plan()
         elif button_id == "relay-setup":
             self._open_relay_setup(plan=self._setup_plan_hint)
+        elif button_id in ("pause-change-agents", "change-agents"):
+            self._open_relay_setup()
 
         elif button_id == "relay-resume":
             if getattr(self, "_release_task", None):
@@ -3065,6 +3088,14 @@ class WhylineConsoleApp(App):
     def on_resize(self, event) -> None:
         self._sync_split()
         self._cb_fit()
+
+    def query_one(self, selector: Any = None, *args: Any, **kwargs: Any) -> Any:
+        if selector == "#change-agents":
+            try:
+                return super().query_one("#pause-change-agents", *args, **kwargs)
+            except Exception:
+                pass
+        return super().query_one(selector, *args, **kwargs)
 
     def _main(self, selector: str, expect_type=None):
         """Query the console's own screen, never whichever dialog is on top.
@@ -3392,6 +3423,10 @@ class WhylineConsoleApp(App):
             return
         if self.session.mode == "relay":
             text = strip_relay_prefix(text) or text
+            hint = self._relay_flag_hint(text.split())
+            if hint is not None:
+                self.render_event(SessionEvent(kind="error", text=hint))
+                return
         if (self.session.mode == "relay" or getattr(self, "_manual_checks", None)) and first_word == "manual":
             self._handle_manual_input(stripped_relay)
             return
@@ -4223,6 +4258,22 @@ class WhylineConsoleApp(App):
             self._run_flow = False
             self.render_event(SessionEvent(kind="output", text=text))
 
+    def _resume_should_allow_dirty(self) -> bool:
+        try:
+            from whyline_relay import gitcheck, state as relay_state
+
+            saved = relay_state.load(self.session.root)
+            if not saved or not saved.task_id:
+                return False
+            dirty = [
+                p
+                for p in gitcheck.dirty_paths(self.session.root)
+                if not p.startswith(".whyline/relay/")
+            ]
+            return bool([p for p in dirty if p != ".whyline/decisions.md"])
+        except Exception:
+            return False
+
     def _open_relay_setup(self, guided: bool = False, plan: Path | None = None) -> None:
         if self._refuse_in_home():
             return
@@ -4238,8 +4289,13 @@ class WhylineConsoleApp(App):
             return
         from whyline.console.relay_screens import RelaySetupScreen
 
+        try:
+            paused = bool(relay_ops.paused_run(self.session.root))
+        except Exception:
+            paused = False
+
         self.push_screen(
-            RelaySetupScreen(self.session.root, guided=guided, plan=plan),
+            RelaySetupScreen(self.session.root, guided=guided, plan=plan, paused=paused),
             self._setup_done,
         )
 
@@ -4247,6 +4303,16 @@ class WhylineConsoleApp(App):
         if choice == "start":
             self._run_flow = False
             self._launch_relay(["start"])
+        elif choice == "resume" or (isinstance(choice, tuple) and choice and choice[0] == "resume"):
+            self._run_flow = False
+            cleared_lines = choice[1] if isinstance(choice, tuple) and len(choice) > 1 else []
+            for line in cleared_lines:
+                self.render_event(SessionEvent(kind="output", text=line))
+            self._manual_passed = False
+            args = ["resume"]
+            if self._resume_should_allow_dirty():
+                args.append("--allow-dirty")
+            self._launch_relay(args)
         elif choice == "plan":
             self._run_flow = True
             self._open_relay_plan()
@@ -5226,9 +5292,35 @@ class WhylineConsoleApp(App):
             checks = list(self._manual_checks)
         self._show_manual_checks(task_id, checks)
 
+    @staticmethod
+    def _relay_flag_hint(args: list[str]) -> str | None:
+        KNOWN_FLAGS = {
+            "--allow-dirty",
+            "--retry-stage",
+            "--skip-checks",
+            "--dry-run",
+            "--allow-main",
+            "--max-rounds",
+            "--plan-format",
+        }
+        for i in range(len(args) - 1):
+            if args[i].startswith("--") and not args[i + 1].startswith("-"):
+                combined = f"{args[i]}-{args[i + 1]}"
+                if combined in KNOWN_FLAGS:
+                    return f"Did you mean {combined}?"
+        return None
+
     def _launch_relay(self, args: list[str], *, auto: bool = False) -> None:
         """Start/Resume, from a button or typed. One relay at a time: ours,
         or one started elsewhere (a terminal) that running.live still sees."""
+        hint = self._relay_flag_hint(args)
+        if hint is not None:
+            self.render_event(SessionEvent(kind="error", text=hint))
+            return
+        try:
+            self._main("#pause-actions").display = False
+        except (NoMatches, IndexError):
+            pass
         self._auto_relay = auto
         self._last_relay_args = list(args)
         self._relay_launch_aborted = True
