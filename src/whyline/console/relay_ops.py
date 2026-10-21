@@ -564,18 +564,76 @@ def current_roles(root: Path) -> dict:
     return {**roles, "backup": backup}
 
 
-def save_backup(root: Path, chain: list[str]) -> None:
+def _stored_roles(root: Path) -> dict[str, str]:
+    """The [roles] table as written, unfiltered: what the config said before a
+    save, so a changed role can be told from an unchanged one."""
+    from whyline_relay import config
+
+    try:
+        raw = tomllib.loads(config.config_path(root).read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    table = raw.get("roles")
+    if not isinstance(table, dict):
+        return {}
+    return {key: value for key, value in table.items() if isinstance(value, str)}
+
+
+def clear_stale_switches(
+    root: Path,
+    saved: dict[str, tuple[str | None, str]] | None = None,
+    chain: list[str] | None = None,
+) -> dict[str, str]:
+    """Drop the backup switches (.whyline/relay/active-roles.json) a save
+    made stale, so what the user picks is what runs: the relay's
+    effective_agent prefers a switch over the configured agent.
+
+    `saved` maps a role to (agent stored before, agent saved now). Its switch
+    goes when the saved agent differs from the one stored before, or from the
+    agent the switch was standing in for (`backup_for`). `chain`, when given,
+    is the saved backup chain: a switch to an agent no longer in it goes too.
+    Other roles' switches are untouched. Returns {role: backup agent it was
+    on} for each switch cleared. Never creates active-roles.json."""
+    from whyline_relay import failover
+
+    saved = saved or {}
+    cleared: dict[str, str] = {}
+    for role, override in failover.read_overrides(root).items():
+        stale = False
+        if role in saved:
+            before, now = saved[role]
+            stale = now != before or now != override.backup_for
+        if chain is not None and override.agent not in chain:
+            stale = True
+        if stale:
+            failover.clear_overrides(root, role=role)
+            cleared[role] = override.agent
+    return cleared
+
+
+def save_backup(root: Path, chain: list[str]) -> dict[str, str]:
+    """Save the chain; returns the switches it cleared (clear_stale_switches)."""
     from whyline_relay import setup
 
     setup.write_backup(root, chain)
+    return clear_stale_switches(root, chain=[name for name in chain if name])
 
 
 def save_roles(
     root: Path, implementer: str, tester: str, reviewer: str, backup: list[str]
-) -> None:
+) -> dict[str, str]:
+    """Save the roles and chain; returns the switches it cleared
+    (clear_stale_switches), e.g. {"implementer": "claude"}."""
     from whyline_relay import setup
 
+    before = _stored_roles(root)
     setup.write_roles(root, implementer, tester, reviewer, backup)
+    picked = {"implementer": implementer, "tester": tester, "reviewer": reviewer}
+    return clear_stale_switches(
+        root,
+        saved={role: (before.get(role), agent) for role, agent in picked.items()},
+        chain=[name for name in backup if name],
+    )
 
 
 def save_release(root: Path, value: str) -> None:

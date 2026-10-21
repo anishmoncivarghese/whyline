@@ -208,6 +208,79 @@ def test_staged_backup_drops_the_primary_in_preference_order():
     ]
 
 
+def _switch(repo: Path, role: str, agent: str, backup_for: str) -> None:
+    from whyline_relay import failover
+
+    failover.write_override(
+        repo,
+        role,
+        failover.ActiveOverride(
+            agent=agent, backup_for=backup_for, reason="rate-limit",
+            since="2026-10-21T10:00:00+05:30",
+        ),
+    )
+
+
+def _switched(repo: Path) -> dict[str, str]:
+    from whyline_relay import failover
+
+    return {role: o.agent for role, o in failover.read_overrides(repo).items()}
+
+
+def test_save_roles_changing_a_role_clears_its_switch(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    cleared = relay_ops.save_roles(repo, "antigravity", "codex", "codex", ["claude"])
+    assert cleared == {"implementer": "claude"}
+    assert _switched(repo) == {}
+
+    from whyline_relay import config, failover
+
+    settings = config.load(repo)
+    assert failover.pipeline_effective_agent(repo, settings, "implementer") == "antigravity"
+
+
+def test_save_roles_saving_the_same_role_keeps_its_switch(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    assert relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"]) == {}
+    assert _switched(repo) == {"implementer": "claude"}
+
+
+def test_save_roles_clears_a_switch_whose_agent_left_the_chain(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude", "antigravity"])
+    _switch(repo, "implementer", "claude", "grok")
+    cleared = relay_ops.save_roles(repo, "grok", "codex", "codex", ["antigravity"])
+    assert cleared == {"implementer": "claude"}
+    assert _switched(repo) == {}
+
+
+def test_save_backup_clears_only_switches_whose_agent_left_the_chain(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude", "antigravity"])
+    _switch(repo, "implementer", "claude", "grok")
+    _switch(repo, "tester", "antigravity", "codex")
+    assert relay_ops.save_backup(repo, ["antigravity"]) == {"implementer": "claude"}
+    assert _switched(repo) == {"tester": "antigravity"}
+
+
+def test_save_roles_leaves_other_roles_switches_alone(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    _switch(repo, "reviewer", "claude", "codex")
+    cleared = relay_ops.save_roles(repo, "antigravity", "codex", "codex", ["claude"])
+    assert cleared == {"implementer": "claude"}
+    assert _switched(repo) == {"reviewer": "claude"}
+
+
+def test_saving_without_active_roles_creates_nothing(repo):
+    from whyline_relay import failover
+
+    assert relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"]) == {}
+    assert relay_ops.save_roles(repo, "antigravity", "codex", "codex", []) == {}
+    assert relay_ops.save_backup(repo, ["grok"]) == {}
+    assert not failover.path(repo).exists()
+
+
 def test_current_roles_does_not_swallow_read_backup_config_error(repo):
     from whyline_relay import config
 

@@ -20001,3 +20001,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ad1a980226254494b691bd9c76909522 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:50:25.259Z"} -->
+
+## 2026-10-21 — A save clears a role's backup switch when the saved agent differs from the stored one or from the switch's backup_for
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-1
+
+**Because:** The task says 'or from the override's agent', but a switch's agent is always a backup different from the primary, so read literally every save would clear it and 'saving the same role keeps it' could never hold; backup_for is the agent the switch stands in for
+
+**Rejected:**
+
+- Compare with override.agent literally — contradicts the keep-on-same-save test
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: de23b0e1cf0f47d490b3ad420b6a4752 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:59:21.726Z"} -->
+
+## 2026-10-21 — save_roles/save_backup return {role: backup agent it was on} instead of a bare list of roles
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-1
+
+**Because:** AGS-3 has to say 'implementer was on backup claude; it now uses antigravity', and once cleared the switch's agent is gone; iterating the dict still yields the cleared roles
+
+**Rejected:**
+
+- list[str] of roles — AGS-3 would have to read active-roles.json before saving to recover the backup agent
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: bf82ab465d0645c48eda2237a428b156 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:59:21.788Z"} -->
+
+## 2026-10-21 — Shared clear_stale_switches helper in relay_ops, also called by recovery's use-<agent> option after roles.set_role
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-1
+
+**Because:** One rule for Set up and Resolve; recovery passes the role's pre-set agent from roles.current_roles and no chain, since it does not change the chain
+
+**Rejected:**
+
+- Clear the role unconditionally in recovery — would differ from the Set up rule for the same choice
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 83b111a12caa4adf9184ff79a9602a9a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:59:21.850Z"} -->
+
+## 2026-10-21 — AGS-1 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-1
+
+**Because:** The required relay-ops suite and full project suite both exited 0; coverage verifies role changes and removed backup agents clear only stale overrides, unchanged roles preserve switches, and absent active-roles state is not created
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 59cc7b54b5dd4dd2a4efde029103cad7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T07:07:08.282Z"} -->
+
+## 2026-10-21 — AGS-1 approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-1
+
+**Because:** The diff clears only stale backup overrides after role or backup-chain saves, preserves valid unchanged switches, avoids creating active-roles state when absent, and both the focused 81-test suite and full regression suite passed
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: cf5af9ff83b542208be262fc99429732 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T07:14:20.435Z"} -->

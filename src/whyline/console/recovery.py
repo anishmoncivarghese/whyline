@@ -2385,6 +2385,7 @@ def apply(
     if option_id.startswith("use-"):
         agent = option_id[len("use-") :]
         from whyline_relay import config as relay_config, roles
+        from whyline.console import relay_ops
 
         settings = relay_config.load(root_path)
         m = re.search(r"roles set\s+(\S+)", matched_opt.detail)
@@ -2398,6 +2399,10 @@ def apply(
             elif current:
                 role = next(iter(current))
         roles.set_role(root_path, settings, role, agent=agent, model=None)
+        # A backup switch for this role would otherwise win on Resume.
+        relay_ops.clear_stale_switches(
+            root_path, saved={role: (current.get(role), agent)}
+        )
         launch(["resume"])
         return f"Set role {role} to {agent} and resumed relay."
 
