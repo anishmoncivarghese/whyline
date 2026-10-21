@@ -22,7 +22,7 @@ try:
     from textual.containers import Horizontal, Vertical, VerticalScroll
     from textual.css.query import NoMatches
     from textual.message import Message
-    from textual.screen import ModalScreen
+    from textual.screen import ModalScreen, Screen
     from rich.text import Text
     from textual.widgets import (
         Button, Checkbox, Footer, Header, Input, Label, RichLog, Select, Static,
@@ -32,7 +32,7 @@ try:
 
     TUI_AVAILABLE = True
 except ImportError:
-    App = ModalScreen = Input = Message = TextArea = object  # placeholder bases so the classes can still be defined
+    App = ModalScreen = Screen = Input = Message = TextArea = object  # placeholder bases so the classes can still be defined
     NoMatches = LookupError
     ComposeResult = None
     Horizontal = Vertical = VerticalScroll = None
@@ -4562,6 +4562,10 @@ class WhylineConsoleApp(App):
             login_agent = res.agent
             self._login(res.agent)
             res = ""
+        if isinstance(res, Screen):
+            self._close_resolve_flow()
+            self.push_screen(res, self._setup_done)
+            return
         if res:
             self.render_event(SessionEvent(kind="output", text=res))
 

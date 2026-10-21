@@ -1375,7 +1375,7 @@ def resolve_configured_role(
             if not configured_roles or "implementer" in configured_roles:
                 active_role = "implementer"
 
-    if opt_id == "reset-role":
+    if opt_id in ("reset-role", "use-configured", "switch-back"):
         try:
             from whyline_relay import failover as relay_failover
 
@@ -1471,6 +1471,35 @@ def make_rec_4c_option(
     elif opt_id == "reset-role":
         label = f"Reset {target_role}" if target_role else "Reset role"
         detail = f"whyline relay roles reset {target_role}" if target_role else "whyline relay roles reset"
+    elif opt_id == "use-configured":
+        configured_agent = "configured"
+        if root is not None:
+            try:
+                from whyline_relay import config as relay_config, roles as relay_roles
+
+                settings = relay_config.load(Path(root))
+                current = relay_roles.current_roles(settings)
+                configured_agent = current.get(target_role) or "configured"
+            except Exception:
+                pass
+        label = f"Use {configured_agent} (from Set up)"
+        detail = f"whyline relay roles reset {target_role}" if target_role else "whyline relay roles reset"
+    elif opt_id == "switch-back":
+        configured_agent = "configured"
+        if root is not None:
+            try:
+                from whyline_relay import config as relay_config, roles as relay_roles
+
+                settings = relay_config.load(Path(root))
+                current = relay_roles.current_roles(settings)
+                configured_agent = current.get(target_role) or "configured"
+            except Exception:
+                pass
+        label = f"Switch back to {configured_agent} anyway"
+        detail = f"whyline relay roles reset {target_role}" if target_role else "whyline relay roles reset"
+    elif opt_id == "choose-agents":
+        label = "Choose agents…"
+        detail = "open RelaySetupScreen"
     elif opt_id.startswith("use-"):
         ag = opt_id[len("use-") :]
         label = f"Use {ag}"
@@ -1598,16 +1627,22 @@ def _logged_out_options(agent: str) -> list[Option]:
     return opts
 
 
-def _override_reset_in_future(override: Any) -> bool:
+def _override_reset_status(override: Any) -> tuple[str, str]:
+    """Returns (status, label) where status is 'past', 'ahead', or 'unknown',
+    and label is formatted reset time or 'unknown'."""
     resets_at = getattr(override, "resets_at", "") or ""
     if not resets_at:
-        return False
+        return "unknown", "unknown"
     try:
         when = datetime.fromisoformat(resets_at)
     except (TypeError, ValueError):
-        return False
+        return "unknown", "unknown"
     now = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
-    return when > now
+    return ("ahead", resets_at) if when > now else ("past", resets_at)
+
+
+def _override_reset_in_future(override: Any) -> bool:
+    return _override_reset_status(override)[0] == "ahead"
 
 
 def diagnose(
@@ -1674,33 +1709,28 @@ def diagnose(
     # 2. sticky-switch
     try:
         from whyline import account
-        from whyline_relay import failover
+        from whyline_relay import config as relay_config, failover, roles as relay_roles
 
         overrides = failover.read_overrides(root_path)
         if overrides:
             agent_status_map = account.agent_status(root_path)
+            try:
+                settings = relay_config.load(root_path)
+                current_roles = relay_roles.current_roles(settings)
+            except Exception:
+                current_roles = {}
             for role, override in overrides.items():
-                configured = override.backup_for
+                configured = current_roles.get(role) or override.backup_for
+                is_stale = override.backup_for != configured
                 if agent_status_map.get(configured, {}).get("available"):
                     evidence_lines = [
                         f"Role {role} overridden to {override.agent}; configured agent {configured} is logged in again"
                     ]
-                    generic = configured in _GENERIC_AGENTS
-                    reset_future = _override_reset_in_future(override)
-                    if generic or reset_future:
-                        reset_label = getattr(override, "resets_at", "") or "unknown"
-                        evidence_lines.append(
-                            f"{configured} may still be out of quota (resets {reset_label})"
-                        )
-                        opts = [
-                            Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
-                            Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
-                        ]
-                    else:
+                    if is_stale:
                         opts = [
                             Option(
-                                "reset-role",
-                                f"Reset {role}",
+                                "use-configured",
+                                f"Use {configured} (from Set up)",
                                 f"whyline relay roles reset {role}",
                                 recommended=True,
                                 confirm=False,
@@ -1708,6 +1738,43 @@ def diagnose(
                             Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
                             Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
                         ]
+                    else:
+                        generic = configured in _GENERIC_AGENTS
+                        reset_status, reset_label = _override_reset_status(override)
+                        if generic or reset_status in ("unknown", "ahead"):
+                            evidence_lines.append(
+                                f"{configured} may still be out of quota (resets {reset_label})"
+                            )
+                            opts = [
+                                Option(
+                                    "switch-back",
+                                    f"Switch back to {configured} anyway",
+                                    f"whyline relay roles reset {role}",
+                                    recommended=False,
+                                    confirm=False,
+                                ),
+                                Option(
+                                    "choose-agents",
+                                    "Choose agents…",
+                                    "open RelaySetupScreen",
+                                    recommended=False,
+                                    confirm=False,
+                                ),
+                                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                            ]
+                        else:
+                            opts = [
+                                Option(
+                                    "reset-role",
+                                    f"Reset {role}",
+                                    f"whyline relay roles reset {role}",
+                                    recommended=True,
+                                    confirm=False,
+                                ),
+                                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                            ]
                     problems.append(
                         Problem(
                             id="sticky-switch",
@@ -2351,7 +2418,10 @@ def apply(
         launch(["resume", "--allow-dirty"])
         return f"Moved foreign commits to branch {branch_name}, reset to {base_commit}, and resumed relay with changes kept."
 
-    if option_id == "reset-role":
+    if (
+        option_id in ("reset-role", "use-configured", "use-setup", "switch-back")
+        or (problem.id == "sticky-switch" and option_id.startswith("use-"))
+    ):
         from whyline_relay import failover, roles
 
         m = re.search(r"roles reset\s+(\S+)", matched_opt.detail)
@@ -2359,7 +2429,16 @@ def apply(
         if not role or role == "<role>":
             role = resolve_configured_role(root_path, option_id)
         roles.reset(root_path, role)
+        if option_id == "switch-back":
+            return f"Switched role {role} back to its configured agent." if role else "Switched role back to configured agent."
+        if option_id in ("use-configured", "use-setup") or (problem.id == "sticky-switch" and option_id.startswith("use-")):
+            return f"Reset role {role} to use configured agent." if role else "Reset role to configured agent."
         return f"Reset role {role} to its configured agent." if role else "Reset role to its configured agent."
+
+    if option_id == "choose-agents":
+        from whyline.console.relay_screens import RelaySetupScreen
+
+        return RelaySetupScreen(root_path)
 
     if option_id == "resume-longer":
         from whyline.console import relay_ops

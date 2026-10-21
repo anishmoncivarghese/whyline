@@ -1186,7 +1186,14 @@ async def test_two_problems_are_handled_one_after_the_other(tmp_path, monkeypatc
     failover.write_override(
         tmp_path,
         "implementer",
-        failover.ActiveOverride("claude", "codex", "rate-limit", "2026-10-14", []),
+        failover.ActiveOverride(
+            "claude",
+            "codex",
+            "rate-limit",
+            "2026-10-14",
+            [],
+            resets_at="2020-01-01T00:00:00",
+        ),
     )
     monkeypatch.setattr(
         account,

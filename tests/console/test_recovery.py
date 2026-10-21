@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from whyline.console import adapters, recovery
+from whyline.console import adapters, recovery, tui
 
 
 def test_every_kind_maps_as_listed() -> None:
@@ -1342,7 +1342,14 @@ def test_each_known_problem_diagnosed_with_recommended_option_first(tmp_path: Pa
     failover.write_override(
         repo_sticky,
         "implementer",
-        failover.ActiveOverride("claude", "codex", "rate-limit", "2026-10-14", []),
+        failover.ActiveOverride(
+            "claude",
+            "codex",
+            "rate-limit",
+            "2026-10-14",
+            [],
+            resets_at="2020-01-01T00:00:00",
+        ),
     )
     monkeypatch.setattr(
         account,
@@ -2542,6 +2549,10 @@ def test_sticky_switch_from_antigravity_is_not_offered_reset_role(
     from whyline_relay import failover
 
     repo = _init_scratch_repo(tmp_path / "repo_agy")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
     failover.write_override(
         repo,
         "implementer",
@@ -2562,7 +2573,17 @@ def test_sticky_switch_from_antigravity_is_not_offered_reset_role(
     probs = recovery.diagnose(repo, [], "")
     assert probs[0].id == "sticky-switch"
     assert all(opt.id != "reset-role" for opt in probs[0].options)
-    assert [opt.id for opt in probs[0].options] == ["show", "cancel"]
+    assert [opt.id for opt in probs[0].options] == [
+        "switch-back",
+        "choose-agents",
+        "show",
+        "cancel",
+    ]
+    assert probs[0].options[0].label == "Switch back to antigravity anyway"
+    assert probs[0].options[0].recommended is False
+    assert probs[0].options[1].label == "Choose agents…"
+    assert probs[0].options[1].recommended is False
+    assert recovery.auto_option(probs[0]) is None
     assert any(
         "antigravity may still be out of quota (resets 2026-10-23T00:00:00)" in line
         for line in probs[0].evidence
@@ -2576,6 +2597,10 @@ def test_sticky_switch_from_claude_whose_reset_has_passed_offers_reset_role(
     from whyline_relay import failover
 
     repo = _init_scratch_repo(tmp_path / "repo_claude_reset")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n',
+        encoding="utf-8",
+    )
     failover.write_override(
         repo,
         "implementer",
@@ -2597,6 +2622,242 @@ def test_sticky_switch_from_claude_whose_reset_has_passed_offers_reset_role(
     assert probs[0].id == "sticky-switch"
     assert probs[0].options[0].id == "reset-role"
     assert probs[0].options[0].recommended is True
+
+
+def test_stale_override_gives_recommended_use_option_and_clears_override(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_stale")
+    # In config.toml, implementer is codex.
+    # Override was recorded when implementer was claude.
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "grok",
+            "claude",
+            "rate-limit",
+            "2026-10-14",
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"codex": {"available": True, "label": "available", "hint": None}},
+    )
+    probs = recovery.diagnose(repo, [], "")
+    assert len(probs) == 1
+    assert probs[0].id == "sticky-switch"
+    opt_use = probs[0].options[0]
+    assert opt_use.id == "use-configured"
+    assert opt_use.label == "Use codex (from Set up)"
+    assert opt_use.recommended is True
+    assert opt_use.confirm is False
+
+    # Auto applies the Use option
+    assert recovery.auto_option(probs[0]) == opt_use
+
+    # Applying the Use option clears the override
+    msg = recovery.apply(repo, probs[0], opt_use.id, launch=lambda args: None)
+    assert "Reset role implementer" in msg or "implementer" in msg
+    assert failover.read_overrides(repo) == {}
+
+
+def test_generic_agent_offers_switch_back_anyway_and_choose_agents(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline.console.relay_screens import RelaySetupScreen
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_generic")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "claude",
+            "grok",
+            "rate-limit",
+            "2026-10-14",
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"grok": {"available": True, "label": "installed", "hint": None}},
+    )
+    probs = recovery.diagnose(repo, [], "")
+    assert len(probs) == 1
+    assert probs[0].id == "sticky-switch"
+    opt_ids = [opt.id for opt in probs[0].options]
+    assert opt_ids == ["switch-back", "choose-agents", "show", "cancel"]
+
+    opt_switch = probs[0].options[0]
+    assert opt_switch.label == "Switch back to grok anyway"
+    assert opt_switch.recommended is False
+
+    opt_choose = probs[0].options[1]
+    assert opt_choose.label == "Choose agents…"
+    assert opt_choose.recommended is False
+
+    # Auto never applies Switch back anyway (or Choose agents)
+    assert recovery.auto_option(probs[0]) is None
+
+    # Applying choose-agents opens RelaySetupScreen
+    screen = recovery.apply(repo, probs[0], "choose-agents", launch=lambda args: None)
+    assert isinstance(screen, RelaySetupScreen)
+
+    # Applying switch-back clears the override
+    msg = recovery.apply(repo, probs[0], "switch-back", launch=lambda args: None)
+    assert "implementer" in msg
+    assert failover.read_overrides(repo) == {}
+
+
+def test_non_generic_agent_with_missing_reset_time_offers_switch_back_anyway_and_choose_agents(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_claude_no_reset")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n',
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "grok",
+            "claude",
+            "rate-limit",
+            "2026-10-14",
+            [],
+            resets_at="",
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"claude": {"available": True, "label": "pro", "hint": None}},
+    )
+    probs = recovery.diagnose(repo, [], "")
+    assert len(probs) == 1
+    assert probs[0].id == "sticky-switch"
+    opt_ids = [opt.id for opt in probs[0].options]
+    assert opt_ids == ["switch-back", "choose-agents", "show", "cancel"]
+    assert probs[0].options[0].label == "Switch back to claude anyway"
+    assert probs[0].options[0].recommended is False
+    assert probs[0].options[1].label == "Choose agents…"
+    assert probs[0].options[1].recommended is False
+    assert recovery.auto_option(probs[0]) is None
+    assert any(
+        "claude may still be out of quota (resets unknown)" in line
+        for line in probs[0].evidence
+    )
+
+
+def test_non_generic_agent_with_invalid_reset_time_offers_switch_back_anyway_and_choose_agents(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_claude_bad_reset")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n',
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "grok",
+            "claude",
+            "rate-limit",
+            "2026-10-14",
+            [],
+            resets_at="invalid-iso-timestamp",
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"claude": {"available": True, "label": "pro", "hint": None}},
+    )
+    probs = recovery.diagnose(repo, [], "")
+    assert len(probs) == 1
+    assert probs[0].id == "sticky-switch"
+    opt_ids = [opt.id for opt in probs[0].options]
+    assert opt_ids == ["switch-back", "choose-agents", "show", "cancel"]
+    assert probs[0].options[0].label == "Switch back to claude anyway"
+    assert probs[0].options[0].recommended is False
+    assert probs[0].options[1].label == "Choose agents…"
+    assert probs[0].options[1].recommended is False
+    assert recovery.auto_option(probs[0]) is None
+    assert any(
+        "claude may still be out of quota (resets unknown)" in line
+        for line in probs[0].evidence
+    )
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_resolve_choose_agents_pushes_relay_setup_screen_in_console(
+    tmp_path: Path, monkeypatch, installed_agents
+) -> None:
+    from whyline import account
+    from whyline.console.relay_screens import RelaySetupScreen
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_choose_tui")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "claude",
+            "grok",
+            "rate-limit",
+            "2026-10-14",
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"grok": {"available": True, "label": "installed", "hint": None}},
+    )
+
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume")
+        await pilot.pause()
+
+        assert app.query_one("#resolve-actions", tui.Horizontal).display is True
+        assert app.query_one("#resolve-choose-agents", tui.Button).display is True
+
+        await pilot.click("#resolve-choose-agents")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, RelaySetupScreen):
+                break
+
+        assert isinstance(app.screen, RelaySetupScreen)
+        assert app._main("#resolve-actions").display is False
 
 
 def test_fail_line_not_logged_in_is_logged_out_with_login_claude_first(

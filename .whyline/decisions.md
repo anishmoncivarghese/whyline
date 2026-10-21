@@ -20097,3 +20097,103 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4c03c3c42c104dcba3f55722be37b487 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T07:41:09.867Z"} -->
+
+## 2026-10-21 — Resolve detects stale backup overrides by comparing with config.toml and offers Use configured, Switch back anyway, and Choose agents
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-2
+
+**Because:** Previously Resolve compared with override.backup_for and offered only Show evidence and Cancel for generic agents, dead-ending users
+
+**Rejected:**
+
+- Clear overrides unconditionally without offering options — silently drops user backup overrides
+- Offer only Switch back anyway without Choose agents — leaves user unable to switch to other installed agents
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: c11e0fd109034c208529fbeb7d2916f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:00:29.637Z"} -->
+
+## 2026-10-21 — AGS-2 passes behavioral testing in round 2
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-2
+
+**Because:** The targeted recovery suite and full project suite both exited successfully, covering stale override clearing, generic-agent escape options, Auto-mode safety, setup-screen navigation, and the existing past-reset path
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: a5b88e52cc7b4f9db62405a3908e535f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:09:11.712Z"} -->
+
+## 2026-10-21 — AGS-2 round 3 requires changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-2
+
+**Because:** Unknown reset times for non-generic agents still recommend reset, and Choose agents returns a RelaySetupScreen object that the console renders as output instead of opening; existing tests pass but do not cover either end-to-end behavior
+
+**Rejected:**
+
+- Approve — two explicit escape-path requirements are not met in the console
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py
+
+<!-- whyline-event: a507186b37ff49d5809d41c006de9fdf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:16:39.354Z"} -->
+
+## 2026-10-21 — Treat missing or invalid override reset timestamps as unknown and push RelaySetupScreen when choose-agents finishes in console
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-2
+
+**Because:** Non-generic agents with unknown reset times must not recommend reset, and Choose agents must open RelaySetupScreen instead of rendering it as text
+
+**Rejected:**
+
+- Assume missing reset times have passed — inappropriately recommends resetting non-generic agents that may still be rate-limited
+- Render RelaySetupScreen as text — leaves user in resolve flow without navigating to agent setup
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui.py
+
+<!-- whyline-event: ddba2d829ec246848ecfe68f4eea8023 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:41:47.027Z"} -->
+
+## 2026-10-21 — AGS-2 round 5 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-2
+
+**Because:** The 66-test recovery suite passed and a direct Textual smoke test verified Choose agents opens RelaySetupScreen and dismissal returns to the main console; the full suite's seven reproducible failures are unrelated Runs-view and Ideas/AppKit environment failures outside the changed paths
+
+**Rejected:**
+
+- Fail AGS-2 for unrelated full-suite failures — none touch recovery diagnosis, sticky-switch application, or resolve-screen navigation
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 7ff3fe8c35d746ef9cacb090d9905f2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:50:25.193Z"} -->
+
+## 2026-10-21 — Approve AGS-2 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-2
+
+**Because:** The diff compares overrides with the currently configured role agent, makes stale resets recommended and Auto-safe, keeps unsafe switch-back manual, opens RelaySetupScreen for agent selection, and both the focused recovery suite and full pytest suite pass
+
+**Rejected:**
+
+- Request changes — no task-scope defect or unsafe behavior remained after inspection and independent test runs
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui.py
+
+<!-- whyline-event: c4b2367b1353434298a3d561de400f43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T10:57:54.294Z"} -->
