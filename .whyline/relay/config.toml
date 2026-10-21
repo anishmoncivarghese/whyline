@@ -97,4 +97,4 @@ review = "codex"
 test = ""
 
 [backup]
-chain = ["grok", "claude"]
+chain = ["grok", "antigravity"]
