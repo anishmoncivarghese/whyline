@@ -19904,3 +19904,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b11b82c1d57e48adba047b66b3d17129 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-20T22:03:57.287Z"} -->
+
+## 2026-10-21 — Add AGS-1..5 before IDEA-15: Set up's agent and model choices take effect at a pause, and Resolve never dead-ends
+
+**Actor:** claude
+**Role:** planner
+**Task:** AGS-PLAN
+
+**Because:** At the TGS-4 pause a stale active-roles.json backup switch silently overrode Set up's implementer change; Resolve offered only Show evidence and Cancel for generic agents; antigravity's default model was out of quota while its other models were full, and Set up cannot pick a model for grok or antigravity. The user asked for this before IDEA-15 so it ships in 0.3.48
+
+**Rejected:**
+
+- Park until after 0.3.48 — the user hits this at every agent limit and wants it now
+- Fix it in whyline-relay (clear overrides in setup.write_roles, model_flag for generic agents) — separate package and release; the console can do both today. The roles status wrong-agent wording and generic model_flag still go to whyline-relay separately
+- Commit the plan and Resume TGS-4 — a paused run accepts only config.toml commits and would pause with HEAD moved at approval; start TGS-4 fresh with --allow-dirty instead, since its only round was Claude's failed draft
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 39f885fe97e241da8558ef0a9df79bbc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:17:32.477Z"} -->
