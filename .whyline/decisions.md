@@ -20248,3 +20248,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 77e047775f4c426dbf1be8a6aab8aa14 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T12:03:41.933Z"} -->
+
+## 2026-10-21 — Choose default agent models in Set up via config.toml model key for claude/codex and --model in command for generic agents
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-4
+
+**Because:** claude and codex declare model_flag so config.py validates model there, whereas generic agents reject model but accept --model in command
+
+**Rejected:**
+
+- use model key everywhere — config.py rejects model on generic adapters
+- always edit command — claude and codex use managed commands where config.toml model key is the standard relay pattern
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py
+
+<!-- whyline-event: dd954a6567a047a1a8c1833bca8aa7c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T12:30:43.958Z"} -->
+
+## 2026-10-21 — Pass AGS-4 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-4
+
+**Because:** The focused relay setup and operations tests and the full project pytest suite both completed successfully, covering per-agent model saving, CLI-default removal, generic command flag preservation, agy fallback, and the 80x24 setup layout
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py
+
+<!-- whyline-event: b621ee7531614a16b7f9a957234d965d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T12:38:36.389Z"} -->
+
+## 2026-10-21 — Request AGS-4 changes for stale model rows after backup action buttons
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-4
+
+**Because:** Backup None and Automatic mutate the active chain inside _SetupChain after stopping the event, but only invalidate checks; a direct Textual run showed None changed the chain from [grok] to [] while the grok Model row remained visible, violating the requirement to show rows only for agents used by a role or backup
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 07a5d30cfa7a44c5bd43020610b90b04 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T12:47:53.156Z"} -->
+
+## 2026-10-21 — Update model-row visibility on _SetupChain button and checkbox mutations
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-4
+
+**Because:** _SetupChain button actions like None and Automatic stop event propagation and change backup membership, leaving unused agent model rows visible unless the screen models are refreshed
+
+**Rejected:**
+
+- rely on unhandled bubbling — OrderedChain stops button presses for None and Automatic
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: d5fa9846760a4118b026f88b93b2607b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T13:00:49.777Z"} -->
+
+## 2026-10-21 — Pass AGS-4 round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-4
+
+**Because:** The focused relay setup and operations suite and the full project pytest suite both completed with exit 0, including regression coverage for model-row refresh after backup button and checkbox changes
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 9fbfb646c74048d3ac9fcc89c3dcd3d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T13:09:02.737Z"} -->
+
+## 2026-10-21 — Request AGS-4 changes for release-only agent model selection
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-4
+
+**Because:** Relay Setup treats Release as an agent role, but both initial and live model-agent membership omit it, so an agent used only for release has no Model row and its default cannot be saved
+
+**Rejected:**
+
+- Approve based on passing tests — the current tests leave Release as human and do not cover the required release-role case
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 9899d3ac9a06488b8631ed44d0d006b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T13:17:18.602Z"} -->
+
+## 2026-10-21 — Include saved and current release agent in RelaySetupScreen model-agent computation
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-4
+
+**Because:** Release is an agent role in Relay Setup; omitting it prevented a release-only agent from displaying its model row or persisting its default model
+
+**Rejected:**
+
+- only support models for primary roles and backup — ignores agents assigned solely to release
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: f5a0b781a9594924a93a5d21693602aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T13:30:30.238Z"} -->
+
+## 2026-10-21 — Pass AGS-4 round 8 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-4
+
+**Because:** The focused relay setup and operations tests and the full project pytest suite both completed with exit 0 after release-agent model coverage was added; the full run had one skip and no failures
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, tests/console/test_relay_ops.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 20d5d7a2fbb14f49855de7698aca21aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T13:38:26.787Z"} -->
+
+## 2026-10-21 — Approve AGS-4 round 9 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-4
+
+**Because:** The diff implements per-agent model selection and persistence for all four agents, includes release-only agents, preserves generic command arguments, supports typed fallback, and both the focused and full pytest suites passed with exit 0
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found in the requested behavior
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, tests/console/test_relay_ops.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: d2e168b652d7404098f89629d03ca977 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T20:36:39.779Z"} -->

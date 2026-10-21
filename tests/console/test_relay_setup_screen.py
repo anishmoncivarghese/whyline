@@ -818,3 +818,351 @@ async def test_resume_in_setup_dismisses_with_cleared_switches(tmp_path, monkeyp
         await pilot.click("#rs-start")
         await pilot.pause()
         assert results == [("resume", ["implementer was on backup claude; it now uses antigravity"])]
+
+
+async def test_setup_screen_saves_model_for_agents(tmp_path, monkeypatch):
+    import subprocess
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "antigravity_models",
+        lambda runner=None: [("Gemini Flash", "gemini-3.8-flash-high")],
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rs-model-claude", tui.Select).value = "opus"
+        screen.query_one("#rs-model-codex", tui.Select).value = "gpt-5.6-sol"
+        screen.query_one("#rs-model-grok", tui.Select).value = "grok-4.6"
+        screen.query_one("#rs-model-antigravity", tui.Select).value = "gemini-3.8-flash-high"
+
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+
+    assert relay_ops.read_agent_model(tmp_path, "claude") == "opus"
+    assert relay_ops.read_agent_model(tmp_path, "codex") == "gpt-5.6-sol"
+    assert relay_ops.read_agent_model(tmp_path, "grok") == "grok-4.6"
+    assert relay_ops.read_agent_model(tmp_path, "antigravity") == "gemini-3.8-flash-high"
+
+    config_text = (tmp_path / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "[agents.claude]" in config_text
+    assert 'model = "opus"' in config_text
+    assert "[agents.codex]" in config_text
+    assert 'model = "gpt-5.6-sol"' in config_text
+    assert "[agents.grok]" in config_text
+    assert '"--model", "grok-4.6"' in config_text
+    assert "[agents.antigravity]" in config_text
+    assert '"--model", "gemini-3.8-flash-high"' in config_text
+
+
+async def test_setup_screen_cli_default_removes_model(tmp_path, monkeypatch):
+    import subprocess
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+
+    relay_ops.save_agent_model(tmp_path, "claude", "opus")
+    relay_ops.save_agent_model(tmp_path, "codex", "gpt-5.6-sol")
+    relay_ops.save_agent_model(tmp_path, "grok", "grok-4.6")
+    relay_ops.save_agent_model(tmp_path, "antigravity", "gemini-3.8-flash-high")
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "antigravity_models",
+        lambda runner=None: [("Gemini Flash", "gemini-3.8-flash-high")],
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        screen.query_one("#rs-model-claude", tui.Select).value = ""
+        screen.query_one("#rs-model-codex", tui.Select).value = ""
+        screen.query_one("#rs-model-grok", tui.Select).value = ""
+        screen.query_one("#rs-model-antigravity", tui.Select).value = ""
+
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+
+    assert relay_ops.read_agent_model(tmp_path, "claude") == ""
+    assert relay_ops.read_agent_model(tmp_path, "codex") == ""
+    assert relay_ops.read_agent_model(tmp_path, "grok") == ""
+    assert relay_ops.read_agent_model(tmp_path, "antigravity") == ""
+
+    config_text = (tmp_path / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "opus" not in config_text
+    assert "gpt-5.6-sol" not in config_text
+    assert "grok-4.6" not in config_text
+    assert "gemini-3.8-flash-high" not in config_text
+
+
+async def test_setup_screen_agy_models_failure_falls_back_to_typing_name(tmp_path, monkeypatch):
+    import subprocess
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["antigravity", "codex"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "codex",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "antigravity_models", lambda runner=None: None)
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        antigravity_input = screen.query_one("#rs-model-antigravity", tui.Input)
+        assert isinstance(antigravity_input, tui.Input)
+        antigravity_input.value = "claude-opus-5-5-high"
+
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+
+    assert relay_ops.read_agent_model(tmp_path, "antigravity") == "claude-opus-5-5-high"
+    config_text = (tmp_path / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert '"--model", "claude-opus-5-5-high"' in config_text
+
+
+async def test_setup_screen_fits_80x24_with_model_rows(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=False)
+        app.push_screen(screen)
+        await pilot.pause()
+        start_btn = screen.query_one("#rs-start", tui.Button)
+        assert start_btn.region.height > 0
+        assert start_btn.region.bottom <= 24
+        for agent in ("claude", "codex", "grok", "antigravity"):
+            assert screen.query_one(f"#rs-model-row-{agent}").display
+
+
+async def test_setup_screen_refreshes_model_rows_on_backup_chain_actions(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(RelaySetupScreen, "_fill_backup", lambda self: ["grok"])
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        # All 4 agents are initially in use: antigravity, codex, claude in roles; grok in backup.
+        assert screen.query_one("#rs-model-row-grok").display
+        assert not screen.query_one("#rs-model-row-grok").has_class("-empty")
+        assert screen.query_one("#rs-model-row-antigravity").display
+
+        # None button clears the backup chain. grok is not in any role, so its row hides.
+        screen.query_one("#chain-none", tui.Button).press()
+        await pilot.pause()
+        chain = screen.query_one("#rs-backup", OrderedChain)
+        assert chain.order() == []
+        assert not screen.query_one("#rs-model-row-grok").display
+        assert screen.query_one("#rs-model-row-grok").has_class("-empty")
+        assert screen.query_one("#rs-model-row-antigravity").display
+
+        # Automatic button restores grok to the backup chain.
+        screen.query_one("#chain-automatic", tui.Button).press()
+        await pilot.pause()
+        assert chain.order() == ["grok"]
+        assert screen.query_one("#rs-model-row-grok").display
+        assert not screen.query_one("#rs-model-row-grok").has_class("-empty")
+
+        # Unchecking grok in the backup chain hides its row.
+        screen.query_one("#chain-check-grok", tui.Checkbox).value = False
+        await pilot.pause()
+        assert chain.order() == []
+        assert not screen.query_one("#rs-model-row-grok").display
+        assert screen.query_one("#rs-model-row-grok").has_class("-empty")
+
+        # Re-checking grok in the backup chain restores its row.
+        screen.query_one("#chain-check-grok", tui.Checkbox).value = True
+        await pilot.pause()
+        assert chain.order() == ["grok"]
+        assert screen.query_one("#rs-model-row-grok").display
+        assert not screen.query_one("#rs-model-row-grok").has_class("-empty")
+
+
+async def test_setup_screen_initial_visibility_for_release_only_agent(tmp_path, monkeypatch):
+    import subprocess
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(RelaySetupScreen, "_fill_backup", lambda self: [])
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "grok")
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        # grok is used only in release, not in implementer, tester, reviewer, or backup.
+        assert screen.query_one("#rs-model-row-grok").display
+        assert not screen.query_one("#rs-model-row-grok").has_class("-empty")
+        assert screen.query_one("#rs-model-row-claude").display
+        assert screen.query_one("#rs-model-row-codex").display
+        assert screen.query_one("#rs-model-row-antigravity").display
+
+        screen.query_one("#rs-model-grok", tui.Select).value = "grok-4.6"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+
+    assert relay_ops.read_agent_model(tmp_path, "grok") == "grok-4.6"
+    config_text = (tmp_path / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "[agents.grok]" in config_text
+    assert '"--model", "grok-4.6"' in config_text
+
+
+async def test_setup_screen_refreshes_model_rows_on_release_selector_changes(tmp_path, monkeypatch):
+    import subprocess
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(RelaySetupScreen, "_fill_backup", lambda self: [])
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        # grok is initially unused (release is human).
+        assert not screen.query_one("#rs-model-row-grok").display
+        assert screen.query_one("#rs-model-row-grok").has_class("-empty")
+
+        # Switching release to grok reveals grok's model row.
+        screen.query_one("#rs-release", tui.Select).value = "grok"
+        await pilot.pause()
+        assert screen.query_one("#rs-model-row-grok").display
+        assert not screen.query_one("#rs-model-row-grok").has_class("-empty")
+
+        # Choosing a model for grok and saving persists it.
+        screen.query_one("#rs-model-grok", tui.Select).value = "grok-4.6"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+        assert relay_ops.read_agent_model(tmp_path, "grok") == "grok-4.6"
+
+        # Switching release back to human hides grok's model row again.
+        screen.query_one("#rs-release", tui.Select).value = "human"
+        await pilot.pause()
+        assert not screen.query_one("#rs-model-row-grok").display
+        assert screen.query_one("#rs-model-row-grok").has_class("-empty")
+
+
+

@@ -642,6 +642,274 @@ def save_release(root: Path, value: str) -> None:
     setup.write_release(root, value)
 
 
+AGENT_MODELS: dict[str, list[str]] = {
+    "claude": [
+        "claude-opus-5-5-high",
+        "claude-sonnet-4-6",
+        "claude-opus-4-6",
+        "opus",
+        "sonnet",
+        "haiku",
+    ],
+    "codex": [
+        "gpt-5.6-sol",
+        "gpt-5.6",
+        "gpt-5-codex",
+    ],
+    "grok": [
+        "grok-4.6",
+        "grok-4",
+    ],
+}
+
+_AGY_MODELS_CACHE: list[tuple[str, str]] | None = None
+
+
+def clear_antigravity_models_cache() -> None:
+    global _AGY_MODELS_CACHE
+    _AGY_MODELS_CACHE = None
+
+
+def antigravity_models(*, runner=subprocess.run) -> list[tuple[str, str]] | None:
+    """The models reported by `agy models`, cached for the session.
+
+    Returns a list of (label, model_id) tuples, or None on failure.
+    """
+    global _AGY_MODELS_CACHE
+    if _AGY_MODELS_CACHE is not None:
+        return list(_AGY_MODELS_CACHE)
+    try:
+        res = runner(["agy", "models"], capture_output=True, text=True, timeout=10)
+        if res.returncode != 0:
+            return None
+        models: list[tuple[str, str]] = []
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Fetching") or line.startswith("⠋") or line.startswith("..."):
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                model_id = parts[0].strip()
+                label = parts[1].strip()
+            else:
+                tokens = line.split(None, 1)
+                if not tokens:
+                    continue
+                model_id = tokens[0].strip()
+                label = tokens[1].strip() if len(tokens) > 1 else model_id
+            if model_id and (label, model_id) not in models:
+                models.append((label, model_id))
+        if not models:
+            return None
+        _AGY_MODELS_CACHE = models
+        return list(models)
+    except Exception:
+        return None
+
+
+def model_options_for_agent(agent: str) -> list[tuple[str, str]] | None:
+    """List of (label, model_id) options for `agent`.
+
+    Antigravity's list comes from `agy models` (cached for the session; None
+    on failure). Claude, Codex, Grok use short preset lists kept in relay_ops.
+    """
+    if agent == "antigravity":
+        return antigravity_models()
+    if agent in AGENT_MODELS:
+        return [(m, m) for m in AGENT_MODELS[agent]]
+    return None
+
+
+def read_agent_model(root: Path, agent: str) -> str:
+    """The default model configured for `agent` in .whyline/relay/config.toml,
+    or '' if none is configured (CLI default)."""
+    from whyline_relay import config
+
+    path = config.config_path(root)
+    if not path.is_file():
+        return ""
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return ""
+    agent_table = (raw.get("agents") or {}).get(agent)
+    if not isinstance(agent_table, dict):
+        return ""
+    model_val = agent_table.get("model")
+    if isinstance(model_val, str) and model_val:
+        return model_val
+    cmd = agent_table.get("command")
+    if isinstance(cmd, list):
+        for idx, arg in enumerate(cmd):
+            if arg == "--model" and idx + 1 < len(cmd):
+                val = cmd[idx + 1]
+                if isinstance(val, str):
+                    return val
+    return ""
+
+
+def update_command_model(command: list[str], model: str) -> list[str]:
+    """Insert, replace, or remove '--model <name>' in `command`, keeping every
+    other argument in order. If `model` is empty, '--model <name>' is removed."""
+    cmd = list(command)
+    idx = None
+    for i, arg in enumerate(cmd):
+        if arg == "--model":
+            idx = i
+            break
+    if not model:
+        if idx is not None:
+            if idx + 1 < len(cmd):
+                del cmd[idx:idx + 2]
+            else:
+                del cmd[idx:idx + 1]
+        return cmd
+
+    if idx is not None:
+        if idx + 1 < len(cmd):
+            cmd[idx + 1] = model
+        else:
+            cmd.append(model)
+        return cmd
+
+    if cmd and cmd[-1] == "-p":
+        return cmd[:-1] + ["--model", model, "-p"]
+    return cmd + ["--model", model]
+
+
+def set_agent_model_in_toml(
+    toml_text: str, agent: str, model: str, *, is_builtin: bool, default_command=None
+) -> str:
+    """Update config.toml content for `agent`'s default model.
+
+    For built-ins (claude, codex), sets or removes `model = "..."` under
+    `[agents.<name>]`. For generic agents (grok, antigravity), inserts,
+    replaces, or removes `--model <name>` in `command`.
+    """
+    table = f"agents.{agent}"
+    lines = toml_text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == f"[{table}]"), None)
+
+    if is_builtin:
+        if start is None:
+            if not model:
+                return toml_text
+            new_section = [f"[{table}]", f'model = "{model}"']
+            prefix = toml_text.rstrip("\n")
+            sep = "\n\n" if prefix else ""
+            return prefix + sep + "\n".join(new_section) + "\n"
+        end = start + 1
+        while end < len(lines) and not lines[end].lstrip().startswith("["):
+            end += 1
+        model_line = None
+        indent = ""
+        for i in range(start + 1, end):
+            match = re.match(r"^(\s*)model\s*=", lines[i])
+            if match:
+                model_line = i
+                indent = match.group(1)
+                break
+        if model:
+            if model_line is not None:
+                lines[model_line] = f'{indent}model = "{model}"'
+            else:
+                insert_at = end
+                while insert_at > start + 1 and not lines[insert_at - 1].strip():
+                    insert_at -= 1
+                lines.insert(insert_at, f'{indent}model = "{model}"')
+        else:
+            if model_line is not None:
+                lines.pop(model_line)
+                end -= 1
+            for i in range(start + 1, end):
+                if re.match(r"^\s*command\s*=", lines[i]):
+                    try:
+                        raw = tomllib.loads("\n".join(lines[start:end]))
+                        cmd = (raw.get("agents") or {}).get(agent, {}).get("command")
+                        if isinstance(cmd, list) and "--model" in cmd:
+                            new_cmd = update_command_model(cmd, "")
+                            lines[i] = f"{indent}command = {json.dumps(new_cmd)}"
+                    except Exception:
+                        pass
+                    break
+        return "\n".join(lines) + "\n"
+
+    # Generic agent
+    try:
+        raw = tomllib.loads(toml_text)
+    except Exception:
+        raw = {}
+    current_cmd = (raw.get("agents") or {}).get(agent, {}).get("command")
+    if not isinstance(current_cmd, list):
+        current_cmd = list(default_command or [])
+    new_cmd = update_command_model(current_cmd, model)
+
+    if start is None:
+        if not model:
+            return toml_text
+        new_section = [f"[{table}]", 'adapter = "generic"', f"command = {json.dumps(new_cmd)}"]
+        prefix = toml_text.rstrip("\n")
+        sep = "\n\n" if prefix else ""
+        return prefix + sep + "\n".join(new_section) + "\n"
+
+    end = start + 1
+    while end < len(lines) and not lines[end].lstrip().startswith("["):
+        end += 1
+
+    cmd_start = None
+    cmd_end = None
+    indent = ""
+    for i in range(start + 1, end):
+        match = re.match(r"^(\s*)command\s*=", lines[i])
+        if match:
+            cmd_start = i
+            indent = match.group(1)
+            break
+
+    if cmd_start is not None:
+        i = cmd_start
+        bracket_count = 0
+        while i < end:
+            bracket_count += lines[i].count("[") - lines[i].count("]")
+            if bracket_count <= 0 and "]" in lines[i]:
+                cmd_end = i + 1
+                break
+            i += 1
+        if cmd_end is None:
+            cmd_end = cmd_start + 1
+        lines[cmd_start:cmd_end] = [f"{indent}command = {json.dumps(new_cmd)}"]
+    else:
+        insert_at = end
+        while insert_at > start + 1 and not lines[insert_at - 1].strip():
+            insert_at -= 1
+        lines.insert(insert_at, f"{indent}command = {json.dumps(new_cmd)}")
+    return "\n".join(lines) + "\n"
+
+
+def save_agent_model(root: Path, agent: str, model: str, *, commit: bool = True) -> None:
+    """Save the default model for `agent` in config.toml.
+
+    For claude and codex, writes `model = "..."` or removes it. For generic
+    agents (antigravity, grok), updates `command`. Commits only config.toml.
+    """
+    from whyline_relay import adapters, config, gitcheck, recipes
+
+    is_builtin = agent in adapters.BUILTIN
+    default_cmd = list(recipes.RECIPES.get(agent, (agent, "-p")))
+    config_file = config.config_path(root)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    existing = config_file.read_text(encoding="utf-8") if config_file.exists() else ""
+    updated = set_agent_model_in_toml(
+        existing, agent, model, is_builtin=is_builtin, default_command=default_cmd
+    )
+    if updated != existing:
+        config_file.write_text(updated, encoding="utf-8")
+        if commit:
+            msg = f"setup: {agent} model {model}" if model else f"setup: {agent} CLI default model"
+            gitcheck.commit_paths(root, [config_file], msg)
+
+
+
 # Set up's per-agent-run limits, plus 0 for none. 30 is the floor: a relay
 # stage that runs the test suite routinely needs more than 15 minutes.
 RELAY_TIMEOUT_OPTIONS = (30, 45, 60, 0)

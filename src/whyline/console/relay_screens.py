@@ -1342,6 +1342,17 @@ class _SetupChain(OrderedChain):
         screen = self.screen
         if isinstance(screen, RelaySetupScreen):
             screen._invalidate()
+            screen._update_models()
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        before = self.order()
+        super().on_checkbox_changed(event)
+        if self.order() == before:
+            return
+        screen = self.screen
+        if isinstance(screen, RelaySetupScreen):
+            screen._invalidate()
+            screen._update_models()
 
 
 class RelaySetupScreen(ModalScreen):
@@ -1356,14 +1367,19 @@ class RelaySetupScreen(ModalScreen):
         border: thick $accent; background: $surface;
     }
     RelaySetupScreen Horizontal { height: auto; }
-    RelaySetupScreen .field-label { width: 18; padding: 1 1 0 0; }
+    RelaySetupScreen .field-label { width: 20; padding: 1 1 0 0; }
     RelaySetupScreen Select { width: 30; }
+    RelaySetupScreen .model-input { width: 24; margin-left: 1; }
+    RelaySetupScreen .model-input.-empty { display: none; }
+    RelaySetupScreen .model-row { height: auto; }
+    RelaySetupScreen .model-row.-empty { display: none; }
+    RelaySetupScreen #rs-models { height: auto; }
     RelaySetupScreen #rs-plan { width: 70; }
     RelaySetupScreen #rs-no-plan { color: $warning; padding: 1 0 0 0; }
     RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
     RelaySetupScreen Checkbox:focus { border: none; }
     RelaySetupScreen #rs-roles { height: auto; }
-    RelaySetupScreen .role-override { color: $accent; padding: 0 0 0 18; height: auto; }
+    RelaySetupScreen .role-override { color: $accent; padding: 0 0 0 20; height: auto; }
     RelaySetupScreen .role-override.-empty { display: none; }
     RelaySetupScreen #rs-committer { padding: 1 1 0 0; }
     RelaySetupScreen #rs-summary { width: 1fr; padding: 1 1 0 0; }
@@ -1405,6 +1421,7 @@ class RelaySetupScreen(ModalScreen):
             self._overrides = {}
         self._cleared_info: dict[str, str] = {}
         self._agents = relay_ops.relay_agents(root)
+        self._saved_models = {a: relay_ops.read_agent_model(root, a) for a in self._agents}
         self._roles = relay_ops.current_roles(root)
         self._configured_roles = dict(self._roles)
         self._configured = relay_ops.roles_configured(root)
@@ -1499,6 +1516,53 @@ class RelaySetupScreen(ModalScreen):
                 )
             chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
             chain.load(self._backup)
+            model_rows = []
+            initial_active = set(self._initial_model_agents())
+            for agent in self._agents:
+                row_items = [Label(f"Model ({agent}):", classes="field-label")]
+                model_opts = relay_ops.model_options_for_agent(agent)
+                current_model = self._saved_models.get(agent, "")
+                if model_opts is not None:
+                    opts = [("CLI default", "")]
+                    for lbl, val in model_opts:
+                        opts.append((lbl, val))
+                    known_vals = {v for _, v in opts}
+                    if current_model and current_model not in known_vals:
+                        opts.append((current_model, current_model))
+                    opts.append(("Other…", "other"))
+                    select_val = current_model if current_model in {v for _, v in opts} else "other"
+                    row_items.append(
+                        Select(
+                            opts,
+                            value=select_val,
+                            allow_blank=False,
+                            id=f"rs-model-{agent}",
+                        )
+                    )
+                    row_items.append(
+                        Input(
+                            value=current_model if select_val == "other" else "",
+                            placeholder="type model name",
+                            classes="model-input" + ("" if select_val == "other" else " -empty"),
+                            id=f"rs-model-input-{agent}",
+                        )
+                    )
+                else:
+                    row_items.append(
+                        Input(
+                            value=current_model,
+                            placeholder="CLI default",
+                            classes="model-input",
+                            id=f"rs-model-{agent}",
+                        )
+                    )
+                model_rows.append(
+                    Horizontal(
+                        *row_items,
+                        id=f"rs-model-row-{agent}",
+                        classes="model-row" + ("" if agent in initial_active else " -empty"),
+                    )
+                )
             roles_body = [
                 Static("Recommended for the agents you have.", id="rs-recommended"),
                 *rows,
@@ -1538,6 +1602,7 @@ class RelaySetupScreen(ModalScreen):
                 Label("Backup, used when an agent fails:"),
                 chain,
                 Static("", id="rs-meaning"),
+                Vertical(*model_rows, id="rs-models"),
             ]
         else:
             roles_body = [Label(NO_AGENTS_SETUP)]
@@ -1625,7 +1690,66 @@ class RelaySetupScreen(ModalScreen):
         # Nothing saved yet: open on Automatic rather than on no backup.
         self.query_one("#rs-backup", OrderedChain).load(self._backup or self._fill_backup())
         self._update_meaning()
+        self._update_models()
         self.call_after_refresh(self._ready)
+
+    def _initial_model_agents(self) -> list[str]:
+        in_use = [
+            self._roles.get("implementer"),
+            self._roles.get("tester"),
+            self._roles.get("reviewer"),
+            self._release,
+            *self._backup,
+        ]
+        res = []
+        for a in in_use:
+            if a and a in self._agents and a not in res:
+                res.append(a)
+        return res
+
+    def _chosen_release(self) -> str:
+        try:
+            if self.query("#rs-release"):
+                return self.query_one("#rs-release", Select).value
+        except Exception:
+            pass
+        return getattr(self, "_release", "human")
+
+    def _model_agents(self) -> list[str]:
+        if not self._agents:
+            return []
+        implementer, tester, reviewer, backup = self._chosen()
+        release = self._chosen_release()
+        res = []
+        for a in (implementer, tester, reviewer, release, *backup):
+            if a and a in self._agents and a not in res:
+                res.append(a)
+        return res
+
+    def _update_models(self) -> None:
+        if not self._agents:
+            return
+        active = set(self._model_agents())
+        for agent in self._agents:
+            if self.query(f"#rs-model-row-{agent}"):
+                row = self.query_one(f"#rs-model-row-{agent}")
+                row.set_class(agent not in active, "-empty")
+
+    def _chosen_model(self, agent: str) -> str:
+        if self.query(f"#rs-model-{agent}"):
+            widget = self.query_one(f"#rs-model-{agent}")
+            if isinstance(widget, Input):
+                return widget.value.strip()
+            if isinstance(widget, Select):
+                val = widget.value
+                if val == "other":
+                    if self.query(f"#rs-model-input-{agent}"):
+                        return self.query_one(f"#rs-model-input-{agent}", Input).value.strip()
+                    return ""
+                return val if val != Select.BLANK else ""
+        if self.query(f"#rs-model-input-{agent}"):
+            return self.query_one(f"#rs-model-input-{agent}", Input).value.strip()
+        return ""
 
     def _fill_backup(self) -> list[str]:
         """Names for an empty editor. Automatic is not a value Check stores."""
@@ -1641,10 +1765,7 @@ class RelaySetupScreen(ModalScreen):
                 self.query_one("#rs-meaning", Static).update("")
             return
         i, t, r, _ = self._chosen()
-        try:
-            rel = self.query_one("#rs-release", Select).value
-        except Exception:
-            rel = self._release
+        rel = self._chosen_release()
         self.query_one("#rs-meaning", Static).update(relay_ops.role_meaning(i, t, r, rel))
 
     def _ready(self) -> None:
@@ -1671,11 +1792,28 @@ class RelaySetupScreen(ModalScreen):
                 self._release = self.query_one("#rs-release", Select).value
         except Exception:
             pass
+        if event.select.id and event.select.id.startswith("rs-model-"):
+            agent = event.select.id.removeprefix("rs-model-")
+            if self.query(f"#rs-model-input-{agent}"):
+                inp = self.query_one(f"#rs-model-input-{agent}", Input)
+                if event.value == "other":
+                    inp.remove_class("-empty")
+                    inp.focus()
+                else:
+                    inp.add_class("-empty")
         self._invalidate()
         self._update_meaning()
+        self._update_models()
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         self._invalidate()
+        self._update_models()
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        if event.input.id and (
+            event.input.id.startswith("rs-model-") or event.input.id.startswith("rs-model-input-")
+        ):
+            self._invalidate()
 
     def _chosen(self) -> tuple[str, str, str, list[str]]:
         if not self._agents:
@@ -1741,6 +1879,7 @@ class RelaySetupScreen(ModalScreen):
         timeout = self.query_one("#rs-timeout", Select).value
         resolve_mode = self.query_one("#rs-resolve-mode", Select).value
         plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
+        models_to_save = {a: self._chosen_model(a) for a in self._model_agents()}
 
         def in_thread() -> None:
             try:
@@ -1753,6 +1892,10 @@ class RelaySetupScreen(ModalScreen):
                     relay_ops.save_timeout(root, timeout)
                 if resolve_mode != relay_ops.resolve_mode(root):
                     relay_ops.save_resolve_mode(root, resolve_mode)
+                for a, picked_model in models_to_save.items():
+                    current_model = relay_ops.read_agent_model(root, a)
+                    if picked_model != current_model:
+                        relay_ops.save_agent_model(root, a, picked_model)
                 agents_to_prepare = [chosen[0], chosen[1], chosen[2], *chosen[3]]
                 if release != "human":
                     agents_to_prepare.append(release)

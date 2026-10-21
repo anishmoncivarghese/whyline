@@ -1,4 +1,5 @@
 import subprocess
+import tomllib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pytest
@@ -1370,3 +1371,141 @@ def test_saving_resolve_mode_leaves_the_working_tree_clean(tmp_path: Path) -> No
 def test_saving_resolve_mode_outside_git_still_works(tmp_path: Path) -> None:
     relay_ops.save_resolve_mode(tmp_path, "auto")
     assert relay_ops.resolve_mode(tmp_path) == "auto"
+
+
+def test_save_and_read_agent_model_lands_in_right_place(repo):
+    # claude: built-in adapter uses model = "..."
+    relay_ops.save_agent_model(repo, "claude", "claude-opus-5-5-high")
+    assert relay_ops.read_agent_model(repo, "claude") == "claude-opus-5-5-high"
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "[agents.claude]" in text
+    assert 'model = "claude-opus-5-5-high"' in text
+
+    # codex: built-in adapter uses model = "..."
+    relay_ops.save_agent_model(repo, "codex", "gpt-5.6-sol")
+    assert relay_ops.read_agent_model(repo, "codex") == "gpt-5.6-sol"
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "[agents.codex]" in text
+    assert 'model = "gpt-5.6-sol"' in text
+
+    # antigravity: generic adapter inserts --model in command
+    relay_ops.save_agent_model(repo, "antigravity", "gemini-3.8-flash-high")
+    assert relay_ops.read_agent_model(repo, "antigravity") == "gemini-3.8-flash-high"
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "[agents.antigravity]" in text
+    assert 'adapter = "generic"' in text
+    assert '"--model", "gemini-3.8-flash-high"' in text
+
+    # grok: generic adapter inserts --model in command
+    relay_ops.save_agent_model(repo, "grok", "grok-4.6")
+    assert relay_ops.read_agent_model(repo, "grok") == "grok-4.6"
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "[agents.grok]" in text
+    assert 'adapter = "generic"' in text
+    assert '"--model", "grok-4.6"' in text
+
+    # Saving is a config.toml-only commit
+    assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        ".whyline/relay/config.toml"
+    ]
+
+
+def test_cli_default_removes_model(repo):
+    relay_ops.save_agent_model(repo, "claude", "opus")
+    relay_ops.save_agent_model(repo, "codex", "gpt-5.6-sol")
+    relay_ops.save_agent_model(repo, "antigravity", "gemini-3.8-flash-high")
+    relay_ops.save_agent_model(repo, "grok", "grok-4.6")
+
+    # CLI default clears each
+    relay_ops.save_agent_model(repo, "claude", "")
+    assert relay_ops.read_agent_model(repo, "claude") == ""
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "opus" not in text
+
+    relay_ops.save_agent_model(repo, "codex", "")
+    assert relay_ops.read_agent_model(repo, "codex") == ""
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "gpt-5.6-sol" not in text
+
+    relay_ops.save_agent_model(repo, "antigravity", "")
+    assert relay_ops.read_agent_model(repo, "antigravity") == ""
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "gemini-3.8-flash-high" not in text
+
+    relay_ops.save_agent_model(repo, "grok", "")
+    assert relay_ops.read_agent_model(repo, "grok") == ""
+    text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert "grok-4.6" not in text
+
+
+def test_generic_command_keeps_other_flags_and_order(repo):
+    config_file = repo / ".whyline" / "relay" / "config.toml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        '[agents.grok]\nadapter = "generic"\n'
+        'command = ["grok", "--output-format", "json", "--permission-mode", "dontAsk", "-p"]\n',
+        encoding="utf-8",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add grok")
+
+    # Insert model keeps all flags and order
+    relay_ops.save_agent_model(repo, "grok", "grok-4")
+    raw = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    assert raw["agents"]["grok"]["command"] == [
+        "grok", "--output-format", "json", "--permission-mode", "dontAsk", "--model", "grok-4", "-p"
+    ]
+
+    # Replace model in place keeps all flags and order
+    relay_ops.save_agent_model(repo, "grok", "grok-4.6")
+    raw = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    assert raw["agents"]["grok"]["command"] == [
+        "grok", "--output-format", "json", "--permission-mode", "dontAsk", "--model", "grok-4.6", "-p"
+    ]
+
+    # CLI default removes --model and keeps all other flags in order
+    relay_ops.save_agent_model(repo, "grok", "")
+    raw = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    assert raw["agents"]["grok"]["command"] == [
+        "grok", "--output-format", "json", "--permission-mode", "dontAsk", "-p"
+    ]
+
+
+def test_antigravity_models_caching_and_failure():
+    relay_ops.clear_antigravity_models_cache()
+
+    calls = []
+
+    class FakeProc:
+        returncode = 0
+        stdout = (
+            "Fetching available models...\n"
+            "gemini-4-argon-high\tGemini 4 Argon (High)\n"
+            "claude-opus-5-5-high\tClaude Opus 5.5 (High)\n"
+        )
+
+    def fake_runner(*args, **kwargs):
+        calls.append(args)
+        return FakeProc()
+
+    models = relay_ops.antigravity_models(runner=fake_runner)
+    assert models == [
+        ("Gemini 4 Argon (High)", "gemini-4-argon-high"),
+        ("Claude Opus 5.5 (High)", "claude-opus-5-5-high"),
+    ]
+    assert len(calls) == 1
+
+    # Cached for the session: second call does not run the subprocess again
+    cached = relay_ops.antigravity_models(runner=fake_runner)
+    assert cached == models
+    assert len(calls) == 1
+
+    # Failure falls back to None
+    relay_ops.clear_antigravity_models_cache()
+
+    def failing_runner(*args, **kwargs):
+        raise FileNotFoundError("agy not found")
+
+    assert relay_ops.antigravity_models(runner=failing_runner) is None
+    relay_ops.clear_antigravity_models_cache()
+
