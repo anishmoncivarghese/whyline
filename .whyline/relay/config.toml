@@ -13,7 +13,7 @@ command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format"
 
 [agents.antigravity]
 adapter = "generic"
-command = ["agy", "--output-format", "json", "--model", "claude-opus-5-5-high", "--mode", "accept-edits", "--add-dir", ".", "--new-project", "-p"]
+command = ["agy", "--output-format", "json", "--model", "gemini-3.8-flash-high", "--mode", "accept-edits", "--add-dir", ".", "--new-project", "-p"]
 
 [agents.grok]
 adapter = "generic"
@@ -97,4 +97,4 @@ review = "codex"
 test = ""
 
 [backup]
-chain = ["antigravity", "grok"]
+chain = ["antigravity", "claude"]
