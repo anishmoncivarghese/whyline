@@ -610,8 +610,33 @@ def _run_login(argv: list[str]) -> int:
         return 127
 
 
+def offer_reinstall(prompt_session, print_fn, exec_fn, *, install=None, problem=None) -> bool:
+    """The same Reinstall the mouse console offers, as a question. True when
+    it ran and the console was re-executed."""
+    from whyline import __version__
+    from whyline.console import update
+
+    try:
+        if (problem or update.install_problem)() is not None:
+            return False
+    except Exception:
+        return False
+    answer = _ask(prompt_session, f"Reinstall whyline {__version__} now? [y/N] ")
+    if answer is None or answer.lower() not in ("y", "yes"):
+        return False
+    print_fn("Running: " + " ".join(update.install_argv(__version__, reinstall=True)))
+    code = (install or update.install)(__version__, on_line=print_fn, reinstall=True)
+    if code != 0:
+        print_fn(update.failed_text(code, __version__))
+        return False
+    print_fn(update.done_text(__version__))
+    exec_fn("whyline", ["whyline", "console"])
+    return True
+
+
 def run(
-    root: Path, *, print_fn=print, prompt_session=None, exec_fn=None, login_fn=None
+    root: Path, *, print_fn=print, prompt_session=None, exec_fn=None, login_fn=None,
+    install_fn=None, problem_fn=None,
 ) -> None:
     if exec_fn is None:
         exec_fn = _exec
@@ -688,6 +713,11 @@ def run(
             print_fn("Cancelled.")
             continue
         _print_event(session.record(event), print_fn)
+        if event.kind == "error" and event.text == _RELAY_MISSING:
+            if offer_reinstall(
+                prompt_session, print_fn, exec_fn, install=install_fn, problem=problem_fn
+            ):
+                return
 
 
 def busy_label(session: ConsoleSession) -> str:

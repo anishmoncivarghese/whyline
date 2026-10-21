@@ -49,6 +49,7 @@ from whyline.console import (
     plan_job,
     relay_ops,
     repo_setup,
+    update,
 )
 from whyline.console.attachments_ui import (
     AttachMenuScreen,
@@ -62,6 +63,7 @@ from whyline.console.repl import (
     BRAINSTORM_AGENTS,
     RESET_BUSY_TEXT,
     _HOME_REFUSAL,
+    _RELAY_MISSING,
     _UNSET,
     _accepts_kwarg,
     _agents_command as agents_command_event,
@@ -737,6 +739,8 @@ class WhylineConsoleApp(App):
     #resolve-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
+    /* Shown only once there is something to update to. */
+    #update, #update-restart { display: none; }
     #split { height: 1fr; }
     #split.stacked { layout: vertical; }
     #console-column { width: 1fr; height: 1fr; }
@@ -768,6 +772,15 @@ class WhylineConsoleApp(App):
         self._dispatch_token: object | None = None
         self._cancel_event = None
         self._exec_after: tuple[str, list[str]] | None = None
+        self._update_check = update.check
+        self._update_problem = update.install_problem
+        self._update_install = update.install
+        self._update_offer: tuple[str, str | None, bool] | None = None  # version, notes, reinstall
+        self._update_note: str | None = None
+        self._update_running = False
+        self._update_installed = False
+        self._update_problem_text: Any = _UNSET
+        self._update_timer: Any = None
         self._login_fn = _run_login
         self._busy_text = ""
         self._busy_since = 0.0
@@ -1257,6 +1270,128 @@ class WhylineConsoleApp(App):
         warning = home_repo_warning(self.session.root, Path.cwd())
         if warning:
             self.render_event(SessionEvent(kind="error", text=warning))
+        self.run_worker(self._look_for_update, thread=True)
+
+    def _look_for_update(self) -> None:
+        """Runs in a worker thread: both the PyPI request and `uv tool dir`
+        can take seconds, and the console must not wait on either."""
+        from whyline import __version__
+
+        info = self._update_check(__version__)
+        if info is not None:
+            self._install_problem()
+            self.call_from_thread(self._update_found, info)
+
+    def _install_problem(self) -> str | None:
+        """How whyline was installed when the console can't update it; None
+        when it can. Asked once: the answer can't change while it runs."""
+        if self._update_problem_text is _UNSET:
+            try:
+                self._update_problem_text = self._update_problem()
+            except Exception as error:
+                self._update_problem_text = (
+                    f"The console could not tell how whyline was installed ({error})."
+                )
+        return self._update_problem_text
+
+    def _update_found(self, info: "update.UpdateInfo") -> None:
+        self.title = f"whyline {info.version} is available"
+        self._offer_update(info.version, info.notes_url, reinstall=False)
+
+    def _offer_update(self, version: str, notes_url: str | None, *, reinstall: bool) -> None:
+        """Shows Update… when the console can install it itself. Otherwise
+        Help says how whyline was installed, and nothing is offered."""
+        if self._update_running or self._update_installed:
+            return
+        if self._update_offer is not None and not self._update_offer[2]:
+            return  # a newer release already on offer also restores what's missing
+        problem = self._install_problem()
+        if problem is not None:
+            self._update_note = problem
+            return
+        self._update_offer = (version, notes_url, reinstall)
+        try:
+            button = self._main("#update", Button)
+        except (NoMatches, IndexError):
+            return
+        if reinstall and not button.display:
+            self.render_event(SessionEvent(
+                kind="output", text=f"Update… below reinstalls whyline {version} to restore it."))
+        button.display = True
+        self._sync_update_button()
+        if self._update_timer is None:
+            self._update_timer = self.set_interval(1.0, self._sync_update_button)
+
+    def _update_blocked(self) -> bool:
+        return self._relay_running() or self._live_relay() is not None
+
+    def _sync_update_button(self) -> None:
+        try:
+            button = self._main("#update", Button)
+        except (NoMatches, IndexError):
+            return
+        blocked = self._update_blocked()
+        button.disabled = blocked or self._update_running
+        button.tooltip = update.RELAY_RUNNING if blocked else None
+
+    def _open_update(self) -> None:
+        if self._update_offer is None or self._update_running:
+            return
+        if self._update_blocked():
+            self._sync_update_button()
+            self.render_event(SessionEvent(kind="error", text=update.RELAY_RUNNING))
+            return
+        from whyline import __version__
+
+        version, notes_url, reinstall = self._update_offer
+        text = update.confirm_text(__version__, version, notes_url, reinstall=reinstall)
+        self.push_screen(ConfirmScreen(text, "Update"), self._update_confirmed)
+
+    def _update_confirmed(self, confirmed: bool) -> None:
+        if not confirmed or self._update_offer is None:
+            return
+        if self._update_blocked():
+            self.render_event(SessionEvent(kind="error", text=update.RELAY_RUNNING))
+            return
+        version, _notes, reinstall = self._update_offer
+        self._update_running = True
+        self._sync_update_button()
+        self.render_event(SessionEvent(
+            kind="output",
+            text="Running: " + " ".join(update.install_argv(version, reinstall=reinstall)),
+        ))
+
+        def work() -> None:
+            def line(text: str) -> None:
+                self.call_from_thread(self.render_event, SessionEvent(kind="output", text=text))
+
+            try:
+                code = self._update_install(version, on_line=line, reinstall=reinstall)
+            except Exception as error:
+                self.call_from_thread(self.render_event, SessionEvent(kind="error", text=str(error)))
+                code = 1
+            self.call_from_thread(self._update_finished, version, code)
+
+        self.run_worker(work, thread=True)
+
+    def _update_finished(self, version: str, code: int) -> None:
+        from whyline import __version__
+
+        self._update_running = False
+        if code != 0:
+            self.render_event(SessionEvent(kind="error", text=update.failed_text(code, __version__)))
+            self._sync_update_button()
+            return
+        self._update_offer = None
+        self._update_installed = True
+        self._main("#update", Button).display = False
+        self._main("#update-restart", Button).display = True
+        self.render_event(SessionEvent(kind="output", text=update.done_text(version)))
+
+    def _restart_console(self) -> None:
+        binary, argv = update.RESTART
+        self._exec_after = (binary, list(argv))
+        self.exit()
 
     def _restore_release_task(self) -> bool:
         """Picks the release task back up from the relay's saved pause. The
@@ -1354,7 +1489,7 @@ class WhylineConsoleApp(App):
         Enable and disable stay in _sync_relay_buttons and the stop path."""
         wanted = set(_MODE_BUTTONS.get(self.session.mode, ())) | set(_SHARED_BUTTONS)
         for button in self._main("#controls").query(Button):
-            if button.id in ("relay-resolve", "relay-retry-stage"):
+            if button.id in ("relay-resolve", "relay-retry-stage", "update", "update-restart"):
                 continue
             button.display = button.id in wanted
         self._main("#attach").display = self.session.mode == "chat"
@@ -2695,6 +2830,8 @@ class WhylineConsoleApp(App):
                 Button("Files", id="see-files"),
                 Button("Stop", id="stop", disabled=True),
                 Button("Help", id="help"),
+                Button("Update…", id="update"),
+                Button("Restart", id="update-restart", variant="success"),
                 Button("Copy", id="copy"),
                 id="controls",
             ),
@@ -2715,6 +2852,10 @@ class WhylineConsoleApp(App):
 
     def render_event(self, event: SessionEvent) -> None:
         self.session.record(event)
+        if event.kind == "error" and event.text == _RELAY_MISSING:
+            from whyline import __version__
+
+            self._offer_update(__version__, None, reinstall=True)
         try:
             transcript = self._main("#transcript", RichLog)
         except (NoMatches, IndexError):  # the console is closing; the event is still recorded
@@ -2797,6 +2938,10 @@ class WhylineConsoleApp(App):
             self._open_ideas()
         elif button_id == "copy":
             self._copy_transcript()
+        elif button_id == "update":
+            self._open_update()
+        elif button_id == "update-restart":
+            self._restart_console()
         elif button_id == "relay-run":
             self._run_flow_start()
         elif button_id == "relay-plan":
@@ -3319,6 +3464,8 @@ class WhylineConsoleApp(App):
             )
             return True
         self.render_event(event)
+        if command == "/help" and self._update_note:
+            self.render_event(SessionEvent(kind="output", text=self._update_note))
         if command == "/reset-backup" and event.kind == "output":
             self._cb_reload_backup_options()
             self._cb_sync_failover()
@@ -5319,14 +5466,48 @@ def _exec(binary: str, argv: list[str]) -> None:
     os.execvp(binary, argv)
 
 
-def launch(root: Path, *, exec_fn=None) -> None:
-    if not TUI_AVAILABLE:
-        raise TuiUnavailable(
-            "The mouse TUI needs textual, which is missing from this "
-            "install. Run: uv tool install --reinstall whyline"
-        )
+_TEXTUAL_MISSING = (
+    "The mouse TUI needs textual, which is missing from this "
+    "install. Run: uv tool install --reinstall whyline"
+)
+
+
+def _offer_reinstall(ask, print_fn, install, problem) -> bool:
+    """Without textual there is no screen to click, so the same Reinstall is
+    a terminal question. True once the reinstall succeeded."""
+    from whyline import __version__
+
+    try:
+        if problem() is not None:
+            return False
+        answer = ask(f"{_TEXTUAL_MISSING}\nReinstall whyline {__version__} now? [y/N] ")
+    except (EOFError, KeyboardInterrupt):
+        return False
+    if answer.strip().lower() not in ("y", "yes"):
+        return False
+    print_fn("Running: " + " ".join(update.install_argv(__version__, reinstall=True)))
+    code = install(__version__, on_line=print_fn, reinstall=True)
+    if code != 0:
+        print_fn(update.failed_text(code, __version__))
+        return False
+    return True
+
+
+def launch(root: Path, *, exec_fn=None, ask=None, print_fn=print,
+           install=None, problem=None) -> None:
     if exec_fn is None:
         exec_fn = _exec
+    if not TUI_AVAILABLE:
+        import sys
+
+        if ask is None and sys.stdin.isatty():
+            ask = input
+        if ask is not None and _offer_reinstall(
+            ask, print_fn, install or update.install, problem or update.install_problem
+        ):
+            exec_fn(*update.RESTART)
+            return
+        raise TuiUnavailable(_TEXTUAL_MISSING)
     app = WhylineConsoleApp(root=root)
     app.run()
     if app._exec_after is not None:

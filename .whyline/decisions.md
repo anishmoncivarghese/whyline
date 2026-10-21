@@ -19923,3 +19923,81 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 39f885fe97e241da8558ef0a9df79bbc -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:17:32.477Z"} -->
+
+## 2026-10-21 — Missing whyline-relay/textual offers the same Update… button, running uv tool install --reinstall whyline@<current>
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** TGS-4
+
+**Because:** Plain uv tool install whyline@<v> is a no-op when that version is already installed, which is exactly the broken-dependency case; the button keeps the Update… label the task names, and only the argv gains --reinstall
+
+**Rejected:**
+
+- Plain uv tool install for the reinstall too — uv reports already installed and repairs nothing
+- A separate Reinstall… label (the earlier draft) — the task asks for the same Update…
+
+**Files:** src/whyline/console/update.py, src/whyline/console/tui.py, src/whyline/console/repl.py
+
+<!-- whyline-event: 21a813325b91424688d12b804810266c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:29:51.359Z"} -->
+
+## 2026-10-21 — Stub update.check and update.install_problem in tests/console/conftest.py for every console test
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** TGS-4
+
+**Because:** Every TUI test starts the console, which would otherwise ask PyPI (5s timeout) and run uv tool dir; test_update.py captures the real functions before the stub and sets its own fakes
+
+**Rejected:**
+
+- Leave conftest untouched as the task file list says — the whole console suite would hit the network
+
+**Files:** tests/console/conftest.py
+
+<!-- whyline-event: e2d6191a05264eda8c6267af71d1d817 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:29:51.426Z"} -->
+
+## 2026-10-21 — Ask install_problem in the startup worker thread and cache it for the session
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** TGS-4
+
+**Because:** It runs uv tool dir (up to 5s); calling it from _update_found on the UI thread could freeze the console at start
+
+**Rejected:**
+
+- Call it on every offer on the UI thread — blocks the event loop
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: eac60aea175442e7893ec8b16ac839dc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:29:51.488Z"} -->
+
+## 2026-10-21 — TGS-4 passes round 2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** TGS-4
+
+**Because:** The 31 focused console-update tests and the complete project test suite both exited 0; update discovery, install streaming/failure behavior, uv-install gating, relay gating, and console integration are covered without regressions
+
+**Files:** tests/console/test_update.py
+
+<!-- whyline-event: 783217c07af54a2085c3a775072a048c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:42:03.164Z"} -->
+
+## 2026-10-21 — Approve TGS-4 console self-update implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TGS-4
+
+**Because:** The working-tree diff implements daily cached PyPI discovery, uv-tool eligibility checks, click-gated argv-only installs with streamed output, restart and missing-dependency recovery, and relay blocking; all 31 focused tests and the complete pytest suite passed independently
+
+**Files:** src/whyline/console/update.py
+
+<!-- whyline-event: ad1a980226254494b691bd9c76909522 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T06:50:25.259Z"} -->

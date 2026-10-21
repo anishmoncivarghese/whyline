@@ -42,3 +42,14 @@ def installed_agents(monkeypatch):
 
     install("antigravity", "claude", "codex", "grok")
     return install
+
+
+@pytest.fixture(autouse=True)
+def _no_update_check(monkeypatch):
+    """The console asks PyPI for a newer whyline when it starts. A test must
+    never reach the network or offer to reinstall the developer's whyline;
+    tests/console/test_update.py sets its own fakes."""
+    from whyline.console import update
+
+    monkeypatch.setattr(update, "check", lambda current, **_kwargs: None)
+    monkeypatch.setattr(update, "install_problem", lambda **_kwargs: "whyline runs from a test.")
