@@ -262,7 +262,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: three fake rejections sharing a theme give the message and the stronger-model option first; three unrelated ones keep Retry stage first; with no handoffs, evidence falls back to the logs; the summaries render with markup off.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] RSV-4: Auto gets past a cap once per task
+- [x] RSV-4: Auto gets past a cap once per task
   Edit Auto's choice in `src/whyline/console/recovery.py` (`auto_option`, `_HUMAN_KINDS`) and the recovery log in `recovery.json`, with tests in `tests/console/test_recovery.py`. Today visit-cap and round-cap are human-only, so Auto either stops or applies a fix that cannot help.
   Auto may apply one cap option per task, recorded in `recovery.json` by task id, never once per round. At a visit cap that is Retry stage, and at a round cap Give it 6 more rounds. When RSV-3 finds a repeated defect and Set up lists a stronger model for the implementer that is not out of quota (AGS-5), Auto does not choose the model: it stops and tells you which model it would use. A second cap on the same task always stops for you, naming the first recovery.
   Tests: the first visit cap on a task is retried by Auto; the second stops and names the first; a round cap raises max_rounds once; a repeated-defect cap stops with the suggested model; other kinds keep today's behaviour.
