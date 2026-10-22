@@ -20796,3 +20796,65 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 334c35e7efc54ad592e96bff7226ede2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:19:16.361Z"} -->
+
+## 2026-10-22 — At a cap, diagnose drops dirty-paused-work only when a task is saved, and the cap problem carries a non-recommended Stash with file/line counts
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSV-1
+
+**Because:** The uncommitted files are the capped task's own draft; Retry stage and more rounds resume with --allow-dirty to keep them, while dirty-other (no saved task) still offers its own Stash so it is not duplicated
+
+**Rejected:**
+
+- Skipping every dirty-tree problem at a cap — would hide Stash entirely when no task is saved
+- Leaving Retry stage as plain --retry-stage — the relay refuses a dirty tree without --allow-dirty, so the cap option would not keep the draft
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: bbd3a653d1de4b088a92882650d9021e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:39:53.824Z"} -->
+
+## 2026-10-22 — Split the task returns a RelayPlanScreen subclass from recovery.apply that forwards its result to the app's _plan_chosen
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSV-1
+
+**Because:** Resolve pushes returned screens with the Set up callback, which ignores plan results; forwarding keeps the change inside recovery.py as the task required, and the screen itself edits nothing
+
+**Rejected:**
+
+- Changing tui._resolve_option_finished to route plan screens — the task said change nothing outside recovery.py and its tests
+- Adding a public max_rounds writer to whyline_relay.setup — out of scope; more-rounds reuses setup._write_config and _set_unquoted_top_level, the path the timeout setter uses
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 3d49373d57f54420acb1b65bc0e77399 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:39:56.482Z"} -->
+
+## 2026-10-22 — RSV-1 round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-1
+
+**Because:** The focused recovery suite and the full project suite both exited 0, covering cap ordering, round-cap actions, config-only round increases with dirty resume, and stash confirmation counts without regressions
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: fddbce208c3049e487ca092d93d440ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:47:48.815Z"} -->
+
+## 2026-10-22 — RSV-1 round 3 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-1
+
+**Because:** The cap problem is prioritized, dirty paused-work cannot trigger the futile resume path, round-cap actions preserve the draft while committing only max_rounds, stash is explicit and counted, and both the focused and full suites pass independently
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 3f6789e41313438996c411f06b350199 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:56:46.689Z"} -->

@@ -2248,6 +2248,118 @@ def pause_message(
         return reason or f"{agent or 'agent'} hit a usage or rate limit; try again when it resets"
 
 
+_CAP_KINDS = ("visit-cap", "round-cap")
+
+MORE_ROUNDS = 6
+
+
+def _stash_counts(root_path: Path) -> tuple[int, int, int]:
+    """Files, added lines and deleted lines `git stash push -u` would set aside."""
+    files: set[str] = set()
+    added = deleted = 0
+    try:
+        numstat = subprocess.run(
+            ["git", "diff", "--numstat", "HEAD"],
+            cwd=root_path,
+            capture_output=True,
+            text=True,
+        ).stdout
+        for line in numstat.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            files.add(parts[2])
+            if parts[0].isdigit() and parts[1].isdigit():
+                added += int(parts[0])
+                deleted += int(parts[1])
+        others = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=root_path,
+            capture_output=True,
+            text=True,
+        ).stdout
+        for rel in (p for p in others.split("\0") if p):
+            files.add(rel)
+            try:
+                data = (root_path / rel).read_bytes()
+            except OSError:
+                continue
+            if b"\0" in data:
+                continue
+            added += data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+    except Exception:
+        pass
+    return len(files), added, deleted
+
+
+def _stash_cap_option(root_path: Path, task_id: str) -> Option:
+    files, added, deleted = _stash_counts(root_path)
+    msg = f"whyline resolve {task_id}" if task_id else "whyline resolve"
+    noun = "file" if files == 1 else "files"
+    return Option(
+        "stash",
+        "Stash changes",
+        f'git stash push -u -m "{msg}" (sets aside {files} {noun}, +{added} -{deleted} lines)',
+        recommended=False,
+        confirm=True,
+    )
+
+
+def _current_max_rounds(root_path: Path) -> int:
+    from whyline_relay import config as relay_config
+
+    try:
+        return int(relay_config.load(root_path).max_rounds)
+    except Exception:
+        return int(relay_config.DEFAULTS["max_rounds"])
+
+
+def _split_task_screen(root_path: Path, task_id: str, task_text: str) -> Any:
+    """The Plan screen, filled in to split `task_id`. It edits nothing itself."""
+    from whyline import account
+    from whyline.console.relay_screens import RelayPlanScreen
+    from textual.widgets import TextArea
+
+    class SplitTaskPlanScreen(RelayPlanScreen):
+        def on_mount(self) -> None:
+            super().on_mount()
+            lines = [f"Split {task_id or 'the capped task'} into smaller tasks, each able to finish within the round cap."]
+            if task_text:
+                lines += ["", task_text]
+            self.query_one("#rp-description", TextArea).text = "\n".join(lines)
+
+        def dismiss(self, result: Any = None) -> Any:
+            # Resolve pushes its screens with the Set up callback; hand a plan
+            # result to the same handler the Plan button uses.
+            app = self.app
+            done = super().dismiss(None)
+            if result is not None and hasattr(app, "_plan_chosen"):
+                app.call_later(app._plan_chosen, result)
+            return done
+
+    return SplitTaskPlanScreen(
+        root_path,
+        account.agent_status(root_path),
+        "claude",
+        source="draft",
+    )
+
+
+def _saved_task_text(root_path: Path, plan_name: str, task_id: str) -> str:
+    if not task_id:
+        return ""
+    plan_file = root_path / (plan_name or "plan.md")
+    if not plan_file.is_file():
+        return ""
+    try:
+        from whyline_relay import plan as plan_mod
+
+        matched = plan_mod.find(plan_mod.parse(plan_file.read_text(encoding="utf-8")), task_id)
+        return matched.text if matched else ""
+    except Exception:
+        return ""
+
+
 def diagnose(
     root: Path | str,
     fail_lines: list[str] | None = None,
@@ -2275,6 +2387,13 @@ def diagnose(
 
     if not reason and not fails and saved_pause_reason:
         reason = saved_pause_reason
+
+    from whyline.console import adapters
+
+    # A cap pause leaves the capped task's own draft uncommitted; the cap's
+    # options keep it, so it is not offered as a separate dirty-tree problem.
+    cap_kind = adapters.failure_kind(reason)
+    at_cap = cap_kind in _CAP_KINDS
 
     problems: list[Problem] = []
 
@@ -2649,6 +2768,8 @@ def diagnose(
                     options=opts,
                 )
             )
+        elif at_cap and saved_task_id:
+            pass
         elif bool(saved_task_id):
             status_out = ""
             diff_out = ""
@@ -2709,7 +2830,9 @@ def diagnose(
                 pass
             evidence_lines = [l for l in status_out.splitlines() if l.strip()] or [p for p in dirty_paths]
             opts = [
-                Option(
+                _stash_cap_option(root_path, "")
+                if at_cap
+                else Option(
                     "stash",
                     "Stash changes",
                     'git stash push -u -m "whyline resolve"',
@@ -2913,26 +3036,58 @@ def diagnose(
                 )
             )
 
-    # 7. visit-cap
-    if adapters.failure_kind(reason) == "visit-cap":
-        opts = [
-            Option(
-                "retry-stage",
-                "Retry stage",
-                "whyline relay resume --retry-stage",
-                recommended=True,
-                confirm=False,
-            ),
+    # 7. visit-cap and round-cap: listed first, ahead of every other problem
+    if at_cap:
+        dirty_cap = bool(dirty_paths) and dirty_paths != [".whyline/decisions.md"]
+        if cap_kind == "visit-cap":
+            retry_detail = "whyline relay resume --retry-stage"
+            if dirty_cap:
+                retry_detail += " --allow-dirty"
+            cap_opts = [
+                Option(
+                    "retry-stage",
+                    "Retry stage",
+                    retry_detail,
+                    recommended=True,
+                    confirm=False,
+                ),
+            ]
+            cap_summary = f"Stage visit cap reached: {reason}"
+        else:
+            cur_rounds = _current_max_rounds(root_path)
+            cap_opts = [
+                Option(
+                    "more-rounds",
+                    f"Give it {MORE_ROUNDS} more rounds",
+                    f"raise max_rounds {cur_rounds} -> {cur_rounds + MORE_ROUNDS} in .whyline/relay/config.toml "
+                    'as a setup commit, then resume and keep changes: ["resume", "--allow-dirty"]',
+                    recommended=True,
+                    confirm=False,
+                ),
+                Option(
+                    "split-task",
+                    "Split the task",
+                    f"open the Plan screen on {saved_task_id or 'the capped task'}; edits nothing itself",
+                    recommended=False,
+                    confirm=False,
+                ),
+            ]
+            cap_summary = f"Round cap reached: {reason}"
+        # With no saved task the dirty-other problem already offers Stash.
+        if dirty_cap and saved_task_id:
+            cap_opts.append(_stash_cap_option(root_path, saved_task_id))
+        cap_opts += [
             Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
             Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
         ]
-        problems.append(
+        problems.insert(
+            0,
             Problem(
-                id="visit-cap",
-                summary=f"Stage visit cap reached: {reason}",
+                id=cap_kind,
+                summary=cap_summary,
                 evidence=[reason] if reason else fails,
-                options=opts,
-            )
+                options=cap_opts,
+            ),
         )
 
     # 8. logged-out
@@ -3171,8 +3326,34 @@ def apply(
         return f"Set role {role} to {agent} and resumed relay."
 
     if option_id == "retry-stage":
+        if "--allow-dirty" in matched_opt.detail:
+            launch(["resume", "--retry-stage", "--allow-dirty"])
+            return "Resumed relay with --retry-stage, keeping uncommitted changes."
         launch(["resume", "--retry-stage"])
         return "Resumed relay with --retry-stage."
+
+    if option_id == "more-rounds":
+        from whyline_relay import setup as relay_setup
+
+        new_rounds = _current_max_rounds(root_path) + MORE_ROUNDS
+        # Commits config.toml alone; the capped task's draft stays uncommitted.
+        relay_setup._write_config(
+            root_path,
+            lambda text: relay_setup._set_unquoted_top_level(text, "max_rounds", new_rounds),
+            f"setup: max_rounds {new_rounds}",
+            True,
+        )
+        launch(["resume", "--allow-dirty"])
+        return f"Saved max_rounds {new_rounds} and resumed relay with changes kept."
+
+    if option_id == "split-task":
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        task_id = (st.task_id if st and st.task_id else "") or str(st_dict.get("task_id") or "")
+        plan_name = (st.plan if st and st.plan else "") or str(st_dict.get("plan") or "")
+        return _split_task_screen(root_path, task_id, _saved_task_text(root_path, plan_name, task_id))
 
     if option_id == "ask-agent":
         return "Asked agent for recommendation."

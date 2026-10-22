@@ -3750,3 +3750,145 @@ def test_antigravity_override_ignores_unnamed_current_state_log(tmp_path: Path, 
     assert recovery.find_out_until_models(repo, now=display_time).get("antigravity") == (
         "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
     )
+
+
+_VISIT_CAP_REASON = "AGS-5 hit stage 'draft''s 3-visit cap without reaching \"@complete\""
+_ROUND_CAP_REASON = "AGS-5 hit the 3-round cap without an approval"
+
+
+def _capped_repo(path: Path, reason: str) -> Path:
+    """A scratch repo paused at a cap with AGS-5's draft left uncommitted."""
+    import subprocess
+
+    repo = _init_scratch_repo(path)
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "src" / "work.py").write_text("a = 1\nb = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    (repo / "src" / "work.py").write_text("a = 1\nc = 3\nd = 4\n", encoding="utf-8")
+    (repo / "src" / "new.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "AGS-5", "paused_reason": reason, "stage": "draft"}),
+        encoding="utf-8",
+    )
+    return repo
+
+
+def _dirty_status(repo: Path) -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout
+
+
+def test_visit_cap_with_dirty_tree_lists_cap_first_and_no_resume_keep(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    assert probs[0].id == "visit-cap"
+    assert "dirty-paused-work" not in [p.id for p in probs]
+    assert all(o.id != "resume-keep" for p in probs for o in p.options)
+    retry = probs[0].options[0]
+    assert retry.id == "retry-stage" and retry.recommended is True
+    assert retry.detail.endswith("--allow-dirty")
+
+    launched: list[list[str]] = []
+    recovery.apply(repo, probs[0], "retry-stage", launch=launched.append)
+    assert launched == [["resume", "--retry-stage", "--allow-dirty"]]
+
+
+def test_round_cap_offers_more_rounds_and_split_task(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+
+    probs = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+
+    assert probs[0].id == "round-cap"
+    assert "dirty-paused-work" not in [p.id for p in probs]
+    ids = [o.id for o in probs[0].options]
+    assert ids[:2] == ["more-rounds", "split-task"]
+    assert probs[0].options[0].label == "Give it 6 more rounds"
+    assert probs[0].options[0].recommended is True
+    assert probs[0].options[1].label == "Split the task"
+    assert probs[0].options[1].recommended is False
+    assert ids[-2:] == ["show", "cancel"]
+
+
+def test_more_rounds_commits_only_config_and_resumes_allow_dirty(tmp_path: Path) -> None:
+    import subprocess
+    import tomllib
+
+    repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+    config = repo / ".whyline" / "relay" / "config.toml"
+    config.write_text(
+        'plan = "plan.md"\nmax_rounds = 18\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "rounds 18"], cwd=repo, check=True)
+    dirty_before = _dirty_status(repo)
+    count_before = _commit_count(repo)
+
+    probs = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+    assert "18 -> 24" in probs[0].options[0].detail
+    launched: list[list[str]] = []
+    recovery.apply(repo, probs[0], "more-rounds", launch=launched.append)
+
+    assert _commit_count(repo) == count_before + 1
+    changed = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.split()
+    assert changed == [".whyline/relay/config.toml"]
+    saved = tomllib.loads(config.read_text(encoding="utf-8"))
+    assert saved["max_rounds"] == 24
+    assert saved["roles"] == {"implementer": "codex", "reviewer": "claude"}
+    assert _dirty_status(repo) == dirty_before
+    assert launched == [["resume", "--allow-dirty"]]
+
+
+def test_split_task_opens_plan_screen_and_edits_nothing(tmp_path: Path, monkeypatch) -> None:
+    from whyline import account
+    from whyline.console.relay_screens import RelayPlanScreen
+
+    repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+    monkeypatch.setattr(account, "agent_status", lambda root: {})
+    dirty_before = _dirty_status(repo)
+    count_before = _commit_count(repo)
+
+    probs = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, probs[0], "split-task", launch=launched.append)
+
+    assert isinstance(res, RelayPlanScreen)
+    assert launched == []
+    assert _commit_count(repo) == count_before
+    assert _dirty_status(repo) == dirty_before
+
+
+@pytest.mark.parametrize("reason", [_VISIT_CAP_REASON, _ROUND_CAP_REASON])
+def test_stash_at_cap_is_not_recommended_and_confirms_with_counts(tmp_path: Path, reason: str) -> None:
+    repo = _capped_repo(tmp_path / "repo", reason)
+
+    probs = recovery.diagnose(repo, [], reason)
+
+    stashes = [o for p in probs for o in p.options if o.id == "stash"]
+    assert stashes
+    for opt in stashes:
+        assert opt.recommended is False
+        assert opt.confirm is True
+        # work.py: +2 -1; new.py: +2, untracked
+        assert "sets aside 2 files, +4 -1 lines" in opt.detail
+
+
+def test_stash_with_no_task_at_cap_is_not_recommended(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / "loose.txt").write_text("one\n", encoding="utf-8")
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    assert probs[0].id == "visit-cap"
+    other = next(p for p in probs if p.id == "dirty-other")
+    assert other.options[0].id == "stash"
+    assert other.options[0].recommended is False
+    assert other.options[0].confirm is True
+    assert "sets aside 1 file, +1 -0 lines" in other.options[0].detail
