@@ -3970,6 +3970,209 @@ def apply(
     raise ValueError(f"Unhandled option id: {option_id!r}")
 
 
+# What the relay does, stated for the Ask agent. Keep in step with
+# whyline_relay: update these lines whenever the relay's behaviour changes.
+RELAY_FACTS = (
+    "- A paused task accepts only config.toml-only commits.",
+    '- Any other commit makes Resume fail at approval with "HEAD moved", '
+    "so restart with `start --allow-dirty`.",
+    "- `--allow-dirty` keeps the task's draft.",
+    "- `--only <task>` stops after that task.",
+    "- Config is read when a run starts.",
+    "- An agent in an override's `tried` list is skipped by failover.",
+    "- Caps: Retry stage gives a stage one more visit, and the round limit is `max_rounds`.",
+)
+
+ASK_PROMPT_LIMIT = 40 * 1024
+_CONFIG_TOML = ".whyline/relay/config.toml"
+_SECRET_FLAG = re.compile(r"(?i)(token|secret|passw(or)?d|api[_-]?key|auth|credential)")
+_SECRET_ASSIGN = re.compile(
+    r"(?i)^([\w.-]*(?:token|secret|passw(?:or)?d|api[_-]?key|auth|credential)[\w.-]*\s*[=:]\s*)(.+)$"
+)
+
+
+def _redact_command(command: Sequence[str]) -> list[str]:
+    """`command` with secret values replaced: `--token X`, `TOKEN=X` and known key shapes."""
+    from whyline import ledgerops
+
+    out: list[str] = []
+    hide_next = False
+    for arg in command:
+        arg = str(arg)
+        if hide_next:
+            out.append("[redacted]")
+            hide_next = False
+            continue
+        m = _SECRET_ASSIGN.match(arg)
+        if m:
+            out.append(m.group(1) + "[redacted]")
+            continue
+        if arg.startswith("-") and _SECRET_FLAG.search(arg):
+            hide_next = True
+        out.append(ledgerops.redact(arg))
+    return out
+
+
+def _git_out(root_path: Path, *args: str) -> str:
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=root_path, capture_output=True, text=True
+        ).stdout.rstrip()
+    except Exception:
+        return ""
+
+
+def _ask_state_lines(st_dict: dict[str, Any]) -> list[str]:
+    visits = st_dict.get("stage_visits")
+    if isinstance(visits, dict) and visits:
+        visits_text = ", ".join(f"{k}={v}" for k, v in sorted(visits.items()))
+    else:
+        visits_text = ""
+    task = st_dict.get("task_id")
+    round_val = st_dict.get("round")
+    stage = st_dict.get("stage")
+    base = st_dict.get("base_commit")
+    return [
+        f"task: {task if task is not None and task != '' else '(none)'}",
+        f"round: {round_val if round_val is not None and round_val != '' else '(none)'}",
+        f"stage: {stage if stage is not None and stage != '' else '(none)'}",
+        f"visits: {visits_text or '(none)'}",
+        f"base: {base if base is not None and base != '' else '(none)'}",
+    ]
+
+
+def _ask_roles_lines(root_path: Path) -> list[str]:
+    try:
+        from whyline.console import relay_ops
+        from whyline_relay import config as relay_config, roles as relay_roles
+
+        settings = relay_config.load(root_path)
+    except Exception as error:
+        return [f"config.toml could not be read: {error}"]
+    lines = ["Roles:"]
+    for role, agent in relay_roles.current_roles(settings).items():
+        lines.append(f"- {role}: {agent}")
+    lines.append(f"Backup chain: {' -> '.join(settings.backup_chain) or '(none)'}")
+    lines.append(f"max_rounds: {settings.max_rounds}")
+    lines.append("Agents:")
+    for name, command in settings.agents.items():
+        try:
+            model = relay_ops.read_agent_model(root_path, name)
+        except Exception:
+            model = ""
+        lines.append(
+            f"- {name}: model {model or '(CLI default)'}; command: "
+            f"{' '.join(_redact_command(command or []))}"
+        )
+    return lines
+
+
+def _ask_override_lines(root_path: Path) -> list[str]:
+    try:
+        from whyline_relay import failover as relay_failover
+
+        overrides = relay_failover.read_overrides(root_path)
+    except Exception:
+        overrides = {}
+    lines = []
+    for role, ov in sorted(overrides.items()):
+        lines.append(
+            f"- {role}: {ov.agent} standing in for {ov.backup_for} ({ov.reason}, since {ov.since}"
+            f"{', resets ' + ov.resets_at if ov.resets_at else ''}); tried: "
+            f"{', '.join(ov.tried) or '(none)'}"
+        )
+    return lines or ["None"]
+
+
+def _ask_quota_lines(root_path: Path) -> list[str]:
+    """The newest limit line per agent and model in the relay logs, with its reset time."""
+    logs_dir = root_path / ".whyline" / "relay" / "logs"
+    if not logs_dir.is_dir():
+        return ["None"]
+    try:
+        logs = sorted(logs_dir.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    except OSError:
+        return ["None"]
+    seen: set[tuple[str, str]] = set()
+    lines = []
+    for log in logs:
+        try:
+            text = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        limit_lines = [ln.strip() for ln in text.splitlines() if _quota_text(ln)]
+        if not limit_lines:
+            continue
+        agent = _infer_agent_from_log(root_path, log) or "(unknown agent)"
+        model, reset = parse_quota_log(log)
+        key = (agent, model)
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(
+            f"- {agent} · {model or '(model not named)'}: {limit_lines[-1][:300]} "
+            f"(resets {reset or 'unknown'}; {log.name})"
+        )
+    return lines or ["None"]
+
+
+def _ask_rejection_lines(root_path: Path, task_id: str) -> list[str]:
+    try:
+        found = recent_rejections(root_path, task_id)
+    except Exception:
+        found = []
+    return [f"- {r['actor'] or '?'} ({r['status']}): {r['summary']}" for r in found] or ["None"]
+
+
+def _ask_problem_lines(root_path: Path, fails: list[str], reason: str) -> list[str]:
+    try:
+        problems = _rule_problems(root_path, fails, reason)
+    except Exception as error:
+        return [f"Resolve's rules could not run: {error}"]
+    lines = []
+    for problem in problems:
+        lines.append(f"- {problem.id}: {problem.summary}")
+        for opt in problem.options:
+            mark = " (recommended)" if opt.recommended else ""
+            lines.append(f"  - {opt.id}: {opt.label}{mark}")
+    return lines or ["None"]
+
+
+def _ask_commit_lines(root_path: Path, base: str) -> list[str]:
+    if not base:
+        return ["No base commit recorded."]
+    log = _git_out(root_path, "log", "--format=%H %s", f"{base}..HEAD")
+    lines = []
+    for entry in log.splitlines():
+        sha, _, subject = entry.partition(" ")
+        files = _git_out(root_path, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).splitlines()
+        tag = " [config-only]" if files == [_CONFIG_TOML] else ""
+        lines.append(f"- {sha[:12]} {subject}{tag}")
+    return lines or ["None"]
+
+
+def _ask_recovery_lines(root_path: Path, count: int = 10) -> list[str]:
+    entries = load_attempts(root_path)[-count:]
+    return [json.dumps(e, sort_keys=True) for e in entries] or ["None"]
+
+
+def _trim_head(text: str, excess: int) -> str:
+    """`text` without its first lines, dropping at least `excess` bytes."""
+    if excess <= 0:
+        return text
+    had_marker = text.startswith("[trimmed]\n")
+    content = text[len("[trimmed]\n") :] if had_marker else text
+    data = content.encode("utf-8")
+    needed = excess + (0 if had_marker else len(b"[trimmed]\n"))
+    if needed >= len(data):
+        return "[trimmed]"
+    kept = data[needed:].decode("utf-8", errors="ignore")
+    _, sep, rest = kept.partition("\n")
+    if not sep and not rest:
+        return "[trimmed]"
+    return "[trimmed]\n" + rest
+
+
 def build_ask_agent_prompt(
     root: Path | str,
     fail_lines: Sequence[str] | None = None,
@@ -3982,43 +4185,54 @@ def build_ask_agent_prompt(
     root_path = Path(root).resolve()
     fails = [str(f) for f in (fail_lines or [])]
     reason = str(pause_reason or "")
+    st_dict = _read_state_dict(root_path)
+    task_id = str(st_dict.get("task_id") or "")
+    plan_name = str(st_dict.get("plan") or "")
+    if not plan_name:
+        try:
+            from whyline_relay import config as relay_config
 
-    sections = [
-        "A relay problem occurred that Resolve does not know how to handle.",
-        "",
-    ]
-
-    if reason:
-        sections.extend(["## Pause Reason", reason, ""])
-    if fails:
-        sections.append("## Preflight FAIL Lines")
-        for f in fails:
-            sections.append(f)
-        sections.append("")
-    if not reason and not fails:
-        sections.extend(["## Problem", "Unknown problem", ""])
-
-    sections.extend([
-        "## Recent Round Log",
-        round_log.strip() if round_log else "None",
-        "",
-        "## Relay Status",
-        relay_status.strip() if relay_status else "None",
-        "",
-        "## Git Status",
-        git_status.strip() if git_status else "Clean",
-        "",
-    ])
-
+            plan_name = relay_config.load(root_path).plan or ""
+        except Exception:
+            pass
     if options_catalog is None:
         options_catalog = get_rec_4c_options(root_path)
 
-    sections.append("## Available REC-4C Options")
-    for opt_id, label in options_catalog.items():
-        sections.append(f"- {opt_id}: {label}")
-    sections.append("")
+    task_text = _saved_task_text(root_path, plan_name, task_id)
+    plan_task_body = task_text.strip() or "Not found"
 
-    sections.extend([
+    facts_section: list[str] = [
+        "## Relay Facts",
+        *RELAY_FACTS,
+        "",
+    ]
+    plan_task_section: list[str] = [
+        "## Plan Task",
+        plan_task_body,
+        "",
+    ]
+
+    roles_text = "\n".join(_ask_roles_lines(root_path))
+    overrides_text = "\n".join(_ask_override_lines(root_path))
+    quota_text = "\n".join(_ask_quota_lines(root_path))
+    rejections_text = "\n".join(_ask_rejection_lines(root_path, task_id))
+    problems_text = "\n".join(_ask_problem_lines(root_path, fails, reason))
+
+    pause_reason_text = reason
+    fail_lines_text = "\n".join(fails)
+    state_text = "\n".join(_ask_state_lines(st_dict))
+    relay_status_text = relay_status.strip() if relay_status else "None"
+    git_status_text = git_status.strip() if git_status else "Clean"
+    diff_text = _git_out(root_path, "diff", "--stat", "HEAD") or "None"
+    commits_text = "\n".join(_ask_commit_lines(root_path, str(st_dict.get("base_commit") or "")))
+    recovery_text = "\n".join(_ask_recovery_lines(root_path))
+    log_text = round_log.strip() if round_log else "None"
+
+    tail = [
+        "",
+        "## Available REC-4C Options",
+        *(f"- {opt_id}: {label}" for opt_id, label in options_catalog.items()),
+        "",
         "## Instructions",
         "You are acting in a read-only diagnostic capacity.",
         "You must not edit, stage, or commit anything.",
@@ -4028,9 +4242,158 @@ def build_ask_agent_prompt(
         "RECOMMEND: <option id>",
         "or",
         "RECOMMEND: human",
-    ])
+    ]
 
-    return "\n".join(sections)
+    def render() -> str:
+        problem_lines: list[str] = [
+            "A relay problem occurred that Resolve does not know how to handle.",
+            "",
+        ]
+        if reason:
+            problem_lines.extend(["## Pause Reason", pause_reason_text, ""])
+        if fails:
+            problem_lines.append("## Preflight FAIL Lines")
+            problem_lines.append(fail_lines_text)
+            problem_lines.append("")
+        if not reason and not fails:
+            problem_lines.extend(["## Problem", "Unknown problem", ""])
+
+        parts: list[str] = [
+            *problem_lines,
+            *facts_section,
+            "## state.json",
+            state_text,
+            "",
+            *plan_task_section,
+            "## Roles, Backup Chain and Models (config.toml)",
+            roles_text,
+            "",
+            "## Role Overrides (active-roles.json)",
+            overrides_text,
+            "",
+            "## Quota Evidence",
+            quota_text,
+            "",
+            "## Last Reviewer Rejections",
+            rejections_text,
+            "",
+            "## Problems and Options Resolve Found",
+            problems_text,
+            "",
+            "## Relay Status",
+            relay_status_text,
+            "",
+            "## Git Status",
+            git_status_text,
+            "",
+            "## Diff Stat (git diff --stat HEAD)",
+            diff_text,
+            "",
+            "## Commits Since Base",
+            commits_text,
+            "",
+            "## Recent recovery.json Entries",
+            recovery_text,
+            "",
+            "## Recent Round Log",
+            log_text,
+            *tail,
+        ]
+        return "\n".join(parts)
+
+    # Over the limit: drop the oldest log lines first, then the diff stat.
+    prompt = render()
+    excess = len(prompt.encode("utf-8")) - ASK_PROMPT_LIMIT
+    while excess > 0 and log_text != "[trimmed]":
+        log_text = _trim_head(log_text, excess)
+        prompt = render()
+        excess = len(prompt.encode("utf-8")) - ASK_PROMPT_LIMIT
+    while excess > 0 and diff_text != "[trimmed]":
+        diff_text = _trim_head(diff_text, excess)
+        prompt = render()
+        excess = len(prompt.encode("utf-8")) - ASK_PROMPT_LIMIT
+
+    # After logs and diffs, trim oversized diagnostic sections while preserving
+    # Relay facts and full task text.
+    while excess > 0:
+        candidates = [
+            ("pause_reason", pause_reason_text),
+            ("fail_lines", fail_lines_text),
+            ("commits", commits_text),
+            ("git_status", git_status_text),
+            ("relay_status", relay_status_text),
+            ("recovery", recovery_text),
+            ("state", state_text),
+        ]
+        trimmable = [
+            (name, text)
+            for name, text in candidates
+            if text != "[trimmed]" and len(text.encode("utf-8")) > len(b"[trimmed]")
+        ]
+        if not trimmable:
+            break
+        name, text = max(trimmable, key=lambda item: len(item[1].encode("utf-8")))
+        trimmed = _trim_head(text, excess)
+        if trimmed == text:
+            trimmed = "[trimmed]"
+        if name == "commits":
+            commits_text = trimmed
+        elif name == "git_status":
+            git_status_text = trimmed
+        elif name == "relay_status":
+            relay_status_text = trimmed
+        elif name == "recovery":
+            recovery_text = trimmed
+        elif name == "state":
+            state_text = trimmed
+        elif name == "pause_reason":
+            pause_reason_text = trimmed
+        elif name == "fail_lines":
+            fail_lines_text = trimmed
+        prompt = render()
+        excess = len(prompt.encode("utf-8")) - ASK_PROMPT_LIMIT
+
+    # Fallback: if still over the budget, trim remaining diagnostics,
+    # keeping Relay facts, plan task, and instructions intact.
+    while excess > 0:
+        fallback_candidates = [
+            ("pause_reason", pause_reason_text),
+            ("fail_lines", fail_lines_text),
+            ("quota", quota_text),
+            ("rejections", rejections_text),
+            ("problems", problems_text),
+            ("overrides", overrides_text),
+            ("roles", roles_text),
+        ]
+        trimmable = [
+            (name, text)
+            for name, text in fallback_candidates
+            if text != "[trimmed]" and len(text.encode("utf-8")) > len(b"[trimmed]")
+        ]
+        if not trimmable:
+            break
+        name, text = max(trimmable, key=lambda item: len(item[1].encode("utf-8")))
+        trimmed = _trim_head(text, excess)
+        if trimmed == text:
+            trimmed = "[trimmed]"
+        if name == "quota":
+            quota_text = trimmed
+        elif name == "rejections":
+            rejections_text = trimmed
+        elif name == "problems":
+            problems_text = trimmed
+        elif name == "overrides":
+            overrides_text = trimmed
+        elif name == "roles":
+            roles_text = trimmed
+        elif name == "pause_reason":
+            pause_reason_text = trimmed
+        elif name == "fail_lines":
+            fail_lines_text = trimmed
+        prompt = render()
+        excess = len(prompt.encode("utf-8")) - ASK_PROMPT_LIMIT
+
+    return prompt
 
 
 def parse_agent_recommendation(text: str) -> tuple[str, str]:

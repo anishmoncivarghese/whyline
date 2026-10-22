@@ -21512,3 +21512,137 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0276fd2c2f5648d7b570f0dd3daf0e74 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T19:09:42.400Z"} -->
+
+## 2026-10-22 — Trim logs iteratively before diff stat and account for prefix overhead in _trim_head
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASK-2
+
+**Because:** dropping diff lines prematurely loses useful context when the round log can absorb all excess to meet the 40 KB limit
+
+**Rejected:**
+
+- single-pass trim — line rounding and the [trimmed] prefix left excess positive and caused premature diff truncation
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a3c78eedbd36450ca00a0f04fda73651 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T19:31:29.158Z"} -->
+
+## 2026-10-22 — ASK-2 fails tester verification because the 40 KB cap is not guaranteed
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-2
+
+**Because:** Both required pytest suites pass, but a fake 50 KB commits-since-base section produces a 63,680-byte prompt after the log and diff are fully trimmed; build_ask_agent_prompt returns over its 40,960-byte limit
+
+**Rejected:**
+
+- Pass based only on existing tests — the task explicitly requires the prompt to stay under 40 KB and the active handoff flags large commit logs as a risk
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a5fdd09d1d764108ae8c07f379e8f3bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T19:40:44.023Z"} -->
+
+## 2026-10-22 — Add bounded trimming for commits, status, recovery, and state by descending section size after logs and diffs
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASK-2
+
+**Because:** oversized non-log sections like large commit histories or dirty status could exceed the 40 KB prompt cap even when log and diff are fully trimmed, while trimming largest first spares compact sections and preserving facts and task text ensures essential context remains
+
+**Rejected:**
+
+- fixed-order trimming — truncating a small 100-byte commits list before an oversized 50 KB git status destroys commit context needlessly
+- truncating plan task or relay facts — the prompt explicitly requires keeping task requirements and relay operational rules intact for diagnostic accuracy
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 7cf8e57b5ea845bca1870481a4e272e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T19:58:36.392Z"} -->
+
+## 2026-10-22 — ASK-2 passes Round 4 tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-2
+
+**Because:** Both required pytest suites pass, and independent probes confirm combined oversized diagnostics remain below 40 KB while preserving relay facts and full task text, with logs trimmed before diffs
+
+**Rejected:**
+
+- Fail on prior 40 KB defect — the new bounded fallback trimming now covers oversized commits, status, recovery, state, roles, overrides, quota, rejections, and problems
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: c6603451ec064eaaa128f714b559c429 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T20:07:45.099Z"} -->
+
+## 2026-10-22 — ASK-2 Round 5 review rejects the prompt cap implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASK-2
+
+**Because:** Both required pytest suites pass, but a 50 KB preflight FAIL line produces a 53,866-byte prompt because the raw problem block is never trimmed, violating the unconditional 40 KB cap
+
+**Rejected:**
+
+- Approve based on passing tests — the added tests omit oversized fail_lines and pause_reason inputs
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: cc9b3443427044d9ae106da96d691c4e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T20:16:35.134Z"} -->
+
+## 2026-10-22 — Include raw Pause Reason and Preflight FAIL lines in bounded diagnostic trimming after logs and diffs
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASK-2
+
+**Because:** oversized preflight failures or pause reasons can exceed the 40 KB prompt cap even when logs and diffs are trimmed, and trimming them dynamically alongside other diagnostic candidates by descending size preserves compact sections, Relay facts, and full task text
+
+**Rejected:**
+
+- static un-trimmable problem block — causes prompt cap violation when preflight fail lines or pause reasons are oversized
+- trimming problem block before logs and diffs — violates the strict requirement to trim logs first, then diffs
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: b43de238549b4199bb106e23852fc08e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T20:40:51.572Z"} -->
+
+## 2026-10-22 — ASK-2 passes Round 7 tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-2
+
+**Because:** The targeted 116-test recovery suite and full project suite exited successfully, and independent probes verified the 40 KB cap for single-line and multi-line oversized preflight failures and pause reasons while preserving Relay facts and full task text; a combined oversized-log probe also confirmed logs trim before diffs
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: f84682e97de74835bbf891d7226929b0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T20:49:44.635Z"} -->
+
+## 2026-10-22 — ASK-2 Round 8 review approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASK-2
+
+**Because:** The diff supplies every requested prompt section from the relay's real state and config formats, redacts command secrets, preserves Relay facts and full task text while enforcing the 40 KB byte cap with logs trimmed before diffs, and both required pytest suites plus independent prompt probes passed
+
+**Rejected:**
+
+- Request changes — no unsafe or task-breaking defect was found; minor coverage gaps for reset-time and diff-stat assertions were independently exercised
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: ae04a112dfab435e95dffba1837a3aa0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T21:00:48.552Z"} -->

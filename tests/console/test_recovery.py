@@ -4830,3 +4830,332 @@ def test_ask_agent_without_read_only_mode_that_edits_a_file_is_refused(tmp_path:
     assert res.agent == "antigravity"
     assert res.changed_paths == ["README.md"]
     assert res.option is None
+
+
+def test_build_ask_agent_prompt_all_sections_appear_from_fakes(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    # 1. Base commit and commits since base (including config-only)
+    base_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    relay_dir = repo / ".whyline" / "relay"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+    config_file = relay_dir / "config.toml"
+    config_file.write_text(
+        'plan = "plan.md"\n'
+        "max_rounds = 4\n"
+        '[backup]\nchain = ["claude", "grok"]\n'
+        '[roles]\nimplementer = "codex"\nreviewer = "claude"\n'
+        '[agents.codex]\nmodel = "gpt-4o"\ncommand = ["codex", "--model", "gpt-4o"]\n'
+        '[agents.claude]\nmodel = "claude-3-5-sonnet"\ncommand = ["claude", "--model", "claude-3-5-sonnet"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", ".whyline/relay/config.toml"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "config update commit"], cwd=repo, check=True)
+
+    (repo / "feature.py").write_text("print('hello world')\n", encoding="utf-8")
+    subprocess.run(["git", "add", "feature.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "code feature commit"], cwd=repo, check=True)
+
+    # 2. Plan file with task
+    (repo / "plan.md").write_text(
+        "# Plan\n\n"
+        "- [ ] ASK-2: Give the agent what a person would read\n"
+        "  Detailed instructions for ASK-2.\n"
+        "  Includes multiple lines of task requirements.\n",
+        encoding="utf-8",
+    )
+
+    # 3. state.json
+    state_file = relay_dir / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "task_id": "ASK-2",
+            "round": 2,
+            "stage": "draft",
+            "stage_visits": {"draft": 2, "test": 1},
+            "base_commit": base_commit,
+            "paused_reason": "an unclassified pause reason",
+        }),
+        encoding="utf-8",
+    )
+
+    # 4. active-roles.json overrides with tried
+    overrides_file = relay_dir / "active-roles.json"
+    overrides_file.write_text(
+        json.dumps({
+            "implementer": {
+                "agent": "grok",
+                "backup_for": "codex",
+                "reason": "rate limit",
+                "since": "2026-10-22T10:00:00Z",
+                "resets_at": "22 Oct 14:00",
+                "tried": ["codex", "claude"],
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    # 5. Quota log evidence
+    logs_dir = relay_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "ASK-2-1-codex-draft.log").write_text(
+        '{"modelName": "gpt-4o", "error": "rate limit exceeded. Resets 22 Oct 15:30"}\n',
+        encoding="utf-8",
+    )
+
+    # 6. Rejections (RSV-3)
+    _record_rejection(repo, "ASK-2", "Missing error handling in unit tests", status="changes-requested")
+    _record_rejection(repo, "ASK-2", "Refactor helper functions for clarity", status="changes-requested")
+
+    # 7. Recent recovery.json entries
+    recovery.record_attempt(
+        repo,
+        task="ASK-2",
+        round=1,
+        kind="rate-limit",
+        agent="codex",
+        verdict="failover",
+    )
+
+    # 8. Dirty change for git status & diff stat
+    (repo / "dirty_test.py").write_text("modified dirty content\n", encoding="utf-8")
+
+    prompt = recovery.build_ask_agent_prompt(
+        repo,
+        fail_lines=["FAIL preflight failed"],
+        pause_reason="an unclassified pause reason",
+        relay_status="relay running",
+        git_status="?? dirty_test.py",
+    )
+
+    # Relay facts
+    assert "## Relay Facts" in prompt
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt
+
+    # state.json
+    assert "## state.json" in prompt
+    assert "task: ASK-2" in prompt
+    assert "round: 2" in prompt
+    assert "stage: draft" in prompt
+    assert "visits: draft=2, test=1" in prompt
+    assert f"base: {base_commit}" in prompt
+
+    # Plan task full text
+    assert "## Plan Task" in prompt
+    assert "ASK-2: Give the agent what a person would read" in prompt
+    assert "Detailed instructions for ASK-2." in prompt
+    assert "Includes multiple lines of task requirements." in prompt
+
+    # Roles, backup chain, models
+    assert "## Roles, Backup Chain and Models (config.toml)" in prompt
+    assert "- implementer: codex" in prompt
+    assert "- reviewer: claude" in prompt
+    assert "Backup chain: claude -> grok" in prompt
+    assert "max_rounds: 4" in prompt
+    assert "codex: model gpt-4o" in prompt
+    assert "claude: model claude-3-5-sonnet" in prompt
+
+    # active-roles.json overrides including tried
+    assert "## Role Overrides (active-roles.json)" in prompt
+    assert "implementer: grok standing in for codex" in prompt
+    assert "tried: codex, claude" in prompt
+
+    # Quota evidence
+    assert "## Quota Evidence" in prompt
+    assert "codex" in prompt
+    assert "gpt-4o" in prompt
+    assert "rate limit exceeded" in prompt
+
+    # Last reviewer rejections
+    assert "## Last Reviewer Rejections" in prompt
+    assert "Missing error handling in unit tests" in prompt
+    assert "Refactor helper functions for clarity" in prompt
+
+    # Problems and options Resolve found
+    assert "## Problems and Options Resolve Found" in prompt
+
+    # Git status and diff stat
+    assert "## Git Status" in prompt
+    assert "?? dirty_test.py" in prompt
+    assert "## Diff Stat (git diff --stat HEAD)" in prompt
+
+    # Commits since base marking config-only
+    assert "## Commits Since Base" in prompt
+    assert "config update commit [config-only]" in prompt
+    assert "code feature commit" in prompt
+
+    # Recent recovery.json entries
+    assert "## Recent recovery.json Entries" in prompt
+    assert '"task": "ASK-2"' in prompt
+    assert '"verdict": "failover"' in prompt
+
+
+def test_build_ask_agent_prompt_trims_long_log_while_facts_and_task_stay(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_dir = repo / ".whyline" / "relay"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+
+    # Distinct plan task text
+    unique_task_marker = "UNIQUE_TASK_CONSTRAINT_NEVER_REMOVE"
+    (repo / "plan.md").write_text(
+        f"# Plan\n\n- [ ] T-99: Task with marker\n  {unique_task_marker}\n",
+        encoding="utf-8",
+    )
+    (relay_dir / "state.json").write_text(
+        json.dumps({"plan": "plan.md", "task_id": "T-99", "round": 1}),
+        encoding="utf-8",
+    )
+
+    # 60 KB round log
+    long_log = "\n".join(f"round log line number {i:05d} with extra padding text" for i in range(1200))
+    assert len(long_log.encode("utf-8")) > 50 * 1024
+
+    prompt = recovery.build_ask_agent_prompt(repo, round_log=long_log)
+
+    # Prompt is under 40 KB
+    assert len(prompt.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt
+
+    # Relay facts stay
+    assert "## Relay Facts" in prompt
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt
+
+    # Task text stays
+    assert "## Plan Task" in prompt
+    assert unique_task_marker in prompt
+
+
+def test_build_ask_agent_prompt_redacts_tokens_in_agent_commands(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_dir = repo / ".whyline" / "relay"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+    config_file = relay_dir / "config.toml"
+    config_file.write_text(
+        'plan = "plan.md"\n'
+        '[roles]\nimplementer = "codex"\nreviewer = "claude"\n'
+        "[agents.codex]\n"
+        'command = ["codex", "--token", "secret_token_val_12345", "--api-key=secret_key_val_67890"]\n'
+        "[agents.claude]\n"
+        'command = ["claude", "-p", "sk-ant-api03-abcdef1234567890abcdef1234", "AUTH_TOKEN=secret_auth_token_999"]\n',
+        encoding="utf-8",
+    )
+
+    prompt = recovery.build_ask_agent_prompt(repo)
+
+    assert "secret_token_val_12345" not in prompt
+    assert "secret_key_val_67890" not in prompt
+    assert "sk-ant-api03-abcdef1234567890abcdef1234" not in prompt
+    assert "secret_auth_token_999" not in prompt
+    assert "[redacted]" in prompt
+
+
+def test_build_ask_agent_prompt_trims_large_non_log_section_while_facts_and_task_stay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_dir = repo / ".whyline" / "relay"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+
+    unique_task_marker = "UNIQUE_TASK_CONSTRAINT_NEVER_REMOVE"
+    (repo / "plan.md").write_text(
+        f"# Plan\n\n- [ ] T-99: Task with marker\n  {unique_task_marker}\n",
+        encoding="utf-8",
+    )
+    (relay_dir / "state.json").write_text(
+        json.dumps({"plan": "plan.md", "task_id": "T-99", "round": 1}),
+        encoding="utf-8",
+    )
+
+    # 1. 50 KB commits-since-base section
+    fake_commit = "- 123456789012 " + ("x" * 50_000)
+    monkeypatch.setattr(recovery, "_ask_commit_lines", lambda *_: [fake_commit])
+
+    prompt = recovery.build_ask_agent_prompt(repo)
+
+    assert len(prompt.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt
+
+    assert "## Relay Facts" in prompt
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt
+
+    assert "## Plan Task" in prompt
+    assert unique_task_marker in prompt
+
+    # 2. 50 KB git status section
+    monkeypatch.undo()
+    prompt_status = recovery.build_ask_agent_prompt(repo, git_status="?? " + ("g" * 50_000))
+
+    assert len(prompt_status.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt_status
+
+    assert "## Relay Facts" in prompt_status
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt_status
+
+    assert "## Plan Task" in prompt_status
+    assert unique_task_marker in prompt_status
+
+    # 3. 50 KB preflight fail line
+    prompt_fail = recovery.build_ask_agent_prompt(repo, fail_lines=["FAIL: " + ("f" * 50_000)])
+
+    assert len(prompt_fail.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt_fail
+
+    assert "## Relay Facts" in prompt_fail
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt_fail
+
+    assert "## Plan Task" in prompt_fail
+    assert unique_task_marker in prompt_fail
+
+    # 4. Multi-line oversized preflight fail lines
+    multi_fail = [f"FAIL check {i:04d}: " + ("x" * 200) for i in range(250)]
+    prompt_multi_fail = recovery.build_ask_agent_prompt(repo, fail_lines=multi_fail)
+
+    assert len(prompt_multi_fail.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt_multi_fail
+
+    assert "## Relay Facts" in prompt_multi_fail
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt_multi_fail
+
+    assert "## Plan Task" in prompt_multi_fail
+    assert unique_task_marker in prompt_multi_fail
+
+    # 5. 50 KB pause reason
+    prompt_reason = recovery.build_ask_agent_prompt(repo, pause_reason="PAUSE: " + ("p" * 50_000))
+
+    assert len(prompt_reason.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt_reason
+
+    assert "## Relay Facts" in prompt_reason
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt_reason
+
+    assert "## Plan Task" in prompt_reason
+    assert unique_task_marker in prompt_reason
+
+    # 6. Combined oversized log and fail_lines: log trimmed before fail_lines
+    long_log = "\n".join(f"log line {i:05d}" for i in range(1200))
+    prompt_combined = recovery.build_ask_agent_prompt(
+        repo,
+        fail_lines=["FAIL: " + ("f" * 50_000)],
+        round_log=long_log,
+    )
+    assert len(prompt_combined.encode("utf-8")) <= recovery.ASK_PROMPT_LIMIT
+    assert "[trimmed]" in prompt_combined
+    assert "## Relay Facts" in prompt_combined
+    for fact in recovery.RELAY_FACTS:
+        assert fact in prompt_combined
+    assert "## Plan Task" in prompt_combined
+    assert unique_task_marker in prompt_combined
+
