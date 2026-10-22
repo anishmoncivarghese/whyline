@@ -1165,4 +1165,376 @@ async def test_setup_screen_refreshes_model_rows_on_release_selector_changes(tmp
         assert screen.query_one("#rs-model-row-grok").has_class("-empty")
 
 
+async def test_setup_screen_shows_out_until_line_beside_model_row(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from whyline.console import recovery
+    from whyline_relay import failover
+
+    now = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", now, raising=False)
+
+    logs_dir = tmp_path / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    failover.write_override(
+        tmp_path,
+        "implementer",
+        failover.ActiveOverride(
+            agent="claude",
+            backup_for="antigravity",
+            reason="rate-limit",
+            since="2026-10-19T01:12:29",
+            resets_at="2026-10-25T11:55:00+00:00",
+        ),
+    )
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["claude"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=True, focus_agent="antigravity")
+        app.push_screen(screen)
+        await pilot.pause()
+
+        expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+        row = screen.query_one("#rs-model-row-antigravity")
+        assert row.display is True
+        assert not row.has_class("-empty")
+
+        out_widget = screen.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget.renderable) == expected_line
+        assert not out_widget.has_class("-empty")
+
+
+async def test_setup_screen_shows_out_until_line_with_display_time_later_than_failure_time(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from whyline.console import recovery
+    from whyline_relay import failover
+
+    failure_time = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    # Display time is 2.5 days after failure
+    display_time = datetime(2026, 10, 21, 18, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    logs_dir = tmp_path / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    failover.write_override(
+        tmp_path,
+        "implementer",
+        failover.ActiveOverride(
+            agent="claude",
+            backup_for="antigravity",
+            reason="rate-limit",
+            since=failure_time.isoformat(),
+            resets_at="2026-10-25T11:55:00+00:00",
+        ),
+    )
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["claude"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=True, focus_agent="antigravity")
+        app.push_screen(screen)
+        await pilot.pause()
+
+        # Must honor the override's absolute resets_at (25 Oct 11:55), NOT recompute from display_time (which would be 28 Oct)
+        expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+        row = screen.query_one("#rs-model-row-antigravity")
+        assert row.display is True
+        assert not row.has_class("-empty")
+
+        out_widget = screen.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget.renderable) == expected_line
+        assert not out_widget.has_class("-empty")
+
+
+async def test_setup_screen_does_not_show_out_until_for_old_quota_logs_or_non_quota_state(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime, timezone
+    from whyline.console import recovery
+
+    now = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", now, raising=False)
+
+    logs_dir = tmp_path / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    old_log = logs_dir / "T0-1-antigravity.log"
+    old_log.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["claude"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    # 1. No override and no state: old quota log must not produce out-until in Set up
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=False, focus_agent="antigravity")
+        app.push_screen(screen)
+        await pilot.pause()
+
+        out_widget = screen.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget.renderable) == ""
+        assert out_widget.has_class("-empty")
+
+    # 2. Non-quota state (e.g. sandbox failure): old quota log must not produce out-until in Set up
+    (tmp_path / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "antigravity could not run a required command",
+            "log_path": str(old_log),
+        }),
+        encoding="utf-8",
+    )
+    app2 = tui.WhylineConsoleApp(root=tmp_path)
+    async with app2.run_test(size=(110, 50)) as pilot:
+        screen2 = RelaySetupScreen(tmp_path, paused=True, focus_agent="antigravity")
+        app2.push_screen(screen2)
+        await pilot.pause()
+
+        out_widget2 = screen2.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget2.renderable) == ""
+        assert out_widget2.has_class("-empty")
+
+
+async def test_setup_screen_honors_direct_pause_resets_at_when_display_time_is_later(tmp_path, monkeypatch):
+    import json
+    import os
+    from datetime import datetime, timezone
+    from whyline.console import recovery
+    from whyline_relay import failover
+
+    failure_time = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    # Display time is 2.5 days after failure
+    display_time = datetime(2026, 10, 21, 18, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    logs_dir = tmp_path / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+    os.utime(log_file, (failure_time.timestamp(), failure_time.timestamp()))
+
+    # Direct pause without override:
+    state_file = tmp_path / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "antigravity hit a usage or rate limit; try again when it resets",
+            "log_path": str(log_file),
+        }),
+        encoding="utf-8",
+    )
+    os.utime(state_file, (failure_time.timestamp(), failure_time.timestamp()))
+
+    assert failover.read_overrides(tmp_path) == {}
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    # 1. At display_time: shows 25 Oct 11:55, not 28 Oct
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=True, focus_agent="antigravity")
+        app.push_screen(screen)
+        await pilot.pause()
+
+        expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+        row = screen.query_one("#rs-model-row-antigravity")
+        assert row.display is True
+        assert not row.has_class("-empty")
+
+        out_widget = screen.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget.renderable) == expected_line
+        assert not out_widget.has_class("-empty")
+
+    # 2. At expired_time (after 25 Oct 11:55): suppresses out-until
+    expired_time = datetime(2026, 10, 26, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", expired_time, raising=False)
+
+    app2 = tui.WhylineConsoleApp(root=tmp_path)
+    async with app2.run_test(size=(110, 50)) as pilot:
+        screen2 = RelaySetupScreen(tmp_path, paused=True, focus_agent="antigravity")
+        app2.push_screen(screen2)
+        await pilot.pause()
+
+        out_widget2 = screen2.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget2.renderable) == ""
+        assert out_widget2.has_class("-empty")
+
+
+async def test_setup_screen_out_until_widget_visible_within_80_columns(tmp_path, monkeypatch):
+    """Ensure at 80 columns the status widget does not overflow the model row and is fully visible."""
+    import json
+    from datetime import datetime, timezone
+    from whyline.console import recovery
+    from whyline_relay import failover
+
+    failure_time = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    display_time = datetime(2026, 10, 21, 18, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    logs_dir = tmp_path / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    failover.write_override(
+        tmp_path,
+        "implementer",
+        failover.ActiveOverride(
+            agent="codex",
+            backup_for="antigravity",
+            reason="rate-limit",
+            since=failure_time.isoformat(),
+            resets_at="2026-10-25T11:55:00+00:00",
+        ),
+    )
+
+    # Current state is Codex running in round 2 with its own log
+    codex_log = logs_dir / "T1-2-codex.log"
+    codex_log.write_text('codex --model gpt-5\n', encoding="utf-8")
+    (tmp_path / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 2,
+            "base_commit": "abc",
+            "paused_reason": "codex could not run a required command",
+            "log_path": str(codex_log),
+        }),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["codex"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=True, focus_agent="antigravity")
+        app.push_screen(screen)
+        await pilot.pause()
+
+        expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+        row = screen.query_one("#rs-model-row-antigravity")
+        assert row.display is True
+        assert not row.has_class("-empty")
+
+        out_widget = screen.query_one("#rs-model-out-antigravity", tui.Static)
+        assert str(out_widget.renderable) == expected_line
+        assert not out_widget.has_class("-empty")
+
+        # Layout checks: widget must not overflow model row or screen bounds at 80 columns
+        assert out_widget.region.x >= row.region.x
+        assert out_widget.region.x + out_widget.region.width <= row.region.x + row.region.width
+        assert out_widget.region.x + out_widget.region.width <= 80
+        # The whole line, reset time included, fits on one row of the widget's content area
+        assert out_widget.content_region.width >= len(expected_line)
+        assert out_widget.region.height >= 1
+
+        # And it is what the terminal actually shows: the full line on one screen row
+        await pilot.pause()
+        screen_rows = [strip.text for strip in screen._compositor.render_strips()]
+        assert any(expected_line in text for text in screen_rows), "\n".join(screen_rows)
+
 

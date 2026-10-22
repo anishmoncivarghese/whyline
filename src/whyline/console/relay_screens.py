@@ -1371,8 +1371,11 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen Select { width: 30; }
     RelaySetupScreen .model-input { width: 24; margin-left: 1; }
     RelaySetupScreen .model-input.-empty { display: none; }
+    RelaySetupScreen .model-out { padding: 0 0 0 2; color: $warning; height: auto; }
+    RelaySetupScreen .model-out.-empty { display: none; }
     RelaySetupScreen .model-row { height: auto; }
     RelaySetupScreen .model-row.-empty { display: none; }
+    RelaySetupScreen .model-row Horizontal { height: auto; }
     RelaySetupScreen #rs-models { height: auto; }
     RelaySetupScreen #rs-plan { width: 70; }
     RelaySetupScreen #rs-no-plan { color: $warning; padding: 1 0 0 0; }
@@ -1402,10 +1405,22 @@ class RelaySetupScreen(ModalScreen):
         guided: bool = False,
         plan: Path | None = None,
         paused: bool | None = None,
+        focus_agent: str | None = None,
+        out_until: dict[str, str] | None = None,
     ) -> None:
         super().__init__()
         self._root = root
         self._guided = guided
+        self._focus_agent = focus_agent
+        if out_until is not None:
+            self._out_until = dict(out_until)
+        else:
+            try:
+                from whyline.console import recovery
+
+                self._out_until = recovery.find_out_until_models(root)
+            except Exception:
+                self._out_until = {}
         if paused is not None:
             self._paused = paused
         else:
@@ -1556,9 +1571,16 @@ class RelaySetupScreen(ModalScreen):
                             id=f"rs-model-{agent}",
                         )
                     )
+                out_line = self._out_until.get(agent, "")
+                out_widget = Static(
+                    out_line,
+                    id=f"rs-model-out-{agent}",
+                    classes="model-out" + ("" if out_line else " -empty"),
+                )
                 model_rows.append(
-                    Horizontal(
-                        *row_items,
+                    Vertical(
+                        Horizontal(*row_items),
+                        out_widget,
                         id=f"rs-model-row-{agent}",
                         classes="model-row" + ("" if agent in initial_active else " -empty"),
                     )
@@ -1691,6 +1713,11 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-backup", OrderedChain).load(self._backup or self._fill_backup())
         self._update_meaning()
         self._update_models()
+        if getattr(self, "_focus_agent", None):
+            target_id = f"rs-model-{self._focus_agent}"
+            if self.query(f"#{target_id}"):
+                widget = self.query_one(f"#{target_id}")
+                self.call_after_refresh(widget.focus)
         self.call_after_refresh(self._ready)
 
     def _initial_model_agents(self) -> list[str]:
@@ -1701,6 +1728,10 @@ class RelaySetupScreen(ModalScreen):
             self._release,
             *self._backup,
         ]
+        if getattr(self, "_focus_agent", None):
+            in_use.append(self._focus_agent)
+        if hasattr(self, "_out_until"):
+            in_use.extend(self._out_until.keys())
         res = []
         for a in in_use:
             if a and a in self._agents and a not in res:
@@ -1724,6 +1755,13 @@ class RelaySetupScreen(ModalScreen):
         for a in (implementer, tester, reviewer, release, *backup):
             if a and a in self._agents and a not in res:
                 res.append(a)
+        if getattr(self, "_focus_agent", None):
+            if self._focus_agent in self._agents and self._focus_agent not in res:
+                res.append(self._focus_agent)
+        if hasattr(self, "_out_until"):
+            for a in self._out_until:
+                if a in self._agents and a not in res:
+                    res.append(a)
         return res
 
     def _update_models(self) -> None:

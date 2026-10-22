@@ -18,6 +18,7 @@ _FAILURE_PHRASES = (
     ("sandbox", "could not run a required command"),
     ("visit-cap", "-visit cap without"),
     ("rate-limit", "hit a usage or rate limit"),
+    ("rate-limit", "out until"),
     ("auth", "is no longer logged in"),
     ("no-handoff", "exited without handing off"),
     ("round-cap", "round cap"),
@@ -137,6 +138,22 @@ def format_pause_text(
     """Builds structured pause card text."""
     kind_label = failure_kind(reason)
     task_prefix = f"Task {task_id}" if task_id else "Task"
+
+    if kind_label == "rate-limit" or "usage or rate limit" in reason or "quota" in reason:
+        try:
+            from whyline.console import recovery
+
+            msg = recovery.pause_message(
+                agent="",
+                reason=reason,
+                root=root,
+                log_path=log_path,
+            )
+            if msg and "out until" in msg:
+                reason = msg
+        except Exception:
+            pass
+
     lines = [f"[{kind_label}] {task_prefix}".strip(), f"Reason {reason}"]
 
     if kind_label == "sandbox":
@@ -347,7 +364,22 @@ def run_status(root: Path) -> SessionEvent:
         # while an agent runs it is history, not the current state.
         lines.append(f"Last pause  {saved.paused_reason}")
         return SessionEvent(kind="output", text="\n".join(lines))
-    lines.append(f"Paused    {saved.paused_reason}")
+    pause_msg = saved.paused_reason
+    if failure_kind(pause_msg) == "rate-limit" or "usage or rate limit" in pause_msg:
+        try:
+            from whyline.console import recovery
+
+            pm = recovery.pause_message(
+                agent="",
+                reason=pause_msg,
+                root=root,
+                log_path=saved.log_path or "",
+            )
+            if pm and "out until" in pm:
+                pause_msg = pm
+        except Exception:
+            pass
+    lines.append(f"Paused    {pause_msg}")
     if saved.log_path:
         lines.append(f"Log       {saved.log_path}")
     return SessionEvent(kind="pause", text="\n".join(lines))
@@ -399,6 +431,21 @@ def classify_relay_output(root: Path | str, text: str, code: int) -> SessionEven
                 saved.log_path or "",
             )
             return SessionEvent(kind="pause", text=structured)
+        try:
+            import json
+            state_p = Path(root) / ".whyline" / "relay" / "state.json"
+            if state_p.is_file():
+                data = json.loads(state_p.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    structured = format_pause_text(
+                        root,
+                        data.get("task_id", ""),
+                        data.get("paused_reason", text),
+                        data.get("log_path", "") or "",
+                    )
+                    return SessionEvent(kind="pause", text=structured)
+        except Exception:
+            pass
         return SessionEvent(kind="pause", text=text)
     if _COMPLETE_PATTERN.search(text) or code == 0:
         kind = "output"

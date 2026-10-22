@@ -2963,5 +2963,790 @@ def test_auth_pause_reason_is_logged_out(tmp_path: Path, monkeypatch) -> None:
     assert probs[0].options[0].id == "login-claude"
 
 
+def test_fake_agy_quota_log_yields_model_and_reset_time(tmp_path: Path):
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    log_content = (
+        'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 154h42m31s.\n'
+        'AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 154h42m31s.","status":"RESOURCE_EXHAUSTED","error_code":429,"modelName":"gemini-4-argon-medium"}\n'
+    )
+    log_file = tmp_path / "failing.log"
+    log_file.write_text(log_content, encoding="utf-8")
+
+    model, reset_time = recovery.read_quota_log(log_file, now=now)
+    assert model == "gemini-4-argon-medium"
+    assert reset_time == "25 Oct 11:55"
+
+    # Also works when model is passed via CLI flag
+    log_cli = tmp_path / "cli.log"
+    log_cli.write_text(
+        'agy -p "prompt" --model gemini-4-argon-medium\n'
+        'error: Individual quota reached. Resets in 154h42m31s.\n',
+        encoding="utf-8",
+    )
+    m2, r2 = recovery.read_quota_log(log_cli, now=now)
+    assert m2 == "gemini-4-argon-medium"
+    assert r2 == "25 Oct 11:55"
 
 
+def test_resolve_offers_model_option_and_shows_out_until_evidence(tmp_path: Path, monkeypatch, installed_agents):
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+    from whyline.console.relay_screens import RelaySetupScreen
+
+    now = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", now, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_resolve_model")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n[backup]\nchain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "grok": {"available": True}},
+    )
+
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'error: Individual quota reached. Resets in 154h42m31s.\n'
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": 'antigravity hit a usage or rate limit; try again when it resets',
+            "log_path": str(log_file),
+        }),
+        encoding="utf-8",
+    )
+
+    probs = recovery.diagnose(repo, [], 'antigravity hit a usage or rate limit; try again when it resets')
+    assert probs[0].id == "out-of-usage"
+    expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+    assert expected_line in probs[0].evidence
+    assert expected_line in probs[0].summary
+
+    # Resolve offers **Use another antigravity model…**
+    model_opts = [opt for opt in probs[0].options if "model" in opt.id]
+    assert len(model_opts) == 1
+    assert model_opts[0].label == "Use another antigravity model…"
+    assert model_opts[0].recommended is False
+
+    # Auto never picks a model
+    assert recovery.auto_option(probs[0]) != model_opts[0]
+    prob_only_model = recovery.Problem(
+        id="out-of-usage",
+        summary="out",
+        evidence=[expected_line],
+        options=[
+            model_opts[0],
+            recovery.Option("show", "Show", "show", False, False),
+            recovery.Option("cancel", "Cancel", "cancel", False, False),
+        ],
+    )
+    assert recovery.auto_option(prob_only_model) is None
+
+    # Applying opens Set up on that Model row
+    res = recovery.apply(repo, probs[0], model_opts[0].id, lambda args: None)
+    assert isinstance(res, RelaySetupScreen)
+    assert getattr(res, "_focus_agent", None) == "antigravity"
+
+    # pause_message includes model out-until text
+    msg = recovery.pause_message("antigravity", "implementer", "rate-limit", root=repo, now=now)
+    assert msg == expected_line
+
+    # Production pause card shows model out-until line
+    from whyline.console import adapters
+
+    pause_card_text = adapters.format_pause_text(
+        repo,
+        "T1",
+        "antigravity hit a usage or rate limit; try again when it resets",
+        log_path=str(log_file),
+    )
+    assert "[rate-limit]" in pause_card_text
+    assert f"Reason {expected_line}" in pause_card_text
+
+    # classify_relay_output produces pause card with model out-until line
+    ev = adapters.classify_relay_output(repo, "Paused: rate-limit\n", 2)
+    assert ev.kind == "pause"
+    assert f"Reason {expected_line}" in ev.text
+
+
+def test_quota_log_with_no_model_name_falls_back_to_agent_level_message(tmp_path: Path, monkeypatch, installed_agents):
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+
+    now = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", now, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_no_model")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n[backup]\nchain = []\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "grok": {"available": True}},
+    )
+
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'error: Individual quota reached. Resets in 154h42m31s.\n',
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": 'antigravity hit a usage or rate limit; try again when it resets',
+            "log_path": str(log_file),
+        }),
+        encoding="utf-8",
+    )
+
+    model, reset_time = recovery.read_quota_log(log_file, now=now)
+    assert model == ""
+    assert reset_time == "25 Oct 11:55"
+
+    probs = recovery.diagnose(repo, [], 'antigravity hit a usage or rate limit; try again when it resets')
+    assert probs[0].id == "out-of-usage"
+    # Falls back to agent-level message
+    assert "antigravity" in probs[0].summary
+    assert "out until" not in probs[0].summary
+    # Resolve does NOT offer model option
+    assert not any("model" in opt.id for opt in probs[0].options)
+
+    # pause_message falls back to today's agent-level message
+    msg = recovery.pause_message("antigravity", "implementer", "rate-limit", root=repo, now=now)
+    assert "antigravity hit a usage or rate limit" in msg
+    assert "out until" not in msg
+
+    # Production pause card also falls back to agent-level message
+    from whyline.console import adapters
+
+    pause_card_text = adapters.format_pause_text(
+        repo,
+        "T1",
+        "antigravity hit a usage or rate limit; try again when it resets",
+        log_path=str(log_file),
+    )
+    assert "[rate-limit]" in pause_card_text
+    assert "Reason antigravity hit a usage or rate limit; try again when it resets" in pause_card_text
+    assert "out until" not in pause_card_text
+
+    ev = adapters.classify_relay_output(repo, "Paused: rate-limit\n", 2)
+    assert ev.kind == "pause"
+    assert "Reason antigravity hit a usage or rate limit; try again when it resets" in ev.text
+    assert "out until" not in ev.text
+
+
+def test_quota_preserves_absolute_resets_at_when_display_time_is_later_than_failure_time(tmp_path: Path, monkeypatch, installed_agents):
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+    from whyline.console import adapters
+    from whyline_relay import failover
+
+    failure_time = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    display_time = datetime(2026, 10, 21, 14, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_display_later")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n[backup]\nchain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "grok": {"available": True}},
+    )
+
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    # ActiveOverride was persisted at failure_time with resets_at 25 Oct 11:55
+    override = failover.ActiveOverride(
+        agent="grok",
+        backup_for="antigravity",
+        reason="rate-limit",
+        since="2026-10-19T01:12:29",
+        resets_at="2026-10-25T11:55:00+00:00",
+    )
+    failover.write_override(repo, "implementer", override)
+
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": 'antigravity hit a usage or rate limit; try again when it resets',
+            "log_path": str(log_file),
+        }),
+        encoding="utf-8",
+    )
+
+    expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+
+    # read_failing_turn_quota honors the override's absolute resets_at, not recomputing from display_time
+    m, r = recovery.read_failing_turn_quota(repo, "antigravity", override=override, now=display_time)
+    assert m == "gemini-4-argon-medium"
+    assert r == "25 Oct 11:55"
+
+    # find_out_until_models also honors absolute resets_at
+    out_models = recovery.find_out_until_models(repo, now=display_time)
+    assert out_models.get("antigravity") == expected_line
+
+    # pause_message preserves absolute resets_at at later display time
+    msg = recovery.pause_message("antigravity", "implementer", "rate-limit", root=repo, now=display_time)
+    assert msg == expected_line
+
+    # production pause card preserves absolute resets_at
+    pause_card_text = adapters.format_pause_text(
+        repo,
+        "T1",
+        "antigravity hit a usage or rate limit; try again when it resets",
+        log_path=str(log_file),
+    )
+    assert f"Reason {expected_line}" in pause_card_text
+
+    ev = adapters.classify_relay_output(repo, "Paused: rate-limit\n", 2)
+    assert ev.kind == "pause"
+    assert f"Reason {expected_line}" in ev.text
+
+
+def test_old_quota_logs_and_non_quota_state_do_not_produce_out_until_models(tmp_path: Path, monkeypatch, installed_agents):
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+
+    now = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", now, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_old_logs")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n[backup]\nchain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "grok": {"available": True}},
+    )
+
+    # Historical quota log exists from a previous run
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    old_log = logs_dir / "T0-1-antigravity.log"
+    old_log.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    # 1. No state and no override: old quota log must NOT produce an out-until status
+    out_models = recovery.find_out_until_models(repo, now=now)
+    assert out_models == {}
+
+    m, r = recovery.read_failing_turn_quota(repo, "antigravity", now=now)
+    assert m == ""
+    assert r == ""
+
+    # 2. Non-quota state (e.g. sandbox error): must NOT produce an out-until status
+    sandbox_log = logs_dir / "T1-1-antigravity.log"
+    sandbox_log.write_text("antigravity could not run a required command: git status\n", encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "antigravity could not run a required command",
+            "log_path": str(sandbox_log),
+        }),
+        encoding="utf-8",
+    )
+    out_models = recovery.find_out_until_models(repo, now=now)
+    assert out_models == {}
+
+    m, r = recovery.read_failing_turn_quota(
+        repo, "antigravity", reason="antigravity could not run a required command", log_path=str(sandbox_log), now=now
+    )
+    assert m == ""
+    assert r == ""
+
+    # 3. Non-quota state (e.g. visit-cap): must NOT produce an out-until status
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "antigravity hit a 3-visit cap without handing off",
+            "log_path": str(sandbox_log),
+        }),
+        encoding="utf-8",
+    )
+    out_models = recovery.find_out_until_models(repo, now=now)
+    assert out_models == {}
+
+
+def test_quota_direct_pause_anchors_reset_deadline_to_failing_turn_when_display_time_is_later(tmp_path: Path, monkeypatch, installed_agents):
+    import os
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+    from whyline.console import adapters
+    from whyline_relay import failover
+
+    failure_time = datetime(2026, 10, 19, 1, 12, 29, tzinfo=timezone.utc)
+    display_time = datetime(2026, 10, 21, 14, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_direct_pause_display_later")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}},
+    )
+
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+    os.utime(log_file, (failure_time.timestamp(), failure_time.timestamp()))
+
+    # Direct pause without backup/override: NO override exists in repo
+    assert failover.read_overrides(repo) == {}
+
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state_file.write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "antigravity hit a usage or rate limit; try again when it resets",
+            "log_path": str(log_file),
+        }),
+        encoding="utf-8",
+    )
+    os.utime(state_file, (failure_time.timestamp(), failure_time.timestamp()))
+
+    expected_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+
+    # 1. At display_time (21 Oct 14:30), reset deadline is anchored to failure_time (25 Oct 11:55), NOT recomputed from display_time (28 Oct 01:12)
+    m, r = recovery.read_failing_turn_quota(repo, "antigravity", now=display_time)
+    assert m == "gemini-4-argon-medium"
+    assert r == "25 Oct 11:55"
+
+    out_models = recovery.find_out_until_models(repo, now=display_time)
+    assert out_models.get("antigravity") == expected_line
+
+    msg = recovery.pause_message("antigravity", "implementer", "rate-limit", root=repo, now=display_time)
+    assert msg == expected_line
+
+    pause_card_text = adapters.format_pause_text(
+        repo,
+        "T1",
+        "antigravity hit a usage or rate limit; try again when it resets",
+        log_path=str(log_file),
+    )
+    assert f"Reason {expected_line}" in pause_card_text
+
+    ev = adapters.classify_relay_output(repo, "Paused: rate-limit\n", 2)
+    assert ev.kind == "pause"
+    assert f"Reason {expected_line}" in ev.text
+
+    probs = recovery.diagnose(repo, [], "antigravity hit a usage or rate limit; try again when it resets")
+    assert expected_line in probs[0].evidence
+    assert expected_line in probs[0].summary
+
+    # 2. Later, when the reset deadline has passed (expired status):
+    expired_time = datetime(2026, 10, 26, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", expired_time, raising=False)
+
+    out_models_expired = recovery.find_out_until_models(repo, now=expired_time)
+    assert out_models_expired == {}
+
+    m_exp, r_exp = recovery.read_failing_turn_quota(repo, "antigravity", now=expired_time)
+    assert m_exp == ""
+    assert r_exp == ""
+
+    msg_expired = recovery.pause_message("antigravity", "implementer", "rate-limit", root=repo, now=expired_time)
+    assert "out until" not in msg_expired
+    assert "antigravity hit a usage or rate limit; try again when it resets" in msg_expired
+
+
+def test_sticky_switch_quota_override_apply_use_another_model_opens_relay_setup_screen(tmp_path: Path, monkeypatch, installed_agents):
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+    from whyline.console.relay_screens import RelaySetupScreen
+    from whyline_relay import failover
+
+    display_time = datetime(2026, 10, 21, 14, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_sticky_switch_model_apply")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "codex"\n[backup]\nchain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "grok": {"available": True}},
+    )
+
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "T1-1-antigravity.log"
+    log_file.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+
+    override = failover.ActiveOverride(
+        agent="grok",
+        backup_for="antigravity",
+        reason="rate-limit",
+        since="2026-10-19T01:12:29",
+        resets_at="2026-10-25T11:55:00+00:00",
+    )
+    failover.write_override(repo, "implementer", override)
+
+    probs = recovery.diagnose(repo, [])
+    sticky_probs = [p for p in probs if p.id == "sticky-switch"]
+    assert len(sticky_probs) == 1
+    sticky_prob = sticky_probs[0]
+
+    opt_ids = [opt.id for opt in sticky_prob.options]
+    assert "use-another-antigravity-model" in opt_ids
+
+    # Applying use-another-antigravity-model must open RelaySetupScreen on antigravity Model row,
+    # NOT be intercepted by the sticky-switch role reset branch
+    res = recovery.apply(repo, sticky_prob, "use-another-antigravity-model", lambda args: None)
+    assert isinstance(res, RelaySetupScreen)
+    assert getattr(res, "_focus_agent", None) == "antigravity"
+
+    # Confirm the override was NOT reset
+    current_overrides = failover.read_overrides(repo)
+    assert "implementer" in current_overrides
+    assert current_overrides["implementer"].agent == "grok"
+
+
+def test_antigravity_override_does_not_read_unrelated_codex_state_log(tmp_path: Path, monkeypatch, installed_agents):
+    """Regression for AGS-5: Quota lookup for an agent under an older rate-limit override
+    must not attribute an unrelated current state log (e.g. from Codex running as backup) to that agent.
+    """
+    import json
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+    from whyline_relay import failover
+
+    display_time = datetime(2026, 10, 21, 14, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_quota_override_unrelated_codex_log")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        '[relay]\nplan = "plan.md"\n[roles]\nimplementer = "antigravity"\ntester = "codex"\nreviewer = "claude"\nbackup = ["codex"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "claude": {"available": True}},
+    )
+
+    # 1. Antigravity hit quota in round 1; failing turn log is stored in logs/
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    agy_log = logs_dir / "T1-1-antigravity.log"
+    agy_log.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+    override = failover.ActiveOverride(
+        agent="codex",
+        backup_for="antigravity",
+        reason="rate-limit",
+        since="2026-10-19T01:12:29",
+        resets_at="2026-10-25T11:55:00+00:00",
+    )
+    failover.write_override(repo, "implementer", override)
+
+    # 2. In round 2, Codex ran as backup. Current relay state points to Codex's log which mentions a model.
+    codex_log = logs_dir / "T1-2-codex.log"
+    codex_log.write_text(
+        'running codex --model gpt-5\nCodex encountered a command error.\n',
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 2,
+            "base_commit": "abc",
+            "paused_reason": "codex could not run a required command: pytest",
+            "log_path": str(codex_log),
+        }),
+        encoding="utf-8",
+    )
+
+    # Quota lookup for antigravity must find Antigravity's failing turn log, NOT Codex's current state log
+    m, r = recovery.read_failing_turn_quota(repo, "antigravity", override=override, now=display_time)
+    assert m == "gemini-4-argon-medium"
+    assert r == "25 Oct 11:55"
+
+    out_models = recovery.find_out_until_models(repo, now=display_time)
+    assert out_models.get("antigravity") == "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+    assert "gpt-5" not in out_models.get("antigravity", "")
+
+    # Also test when Codex's state was itself a quota limit
+    codex_log.write_text(
+        'codex error: usage limit reached for model "gpt-5". Resets in 12h.\n',
+        encoding="utf-8",
+    )
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 2,
+            "base_commit": "abc",
+            "paused_reason": "codex hit a usage or rate limit; try again when it resets",
+            "log_path": str(codex_log),
+        }),
+        encoding="utf-8",
+    )
+
+    m2, r2 = recovery.read_failing_turn_quota(repo, "antigravity", override=override, now=display_time)
+    assert m2 == "gemini-4-argon-medium"
+    assert r2 == "25 Oct 11:55"
+
+    out_models2 = recovery.find_out_until_models(repo, now=display_time)
+    assert out_models2.get("antigravity") == "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+
+    # The review's reproduction: grok is the backup, and a later ordinary Codex turn's
+    # log names its model in a JSON field without any quota text
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            agent="grok",
+            backup_for="antigravity",
+            reason="rate-limit",
+            since="2026-10-19T01:12:29+00:00",
+            resets_at="2026-10-25T11:55:00+00:00",
+        ),
+    )
+    other_log = logs_dir / "T2-1-codex.log"
+    other_log.write_text('{"modelName":"gpt-5.1"}\nordinary successful turn\n', encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T2",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "codex could not run a required command",
+            "log_path": str(other_log),
+        }),
+        encoding="utf-8",
+    )
+    assert recovery.find_out_until_models(repo, now=display_time) == {
+        "antigravity": "antigravity · gemini-4-argon-medium out until 25 Oct 11:55",
+    }
+
+
+
+def test_backup_quota_pause_does_not_borrow_the_role_overrides_reset_time(tmp_path: Path, monkeypatch, installed_agents):
+    """Regression for AGS-5: the role's override records antigravity's limit. When codex,
+    running as that backup, later hits its own limit, codex's out-until line must use codex's
+    log and reset, never antigravity's override resets_at, and antigravity keeps its own line.
+    """
+    import os
+    import subprocess
+    from datetime import datetime, timezone
+    from whyline import account
+    from whyline_relay import failover
+
+    display_time = datetime(2026, 10, 21, 14, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_backup_quota_own_reset")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "claude"\n[backup]\nchain = ["codex"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "setup roles"], cwd=repo, check=True)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True}, "codex": {"available": True}, "claude": {"available": True}},
+    )
+
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    agy_log = logs_dir / "T1-1-antigravity.log"
+    agy_log.write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+    override = failover.ActiveOverride(
+        agent="codex",
+        backup_for="antigravity",
+        reason="rate-limit",
+        since="2026-10-19T01:12:29+00:00",
+        tried=["antigravity"],
+        resets_at="2026-10-25T11:55:00+00:00",
+    )
+    failover.write_override(repo, "implementer", override)
+
+    codex_log = logs_dir / "T1-2-codex.log"
+    codex_log.write_text(
+        'codex --model gpt-5\nerror: usage limit reached. Resets in 12h0m0s.\n',
+        encoding="utf-8",
+    )
+    os.utime(codex_log, (display_time.timestamp(), display_time.timestamp()))
+    reason = "codex hit a usage or rate limit; try again when it resets"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 2,
+            "base_commit": "abc",
+            "paused_reason": reason,
+            "log_path": str(codex_log),
+        }),
+        encoding="utf-8",
+    )
+
+    codex_line = "codex · gpt-5 out until 22 Oct 02:30"
+    agy_line = "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+
+    # Passing the role's override (antigravity's limit) for codex must not attach its reset time
+    assert recovery.read_failing_turn_quota(repo, "codex", override=override, now=display_time) == (
+        "gpt-5",
+        "22 Oct 02:30",
+    )
+    # Nor may the lookup pick up that override on its own because codex is its backup
+    assert recovery.read_failing_turn_quota(repo, "codex", reason=reason, now=display_time) == (
+        "gpt-5",
+        "22 Oct 02:30",
+    )
+    # Antigravity's own limit still comes from its own log and override
+    assert recovery.read_failing_turn_quota(repo, "antigravity", override=override, now=display_time) == (
+        "gemini-4-argon-medium",
+        "25 Oct 11:55",
+    )
+
+    assert recovery.find_out_until_models(repo, now=display_time) == {
+        "antigravity": agy_line,
+        "codex": codex_line,
+    }
+
+    probs = recovery.diagnose(repo, [], reason)
+    usage = [p for p in probs if p.id == "out-of-usage"]
+    assert usage, [p.id for p in probs]
+    assert codex_line in usage[0].evidence
+    assert all("25 Oct" not in line for line in usage[0].evidence)
+    assert any(opt.label == "Use another codex model…" for opt in usage[0].options)
+
+
+def test_antigravity_override_ignores_unnamed_current_state_log(tmp_path: Path, monkeypatch, installed_agents):
+    """Regression for AGS-5: a current state log whose name does not say which agent wrote it
+    (e.g. chat-last-turn.log) is not antigravity's failing turn under an antigravity override,
+    even when it is a quota pause that names a model.
+    """
+    from datetime import datetime, timezone
+    from whyline_relay import failover
+
+    display_time = datetime(2026, 10, 21, 14, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(recovery, "_NOW_OVERRIDE", display_time, raising=False)
+
+    repo = _init_scratch_repo(tmp_path / "repo_override_unnamed_state_log")
+    logs_dir = repo / ".whyline" / "relay" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "T1-1-antigravity.log").write_text(
+        'AGY_ERROR: {"modelName":"gemini-4-argon-medium","error":"Individual quota reached. Resets in 154h42m31s."}\n',
+        encoding="utf-8",
+    )
+    override = failover.ActiveOverride(
+        agent="codex",
+        backup_for="antigravity",
+        reason="rate-limit",
+        since="2026-10-19T01:12:29+00:00",
+        resets_at="2026-10-25T11:55:00+00:00",
+    )
+    failover.write_override(repo, "implementer", override)
+
+    unnamed_log = logs_dir / "chat-last-turn.log"
+    unnamed_log.write_text('usage limit reached for model "gpt-5". Resets in 12h0m0s.\n', encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "T1",
+            "round": 2,
+            "base_commit": "abc",
+            "paused_reason": "usage limit reached; try again when it resets",
+            "log_path": str(unnamed_log),
+        }),
+        encoding="utf-8",
+    )
+
+    assert recovery.read_failing_turn_quota(repo, "antigravity", override=override, now=display_time) == (
+        "gemini-4-argon-medium",
+        "25 Oct 11:55",
+    )
+    assert recovery.find_out_until_models(repo, now=display_time).get("antigravity") == (
+        "antigravity · gemini-4-argon-medium out until 25 Oct 11:55"
+    )

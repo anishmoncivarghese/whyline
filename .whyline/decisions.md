@@ -20386,3 +20386,334 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d2e168b652d7404098f89629d03ca977 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-21T20:36:39.779Z"} -->
+
+## 2026-10-21 — Show model out-until status and offer alternate model setup on quota limits
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** A model out of quota can be replaced with an alternate model in Set up while preserving today's agent-level fallback and preventing Auto from picking models automatically
+
+**Rejected:**
+
+- parse model from config.toml when absent from log — prompt requires falling back to agent-level message when log names no model
+- allow Auto to pick a model — changing models requires human selection of capability and cost
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 4f305d087834473798be360dbf313f5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T21:09:32.953Z"} -->
+
+## 2026-10-21 — Pass AGS-5 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-5
+
+**Because:** The focused recovery and relay setup tests passed with exit 0 and cover quota-log model/reset parsing, model-specific pause and Resolve evidence, alternate-model setup navigation, Set up out-until status, no-model fallback, and Auto exclusion; the full project suite also passed with exit 0 and one skip
+
+**Rejected:**
+
+- Fail the task — no behavioral test failure or regression was observed
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: e6f5dbe4f478454298456ac145dea076 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T21:18:35.325Z"} -->
+
+## 2026-10-21 — Reject AGS-5 round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-5
+
+**Because:** The focused and full pytest suites pass, but Set up recomputes the relative reset duration at display time instead of honoring the override's absolute resets_at, and the new model-aware pause_message helper is not called by the production pause-card path, so the requested pause message remains unchanged
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 09690cdc00034ef484f53e52d57662de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T21:28:12.039Z"} -->
+
+## 2026-10-21 — Preserve absolute override resets_at and render model out-until lines in production pause cards
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** Set up was recomputing reset times relative to current display time instead of honoring the override's absolute resets_at, and format_pause_text was not calling pause_message to format the quota message
+
+**Rejected:**
+
+- recomputing reset times dynamically — loses the absolute reset deadline recorded during turn failure
+- keeping pause card reason unchanged — fails to inform user which model ran out of quota
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 2126e15142be4b7b8d06a85690205557 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T21:53:12.765Z"} -->
+
+## 2026-10-21 — AGS-5 passes Round 5 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-5
+
+**Because:** The focused recovery and relay setup suite and the full project suite both exited successfully, covering quota-log model and reset extraction, Resolve model switching, Set up out-until display, pause-card rendering, and agent-level fallback behavior
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 0bef143af61645959207e5d477bbe2fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T22:01:19.775Z"} -->
+
+## 2026-10-21 — Reject AGS-5 because Set up treats historical quota logs as active limits
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-5
+
+**Because:** find_out_until_models scans unattached logs and recomputes their relative reset duration from the current display time; it also calculates but ignores the state is_quota guard, so Set up can show a false, perpetually advancing out-until line without a quota pause or rate-limit override
+
+**Rejected:**
+
+- Approve after green tests — the focused and full suites pass but do not cover inactive or non-quota state and therefore miss the false status
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: b6d9d073a17c4daba308023b280ca7eb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T22:10:17.510Z"} -->
+
+## 2026-10-21 — Restrict find_out_until_models to active rate-limit overrides and quota pause states
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** Unattached log scanning and un-guarded state parsing produced false positive out-until rows from old logs when no active rate-limit override or quota pause existed
+
+**Rejected:**
+
+- Scan unattached logs — causes perpetually advancing false out-until status from old turn logs
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: c1e763998bd449768dcb28e440470ba3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T22:28:54.121Z"} -->
+
+## 2026-10-21 — AGS-5 passes Round 8 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-5
+
+**Because:** The focused recovery and Set up suite plus the full project suite passed; tests verify model/reset extraction, Resolve model navigation, Auto exclusion, pause and Set up rendering, agent fallback without a model, and suppression for stale logs or non-quota state
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: c18b6fd00f984c29a7a078d7d6e350f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T22:36:58.658Z"} -->
+
+## 2026-10-21 — Reject AGS-5 Round 9 because direct quota pauses move the reset deadline forward
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-5
+
+**Because:** read_failing_turn_quota parses a paused state's relative Resets in value using display time whenever no active override supplies resets_at; reopening the same no-backup pause later changes 25 Oct 11:55 to 28 Oct 01:12 and keeps Set up showing an active future limit indefinitely, despite both focused and full suites passing
+
+**Rejected:**
+
+- Approve after green tests — the tests cover delayed display only when an override persists an absolute resets_at, not the required direct-pause path
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 2a206c0dd77c432bbda51e6de6fa2a57 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-21T22:46:04.293Z"} -->
+
+## 2026-10-22 — Retrying stage 'draft' once more.
+
+**Actor:** relay
+**Role:** resume
+**Task:** AGS-5
+
+**Because:** Stage 'draft' had hit its visit cap. Its saved visit count was lowered by one so this resume can enter it once more. max_visits is unchanged, so the pipeline fingerprint stays the same.
+
+<!-- whyline-event: 52f60184b984481b97dcd8ba87a47857 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T04:09:03.191Z"} -->
+
+## 2026-10-22 — Anchor direct quota pause reset deadlines to failing turn timestamp and suppress expired limits
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** Relative Resets in durations in turn logs must anchor to the failing turn execution timestamp so reopening a paused relay does not advance the deadline, and expired limits are suppressed
+
+**Rejected:**
+
+- parse relative reset from display time — advances reset deadline on every console reopen and prevents limits from expiring
+- require ActiveOverride to persist reset deadlines — direct pauses without backups have no override records
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 805c9e46587e437095a3a4821970a787 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T04:36:36.715Z"} -->
+
+## 2026-10-22 — AGS-5 passes Round 10 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-5
+
+**Because:** The focused recovery and Set up tests and the full project suite both exited 0; coverage exercises quota model/reset extraction, Resolve navigation, Auto exclusion, pause/evidence/Set up rendering, missing-model fallback, failure-time anchoring, and expired-status suppression
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 7f9ac7d744c24313aac8197d1e150599 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T04:45:12.594Z"} -->
+
+## 2026-10-22 — AGS-5 Round 11 requires changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-5
+
+**Because:** The suites pass, but quota overrides expose a model option whose apply path is intercepted by the sticky-switch use-* handler, so it resets the role instead of opening Set up on the Model row; duplicate test definitions hide intended coverage, the test files fail git diff --check, and adapters.py is outside the stated file scope.
+
+**Rejected:**
+
+- approve — required override Resolve behavior is broken despite passing tests
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py, src/whyline/console/adapters.py
+
+<!-- whyline-event: 172cca8bd37d4b4897544fda4fd8f8b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T04:54:05.792Z"} -->
+
+## 2026-10-22 — Route use-another-model in recovery.apply to RelaySetupScreen before role-reset branch
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** Sticky-switch quota overrides offer use-another-<agent>-model which was intercepted by the generic sticky-switch use-* prefix check in apply, resetting the role instead of opening Set up focused on the agent
+
+**Rejected:**
+
+- check prefix use- without excluding -model — intercepts model options on active overrides and resets roles
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 0f1492ecd2b74d5f9a3e33b7c4fc4d29 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T05:10:22.739Z"} -->
+
+## 2026-10-22 — Retain adapters.py pause formatting hook for model quota out-until messages
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** The AGS-5 requirement to show the out-until model line in the pause message requires format_pause_text and classify_relay_output in adapters.py to resolve the failing turn log via recovery.pause_message, otherwise console pause cards only display the generic agent-level reason
+
+**Rejected:**
+
+- revert adapters.py — console pause cards would display generic rate limit text instead of naming the model that ran out
+
+**Files:** src/whyline/console/adapters.py
+
+<!-- whyline-event: 151038a598024c11a4529c3c672b474d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T05:10:27.448Z"} -->
+
+## 2026-10-22 — AGS-5 passes behavioral and regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-5
+
+**Because:** The targeted recovery and Relay Setup tests passed all 120 cases, including quota model/reset presentation and model-row navigation, and the full suite passed 843 tests with 1 skip
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 7db8e0dc3e6f4030b6e25d3cc06e660d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T05:18:58.115Z"} -->
+
+## 2026-10-22 — AGS-5 needs correction before approval
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-5
+
+**Because:** Quota lookup can attribute an unrelated current state log's model to the agent under an older quota override, and the Set up status widget overflows the model row so the reset time is clipped at 80 columns
+
+**Rejected:**
+
+- approve — both defects are user-visible and the current tests only assert stored renderable text, not correct log association or visible layout
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: a11783b18b6244efa20bc371ef307b45 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T05:29:48.060Z"} -->
+
+## 2026-10-22 — Add RSV-1..4 (caps outrank dirty-work, Retry stage keeps work, repeated-defect evidence, Auto past a cap once) after AWK-1, before IDEA-15
+
+**Actor:** claude
+**Role:** planner
+**Task:** RSV-PLAN
+
+**Because:** At AGS-5's cap Resolve recommended Resume and keep changes, which cannot pass a cap; Retry stage drops --allow-dirty; three reviews naming one defect went unnoticed; RCP-1 was approved 2026-10-20 but never added
+
+**Rejected:**
+
+- Wait until AGS-5 commits — the user stopped AGS-5 at round 15 to switch models, so this pause is the window; a fresh start also resets AGS-5's round and visit budget
+- Plan-only commits mid-task in the console — belongs in the relay loop, planned as whyline-relay RLY-1
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 62429fd333d6434c928c388097c60066 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T05:46:11.745Z"} -->
+
+## 2026-10-22 — Keep round-15 fixes for AGS-5 review defects and pin the reviewer's exact reproduction as a regression
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AGS-5
+
+**Because:** Round 15 already restricted state-log association under an override to logs named for the overridden agent and stacked the out-until line under the Model row; its turn was interrupted before handoff, and the review's grok-backup, non-quota JSON modelName case was not asserted verbatim
+
+**Rejected:**
+
+- rewrite read_failing_turn_quota — the existing association guard already rejects the reproduction and the reviewer asked for a regression, not a redesign
+
+**Files:** tests/console/test_recovery.py
+
+<!-- whyline-event: 44f8c16279ae45b591857542b219a24d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T06:32:38.062Z"} -->
+
+## 2026-10-22 — AGS-5 round-2 testing passes targeted and full regression suites
+
+**Actor:** codex
+**Role:** tester
+**Task:** AGS-5
+
+**Because:** The required recovery and Relay Setup tests exited 0, including regressions for unrelated state-log attribution and complete 80-column out-until rendering, and the full pytest suite exited 0 with one expected skip
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: b923fd20036b4f61912dd876cf62162b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T06:40:52.244Z"} -->
+
+## 2026-10-22 — Approve AGS-5 model-specific quota recovery and setup flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AGS-5
+
+**Because:** The implementation names the exhausted model and stable reset deadline in pause cards, Resolve evidence, and Set up; opens the correct Model row; excludes model choices from Auto; preserves agent-level fallback; fixes cross-agent log attribution and 80-column clipping; the targeted and full pytest suites plus git diff --check pass
+
+**Rejected:**
+
+- request changes — the previously reported attribution and layout defects are fixed and covered by genuine regressions
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4b68864786d143ca874c088cc23ab201 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T06:50:37.473Z"} -->

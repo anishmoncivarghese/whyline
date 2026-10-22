@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1197,6 +1197,13 @@ def auto_option(problem: Problem) -> Option | None:
         if opt.recommended:
             if opt.confirm:
                 return None
+            if (
+                opt.id in ("use-another-model", "use-other-model")
+                or (opt.id.startswith("use-another-") and opt.id.endswith("-model"))
+                or (opt.id.startswith("use-other-") and opt.id.endswith("-model"))
+                or "model" in opt.id
+            ):
+                return None
             return opt
     return None
 
@@ -1497,6 +1504,18 @@ def make_rec_4c_option(
                 pass
         label = f"Switch back to {configured_agent} anyway"
         detail = f"whyline relay roles reset {target_role}" if target_role else "whyline relay roles reset"
+    elif opt_id in ("use-another-model", "use-other-model") or (
+        opt_id.startswith("use-another-") and opt_id.endswith("-model")
+    ) or (
+        opt_id.startswith("use-other-") and opt_id.endswith("-model")
+    ):
+        ag = "antigravity"
+        if opt_id.startswith("use-another-") and opt_id.endswith("-model"):
+            ag = opt_id[len("use-another-") : -len("-model")]
+        elif opt_id.startswith("use-other-") and opt_id.endswith("-model"):
+            ag = opt_id[len("use-other-") : -len("-model")]
+        label = f"Use another {ag} model…"
+        detail = f"open RelaySetupScreen on Model ({ag})"
     elif opt_id == "choose-agents":
         label = "Choose agents…"
         detail = "open RelaySetupScreen"
@@ -1627,7 +1646,7 @@ def _logged_out_options(agent: str) -> list[Option]:
     return opts
 
 
-def _override_reset_status(override: Any) -> tuple[str, str]:
+def _override_reset_status(override: Any, *, now: datetime | None = None) -> tuple[str, str]:
     """Returns (status, label) where status is 'past', 'ahead', or 'unknown',
     and label is formatted reset time or 'unknown'."""
     resets_at = getattr(override, "resets_at", "") or ""
@@ -1637,12 +1656,596 @@ def _override_reset_status(override: Any) -> tuple[str, str]:
         when = datetime.fromisoformat(resets_at)
     except (TypeError, ValueError):
         return "unknown", "unknown"
-    now = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
-    return ("ahead", resets_at) if when > now else ("past", resets_at)
+    cur = now if now is not None else _NOW_OVERRIDE
+    if cur is None:
+        cur = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
+    elif when.tzinfo is not None and cur.tzinfo is None:
+        cur = cur.replace(tzinfo=when.tzinfo)
+    elif when.tzinfo is None and cur.tzinfo is not None:
+        when = when.replace(tzinfo=cur.tzinfo)
+    return ("ahead", resets_at) if when > cur else ("past", resets_at)
 
 
 def _override_reset_in_future(override: Any) -> bool:
     return _override_reset_status(override)[0] == "ahead"
+
+
+_NOW_OVERRIDE: datetime | None = None
+
+
+def _compare_datetimes(dt1: datetime, dt2: datetime) -> int:
+    d1 = dt1
+    d2 = dt2
+    if d1.tzinfo is not None and d2.tzinfo is None:
+        d2 = d2.replace(tzinfo=d1.tzinfo)
+    elif d1.tzinfo is None and d2.tzinfo is not None:
+        d1 = d1.replace(tzinfo=d2.tzinfo)
+    if d1 < d2:
+        return -1
+    elif d1 > d2:
+        return 1
+    return 0
+
+
+def _is_reset_expired(deadline_iso: str, now: datetime | None = None) -> bool:
+    if not deadline_iso:
+        return False
+    try:
+        when = datetime.fromisoformat(deadline_iso)
+    except (ValueError, TypeError):
+        return False
+    cur = now if now is not None else _NOW_OVERRIDE
+    if cur is None:
+        cur = datetime.now(when.tzinfo) if when.tzinfo is not None else datetime.now()
+    return _compare_datetimes(when, cur) <= 0
+
+
+def _turn_moment_for_quota(
+    lp: Path | str | None,
+    txt: str = "",
+    root_path: Path | None = None,
+    effective_now: datetime | None = None,
+) -> datetime | None:
+    if txt:
+        m_ts = re.search(
+            r'\b(20\d\d-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)\b',
+            txt,
+        )
+        if m_ts:
+            try:
+                t_str = m_ts.group(1).replace("Z", "+00:00")
+                dt = datetime.fromisoformat(t_str)
+                if effective_now is None or _compare_datetimes(dt, effective_now) <= 0:
+                    return dt
+            except Exception:
+                pass
+
+    path_obj: Path | None = None
+    if isinstance(lp, Path):
+        path_obj = lp
+    elif isinstance(lp, str) and lp:
+        try:
+            p = Path(lp)
+            if not p.is_absolute() and root_path is not None:
+                p = root_path / p
+            path_obj = p
+        except Exception:
+            path_obj = None
+
+    if path_obj is not None and path_obj.is_file():
+        try:
+            mtime = path_obj.stat().st_mtime
+            tz = (
+                effective_now.tzinfo
+                if (effective_now is not None and effective_now.tzinfo is not None)
+                else timezone.utc
+            )
+            dt = datetime.fromtimestamp(mtime, tz=tz)
+            if effective_now is None or _compare_datetimes(dt, effective_now) <= 0:
+                return dt
+        except Exception:
+            pass
+
+    if root_path is not None:
+        st_path = Path(root_path) / ".whyline" / "relay" / "state.json"
+        if st_path.is_file():
+            try:
+                mtime = st_path.stat().st_mtime
+                tz = (
+                    effective_now.tzinfo
+                    if (effective_now is not None and effective_now.tzinfo is not None)
+                    else timezone.utc
+                )
+                dt = datetime.fromtimestamp(mtime, tz=tz)
+                if effective_now is None or _compare_datetimes(dt, effective_now) <= 0:
+                    return dt
+            except Exception:
+                pass
+
+    return effective_now
+
+
+def _format_iso_reset(iso_str: str) -> str:
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        return f"{dt.day} {dt.strftime('%b %H:%M')}"
+    except (ValueError, TypeError):
+        return ""
+
+
+def parse_quota_log(
+    path_or_text: Path | str,
+    *,
+    now: datetime | None = None,
+) -> tuple[str, str]:
+    """Extract (model, reset_time) from an agent's quota or turn log.
+
+    `reset_time` is formatted like '25 Oct 11:55'.
+    Returns ('', '') or ('', reset_time) if model is not named.
+    """
+    effective_now = now if now is not None else _NOW_OVERRIDE
+    text = ""
+    lp: Path | None = None
+    if isinstance(path_or_text, Path):
+        lp = path_or_text
+        try:
+            text = path_or_text.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = str(path_or_text)
+    elif isinstance(path_or_text, str):
+        if len(path_or_text) < 1024 and "\n" not in path_or_text:
+            try:
+                p = Path(path_or_text)
+                if p.is_file():
+                    lp = p
+                    text = p.read_text(encoding="utf-8", errors="replace")
+                else:
+                    text = path_or_text
+            except OSError:
+                text = path_or_text
+        else:
+            text = path_or_text
+    else:
+        text = str(path_or_text)
+
+    turn_moment = (
+        _turn_moment_for_quota(lp, text, effective_now=effective_now)
+        if now is None
+        else effective_now
+    )
+
+    from whyline_relay import failover as relay_failover
+
+    reset_time = ""
+    deadline_iso = relay_failover.reset_deadline(text, now=turn_moment)
+    if deadline_iso:
+        reset_time = _format_iso_reset(deadline_iso)
+
+    model = ""
+    # 1. JSON fields
+    m_json = re.search(r'"model(?:Name|_name)?"\s*:\s*"([^"]+)"', text)
+    if m_json:
+        model = m_json.group(1).strip()
+
+    # 2. Command flag --model <name> or -m <name>
+    if not model:
+        m_flag = re.search(r'(?:--model|-m)(?:=|\s+)["\']?([^\s"\'`,]+)', text)
+        if m_flag:
+            model = m_flag.group(1).strip()
+
+    # 3. Header lines "model: <name>" or "Model: <name>"
+    if not model:
+        m_hdr = re.search(
+            r'^\s*model\s*[:=]\s*["\']?([^\s"\'`,]+)',
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if m_hdr:
+            model = m_hdr.group(1).strip()
+
+    # 4. Contextual mentions e.g. "model 'gemini-4-argon-medium'"
+    if not model:
+        m_phrase = re.search(
+            r'\b(?:for\s+)?model\s+["\']([^\s"\'`,]+)["\']',
+            text,
+            re.IGNORECASE,
+        )
+        if m_phrase:
+            model = m_phrase.group(1).strip()
+
+    # 5. Known model identifier in quota error text
+    if not model:
+        m_known = re.search(
+            r'\b(gemini-[a-zA-Z0-9_.-]+|claude-[a-zA-Z0-9_.-]+|gpt-[a-zA-Z0-9_.-]+|grok-[a-zA-Z0-9_.-]+)\b',
+            text,
+        )
+        if m_known:
+            model = m_known.group(1).strip()
+
+    return model, reset_time
+
+
+read_quota_log = parse_quota_log
+
+
+def format_out_until(agent: str, model: str, reset_time: str) -> str:
+    return f"{agent} · {model} out until {reset_time}"
+
+
+def _infer_agent_from_log(root: Path, log_path: Path | str) -> str:
+    path = Path(log_path)
+    stem = path.stem.lower()
+    # Relay turn logs are named "<task>-<round>-<agent>[-<role>].log"; read the
+    # agent from that slot first so a task id or role cannot name another agent.
+    m_slot = re.search(r"-\d+-(antigravity|claude|codex|grok)(?:-|$)", stem)
+    if m_slot:
+        return m_slot.group(1)
+    for ag in ("antigravity", "claude", "codex", "grok"):
+        if ag in stem:
+            return ag
+    if "agy" in stem:
+        return "antigravity"
+    return ""
+
+
+def read_failing_turn_quota(
+    root: Path | str,
+    agent: str = "",
+    *,
+    override: Any = None,
+    reason: str = "",
+    log_path: Path | str | None = None,
+    now: datetime | None = None,
+) -> tuple[str, str]:
+    """Find and read the failing turn's log for `agent`, returning (model, reset_time)."""
+    root_path = Path(root).resolve()
+    effective_now = now if now is not None else _NOW_OVERRIDE
+
+    if override is None:
+        try:
+            from whyline_relay import failover as relay_failover
+
+            ovs = relay_failover.read_overrides(root_path)
+            for ov in ovs.values():
+                # Only the override written when `agent` ran out describes
+                # `agent`'s limit. An override where `agent` is the backup
+                # carries another agent's reset time.
+                if ov.reason == "rate-limit" and (not agent or ov.backup_for == agent):
+                    override = ov
+                    break
+        except Exception:
+            pass
+    elif agent and getattr(override, "backup_for", "") != agent:
+        # The caller's override belongs to a different agent's limit (for
+        # example the role's override when its backup later paused), so its
+        # resets_at must not be attached to `agent`.
+        override = None
+
+    if not agent and override:
+        agent = getattr(override, "backup_for", None) or getattr(override, "agent", "")
+    if not agent and reason:
+        m_fa = re.search(r"(\S+)\s+(?:hit a usage or rate limit|exited without handing off)", reason)
+        if m_fa:
+            agent = m_fa.group(1)
+        if not agent:
+            for ag in ("antigravity", "claude", "codex", "grok"):
+                if ag in reason.lower():
+                    agent = ag
+                    break
+
+    from whyline.console import adapters
+
+    has_quota_override = override is not None and getattr(override, "reason", "") == "rate-limit"
+    has_quota_reason = bool(reason and ((adapters.failure_kind(reason) == "rate-limit") or _quota_text(reason)))
+
+    # If neither override nor reason indicates quota, check state.json
+    if not has_quota_override and not has_quota_reason:
+        try:
+            from whyline_relay import state as relay_state
+
+            st = relay_state.load(root_path)
+            if st is not None and st.paused_reason:
+                if (adapters.failure_kind(st.paused_reason) == "rate-limit") or _quota_text(st.paused_reason):
+                    has_quota_reason = True
+                    if not log_path and st.log_path:
+                        log_path = st.log_path
+        except Exception:
+            pass
+
+    # Only read a failing log when the associated pause or override is quota/rate-limit (or log_path is explicitly provided)
+    if not has_quota_override and not has_quota_reason and not log_path:
+        return "", ""
+
+    ov_resets_at = getattr(override, "resets_at", "") if override else ""
+    if ov_resets_at and _is_reset_expired(ov_resets_at, effective_now):
+        return "", ""
+    ov_reset_formatted = _format_iso_reset(ov_resets_at) if ov_resets_at else ""
+
+    from whyline_relay import failover as relay_failover
+
+    # 1. Direct log_path
+    if log_path:
+        lp = Path(log_path)
+        if not lp.is_absolute():
+            lp = root_path / lp
+        if lp.is_file():
+            log_agent = _infer_agent_from_log(root_path, lp)
+            if not agent or not log_agent or log_agent == agent:
+                try:
+                    txt = lp.read_text(encoding="utf-8", errors="replace")
+                    turn_moment = _turn_moment_for_quota(lp, txt, root_path, effective_now)
+                    deadline_iso = ov_resets_at or relay_failover.reset_deadline(txt, now=turn_moment)
+                    if deadline_iso and _is_reset_expired(deadline_iso, effective_now):
+                        return "", ""
+                    m, r = parse_quota_log(txt, now=turn_moment)
+                    if ov_reset_formatted:
+                        r = ov_reset_formatted
+                    return m, r
+                except OSError:
+                    pass
+        return "", ov_reset_formatted
+
+    best_m = ""
+    best_r = ov_reset_formatted
+
+    # 2. Check state.json
+    try:
+        from whyline_relay import state as relay_state
+
+        st = relay_state.load(root_path)
+        if st and st.log_path:
+            st_log_agent = _infer_agent_from_log(root_path, st.log_path)
+            st_reason = st.paused_reason or ""
+            st_agent = getattr(st, "agent", None) or st_log_agent
+            if not st_agent and st_reason:
+                for ag_name in ("antigravity", "claude", "codex", "grok"):
+                    if re.search(rf"\b{ag_name}\b", st_reason.lower()):
+                        st_agent = ag_name
+                        break
+
+            # The current state log describes whichever turn paused last. It is
+            # `agent`'s failing turn only when that pause was a quota limit and
+            # the log is `agent`'s own; under an override the log must name
+            # `agent` outright, since the backup's turns run in the meantime.
+            st_is_quota = bool(st_reason) and (
+                adapters.failure_kind(st_reason) == "rate-limit" or bool(_quota_text(st_reason))
+            )
+            mismatch = not st_is_quota
+            if agent:
+                if st_agent and st_agent != agent:
+                    mismatch = True
+                elif override is not None and st_log_agent != agent:
+                    mismatch = True
+
+            if not mismatch:
+                lp = Path(st.log_path)
+                if not lp.is_absolute():
+                    lp = root_path / lp
+                if lp.is_file():
+                    txt = lp.read_text(encoding="utf-8", errors="replace")
+                    turn_moment = _turn_moment_for_quota(lp, txt, root_path, effective_now)
+                    deadline_iso = ov_resets_at or relay_failover.reset_deadline(txt, now=turn_moment)
+                    if not (deadline_iso and _is_reset_expired(deadline_iso, effective_now)):
+                        m, r = parse_quota_log(txt, now=turn_moment)
+                        if ov_reset_formatted:
+                            r = ov_reset_formatted
+                        if m and not best_m:
+                            best_m = m
+                        if r and not best_r:
+                            best_r = r
+                        if best_m and best_r:
+                            return best_m, best_r
+    except Exception:
+        pass
+
+    # 3. Check logs directory for the active override's failing log
+    logs_dir = root_path / ".whyline" / "relay" / "logs"
+    if logs_dir.is_dir():
+        candidates = []
+        if agent:
+            candidates.extend(logs_dir.glob(f"*{agent}*.log"))
+            if agent == "antigravity":
+                candidates.extend(logs_dir.glob("*agy*.log"))
+        else:
+            candidates = list(logs_dir.glob("*.log"))
+        if agent:
+            candidates = [
+                c for c in candidates
+                if _infer_agent_from_log(root_path, c) in (agent, "")
+            ]
+        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        for cand in candidates:
+            try:
+                txt = cand.read_text(encoding="utf-8", errors="replace")
+                if not (_quota_text(txt) or relay_failover.reset_deadline(txt) or "quota" in txt.lower() or "rate limit" in txt.lower()):
+                    continue
+                turn_moment = _turn_moment_for_quota(cand, txt, root_path, effective_now)
+                deadline_iso = ov_resets_at or relay_failover.reset_deadline(txt, now=turn_moment)
+                if deadline_iso and _is_reset_expired(deadline_iso, effective_now):
+                    continue
+                m, r = parse_quota_log(txt, now=turn_moment)
+                if ov_reset_formatted:
+                    r = ov_reset_formatted
+                if m and not best_m:
+                    best_m = m
+                if r and not best_r:
+                    best_r = r
+                if best_m and best_r:
+                    return best_m, best_r
+            except OSError:
+                continue
+
+    # 4. Check reason text directly
+    if reason:
+        reason_agent = ""
+        for ag in ("antigravity", "claude", "codex", "grok"):
+            if ag in reason.lower():
+                reason_agent = ag
+                break
+        if not agent or not reason_agent or reason_agent == agent:
+            turn_moment = _turn_moment_for_quota(None, reason, root_path, effective_now)
+            deadline_iso = ov_resets_at or relay_failover.reset_deadline(reason, now=turn_moment)
+            if not (deadline_iso and _is_reset_expired(deadline_iso, effective_now)):
+                m, r = parse_quota_log(reason, now=turn_moment)
+                if ov_reset_formatted:
+                    r = ov_reset_formatted
+                if m and not best_m:
+                    best_m = m
+                if r and not best_r:
+                    best_r = r
+                if best_m and best_r:
+                    return best_m, best_r
+
+    if best_m or best_r:
+        return best_m, best_r
+
+    return "", ""
+
+
+def find_out_until_models(
+    root: Path | str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, str]:
+    """Finds agents with out-until status from pauses or active rate-limit overrides."""
+    root_path = Path(root).resolve()
+    result: dict[str, str] = {}
+    effective_now = now if now is not None else _NOW_OVERRIDE
+
+    # Check overrides
+    try:
+        from whyline_relay import failover as relay_failover
+
+        overrides = relay_failover.read_overrides(root_path)
+        for role, ov in overrides.items():
+            if ov.reason == "rate-limit":
+                status, _ = _override_reset_status(ov, now=effective_now)
+                if status == "past":
+                    continue
+                ag = ov.backup_for or ov.agent
+                if ag and ag not in result:
+                    m, r = read_failing_turn_quota(root_path, ag, override=ov, now=effective_now)
+                    if m and r:
+                        result[ag] = f"{ag} · {m} out until {r}"
+    except Exception:
+        pass
+
+    # Check state
+    try:
+        from whyline_relay import state as relay_state
+
+        st = relay_state.load(root_path)
+        if st is not None:
+            reason = st.paused_reason or ""
+            from whyline.console import adapters
+
+            is_quota = (adapters.failure_kind(reason) == "rate-limit") or _quota_text(reason)
+            if is_quota:
+                ag = getattr(st, "agent", None) or ""
+                if not ag:
+                    m_fa = re.search(
+                        r"(\S+)\s+(?:hit a usage or rate limit|exited without handing off)",
+                        reason,
+                    )
+                    if m_fa:
+                        ag = m_fa.group(1)
+                m, r = read_failing_turn_quota(
+                    root_path,
+                    ag,
+                    reason=reason,
+                    log_path=st.log_path,
+                    now=effective_now,
+                )
+                if not ag and st.log_path:
+                    ag = _infer_agent_from_log(root_path, st.log_path)
+                if not ag and m.startswith("gemini-"):
+                    ag = "antigravity"
+                if ag and m and r and ag not in result:
+                    result[ag] = f"{ag} · {m} out until {r}"
+    except Exception:
+        pass
+
+    return result
+
+
+def pause_message(
+    agent: str = "",
+    role: str = "",
+    reason: str = "",
+    override: Any = None,
+    *,
+    root: Path | str | None = None,
+    log_path: Path | str | None = None,
+    model: str = "",
+    reset_time: str = "",
+    now: datetime | None = None,
+) -> str:
+    """Format a pause message with model and reset time if known, else agent-level fallback."""
+    effective_now = now if now is not None else _NOW_OVERRIDE
+
+    if not agent and reason:
+        m_fa = re.search(r"(\S+)\s+(?:hit a usage or rate limit|exited without handing off)", reason)
+        if m_fa:
+            agent = m_fa.group(1)
+        if not agent:
+            for ag in ("antigravity", "claude", "codex", "grok"):
+                if ag in reason.lower():
+                    agent = ag
+                    break
+
+    if not agent and override:
+        agent = getattr(override, "backup_for", None) or getattr(override, "agent", "")
+
+    if not agent and root is not None and log_path:
+        agent = _infer_agent_from_log(root, log_path)
+
+    if not agent and root is not None:
+        try:
+            from whyline_relay import state as relay_state
+
+            st = relay_state.load(Path(root))
+            if st and getattr(st, "agent", None):
+                agent = st.agent
+        except Exception:
+            pass
+
+    if not agent and root is not None:
+        try:
+            from whyline_relay import failover as relay_failover
+
+            ovs = relay_failover.read_overrides(Path(root))
+            for ov in ovs.values():
+                if ov.reason == "rate-limit":
+                    agent = ov.backup_for or ov.agent
+                    if not override:
+                        override = ov
+                    break
+        except Exception:
+            pass
+
+    if (not model or not reset_time) and root is not None:
+        m, r = read_failing_turn_quota(
+            root, agent, override=override, reason=reason, log_path=log_path, now=effective_now
+        )
+        if m and not model:
+            model = m
+        if r and not reset_time:
+            reset_time = r
+
+    if not agent and model and model.startswith("gemini-"):
+        agent = "antigravity"
+
+    if model and reset_time:
+        return f"{agent} · {model} out until {reset_time}" if agent else f"{model} out until {reset_time}"
+
+    from whyline_relay import failover as relay_failover
+
+    try:
+        return relay_failover.pause_message(agent or "agent", role, reason or "rate-limit", override)
+    except Exception:
+        return reason or f"{agent or 'agent'} hit a usage or rate limit; try again when it resets"
 
 
 def diagnose(
@@ -1741,7 +2344,39 @@ def diagnose(
                     else:
                         generic = configured in _GENERIC_AGENTS
                         reset_status, reset_label = _override_reset_status(override)
-                        if generic or reset_status in ("unknown", "ahead"):
+                        model, reset_time = read_failing_turn_quota(
+                            root_path, configured, override=override
+                        )
+                        if model and reset_time:
+                            out_line = f"{configured} · {model} out until {reset_time}"
+                            evidence_lines.append(out_line)
+                            model_opt = Option(
+                                f"use-another-{configured}-model",
+                                f"Use another {configured} model…",
+                                f"open RelaySetupScreen on Model ({configured})",
+                                recommended=False,
+                                confirm=False,
+                            )
+                            opts = [
+                                Option(
+                                    "switch-back",
+                                    f"Switch back to {configured} anyway",
+                                    f"whyline relay roles reset {role}",
+                                    recommended=False,
+                                    confirm=False,
+                                ),
+                                Option(
+                                    "choose-agents",
+                                    "Choose agents…",
+                                    "open RelaySetupScreen",
+                                    recommended=False,
+                                    confirm=False,
+                                ),
+                                model_opt,
+                                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                            ]
+                        elif generic or reset_status in ("unknown", "ahead"):
                             evidence_lines.append(
                                 f"{configured} may still be out of quota (resets {reset_label})"
                             )
@@ -2143,6 +2778,11 @@ def diagnose(
         m_fa = re.search(r"(\S+)\s+(?:hit a usage or rate limit|exited without handing off)", reason)
         if m_fa:
             failed_agent = m_fa.group(1)
+        if not failed_agent:
+            for ag in ("antigravity", "claude", "codex", "grok"):
+                if ag in reason.lower():
+                    failed_agent = ag
+                    break
 
         from whyline_relay import (
             config as relay_config,
@@ -2213,7 +2853,13 @@ def diagnose(
             tried.add(failed_agent)
 
         next_backup = relay_failover.next_backup(chain, tried)
-        if next_backup is None or quota_no_handoff:
+        model, reset_time = read_failing_turn_quota(
+            root_path, failed_agent, override=existing, reason=reason, now=_NOW_OVERRIDE
+        )
+        if not failed_agent and model and model.startswith("gemini-"):
+            failed_agent = "antigravity"
+
+        if next_backup is None or quota_no_handoff or (model and reset_time):
             from whyline import account
             from whyline.console import relay_ops
 
@@ -2233,18 +2879,36 @@ def diagnose(
                         confirm=False,
                     )
                 )
+            if model and failed_agent:
+                opts.append(
+                    Option(
+                        f"use-another-{failed_agent}-model",
+                        f"Use another {failed_agent} model…",
+                        f"open RelaySetupScreen on Model ({failed_agent})",
+                        recommended=False,
+                        confirm=False,
+                    )
+                )
             opts.append(Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False))
             opts.append(Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False))
+
+            if model and reset_time and failed_agent:
+                out_line = f"{failed_agent} · {model} out until {reset_time}"
+                summary_text = out_line
+                evidence_list = [out_line]
+            else:
+                summary_text = (
+                    f"{failed_agent or 'Agent'} is out of quota; switch its role to another agent"
+                    if quota_no_handoff
+                    else f"Rate limit hit by {failed_agent or 'agent'} and backup chain is exhausted"
+                )
+                evidence_list = [reason] if reason else fails
 
             problems.append(
                 Problem(
                     id="out-of-usage",
-                    summary=(
-                        f"{failed_agent or 'Agent'} is out of quota; switch its role to another agent"
-                        if quota_no_handoff
-                        else f"Rate limit hit by {failed_agent or 'agent'} and backup chain is exhausted"
-                    ),
-                    evidence=[reason] if reason else fails,
+                    summary=summary_text,
+                    evidence=evidence_list,
                     options=opts,
                 )
             )
@@ -2418,9 +3082,35 @@ def apply(
         launch(["resume", "--allow-dirty"])
         return f"Moved foreign commits to branch {branch_name}, reset to {base_commit}, and resumed relay with changes kept."
 
+    if option_id in ("choose-agents", "use-another-model", "use-other-model") or (
+        option_id.startswith("use-another-") and option_id.endswith("-model")
+    ) or (
+        option_id.startswith("use-other-") and option_id.endswith("-model")
+    ) or (
+        option_id.startswith("use-model-")
+    ):
+        from whyline.console.relay_screens import RelaySetupScreen
+
+        ag = None
+        if option_id.startswith("use-another-") and option_id.endswith("-model"):
+            ag = option_id[len("use-another-") : -len("-model")]
+        elif option_id.startswith("use-other-") and option_id.endswith("-model"):
+            ag = option_id[len("use-other-") : -len("-model")]
+        elif option_id.startswith("use-model-"):
+            ag = option_id[len("use-model-") :]
+        return RelaySetupScreen(root_path, focus_agent=ag)
+
     if (
         option_id in ("reset-role", "use-configured", "use-setup", "switch-back")
-        or (problem.id == "sticky-switch" and option_id.startswith("use-"))
+        or (
+            problem.id == "sticky-switch"
+            and option_id.startswith("use-")
+            and not (
+                option_id in ("use-another-model", "use-other-model")
+                or option_id.endswith("-model")
+                or "model" in option_id
+            )
+        )
     ):
         from whyline_relay import failover, roles
 
@@ -2434,11 +3124,6 @@ def apply(
         if option_id in ("use-configured", "use-setup") or (problem.id == "sticky-switch" and option_id.startswith("use-")):
             return f"Reset role {role} to use configured agent." if role else "Reset role to configured agent."
         return f"Reset role {role} to its configured agent." if role else "Reset role to its configured agent."
-
-    if option_id == "choose-agents":
-        from whyline.console.relay_screens import RelaySetupScreen
-
-        return RelaySetupScreen(root_path)
 
     if option_id == "resume-longer":
         from whyline.console import relay_ops
