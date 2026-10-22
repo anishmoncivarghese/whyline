@@ -120,6 +120,18 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     work.add_argument("job_id", type=int)
 
+    repos = sub.add_parser(
+        "repos",
+        help="Repositories an idea may be planned into",
+    )
+    repos_sub = repos.add_subparsers(dest="idea_repos_command", required=True)
+    add_r = repos_sub.add_parser("add", help="Allow a repository")
+    add_r.add_argument("name", help="Repository short name")
+    add_r.add_argument("path", help="Path to git repository with whyline initialised")
+    rm_r = repos_sub.add_parser("remove", help="Remove an allowed repository")
+    rm_r.add_argument("name", help="Repository short name")
+    repos_sub.add_parser("list", help="List allowed repositories")
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -127,7 +139,7 @@ def run(args: argparse.Namespace) -> int:
     if handler is None:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
-            "export|documents|agents|assistant|doctor|telegram|service|work",
+            "export|documents|agents|assistant|doctor|telegram|service|work|repos",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1044,6 +1056,47 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     return EXIT_OK if all(check.ok for check in checks) else EXIT_ERROR
 
 
+def cmd_repos(args: argparse.Namespace) -> int:
+    from whyline.ideas import setup
+
+    action = getattr(args, "idea_repos_command", None)
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        if action == "add":
+            try:
+                resolved = setup.add_repo(conn, args.name, args.path)
+            except setup.SetupError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{args.name}  {resolved}")
+            return EXIT_OK
+        if action == "remove":
+            try:
+                removed = setup.remove_repo(conn, args.name)
+            except setup.SetupError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            if not removed:
+                print(f"Unknown repository: {args.name}", file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{args.name}  removed")
+            return EXIT_OK
+        if action == "list":
+            repos = setup.list_repos(conn)
+            if not repos:
+                print("No repositories configured.")
+                return EXIT_OK
+            for name, path in sorted(repos.items()):
+                print(f"{name}  {path}")
+            return EXIT_OK
+        print("usage: whyline idea repos add|remove|list", file=sys.stderr)
+        return EXIT_USAGE
+    finally:
+        conn.close()
+
+
 _COMMANDS = {
     "add": cmd_add,
     "list": cmd_list,
@@ -1060,4 +1113,5 @@ _COMMANDS = {
     "telegram": cmd_telegram,
     "service": cmd_service,
     "work": cmd_work,
+    "repos": cmd_repos,
 }

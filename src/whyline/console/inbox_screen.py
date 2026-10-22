@@ -8,21 +8,24 @@ Check prints the same lines as ``whyline idea doctor``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
+import re
 import sqlite3
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Label, Select, Static
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 from whyline.console.chain_editor import OrderedChain
 
 _FORMATS = ("word", "pdf", "both")
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ class _Saved:
     backup: str | None
     documents: str | None
     service_on: bool
+    repos: dict[str, str] = field(default_factory=dict)
 
 
 def _db_path():
@@ -60,8 +64,8 @@ def _read_saved() -> _Saved:
     """Saved settings. Does not create the inbox database."""
     path = _db_path()
     if path is None:
-        return _Saved((), None, None, None, None, False)
-    from whyline.ideas import assistant, cli, telegram_in, worker
+        return _Saved((), None, None, None, None, False, {})
+    from whyline.ideas import assistant, cli, setup, telegram_in, worker
 
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -74,6 +78,7 @@ def _read_saved() -> _Saved:
             backup=_kv(conn, assistant.BACKUP_KEY),
             documents=_kv(conn, "doc_formats"),
             service_on=worker.enabled(conn),
+            repos=setup.list_repos(conn),
         )
     finally:
         conn.close()
@@ -170,6 +175,12 @@ class IdeaInboxScreen(ModalScreen):
     IdeaInboxScreen #ib-chats-empty, IdeaInboxScreen #ib-message { height: auto; }
     IdeaInboxScreen #ib-message { color: $error; }
     IdeaInboxScreen #ib-message.-empty { display: none; }
+    IdeaInboxScreen #ib-repos { height: auto; }
+    IdeaInboxScreen #ib-repo-add-row { height: auto; }
+    IdeaInboxScreen #ib-repo-name { width: 20; }
+    IdeaInboxScreen #ib-repo-path { width: 1fr; }
+    IdeaInboxScreen .ib-repo-row { height: auto; }
+    IdeaInboxScreen .ib-repo-label { width: 1fr; padding: 1 0; }
     """
 
     def __init__(self) -> None:
@@ -180,6 +191,23 @@ class IdeaInboxScreen(ModalScreen):
         self._loaded_agents: list[str] = []
         self._generation = 0
         self._closed = False
+        self._repo_remove_buttons: dict[str, str] = {}
+
+    @staticmethod
+    def _repo_remove_id(name: str) -> str:
+        if _SAFE_ID_RE.match(name):
+            return f"ib-repo-remove-{name}"
+        digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:12]
+        return f"ib-repo-remove-safe-{digest}"
+
+    def _make_repo_remove_button(self, name: str) -> Button:
+        btn_id = self._repo_remove_id(name)
+        self._repo_remove_buttons[btn_id] = name
+        return Button("Remove", id=btn_id, name=name, classes="ib-repo-remove")
+
+    def repo_remove_button(self, name: str) -> Button:
+        btn_id = self._repo_remove_id(name)
+        return self.query_one(f"#{btn_id}", Button)
 
     def compose(self) -> ComposeResult:
         from whyline.agents import telegram
@@ -270,6 +298,24 @@ class IdeaInboxScreen(ModalScreen):
                     id="ib-service",
                 ),
                 Static("", id="ib-status", markup=False),
+                Label("Repositories"),
+                Vertical(
+                    *[
+                        Horizontal(
+                            Label(f"{name}: {path}", classes="ib-repo-label"),
+                            self._make_repo_remove_button(name),
+                            classes="ib-repo-row",
+                        )
+                        for name, path in sorted(saved.repos.items())
+                    ],
+                    id="ib-repos",
+                ),
+                Horizontal(
+                    Input(placeholder="Name", id="ib-repo-name"),
+                    Input(placeholder="Path", id="ib-repo-path"),
+                    Button("Add", id="ib-repo-add"),
+                    id="ib-repo-add-row",
+                ),
                 Label("Check"),
                 Static("", id="ib-checks", markup=False),
                 id="ib-body",
@@ -319,6 +365,78 @@ class IdeaInboxScreen(ModalScreen):
         elif button_id == "ib-telegram":
             event.stop()
             self._setup()
+        elif button_id == "ib-repo-add":
+            event.stop()
+            self._add_repo()
+        elif button_id and (
+            button_id in self._repo_remove_buttons
+            or button_id.startswith("ib-repo-remove-")
+        ):
+            event.stop()
+            repo_name = self._repo_remove_buttons.get(button_id)
+            if repo_name is None and getattr(event.button, "name", None):
+                repo_name = event.button.name
+            if repo_name is None and button_id.startswith("ib-repo-remove-"):
+                repo_name = button_id[len("ib-repo-remove-"):]
+            if repo_name:
+                self._remove_repo(repo_name)
+
+    def _add_repo(self) -> None:
+        from whyline.ideas import setup, store
+
+        name = self.query_one("#ib-repo-name", Input).value.strip()
+        path = self.query_one("#ib-repo-path", Input).value.strip()
+        if not name or not path:
+            self._show_message("repository name and path are required")
+            return
+        conn = store.connect()
+        try:
+            try:
+                setup.add_repo(conn, name, path)
+            except setup.SetupError as exc:
+                self._show_message(str(exc))
+                return
+        finally:
+            conn.close()
+        self.query_one("#ib-repo-name", Input).value = ""
+        self.query_one("#ib-repo-path", Input).value = ""
+        self._show_message("")
+        self._refresh_repos()
+
+    def _remove_repo(self, name: str) -> None:
+        from whyline.ideas import setup, store
+
+        conn = store.connect()
+        try:
+            try:
+                setup.remove_repo(conn, name)
+            except setup.SetupError as exc:
+                self._show_message(str(exc))
+                return
+        finally:
+            conn.close()
+        self._show_message("")
+        self._refresh_repos()
+
+    def _refresh_repos(self) -> None:
+        from whyline.ideas import setup, store
+
+        conn = store.connect()
+        try:
+            repos = setup.list_repos(conn)
+        finally:
+            conn.close()
+        container = self.query_one("#ib-repos", Vertical)
+        container.remove_children()
+        self._repo_remove_buttons.clear()
+        for name, path in sorted(repos.items()):
+            container.mount(
+                Horizontal(
+                    Label(f"{name}: {path}", classes="ib-repo-label"),
+                    self._make_repo_remove_button(name),
+                    classes="ib-repo-row",
+                )
+            )
 
     def _save(self) -> None:
         saved = _read_saved()

@@ -463,6 +463,50 @@ def set_paths(conn: sqlite3.Connection, idea_id: int, **given: str | None) -> Id
         )
 
 
+def set_repo(conn: sqlite3.Connection, idea_id: int, repo: str) -> Idea:
+    with _txn(conn):
+        row = conn.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+        if row is None:
+            raise LookupError(f"no idea {idea_id}")
+        conn.execute("UPDATE ideas SET repo = ? WHERE id = ?", (repo, idea_id))
+        return _idea(
+            conn.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+        )
+
+
+def bump_revision(
+    conn: sqlite3.Connection,
+    idea_id: int,
+    *,
+    expected_revision: int,
+    actor: str,
+    note: str = "",
+) -> Idea:
+    with _txn(conn):
+        row = conn.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+        if row is None:
+            raise LookupError(f"no idea {idea_id}")
+        if row["revision"] != expected_revision:
+            raise StaleRevision(
+                f"idea {idea_id} is at revision {row['revision']}, not {expected_revision}"
+            )
+        conn.execute(
+            "UPDATE ideas SET revision = ? WHERE id = ?",
+            (expected_revision + 1, idea_id),
+        )
+        current = row["status"]
+        conn.execute(
+            """
+            INSERT INTO events (idea_id, at, from_status, to_status, actor, note)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (idea_id, _now(), current, current, actor, note),
+        )
+        return _idea(
+            conn.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+        )
+
+
 def add_analysis(
     conn: sqlite3.Connection,
     idea_id: int,

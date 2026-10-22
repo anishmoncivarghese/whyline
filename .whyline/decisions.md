@@ -21160,3 +21160,263 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 346eff971e694b15a79d487ca4f23648 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T14:13:14.393Z"} -->
+
+## 2026-10-22 — Add setup conversation, repos allowlist, and AutoRunRequest builder
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-15
+
+**Because:** allows configuring target repository and relay execution defaults for ideas before planning
+
+**Rejected:**
+
+- configure directly in planning job — separates concerns and keeps Telegram card interaction interactive
+
+**Files:** src/whyline/ideas/setup.py, src/whyline/ideas/bot.py, src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: 0eb7f1c8f60142eb970561f019767882 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T14:49:23.909Z"} -->
+
+## 2026-10-22 — IDEA-15 testing failed: allowed dotted repository names crash the Inbox screen
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-15
+
+**Because:** The shared add_repo function accepts api.v2, but IdeaInboxScreen uses the raw name in a Textual widget id and compose raises BadIdentifier, so the required console repository manager cannot open for a valid allowlisted name; both mandated pytest runs otherwise reached 100% without failures
+
+**Rejected:**
+
+- Pass based on the existing suites — they cover only identifier-safe repository names and miss this required console behavior
+
+**Files:** src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: d34414d9fb9c43db810298c2e7bd0cd1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T14:59:34.642Z"} -->
+
+## 2026-10-22 — Use opaque safe IDs with name mapping for repository remove buttons in IdeaInboxScreen
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-15
+
+**Because:** Repository names can contain dots, dashes, or other non-CSS identifier characters (e.g. api.v2). Textual raises BadIdentifier when such names are embedded directly in widget IDs. A safe deterministic ID mapping preserves valid identifier constraints while supporting any valid repo name.
+
+**Rejected:**
+
+- Restrict repository names to identifier-safe strings — repos are external git/project names often containing dots, version suffixes, or domain labels and should not be artificially constrained
+- Encode dots as hyphens without mapping — causes collisions between names like api.v2 and api-v2 and does not handle other special characters safely
+
+**Files:** src/whyline/console/inbox_screen.py, tests/console/test_inbox_screen.py
+
+<!-- whyline-event: 558a136b6e4445029b3da3f44e77bb2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T15:22:09.845Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 4 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-15
+
+**Because:** The dotted repository-name regression now mounts, adds, and removes safely in the Inbox console, tests/ideas completed at 100% without failures, and the full suite completed at 100% without failures with one skip
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: 9295f751a93846529b673db551e68ec3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T15:30:22.299Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 5 review rejected incomplete setup agent validation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-15
+
+**Because:** setup defaults do not revalidate carried brainstorm models/final, and Antigravity trust is enforced only for implementation/test/review and backup rather than every agent Auto names; tests also contain a vacuous plan_reviewer assertion
+
+**Rejected:**
+
+- Approve — both required suites pass, but they do not cover these specification violations
+
+**Files:** src/whyline/ideas/setup.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: f92c057cd8334a0994b08de5a71a21a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T15:39:11.089Z"} -->
+
+## 2026-10-22 — Validate and substitute all Auto-named setup agents in defaults and refuse invalid edits
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-15
+
+**Because:** Auto runs all setup-named agents in the target repository context, requiring usable installed/logged-in status and trusted Antigravity across models, final writer, drafter, plan_reviewer, execution roles, and backup chain
+
+**Rejected:**
+
+- Validate only execution roles and backup — leaves carried brainstorm models or planner drafter/reviewer invalid when Antigravity is untrusted or an agent is not installed
+
+**Files:** src/whyline/ideas/setup.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: 2cf388b974964befa062b74c55baf83e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T15:56:21.015Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 7 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-15
+
+**Because:** The focused ideas suite and full project suite passed, and targeted inspection confirmed non-vacuous coverage that every Auto-named setup agent is usable and untrusted Antigravity is substituted or refused across execution, planning, backup, carried models, and final writer
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/ideas/setup.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: 8f990d923fd54ce3937745976951b13c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T16:05:40.834Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 8 requests target-repository revalidation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-15
+
+**Because:** A settings edit that changes only repo validates no unchanged agents, so roles, backup, planner agents, brainstorm models, or final writer accepted for the old repo can remain unlogged-in or untrusted in the new repo; both required test suites passed but omit this two-repository case
+
+**Rejected:**
+
+- Approve — the passing suites do not cover the reachable repository-switch bypass of the every-agent validation requirement
+
+**Files:** src/whyline/ideas/setup.py, src/whyline/ideas/bot.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: 88770c3f088249e38accd94e369f747e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T16:15:10.746Z"} -->
+
+## 2026-10-22 — Add ASK-1..4 (Resolve asks the console's selected agent or its backup at any pause, with full context and applicable steps; Auto applies safe ones) after IDEA-15, before IDEA-16
+
+**Actor:** claude
+**Role:** planner
+**Task:** ASK-PLAN
+
+**Because:** In every pause on 2026-10-21..22 a Resolve rule matched with a wrong or missing fix, so REC-4E's Ask agent (offered only for unknown problems) never ran; its prompt lacked config, overrides, quota, review history and task text, and its options could not change models, roles or rounds. The user pasted each pause into a Claude session instead
+
+**Rejected:**
+
+- Before IDEA-15 as first asked — the relay was already paused inside IDEA-15 with 694 uncommitted lines; the first unchecked task would have started on top of them
+- More hard-coded rules only — each pause needed a combination (model switch, role swap, clear switch, start vs resume) that rules did not anticipate
+- Let the agent run commands itself — it stays read-only and proposes steps from a fixed catalog the console validates and applies
+
+**Files:** plans/idea-inbox.plan.md
+
+<!-- whyline-event: 9ab9b5e7c83443e1b4dcbb97442b10e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T16:52:13.287Z"} -->
+
+## 2026-10-22 — Set up apply validates every agent in the merged request against the target repo
+
+**Actor:** claude
+**Role:** implementer
+**Task:** IDEA-15
+
+**Because:** A repo-only settings edit otherwise carries roles, backup, planner agents, brainstorm models and final writer accepted for the previous repository without checking login or Antigravity trust in the new one
+
+**Rejected:**
+
+- Re-run defaults() for the new repo on a repo switch — would silently discard the user's earlier edits instead of refusing and naming the problem
+- Validate only edited fields plus a special case for repo — keeps two code paths that can drift
+
+**Files:** src/whyline/ideas/setup.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: a0604079bc764c8e899d1b968c41d79f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T17:17:50.034Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-15
+
+**Because:** The repository-switch regression passed, the focused ideas suite passed, and the full project suite passed; inspection confirmed both direct settings and assistant proposals validate all carried agents against the edited target repository before persisting it
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/ideas/setup.py, src/whyline/ideas/bot.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: 3ba1fafc2fd344a2b505229a5216b5b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T17:26:27.949Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 3 rejects unusable synthesized setup fallbacks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-15
+
+**Because:** setup.defaults fabricates claude/codex fallbacks when relay_ops.usable_agents returns no valid agent, so the Set up card can confirm agents that are not installed or logged in despite the task's every-agent invariant; both required suites pass but omit this case
+
+**Rejected:**
+
+- Approve — the happy-path suites pass, but a directly reproduced target repository with no usable agents renders invalid offered agents
+
+**Files:** src/whyline/ideas/setup.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: e3f5a57dce314615952142c4a7d4a012 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T17:36:58.849Z"} -->
+
+## 2026-10-22 — IDEA-15: setup.defaults refuses the Set up card when no agent is usable, and the idea returns to brainstormed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** IDEA-15
+
+**Because:** every agent on the card must be installed, logged in and (for Antigravity) trusted; a hard-coded claude/codex fallback offered agents that could not run, and leaving the idea in setup_configuring with no card stranded it
+
+**Rejected:**
+
+- Keep claude/codex as last-resort fallbacks — violates the every-agent-usable invariant
+- Show a card with empty roles — Confirm would build an unrunnable request
+
+**Files:** src/whyline/ideas/setup.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: 4bc7ea84c0f948f6b7ec6a793457a225 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T17:57:46.906Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 5 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-15
+
+**Because:** The focused ideas suite and full project suite passed, and targeted inspection confirmed the empty usable-agent regression refuses the card, explains the reason, and returns the idea to brainstormed without offering invalid agents
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/ideas/setup.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: 14b9df049a4f43dc8c4d570f872fd738 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:05:34.002Z"} -->
+
+## 2026-10-22 — IDEA-15 Round 6 review approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-15
+
+**Because:** The working-tree diff implements the repository allowlist and console controls, setup cards use repository defaults and validate all carried or edited agents including Antigravity trust, request construction preserves the confirmed values, and both the focused ideas suite and full project suite passed
+
+**Rejected:**
+
+- Request changes — no unsafe or task-breaking defect was found in the implementation or coverage
+
+**Files:** src/whyline/ideas/setup.py, src/whyline/ideas/bot.py, src/whyline/console/inbox_screen.py, tests/ideas/test_setup.py
+
+<!-- whyline-event: 9bb7b86a93b14d418190c05c2d8404e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:14:08.165Z"} -->

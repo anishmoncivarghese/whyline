@@ -71,6 +71,11 @@ _STATUS_BUTTONS = {
         ("Again", "brainstorm"),
         ("Drop", "drop"),
     ),
+    "setup_configuring": (
+        ("Confirm", "confirm"),
+        ("Edit", "edit"),
+        ("Cancel", "cancel"),
+    ),
     "dropped": (("Reopen", "reopen"),),
 }
 _DETECT_ORDER = ("claude", "codex", "grok")
@@ -409,6 +414,11 @@ def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
         _open_brainstorm(conn, row, idea)
     elif name == "start_brainstorm":
         _start_brainstorm(conn, row, idea, run_fn)
+    elif name == "plan":
+        _open_setup(conn, row, idea)
+    elif name.startswith("repo_"):
+        repo_name = name[len("repo_") :]
+        _choose_repo(conn, row, idea, repo_name)
     else:
         _say(conn, row, "Not available yet.", idea_id=idea.id)
 
@@ -453,6 +463,12 @@ def _settings(conn, row, routed: intent.Intent) -> None:
     ):
         _update_brainstorm_card(conn, row, routed, card)
         return
+    if (
+        card
+        and card.get("kind") in {"setup", "plan_setup"}
+    ):
+        _update_setup_card(conn, row, routed, card)
+        return
     plain, errors = _plain_fields(routed.fields)
     if errors:
         _say(conn, row, "\n".join(errors))
@@ -460,6 +476,9 @@ def _settings(conn, row, routed: intent.Intent) -> None:
     kind = "plan_setup" if _PLAN_KEYS.intersection(plain) else "brainstorm_settings"
     chat_id = int(_field(row, "chat_id"))
     idea = _latest_for_chat(conn, chat_id)
+    if idea and idea.status == "setup_configuring":
+        _update_setup_card(conn, row, routed, card or {"idea_id": idea.id, "fields": {}})
+        return
     summary = ", ".join(f"{key}: {_show(value)}" for key, value in plain.items())
     card = assistant.confirm_card(kind, summary=summary or "Settings", fields=plain, idea=idea)
     _send_named_card(conn, row, card, idea, kind=kind, fields=plain)
@@ -506,6 +525,12 @@ def _free(conn, row, routed: intent.Intent, run_fn) -> None:
             proposal.kind == "brainstorm_settings"
             and proposal.error is None
             and _apply_brainstorm_proposal(conn, row, bound, proposal)
+        ):
+            return
+        if (
+            proposal.kind in {"plan_setup", "setup"}
+            and proposal.error is None
+            and _apply_setup_proposal(conn, row, bound, proposal)
         ):
             return
         _send_named_card(
@@ -744,6 +769,12 @@ def _cancel(conn, row, idea: store.Idea) -> None:
         _retarget_buttons(conn, fresh, fresh.status)
         _clear_card(conn, _field(row, "chat_id"))
         return
+    if idea.status == "setup_configuring":
+        fresh = _move_or_keep(conn, idea, "brainstormed", "cancelled")
+        _say(conn, row, "Cancelled.", idea_id=idea.id)
+        _retarget_buttons(conn, fresh, "brainstormed")
+        _clear_card(conn, _field(row, "chat_id"))
+        return
     card = _card_for(conn, _field(row, "chat_id"))
     kind = card.get("kind") if card else "capture"
     fresh = idea
@@ -764,10 +795,14 @@ def _confirm(conn, row, idea: store.Idea) -> None:
 
 
 def _edit(conn, row, idea: store.Idea) -> None:
+    from whyline.ideas import setup
+
     card = _card_for(conn, _field(row, "chat_id"))
     template = (
         brainstorm.TEMPLATE
         if card and card.get("kind") == "brainstorm"
+        else setup.TEMPLATE
+        if card and card.get("kind") in {"setup", "plan_setup"}
         else _SETTINGS_TEMPLATE
     )
     _say(
@@ -939,6 +974,203 @@ def _show_brainstorm(conn, row, idea: store.Idea, request, notes) -> None:
     _remember_card(
         conn, chat_id, "brainstorm", idea.id, request.as_fields(), outbox_id=outbox_id
     )
+
+
+def _open_setup(conn, row, idea: store.Idea) -> None:
+    from whyline.ideas import setup
+
+    if idea.status not in {"brainstormed", "setup_configuring"}:
+        _say(
+            conn,
+            row,
+            f"This idea can't be set up from {idea.status}.",
+            idea_id=idea.id,
+        )
+        return
+    repos = setup.list_repos(conn)
+    if not repos:
+        _say(
+            conn,
+            row,
+            "No repositories configured. Add one with whyline idea repos add <name> <path>.",
+            idea_id=idea.id,
+        )
+        return
+    if idea.status != "setup_configuring":
+        try:
+            idea = store.transition(
+                conn,
+                idea.id,
+                "setup_configuring",
+                expected_revision=idea.revision,
+                actor="telegram",
+                note="plan",
+            )
+        except store.StaleRevision:
+            _say(conn, row, OUT_OF_DATE, idea_id=idea.id)
+            return
+        except store.IllegalMove as exc:
+            _say(conn, row, str(exc), idea_id=idea.id)
+            return
+
+    if len(repos) == 1:
+        repo_name = next(iter(repos.keys()))
+        store.set_repo(conn, idea.id, repo_name)
+        _show_setup(conn, row, idea, repo_name)
+    else:
+        chat_id = int(_field(row, "chat_id"))
+        buttons = [(name, f"repo_{name}") for name in sorted(repos.keys())]
+        buttons.append(("Cancel", "cancel"))
+        keyboard = _keyboard(buttons, idea.id, idea.revision)
+        text = "Which repository should this idea be planned into?"
+        outbox_id = _enqueue(
+            conn, chat_id, "message", text, buttons=keyboard, idea_id=idea.id
+        )
+        _remember_card(conn, chat_id, "repo_select", idea.id, {}, outbox_id=outbox_id)
+
+
+def _choose_repo(conn, row, idea: store.Idea, repo_name: str) -> None:
+    from whyline.ideas import setup
+
+    repos = setup.list_repos(conn)
+    if repo_name not in repos:
+        _say(conn, row, f"Unknown repository: {repo_name}", idea_id=idea.id)
+        return
+    store.set_repo(conn, idea.id, repo_name)
+    _show_setup(conn, row, idea, repo_name)
+
+
+def _show_setup(conn, row, idea: store.Idea, repo_name: str) -> None:
+    from whyline.ideas import setup
+
+    repos = setup.list_repos(conn)
+    path_str = repos.get(repo_name)
+    if not path_str:
+        _say(conn, row, f"Unknown repository: {repo_name}", idea_id=idea.id)
+        return
+    repo_root = Path(path_str)
+    try:
+        request, notes = setup.defaults(conn, idea.id, repo_name, repo_root)
+    except setup.SetupError as exc:
+        # No card is shown, so do not leave the idea in setup_configuring.
+        current = store.get(conn, idea.id) or idea
+        fresh = _move_or_keep(conn, current, "brainstormed", "setup refused")
+        _say(conn, row, str(exc), idea_id=idea.id)
+        _retarget_buttons(conn, fresh, fresh.status)
+        return
+    _show_setup_with_request(conn, row, idea, request, notes)
+
+
+def _show_setup_with_request(
+    conn, row, idea: store.Idea, request, notes: tuple[str, ...]
+) -> None:
+    from whyline.ideas import setup
+
+    chat_id = int(_field(row, "chat_id"))
+    keyboard = _keyboard(buttons_for("setup_configuring"), idea.id, idea.revision)
+    text = _settings_text(
+        conn,
+        idea.id,
+        "Set up will use:",
+        setup.format_setup(request),
+        setup.TEMPLATE,
+        notes,
+    )
+    card = _card_for(conn, chat_id)
+    same = (
+        isinstance(card, dict)
+        and card.get("kind") in {"setup", "plan_setup"}
+        and card.get("idea_id") == idea.id
+        and card.get("outbox_id")
+    )
+    if same:
+        outbox_id = int(card["outbox_id"])
+        _rewrite_card(conn, outbox_id, text, keyboard)
+    else:
+        outbox_id = _enqueue(
+            conn, chat_id, "message", text, buttons=keyboard, idea_id=idea.id
+        )
+    fields = request.as_fields()
+    _remember_card(
+        conn, chat_id, "plan_setup", idea.id, fields, outbox_id=outbox_id
+    )
+    _kv_set_txn(conn, f"{_SETTINGS_KEY}:{idea.id}", json.dumps(fields))
+
+
+def _update_setup_card(conn, row, routed: intent.Intent, card: dict) -> None:
+    from whyline.ideas import setup
+
+    idea_id = card.get("idea_id")
+    idea = store.get(conn, int(idea_id)) if idea_id else None
+    if idea is None:
+        _say(conn, row, "No idea is waiting for settings.")
+        return
+    card_fields = card.get("fields") or {}
+    base = setup.request_from_fields(card_fields)
+    plain_edits, errors = _plain_fields(routed.fields)
+    if errors:
+        _say(conn, row, "\n".join(errors), idea_id=idea.id)
+        return
+    repo_name = plain_edits.get("repo") or base.repo
+    repos = setup.list_repos(conn)
+    path_str = repos.get(repo_name)
+    if not path_str:
+        _say(conn, row, f"Unknown repository: {repo_name}", idea_id=idea.id)
+        return
+    repo_root = Path(path_str)
+    try:
+        request, notes = setup.apply(base, plain_edits, root=repo_root)
+    except setup.SettingsError as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return
+    idea = store.bump_revision(
+        conn,
+        idea.id,
+        expected_revision=idea.revision,
+        actor="telegram",
+        note="settings edit",
+    )
+    if request.repo != idea.repo:
+        store.set_repo(conn, idea.id, request.repo)
+    _show_setup_with_request(conn, row, idea, request, notes)
+
+
+def _apply_setup_proposal(conn, row, idea, proposal) -> bool:
+    from whyline.ideas import setup
+
+    if idea is None or idea.status != "setup_configuring":
+        return False
+    card = _card_for(conn, _field(row, "chat_id"))
+    on_card = bool(
+        card and card.get("kind") in {"setup", "plan_setup"} and card.get("idea_id") == idea.id
+    )
+    if not on_card:
+        return False
+    card_fields = card.get("fields") or {}
+    base = setup.request_from_fields(card_fields)
+    repo_name = proposal.fields.get("repo") or base.repo
+    repos = setup.list_repos(conn)
+    path_str = repos.get(repo_name)
+    if not path_str:
+        _say(conn, row, f"Unknown repository: {repo_name}", idea_id=idea.id)
+        return True
+    repo_root = Path(path_str)
+    try:
+        request, notes = setup.apply(base, proposal.fields, root=repo_root)
+    except setup.SettingsError as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return True
+    idea = store.bump_revision(
+        conn,
+        idea.id,
+        expected_revision=idea.revision,
+        actor="telegram",
+        note="proposal edit",
+    )
+    if request.repo != idea.repo:
+        store.set_repo(conn, idea.id, request.repo)
+    _show_setup_with_request(conn, row, idea, request, notes)
+    return True
 
 
 def _stop_score_for_brainstorm(conn, idea: store.Idea) -> store.Idea:

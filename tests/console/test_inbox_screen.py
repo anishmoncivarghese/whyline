@@ -386,3 +386,111 @@ async def test_a_rejected_token_is_not_shown(ideas_home, monkeypatch):
         )
         assert TOKEN not in _visible(screen)
         assert not (ideas_home / "ideas.sqlite3").exists()
+
+
+async def test_repositories_section_add_and_remove(tmp_path, ideas_home, monkeypatch):
+    import subprocess
+    from whyline.ideas import setup
+
+    fake = tmp_path / "myrepo"
+    fake.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=fake, check=True)
+    wl = fake / ".whyline"
+    wl.mkdir()
+    (wl / "ledger.jsonl").write_text('{"event":"init"}\n')
+
+    _saved_screen_chats(monkeypatch)
+    _seed({"repos": json.dumps({"existing": str(fake.resolve())})})
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        await _until(
+            pilot,
+            lambda: "@InboxBot" in _plain(screen.query_one("#ib-bot")),
+            "bot name",
+        )
+        assert screen.query_one("#ib-repo-remove-existing") is not None
+
+        # Add an invalid repo
+        screen.query_one("#ib-repo-name", tui.Input).value = "bad"
+        screen.query_one("#ib-repo-path", tui.Input).value = str(tmp_path / "nonexistent")
+        screen.query_one("#ib-repo-add", tui.Button).press()
+        await pilot.pause()
+        assert "not a directory" in _plain(screen.query_one("#ib-message"))
+
+        # Add valid repo
+        new_repo = tmp_path / "newrepo"
+        new_repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=new_repo, check=True)
+        (new_repo / ".whyline").mkdir()
+        (new_repo / ".whyline" / "ledger.jsonl").write_text('{"event":"init"}\n')
+
+        screen.query_one("#ib-repo-name", tui.Input).value = "new"
+        screen.query_one("#ib-repo-path", tui.Input).value = str(new_repo)
+        screen.query_one("#ib-repo-add", tui.Button).press()
+        await pilot.pause()
+        assert screen.query_one("#ib-repo-remove-new") is not None
+
+        # Remove existing repo
+        screen.query_one("#ib-repo-remove-existing", tui.Button).press()
+        await pilot.pause()
+        with pytest.raises(tui.NoMatches):
+            screen.query_one("#ib-repo-remove-existing")
+
+
+async def test_repositories_section_dotted_name_does_not_crash(tmp_path, ideas_home, monkeypatch):
+    import subprocess
+    from whyline.ideas import setup
+
+    fake = tmp_path / "dotted_repo"
+    fake.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=fake, check=True)
+    wl = fake / ".whyline"
+    wl.mkdir()
+    (wl / "ledger.jsonl").write_text('{"event":"init"}\n')
+
+    _saved_screen_chats(monkeypatch)
+    # Repository name with dot (api.v2) must not crash compose
+    _seed({"repos": json.dumps({"api.v2": str(fake.resolve())})})
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        await _until(
+            pilot,
+            lambda: "@InboxBot" in _plain(screen.query_one("#ib-bot")),
+            "bot name",
+        )
+        assert "api.v2:" in _visible(screen)
+        remove_btn = screen.repo_remove_button("api.v2")
+        assert remove_btn is not None
+
+        # Add another dotted repo through the UI
+        new_repo = tmp_path / "another_dotted"
+        new_repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=new_repo, check=True)
+        (new_repo / ".whyline").mkdir()
+        (new_repo / ".whyline" / "ledger.jsonl").write_text('{"event":"init"}\n')
+
+        screen.query_one("#ib-repo-name", tui.Input).value = "core.v1"
+        screen.query_one("#ib-repo-path", tui.Input).value = str(new_repo)
+        screen.query_one("#ib-repo-add", tui.Button).press()
+        await pilot.pause()
+        assert "core.v1:" in _visible(screen)
+        assert screen.repo_remove_button("core.v1") is not None
+
+        # Remove the dotted repo
+        screen.repo_remove_button("api.v2").press()
+        await pilot.pause()
+        assert "api.v2:" not in _visible(screen)
+        with pytest.raises(tui.NoMatches):
+            screen.repo_remove_button("api.v2")
+
+        conn = store.connect()
+        try:
+            repos = setup.list_repos(conn)
+            assert "api.v2" not in repos
+            assert "core.v1" in repos
+        finally:
+            conn.close()
