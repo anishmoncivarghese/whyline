@@ -243,6 +243,31 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests with a fake caffeinate script and HOME pointed at tmp_path: start launches exactly one process and records it; start twice keeps one; stop ends it and clears the record; a record whose pid is dead or not caffeinate reads as off and is removed; off macOS nothing shows; the toggle and `/awake on|off` call start and stop; a second console shows Awake on from the record; quitting with Let it sleep stops it, and Keep awake leaves it running; each mode's row fits 80x24.
   Verify with `uv run pytest -q tests/console/test_awake.py` and `uv run pytest -q`. Change nothing else.
 
+- [ ] RSV-1: At a cap, the cap comes first
+  Edit the problem order in `diagnose` in `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`. Added on 2026-10-22: AGS-5 paused at the draft stage's 3-visit cap. Resolve listed "Uncommitted changes during paused task" first (problem 4) and the visit cap seventh. Auto applied **Resume and keep changes**, which cannot pass a cap, so the relay re-paused at once and Auto stopped with "recovery already attempted".
+  When the pause reason is a visit cap or a round cap (`adapters.failure_kind`), that problem comes first. The dirty-paused-work problem is not offered at a cap: the uncommitted files are the capped task's own draft and are kept by the cap's options. At a cap, **Stash changes** is never recommended. It asks for confirmation, naming the file and line counts it would set aside.
+  Add the round-cap problem (diagnose has no rule today): **Give it 6 more rounds** (raise `max_rounds` by 6 in `.whyline/relay/config.toml` as a config-only setup commit, then resume keeping changes; recommended) and **Split the task** (opens the Plan screen on that task and edits nothing itself).
+  Tests: a visit-cap pause with a dirty tree lists visit-cap first and no resume-keep; a round-cap pause offers both options; more-rounds commits only config.toml with max_rounds raised by 6 and resumes with `--allow-dirty`; Stash at a cap asks for confirmation with the counts.
+  Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
+- [ ] RSV-2: Retry stage keeps the paused task's work
+  Edit `src/whyline/console/tui.py` (the `relay-retry-stage` button) and the `retry-stage` option in `src/whyline/console/recovery.py`, with tests in `tests/console/test_tui_relay_run.py` and `tests/console/test_recovery.py`. Both run `resume --retry-stage` without `--allow-dirty`, so they refuse to start whenever the capped task's draft is uncommitted, which is always.
+  Add `--allow-dirty` when every dirty path is one the paused task touched (the same test dirty-paused-work uses). Otherwise keep today's command, and show which unrelated files block it.
+  Tests: a cap with the task's own changes launches `resume --retry-stage --allow-dirty`; an unrelated dirty file leaves the flag off and names the file; a clean tree launches without it.
+  Verify with `uv run pytest -q tests/console/test_tui_relay_run.py tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
+- [ ] RSV-3: Notice when reviews keep naming the same defect
+  Edit `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`. AGS-5's three rejections all named one bug (a "Resets in" deadline computed from display time), found in a new code path each round. Resolve showed only the cap.
+  At a visit or round cap, read the last three reviewer rejection summaries from the task's handoffs (`whyline handoff` records; fall back to the review logs) and show them as the cap's evidence. When at least two share a theme, using a simple word-overlap check on the summaries (no agent call), say "The reviewer keeps finding the same problem". Then recommend **Retry with a stronger model**: it opens Set up on the implementer's Model row (AGS-4), saves, and retries the stage keeping changes. Plain **Retry stage** stays as the second option.
+  Tests: three fake rejections sharing a theme give the message and the stronger-model option first; three unrelated ones keep Retry stage first; with no handoffs, evidence falls back to the logs; the summaries render with markup off.
+  Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
+- [ ] RSV-4: Auto gets past a cap once per task
+  Edit Auto's choice in `src/whyline/console/recovery.py` (`auto_option`, `_HUMAN_KINDS`) and the recovery log in `recovery.json`, with tests in `tests/console/test_recovery.py`. Today visit-cap and round-cap are human-only, so Auto either stops or applies a fix that cannot help.
+  Auto may apply one cap option per task, recorded in `recovery.json` by task id, never once per round. At a visit cap that is Retry stage, and at a round cap Give it 6 more rounds. When RSV-3 finds a repeated defect and Set up lists a stronger model for the implementer that is not out of quota (AGS-5), Auto does not choose the model: it stops and tells you which model it would use. A second cap on the same task always stops for you, naming the first recovery.
+  Tests: the first visit cap on a task is retried by Auto; the second stops and names the first; a round cap raises max_rounds once; a repeated-defect cap stops with the suggested model; other kinds keep today's behaviour.
+  Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
 - [ ] IDEA-15: The Set up conversation
   Add `src/whyline/ideas/setup.py` and `tests/ideas/test_setup.py`, and the card handling in `bot.py`.
   Repositories an idea may be planned into are an allowlist in `kv` key `repos` (name → absolute path), managed by `whyline idea repos add <name> <path>` / `remove` / `list`; a path must be a git repository with whyline initialised. Add a **Repositories** section to TGS-2's Inbox screen (name, path, Add, Remove) that writes through the same functions.
