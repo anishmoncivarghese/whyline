@@ -229,7 +229,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a model saved for each of the four agents lands in the right place; CLI default removes it; a generic `command` keeps its other flags and order; an `agy models` failure still allows typing a name; the popup fits 80x24.
   Verify with `uv run pytest -q tests/console/test_relay_setup_screen.py tests/console/test_relay_ops.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] AGS-5: Name the model that ran out, and offer another
+- [x] AGS-5: Name the model that ran out, and offer another
   Edit `src/whyline/console/recovery.py` and `src/whyline/console/relay_screens.py`, with tests in `tests/console/test_recovery.py` and `tests/console/test_relay_setup_screen.py`.
   When a pause or an override's reason is a usage or quota limit, read the failing turn's log for the model and reset time (agy prints "Resets in 154h42m31s"; reuse `failover.reset_deadline` for the time). Show "antigravity · gemini-4-argon-medium out until 25 Oct 11:55" in the pause message, in Resolve's evidence, and in Set up beside that agent's Model row (AGS-4). Resolve then also offers **Use another antigravity model…**, which opens Set up on that Model row. Auto never picks a model.
   Tests: a fake agy quota log yields the model and reset time; Resolve offers the model option for it; Set up shows the out-until line; a log with no model name falls back to today's agent-level message.
