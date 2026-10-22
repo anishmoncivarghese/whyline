@@ -2305,6 +2305,74 @@ def _stash_cap_option(root_path: Path, task_id: str) -> Option:
     )
 
 
+def _task_handoff_paths(root_path: Path, task_id: str) -> set[str]:
+    """Every path a `whyline handoff` for `task_id` listed: the files it touched."""
+    from whyline import events, handoff, ledger, paths
+
+    records: list[dict] = []
+    try:
+        records, _ = ledger.read_all(
+            paths.ledger_path(root_path), skip_types=(events.INSTRUCTION, events.FILE_TOUCHED)
+        )
+    except Exception:
+        pass
+    try:
+        active = handoff.load(root_path)
+        if active:
+            records.append(active)
+    except Exception:
+        pass
+    root_resolved = root_path.resolve()
+    found: set[str] = set()
+    for rec in records:
+        if rec.get("type") != events.HANDOFF or rec.get("task") != task_id:
+            continue
+        for name in rec.get("files") or []:
+            if not isinstance(name, str) or not name.strip():
+                continue
+            name = name.strip()
+            if Path(name).is_absolute():
+                try:
+                    name = Path(name).resolve().relative_to(root_resolved).as_posix()
+                except ValueError:
+                    continue
+            found.add(name.rstrip("/"))
+    return found
+
+
+def retry_stage_args(root_path: Path, task_id: str | None = None) -> tuple[list[str], list[str]]:
+    """The Retry stage command and the dirty paths that keep it from keeping work.
+
+    `--allow-dirty` is added when the paused task is saved and every dirty path
+    (relay runtime state aside) is one its handoffs listed. The decision log is
+    checked like any other path, since --allow-dirty would carry it along too.
+    Any other dirty path is returned, and the command
+    stays plain so the relay refuses rather than sweep it into the task."""
+    args = ["resume", "--retry-stage"]
+    try:
+        from whyline_relay import gitcheck, state as relay_state
+
+        if task_id is None:
+            record = json.loads(relay_state.path(root_path).read_text(encoding="utf-8"))
+            task_id = str(record.get("task_id") or "") if isinstance(record, dict) else ""
+        dirty = [
+            p
+            for p in gitcheck.dirty_paths(root_path)
+            if not p.startswith(".whyline/relay/")
+        ]
+    except Exception:
+        return args, []
+    if not task_id or not dirty:
+        return args, []
+    touched = _task_handoff_paths(root_path, task_id)
+    unrelated = [
+        p for p in dirty if not any(p == t or p.startswith(t + "/") for t in touched)
+    ]
+    if unrelated:
+        return args, unrelated
+    return args + ["--allow-dirty"], []
+
+
 def _current_max_rounds(root_path: Path) -> int:
     from whyline_relay import config as relay_config
 
@@ -3040,9 +3108,10 @@ def diagnose(
     if at_cap:
         dirty_cap = bool(dirty_paths) and dirty_paths != [".whyline/decisions.md"]
         if cap_kind == "visit-cap":
-            retry_detail = "whyline relay resume --retry-stage"
-            if dirty_cap:
-                retry_detail += " --allow-dirty"
+            retry_args, unrelated = retry_stage_args(root_path, saved_task_id)
+            retry_detail = "whyline relay " + " ".join(retry_args)
+            if unrelated:
+                retry_detail += f" (refuses to start: unrelated uncommitted files {', '.join(unrelated)})"
             cap_opts = [
                 Option(
                     "retry-stage",
@@ -3326,10 +3395,15 @@ def apply(
         return f"Set role {role} to {agent} and resumed relay."
 
     if option_id == "retry-stage":
-        if "--allow-dirty" in matched_opt.detail:
-            launch(["resume", "--retry-stage", "--allow-dirty"])
+        retry_args, unrelated = retry_stage_args(root_path)
+        launch(retry_args)
+        if "--allow-dirty" in retry_args:
             return "Resumed relay with --retry-stage, keeping uncommitted changes."
-        launch(["resume", "--retry-stage"])
+        if unrelated:
+            return (
+                "Resumed relay with --retry-stage; unrelated uncommitted files block it: "
+                + ", ".join(unrelated)
+            )
         return "Resumed relay with --retry-stage."
 
     if option_id == "more-rounds":

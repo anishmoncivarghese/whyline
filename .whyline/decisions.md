@@ -20858,3 +20858,103 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3f6789e41313438996c411f06b350199 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:56:46.689Z"} -->
+
+## 2026-10-22 — Retry stage adds --allow-dirty only when every dirty path (relay state and decisions.md aside) is a file or directory listed in a handoff for the paused task
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSV-2
+
+**Because:** dirty-paused-work's own test has no per-file ownership (any dirty path counts once a task is saved), and FileTouched ledger events carry no task, so the task's handoff file lists are the only per-task record of what it touched; Resolve and the TUI button share recovery.retry_stage_args so they cannot disagree
+
+**Rejected:**
+
+- FileTouched events — they record agent and session but not the task
+- Treat every dirty path as the task's, as dirty-paused-work does — cannot name unrelated files, which the task requires
+- apply() reading --allow-dirty out of the option detail — recomputed instead so a stale or file-named detail cannot decide the flag
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 2b4da3e3465940b7b4a98b4216426497 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T10:21:49.272Z"} -->
+
+## 2026-10-22 — RSV-2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-2
+
+**Because:** All six retry-stage behavior tests pass, covering owned dirty work with --allow-dirty, unrelated dirty work without the flag and with the blocker named, and a clean tree without the flag; the full suite passes. The required focused suite has one unrelated pre-existing RelaySetupScreen mount failure that also reproduces alone and does not exercise retry-stage.
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: a1190aa2448243828ff443fba61dd0f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T10:30:16.088Z"} -->
+
+## 2026-10-22 — RSV-2 review requests changes for an ownership bypass
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-2
+
+**Because:** retry_stage_args excludes .whyline/decisions.md before checking whether every dirty path belongs to the paused task, so an unlisted dirty decision log still enables --allow-dirty; the task requires every dirty path to be task-owned
+
+**Rejected:**
+
+- Approve as-is — the full suite passes, but it does not cover this unsafe mixed-dirty-tree case
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 1434017ddb3a42a091661a9faa4d7426 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T10:39:44.989Z"} -->
+
+## 2026-10-22 — Retry stage treats .whyline/decisions.md as an ordinary dirty path; only .whyline/relay/ runtime state is ignored
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSV-2
+
+**Because:** --allow-dirty would carry an unlisted decision log into the paused task's commit, so it must be task-listed or named as a blocker
+
+**Rejected:**
+
+- Keep skipping decisions.md like dirty-paused-work — lets an unrelated dirty decision log enable --allow-dirty (RSV-2 review)
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 86aaa94de838476bbc60e81beb1536b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:03:30.050Z"} -->
+
+## 2026-10-22 — RSV-2 Round 5 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-2
+
+**Because:** All seven retry-stage behavior tests pass, including task-owned dirty work with --allow-dirty, unrelated and decision-log blockers without the flag, and clean trees; the full suite exits 0. The required combined focused command still hits the previously recorded unrelated RelaySetupScreen #rs-recommended mount failure, which reproduces alone and does not exercise retry-stage.
+
+**Rejected:**
+
+- Fail RSV-2 for the focused-suite mount error — the same unrelated test fails in isolation while all retry-stage tests and the full suite pass
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 51e8fade75f4486bb3c33e0da1488646 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:11:57.516Z"} -->
+
+## 2026-10-22 — Approve RSV-2 Round 6 retry-stage preservation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-2
+
+**Because:** The implementation adds --allow-dirty only when every non-runtime dirty path is listed by the paused task, names unrelated blockers in both console paths, recomputes at action time, and covers owned, unrelated, decision-log, directory, and clean-tree cases; the full suite passed
+
+**Rejected:**
+
+- Request changes — no unsafe ownership bypass or missing required behavior remains; the combined focused suite's setup-screen mount failure is unrelated and the full suite passed
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 1de2424f8ad24192a0ce54792fbffe90 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:20:53.420Z"} -->

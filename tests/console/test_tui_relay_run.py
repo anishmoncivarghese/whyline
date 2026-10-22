@@ -394,3 +394,66 @@ async def test_resume_passes_allow_dirty_when_task_draft_in_tree(tmp_path, monke
         assert FakeProcess.instances[-1].args == ["resume", "--allow-dirty"]
 
 
+
+
+def _paused_at_visit_cap(root, monkeypatch, dirty, handoff_files):
+    from whyline import events, ledger, paths
+    from whyline_relay import gitcheck, state as relay_state
+    from whyline_relay.state import RelayState
+
+    relay_state.save(root, RelayState(
+        task_id="RSV-2",
+        branch="relay/myplan",
+        plan="plans/myplan.plan.md",
+        paused_reason="RSV-2 hit stage 'draft''s 3-visit cap without reaching \"@complete\"",
+        round=1,
+        log_path="",
+        base_commit="abc",
+    ))
+    ledger.append(paths.ledger_path(root), events.new_event(
+        events.HANDOFF, task="RSV-2", from_actor="claude", to_actor="codex",
+        status="ready", files=handoff_files,
+    ))
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(gitcheck, "dirty_paths", lambda root: list(dirty))
+
+
+async def _press_retry_stage(app, pilot):
+    app.on_button_pressed(tui.Button.Pressed(app._main("#relay-retry-stage", tui.Button)))
+    await pilot.pause()
+
+
+async def test_retry_stage_keeps_the_capped_task_s_own_changes(tmp_path, monkeypatch):
+    _paused_at_visit_cap(
+        tmp_path, monkeypatch, ["src/a.py", ".whyline/relay/state.json"], ["src/a.py"]
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        await _press_retry_stage(app, pilot)
+        assert FakeProcess.instances[-1].args == ["resume", "--retry-stage", "--allow-dirty"]
+
+
+async def test_retry_stage_names_an_unrelated_dirty_file_and_leaves_the_flag_off(
+    tmp_path, monkeypatch
+):
+    _paused_at_visit_cap(tmp_path, monkeypatch, ["src/a.py", "notes.txt"], ["src/a.py"])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        await _press_retry_stage(app, pilot)
+        assert FakeProcess.instances[-1].args == ["resume", "--retry-stage"]
+        transcript = " ".join(
+            line.text.strip() for line in app._main("#transcript", tui.RichLog).lines
+        )
+        assert "unrelated uncommitted files block it: notes.txt" in transcript
+
+
+async def test_retry_stage_on_a_clean_tree_has_no_flag(tmp_path, monkeypatch):
+    _paused_at_visit_cap(tmp_path, monkeypatch, [], ["src/a.py"])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        await _press_retry_stage(app, pilot)
+        assert FakeProcess.instances[-1].args == ["resume", "--retry-stage"]
+        assert not any("unrelated uncommitted" in line for line in _lines(app))

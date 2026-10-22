@@ -3049,7 +3049,16 @@ class WhylineConsoleApp(App):
                 self._manual_passed = False
                 self._launch_relay(["resume"])
         elif button_id == "relay-retry-stage":
-            self._launch_relay(["resume", "--retry-stage"])
+            from whyline.console import recovery
+
+            retry_args, unrelated = recovery.retry_stage_args(self.session.root)
+            if unrelated:
+                self.render_event(SessionEvent(
+                    kind="output",
+                    text="Retry stage cannot keep the draft; unrelated uncommitted files block it: "
+                    + ", ".join(unrelated),
+                ))
+            self._launch_relay(retry_args)
         elif button_id == "relay-resolve":
             self._start_resolve_flow(source="resume")
         elif button_id and button_id.startswith("resolve-"):

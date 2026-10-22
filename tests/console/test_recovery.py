@@ -3782,8 +3782,21 @@ def _dirty_status(repo: Path) -> str:
     ).stdout
 
 
+def _record_handoff(repo: Path, task_id: str, files: list[str]) -> None:
+    from whyline import events, ledger, paths
+
+    ledger.append(
+        paths.ledger_path(repo),
+        events.new_event(
+            events.HANDOFF, task=task_id, from_actor="codex", to_actor="claude",
+            status="ready", files=files,
+        ),
+    )
+
+
 def test_visit_cap_with_dirty_tree_lists_cap_first_and_no_resume_keep(tmp_path: Path) -> None:
     repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _record_handoff(repo, "AGS-5", ["src/work.py", "src/new.py"])
 
     probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
 
@@ -3797,6 +3810,74 @@ def test_visit_cap_with_dirty_tree_lists_cap_first_and_no_resume_keep(tmp_path: 
     launched: list[list[str]] = []
     recovery.apply(repo, probs[0], "retry-stage", launch=launched.append)
     assert launched == [["resume", "--retry-stage", "--allow-dirty"]]
+
+
+def test_visit_cap_retry_stage_counts_a_listed_directory_as_the_task_s(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _record_handoff(repo, "AGS-5", [str(repo / "src") + "/"])
+
+    assert recovery.retry_stage_args(repo) == (["resume", "--retry-stage", "--allow-dirty"], [])
+
+
+def test_visit_cap_retry_stage_with_an_unrelated_file_leaves_the_flag_off(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _record_handoff(repo, "AGS-5", ["src/work.py", "src/new.py"])
+    _record_handoff(repo, "AGS-4", ["notes.txt"])
+    (repo / "notes.txt").write_text("mine\n", encoding="utf-8")
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    retry = probs[0].options[0]
+    assert retry.id == "retry-stage"
+    assert "--allow-dirty" not in retry.detail
+    assert "notes.txt" in retry.detail and "src/work.py" not in retry.detail
+
+    launched: list[list[str]] = []
+    message = recovery.apply(repo, probs[0], "retry-stage", launch=launched.append)
+    assert launched == [["resume", "--retry-stage"]]
+    assert "notes.txt" in message
+
+
+def test_visit_cap_retry_stage_names_an_unlisted_decision_log(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _record_handoff(repo, "AGS-5", ["src/work.py", "src/new.py"])
+    (repo / ".whyline" / "decisions.md").write_text("- unrelated note\n", encoding="utf-8")
+    (repo / ".whyline" / "relay" / "runtime.json").write_text("{}\n", encoding="utf-8")
+
+    assert recovery.retry_stage_args(repo) == (
+        ["resume", "--retry-stage"],
+        [".whyline/decisions.md"],
+    )
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    retry = probs[0].options[0]
+    assert retry.id == "retry-stage"
+    assert "--allow-dirty" not in retry.detail
+    assert ".whyline/decisions.md" in retry.detail
+
+    launched: list[list[str]] = []
+    message = recovery.apply(repo, probs[0], "retry-stage", launch=launched.append)
+    assert launched == [["resume", "--retry-stage"]]
+    assert ".whyline/decisions.md" in message
+
+
+def test_visit_cap_retry_stage_on_a_clean_tree_has_no_flag(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"task_id": "AGS-5", "paused_reason": _VISIT_CAP_REASON, "stage": "draft"}),
+        encoding="utf-8",
+    )
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    retry = probs[0].options[0]
+    assert retry.id == "retry-stage"
+    assert retry.detail == "whyline relay resume --retry-stage"
+    launched: list[list[str]] = []
+    assert recovery.apply(repo, probs[0], "retry-stage", launch=launched.append) == (
+        "Resumed relay with --retry-stage."
+    )
+    assert launched == [["resume", "--retry-stage"]]
 
 
 def test_round_cap_offers_more_rounds_and_split_task(tmp_path: Path) -> None:
