@@ -21020,3 +21020,143 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3378cf748d6d45ec864aec56781477df -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T12:01:00.644Z"} -->
+
+## 2026-10-22 — Cap recoveries are tracked by task in recovery.json and allowed once per task; second cap stops naming the first
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RSV-4
+
+**Because:** Auto can safely retry a stage visit cap once with retry-stage or raise max_rounds once with more-rounds, but repeated caps require human intervention; repeated defects with a stronger model stop and name the model
+
+**Rejected:**
+
+- Store cap recoveries per round — allows infinite cap retries across rounds or on the same stage
+- Automatically apply the stronger model — model changes require human approval and Set up selection
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 9ac00b0c174b4ceba269866136809788 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T12:32:12.392Z"} -->
+
+## 2026-10-22 — RSV-4 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-4
+
+**Because:** The focused recovery suite and full project suite pass, verifying first-cap Auto recovery once per task, second-cap stopping with the first recovery named, round-cap extension, stronger-model guidance without automatic selection, quota skipping, and existing behavior for other recovery kinds
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: a6222950b4074360a1551a0f0850b9dd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T12:41:43.833Z"} -->
+
+## 2026-10-22 — Request changes: second same-round cap is stopped before the first recovery can be named
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-4
+
+**Because:** Although the focused and full suites pass, apply records the cap and both Auto entry points then append a resolve-auto record; allowed treats that record as a completed attempt for the round, so a repeated visit cap exits before diagnose and reports only recovery already attempted instead of naming Retry stage. The new test calls diagnose directly and misses the production Auto gate.
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: abcca901301c4a83888336ccb96f3c4b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T12:51:26.990Z"} -->
+
+## 2026-10-22 — allowed() treats resolve-auto paired with cap recovery as part of the cap, allowing second same-round caps to reach diagnose
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RSV-4
+
+**Because:** Auto entry points record a generic resolve-auto attempt after apply; pairing it with the cap recovery ensures a repeated visit cap reaches diagnose and names the first recovery while preserving once-per-round gating for non-cap recoveries
+
+**Rejected:**
+
+- Omit resolve-auto in Auto entry points — touches auto_run.py and tui.py outside the task scope and breaks resolve-auto auditing
+- Gate cap pauses per round in allowed() — violates RSV-4 spec requiring cap recoveries to be tracked once per task
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 5e57078777194ca884ea09f4a7cd2478 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T13:13:48.710Z"} -->
+
+## 2026-10-22 — RSV-4 passes round 5 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-4
+
+**Because:** The focused recovery suite and full project suite both exit successfully, and targeted regression tests confirm non-cap attempts remain once per round while first cap recovery proceeds and a second same-task cap stops naming the first recovery
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: cb2f9b80dbba492bb4884d2b77e40757 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T13:22:31.928Z"} -->
+
+## 2026-10-22 — Reject RSV-4 round 6: cap metadata propagation disables ordinary once-per-round gating
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-4
+
+**Because:** record_attempt propagates retry-stage or more-rounds from any immediately previous tagged record, including resolve-auto, so the tag chains onto later unrelated Auto recoveries; allowed then classifies every tagged resolve-auto as cap-related and keeps returning true after an ordinary recovery
+
+**Rejected:**
+
+- Approve because both suites pass — the submitted tests omit the cap-then-ordinary same-round sequence and a direct reproduction exposes the regression
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: fa81cbcd99014a2094fd0f192fcffd89 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T13:31:14.780Z"} -->
+
+## 2026-10-22 — Pair resolve-auto cap metadata only when immediately preceded by direct cap kind and gate ordinary attempts via sequential pairing in allowed()
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** RSV-4
+
+**Because:** prevents cap metadata from chaining across successive resolve-auto entries and allows an ordinary recovery after a cap recovery while strictly refusing subsequent ordinary attempts in the same round
+
+**Rejected:**
+
+- Allow chaining across resolve-auto — incorrectly tags subsequent ordinary Auto recoveries and disables once-per-round gating
+- Subtract cap count from resolve-auto count — double-counts tagged cap resolve-auto entries and masks subsequent ordinary attempts
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 8197d1cf42b14707aabee774fbf9604c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T13:54:19.242Z"} -->
+
+## 2026-10-22 — RSV-4 round 8 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-4
+
+**Because:** The focused recovery suite and full project suite exit successfully, and targeted cap-to-ordinary regressions verify one cap recovery per task while preserving then enforcing ordinary once-per-round gating
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 6da01b0ecabe40fa9774e4ddaa95751e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T14:04:35.294Z"} -->
+
+## 2026-10-22 — Approve RSV-4 round 9 cap recovery implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-4
+
+**Because:** The diff enforces one cap recovery per task across visit and round caps, stops repeated-defect caps with the available stronger-model name, preserves ordinary once-per-round gating after cap recovery, and both required test suites plus diff validation pass
+
+**Rejected:**
+
+- Request changes — no functional, coverage, safety, or scope defect remained after the round 8 regression fix
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 346eff971e694b15a79d487ca4f23648 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T14:13:14.393Z"} -->

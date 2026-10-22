@@ -358,6 +358,7 @@ def record_attempt(
     agent: str = "",
     verdict: str = "",
     at: str | None = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Record a recovery attempt into .whyline/relay/recovery.json."""
     if isinstance(task, dict):
@@ -374,8 +375,26 @@ def record_attempt(
             "agent": agent,
             "verdict": verdict,
             "at": at,
+            **kwargs,
         }
     attempts = load_attempts(root)
+    # If this is a generic resolve-auto record appended right after a cap recovery,
+    # carry the cap option so any consumer knows it belongs to the cap resolution.
+    if isinstance(entry, dict) and entry.get("kind") == "resolve-auto" and not entry.get("option"):
+        if attempts and isinstance(attempts[-1], dict):
+            prev = attempts[-1]
+            if (
+                str(prev.get("task")) == str(entry.get("task"))
+                and (
+                    prev.get("round") == entry.get("round")
+                    or str(prev.get("round")) == str(entry.get("round"))
+                )
+                and prev.get("kind") in ("visit-cap", "round-cap")
+            ):
+                if prev.get("option"):
+                    entry["option"] = prev.get("option")
+                if prev.get("kind"):
+                    entry["cap_kind"] = prev.get("kind")
     attempts.append(entry)
     save_attempts(root, attempts)
     return entry
@@ -386,15 +405,93 @@ record = record_attempt
 
 def allowed(root: Path | str, task: str, round: int) -> bool:
     """Return False once that task and round have one entry, else True."""
+    # Check if the current relay pause is a cap pause (caps are governed per-task, not per-round)
+    try:
+        from whyline_relay import state as relay_state
+        from whyline.console import adapters
+
+        st = relay_state.load(Path(root))
+        if st and st.paused_reason:
+            pause_reason = st.paused_reason
+        else:
+            st_dict = _read_state_dict(root)
+            pause_reason = str(st_dict.get("paused_reason") or "")
+        if pause_reason and adapters.failure_kind(pause_reason) in ("visit-cap", "round-cap"):
+            return True
+    except Exception:
+        pass
+
+    attempts = load_attempts(root)
+    non_cap_attempts = 0
+    prev_was_direct_cap = False
+
+    for entry in attempts:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("task")) != str(task):
+            continue
+        if str(entry.get("round")) != str(round):
+            continue
+
+        kind = str(entry.get("kind") or "")
+        opt = str(entry.get("option") or entry.get("agent") or "")
+        verdict = str(entry.get("verdict") or "")
+        cap_kind = str(entry.get("cap_kind") or "")
+
+        is_direct_cap = (
+            kind in ("visit-cap", "round-cap")
+            or (
+                kind != "resolve-auto"
+                and (
+                    opt in ("retry-stage", "more-rounds")
+                    or "Retry stage" in verdict
+                    or "more rounds" in verdict
+                )
+            )
+        )
+        is_paired_cap = (
+            kind == "resolve-auto"
+            and (
+                cap_kind in ("visit-cap", "round-cap")
+                or opt in ("retry-stage", "more-rounds")
+                or prev_was_direct_cap
+            )
+        )
+
+        if is_direct_cap:
+            prev_was_direct_cap = True
+        elif is_paired_cap:
+            prev_was_direct_cap = False
+        else:
+            prev_was_direct_cap = False
+            non_cap_attempts += 1
+
+    return non_cap_attempts == 0
+
+
+def find_task_cap_recovery(root: Path | str, task: str) -> dict[str, Any] | None:
+    """Find the first cap recovery record for `task` in recovery.json, if any."""
+    if not task:
+        return None
     attempts = load_attempts(root)
     for entry in attempts:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("task")) != str(task):
+            continue
+        kind = str(entry.get("kind") or "")
+        opt = str(entry.get("option") or entry.get("agent") or "")
+        verdict = str(entry.get("verdict") or "")
         if (
-            isinstance(entry, dict)
-            and entry.get("task") == task
-            and (entry.get("round") == round or str(entry.get("round")) == str(round))
+            kind in ("visit-cap", "round-cap")
+            or opt in ("retry-stage", "more-rounds")
+            or "Retry stage" in verdict
+            or "more rounds" in verdict
+            or "retry-stage" in str(entry)
+            or "more-rounds" in str(entry)
         ):
-            return False
-    return True
+            return entry
+    return None
 
 
 class RecoveryResult(FixResult):
@@ -1140,6 +1237,10 @@ class Problem:
     summary: str
     evidence: list[str]
     options: list[Option]
+    task_id: str = ""
+    root: Path | None = None
+    suggested_model: str = ""
+    first_recovery: str = ""
 
 
 @dataclass(frozen=True)
@@ -1152,10 +1253,8 @@ class LoginRequest:
 _HUMAN_KINDS = frozenset({
     "auth",
     "blocked",
-    "round-cap",
     "release",
     "sandbox",
-    "visit-cap",
 })
 
 _GENERIC_AGENTS = frozenset({"antigravity", "grok"})
@@ -1170,12 +1269,16 @@ _LOGGED_OUT_PHRASES = (
 _SIGN_IN_DETAIL = "Open {agent} in a terminal and sign in, then press Check again."
 
 
-def auto_option(problem: Problem) -> Option | None:
+def auto_option(
+    problem: Problem,
+    root: Path | str | None = None,
+    task_id: str | None = None,
+) -> Option | None:
     """The recommended option when it has confirm=False, else None.
 
     Returns None for unknown, logged-out (a login always needs a click), for
     any option with confirm=True, and for any kind REC-1 routes to human
-    (auth, blocked, round-cap, release, sandbox).
+    (auth, blocked, release, sandbox).
     """
     if (
         problem.id == "unknown"
@@ -1184,6 +1287,7 @@ def auto_option(problem: Problem) -> Option | None:
     ):
         return None
 
+    summary_kind = ""
     try:
         from whyline.console import adapters
 
@@ -1192,6 +1296,30 @@ def auto_option(problem: Problem) -> Option | None:
             return None
     except Exception:
         pass
+
+    is_cap = problem.id in _CAP_KINDS or summary_kind in _CAP_KINDS
+    if is_cap:
+        if getattr(problem, "first_recovery", ""):
+            return None
+        eff_task = task_id or getattr(problem, "task_id", "")
+        if not eff_task:
+            m_task = re.search(r"\b([A-Z]+-\d+)\b", problem.summary)
+            if m_task:
+                eff_task = m_task.group(1)
+        eff_root = root or getattr(problem, "root", None)
+        if eff_task:
+            check_root = eff_root or Path.cwd()
+            if find_task_cap_recovery(check_root, eff_task):
+                return None
+        for opt in problem.options:
+            if opt.recommended:
+                if opt.confirm or "model" in opt.id:
+                    return None
+                if (problem.id == "visit-cap" or summary_kind == "visit-cap") and opt.id == "retry-stage":
+                    return opt
+                if (problem.id == "round-cap" or summary_kind == "round-cap") and opt.id == "more-rounds":
+                    return opt
+        return None
 
     for opt in problem.options:
         if opt.recommended:
@@ -2497,6 +2625,75 @@ def _configured_implementer(root_path: Path) -> str:
         return ""
 
 
+def find_stronger_model(root_path: Path | str, agent: str) -> tuple[str, str] | None:
+    """Find a stronger model for `agent` listed in Set up that is not out of quota.
+
+    Returns (label, model_id) or None.
+    """
+    if not agent:
+        return None
+    root_p = Path(root_path).resolve()
+    try:
+        from whyline.console import relay_ops
+    except Exception:
+        return None
+
+    try:
+        model_opts = relay_ops.model_options_for_agent(agent)
+    except Exception:
+        model_opts = None
+    if not model_opts:
+        return None
+
+    try:
+        current_model = relay_ops.read_agent_model(root_p, agent)
+    except Exception:
+        current_model = ""
+
+    out_models = {}
+    try:
+        out_models = find_out_until_models(root_p)
+    except Exception:
+        pass
+
+    failing_m = ""
+    try:
+        failing_m, _ = read_failing_turn_quota(root_p, agent)
+    except Exception:
+        pass
+
+    out_str = out_models.get(agent, "")
+
+    if current_model:
+        curr_idx = None
+        for i, (lbl, mid) in enumerate(model_opts):
+            if mid == current_model or lbl == current_model:
+                curr_idx = i
+                break
+        if curr_idx is not None and curr_idx > 0:
+            candidates = model_opts[:curr_idx]
+        elif curr_idx is None:
+            candidates = [m for m in model_opts if m[1] != current_model and m[0] != current_model]
+        else:
+            candidates = []
+    else:
+        candidates = list(model_opts)
+
+    out_model = failing_m
+    if not out_model and out_str:
+        m_match = re.search(r"·\s*(\S+)\s+out until", out_str)
+        if m_match:
+            out_model = m_match.group(1).strip()
+
+    for lbl, mid in candidates:
+        if out_model and (mid == out_model or lbl == out_model):
+            continue
+        if failing_m and (mid == failing_m or lbl == failing_m):
+            continue
+        return (lbl, mid)
+    return None
+
+
 def _raise_max_rounds(root_path: Path) -> int:
     from whyline_relay import setup as relay_setup
 
@@ -3278,6 +3475,16 @@ def diagnose(
     # 7. visit-cap and round-cap: listed first, ahead of every other problem
     if at_cap:
         dirty_cap = bool(dirty_paths) and dirty_paths != [".whyline/decisions.md"]
+        first_cap = find_task_cap_recovery(root_path, saved_task_id)
+        first_recovery_name = ""
+        if first_cap:
+            first_recovery_name = (
+                first_cap.get("verdict")
+                or first_cap.get("label")
+                or first_cap.get("option")
+                or ("Retry stage" if first_cap.get("kind") == "visit-cap" else f"Give it {MORE_ROUNDS} more rounds")
+            )
+
         if cap_kind == "visit-cap":
             retry_args, unrelated = retry_stage_args(root_path, saved_task_id)
             retry_detail = "whyline relay " + " ".join(retry_args)
@@ -3315,6 +3522,7 @@ def diagnose(
             cap_summary = f"Round cap reached: {reason}"
         cap_evidence = [reason] if reason else list(fails)
         rejections = recent_rejections(root_path, saved_task_id)
+        repeated = False
         if rejections:
             repeated = len(rejections) >= 2 and shares_theme([r["summary"] for r in rejections])
             if repeated:
@@ -3323,24 +3531,39 @@ def diagnose(
             cap_evidence += [
                 f"- {r['actor'] or 'reviewer'} ({r['status']}): {r['summary']}" for r in rejections
             ]
-            if repeated:
-                implementer = _configured_implementer(root_path)
-                then = (
-                    "retries the stage keeping changes"
-                    if cap_kind == "visit-cap"
-                    else f"gives it {MORE_ROUNDS} more rounds keeping changes"
-                )
-                cap_opts = [
-                    Option(
-                        "retry-stronger-model",
-                        "Retry with a stronger model",
-                        f"open Set up on {implementer or 'the implementer'}'s Model row; "
-                        f"saving there {then}",
-                        recommended=True,
-                        confirm=False,
-                    ),
-                    *(replace(o, recommended=False) for o in cap_opts),
-                ]
+
+        suggested_model_name = ""
+        if first_recovery_name:
+            cap_summary = f"{cap_summary} (first recovery was {first_recovery_name})"
+            cap_evidence.append(
+                f"Second cap on task {saved_task_id or 'the task'} reached; first recovery was {first_recovery_name}."
+            )
+            cap_opts = [replace(o, recommended=False) for o in cap_opts]
+        elif rejections and repeated:
+            implementer = _configured_implementer(root_path)
+            stronger = find_stronger_model(root_path, implementer)
+            if stronger:
+                suggested_model_name = stronger[0]
+            then = (
+                "retries the stage keeping changes"
+                if cap_kind == "visit-cap"
+                else f"gives it {MORE_ROUNDS} more rounds keeping changes"
+            )
+            cap_opts = [
+                Option(
+                    "retry-stronger-model",
+                    "Retry with a stronger model",
+                    f"open Set up on {implementer or 'the implementer'}'s Model row; "
+                    f"saving there {then}",
+                    recommended=True,
+                    confirm=False,
+                ),
+                *(replace(o, recommended=False) for o in cap_opts),
+            ]
+            if suggested_model_name:
+                cap_summary = f"{cap_summary} (would use {suggested_model_name})"
+                cap_evidence.append(f"Auto would use {suggested_model_name}")
+
         # With no saved task the dirty-other problem already offers Stash.
         if dirty_cap and saved_task_id:
             cap_opts.append(_stash_cap_option(root_path, saved_task_id))
@@ -3355,6 +3578,10 @@ def diagnose(
                 summary=cap_summary,
                 evidence=cap_evidence,
                 options=cap_opts,
+                task_id=saved_task_id,
+                root=root_path,
+                suggested_model=suggested_model_name,
+                first_recovery=first_recovery_name,
             ),
         )
 
@@ -3594,6 +3821,25 @@ def apply(
         return f"Set role {role} to {agent} and resumed relay."
 
     if option_id == "retry-stage":
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        task_id = (
+            getattr(problem, "task_id", "")
+            or (st.task_id if st and st.task_id else "")
+            or str(st_dict.get("task_id") or "")
+        )
+        round_num = (st.round if st and hasattr(st, "round") and st.round is not None else 1) or 1
+        record_attempt(
+            root_path,
+            task=task_id,
+            round=round_num,
+            kind="visit-cap",
+            agent="retry-stage",
+            verdict="Retry stage",
+            option="retry-stage",
+        )
         retry_args, unrelated = retry_stage_args(root_path)
         launch(retry_args)
         if "--allow-dirty" in retry_args:
@@ -3609,6 +3855,25 @@ def apply(
         return _stronger_model_screen(root_path, problem.id, _configured_implementer(root_path))
 
     if option_id == "more-rounds":
+        from whyline_relay import state as state_mod
+
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        task_id = (
+            getattr(problem, "task_id", "")
+            or (st.task_id if st and st.task_id else "")
+            or str(st_dict.get("task_id") or "")
+        )
+        round_num = (st.round if st and hasattr(st, "round") and st.round is not None else 1) or 1
+        record_attempt(
+            root_path,
+            task=task_id,
+            round=round_num,
+            kind="round-cap",
+            agent="more-rounds",
+            verdict="Give it 6 more rounds",
+            option="more-rounds",
+        )
         new_rounds = _raise_max_rounds(root_path)
         launch(["resume", "--allow-dirty"])
         return f"Saved max_rounds {new_rounds} and resumed relay with changes kept."

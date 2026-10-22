@@ -3768,7 +3768,16 @@ def _capped_repo(path: Path, reason: str) -> Path:
     (repo / "src" / "work.py").write_text("a = 1\nc = 3\nd = 4\n", encoding="utf-8")
     (repo / "src" / "new.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
     (repo / ".whyline" / "relay" / "state.json").write_text(
-        json.dumps({"task_id": "AGS-5", "paused_reason": reason, "stage": "draft"}),
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "AGS-5",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
         encoding="utf-8",
     )
     return repo
@@ -4173,3 +4182,443 @@ async def test_saving_set_up_from_stronger_model_retries_keeping_changes(
         config = tomllib.loads((repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8"))
         assert config["max_rounds"] == rounds_before + recovery.MORE_ROUNDS
     assert "implementer was on backup grok; it now uses codex" in text
+
+
+def test_first_visit_cap_retried_by_auto_and_second_stops_naming_first(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    cap = probs[0]
+    assert cap.id == "visit-cap"
+
+    # Auto chooses retry-stage
+    opt = recovery.auto_option(cap)
+    assert opt is not None
+    assert opt.id == "retry-stage"
+    assert opt.label == "Retry stage"
+
+    # Applying the option launches retry-stage and records in recovery.json
+    launched: list[list[str]] = []
+    res = recovery.apply(repo, cap, opt.id, launch=launched.append)
+    assert launched == [["resume", "--retry-stage", "--allow-dirty"]]
+    assert "Resumed relay with --retry-stage" in res
+
+    # Check recovery.json
+    records = recovery.load_attempts(repo)
+    assert len(records) == 1
+    assert records[0]["task"] == "AGS-5"
+    assert records[0]["kind"] == "visit-cap"
+    assert records[0]["option"] == "retry-stage"
+    assert records[0]["verdict"] == "Retry stage"
+
+    # Second cap on the same task: Auto stops and names the first recovery
+    probs2 = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    cap2 = probs2[0]
+    assert cap2.id == "visit-cap"
+    assert "first recovery was Retry stage" in cap2.summary
+    assert "Retry stage" in cap2.first_recovery
+    assert any("first recovery was Retry stage" in line for line in cap2.evidence)
+    assert recovery.auto_option(cap2) is None
+
+
+def test_round_cap_raises_max_rounds_once_by_auto(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    initial_rounds = recovery._current_max_rounds(repo)
+
+    probs = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+    cap = probs[0]
+    assert cap.id == "round-cap"
+
+    # Auto chooses more-rounds
+    opt = recovery.auto_option(cap)
+    assert opt is not None
+    assert opt.id == "more-rounds"
+    assert opt.label == f"Give it {recovery.MORE_ROUNDS} more rounds"
+
+    # Applying raises max_rounds and records in recovery.json
+    launched: list[list[str]] = []
+    recovery.apply(repo, cap, opt.id, launch=launched.append)
+    assert launched == [["resume", "--allow-dirty"]]
+    assert recovery._current_max_rounds(repo) == initial_rounds + recovery.MORE_ROUNDS
+
+    # Check recovery.json
+    records = recovery.load_attempts(repo)
+    assert any(
+        r.get("task") == "AGS-5"
+        and r.get("kind") == "round-cap"
+        and r.get("option") == "more-rounds"
+        for r in records
+    )
+
+    # Second round cap on the same task: stops and does not raise max_rounds again
+    probs2 = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+    cap2 = probs2[0]
+    assert recovery.auto_option(cap2) is None
+    assert "Give it 6 more rounds" in cap2.summary
+    assert "Give it 6 more rounds" in cap2.first_recovery
+    assert recovery._current_max_rounds(repo) == initial_rounds + recovery.MORE_ROUNDS
+
+
+def test_repeated_defect_cap_stops_with_suggested_model(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    for summary in _DEADLINE_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    cap = probs[0]
+    assert cap.id == "visit-cap"
+    assert recovery.REPEATED_DEFECT in cap.evidence
+
+    # Stronger model is "gpt-5.6-sol"
+    assert "would use gpt-5.6-sol" in cap.summary
+    assert cap.suggested_model == "gpt-5.6-sol"
+    assert any("gpt-5.6-sol" in line for line in cap.evidence)
+
+    # Auto does not choose the model: it stops
+    assert recovery.auto_option(cap) is None
+
+
+def test_repeated_defect_cap_skips_out_of_quota_model(tmp_path: Path, monkeypatch) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    for summary in _DEADLINE_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    # Mark gpt-5.6-sol as out of quota
+    monkeypatch.setattr(
+        recovery,
+        "find_out_until_models",
+        lambda root, **kw: {"codex": "codex · gpt-5.6-sol out until 25 Oct 11:55"},
+    )
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    cap = probs[0]
+
+    # Stronger model is now "gpt-5.6" instead of "gpt-5.6-sol"
+    assert "would use gpt-5.6" in cap.summary
+    assert "gpt-5.6-sol" not in cap.summary
+    assert cap.suggested_model == "gpt-5.6"
+    assert recovery.auto_option(cap) is None
+
+
+def test_second_cap_across_types_stops_and_names_first(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    opt = recovery.auto_option(probs[0])
+    assert opt is not None
+    recovery.apply(repo, probs[0], opt.id, launch=lambda args: None)
+
+    # Now round cap occurs on the same task
+    probs_round = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+    cap_round = probs_round[0]
+    assert recovery.auto_option(cap_round) is None
+    assert "first recovery was Retry stage" in cap_round.summary
+
+
+def test_different_task_is_allowed_first_cap(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    # Record cap recovery for AGS-5
+    recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="visit-cap",
+        option="retry-stage",
+        verdict="Retry stage",
+    )
+
+    # Diagnose for another task AGS-6
+    other_reason = "AGS-6 hit stage 'draft''s 3-visit cap without reaching \"@complete\""
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "AGS-6",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": other_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+    probs = recovery.diagnose(repo, [], other_reason)
+    cap = probs[0]
+    assert cap.id == "visit-cap"
+    opt = recovery.auto_option(cap)
+    assert opt is not None
+    assert opt.id == "retry-stage"
+
+
+def test_auto_run_visit_cap_first_retried_and_second_stops_naming_first(tmp_path: Path) -> None:
+    """Integration regression driving the Auto recovery entry point through first and second caps."""
+    from whyline.console import auto_run, relay_ops
+
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    relay_ops.save_resolve_mode(repo, "auto")
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    # First visit cap: Auto automatically applies retry-stage
+    res1 = auto_run.recover_pause(
+        repo,
+        task_id="AGS-5",
+        round=1,
+        pause_reason=_VISIT_CAP_REASON,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res1.verdict == "resolved"
+    assert launched == [["resume", "--retry-stage", "--allow-dirty"]]
+    assert any("resolve · auto · visit-cap · retry-stage" in l for l in lines)
+
+    # Check recovery.json recorded attempts
+    records = recovery.load_attempts(repo)
+    assert any(
+        r.get("task") == "AGS-5"
+        and (r.get("kind") == "visit-cap" or r.get("option") == "retry-stage")
+        for r in records
+    )
+
+    # Second visit cap in the same round: Auto stops and names the first recovery
+    launched.clear()
+    lines.clear()
+    res2 = auto_run.recover_pause(
+        repo,
+        task_id="AGS-5",
+        round=1,
+        pause_reason=_VISIT_CAP_REASON,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res2.verdict == "human"
+    assert "Retry stage" in res2.reason
+    assert "first recovery was Retry stage" in res2.reason
+    assert "recovery already attempted" not in res2.reason
+    assert launched == []
+
+
+def test_auto_run_round_cap_first_retried_and_second_stops_naming_first(tmp_path: Path) -> None:
+    """Integration regression driving the Auto recovery entry point through first and second round caps."""
+    from whyline.console import auto_run, relay_ops
+
+    repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+    relay_ops.save_resolve_mode(repo, "auto")
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    initial_rounds = recovery._current_max_rounds(repo)
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    # First round cap: Auto gives 6 more rounds
+    res1 = auto_run.recover_pause(
+        repo,
+        task_id="AGS-5",
+        round=1,
+        pause_reason=_ROUND_CAP_REASON,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res1.verdict == "resolved"
+    assert launched == [["resume", "--allow-dirty"]]
+    assert recovery._current_max_rounds(repo) == initial_rounds + recovery.MORE_ROUNDS
+
+    # Second round cap on same task: Auto stops and names the first recovery
+    launched.clear()
+    lines.clear()
+    res2 = auto_run.recover_pause(
+        repo,
+        task_id="AGS-5",
+        round=1,
+        pause_reason=_ROUND_CAP_REASON,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res2.verdict == "human"
+    assert f"Give it {recovery.MORE_ROUNDS} more rounds" in res2.reason
+    assert "recovery already attempted" not in res2.reason
+    assert recovery._current_max_rounds(repo) == initial_rounds + recovery.MORE_ROUNDS
+    assert launched == []
+
+
+def test_cap_recovery_followed_by_ordinary_auto_recovery_refuses_next_ordinary_attempt(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+
+    # 1. Cap recovery: direct visit-cap attempt
+    r1 = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="visit-cap",
+        option="retry-stage",
+        verdict="Retry stage",
+    )
+    assert r1.get("option") == "retry-stage"
+
+    # 2. Generic resolve-auto emitted immediately for the cap recovery
+    r2 = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="resolve-auto",
+        agent="",
+        verdict="resolved",
+    )
+    assert r2.get("option") == "retry-stage"
+    assert r2.get("cap_kind") == "visit-cap"
+
+    # Cap recovery is per-task, so round 1 is still allowed an ordinary recovery
+    assert recovery.allowed(repo, "AGS-5", 1) is True
+
+    # 3. An unrelated ordinary Auto recovery in the same task and round
+    r3 = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="resolve-auto",
+        agent="",
+        verdict="resolved",
+    )
+    # The unrelated resolve-auto must NOT inherit cap option or cap_kind
+    assert "option" not in r3 or not r3.get("option")
+    assert "cap_kind" not in r3 or not r3.get("cap_kind")
+
+    # 4. Once an ordinary recovery has occurred, the next ordinary attempt is refused
+    assert recovery.allowed(repo, "AGS-5", 1) is False
+
+    # New round or different task remains allowed
+    assert recovery.allowed(repo, "AGS-5", 2) is True
+    assert recovery.allowed(repo, "AGS-6", 1) is True
+
+
+def test_round_cap_followed_by_ordinary_auto_recovery_refuses_next_ordinary_attempt(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+
+    # 1. Cap recovery: direct round-cap attempt
+    r1 = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="round-cap",
+        option="more-rounds",
+        verdict="Give it 6 more rounds",
+    )
+    assert r1.get("option") == "more-rounds"
+
+    # 2. Generic resolve-auto emitted immediately for the cap recovery
+    r2 = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="resolve-auto",
+        agent="",
+        verdict="resolved",
+    )
+    assert r2.get("option") == "more-rounds"
+    assert r2.get("cap_kind") == "round-cap"
+
+    assert recovery.allowed(repo, "AGS-5", 1) is True
+
+    # 3. Unrelated ordinary resolve-auto
+    r3 = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="resolve-auto",
+        agent="",
+        verdict="resolved",
+    )
+    assert "option" not in r3 or not r3.get("option")
+    assert "cap_kind" not in r3 or not r3.get("cap_kind")
+
+    # Refused in same round, allowed in next round
+    assert recovery.allowed(repo, "AGS-5", 1) is False
+    assert recovery.allowed(repo, "AGS-5", 2) is True
+
+
+def test_auto_run_cap_then_ordinary_refuses_subsequent_ordinary_attempt(
+    tmp_path: Path,
+) -> None:
+    from whyline.console import auto_run, relay_ops
+
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    relay_ops.save_resolve_mode(repo, "auto")
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    # 1. Cap recovery succeeds
+    res1 = auto_run.recover_pause(
+        repo,
+        task_id="AGS-5",
+        round=1,
+        pause_reason=_VISIT_CAP_REASON,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res1.verdict == "resolved"
+
+    # 2. Simulate next pause being an ordinary (non-cap) pause in round 1
+    ordinary_reason = "Test suite failed in stage 'draft'"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "AGS-5",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": ordinary_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    # Cap recovery happened, but no ordinary recovery yet in round 1, so ordinary pause is allowed
+    assert recovery.allowed(repo, "AGS-5", 1) is True
+
+    # Record one ordinary Auto recovery in round 1
+    r_ord = recovery.record_attempt(
+        repo,
+        task="AGS-5",
+        round=1,
+        kind="resolve-auto",
+        agent="",
+        verdict="resolved",
+    )
+    assert "option" not in r_ord or not r_ord.get("option")
+    assert "cap_kind" not in r_ord or not r_ord.get("cap_kind")
+
+    # Next ordinary attempt in round 1 must be refused
+    assert recovery.allowed(repo, "AGS-5", 1) is False
+
+    # 3. auto_run on an ordinary pause is now refused by once-per-round gating
+    res_ordinary = auto_run.recover_pause(
+        repo,
+        task_id="AGS-5",
+        round=1,
+        pause_reason=ordinary_reason,
+        progress=lines.append,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res_ordinary.verdict == "human"
+    assert "recovery already attempted for AGS-5 round 1" in res_ordinary.reason
