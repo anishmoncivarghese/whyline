@@ -250,7 +250,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a visit-cap pause with a dirty tree lists visit-cap first and no resume-keep; a round-cap pause offers both options; more-rounds commits only config.toml with max_rounds raised by 6 and resumes with `--allow-dirty`; Stash at a cap asks for confirmation with the counts.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] RSV-2: Retry stage keeps the paused task's work
+- [x] RSV-2: Retry stage keeps the paused task's work
   Edit `src/whyline/console/tui.py` (the `relay-retry-stage` button) and the `retry-stage` option in `src/whyline/console/recovery.py`, with tests in `tests/console/test_tui_relay_run.py` and `tests/console/test_recovery.py`. Both run `resume --retry-stage` without `--allow-dirty`, so they refuse to start whenever the capped task's draft is uncommitted, which is always.
   Add `--allow-dirty` when every dirty path is one the paused task touched (the same test dirty-paused-work uses). Otherwise keep today's command, and show which unrelated files block it.
   Tests: a cap with the task's own changes launches `resume --retry-stage --allow-dirty`; an unrelated dirty file leaves the flag off and names the file; a clean tree launches without it.
