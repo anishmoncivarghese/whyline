@@ -276,6 +276,65 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: the card shows the repository's configured roles as defaults; a settings edit updates the card and bumps the revision; an agent that is not logged in is refused naming it; untrusted antigravity is refused with the reason; `release: codex` is refused; Cancel returns to `brainstormed`; the built request round-trips the confirmed values.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
+- [ ] ASK-1: Ask agent at every pause
+  Edit `src/whyline/console/recovery.py` and `src/whyline/console/tui.py`, with tests in `tests/console/test_recovery.py` and `tests/console/test_tui_relay_run.py`. Added on 2026-10-22: in every pause from 2026-10-21 to 22, one of Resolve's rules matched but offered the wrong fix or none (a sticky switch offering only Show evidence and Cancel, a visit cap ranked below uncommitted changes), so `ask_agent` (REC-4E), which is offered only for the "unknown" problem, never ran. The user brought each pause to a separate Claude session instead.
+  Every Resolve result gets **Ask agent** as its last option, after the rule-based ones. It is recommended when no rule-based option is recommended, or when the rule-based fix was already applied to this pause (`recovery.json`). It runs the agent selected in the console's context bar, then the backup chain, as `ask_agent` does now, read-only (`capabilities.read_only_command`; for agents without one, the existing snapshot check refuses any edit). It shows a thinking line, uses the relay's per-agent timeout, and falls back to the next agent on a limit or timeout, naming each one tried.
+  Tests: a sticky-switch pause lists Ask agent last; an already-applied fix makes Ask agent recommended; a limit on the first agent falls to the backup and says so; an agent that edits a file is refused and the edit reported.
+  Verify with `uv run pytest -q tests/console/test_recovery.py tests/console/test_tui_relay_run.py` and `uv run pytest -q`. Change nothing else.
+
+- [ ] ASK-2: Give the agent what a person would read
+  Edit `build_ask_agent_prompt` in `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`.
+  Add these sections:
+  - state.json: task, round, stage, visits and base.
+  - The plan task's full text.
+  - Roles, backup chain and each agent's model from `config.toml` (agent commands with secrets redacted).
+  - `active-roles.json` overrides, including `tried`.
+  - Quota evidence: the last limit line and reset time per agent and model, from AGS-5's parser.
+  - The last three reviewer rejection summaries (RSV-3).
+  - The rule-based problems and options Resolve already found.
+  - `git status` with `--stat`, and commits since the base, marking config-only ones.
+  - Recent `recovery.json` entries.
+  Also add a fixed **Relay facts** section, kept in the code next to the prompt and updated when the relay changes:
+  - A paused task accepts only config.toml-only commits.
+  - Any other commit makes Resume fail at approval with "HEAD moved", so restart with `start --allow-dirty`.
+  - `--allow-dirty` keeps the task's draft.
+  - `--only <task>` stops after that task.
+  - Config is read when a run starts.
+  - An agent in an override's `tried` list is skipped by failover.
+  - Caps: Retry stage gives a stage one more visit, and the round limit is `max_rounds`.
+  Keep the prompt under 40 KB: trim logs first, then diffs.
+  Tests: each section appears from fakes; a long log is trimmed and the facts and task text stay; a token in an agent command is redacted.
+  Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
+- [ ] ASK-3: The agent proposes steps the console can apply
+  Edit `src/whyline/console/recovery.py` and `src/whyline/console/relay_screens.py`, with tests in `tests/console/test_recovery.py`.
+  The agent ends with a fenced JSON block: `{"diagnosis": "...", "steps": [...], "confidence": "high|medium|low"}`. Each step is one of a fixed catalog that maps to an existing console function:
+  - `set-model {agent, model}` (AGS-4's save)
+  - `set-roles {implementer?, tester?, reviewer?, backup?}` (`relay_ops.save_roles` / `save_backup`, clearing overrides as AGS-1 does)
+  - `clear-override {role}`
+  - `raise-rounds {by}` (at most 12)
+  - `retry-stage`
+  - `resume {allow_dirty}`
+  - `start {only?, allow_dirty}`
+  - `wait-until {time}`
+  - `human {text}`
+  - every existing REC_4C option
+  Validate before showing: agents must be usable (`relay_ops.usable_agents`), models must be in AGS-4's list for that agent, and a step outside the catalog is dropped with a note. Resolve shows the diagnosis and the numbered steps, with **Apply all**, **Apply step 1 only** and **Cancel**. Apply runs the steps in order, as config-only commits where config changes, and stops at the first failure, saying which. A reply with no valid JSON falls back to today's `RECOMMEND:` parsing.
+  Tests: a reply proposing set-model, clear-override and resume applies all three in order with one config commit; an unknown agent or model is dropped with a note; a step outside the catalog is dropped; a failing step stops the rest; a reply with no JSON uses RECOMMEND.
+  Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
+- [ ] ASK-4: Auto applies the agent's safe steps
+  Edit Auto's path in `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`.
+  In Auto mode, when no rule-based fix is auto-safe or one was already applied to this pause, Auto asks the agent once per pause. Auto applies the steps only when every step is in a safe set:
+  - `set-model` to a model with no recorded quota block
+  - `set-roles` and `clear-override` naming only usable agents
+  - `retry-stage` or `raise-rounds`, once per task (shared with RSV-4's limit)
+  - `resume {allow_dirty}` when the dirty files are the task's own
+  - `start` when the pause's own task is the next unchecked one
+  `stash`, `reset-keep`, `move-aside`, `stop` and `human` always stop for you, showing the proposal. Every applied proposal is recorded in `recovery.json` with the agent, its diagnosis and its steps. A second pause with the same reason after an applied proposal stops for you, naming what was tried.
+  Tests: a safe proposal is applied and recorded; a proposal containing stash stops with the steps shown; the same reason twice stops naming the first proposal; Auto asks at most once per pause.
+  Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
+
 - [ ] IDEA-16: Auto accepts an existing synthesis, and redrafts a plan from feedback
   Edit `src/whyline/console/auto_run.py` and `tests/console/test_auto_run.py`. No inbox code here.
   `run(..., synthesis: Path | None = None)` and `resume(..., synthesis=None)`: when given and the file contains `## Final Synthesis`, the research phase copies it to `brainstorm.shared_path(root, request.topic)` and accepts it with no model call. Without it, behaviour is unchanged. The fingerprint does not change: `synthesis` is not part of the request.
