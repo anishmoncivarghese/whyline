@@ -20958,3 +20958,65 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1de2424f8ad24192a0ce54792fbffe90 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:20:53.420Z"} -->
+
+## 2026-10-22 — At a round cap, Retry with a stronger model raises max_rounds by 6 after Set up saves, then resumes keeping changes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSV-3
+
+**Because:** relay resume --retry-stage only works at a visit cap, and resuming a round cap without more rounds stops at the same cap straight away
+
+**Rejected:**
+
+- launch resume --retry-stage at a round cap too — the relay refuses it
+- offer the stronger-model option only at visit caps — the task names both caps
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 142d3bcd5614424486527c90d4bd0b03 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:44:14.431Z"} -->
+
+## 2026-10-22 — Repeated-defect check: two of the last three rejection summaries share at least 3 words of 4+ letters, after dropping review boilerplate (fix, tests, regression, suites, passed...)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSV-3
+
+**Because:** on the real ledger this flags AGS-5's last three (quota/override/state) but not TGS-5's five unrelated rejections, which share at most 2
+
+**Rejected:**
+
+- a ratio such as Jaccard — AGS-5's long summaries share few words in proportion, so it would miss the motivating case
+- a lower threshold of 2 shared words — it fires on nearly any task with two rejections
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 0958a591286742aabc5a813eeb74098a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:44:16.899Z"} -->
+
+## 2026-10-22 — RSV-3 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** RSV-3
+
+**Because:** The focused recovery tests and full project suite pass, covering repeated-theme evidence, unrelated rejection ordering, log fallback, literal markup rendering, and stronger-model retry behavior at visit and round caps
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 30266798ddb24cc292bedfcd05753c88 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T11:52:37.133Z"} -->
+
+## 2026-10-22 — Approve RSV-3 repeated-review recovery guidance
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSV-3
+
+**Because:** The cap evidence uses the last three task rejection summaries with log fallback, detects repeated themes without an agent call, renders summaries literally, and the stronger-model setup retry preserves changes at both visit and round caps; focused and full test suites pass
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 3378cf748d6d45ec864aec56781477df -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T12:01:00.644Z"} -->

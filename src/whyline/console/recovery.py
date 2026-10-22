@@ -8,7 +8,7 @@ import re
 import subprocess
 import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -2373,6 +2373,177 @@ def retry_stage_args(root_path: Path, task_id: str | None = None) -> tuple[list[
     return args + ["--allow-dirty"], []
 
 
+_REJECTED_STATUSES = frozenset({"rejected", "failed", "changes-requested", "revise"})
+
+REPEATED_DEFECT = "The reviewer keeps finding the same problem"
+
+# Words every review summary uses, whatever the defect: they say nothing
+# about which problem was found.
+_THEME_STOPWORDS = frozenset(
+    """
+    about actually added adding after again also before both cannot case change
+    changes check checks code continue currently does each every file files first
+    focused from full have instead into just keep make makes missing more must
+    need never only other otherwise pass passed passes pytest regression remove
+    required review same should still suite suites targeted test tests that their
+    them then there these they this those through under uses using when where
+    which while with without would your
+    """.split()
+)
+
+_LOG_HANDOFF = re.compile(r"whyline handoff\s+(\S+)([^\n]*)")
+_LOG_STATUS = re.compile(r"--status[\s=]+[\"']?([\w-]+)")
+_LOG_SUMMARY = re.compile(r"--summary[\s=]+\"((?:[^\"\\\n]|\\.)*)\"")
+
+
+def _handoff_rejections(root_path: Path, task_id: str) -> list[dict[str, str]]:
+    """Every rejecting `whyline handoff` for `task_id` with a summary, oldest first."""
+    from whyline import events, handoff, ledger, paths
+
+    records: list[dict] = []
+    try:
+        records, _ = ledger.read_all(
+            paths.ledger_path(root_path), skip_types=(events.INSTRUCTION, events.FILE_TOUCHED)
+        )
+    except Exception:
+        pass
+    try:
+        active = handoff.load(root_path)
+        if active and all(active.get("id") != rec.get("id") for rec in records):
+            records.append(active)
+    except Exception:
+        pass
+    found = []
+    for rec in records:
+        if rec.get("type") != events.HANDOFF or rec.get("task") != task_id:
+            continue
+        status = str(rec.get("status") or "").strip().lower()
+        summary = str(rec.get("summary") or "").strip()
+        if status in _REJECTED_STATUSES and summary:
+            found.append({"actor": str(rec.get("from_actor") or ""), "status": status, "summary": summary})
+    return found
+
+
+def _log_rejections(root_path: Path, task_id: str) -> list[dict[str, str]]:
+    """Rejections read from the task's test and review logs, oldest first.
+
+    Each log's last rejecting handoff command counts; the prompt's own
+    `--summary "<what happened>"` templates are skipped."""
+    logs_dir = root_path / ".whyline" / "relay" / "logs"
+    if not task_id or not logs_dir.is_dir():
+        return []
+    name = re.compile(re.escape(task_id) + r"-(\d+)-([\w.]+?)-(test|review)\.log")
+    logs = []
+    for path in logs_dir.glob(f"{task_id}-*.log"):
+        m = name.fullmatch(path.name)
+        if m:
+            logs.append((int(m.group(1)), m.group(2), path))
+    found = []
+    for _, actor, path in sorted(logs):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        last = None
+        for cmd in _LOG_HANDOFF.finditer(text):
+            if cmd.group(1).strip("\"'") != task_id:
+                continue
+            status = _LOG_STATUS.search(cmd.group(2))
+            summary = _LOG_SUMMARY.search(cmd.group(2))
+            if not status or not summary or status.group(1).lower() not in _REJECTED_STATUSES:
+                continue
+            text_summary = summary.group(1).replace('\\"', '"').strip()
+            if not text_summary or (text_summary.startswith("<") and text_summary.endswith(">")):
+                continue
+            last = {"actor": actor, "status": status.group(1).lower(), "summary": text_summary}
+        if last:
+            found.append(last)
+    return found
+
+
+def recent_rejections(root_path: Path, task_id: str, count: int = 3) -> list[dict[str, str]]:
+    """The last `count` rejection summaries for the task: handoff records, else the logs."""
+    if not task_id:
+        return []
+    return (_handoff_rejections(root_path, task_id) or _log_rejections(root_path, task_id))[-count:]
+
+
+def _theme_words(summary: str) -> set[str]:
+    found = set()
+    for word in re.findall(r"[a-z][a-z0-9_]*", summary.lower()):
+        if len(word) > 4 and word.endswith("s"):
+            word = word[:-1]
+        if len(word) >= 4 and word not in _THEME_STOPWORDS:
+            found.add(word)
+    return found
+
+
+def shares_theme(summaries: Sequence[str], min_shared: int = 3) -> bool:
+    """True when two summaries share at least `min_shared` telling words."""
+    words = [_theme_words(s) for s in summaries]
+    return any(
+        len(words[i] & words[j]) >= min_shared
+        for i in range(len(words))
+        for j in range(i + 1, len(words))
+    )
+
+
+def _configured_implementer(root_path: Path) -> str:
+    try:
+        from whyline_relay import config as relay_config, roles
+
+        return str(roles.current_roles(relay_config.load(root_path)).get("implementer") or "")
+    except Exception:
+        return ""
+
+
+def _raise_max_rounds(root_path: Path) -> int:
+    from whyline_relay import setup as relay_setup
+
+    new_rounds = _current_max_rounds(root_path) + MORE_ROUNDS
+    # Commits config.toml alone; the capped task's draft stays uncommitted.
+    relay_setup._write_config(
+        root_path,
+        lambda text: relay_setup._set_unquoted_top_level(text, "max_rounds", new_rounds),
+        f"setup: max_rounds {new_rounds}",
+        True,
+    )
+    return new_rounds
+
+
+def _stronger_model_screen(root_path: Path, cap_kind: str, agent: str) -> Any:
+    """Set up on the implementer's Model row; saving it retries, keeping changes."""
+    from whyline.console.relay_screens import RelaySetupScreen
+
+    class StrongerModelSetupScreen(RelaySetupScreen):
+        def dismiss(self, result: Any = None) -> Any:
+            resumed = result == "resume" or (
+                isinstance(result, tuple) and bool(result) and result[0] == "resume"
+            )
+            if not resumed:
+                return super().dismiss(result)
+            app = self.app
+            done = super().dismiss(None)
+            cleared = list(result[1]) if isinstance(result, tuple) and len(result) > 1 else []
+            if cap_kind == "visit-cap":
+                args, _ = retry_stage_args(root_path)
+            else:
+                # A round cap has no stage retry; resuming without more rounds
+                # would stop at the same cap at once.
+                _raise_max_rounds(root_path)
+                args = ["resume", "--allow-dirty"]
+            if hasattr(app, "render_event"):
+                from whyline.console.session import SessionEvent
+
+                for line in cleared:
+                    app.render_event(SessionEvent(kind="output", text=line))
+            if hasattr(app, "_launch_relay"):
+                app.call_later(app._launch_relay, args)
+            return done
+
+    return StrongerModelSetupScreen(root_path, focus_agent=agent or None)
+
+
 def _current_max_rounds(root_path: Path) -> int:
     from whyline_relay import config as relay_config
 
@@ -3142,6 +3313,34 @@ def diagnose(
                 ),
             ]
             cap_summary = f"Round cap reached: {reason}"
+        cap_evidence = [reason] if reason else list(fails)
+        rejections = recent_rejections(root_path, saved_task_id)
+        if rejections:
+            repeated = len(rejections) >= 2 and shares_theme([r["summary"] for r in rejections])
+            if repeated:
+                cap_evidence.append(REPEATED_DEFECT)
+            cap_evidence.append(f"Last {len(rejections)} review rejection(s), oldest first:")
+            cap_evidence += [
+                f"- {r['actor'] or 'reviewer'} ({r['status']}): {r['summary']}" for r in rejections
+            ]
+            if repeated:
+                implementer = _configured_implementer(root_path)
+                then = (
+                    "retries the stage keeping changes"
+                    if cap_kind == "visit-cap"
+                    else f"gives it {MORE_ROUNDS} more rounds keeping changes"
+                )
+                cap_opts = [
+                    Option(
+                        "retry-stronger-model",
+                        "Retry with a stronger model",
+                        f"open Set up on {implementer or 'the implementer'}'s Model row; "
+                        f"saving there {then}",
+                        recommended=True,
+                        confirm=False,
+                    ),
+                    *(replace(o, recommended=False) for o in cap_opts),
+                ]
         # With no saved task the dirty-other problem already offers Stash.
         if dirty_cap and saved_task_id:
             cap_opts.append(_stash_cap_option(root_path, saved_task_id))
@@ -3154,7 +3353,7 @@ def diagnose(
             Problem(
                 id=cap_kind,
                 summary=cap_summary,
-                evidence=[reason] if reason else fails,
+                evidence=cap_evidence,
                 options=cap_opts,
             ),
         )
@@ -3406,17 +3605,11 @@ def apply(
             )
         return "Resumed relay with --retry-stage."
 
-    if option_id == "more-rounds":
-        from whyline_relay import setup as relay_setup
+    if option_id == "retry-stronger-model":
+        return _stronger_model_screen(root_path, problem.id, _configured_implementer(root_path))
 
-        new_rounds = _current_max_rounds(root_path) + MORE_ROUNDS
-        # Commits config.toml alone; the capped task's draft stays uncommitted.
-        relay_setup._write_config(
-            root_path,
-            lambda text: relay_setup._set_unquoted_top_level(text, "max_rounds", new_rounds),
-            f"setup: max_rounds {new_rounds}",
-            True,
-        )
+    if option_id == "more-rounds":
+        new_rounds = _raise_max_rounds(root_path)
         launch(["resume", "--allow-dirty"])
         return f"Saved max_rounds {new_rounds} and resumed relay with changes kept."
 

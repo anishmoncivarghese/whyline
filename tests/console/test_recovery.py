@@ -3973,3 +3973,203 @@ def test_stash_with_no_task_at_cap_is_not_recommended(tmp_path: Path) -> None:
     assert other.options[0].recommended is False
     assert other.options[0].confirm is True
     assert "sets aside 1 file, +1 -0 lines" in other.options[0].detail
+
+
+_DEADLINE_REJECTIONS = [
+    "Fix the Resets in deadline on pause cards: it is computed from display time, so the reset time keeps advancing.",
+    "Fix Set up's out-until line: its Resets in deadline is recomputed from display time when opened later.",
+    "Fix the override path: the quota Resets in deadline still comes from display time, not the failing turn.",
+]
+_UNRELATED_REJECTIONS = [
+    "Fix the Cancel button on the brainstorm card so it carries the new revision.",
+    "Remove the duplicate definitions so intended assertions are collected.",
+    "Make the Excel export send its Preparing status before the synchronous call.",
+]
+
+
+def _record_rejection(repo: Path, task_id: str, summary: str, status: str = "rejected") -> None:
+    from whyline import events, ledger, paths
+
+    ledger.append(
+        paths.ledger_path(repo),
+        events.new_event(
+            events.HANDOFF, task=task_id, from_actor="codex", to_actor="antigravity",
+            status=status, summary=summary, files=["src/work.py", "src/new.py"],
+        ),
+    )
+
+
+def test_visit_cap_with_rejections_sharing_a_theme_recommends_a_stronger_model(tmp_path: Path) -> None:
+    from whyline.console.relay_screens import RelaySetupScreen
+
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _record_rejection(repo, "AGS-5", "An older, unrelated rejection about the Help button.")
+    for summary in _DEADLINE_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    cap = probs[0]
+    assert cap.id == "visit-cap"
+    assert recovery.REPEATED_DEFECT in cap.evidence
+    shown = [line for line in cap.evidence if line.startswith("- ")]
+    assert shown == [f"- codex (rejected): {s}" for s in _DEADLINE_REJECTIONS]
+    first, second = cap.options[0], cap.options[1]
+    assert (first.id, first.label, first.recommended) == (
+        "retry-stronger-model", "Retry with a stronger model", True
+    )
+    assert "codex's Model row" in first.detail
+    assert (second.id, second.label, second.recommended) == ("retry-stage", "Retry stage", False)
+    assert [o for o in cap.options if o.recommended] == [first]
+    assert recovery.auto_option(cap) is None
+
+    launched: list[list[str]] = []
+    screen = recovery.apply(repo, cap, "retry-stronger-model", launch=launched.append)
+    assert isinstance(screen, RelaySetupScreen)
+    assert screen._focus_agent == "codex"
+    assert launched == []
+
+
+def test_round_cap_with_a_repeated_defect_puts_the_stronger_model_ahead_of_more_rounds(
+    tmp_path: Path,
+) -> None:
+    repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+    for summary in _DEADLINE_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _ROUND_CAP_REASON)
+
+    ids = [o.id for o in probs[0].options]
+    assert ids[:3] == ["retry-stronger-model", "more-rounds", "split-task"]
+    assert recovery.REPEATED_DEFECT in probs[0].evidence
+    assert "6 more rounds" in probs[0].options[0].detail
+
+
+def test_visit_cap_with_unrelated_rejections_keeps_retry_stage_first(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    for summary in _UNRELATED_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    cap = probs[0]
+    assert recovery.REPEATED_DEFECT not in cap.evidence
+    assert [line for line in cap.evidence if line.startswith("- ")] == [
+        f"- codex (rejected): {s}" for s in _UNRELATED_REJECTIONS
+    ]
+    assert cap.options[0].id == "retry-stage" and cap.options[0].recommended is True
+    assert "retry-stronger-model" not in [o.id for o in cap.options]
+
+
+def test_cap_evidence_falls_back_to_review_logs_without_handoffs(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    logs = repo / ".whyline" / "relay" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    template = (
+        "    whyline handoff AGS-5 --from codex --to antigravity --status rejected "
+        '--summary "<what happened>"\n'
+    )
+    for n, summary in zip((3, 6, 9, 12), ["An old one about tabs.", *_DEADLINE_REJECTIONS]):
+        stage = "test" if n == 6 else "review"
+        (logs / f"AGS-5-{n}-codex-{stage}.log").write_text(
+            template
+            + "/bin/zsh -lc 'whyline handoff AGS-5 --from codex --to antigravity "
+            f'--status {"failed" if stage == "test" else "rejected"} --summary "{summary}"\'\n'
+            + "Review rejected and handed back.\n",
+            encoding="utf-8",
+        )
+    (logs / "AGS-5-13-antigravity-draft.log").write_text(
+        'whyline handoff AGS-5 --from antigravity --to codex --status rejected --summary "not a review"\n',
+        encoding="utf-8",
+    )
+    (logs / "AGS-4-3-codex-review.log").write_text(
+        'whyline handoff AGS-4 --from codex --to claude --status rejected --summary "another task"\n',
+        encoding="utf-8",
+    )
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+
+    cap = probs[0]
+    assert [line for line in cap.evidence if line.startswith("- ")] == [
+        "- codex (failed): " + _DEADLINE_REJECTIONS[0],
+        "- codex (rejected): " + _DEADLINE_REJECTIONS[1],
+        "- codex (rejected): " + _DEADLINE_REJECTIONS[2],
+    ]
+    assert recovery.REPEATED_DEFECT in cap.evidence
+    assert cap.options[0].id == "retry-stronger-model"
+
+
+def test_handoff_rejections_win_over_the_logs(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    logs = repo / ".whyline" / "relay" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "AGS-5-3-codex-review.log").write_text(
+        'whyline handoff AGS-5 --from codex --to claude --status rejected --summary "from the log"\n',
+        encoding="utf-8",
+    )
+    _record_rejection(repo, "AGS-5", "from the handoff")
+    _record_handoff(repo, "AGS-5", ["src/work.py"])
+
+    assert [r["summary"] for r in recovery.recent_rejections(repo, "AGS-5")] == ["from the handoff"]
+
+
+@pytest.mark.asyncio
+async def test_rejection_summaries_render_with_markup_off(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    tricky = [
+        "Fix [recovery.py](/x/recovery.py:1933) [bold]Resets in[/bold] deadline from display time.",
+        "Fix [/] the Resets in deadline [red] from display time again.",
+        "Fix [link=x]Resets in[/link] deadline still from display time.",
+    ]
+    for summary in tricky:
+        _record_rejection(repo, "AGS-5", summary)
+
+    probs = recovery.diagnose(repo, [], _VISIT_CAP_REASON)
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test(size=(240, 60)) as pilot:
+        app._show_resolve_problem(probs[0], is_first=True, count=len(probs))
+        await pilot.pause()
+        text = "\n".join(strip.text for strip in app.query_one("#transcript").lines)
+
+    for summary in tricky:
+        assert f"- codex (rejected): {summary}" in text
+    assert recovery.REPEATED_DEFECT in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", [_VISIT_CAP_REASON, _ROUND_CAP_REASON])
+async def test_saving_set_up_from_stronger_model_retries_keeping_changes(
+    tmp_path: Path, monkeypatch, reason: str
+) -> None:
+    import tomllib
+
+    from whyline import account
+
+    repo = _capped_repo(tmp_path / "repo", reason)
+    for summary in _DEADLINE_REJECTIONS:
+        _record_rejection(repo, "AGS-5", summary)
+    monkeypatch.setattr(account, "agent_status", lambda root: {})
+    probs = recovery.diagnose(repo, [], reason)
+    rounds_before = recovery._current_max_rounds(repo)
+
+    app = tui.WhylineConsoleApp(root=repo)
+    launched: list[list[str]] = []
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kw: launched.append(args))
+    async with app.run_test() as pilot:
+        screen = recovery.apply(repo, probs[0], "retry-stronger-model", launch=launched.append)
+        app.push_screen(screen, app._setup_done)
+        await pilot.pause()
+        screen.dismiss(("resume", ["implementer was on backup grok; it now uses codex"]))
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if launched:
+                break
+        text = "\n".join(strip.text for strip in app.query_one("#transcript").lines)
+
+    if reason == _VISIT_CAP_REASON:
+        assert launched == [["resume", "--retry-stage", "--allow-dirty"]]
+    else:
+        assert launched == [["resume", "--allow-dirty"]]
+        config = tomllib.loads((repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8"))
+        assert config["max_rounds"] == rounds_before + recovery.MORE_ROUNDS
+    assert "implementer was on backup grok; it now uses codex" in text
