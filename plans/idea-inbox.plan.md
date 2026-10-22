@@ -282,7 +282,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a sticky-switch pause lists Ask agent last; an already-applied fix makes Ask agent recommended; a limit on the first agent falls to the backup and says so; an agent that edits a file is refused and the edit reported.
   Verify with `uv run pytest -q tests/console/test_recovery.py tests/console/test_tui_relay_run.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] ASK-2: Give the agent what a person would read
+- [x] ASK-2: Give the agent what a person would read
   Edit `build_ask_agent_prompt` in `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`.
   Add these sections:
   - state.json: task, round, stage, visits and base.
