@@ -256,7 +256,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a cap with the task's own changes launches `resume --retry-stage --allow-dirty`; an unrelated dirty file leaves the flag off and names the file; a clean tree launches without it.
   Verify with `uv run pytest -q tests/console/test_tui_relay_run.py tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] RSV-3: Notice when reviews keep naming the same defect
+- [x] RSV-3: Notice when reviews keep naming the same defect
   Edit `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`. AGS-5's three rejections all named one bug (a "Resets in" deadline computed from display time), found in a new code path each round. Resolve showed only the cap.
   At a visit or round cap, read the last three reviewer rejection summaries from the task's handoffs (`whyline handoff` records; fall back to the review logs) and show them as the cap's evidence. When at least two share a theme, using a simple word-overlap check on the summaries (no agent call), say "The reviewer keeps finding the same problem". Then recommend **Retry with a stronger model**: it opens Set up on the implementer's Model row (AGS-4), saves, and retries the stage keeping changes. Plain **Retry stage** stays as the second option.
   Tests: three fake rejections sharing a theme give the message and the stronger-model option first; three unrelated ones keep Retry stage first; with no handoffs, evidence falls back to the logs; the summaries render with markup off.
