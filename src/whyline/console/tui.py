@@ -44,6 +44,7 @@ except ImportError:
 from whyline.console import (
     adapters,
     attachments as att,
+    awake,
     file_follow,
     mac_input,
     plan_job,
@@ -104,7 +105,11 @@ _MODE_BUTTONS = {
         "agents-ideas",
     ),
 }
-_SHARED_BUTTONS = ("see-files", "stop", "help", "copy")
+_SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy")
+_AWAKE_ON_TEXT = (
+    "The Mac stays awake until you turn this off, even after the console closes. "
+    "Closing the lid still sleeps it unless it is plugged into a display."
+)
 _SLASH_HINT = "/status /timeline /note /decisions /handoff /model /timeout /repo /help"
 
 # Brainstorming makes one full agent turn per selected model and phase. Keep
@@ -287,23 +292,71 @@ class QuitRelayScreen(ModalScreen):
     QuitRelayScreen Button { margin-right: 2; }
     """
 
-    def __init__(self, label: str) -> None:
+    def __init__(self, label: str, awake_on: bool = False) -> None:
         super().__init__()
         self._label = label
+        self._awake_on = awake_on
+        self.keep_awake = True
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
+        rows = [
             Label(f"The relay is still working ({self._label}). Leave it running?"),
             Horizontal(
                 Button("Leave it running", id="quit-leave", variant="primary"),
                 Button("Stop it, then quit", id="quit-stop", variant="warning"),
                 Button("Cancel", id="quit-cancel"),
             ),
-        )
+        ]
+        if self._awake_on:
+            # A choice, not an exit: the row above still decides when to quit.
+            rows += [
+                Label("Keep the Mac awake?"),
+                Horizontal(
+                    Button("Keep awake", id="quit-keep-awake", variant="primary"),
+                    Button("Let it sleep", id="quit-let-sleep"),
+                ),
+            ]
+        yield Vertical(*rows)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
+        if event.button.id in ("quit-keep-awake", "quit-let-sleep"):
+            self.keep_awake = event.button.id == "quit-keep-awake"
+            self.query_one("#quit-keep-awake", Button).variant = "primary" if self.keep_awake else "default"
+            self.query_one("#quit-let-sleep", Button).variant = "default" if self.keep_awake else "primary"
+            return
         choices = {"quit-leave": "leave", "quit-stop": "stop"}
+        self.dismiss(choices.get(event.button.id))
+
+
+class QuitAwakeScreen(ModalScreen):
+    """Asked on quit while Awake is on and no relay is running."""
+
+    DEFAULT_CSS = """
+    QuitAwakeScreen { align: center middle; }
+    QuitAwakeScreen > Vertical {
+        width: 70; height: auto; padding: 1 2; border: thick $warning; background: $surface;
+    }
+    QuitAwakeScreen Horizontal { height: auto; margin-top: 1; }
+    QuitAwakeScreen Button { margin-right: 2; }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Keep the Mac awake?"),
+            Horizontal(
+                Button("Keep awake", id="quit-keep-awake", variant="primary"),
+                Button("Let it sleep", id="quit-let-sleep"),
+                Button("Cancel", id="quit-cancel"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#quit-keep-awake", Button).focus()
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        choices = {"quit-keep-awake": "keep", "quit-let-sleep": "sleep"}
         self.dismiss(choices.get(event.button.id))
 
 
@@ -759,6 +812,8 @@ class WhylineConsoleApp(App):
         self.session.agent = model.resolve(root)[0]
         self.session._sync_timeout = self._cb_sync_timeout
         self._files_on: bool = False
+        # Shared with every other console through ~/.whyline/awake.json.
+        self._awake: awake.Awake | None = awake.status()
         self._follow_base: dict[str, file_follow.Snap] = {}
         self._follow_order: list[str] = []
         self._follow_index: int | None = None
@@ -1426,6 +1481,8 @@ class WhylineConsoleApp(App):
             suffix = f" · manual {self._manual_checks[0].id}"
         else:
             suffix = ""
+        if self._awake is not None:
+            suffix += f" · Mac kept awake since {self._awake.started:%H:%M}"
         self.sub_title = f"mode: {mode}{suffix}"
         for name in _MODES:
             button = self._main(f"#mode-{name}", Button)
@@ -1489,6 +1546,9 @@ class WhylineConsoleApp(App):
         """One place decides which bottom-bar buttons are on screen.
         Enable and disable stay in _sync_relay_buttons and the stop path."""
         wanted = set(_MODE_BUTTONS.get(self.session.mode, ())) | set(_SHARED_BUTTONS)
+        if not awake.available():
+            wanted.discard("awake")
+        self._main("#awake", Button).label = "Awake ●" if self._awake else "Awake"
         for button in self._main("#controls").query(Button):
             if button.id in ("relay-resolve", "relay-retry-stage", "update", "update-restart"):
                 continue
@@ -1623,7 +1683,8 @@ class WhylineConsoleApp(App):
             pass
         on = mac and self._scheduler_on()
         try:
-            self._main("#agents-scheduler", Button).label = "Scheduler: on" if on else "Scheduler: off"
+            # Short so Agents' row fits 80 columns with Awake; the status bar spells it out.
+            self._main("#agents-scheduler", Button).label = "Schedule ●" if on else "Schedule"
         except (NoMatches, IndexError):
             pass
         if not mac:
@@ -2840,10 +2901,11 @@ class WhylineConsoleApp(App):
                 Button("New", id="agents-new"),
                 Button("Agents", id="agents-list"),
                 Button("Runs", id="agents-runs"),
-                Button("Scheduler", id="agents-scheduler"),
+                Button("Schedule", id="agents-scheduler"),
                 Button("Inbox", id="agents-inbox"),
                 Button("Ideas", id="agents-ideas"),
                 Button("Files", id="see-files"),
+                Button("Awake", id="awake"),
                 Button("Stop", id="stop", disabled=True),
                 Button("Help", id="help"),
                 Button("Update…", id="update"),
@@ -2957,6 +3019,8 @@ class WhylineConsoleApp(App):
             self._open_idea_inbox()
         elif button_id == "agents-ideas":
             self._open_ideas()
+        elif button_id == "awake":
+            self._set_awake(None)
         elif button_id == "copy":
             self._copy_transcript()
         elif button_id == "update":
@@ -3460,6 +3524,13 @@ class WhylineConsoleApp(App):
         whether to fall through to an ordinary (possibly slow) dispatch()
         call in a worker."""
         command = text.strip()
+        if command.split()[:1] == ["/awake"]:
+            arg = command.removeprefix("/awake").strip().lower()
+            if arg in ("", "on", "off"):
+                self._set_awake({"": None, "on": True, "off": False}[arg])
+            else:
+                self.render_event(SessionEvent(kind="error", text="Use /awake, /awake on, or /awake off."))
+            return True
         if command == "/reset-backup" and self._cb_chain_busy():
             self.render_event(SessionEvent(kind="error", text=RESET_BUSY_TEXT))
             return True
@@ -5538,23 +5609,69 @@ class WhylineConsoleApp(App):
             self._start_resolve_flow(source="resume", fail_lines=fail_lines)
 
     async def action_quit(self) -> None:
+        # Another console may have turned it off since this one last looked.
+        self._awake = awake.status()
         if self._relay_running():
-            self.push_screen(QuitRelayScreen(self._relay_label or "relay"), self._quit_choice)
+            screen = QuitRelayScreen(self._relay_label or "relay", awake_on=self._awake is not None)
+            self.push_screen(screen, lambda choice: self._quit_choice(choice, screen.keep_awake))
             return
+        if self._awake is not None:
+            self.push_screen(QuitAwakeScreen(), self._quit_awake_choice)
+            return
+        self._quit_now()
+
+    def _quit_awake_choice(self, choice: "str | None") -> None:
+        if choice is None:
+            return
+        if choice == "sleep":
+            awake.stop()
+        self._quit_now()
+
+    def _quit_now(self) -> None:
         if getattr(self, "_auto_cancel_event", None) is not None:
             from whyline.console import auto_run
 
             auto_run.close_console(self.session.root, self._auto_cancel_event)
         self.exit()
 
-    def _quit_choice(self, choice: "str | None") -> None:
+    def _quit_choice(self, choice: "str | None", keep_awake: bool = True) -> None:
         if choice is None:
             return
+        if not keep_awake:
+            awake.stop()
         if self._relay is not None:
             if choice == "stop":
                 self._relay.interrupt()
             self._relay.stop_following()
         self.exit()
+
+    def _set_awake(self, want: "bool | None") -> None:
+        """None toggles. Reads the shared record first, so a console that
+        is out of date never starts a second caffeinate or misses one."""
+        if not awake.available():
+            self.render_event(SessionEvent(
+                kind="error", text="Keeping the Mac awake needs macOS's caffeinate."))
+            return
+        self._awake = awake.status()
+        if want is None:
+            want = self._awake is None
+        if want and self._awake is None:
+            self._awake = awake.start()
+            if self._awake is None:
+                self.render_event(SessionEvent(kind="error", text="caffeinate did not start."))
+            else:
+                self.render_event(SessionEvent(kind="output", text=_AWAKE_ON_TEXT))
+        elif want:
+            self.render_event(SessionEvent(
+                kind="output", text=f"The Mac is already kept awake (since {self._awake.started:%H:%M})."))
+        else:
+            stopped = awake.stop()
+            self._awake = None
+            self.render_event(SessionEvent(
+                kind="output",
+                text="The Mac can sleep again." if stopped else "The Mac was not being kept awake.",
+            ))
+        self._sync_mode_indicator()
 
 
 

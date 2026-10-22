@@ -20717,3 +20717,82 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4b68864786d143ca874c088cc23ab201 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T06:50:37.473Z"} -->
+
+## 2026-10-22 — Agents' Scheduler button reads Schedule / Schedule ● so the row fits 80 columns with Awake
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AWK-1
+
+**Because:** Agents' row was 84 columns with Awake ● added; the agents status bar already spells out Scheduler: on/off
+
+**Rejected:**
+
+- drop a button — the task says shorten labels rather than drop
+- shorten Awake ● — the label is specified by the task
+
+**Files:** src/whyline/console/tui.py, tests/console/test_agents_scheduler.py
+
+<!-- whyline-event: 3049fe961f3c45a3a5992f050305048d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:03:53.465Z"} -->
+
+## 2026-10-22 — Quit with Awake on: relay dialog gains a Keep awake / Let it sleep toggle row; without a relay a separate QuitAwakeScreen asks
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AWK-1
+
+**Because:** the relay dialog's existing buttons already decide quit, so the awake choice is a toggle within it (default Keep awake); with no relay there was no dialog to add to
+
+**Rejected:**
+
+- chain a second dialog after QuitRelayScreen — two prompts to quit is clumsy
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 1ecb4dea141f42ba8ca02d8b78f96866 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:03:55.588Z"} -->
+
+## 2026-10-22 — Fake caffeinate in tests is a shell script that execs a symlink to sleep named caffeinate
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AWK-1
+
+**Because:** ps -o comm= then reads caffeinate on macOS and Linux; macOS SIGKILLs a copied system binary because its signature breaks
+
+**Rejected:**
+
+- copy /bin/sleep — killed by macOS on launch
+- monkeypatch the comm check — would not test the real ps check
+
+**Files:** tests/console/test_awake.py
+
+<!-- whyline-event: 3c1b0938577c411491c061bc38009e56 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:03:57.251Z"} -->
+
+## 2026-10-22 — AWK-1 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** AWK-1
+
+**Because:** The focused awake suite passed all 21 tests and the full project suite completed with exit code 0 and only its expected skip
+
+**Files:** tests/console/test_awake.py
+
+<!-- whyline-event: db3b56478c7c46498cd61239c56b1d1f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:11:29.522Z"} -->
+
+## 2026-10-22 — AWK-1 approved after Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AWK-1
+
+**Because:** The implementation matches the requested detached caffeinate lifecycle and console UX, its tests exercise the required process, shared-state, quit, off-macOS, and 80-column behavior, the 21 focused tests passed, and the full suite passed with one expected skip
+
+**Files:** src/whyline/console/awake.py
+
+<!-- whyline-event: 334c35e7efc54ad592e96bff7226ede2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T08:19:16.361Z"} -->

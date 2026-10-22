@@ -1,6 +1,6 @@
 import pytest
 
-from whyline.console import tui
+from whyline.console import awake, tui
 
 pytestmark = [pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"), pytest.mark.asyncio]
 
@@ -16,6 +16,7 @@ async def test_each_mode_shows_only_its_buttons_within_80_columns(tmp_path, mode
         app._sync_mode_indicator()
         await pilot.pause()
         shown = {b.id for b in app.query("#controls Button") if b.display}
-        assert shown == visible
+        # Awake shows only where /usr/bin/caffeinate exists (macOS).
+        assert shown == visible | ({"awake"} if awake.available() else set())
         assert all(app.query_one(f"#{b}").region.right <= 80 for b in shown)
         assert app.query_one("#attach").display is (mode == "chat")

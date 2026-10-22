@@ -170,7 +170,7 @@ async def test_turning_the_scheduler_on_and_off_says_what_happens(tmp_path, monk
         await pilot.click("#mode-agents")
         await pilot.pause()
         scheduler = app._main("#agents-scheduler", tui.Button)
-        assert str(scheduler.label) == "Scheduler: off"
+        assert str(scheduler.label) == "Schedule"
         assert scheduler.region.right <= 80
         scheduler.press()
         await _until(pilot, lambda: loaded["on"], "turned on")
@@ -181,7 +181,7 @@ async def test_turning_the_scheduler_on_and_off_says_what_happens(tmp_path, monk
         await _until(pilot, lambda: any("Scheduler on." in line for line in lines()), "on message")
         assert any("Scheduled agents (1):" in line for line in lines())
         assert any("this Mac on and you logged in" in line for line in lines())
-        assert str(scheduler.label) == "Scheduler: on" and scheduler.region.right <= 80
+        assert str(scheduler.label) == "Schedule ●" and scheduler.region.right <= 80
         scheduler.press()
         await _until(
             pilot,
@@ -191,4 +191,4 @@ async def test_turning_the_scheduler_on_and_off_says_what_happens(tmp_path, monk
         app.screen.query_one("#confirm", tui.Button).press()
         await _until(pilot, lambda: not loaded["on"], "turned off")
         await _until(pilot, lambda: any("Scheduler off." in line for line in lines()), "off message")
-        assert str(scheduler.label) == "Scheduler: off"
+        assert str(scheduler.label) == "Schedule"
