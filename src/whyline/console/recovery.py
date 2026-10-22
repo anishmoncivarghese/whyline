@@ -685,6 +685,22 @@ def _is_model_failure(
     return False
 
 
+def _fallback_reason(err: Exception | None, output: str) -> str:
+    """Why an agent passed its turn on, for the line naming who was tried."""
+    from whyline_relay import agents
+
+    if isinstance(err, (agents.AgentTimeout, subprocess.TimeoutExpired)):
+        return "timed out"
+    text = (str(err) if err is not None else output).lower()
+    if agents.rate_limited(text):
+        return "hit a usage limit"
+    if "timeout" in text or "timed out" in text:
+        return "timed out"
+    if err is not None:
+        return "is not available"
+    return "hit a usage limit"
+
+
 def _parse_recovery_verdict(text: str) -> tuple[str, str]:
     for line in reversed(text.splitlines()):
         clean = line.strip()
@@ -1285,6 +1301,9 @@ def auto_option(
         or problem.id in _HUMAN_KINDS
         or problem.id in ("other", "logged-out")
     ):
+        return None
+    # Asking an agent is a click: its answer is offered, never applied.
+    if any(opt.recommended and opt.id == "ask-agent" for opt in problem.options):
         return None
 
     summary_kind = ""
@@ -2796,7 +2815,54 @@ def _saved_task_text(root_path: Path, plan_name: str, task_id: str) -> str:
         return ""
 
 
+_ASK_AGENT_DETAIL = "ask the selected agent, then the backup chain, read-only"
+
+_NOT_A_FIX = frozenset({"show", "cancel", "ask-agent"})
+
+
+def _applied_this_pause(root_path: Path, option_id: str) -> bool:
+    """recovery.json already holds `option_id` for the paused task and round."""
+    st_dict = _read_state_dict(root_path)
+    task = str(st_dict.get("task_id") or "")
+    round_ = str(st_dict.get("round") or 1)
+    if not task:
+        return False
+    for entry in load_attempts(root_path):
+        if str(entry.get("task")) != task or str(entry.get("round") or 1) != round_:
+            continue
+        if option_id in (str(entry.get("option") or ""), str(entry.get("agent") or "")):
+            return True
+    return False
+
+
+def _with_ask_agent(root_path: Path, problem: Problem) -> Problem:
+    """Ask agent after the rule-based options, ahead of Show evidence and
+    Cancel. It leads when no rule-based option is recommended, or when the
+    recommended one already ran for this pause and the pause is back."""
+    fixes = [o for o in problem.options if o.id not in _NOT_A_FIX]
+    rest = [o for o in problem.options if o.id in ("show", "cancel")]
+    picked = next((o for o in fixes if o.recommended), None)
+    lead = picked is None or _applied_this_pause(root_path, picked.id)
+    if picked is not None and lead:
+        fixes = [replace(o, recommended=False) for o in fixes]
+    ask = Option("ask-agent", "Ask agent", _ASK_AGENT_DETAIL, recommended=lead, confirm=False)
+    return replace(problem, options=[*fixes, ask, *rest])
+
+
 def diagnose(
+    root: Path | str,
+    fail_lines: list[str] | None = None,
+    pause_reason: str = "",
+) -> list[Problem]:
+    """Each problem's rule-based options, then Ask agent (ASK-1)."""
+    root_path = Path(root).resolve()
+    return [
+        _with_ask_agent(root_path, problem)
+        for problem in _rule_problems(root_path, fail_lines, pause_reason)
+    ]
+
+
+def _rule_problems(
     root: Path | str,
     fail_lines: list[str] | None = None,
     pause_reason: str = "",
@@ -4109,6 +4175,8 @@ class AskAgentResult:
     changed_paths: list[str] = field(default_factory=list)
     agents_tried: list[str] = field(default_factory=list)
     option: Option | None = None
+    # (agent, why it was passed over), in the order tried.
+    fallbacks: list[tuple[str, str]] = field(default_factory=list)
 
 
 def ask_agent(
@@ -4125,7 +4193,16 @@ def ask_agent(
     relay_status: str | None = None,
     git_status: str | None = None,
     options_catalog: dict[str, str] | None = None,
+    on_fallback: Callable[[str, str, str | None], None] | None = None,
 ) -> AskAgentResult:
+    """Ask the selected agent, then the backup chain, for a Resolve option.
+
+    Each agent runs read-only where its CLI has a read-only mode; any edit
+    left behind (by an agent without one) is refused. An agent that hits a
+    limit, times out or is missing passes the turn to the next, and
+    `on_fallback(agent, why, next_agent)` reports each hand-over.
+    """
+    from whyline.agents import capabilities
     from whyline_relay import (
         config as relay_config,
         failover as relay_failover,
@@ -4232,15 +4309,48 @@ def ask_agent(
 
     head_before, status_before, contents_before = _snapshot_ask_state(root_path)
 
-    tried: set[str] = set()
+    tried: list[str] = []
+    fallbacks: list[tuple[str, str]] = []
     current_agent: str | None = selected_agent
     turn_taken_by: str | None = None
     raw_output = ""
     response_text = ""
 
+    def pass_over(agent: str, why: str) -> None:
+        fallbacks.append((agent, why))
+        if on_fallback is not None:
+            following = relay_failover.next_backup(backup_chain, set(tried))
+            try:
+                on_fallback(agent, why, following)
+            except Exception:
+                pass
+
+    def refused(agent: str) -> AskAgentResult | None:
+        head_after, status_after, contents_after = _snapshot_ask_state(root_path)
+        changed = _diff_ask_state(
+            root_path,
+            head_before,
+            status_before,
+            contents_before,
+            head_after,
+            status_after,
+            contents_after,
+        )
+        if not changed:
+            return None
+        return AskAgentResult(
+            status="modified",
+            recommendation="",
+            explanation="",
+            agent=agent,
+            changed_paths=changed,
+            agents_tried=list(tried),
+            fallbacks=list(fallbacks),
+        )
+
     while True:
         if current_agent is None:
-            current_agent = relay_failover.next_backup(backup_chain, tried)
+            current_agent = relay_failover.next_backup(backup_chain, set(tried))
             if current_agent is None:
                 break
 
@@ -4248,7 +4358,7 @@ def ask_agent(
             current_agent = None
             continue
 
-        tried.add(current_agent)
+        tried.append(current_agent)
 
         try:
             from whyline_relay import chat as relay_chat
@@ -4258,8 +4368,15 @@ def ask_agent(
             if active_runner is not None and current_agent:
                 command = [current_agent]
             else:
+                pass_over(current_agent, "is not available")
                 current_agent = None
                 continue
+
+        # Agents without a read-only mode run as configured; refused()
+        # turns away any edit they leave.
+        read_only = capabilities.read_only_command(current_agent, list(command))
+        if read_only is not None:
+            command = read_only
 
         try:
             adapter = relay_config.adapter_for(settings, current_agent)
@@ -4320,6 +4437,10 @@ def ask_agent(
 
         if call_err is not None:
             if _is_model_failure(call_err, ""):
+                edited = refused(current_agent)
+                if edited is not None:
+                    return edited
+                pass_over(current_agent, _fallback_reason(call_err, ""))
                 current_agent = None
                 continue
             raise call_err
@@ -4356,6 +4477,10 @@ def ask_agent(
         ) or _is_model_failure(
             None, response_text, adapter=adapter, command=command
         ):
+            edited = refused(current_agent)
+            if edited is not None:
+                return edited
+            pass_over(current_agent, _fallback_reason(None, raw_output))
             current_agent = None
             continue
 
@@ -4368,28 +4493,13 @@ def ask_agent(
             recommendation="",
             explanation="",
             agent="",
-            agents_tried=sorted(tried),
+            agents_tried=list(tried),
+            fallbacks=list(fallbacks),
         )
 
-    head_after, status_after, contents_after = _snapshot_ask_state(root_path)
-    changed_paths = _diff_ask_state(
-        root_path,
-        head_before,
-        status_before,
-        contents_before,
-        head_after,
-        status_after,
-        contents_after,
-    )
-    if changed_paths:
-        return AskAgentResult(
-            status="modified",
-            recommendation="",
-            explanation="",
-            agent=turn_taken_by,
-            changed_paths=changed_paths,
-            agents_tried=sorted(tried),
-        )
+    edited = refused(turn_taken_by)
+    if edited is not None:
+        return edited
 
     explanation, recommendation = parse_agent_recommendation(
         response_text or raw_output
@@ -4407,7 +4517,8 @@ def ask_agent(
             recommendation="human",
             explanation=explanation,
             agent=turn_taken_by,
-            agents_tried=sorted(tried),
+            agents_tried=list(tried),
+            fallbacks=list(fallbacks),
         )
 
     if recommendation in catalog:
@@ -4418,7 +4529,8 @@ def ask_agent(
             explanation=explanation,
             agent=turn_taken_by,
             option=opt,
-            agents_tried=sorted(tried),
+            agents_tried=list(tried),
+            fallbacks=list(fallbacks),
         )
 
     return AskAgentResult(
@@ -4426,7 +4538,8 @@ def ask_agent(
         recommendation=recommendation,
         explanation=explanation,
         agent=turn_taken_by,
-        agents_tried=sorted(tried),
+        agents_tried=list(tried),
+        fallbacks=list(fallbacks),
     )
 
 

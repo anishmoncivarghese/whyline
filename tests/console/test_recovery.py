@@ -1649,7 +1649,7 @@ def test_timeout_offers_longer_timeout_or_another_agent(
     # Longer timeout stays the recommendation; the backup chain comes first
     # among the switches, the timed-out agent and logged-out agents are absent.
     assert option_ids == [
-        "resume-longer", "use-grok", "use-codex", "resume", "show", "cancel"
+        "resume-longer", "use-grok", "use-codex", "resume", "ask-agent", "show", "cancel"
     ]
     assert probs[0].options[0].recommended is True
     assert not any(opt.recommended for opt in probs[0].options[1:])
@@ -1703,7 +1703,7 @@ def test_no_handoff_with_quota_text_offers_another_agent(
     assert probs[0].id == "out-of-usage"
     assert "antigravity is out of quota" in probs[0].summary
     option_ids = [opt.id for opt in probs[0].options]
-    assert option_ids == ["use-grok", "use-codex", "show", "cancel"]
+    assert option_ids == ["use-grok", "use-codex", "ask-agent", "show", "cancel"]
     assert probs[0].options[0].recommended is True
 
     launched: list[list[str]] = []
@@ -2576,6 +2576,7 @@ def test_sticky_switch_from_antigravity_is_not_offered_reset_role(
     assert [opt.id for opt in probs[0].options] == [
         "switch-back",
         "choose-agents",
+        "ask-agent",
         "show",
         "cancel",
     ]
@@ -2699,7 +2700,7 @@ def test_generic_agent_offers_switch_back_anyway_and_choose_agents(
     assert len(probs) == 1
     assert probs[0].id == "sticky-switch"
     opt_ids = [opt.id for opt in probs[0].options]
-    assert opt_ids == ["switch-back", "choose-agents", "show", "cancel"]
+    assert opt_ids == ["switch-back", "choose-agents", "ask-agent", "show", "cancel"]
 
     opt_switch = probs[0].options[0]
     assert opt_switch.label == "Switch back to grok anyway"
@@ -2754,7 +2755,7 @@ def test_non_generic_agent_with_missing_reset_time_offers_switch_back_anyway_and
     assert len(probs) == 1
     assert probs[0].id == "sticky-switch"
     opt_ids = [opt.id for opt in probs[0].options]
-    assert opt_ids == ["switch-back", "choose-agents", "show", "cancel"]
+    assert opt_ids == ["switch-back", "choose-agents", "ask-agent", "show", "cancel"]
     assert probs[0].options[0].label == "Switch back to claude anyway"
     assert probs[0].options[0].recommended is False
     assert probs[0].options[1].label == "Choose agents…"
@@ -2798,7 +2799,7 @@ def test_non_generic_agent_with_invalid_reset_time_offers_switch_back_anyway_and
     assert len(probs) == 1
     assert probs[0].id == "sticky-switch"
     opt_ids = [opt.id for opt in probs[0].options]
-    assert opt_ids == ["switch-back", "choose-agents", "show", "cancel"]
+    assert opt_ids == ["switch-back", "choose-agents", "ask-agent", "show", "cancel"]
     assert probs[0].options[0].label == "Switch back to claude anyway"
     assert probs[0].options[0].recommended is False
     assert probs[0].options[1].label == "Choose agents…"
@@ -2915,7 +2916,7 @@ def test_antigravity_logged_out_has_no_login_option_and_sign_in_detail(
     logged = [p for p in probs if p.id == "logged-out"]
     assert len(logged) == 1
     assert all(not opt.id.startswith("login-") for opt in logged[0].options)
-    assert [opt.id for opt in logged[0].options] == ["show", "cancel"]
+    assert [opt.id for opt in logged[0].options] == ["ask-agent", "show", "cancel"]
     assert any(
         "Open antigravity in a terminal and sign in, then press Check again." in line
         for line in logged[0].evidence
@@ -4622,3 +4623,210 @@ def test_auto_run_cap_then_ordinary_refuses_subsequent_ordinary_attempt(
     )
     assert res_ordinary.verdict == "human"
     assert "recovery already attempted for AGS-5 round 1" in res_ordinary.reason
+
+
+# ASK-1: Ask agent at every pause.
+
+
+def test_sticky_switch_pause_lists_ask_agent_after_its_rule_based_options(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "antigravity"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "claude", "antigravity", "rate-limit", "2026-10-14", [],
+            resets_at="2026-10-23T00:00:00",
+        ),
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {"antigravity": {"available": True, "label": "installed", "hint": None}},
+    )
+
+    probs = recovery.diagnose(repo, [], "")
+
+    assert probs[0].id == "sticky-switch"
+    ids = [opt.id for opt in probs[0].options]
+    assert ids == ["switch-back", "choose-agents", "ask-agent", "show", "cancel"]
+    ask = probs[0].options[2]
+    assert ask.label == "Ask agent"
+    assert ask.confirm is False
+    # No rule-based option is recommended here, so Ask agent is.
+    assert not any(o.recommended for o in probs[0].options if o.id != "ask-agent")
+    assert ask.recommended is True
+    # Recommended or not, the agent's turn is a click, never auto-applied.
+    assert recovery.auto_option(probs[0]) is None
+
+
+def _timeout_repo(tmp_path: Path, monkeypatch) -> Path:
+    import subprocess
+    from whyline import account
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n'
+        "[agents.antigravity]\n"
+        'adapter = "generic"\n'
+        'command = ["agy", "-p"]\n'
+        "[roles]\n"
+        'implementer = "antigravity"\n'
+        'reviewer = "codex"\n'
+        "[backup]\n"
+        'chain = ["grok"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-qam", "antigravity implements"], cwd=repo, check=True)
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({"plan": "plan.md", "branch": "main", "task_id": "ASK-1", "round": 2}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {name: {"available": True} for name in ("antigravity", "codex", "grok")},
+    )
+    return repo
+
+
+def test_rule_based_recommendation_keeps_ask_agent_unrecommended(
+    tmp_path: Path, monkeypatch, installed_agents
+) -> None:
+    repo = _timeout_repo(tmp_path, monkeypatch)
+
+    prob = recovery.diagnose(repo, [], "agy exceeded 3600s and was terminated")[0]
+
+    assert prob.id == "timeout"
+    by_id = {o.id: o for o in prob.options}
+    assert by_id["resume-longer"].recommended is True
+    assert by_id["ask-agent"].recommended is False
+    assert [o.id for o in prob.options][-3:] == ["ask-agent", "show", "cancel"]
+
+
+def test_fix_already_applied_to_this_pause_makes_ask_agent_recommended(
+    tmp_path: Path, monkeypatch, installed_agents
+) -> None:
+    repo = _timeout_repo(tmp_path, monkeypatch)
+    # Same task, other round: not this pause.
+    recovery.record_attempt(
+        repo, task="ASK-1", round=1, kind="resolve-auto", agent="",
+        verdict="resolved", option="resume-longer",
+    )
+    prob = recovery.diagnose(repo, [], "agy exceeded 3600s and was terminated")[0]
+    assert {o.id: o.recommended for o in prob.options}["ask-agent"] is False
+
+    recovery.record_attempt(
+        repo, task="ASK-1", round=2, kind="resolve-auto", agent="",
+        verdict="resolved", option="resume-longer",
+    )
+    prob = recovery.diagnose(repo, [], "agy exceeded 3600s and was terminated")[0]
+
+    recommended = [o.id for o in prob.options if o.recommended]
+    assert recommended == ["ask-agent"]
+    # The applied fix stays on offer, just not as the recommendation.
+    assert "resume-longer" in [o.id for o in prob.options]
+    assert recovery.auto_option(prob) is None
+
+
+def test_ask_agent_limit_on_first_agent_falls_to_backup_and_says_so(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\ntimeout_minutes = 7\n[backup]\nchain = ["claude"]\n'
+        '[roles]\nimplementer = "codex"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+
+    calls: list[tuple[str, list[str], int | None]] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        agent = kwargs["agent_name"]
+        calls.append((agent, list(command), kwargs["timeout_seconds"]))
+        if agent == "codex":
+            return "ERROR: You've hit your usage limit. Try again later.\n"
+        return "EXPLANATION: The backup answered.\nRECOMMEND: wait\n"
+
+    passed: list[tuple[str, str, str | None]] = []
+    res = recovery.ask_agent(
+        ConsoleSession(root=repo, agent="codex"),
+        runner=fake_runner,
+        on_fallback=lambda agent, why, following: passed.append((agent, why, following)),
+    )
+
+    assert res.status == "recommended"
+    assert res.agent == "claude"
+    assert res.recommendation == "wait"
+    assert res.agents_tried == ["codex", "claude"]
+    assert res.fallbacks == [("codex", "hit a usage limit")]
+    assert passed == [("codex", "hit a usage limit", "claude")]
+    # The relay's per-agent timeout, and the read-only form of each command.
+    assert [c[2] for c in calls] == [7 * 60, 7 * 60]
+    claude_cmd = calls[1][1]
+    assert claude_cmd[claude_cmd.index("--permission-mode") + 1] == "plan"
+
+
+def test_ask_agent_timeout_names_each_agent_tried_in_order(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import agents as relay_agents
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[backup]\nchain = ["claude"]\n[roles]\nimplementer = "grok"\nreviewer = "claude"\n',
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, prompt, **kwargs):
+        if kwargs["agent_name"] == "grok":
+            raise relay_agents.AgentTimeout("grok exceeded 60s and was terminated")
+        return "ERROR: rate limit reached\n"
+
+    res = recovery.ask_agent(ConsoleSession(root=repo, agent="grok"), runner=fake_runner)
+
+    assert res.status == "exhausted"
+    assert res.agents_tried == ["grok", "claude"]
+    assert res.fallbacks == [("grok", "timed out"), ("claude", "hit a usage limit")]
+
+
+def test_ask_agent_without_read_only_mode_that_edits_a_file_is_refused(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n'
+        "[agents.antigravity]\n"
+        'adapter = "generic"\n'
+        'command = ["agy", "-p"]\n'
+        "[roles]\n"
+        'implementer = "antigravity"\n'
+        'reviewer = "claude"\n',
+        encoding="utf-8",
+    )
+    import subprocess
+
+    subprocess.run(["git", "commit", "-qam", "antigravity"], cwd=repo, check=True)
+    seen: list[list[str]] = []
+
+    def fake_runner(command, prompt, **kwargs):
+        seen.append(list(command))
+        (repo / "README.md").write_text("edited by the agent\n", encoding="utf-8")
+        return "EXPLANATION: Fixed it myself.\nRECOMMEND: resume\n"
+
+    res = recovery.ask_agent(ConsoleSession(root=repo, agent="antigravity"), runner=fake_runner)
+
+    # Antigravity has no read-only mode: it runs as configured, and the
+    # snapshot check refuses the answer and names the edit.
+    assert seen == [["agy", "-p"]]
+    assert res.status == "modified"
+    assert res.agent == "antigravity"
+    assert res.changed_paths == ["README.md"]
+    assert res.option is None

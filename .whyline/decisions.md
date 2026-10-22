@@ -21420,3 +21420,95 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9bb7b86a93b14d418190c05c2d8404e5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:14:08.165Z"} -->
+
+## 2026-10-22 — Ask agent goes after the rule-based fixes but ahead of Show evidence and Cancel, added by a diagnose() wrapper over every problem
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASK-1
+
+**Because:** the task says last option after the rule-based ones; Show evidence and Cancel are navigation, not fixes, and keeping Cancel last matches every other Resolve list; one wrapper covers all problem kinds, including ones added later
+
+**Rejected:**
+
+- Ask agent literally after Cancel — breaks the Cancel-last convention every problem follows and ~20 position asserts
+- adding the option inside each rule branch — 9+ places to keep in sync, easy to miss a new kind
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a6926ea2321444d0bdf960711e3bbfa7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:52:06.846Z"} -->
+
+## 2026-10-22 — 'Already applied to this pause' means recovery.json has an entry with the same task and round from state.json whose option or agent is the recommended option's id; the TUI's resolve-auto record now stores option=opt.id
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASK-1
+
+**Because:** task+round is how allowed() already defines one pause; matching the option id avoids treating an unrelated fix in the same round as this one
+
+**Rejected:**
+
+- treating any optionless resolve-auto entry for the round as applied — it can't tell which problem it fixed
+- recording manual Resolve clicks too — would make allowed() refuse auto recovery after any manual click, a behaviour change outside ASK-1
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 42e23619230746e380dbb16a04ff77ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:52:06.911Z"} -->
+
+## 2026-10-22 — auto_option never returns Ask agent, even when it is recommended
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASK-1
+
+**Because:** an agent's answer is only offered and needs a click (REC-4E); apply('ask-agent') does not run the agent, so auto applying it would claim a fix that never happened
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 168f1f58caf9490896214b518565b25e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:52:06.974Z"} -->
+
+## 2026-10-22 — When Ask agent returns no usable answer (human, unlisted, edited, exhausted, error), the TUI keeps the problem's rule-based options, unrecommended, alongside Show and Cancel
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASK-1
+
+**Because:** Ask agent is now on rule-matched problems too; dropping to Show/Cancel would take away the fix the rules offered
+
+**Rejected:**
+
+- keep the old Show/Cancel-only reset — fine for 'unknown' (no rule options) but a regression for every other kind
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 0094debd5a304cbeb15e9859e7c18fa1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T18:52:07.037Z"} -->
+
+## 2026-10-22 — ASK-1 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-1
+
+**Because:** The focused recovery/TUI suite and the full project suite both completed with exit 0, covering the required Ask agent ordering, recommendation, fallback, and edit-refusal behavior without regressions
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: da31f5049b3b4be4be7cd997d5ab1c70 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T19:00:52.639Z"} -->
+
+## 2026-10-22 — ASK-1 approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASK-1
+
+**Because:** The diff adds Ask agent to every Resolve result, promotes it only when appropriate, preserves click-only behavior, performs read-only fallback with per-agent timeout and named transitions, refuses edits, and both focused and full pytest suites pass
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 0276fd2c2f5648d7b570f0dd3daf0e74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-22T19:09:42.400Z"} -->

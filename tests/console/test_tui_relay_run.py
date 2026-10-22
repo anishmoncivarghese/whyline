@@ -457,3 +457,119 @@ async def test_retry_stage_on_a_clean_tree_has_no_flag(tmp_path, monkeypatch):
         await _press_retry_stage(app, pilot)
         assert FakeProcess.instances[-1].args == ["resume", "--retry-stage"]
         assert not any("unrelated uncommitted" in line for line in _lines(app))
+
+
+# ASK-1: Ask agent at every pause.
+
+
+def _git_repo(path: Path, config: str) -> None:
+    import subprocess
+
+    for args in (
+        ["init", "-q"],
+        ["config", "user.name", "Test"],
+        ["config", "user.email", "test@test.local"],
+    ):
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
+    relay = path / ".whyline" / "relay"
+    relay.mkdir(parents=True)
+    (relay / "config.toml").write_text(config, encoding="utf-8")
+    (path / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=path, check=True, capture_output=True)
+
+
+def _sticky_switch(monkeypatch) -> None:
+    """A sticky-switch pause whose only rule-based fix is not recommended."""
+    from whyline.console import recovery
+
+    problem = recovery.Problem(
+        id="sticky-switch",
+        summary="implementer is still switched to claude",
+        evidence=["implementer: antigravity -> claude"],
+        options=[
+            recovery.Option("switch-back", "Switch back anyway", "roles reset implementer",
+                            recommended=False, confirm=False),
+            recovery.Option("show", "Show evidence", "print the evidence again",
+                            recommended=False, confirm=False),
+            recovery.Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+        ],
+    )
+    monkeypatch.setattr(recovery, "_rule_problems", lambda root, fails, reason: [problem])
+
+
+async def _ask_and_wait(app, pilot) -> None:
+    await pilot.click("#resolve-ask-agent")
+    await pilot.pause()
+    for _ in range(300):  # 15 s ceiling; Windows git is slow
+        if not getattr(app, "_resolve_running", False):
+            break
+        await pilot.pause(0.05)
+    await pilot.pause()
+
+
+async def test_ask_agent_is_offered_at_a_sticky_switch_pause(tmp_path, monkeypatch):
+    _git_repo(tmp_path, 'plan = "plan.md"\n[roles]\nimplementer = "codex"\n')
+    _sticky_switch(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._start_resolve_flow(source="resume", fail_lines=[])
+        await pilot.pause()
+        ids = [b.id for b in app._main("#resolve-actions").query(tui.Button)]
+        # Recommended first; with no recommended fix, that is Ask agent.
+        assert ids == ["resolve-ask-agent", "resolve-switch-back", "resolve-show", "resolve-cancel"]
+        assert any("Ask agent (recommended)" in line for line in _lines(app))
+
+
+async def test_ask_agent_limit_on_first_agent_falls_to_backup_and_says_so(tmp_path, monkeypatch):
+    _git_repo(
+        tmp_path,
+        'plan = "plan.md"\n[backup]\nchain = ["claude"]\n'
+        '[roles]\nimplementer = "codex"\nreviewer = "claude"\n',
+    )
+    _sticky_switch(monkeypatch)
+    called = []
+
+    def fake_runner(command, prompt, **kwargs):
+        called.append(kwargs["agent_name"])
+        if kwargs["agent_name"] == "codex":
+            return "ERROR: You've hit your usage limit.\n"
+        return "EXPLANATION: Claude looked.\nRECOMMEND: wait\n"
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    app.session.agent = "codex"
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._start_resolve_flow(source="resume", fail_lines=[])
+        await pilot.pause()
+        await _ask_and_wait(app, pilot)
+        assert called == ["codex", "claude"]
+        lines = _lines(app)
+        assert any("Asking codex to analyse the problem" in line for line in lines)
+        assert any("codex hit a usage limit; asking claude" in line for line in lines)
+        assert any("Claude looked." in line for line in lines)
+        assert app.query("#resolve-wait")
+
+
+async def test_ask_agent_that_edits_a_file_is_refused_and_the_edit_reported(tmp_path, monkeypatch):
+    _git_repo(tmp_path, 'plan = "plan.md"\n[roles]\nimplementer = "codex"\n')
+    _sticky_switch(monkeypatch)
+
+    def fake_runner(command, prompt, **kwargs):
+        (tmp_path / "README.md").write_text("edited\n", encoding="utf-8")
+        return "EXPLANATION: Done.\nRECOMMEND: wait\n"
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    app.session.agent = "codex"
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._start_resolve_flow(source="resume", fail_lines=[])
+        await pilot.pause()
+        await _ask_and_wait(app, pilot)
+        lines = _lines(app)
+        assert any("modified files: README.md" in line for line in lines)
+        assert not app.query("#resolve-wait")
+        # The rule-based fix is still there to press.
+        assert app.query("#resolve-switch-back")
+        assert app.query("#resolve-cancel")

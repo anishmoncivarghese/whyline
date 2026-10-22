@@ -4651,6 +4651,9 @@ class WhylineConsoleApp(App):
         self._sync_relay_buttons()
 
         if opt.id == "ask-agent":
+            def passed_over(agent: str, why: str, following: str | None) -> None:
+                self.call_from_thread(self._ask_agent_passed_over, agent, why, following)
+
             def ask_thread() -> None:
                 ask_res = None
                 try:
@@ -4660,6 +4663,7 @@ class WhylineConsoleApp(App):
                         runner=self._runner,
                         fail_lines=self._current_fail_lines(),
                         problem=self._resolve_problem,
+                        on_fallback=passed_over,
                     )
                 except Exception:
                     pass
@@ -4790,11 +4794,25 @@ class WhylineConsoleApp(App):
                 pass
             self._sync_relay_buttons()
 
+    def _ask_agent_passed_over(self, agent: str, why: str, following: str | None) -> None:
+        if following:
+            text = f"{agent} {why}; asking {following}…"
+            self._set_busy(True, f"{following} is analysing the problem")
+        else:
+            text = f"{agent} {why}; no backup agent left to ask."
+        self.render_event(SessionEvent(kind="output", text=text))
+
     def _ask_agent_finished(self, res: Any) -> None:
         from whyline.console import recovery
 
         self._resolve_running = False
         self._set_busy(False)
+        # With no usable answer, the rule-based fixes stay on offer.
+        kept = [
+            recovery.Option(o.id, o.label, o.detail, recommended=False, confirm=o.confirm)
+            for o in (self._resolve_problem.options if self._resolve_problem else [])
+            if o.id not in ("show", "cancel", "ask-agent")
+        ]
 
         if res is None:
             self.render_event(SessionEvent(kind="output", text="Agent inquiry failed."))
@@ -4814,7 +4832,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[show_opt, cancel_opt],
+                options=[*kept, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -4868,7 +4886,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[show_opt, cancel_opt],
+                options=[*kept, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -4898,7 +4916,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[show_opt, cancel_opt],
+                options=[*kept, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -4923,14 +4941,21 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[show_opt, cancel_opt],
+                options=[*kept, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
             return
 
         if res.status == "exhausted":
-            agents_str = ", ".join(res.agents_tried) if res.agents_tried else "none"
+            why = dict(getattr(res, "fallbacks", []) or [])
+            agents_str = (
+                ", ".join(
+                    f"{a} ({why[a]})" if a in why else a for a in res.agents_tried
+                )
+                if res.agents_tried
+                else "none"
+            )
             self.render_event(
                 SessionEvent(
                     kind="output",
@@ -4953,7 +4978,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[show_opt, cancel_opt],
+                options=[*kept, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -5049,6 +5074,7 @@ class WhylineConsoleApp(App):
             if res_line:
                 self.render_event(SessionEvent(kind="output", text=res_line))
 
+            # The option lets diagnose tell the fix already ran for this pause.
             recovery.record_attempt(
                 self.session.root,
                 task=task_id,
@@ -5056,6 +5082,7 @@ class WhylineConsoleApp(App):
                 kind="resolve-auto",
                 agent="",
                 verdict="resolved",
+                option=opt.id,
             )
 
             self._resume_fail_lines = []
