@@ -22160,3 +22160,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f157b5b7716f435b941e393ff345a394 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T19:26:47.974Z"} -->
+
+## 2026-10-23 — Make IDEA-20 release tests independent of installed agents and PDF tools
+
+**Actor:** codex
+**Role:** release
+**Task:** IDEA-20
+
+**Because:** The first v0.3.48 release run was safely blocked because 12 tests passed on a developer Mac but failed on clean GitHub runners; the tests now declare fake installed agents or a fake PDF route and await the UI click deterministically
+
+**Rejected:**
+
+- Bypass or weaken the release workflow — all four matrix jobs correctly protected an unpublished PyPI version
+- Change production agent or PDF detection — the failures were undeclared test prerequisites, while the shipping behavior was correct
+
+**Files:** tests/console/test_recovery.py, tests/console/test_tui_relay_run.py, tests/ideas/test_cli.py
+
+<!-- whyline-event: 26676060c45247d2863dcf3156da7b9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T19:45:57.218Z"} -->

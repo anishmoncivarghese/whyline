@@ -243,7 +243,9 @@ async def test_a_stale_paused_run_offers_clear_instead_of_resume(tmp_path, monke
         assert any("Cleared the finished run CRS-4." in line for line in _lines(app))
 
 
-async def test_change_agents_opens_setup_from_a_pause(tmp_path, monkeypatch):
+async def test_change_agents_opens_setup_from_a_pause(
+    tmp_path, monkeypatch, installed_agents
+):
     from whyline.console.relay_screens import RelaySetupScreen
 
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -257,8 +259,11 @@ async def test_change_agents_opens_setup_from_a_pause(tmp_path, monkeypatch):
 
         change_btn = app.query_one("#pause-change-agents", tui.Button)
         assert change_btn.display
-        change_btn.press()
-        await pilot.pause()
+        await pilot.click("#pause-change-agents")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, RelaySetupScreen):
+                break
 
         assert isinstance(app.screen, RelaySetupScreen)
         assert app.screen._paused

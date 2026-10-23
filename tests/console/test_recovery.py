@@ -5163,6 +5163,7 @@ def test_build_ask_agent_prompt_trims_large_non_log_section_while_facts_and_task
 def test_reply_proposing_set_model_clear_override_and_resume_applies_all_three_in_order_with_one_config_commit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    installed_agents,
 ) -> None:
     import subprocess
     from whyline import account
@@ -5282,6 +5283,7 @@ def test_reply_proposing_set_model_clear_override_and_resume_applies_all_three_i
 def test_unknown_agent_or_model_is_dropped_with_a_note(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    installed_agents,
 ) -> None:
     from whyline import account
 
@@ -5552,6 +5554,7 @@ def test_undeclared_set_backup_proposals_are_dropped(
 def test_set_model_drops_empty_and_absent_models(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    installed_agents,
 ) -> None:
     from whyline import account
 
@@ -5695,6 +5698,7 @@ def test_legacy_rec_4c_options_apply_end_to_end(
 async def test_console_proposal_offers_review_screen_with_apply_step_1_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    installed_agents,
 ) -> None:
     from textual.app import App
     from textual.widgets import Button, Static
@@ -5774,6 +5778,7 @@ async def test_console_proposal_offers_review_screen_with_apply_step_1_only(
 async def test_live_console_flow_opens_proposal_screen_and_applies_step_1_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    installed_agents,
 ) -> None:
     from whyline import account
     from whyline.console import relay_ops, tui
@@ -5855,7 +5860,7 @@ async def test_live_console_flow_opens_proposal_screen_and_applies_step_1_only(
 
 
 def test_auto_run_safe_proposal_applied_and_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installed_agents
 ) -> None:
     import subprocess
     from whyline import account
@@ -5994,7 +5999,7 @@ def test_auto_run_proposal_with_stash_stops_with_steps_shown(
 
 
 def test_auto_run_same_reason_twice_stops_naming_first_proposal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installed_agents
 ) -> None:
     import subprocess
     from whyline import account
@@ -6467,7 +6472,7 @@ def test_auto_safe_steps_start_next_unchecked_task(
 
 
 def test_auto_run_recreated_rule_pause_asks_agent_instead_of_once_per_round_rejection(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installed_agents
 ) -> None:
     import subprocess
     from whyline import account

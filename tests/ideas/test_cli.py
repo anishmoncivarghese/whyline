@@ -33,6 +33,16 @@ def _no_live_telegram_token(monkeypatch):
     monkeypatch.setattr(telegram, "token_get", lambda **_kwargs: None)
 
 
+@pytest.fixture
+def pdf_available(monkeypatch):
+    """Doctor tests unrelated to PDF must not depend on the host platform."""
+    monkeypatch.setattr(
+        documents,
+        "probe_pdf",
+        lambda run=None: documents.PdfResult("appkit"),
+    )
+
+
 def invoke(argv, capsys):
     code = cli.main(argv)
     captured = capsys.readouterr()
@@ -604,7 +614,9 @@ def test_assistant_saves_without_writing_the_workbook(ideas_home, capsys):
     assert not (ideas_home / "ideas.xlsx").exists()
 
 
-def test_doctor_telegram_checks_pass(ideas_home, capsys, monkeypatch):
+def test_doctor_telegram_checks_pass(
+    ideas_home, capsys, monkeypatch, pdf_available
+):
     conn = _ready_inbox(ideas_home, monkeypatch)
     try:
         _kv(conn, telegram_in.ALLOW_KEY, json.dumps([11]))
@@ -681,7 +693,9 @@ def test_doctor_reports_no_allowed_chat(ideas_home, capsys, monkeypatch):
     assert "ok     telegram token: @InboxBot" in text
 
 
-def test_doctor_warns_when_the_service_is_off(ideas_home, capsys, monkeypatch):
+def test_doctor_warns_when_the_service_is_off(
+    ideas_home, capsys, monkeypatch, pdf_available
+):
     conn = _ready_inbox(ideas_home, monkeypatch)
     try:
         _kv(conn, telegram_in.ALLOW_KEY, json.dumps([11, 22]))
@@ -736,7 +750,7 @@ def test_doctor_fails_when_the_bot_has_a_webhook(ideas_home, capsys, monkeypatch
 
 
 def test_doctor_warns_when_the_webhook_check_cannot_reach_telegram(
-    ideas_home, capsys, monkeypatch
+    ideas_home, capsys, monkeypatch, pdf_available
 ):
     conn = _ready_inbox(ideas_home, monkeypatch)
     try:
