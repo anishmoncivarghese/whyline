@@ -140,6 +140,17 @@ class TooSoon(RuntimeError):
 def trigger(name, repo_root, files=(), *, now=None, spawn=None) -> int:
     from datetime import datetime, timedelta
 
+    if name in ("idea", "ideas", "inbox", "idea-inbox", "email"):
+        from whyline.ideas import email_in, store
+
+        conn = store.connect()
+        try:
+            for f in files or []:
+                email_in.handle(conn, Path(f))
+        finally:
+            conn.close()
+        return 0
+
     from whyline.agents import capabilities, folders, tick
 
     now = now or datetime.now().replace(microsecond=0)

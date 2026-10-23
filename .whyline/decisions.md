@@ -22178,3 +22178,99 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 26676060c45247d2863dcf3156da7b9d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T19:45:57.218Z"} -->
+
+## 2026-10-23 — Bind 6-character email confirmation code to idea revision and index in kv
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-21
+
+**Because:** It guarantees that any revision bump immediately invalidates previous confirmation codes without extra schema tables
+
+**Rejected:**
+
+- Require idea ID in reply body — user only replies yes <code>
+- Ephemeral random codes — does not survive restart and risks desync with database state
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 82a2556fed454722b6d449d260113369 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T20:51:23.948Z"} -->
+
+## 2026-10-23 — IDEA-21 Round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-21
+
+**Because:** The required ideas suite and full repository suite both completed with exit code 0; the email intake, authentication rejection, Message-ID deduplication, revision-bound confirmation, attachment, CLI, and console tests introduced for IDEA-21 are covered by those passing suites
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or regression was observed
+
+**Files:** src/whyline/ideas/email_in.py, tests/ideas/test_email_in.py, src/whyline/console/inbox_screen.py, tests/console/test_inbox_screen.py
+
+<!-- whyline-event: db1c8b873ebe47b4b9806b3f3827ae76 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T21:01:14.041Z"} -->
+
+## 2026-10-23 — IDEA-21 Round 3 review rejected
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-21
+
+**Because:** The direct handler tests pass, but no production path invokes email_in.handle: the existing Mail rule still invokes the generic agent trigger and serializes only From, Subject, and Date, so Message-ID deduplication and Authentication-Results verification cannot work. In addition, confirmation records store the originating sender but the handler never compares it with the authenticated reply sender, allowing any allowed sender who has or predicts another sender's code to start that idea's brainstorm.
+
+**Rejected:**
+
+- Approve — green unit and regression tests do not cover the missing real intake route or cross-sender confirmation authorization
+
+**Files:** src/whyline/agents/mail.py, src/whyline/ideas/email_in.py, tests/ideas/test_email_in.py
+
+<!-- whyline-event: 48a5279d994a42a693341f1ffc555caf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T21:10:30.836Z"} -->
+
+## 2026-10-23 — Preserve Message-ID and Authentication-Results in Mail rule and enforce originating sender confirmation
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-21
+
+**Because:** Mail rules must preserve headers for DKIM/SPF verification and Message-ID deduplication, and confirmations must match the originating sender to prevent cross-sender execution
+
+**Rejected:**
+
+- Allow any authenticated sender to confirm with a valid code — permits cross-sender idea execution
+- Only serialize From Subject and Date in AppleScript — drops Authentication-Results and Message-ID needed by the intake handler
+
+**Files:** src/whyline/agents/mail.py, src/whyline/ideas/email_in.py, tests/ideas/test_email_in.py
+
+<!-- whyline-event: 20f5696647f74c07ba31b9375a00d7e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T21:34:46.751Z"} -->
+
+## 2026-10-23 — IDEA-21 Round 5 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-21
+
+**Because:** The task-specific idea tests and full project regression suite both completed successfully, covering authenticated allowed-sender capture and settings, Message-ID deduplication, authentication rejection, revision-bound confirmation behavior, attachment replies, and console email controls
+
+**Files:** tests/ideas/test_email_in.py, tests/console/test_inbox_screen.py
+
+<!-- whyline-event: 16d2e5fb06f649b8ad8d4de0717fbe44 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T21:45:39.785Z"} -->
+
+## 2026-10-23 — Approve IDEA-21 email intake and inbox settings implementation
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** IDEA-21
+
+**Because:** All task requirements and behavioral edge cases are implemented and verified: DKIM/SPF verification, sender allowlist CLI and console management, Message-ID deduplication, revision-bound confirmation codes, document attachments in replies, Telegram notification forwarding, and full test suite passes with exit 0.
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: f95cb67d47894a15a14c25a38e6d5fee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T21:57:53.752Z"} -->

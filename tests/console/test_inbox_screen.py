@@ -494,3 +494,51 @@ async def test_repositories_section_dotted_name_does_not_crash(tmp_path, ideas_h
             assert "core.v1" in repos
         finally:
             conn.close()
+
+
+async def test_email_section_add_and_remove(tmp_path, ideas_home, monkeypatch):
+    from whyline.ideas import email_in
+
+    _saved_screen_chats(monkeypatch)
+    _seed({"email_allow": json.dumps(["alice@example.com"])})
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        await _until(
+            pilot,
+            lambda: "@InboxBot" in _plain(screen.query_one("#ib-bot")),
+            "bot name",
+        )
+        assert "alice@example.com" in _visible(screen)
+        remove_btn = screen.email_remove_button("alice@example.com")
+        assert remove_btn is not None
+
+        # Add invalid email
+        screen.query_one("#ib-email-address", tui.Input).value = "notanemail"
+        screen.query_one("#ib-email-add", tui.Button).press()
+        await pilot.pause()
+        assert "not an email address" in _plain(screen.query_one("#ib-message"))
+
+        # Add valid email
+        screen.query_one("#ib-email-address", tui.Input).value = "bob@example.com"
+        screen.query_one("#ib-email-add", tui.Button).press()
+        await pilot.pause()
+        assert "bob@example.com" in _visible(screen)
+        assert screen.email_remove_button("bob@example.com") is not None
+
+        # Remove existing email
+        screen.email_remove_button("alice@example.com").press()
+        await pilot.pause()
+        assert "alice@example.com" not in _visible(screen)
+        with pytest.raises(tui.NoMatches):
+            screen.email_remove_button("alice@example.com")
+
+        conn = store.connect()
+        try:
+            senders = email_in.allowed_senders(conn)
+            assert "alice@example.com" not in senders
+            assert "bob@example.com" in senders
+        finally:
+            conn.close()
+

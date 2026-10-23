@@ -40,6 +40,7 @@ class _Saved:
     documents: str | None
     service_on: bool
     repos: dict[str, str] = field(default_factory=dict)
+    email_allow: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _db_path():
@@ -64,8 +65,8 @@ def _read_saved() -> _Saved:
     """Saved settings. Does not create the inbox database."""
     path = _db_path()
     if path is None:
-        return _Saved((), None, None, None, None, False, {})
-    from whyline.ideas import assistant, cli, setup, telegram_in, worker
+        return _Saved((), None, None, None, None, False, {}, ())
+    from whyline.ideas import assistant, cli, email_in, setup, telegram_in, worker
 
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -79,6 +80,7 @@ def _read_saved() -> _Saved:
             documents=_kv(conn, "doc_formats"),
             service_on=worker.enabled(conn),
             repos=setup.list_repos(conn),
+            email_allow=tuple(email_in.allowed_senders(conn)),
         )
     finally:
         conn.close()
@@ -181,6 +183,11 @@ class IdeaInboxScreen(ModalScreen):
     IdeaInboxScreen #ib-repo-path { width: 1fr; }
     IdeaInboxScreen .ib-repo-row { height: auto; }
     IdeaInboxScreen .ib-repo-label { width: 1fr; padding: 1 0; }
+    IdeaInboxScreen #ib-emails { height: auto; }
+    IdeaInboxScreen #ib-email-add-row { height: auto; }
+    IdeaInboxScreen #ib-email-address { width: 1fr; }
+    IdeaInboxScreen .ib-email-row { height: auto; }
+    IdeaInboxScreen .ib-email-label { width: 1fr; padding: 1 0; }
     """
 
     def __init__(self) -> None:
@@ -192,6 +199,7 @@ class IdeaInboxScreen(ModalScreen):
         self._generation = 0
         self._closed = False
         self._repo_remove_buttons: dict[str, str] = {}
+        self._email_remove_buttons: dict[str, str] = {}
 
     @staticmethod
     def _repo_remove_id(name: str) -> str:
@@ -207,6 +215,22 @@ class IdeaInboxScreen(ModalScreen):
 
     def repo_remove_button(self, name: str) -> Button:
         btn_id = self._repo_remove_id(name)
+        return self.query_one(f"#{btn_id}", Button)
+
+    @staticmethod
+    def _email_remove_id(address: str) -> str:
+        if _SAFE_ID_RE.match(address):
+            return f"ib-email-remove-{address}"
+        digest = hashlib.sha256(address.encode("utf-8")).hexdigest()[:12]
+        return f"ib-email-remove-safe-{digest}"
+
+    def _make_email_remove_button(self, address: str) -> Button:
+        btn_id = self._email_remove_id(address)
+        self._email_remove_buttons[btn_id] = address
+        return Button("Remove", id=btn_id, name=address, classes="ib-email-remove")
+
+    def email_remove_button(self, address: str) -> Button:
+        btn_id = self._email_remove_id(address)
         return self.query_one(f"#{btn_id}", Button)
 
     def compose(self) -> ComposeResult:
@@ -316,6 +340,23 @@ class IdeaInboxScreen(ModalScreen):
                     Button("Add", id="ib-repo-add"),
                     id="ib-repo-add-row",
                 ),
+                Label("Email"),
+                Vertical(
+                    *[
+                        Horizontal(
+                            Label(address, classes="ib-email-label"),
+                            self._make_email_remove_button(address),
+                            classes="ib-email-row",
+                        )
+                        for address in sorted(saved.email_allow)
+                    ],
+                    id="ib-emails",
+                ),
+                Horizontal(
+                    Input(placeholder="user@example.com", id="ib-email-address"),
+                    Button("Add", id="ib-email-add"),
+                    id="ib-email-add-row",
+                ),
                 Label("Check"),
                 Static("", id="ib-checks", markup=False),
                 id="ib-body",
@@ -380,6 +421,72 @@ class IdeaInboxScreen(ModalScreen):
                 repo_name = button_id[len("ib-repo-remove-"):]
             if repo_name:
                 self._remove_repo(repo_name)
+        elif button_id == "ib-email-add":
+            event.stop()
+            self._add_email()
+        elif button_id and (
+            button_id in self._email_remove_buttons
+            or button_id.startswith("ib-email-remove-")
+        ):
+            event.stop()
+            email_addr = self._email_remove_buttons.get(button_id)
+            if email_addr is None and getattr(event.button, "name", None):
+                email_addr = event.button.name
+            if email_addr is None and button_id.startswith("ib-email-remove-"):
+                email_addr = button_id[len("ib-email-remove-"):]
+            if email_addr:
+                self._remove_email(email_addr)
+
+    def _add_email(self) -> None:
+        from whyline.ideas import email_in, store
+
+        address = self.query_one("#ib-email-address", Input).value.strip()
+        if not address:
+            self._show_message("email address is required")
+            return
+        conn = store.connect()
+        try:
+            try:
+                email_in.allow(conn, address)
+            except email_in.AllowError as exc:
+                self._show_message(str(exc))
+                return
+        finally:
+            conn.close()
+        self.query_one("#ib-email-address", Input).value = ""
+        self._show_message("")
+        self._refresh_emails()
+
+    def _remove_email(self, address: str) -> None:
+        from whyline.ideas import email_in, store
+
+        conn = store.connect()
+        try:
+            email_in.deny(conn, address)
+        finally:
+            conn.close()
+        self._show_message("")
+        self._refresh_emails()
+
+    def _refresh_emails(self) -> None:
+        from whyline.ideas import email_in, store
+
+        conn = store.connect()
+        try:
+            senders = email_in.allowed_senders(conn)
+        finally:
+            conn.close()
+        container = self.query_one("#ib-emails", Vertical)
+        container.remove_children()
+        self._email_remove_buttons.clear()
+        for address in sorted(senders):
+            container.mount(
+                Horizontal(
+                    Label(address, classes="ib-email-label"),
+                    self._make_email_remove_button(address),
+                    classes="ib-email-row",
+                )
+            )
 
     def _add_repo(self) -> None:
         from whyline.ideas import setup, store

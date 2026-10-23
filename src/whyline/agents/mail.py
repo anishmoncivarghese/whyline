@@ -2,6 +2,9 @@
 which saves the message as text and calls `whyline agents trigger`."""
 from __future__ import annotations
 
+import email
+from email import policy
+from email.message import EmailMessage, Message
 import shlex
 import shutil
 import sys
@@ -19,8 +22,27 @@ NEEDS_MACOS = "Mail rules need macOS for now; agents still run with Run now."
 _TEMPLATE = '''using terms from application "Mail"
   on perform mail action with messages theMessages for rule theRule
     repeat with m in theMessages
-      set body to "From: " & (sender of m) & linefeed & "Subject: " & (subject of m) & linefeed & ¬
-        "Date: " & ((date received of m) as string) & linefeed & linefeed & (content of m)
+      set hdrs to ""
+      try
+        set hdrs to (all headers of m)
+      end try
+      set msgid to ""
+      try
+        set msgid to (message id of m)
+        if msgid does not start with "<" then
+          set msgid to "<" & msgid & ">"
+        end if
+      end try
+      set body to "From: " & (sender of m) & linefeed & ¬
+        "Subject: " & (subject of m) & linefeed & ¬
+        "Date: " & ((date received of m) as string) & linefeed
+      if msgid is not "" then
+        set body to body & "Message-ID: " & msgid & linefeed
+      end if
+      if hdrs is not "" then
+        set body to body & hdrs & linefeed
+      end if
+      set body to body & linefeed & (content of m)
       set tmp to (do shell script "mktemp -t whyline-mail")
       set fd to open for access (POSIX file tmp) with write permission
       try
@@ -69,7 +91,10 @@ def script_text(agent_name: str, whyline_path: str) -> str:
     # The executable is whatever shutil.which returned, spaces included.
     if definitions.NAME.match(agent_name) is None:
         raise ValueError("name must be lower-case letters, digits and -, at most 40")
-    command = f"{_shell_token(whyline_path)} agents trigger {agent_name}"
+    if agent_name in ("idea", "ideas", "inbox", "idea-inbox", "email"):
+        command = f"{_shell_token(whyline_path)} idea email intake"
+    else:
+        command = f"{_shell_token(whyline_path)} agents trigger {agent_name}"
     return _TEMPLATE.replace("WHYLINE_BIN", command)
 
 
@@ -80,3 +105,63 @@ def install(agent_name: str) -> Path:
     path = folder / f"whyline-{agent_name}.applescript"
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def read_message(source: str | bytes | Path | Message | dict) -> Message:
+    """Read or parse an incoming email message."""
+    if isinstance(source, Message):
+        return source
+    if isinstance(source, dict):
+        m = EmailMessage()
+        for k, v in source.items():
+            if k.lower() == "body":
+                m.set_content(str(v))
+            elif k.lower() == "headers" and isinstance(v, dict):
+                for hk, hv in v.items():
+                    m[hk] = str(hv)
+            else:
+                m[k] = str(v)
+        if "body" not in [k.lower() for k in source] and "text" in source:
+            m.set_content(str(source["text"]))
+        return m
+    if isinstance(source, Path) or (
+        isinstance(source, str) and "\n" not in source and Path(source).is_file()
+    ):
+        path = Path(source)
+        try:
+            raw_bytes = path.read_bytes()
+            return email.message_from_bytes(raw_bytes, policy=policy.default)
+        except OSError:
+            raw_text = path.read_text(encoding="utf-8")
+            return email.message_from_string(raw_text, policy=policy.default)
+    if isinstance(source, bytes):
+        return email.message_from_bytes(source, policy=policy.default)
+    if isinstance(source, str):
+        return email.message_from_string(source, policy=policy.default)
+    raise TypeError(f"unsupported email message source: {type(source)}")
+
+
+def intake(
+    source: str | bytes | Path | Message | dict,
+    *,
+    conn=None,
+    mail_fn=None,
+    run_fn=None,
+):
+    """Wire Mail.app intake to email_in.handle."""
+    from whyline.ideas import email_in, store
+
+    close_conn = False
+    if conn is None:
+        conn = store.connect()
+        close_conn = True
+    try:
+        return email_in.handle(conn, source, mail_fn=mail_fn, run_fn=run_fn)
+    finally:
+        if close_conn:
+            conn.close()
+
+
+handle = intake
+
+

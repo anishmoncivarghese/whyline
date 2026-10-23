@@ -132,6 +132,20 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     rm_r.add_argument("name", help="Repository short name")
     repos_sub.add_parser("list", help="List allowed repositories")
 
+    email = sub.add_parser("email", help="Allowed senders for email inbox")
+    email_sub = email.add_subparsers(dest="idea_email_command", required=True)
+    allow_e = email_sub.add_parser("allow", help="Allow an email address")
+    allow_e.add_argument("address", help="Email address")
+    deny_e = email_sub.add_parser("deny", help="Deny an email address")
+    deny_e.add_argument("address", help="Email address")
+    list_e = email_sub.add_parser("list", help="List allowed email addresses")
+    list_e.add_argument("address", nargs="?", default=None, help=argparse.SUPPRESS)
+    intake_e = email_sub.add_parser("intake", help="Process incoming email from file or stdin")
+    intake_e.add_argument("--file", action="append", default=[], help="Path to email file")
+    handle_e = email_sub.add_parser("handle", help="Process incoming email from file or stdin")
+    handle_e.add_argument("--file", action="append", default=[], help="Path to email file")
+    email_sub.add_parser("mail-script", help="Install Mail.app rule script for email intake")
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -139,7 +153,7 @@ def run(args: argparse.Namespace) -> int:
     if handler is None:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
-            "export|documents|agents|assistant|doctor|telegram|service|work|repos",
+            "export|documents|agents|assistant|doctor|telegram|service|work|repos|email",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1097,6 +1111,65 @@ def cmd_repos(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_email(args: argparse.Namespace) -> int:
+    from whyline.ideas import email_in
+
+    action = getattr(args, "idea_email_command", None)
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        if action == "allow":
+            try:
+                addr = email_in.allow(conn, args.address)
+            except email_in.AllowError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{addr}  allowed")
+            return EXIT_OK
+        if action == "deny":
+            email_in.deny(conn, args.address)
+            print(f"{args.address.strip().lower()}  denied")
+            return EXIT_OK
+        if action == "list":
+            senders = email_in.allowed_senders(conn)
+            if not senders:
+                print("No allowed senders configured.")
+                return EXIT_OK
+            for addr in sorted(senders):
+                print(addr)
+            return EXIT_OK
+        if action in ("intake", "handle"):
+            files = getattr(args, "file", []) or []
+            if not files:
+                if not sys.stdin.isatty():
+                    content = sys.stdin.read()
+                    email_in.handle(conn, content)
+                return EXIT_OK
+            for f in files:
+                p = Path(f)
+                if p.is_file():
+                    email_in.handle(conn, p)
+            return EXIT_OK
+        if action == "mail-script":
+            from whyline.agents import mail
+
+            if not mail.supported():
+                print(mail.NEEDS_MACOS, file=sys.stderr)
+                return EXIT_ERROR
+            try:
+                path = mail.install("idea")
+            except (RuntimeError, OSError, ValueError) as error:
+                print(str(error), file=sys.stderr)
+                return EXIT_ERROR
+            print(path.as_posix())
+            return EXIT_OK
+        print("usage: whyline idea email allow|deny|list <address>", file=sys.stderr)
+        return EXIT_USAGE
+    finally:
+        conn.close()
+
+
 _COMMANDS = {
     "add": cmd_add,
     "list": cmd_list,
@@ -1114,4 +1187,5 @@ _COMMANDS = {
     "service": cmd_service,
     "work": cmd_work,
     "repos": cmd_repos,
+    "email": cmd_email,
 }

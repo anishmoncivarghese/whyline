@@ -1813,6 +1813,16 @@ def cmd_agents(args: argparse.Namespace) -> int:
             service.delete(args.name, root)
             return EXIT_OK
         if args.agents_command == "trigger":
+            if args.name in ("idea", "ideas", "inbox", "idea-inbox", "email"):
+                from whyline.ideas import email_in, store
+
+                conn = store.connect()
+                try:
+                    for f in args.file or []:
+                        email_in.handle(conn, Path(f))
+                finally:
+                    conn.close()
+                return EXIT_OK
             try:
                 service.trigger(args.name, root, args.file or [])
             except service.TooSoon as error:
