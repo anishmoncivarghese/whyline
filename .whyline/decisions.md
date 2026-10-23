@@ -22037,3 +22037,108 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 37104bd7016f4da294ee8690e74c2b1a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T17:25:12.646Z"} -->
+
+## 2026-10-23 — Poll running and paused idea relays to deliver status, diagnosis alerts, stop, and completion
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-19
+
+**Because:** delivers real-time relay visibility, one-tap recovery options, and completion document to Telegram while keeping worker non-blocking and preserving user release ownership
+
+**Rejected:**
+
+- in-band worker job — blocks idea scheduler queue and risks lease timeouts
+- auto-resolving pause alerts — violates safety requirement that human picks recovery options
+- allow Telegram release publishing — release tasks require human console execution
+
+**Files:** src/whyline/ideas/watch.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, tests/ideas/test_watch.py
+
+<!-- whyline-event: 8809508a042c4eef8521cc2e3009f3ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:00:34.272Z"} -->
+
+## 2026-10-23 — IDEA-19 Round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-19
+
+**Because:** The 404-test ideas suite and full project suite exit cleanly, and the 10 focused watch tests cover every requested pause, confirmation, release, stop, status-redaction, completion, evidence, proposal, and worker-integration behavior
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/ideas/watch.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, tests/ideas/test_watch.py
+
+<!-- whyline-event: 592ff18d79ff47f9803f0582ce63865f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:09:03.639Z"} -->
+
+## 2026-10-23 — IDEA-19 Round 3 requires a user-visible Status button
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-19
+
+**Because:** The status callback handler exists and slash-command, pause, stop, completion, and redaction flows pass both required suites, but no generated running or paused UI emits a button labeled Status as the task requires; the configured buttons are Stop and Refresh, and the start notification has no buttons
+
+**Rejected:**
+
+- Approve — the explicit Status-button trigger is absent and the tests only exercise slash status and assistant status
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_watch.py
+
+<!-- whyline-event: dd23ffbb2db7493f91456d416dd60cef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:20:21.511Z"} -->
+
+## 2026-10-23 — Emit Status button in running and paused card controls and start notification
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-19
+
+**Because:** gives users direct one-tap access to relay progress from Telegram cards alongside Stop, and triggers status callback returning Stop and Refresh controls
+
+**Rejected:**
+
+- omit buttons on start notification — leaves users without visible Status button until manual slash command
+- status card omitting Refresh — prevents real-time progress updates on existing card
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py, tests/ideas/test_watch.py
+
+<!-- whyline-event: 6d0a074a004e4711aad8b524d23d9f78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:37:30.081Z"} -->
+
+## 2026-10-23 — IDEA-19 Round 5 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-19
+
+**Because:** The required ideas suite and full project suite both completed at 100% with exit code 0, verifying the Status-button addition without regressions
+
+**Rejected:**
+
+- Fail the task — no behavioral failure was observed in either required suite
+
+**Files:** tests/ideas/test_watch.py
+
+<!-- whyline-event: 6f39f20dfd7c488ca5cf61179fd692b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:47:29.503Z"} -->
+
+## 2026-10-23 — Approve IDEA-19 Round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-19
+
+**Because:** The implementation supplies status reporting and controls, pause diagnosis and confirmed recovery, release-safe alerts, stop/resume handling, and idempotent completion summaries; focused and full suites passed independently and the diff is clean
+
+**Rejected:**
+
+- Request changes — no functional, safety, or coverage defect was found in the scoped diff
+
+**Files:** src/whyline/ideas/watch.py, src/whyline/ideas/bot.py, tests/ideas/test_watch.py
+
+<!-- whyline-event: 0a1494f3f777462aaa6afc037334e4e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:56:34.540Z"} -->

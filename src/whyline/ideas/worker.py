@@ -170,6 +170,7 @@ def run_once(
     pid_alive=None,
     stop=None,
     clock=None,
+    watch=None,
 ) -> None:
     """One scheduler pass. Returns immediately when the inbox is off.
 
@@ -209,6 +210,7 @@ def run_once(
             flush=flush,
             pid_alive=pid_alive,
             stop=stop,
+            watch=watch,
         )
     finally:
         _release_poll_lock(lock)
@@ -225,6 +227,7 @@ def _poll_while_in_use(
     flush,
     pid_alive,
     stop,
+    watch=None,
 ) -> None:
     from whyline.agents import telegram
     from whyline.ideas import bot, telegram_in
@@ -273,6 +276,7 @@ def _poll_while_in_use(
             moment = clock()
             _recover(conn, moment, pid_alive, stop)
             _start_one(conn, moment, spawn)
+            _watch(conn, watch_fn=watch)
             flush(conn)
             # ``handled`` is rows that ran. A failure is not new activity.
             activity = stored > 0 or handled > 0
@@ -700,6 +704,18 @@ def _start_one(conn, now: datetime, spawn) -> None:
             "UPDATE jobs SET pid = ? WHERE id = ?",
             (int(pid), row["id"]),
         )
+
+
+def _watch(conn: sqlite3.Connection, watch_fn=None) -> None:
+    try:
+        if watch_fn is not None:
+            watch_fn(conn)
+        else:
+            from whyline.ideas import watch
+
+            watch.tick(conn)
+    except Exception:
+        log.exception("watch tick failed")
 
 
 def _job_timeout(conn, row) -> int | str:

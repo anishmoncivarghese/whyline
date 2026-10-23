@@ -85,6 +85,17 @@ _STATUS_BUTTONS = {
     ),
     "plan_discarded": (("Reopen", "reopen"),),
     "dropped": (("Reopen", "reopen"),),
+    "running": (
+        ("Status", "status"),
+        ("Stop", "stop"),
+    ),
+    "paused": (
+        ("Status", "status"),
+        ("Stop", "stop"),
+    ),
+    "stopped": (
+        ("Resume", "resume"),
+    ),
 }
 _DETECT_ORDER = ("claude", "codex", "grok")
 _PLAN_KEYS = frozenset({
@@ -111,6 +122,12 @@ _LABEL_ACTION = {
     "Change": "change_plan",
     "Discard": "discard_plan",
     "Retry": "retry_plan",
+    "Stop": "stop",
+    "Stop now": "stop_yes",
+    "Refresh": "refresh",
+    "Resume": "resume",
+    "Status": "status",
+    "Show evidence": "evidence",
 }
 _SCORE_FROM = frozenset({"captured", "scored"})
 _STAMP = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -458,6 +475,22 @@ def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
     elif name.startswith("repo_"):
         repo_name = name[len("repo_") :]
         _choose_repo(conn, row, idea, repo_name)
+    elif name in ("status", "refresh"):
+        _send_status(conn, row, idea)
+    elif name == "stop":
+        _ask_stop(conn, row, idea)
+    elif name == "stop_yes":
+        _stop(conn, row, idea)
+    elif name == "resume":
+        _resume_from_stopped(conn, row, idea)
+    elif name == "evidence":
+        _show_evidence(conn, row, idea)
+    elif name.startswith("confirm_resolve_"):
+        option_id = name[len("confirm_resolve_") :]
+        _handle_resolve(conn, row, idea, option_id, confirmed=True)
+    elif name.startswith("resolve_"):
+        option_id = name[len("resolve_") :]
+        _handle_resolve(conn, row, idea, option_id, confirmed=False)
     else:
         _say(conn, row, "Not available yet.", idea_id=idea.id)
 
@@ -487,6 +520,10 @@ def _command(conn, row, routed: intent.Intent, *, http=None) -> None:
         _excel(conn, row, None, http=http)
     elif name == "drop":
         _command_drop(conn, row, routed)
+    elif name == "status":
+        _command_status(conn, row, routed)
+    elif name == "stop":
+        _command_stop(conn, row, routed)
     elif name == "new":
         _say(conn, row, "Send the idea as a message.")
     else:
@@ -579,6 +616,22 @@ def _free(conn, row, routed: intent.Intent, run_fn) -> None:
         context=_card_context(conn, chat_id),
         run_fn=run_fn,
     )
+    if proposal.kind == "status" and proposal.error is None:
+        from whyline.ideas import watch
+
+        bound = idea
+        if bound is None and proposal.card and proposal.card.idea_id is not None:
+            bound = store.get(conn, proposal.card.idea_id)
+        if bound is None and isinstance(proposal.fields, dict) and proposal.fields.get("idea_id"):
+            try:
+                bound = store.get(conn, int(proposal.fields["idea_id"]))
+            except (ValueError, TypeError):
+                pass
+        target = bound or watch.find_idea_for_status(conn, chat_id=chat_id)
+        if target is not None:
+            _send_status(conn, row, target)
+            return
+
     if proposal.card is not None:
         bound = idea
         if bound is None and proposal.card.idea_id is not None:
@@ -994,6 +1047,169 @@ def _discard_plan(conn, row, idea: store.Idea) -> None:
     _say(conn, row, text, idea_id=fresh.id)
     _retarget_buttons(conn, fresh, "plan_discarded")
     _clear_card(conn, _field(row, "chat_id"))
+
+
+def _send_status(
+    conn: store.sqlite3.Connection,
+    row,
+    idea: store.Idea,
+    preamble: str | None = None,
+) -> None:
+    from whyline.ideas import watch
+
+    status_text, buttons = watch.build_status(conn, idea)
+    keyboard = _keyboard(buttons, idea.id, idea.revision)
+    full_text = f"{preamble}\n\n{status_text}" if preamble else status_text
+    chat_id = _field(row, "chat_id")
+    outbox_id = _say(conn, row, full_text, keyboard, idea_id=idea.id)
+    if chat_id is not None and outbox_id is not None:
+        _remember_card(conn, int(chat_id), "status", idea.id, outbox_id=outbox_id)
+
+
+def _command_status(conn: store.sqlite3.Connection, row, routed: intent.Intent) -> None:
+    from whyline.ideas import watch
+
+    chat_id = _field(row, "chat_id")
+    idea_id = int(routed.args[0]) if routed.args else None
+    idea = watch.find_idea_for_status(
+        conn, chat_id=int(chat_id) if chat_id is not None else None, idea_id=idea_id
+    )
+    if idea is None:
+        _say(conn, row, "No idea in progress.")
+        return
+    _send_status(conn, row, idea)
+
+
+def _command_stop(conn: store.sqlite3.Connection, row, routed: intent.Intent) -> None:
+    from whyline.ideas import watch
+
+    chat_id = _field(row, "chat_id")
+    idea_id = int(routed.args[0]) if routed.args else None
+    idea = watch.find_idea_for_status(
+        conn, chat_id=int(chat_id) if chat_id is not None else None, idea_id=idea_id
+    )
+    if idea is None:
+        _say(conn, row, "No idea in progress.")
+        return
+    _ask_stop(conn, row, idea)
+
+
+def _ask_stop(conn: store.sqlite3.Connection, row, idea: store.Idea) -> None:
+    chat_id = _field(row, "chat_id")
+    keyboard = _keyboard(
+        (("Stop now", "stop_yes"), ("Cancel", "cancel")),
+        idea.id,
+        idea.revision,
+    )
+    title = idea.title.strip() or f"idea {idea.id}"
+    outbox_id = _say(conn, row, f"Stop {title}?", keyboard, idea_id=idea.id)
+    if chat_id is not None and outbox_id is not None:
+        _remember_card(conn, int(chat_id), "stop_confirm", idea.id, outbox_id=outbox_id)
+
+
+def _stop(conn: store.sqlite3.Connection, row, idea: store.Idea) -> None:
+    from whyline.ideas import run as ideas_run, watch
+
+    repo_name, root = ideas_run._get_repo_root(conn, idea)
+    if root is not None and root.exists():
+        watch.stop_relay(root)
+    fresh = idea
+    if idea.status != "stopped":
+        try:
+            fresh = store.transition(
+                conn,
+                idea.id,
+                "stopped",
+                expected_revision=idea.revision,
+                actor="stop",
+                note="stopped",
+            )
+        except (store.IllegalMove, store.StaleRevision):
+            fresh = store.get(conn, idea.id) or idea
+    keyboard = _keyboard((("Resume", "resume"),), fresh.id, fresh.revision)
+    _say(conn, row, "Stopped.", keyboard, idea_id=fresh.id)
+
+
+def _resume_from_stopped(conn: store.sqlite3.Connection, row, idea: store.Idea) -> None:
+    from whyline.ideas import run as ideas_run, watch
+
+    repo_name, root = ideas_run._get_repo_root(conn, idea)
+    if root is None or not root.exists():
+        _say(conn, row, "Repository not found.", idea_id=idea.id)
+        return
+    result = watch.resume_relay(root, idea.id, conn)
+    fresh = idea
+    if idea.status == "stopped":
+        try:
+            fresh = store.transition(
+                conn,
+                idea.id,
+                "running",
+                expected_revision=idea.revision,
+                actor="recovery",
+                note="resumed",
+            )
+        except (store.IllegalMove, store.StaleRevision):
+            fresh = store.get(conn, idea.id) or idea
+    _send_status(conn, row, fresh, preamble=result)
+
+
+def _handle_resolve(
+    conn: store.sqlite3.Connection,
+    row,
+    idea: store.Idea,
+    option_id: str,
+    *,
+    confirmed: bool = False,
+) -> None:
+    from whyline.ideas import watch
+
+    reply_text, fresh, needs_confirm, confirm_label = watch.handle_resolve(
+        conn, idea, option_id, confirmed=confirmed
+    )
+    if needs_confirm:
+        keyboard = _keyboard(
+            (("Confirm", f"confirm_resolve_{option_id}"), ("Cancel", "cancel")),
+            fresh.id,
+            fresh.revision,
+        )
+        _say(conn, row, reply_text, keyboard, idea_id=fresh.id)
+        return
+
+    keyboard = None
+    if fresh.status == "running":
+        keyboard = _keyboard(
+            buttons_for("running"), fresh.id, fresh.revision
+        )
+    elif fresh.status == "stopped":
+        keyboard = _keyboard((("Resume", "resume"),), fresh.id, fresh.revision)
+
+    _say(conn, row, reply_text, keyboard, idea_id=fresh.id)
+
+
+def _show_evidence(conn: store.sqlite3.Connection, row, idea: store.Idea) -> None:
+    from whyline.console import recovery
+    from whyline.ideas import run as ideas_run
+
+    repo_name, root = ideas_run._get_repo_root(conn, idea)
+    if root is None or not root.exists():
+        _say(conn, row, "Repository not found.", idea_id=idea.id)
+        return
+    saved = None
+    try:
+        from whyline_relay import state as relay_state
+
+        saved = relay_state.load(root)
+    except Exception:
+        pass
+    paused_reason = saved.paused_reason if saved else ""
+    problems = recovery.diagnose(root, [], paused_reason)
+    if not problems:
+        _say(conn, row, "No evidence available.", idea_id=idea.id)
+        return
+    problem = problems[0]
+    lines = [problem.summary, *problem.evidence]
+    _say(conn, row, "\n".join(lines), idea_id=idea.id)
 
 
 def _edit(conn, row, idea: store.Idea) -> None:

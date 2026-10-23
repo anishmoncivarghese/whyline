@@ -359,11 +359,17 @@ def run(
             fresh = store.get(conn, fresh.id) or fresh
 
     if chat_id is not None:
+        keyboard = bot._keyboard(
+            bot.buttons_for("running"),
+            fresh.id,
+            fresh.revision,
+        )
         bot._enqueue(
             conn,
             chat_id,
             "message",
             "Started. Ask /status any time.",
+            buttons=keyboard,
             idea_id=fresh.id,
         )
 
