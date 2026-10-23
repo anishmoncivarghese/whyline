@@ -349,6 +349,8 @@ def save_attempts(root: Path | str, attempts: list[dict[str, Any]]) -> None:
 
 write_attempts = save_attempts
 
+_LAST_APPLIED_RULE_FIX: dict[str, Any] | None = None
+
 
 def record_attempt(
     root: Path | str,
@@ -378,10 +380,35 @@ def record_attempt(
             **kwargs,
         }
     attempts = load_attempts(root)
-    # If this is a generic resolve-auto record appended right after a cap recovery,
-    # carry the cap option so any consumer knows it belongs to the cap resolution.
-    if isinstance(entry, dict) and entry.get("kind") == "resolve-auto" and not entry.get("option"):
-        if attempts and isinstance(attempts[-1], dict):
+    # If this is a generic resolve-auto record appended right after a cap, proposal, or rule fix,
+    # carry the option and details so any consumer knows it belongs to the resolution.
+    if isinstance(entry, dict) and entry.get("kind") == "resolve-auto":
+        global _LAST_APPLIED_RULE_FIX
+        task_matches = (
+            not _LAST_APPLIED_RULE_FIX
+            or not _LAST_APPLIED_RULE_FIX.get("task")
+            or not entry.get("task")
+            or str(_LAST_APPLIED_RULE_FIX.get("task")) == str(entry.get("task"))
+        )
+        round_matches = (
+            not _LAST_APPLIED_RULE_FIX
+            or not _LAST_APPLIED_RULE_FIX.get("round")
+            or not entry.get("round")
+            or _LAST_APPLIED_RULE_FIX.get("round") == entry.get("round")
+            or str(_LAST_APPLIED_RULE_FIX.get("round")) == str(entry.get("round"))
+        )
+        if (
+            _LAST_APPLIED_RULE_FIX
+            and _LAST_APPLIED_RULE_FIX.get("root") == str(Path(root).resolve())
+            and task_matches
+            and round_matches
+        ):
+            if not entry.get("option") and _LAST_APPLIED_RULE_FIX.get("option"):
+                entry["option"] = _LAST_APPLIED_RULE_FIX["option"]
+            if not entry.get("pause_reason") and _LAST_APPLIED_RULE_FIX.get("pause_reason"):
+                entry["pause_reason"] = _LAST_APPLIED_RULE_FIX["pause_reason"]
+            _LAST_APPLIED_RULE_FIX = None
+        elif not entry.get("option") and attempts and isinstance(attempts[-1], dict):
             prev = attempts[-1]
             if (
                 str(prev.get("task")) == str(entry.get("task"))
@@ -389,18 +416,113 @@ def record_attempt(
                     prev.get("round") == entry.get("round")
                     or str(prev.get("round")) == str(entry.get("round"))
                 )
-                and prev.get("kind") in ("visit-cap", "round-cap")
+                and prev.get("kind") in ("visit-cap", "round-cap", "proposal")
             ):
                 if prev.get("option"):
                     entry["option"] = prev.get("option")
                 if prev.get("kind"):
-                    entry["cap_kind"] = prev.get("kind")
+                    if prev.get("kind") in ("visit-cap", "round-cap"):
+                        entry["cap_kind"] = prev.get("kind")
+                    entry["proposal_kind"] = prev.get("kind")
+                if prev.get("agent"):
+                    entry["agent"] = prev.get("agent")
+                if prev.get("diagnosis"):
+                    entry["diagnosis"] = prev.get("diagnosis")
+                if prev.get("steps"):
+                    entry["steps"] = prev.get("steps")
+                if prev.get("pause_reason"):
+                    entry["pause_reason"] = prev.get("pause_reason")
     attempts.append(entry)
     save_attempts(root, attempts)
     return entry
 
 
 record = record_attempt
+
+
+def _find_applied_proposal_for_reason(
+    root: Path | str,
+    task: str = "",
+    reason: str = "",
+) -> dict[str, Any] | None:
+    """Find a previously applied proposal in recovery.json for the same task and pause reason."""
+    if not reason:
+        return None
+    clean_reason = reason.strip().lower()
+    attempts = load_attempts(root)
+    for entry in attempts:
+        if not isinstance(entry, dict):
+            continue
+        if task and entry.get("task") and str(entry.get("task")) != str(task):
+            continue
+        kind = str(entry.get("kind") or "")
+        opt = str(entry.get("option") or "")
+        has_proposal = (
+            kind == "proposal"
+            or entry.get("proposal_kind") == "proposal"
+            or opt == "apply-all"
+            or bool(entry.get("steps"))
+        )
+        if not has_proposal:
+            continue
+        entry_reason = str(entry.get("pause_reason") or "").strip().lower()
+        if entry_reason and (
+            entry_reason == clean_reason
+            or clean_reason in entry_reason
+            or entry_reason in clean_reason
+        ):
+            return entry
+        if not entry_reason:
+            verdict = str(entry.get("verdict") or "").strip().lower()
+            if clean_reason in verdict or verdict in clean_reason:
+                return entry
+    return None
+
+
+def _find_applied_rule_fix_for_pause(
+    root: Path | str,
+    task: str = "",
+    round: int | str = 0,
+    reason: str = "",
+) -> dict[str, Any] | None:
+    """Find an ordinary rule-based fix in recovery.json for the same task, round and pause reason."""
+    if not reason:
+        return None
+    clean_reason = _clean_pause_reason(reason).strip().lower()
+    attempts = load_attempts(root)
+    for entry in attempts:
+        if not isinstance(entry, dict):
+            continue
+        if task and entry.get("task") and str(entry.get("task")) != str(task):
+            continue
+        if round and entry.get("round") and str(entry.get("round")) != str(round):
+            continue
+        kind = str(entry.get("kind") or "")
+        opt = str(entry.get("option") or "")
+        if kind in ("visit-cap", "round-cap", "proposal"):
+            continue
+        if entry.get("cap_kind") or entry.get("proposal_kind"):
+            continue
+        if entry.get("steps"):
+            continue
+        if not opt or opt in ("retry-stage", "more-rounds", "apply-all"):
+            continue
+        entry_reason = _clean_pause_reason(str(entry.get("pause_reason") or "")).strip().lower()
+        if entry_reason and (
+            entry_reason == clean_reason
+            or clean_reason in entry_reason
+            or entry_reason in clean_reason
+        ):
+            return entry
+        if not entry_reason:
+            try:
+                probs = diagnose(root, pause_reason=reason)
+                for prob in probs:
+                    if any(o.id == opt for o in prob.options):
+                        return entry
+            except Exception:
+                pass
+    return None
 
 
 def allowed(root: Path | str, task: str, round: int) -> bool:
@@ -418,12 +540,17 @@ def allowed(root: Path | str, task: str, round: int) -> bool:
             pause_reason = str(st_dict.get("paused_reason") or "")
         if pause_reason and adapters.failure_kind(pause_reason) in ("visit-cap", "round-cap"):
             return True
+        if pause_reason and _find_applied_proposal_for_reason(root, task, pause_reason) is not None:
+            return True
+        if pause_reason and _find_applied_rule_fix_for_pause(root, task, round, pause_reason) is not None:
+            return True
     except Exception:
         pass
 
     attempts = load_attempts(root)
     non_cap_attempts = 0
     prev_was_direct_cap = False
+    prev_was_direct_prop = False
 
     for entry in attempts:
         if not isinstance(entry, dict):
@@ -457,13 +584,35 @@ def allowed(root: Path | str, task: str, round: int) -> bool:
                 or prev_was_direct_cap
             )
         )
+        is_direct_prop = (
+            kind == "proposal"
+            or opt == "apply-all"
+        )
+        is_paired_prop = (
+            kind == "resolve-auto"
+            and (
+                entry.get("proposal_kind") == "proposal"
+                or opt == "apply-all"
+                or prev_was_direct_prop
+            )
+        )
 
         if is_direct_cap:
             prev_was_direct_cap = True
+            prev_was_direct_prop = False
         elif is_paired_cap:
             prev_was_direct_cap = False
+            prev_was_direct_prop = False
+        elif is_direct_prop:
+            prev_was_direct_prop = True
+            prev_was_direct_cap = False
+        elif is_paired_prop:
+            prev_was_direct_prop = False
+            prev_was_direct_cap = False
+            non_cap_attempts += 1
         else:
             prev_was_direct_cap = False
+            prev_was_direct_prop = False
             non_cap_attempts += 1
 
     return non_cap_attempts == 0
@@ -482,6 +631,11 @@ def find_task_cap_recovery(root: Path | str, task: str) -> dict[str, Any] | None
         kind = str(entry.get("kind") or "")
         opt = str(entry.get("option") or entry.get("agent") or "")
         verdict = str(entry.get("verdict") or "")
+        steps = entry.get("steps") or []
+        has_cap_step = any(
+            isinstance(s, dict) and s.get("action") in ("retry-stage", "raise-rounds", "more-rounds")
+            for s in steps
+        )
         if (
             kind in ("visit-cap", "round-cap")
             or opt in ("retry-stage", "more-rounds")
@@ -489,6 +643,8 @@ def find_task_cap_recovery(root: Path | str, task: str) -> dict[str, Any] | None
             or "more rounds" in verdict
             or "retry-stage" in str(entry)
             or "more-rounds" in str(entry)
+            or "raise-rounds" in str(entry)
+            or has_cap_step
         ):
             return entry
     return None
@@ -1259,6 +1415,10 @@ class Problem:
     first_recovery: str = ""
     diagnosis: str = ""
     steps: list[dict[str, Any]] = field(default_factory=list)
+    first_proposal: str = ""
+    pause_reason: str = ""
+    agent: str = ""
+    runner: Any = None
 
 
 @dataclass(frozen=True)
@@ -1286,74 +1446,438 @@ _LOGGED_OUT_PHRASES = (
 
 _SIGN_IN_DETAIL = "Open {agent} in a terminal and sign in, then press Check again."
 
+_ASKED_PAUSES: set[tuple[str, str, int, str]] = set()
+_AUTO_RUNNER: Any = None
+
+
+def reset_asked_pauses() -> None:
+    _ASKED_PAUSES.clear()
+
+
+def _is_model_quota_blocked(root_path: Path, agent: str, model: str) -> bool:
+    if not model:
+        return False
+    try:
+        out_models = find_out_until_models(root_path)
+        if agent and agent in out_models:
+            info = str(out_models[agent])
+            if model in info:
+                return True
+        for val in out_models.values():
+            val_str = str(val)
+            if f"· {model} out until" in val_str or f" {model} out until" in val_str or f" {model} " in val_str:
+                return True
+    except Exception:
+        pass
+
+    try:
+        failing_m, _ = read_failing_turn_quota(root_path, agent)
+        if failing_m and (failing_m == model or model in failing_m or failing_m in model):
+            return True
+    except Exception:
+        pass
+
+    try:
+        from whyline_relay import failover as relay_failover
+
+        overrides = relay_failover.read_overrides(root_path)
+        for ov in overrides.values():
+            if getattr(ov, "reason", None) == "rate-limit":
+                status, _ = _override_reset_status(ov)
+                if status != "past":
+                    ov_ag = getattr(ov, "backup_for", None) or getattr(ov, "agent", None)
+                    if not agent or ov_ag == agent:
+                        m, _ = read_failing_turn_quota(root_path, ov_ag, override=ov)
+                        if m and (m == model or model in m or m in model):
+                            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _is_step_auto_safe(root_path: Path, step: dict[str, Any], task_id: str) -> tuple[bool, str]:
+    action = step.get("action", "")
+
+    # Unsafe steps that always stop:
+    if action in ("stash", "reset-keep", "move-aside", "stop", "human"):
+        return False, f"step '{action}' requires user confirmation"
+
+    # 1. set-model to a model with no recorded quota block
+    if action == "set-model":
+        agent = step.get("agent") or _configured_implementer(root_path)
+        model = str(step.get("model") or "").strip()
+        if not model:
+            return False, "set-model has no model specified"
+        if _is_model_quota_blocked(root_path, agent, model):
+            return False, f"model '{model}' for {agent} has a recorded quota block"
+        return True, ""
+
+    # 2. set-roles and clear-override naming only usable agents
+    if action == "set-roles":
+        from whyline import account
+        from whyline.console import relay_ops
+
+        try:
+            status_map = account.agent_status(root_path)
+            usable = set(relay_ops.usable_agents(root_path, status_map))
+        except Exception:
+            usable = set()
+        for role in ("implementer", "tester", "reviewer"):
+            ag = step.get(role)
+            if ag and ag not in usable:
+                return False, f"agent '{ag}' for role '{role}' is not usable"
+        raw_backup = step.get("backup")
+        if raw_backup:
+            chain = (
+                [b.strip() for b in raw_backup.split(",") if b.strip()]
+                if isinstance(raw_backup, str)
+                else list(raw_backup)
+            )
+            for b in chain:
+                if b and b not in usable:
+                    return False, f"backup agent '{b}' is not usable"
+        return True, ""
+
+    if action == "clear-override":
+        from whyline import account
+        from whyline.console import relay_ops
+        from whyline_relay import failover as relay_failover
+
+        try:
+            status_map = account.agent_status(root_path)
+            usable = set(relay_ops.usable_agents(root_path, status_map))
+        except Exception:
+            usable = set()
+        role = step.get("role") or "reviewer"
+        ag = step.get("agent") or step.get("target")
+        if ag and ag not in usable:
+            return False, f"clear-override agent '{ag}' is not usable"
+        try:
+            croles = relay_ops.current_roles(root_path)
+            configured_ag = croles.get(role)
+            if configured_ag and configured_ag not in usable:
+                return False, f"configured agent '{configured_ag}' for '{role}' is not usable"
+            overrides = relay_failover.read_overrides(root_path)
+            if role in overrides:
+                ov = overrides[role]
+                restored_ag = getattr(ov, "backup_for", None) or configured_ag
+                if restored_ag and restored_ag not in usable:
+                    return False, f"restored agent '{restored_ag}' for '{role}' is not usable"
+        except Exception:
+            pass
+        return True, ""
+
+    # 3. retry-stage or raise-rounds, once per task (shared with RSV-4's limit)
+    if action in ("retry-stage", "raise-rounds", "more-rounds"):
+        if task_id and find_task_cap_recovery(root_path, task_id) is not None:
+            return False, f"cap recovery already attempted for task {task_id}"
+        return True, ""
+
+    # 4. resume {allow_dirty} when the dirty files are the task's own
+    if action == "resume":
+        try:
+            from whyline_relay import gitcheck
+
+            dirty = [
+                p
+                for p in gitcheck.dirty_paths(root_path)
+                if not p.startswith(".whyline/relay/")
+            ]
+        except Exception:
+            dirty = []
+        if not dirty:
+            return True, ""
+        touched = _task_handoff_paths(root_path, task_id)
+        unrelated = [
+            p for p in dirty if not any(p == t or p.startswith(t + "/") for t in touched)
+        ]
+        if unrelated:
+            return False, f"unrelated dirty files block resume: {', '.join(unrelated)}"
+        return True, ""
+
+    # 5. start when the pause's own task is the next unchecked one
+    if action == "start":
+        from whyline_relay import plan as plan_mod, state as relay_state
+
+        st = relay_state.load(root_path)
+        plan_name = (st.plan if st and st.plan else "") or "plan.md"
+        plan_path = root_path / plan_name
+        if not plan_path.is_file():
+            return False, f"plan file '{plan_name}' not found"
+        try:
+            tasks = plan_mod.parse(plan_path.read_text(encoding="utf-8"))
+            next_t = plan_mod.next_unchecked(tasks)
+        except Exception as err:
+            return False, f"error parsing plan: {err}"
+        if next_t is None or next_t.task_id != task_id:
+            next_id = getattr(next_t, "task_id", None)
+            return False, f"task '{task_id}' is not the next unchecked task ({next_id})"
+        return True, ""
+
+    return False, f"step '{action}' is outside the auto safe set"
+
+
+def _clean_pause_reason(reason: str) -> str:
+    r = reason.strip()
+    for marker in ("\nhuman:", "\nProposed steps:", "\nNotes:", "\nfirst proposal was"):
+        if marker in r:
+            r = r.split(marker)[0].strip()
+    return r
+
+
+def _are_steps_auto_safe(
+    root_path: Path,
+    steps: list[dict[str, Any]],
+    task_id: str,
+    notes: list[str] | None = None,
+) -> tuple[bool, str]:
+    if notes:
+        return False, f"proposal contains invalid or dropped steps: {'; '.join(notes)}"
+    if not steps:
+        return False, "no proposed steps"
+    cap_count = 0
+    for s in steps:
+        if s.get("action") in ("retry-stage", "raise-rounds", "more-rounds"):
+            cap_count += 1
+            if cap_count > 1:
+                return False, "multiple cap options proposed"
+        safe, reason = _is_step_auto_safe(root_path, s, task_id)
+        if not safe:
+            return False, reason
+    return True, ""
+
+
+def _pause_identity(root_path: Path, task_id: str, problem: Problem, reason: str) -> tuple[str, str, int, str]:
+    st_dict = _read_state_dict(root_path)
+    round_num = int(st_dict.get("round") or 1)
+    clean_reason = _clean_pause_reason(reason)
+    return (str(root_path.resolve()), task_id, round_num, clean_reason)
+
 
 def auto_option(
     problem: Problem,
     root: Path | str | None = None,
     task_id: str | None = None,
+    *,
+    runner: Any = None,
 ) -> Option | None:
     """The recommended option when it has confirm=False, else None.
 
-    Returns None for unknown, logged-out (a login always needs a click), for
-    any option with confirm=True, and for any kind REC-1 routes to human
-    (auth, blocked, release, sandbox).
+    In Auto mode, when no rule-based fix is auto-safe or one was already applied
+    to this pause, Auto asks the agent once per pause.
     """
+    raw_root = root or getattr(problem, "root", None)
+    eff_root = Path(raw_root).resolve() if raw_root else None
+
+    eff_task = task_id or getattr(problem, "task_id", "")
+    if not eff_task:
+        m_task = re.search(r"\b([A-Z]+-\d+)\b", problem.summary)
+        if m_task:
+            eff_task = m_task.group(1)
+    if not eff_task and eff_root:
+        st_dict = _read_state_dict(eff_root)
+        eff_task = str(st_dict.get("task_id") or "")
+
+    current_reason = getattr(problem, "pause_reason", "")
+    if not current_reason and eff_root:
+        st_dict = _read_state_dict(eff_root)
+        current_reason = str(st_dict.get("paused_reason") or problem.summary or "")
+    elif not current_reason:
+        current_reason = problem.summary or ""
+
+    # Check if a proposal was already applied for this reason:
+    # A second pause with the same reason after an applied proposal stops for you, naming what was tried.
+    if eff_root:
+        prev_prop = _find_applied_proposal_for_reason(eff_root, eff_task, current_reason)
+        if prev_prop is not None:
+            diag = str(prev_prop.get("diagnosis") or "").strip()
+            steps = prev_prop.get("steps") or []
+            step_str = ", ".join(format_step_label(s) for s in steps) if steps else ""
+            first_proposal_name = diag if diag else step_str
+            if not first_proposal_name:
+                first_proposal_name = "previous proposal"
+            stop_desc = f"first proposal was {first_proposal_name}"
+            if diag and step_str and step_str not in diag:
+                stop_desc = f"first proposal was {diag} ({step_str})"
+            object.__setattr__(problem, "summary", f"{problem.summary} ({stop_desc})")
+            object.__setattr__(problem, "first_proposal", first_proposal_name)
+            return None
+
+    # Check for safe rule-based options:
+    safe_rule_opt = None
     if (
-        problem.id == "unknown"
-        or problem.id in _HUMAN_KINDS
-        or problem.id in ("other", "logged-out")
+        problem.id not in ("unknown", "other", "logged-out")
+        and problem.id not in _HUMAN_KINDS
     ):
-        return None
-    # Asking an agent is a click: its answer is offered, never applied.
-    if any(opt.recommended and opt.id == "ask-agent" for opt in problem.options):
+        summary_kind = ""
+        try:
+            from whyline.console import adapters
+
+            summary_kind = adapters.failure_kind(problem.summary)
+        except Exception:
+            pass
+
+        if summary_kind not in _HUMAN_KINDS:
+            is_cap = problem.id in _CAP_KINDS or summary_kind in _CAP_KINDS
+            if is_cap:
+                if not getattr(problem, "first_recovery", ""):
+                    check_root = eff_root or Path.cwd()
+                    if not (eff_task and find_task_cap_recovery(check_root, eff_task)):
+                        for opt in problem.options:
+                            if opt.recommended and not opt.confirm and "model" not in opt.id:
+                                if (problem.id == "visit-cap" or summary_kind == "visit-cap") and opt.id == "retry-stage":
+                                    safe_rule_opt = opt
+                                    break
+                                if (problem.id == "round-cap" or summary_kind == "round-cap") and opt.id == "more-rounds":
+                                    safe_rule_opt = opt
+                                    break
+            else:
+                for opt in problem.options:
+                    if opt.recommended and not opt.confirm:
+                        if (
+                            opt.id in ("use-another-model", "use-other-model")
+                            or (opt.id.startswith("use-another-") and opt.id.endswith("-model"))
+                            or (opt.id.startswith("use-other-") and opt.id.endswith("-model"))
+                            or "model" in opt.id
+                            or opt.id in _NOT_A_FIX
+                        ):
+                            continue
+                        if opt.id == "resume-keep":
+                            if eff_root:
+                                try:
+                                    from whyline_relay import gitcheck
+
+                                    dirty = [
+                                        p
+                                        for p in gitcheck.dirty_paths(eff_root)
+                                        if not p.startswith(".whyline/relay/")
+                                    ]
+                                except Exception:
+                                    dirty = []
+                                touched = _task_handoff_paths(eff_root, eff_task)
+                                unrelated = [
+                                    p for p in dirty if not any(p == t or p.startswith(t + "/") for t in touched)
+                                ]
+                                if unrelated:
+                                    continue
+                        safe_rule_opt = opt
+                        break
+
+    if safe_rule_opt is not None:
+        if eff_root and not _applied_this_pause(eff_root, safe_rule_opt.id):
+            return safe_rule_opt
+        elif not eff_root:
+            return safe_rule_opt
+
+    # If we reach here: no rule-based fix is auto-safe or one was already applied to this pause.
+    if not eff_root:
         return None
 
-    summary_kind = ""
-    try:
-        from whyline.console import adapters
+    from whyline.console import relay_ops
 
-        summary_kind = adapters.failure_kind(problem.summary)
-        if summary_kind in _HUMAN_KINDS:
+    mode = relay_ops.resolve_mode(eff_root)
+    if mode != "auto":
+        return None
+
+    # Auto asks the agent once per pause
+    pause_key = _pause_identity(eff_root, eff_task, problem, current_reason)
+    if pause_key in _ASKED_PAUSES:
+        return None
+    _ASKED_PAUSES.add(pause_key)
+
+    active_runner = runner or getattr(problem, "runner", None) or _AUTO_RUNNER
+    if active_runner is None:
+        try:
+            import sys
+
+            f = sys._getframe(1)
+            while f:
+                if f.f_code.co_name == "recover_pause" and "runner" in f.f_locals:
+                    active_runner = f.f_locals.get("runner")
+                    if active_runner is not None:
+                        break
+                f = f.f_back
+        except Exception:
+            pass
+
+    ask_res = ask_agent(
+        eff_root,
+        session=getattr(problem, "session", None),
+        runner=active_runner,
+        problem=problem,
+        pause_reason=current_reason,
+    )
+
+    if ask_res.status == "proposal" and ask_res.steps:
+        safe, unsafe_reason = _are_steps_auto_safe(
+            eff_root, ask_res.steps, eff_task, notes=getattr(ask_res, "notes", None)
+        )
+        if not safe:
+            step_lines = [
+                f"  {i}. {format_step_label(s)}"
+                for i, s in enumerate(ask_res.steps, 1)
+            ]
+            steps_text = "\n".join(step_lines) if step_lines else "  No valid steps."
+            diag = ask_res.diagnosis
+            disp = [diag] if diag else []
+            disp.append("Proposed steps:\n" + steps_text)
+            if getattr(ask_res, "notes", None):
+                disp.append("Notes:\n" + "\n".join(f"  - {n}" for n in ask_res.notes))
+            proposal_text = "\n".join(disp).strip()
+
+            object.__setattr__(problem, "summary", proposal_text)
+            object.__setattr__(problem, "diagnosis", diag)
+            object.__setattr__(problem, "steps", ask_res.steps)
+            object.__setattr__(problem, "agent", ask_res.agent)
             return None
-    except Exception:
-        pass
 
-    is_cap = problem.id in _CAP_KINDS or summary_kind in _CAP_KINDS
-    if is_cap:
-        if getattr(problem, "first_recovery", ""):
-            return None
-        eff_task = task_id or getattr(problem, "task_id", "")
-        if not eff_task:
-            m_task = re.search(r"\b([A-Z]+-\d+)\b", problem.summary)
-            if m_task:
-                eff_task = m_task.group(1)
-        eff_root = root or getattr(problem, "root", None)
-        if eff_task:
-            check_root = eff_root or Path.cwd()
-            if find_task_cap_recovery(check_root, eff_task):
-                return None
-        for opt in problem.options:
-            if opt.recommended:
-                if opt.confirm or "model" in opt.id:
-                    return None
-                if (problem.id == "visit-cap" or summary_kind == "visit-cap") and opt.id == "retry-stage":
-                    return opt
-                if (problem.id == "round-cap" or summary_kind == "round-cap") and opt.id == "more-rounds":
-                    return opt
-        return None
+        # Safe proposal! Apply all
+        opt_apply = Option(
+            "apply-all",
+            "Apply all",
+            "Apply all proposed steps",
+            recommended=True,
+            confirm=False,
+        )
+        object.__setattr__(problem, "diagnosis", ask_res.diagnosis)
+        object.__setattr__(problem, "steps", ask_res.steps)
+        object.__setattr__(problem, "agent", ask_res.agent)
+        object.__setattr__(problem, "pause_reason", current_reason)
+        object.__setattr__(
+            problem,
+            "options",
+            [opt_apply, *[o for o in problem.options if o.id != "apply-all"]],
+        )
+        return opt_apply
 
-    for opt in problem.options:
-        if opt.recommended:
-            if opt.confirm:
-                return None
-            if (
-                opt.id in ("use-another-model", "use-other-model")
-                or (opt.id.startswith("use-another-") and opt.id.endswith("-model"))
-                or (opt.id.startswith("use-other-") and opt.id.endswith("-model"))
-                or "model" in opt.id
-            ):
-                return None
-            return opt
+    if ask_res.status == "recommended" and ask_res.recommendation:
+        single = normalize_step(ask_res.recommendation)
+        if single.get("action"):
+            steps = [single]
+            safe, unsafe_reason = _are_steps_auto_safe(eff_root, steps, eff_task)
+            if safe:
+                opt_apply = Option(
+                    "apply-all",
+                    "Apply all",
+                    "Apply all proposed steps",
+                    recommended=True,
+                    confirm=False,
+                )
+                object.__setattr__(problem, "diagnosis", ask_res.explanation)
+                object.__setattr__(problem, "steps", steps)
+                object.__setattr__(problem, "agent", ask_res.agent)
+                object.__setattr__(problem, "pause_reason", current_reason)
+                object.__setattr__(
+                    problem,
+                    "options",
+                    [opt_apply, *[o for o in problem.options if o.id != "apply-all"]],
+                )
+                return opt_apply
+
+    # Agent stopped (human, unlisted, modified, exhausted)
+    if ask_res.explanation:
+        object.__setattr__(problem, "summary", ask_res.explanation)
     return None
 
 
@@ -2474,7 +2998,8 @@ def _task_handoff_paths(root_path: Path, task_id: str) -> set[str]:
     root_resolved = root_path.resolve()
     found: set[str] = set()
     for rec in records:
-        if rec.get("type") != events.HANDOFF or rec.get("task") != task_id:
+        rec_type = str(rec.get("type") or "").strip().lower()
+        if (rec.get("type") != events.HANDOFF and rec_type != "handoff") or rec.get("task") != task_id:
             continue
         for name in rec.get("files") or []:
             if not isinstance(name, str) or not name.strip():
@@ -2564,7 +3089,8 @@ def _handoff_rejections(root_path: Path, task_id: str) -> list[dict[str, str]]:
         pass
     found = []
     for rec in records:
-        if rec.get("type") != events.HANDOFF or rec.get("task") != task_id:
+        rec_type = str(rec.get("type") or "").strip().lower()
+        if (rec.get("type") != events.HANDOFF and rec_type != "handoff") or rec.get("task") != task_id:
             continue
         status = str(rec.get("status") or "").strip().lower()
         summary = str(rec.get("summary") or "").strip()
@@ -2841,6 +3367,11 @@ def _with_ask_agent(root_path: Path, problem: Problem) -> Problem:
     """Ask agent after the rule-based options, ahead of Show evidence and
     Cancel. It leads when no rule-based option is recommended, or when the
     recommended one already ran for this pause and the pause is back."""
+    eff_task = problem.task_id
+    if not eff_task:
+        st_dict = _read_state_dict(root_path)
+        eff_task = str(st_dict.get("task_id") or "")
+
     fixes = [o for o in problem.options if o.id not in _NOT_A_FIX]
     rest = [o for o in problem.options if o.id in ("show", "cancel")]
     picked = next((o for o in fixes if o.recommended), None)
@@ -2848,7 +3379,28 @@ def _with_ask_agent(root_path: Path, problem: Problem) -> Problem:
     if picked is not None and lead:
         fixes = [replace(o, recommended=False) for o in fixes]
     ask = Option("ask-agent", "Ask agent", _ASK_AGENT_DETAIL, recommended=lead, confirm=False)
-    return replace(problem, options=[*fixes, ask, *rest])
+    new_prob = replace(problem, root=root_path, task_id=eff_task, options=[*fixes, ask, *rest])
+
+    reason = getattr(problem, "pause_reason", "") or problem.summary
+    prev_prop = _find_applied_proposal_for_reason(root_path, eff_task, reason)
+    if prev_prop is not None:
+        diag = str(prev_prop.get("diagnosis") or "").strip()
+        steps = prev_prop.get("steps") or []
+        step_str = ", ".join(format_step_label(s) for s in steps) if steps else ""
+        first_proposal_name = diag if diag else step_str
+        if not first_proposal_name:
+            first_proposal_name = "previous proposal"
+        stop_desc = f"first proposal was {first_proposal_name}"
+        if diag and step_str and step_str not in diag:
+            stop_desc = f"first proposal was {diag} ({step_str})"
+        new_prob = replace(
+            new_prob,
+            summary=f"{new_prob.summary} ({stop_desc})",
+            first_proposal=first_proposal_name,
+            options=[replace(o, recommended=False) for o in new_prob.options],
+        )
+
+    return new_prob
 
 
 def diagnose(
@@ -3721,6 +4273,34 @@ def apply(
 
     matched_opt = next(opt for opt in problem.options if opt.id == option_id)
 
+    from whyline_relay import state as state_mod
+
+    st = state_mod.load(root_path)
+    st_dict = _read_state_dict(root_path)
+    task_id = (
+        getattr(problem, "task_id", "")
+        or (st.task_id if st and st.task_id else "")
+        or str(st_dict.get("task_id") or "")
+    )
+    round_num = (
+        (st.round if st and hasattr(st, "round") and st.round is not None else None)
+        or st_dict.get("round")
+        or 1
+    )
+    pause_reason = (
+        getattr(problem, "pause_reason", "")
+        or (st.paused_reason if st and st.paused_reason else "")
+        or str(st_dict.get("paused_reason") or problem.summary or "")
+    )
+    global _LAST_APPLIED_RULE_FIX
+    _LAST_APPLIED_RULE_FIX = {
+        "root": str(root_path),
+        "task": str(task_id),
+        "round": int(round_num),
+        "option": str(option_id),
+        "pause_reason": str(pause_reason or ""),
+    }
+
     if option_id == "commit-log":
         from whyline_relay import gitcheck, state as state_mod
 
@@ -3971,10 +4551,37 @@ def apply(
         return "Resolve cancelled; nothing else was changed."
 
     if option_id == "apply-all":
+        from whyline_relay import state as state_mod
+
         steps_to_apply = getattr(problem, "steps", None) or getattr(_LAST_PROPOSAL, "steps", [])
+        agent = getattr(problem, "agent", "") or getattr(_LAST_PROPOSAL, "agent", "")
+        diag = getattr(problem, "diagnosis", "") or getattr(_LAST_PROPOSAL, "diagnosis", "")
+        pause_reason = getattr(problem, "pause_reason", "")
+        st = state_mod.load(root_path)
+        st_dict = _read_state_dict(root_path)
+        if not pause_reason:
+            pause_reason = (st.paused_reason if st and st.paused_reason else "") or str(st_dict.get("paused_reason") or problem.summary or "")
+        task_id = (
+            getattr(problem, "task_id", "")
+            or (st.task_id if st and st.task_id else "")
+            or str(st_dict.get("task_id") or "")
+        )
+        round_num = (st.round if st and hasattr(st, "round") and st.round is not None else 1) or 1
         res = apply_steps(root_path, steps_to_apply, launch=launch)
         if not res.success:
             raise RuntimeError(res.message)
+        record_attempt(
+            root_path,
+            task=task_id,
+            round=round_num,
+            kind="proposal",
+            agent=agent,
+            diagnosis=diag,
+            steps=steps_to_apply,
+            verdict="resolved",
+            option="apply-all",
+            pause_reason=pause_reason,
+        )
         return res.message
 
     if option_id in ("apply-step-1", "apply-first"):
@@ -5193,7 +5800,21 @@ def ask_agent(
     else:
         selected_agent = None
 
-    active_runner = runner if runner is not None else run_fn
+    try:
+        backup_chain = list(relay_setup.read_backup(root_path))
+    except Exception:
+        backup_chain = []
+
+    if selected_agent is None and not backup_chain:
+        try:
+            from whyline.console import relay_ops
+
+            croles = relay_ops.current_roles(root_path)
+            selected_agent = croles.get("reviewer") or croles.get("implementer") or croles.get("tester")
+        except Exception:
+            pass
+
+    active_runner = runner if runner is not None else (run_fn if run_fn is not None else _AUTO_RUNNER)
 
     st = relay_state.load(root_path)
 
@@ -5208,11 +5829,6 @@ def ask_agent(
                 actual_pause_reason = "\n".join(problem.evidence)
     if not actual_pause_reason and st and st.paused_reason:
         actual_pause_reason = st.paused_reason
-
-    try:
-        backup_chain = list(relay_setup.read_backup(root_path))
-    except Exception:
-        backup_chain = []
 
     if round_log is None:
         round_log = ""

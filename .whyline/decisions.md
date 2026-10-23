@@ -21697,3 +21697,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4bf668b1eb0840e3979d98f89f250387 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T11:05:15.452Z"} -->
+
+## 2026-10-23 — Auto asks agent once per pause when no rule-based fix is auto-safe and applies only safe catalog steps
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASK-4
+
+**Because:** enables unattended recovery for safe catalog operations without risking unsafe edits, data loss from stash or resets, or duplicate asks per pause
+
+**Rejected:**
+
+- apply all agent proposals unconditionally — risks silent data loss and unauthorized git state changes
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: d7779b3ceaae43b284011ae9bdedee07 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T12:00:13.162Z"} -->
+
+## 2026-10-23 — ASK-4 Round 2 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-4
+
+**Because:** The focused recovery suite and full project suite both exit 0; acceptance coverage verifies safe proposals apply and record agent, diagnosis, and steps, unsafe stash proposals stop with steps shown, repeated reasons name the first proposal, and Auto asks at most once per pause
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 708fca19c08d457d869cf6c661d73f03 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T12:09:00.442Z"} -->
+
+## 2026-10-23 — ASK-4 Round 3 rejected: repeated rule-based Auto pauses never reach the agent
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASK-4
+
+**Because:** Auto records ordinary rule-based fixes only as resolve-auto entries without the applied option, so recovery.allowed refuses the recreated pause before _applied_this_pause can recognize the prior fix and ask the agent; focused and full tests pass but do not cover this required path
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 471ba947f6a94002af3618883e52f768 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T12:18:46.189Z"} -->
+
+## 2026-10-23 — Propagate applied rule option to Auto resolve records and permit matching recreated pauses to reach the agent
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASK-4
+
+**Because:** allows unattended Auto recovery when a rule fix fails or repeats to escalate to agent proposal instead of hitting once-per-round gating
+
+**Rejected:**
+
+- exempt all resolve-auto entries from once-per-round gating — would allow infinite loops on unresolvable failures with no proposed fixes
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a27ed80d48d64d75941f30a9abdca832 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T12:41:30.505Z"} -->
+
+## 2026-10-23 — ASK-4 Round 5 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-4
+
+**Because:** The focused recovery suite and full project suite both exit 0; coverage verifies the recreated rule-based pause reaches the agent once, records the applied option and proposal details, and a further matching pause stops naming the first proposal
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 7191661892244f108187cb2265754dbb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T12:51:30.593Z"} -->
+
+## 2026-10-23 — ASK-4 Round 6 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASK-4
+
+**Because:** The diff makes Auto ask the agent after no safe rule fix or a repeated rule fix, gates every proposed step against the required safe set, stops and displays unsafe proposals, records applied proposal provenance, and stops repeated matching pauses naming the first proposal; the focused recovery suite and full project suite both exit 0
+
+**Rejected:**
+
+- Request further changes — the recreated rule-based pause regression now reaches the agent once and is covered through the real recover_pause path
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4bf45a72b0d64b159bca465072d2891e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T13:01:54.051Z"} -->

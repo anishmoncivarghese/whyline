@@ -5851,4 +5851,758 @@ async def test_live_console_flow_opens_proposal_screen_and_applies_step_1_only(
         assert not isinstance(app.screen, ResolveProposalScreen)
 
 
+# ASK-4: Auto applies the agent's safe steps
+
+
+def test_auto_run_safe_proposal_applied_and_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    pause_reason = "Draft stage preflight failed: syntax error in main.py"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+    (repo / "plan.md").write_text(
+        "# Plan\n- [ ] ASK-4: Auto applies the agent's safe steps\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "plan.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "plan"], cwd=repo, check=True)
+
+    reply_json = {
+        "diagnosis": "Switch claude to sonnet, then resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    def fake_runner(cmd, prompt, **kwargs):
+        return reply
+
+    launched: list[list[str]] = []
+    lines: list[str] = []
+
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=fake_runner,
+        launcher=lambda args: launched.append(list(args)),
+        progress=lines.append,
+    )
+
+    assert res.verdict == "resolved"
+    assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
+    assert launched == [["resume", "--allow-dirty"]]
+    records = recovery.load_attempts(repo)
+    assert any(
+        r.get("agent") == "claude"
+        and "Switch claude to sonnet" in r.get("diagnosis", "")
+        and r.get("steps")
+        for r in records
+    )
+
+
+def test_auto_run_proposal_with_stash_stops_with_steps_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    pause_reason = "Uncommitted files outside task scope"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Stash uncommitted changes and resume.",
+        "steps": [
+            {"action": "stash"},
+            {"action": "resume", "allow_dirty": False},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+
+    assert res.verdict == "human"
+    assert "stash" in res.reason
+    assert "resume" in res.reason
+    assert launched == []
+
+
+def test_auto_run_same_reason_twice_stops_naming_first_proposal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    pause_reason = "Compilation failed during review stage"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Switch claude to sonnet, then resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+
+    # First pause: safe proposal applied
+    res1 = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res1.verdict == "resolved"
+    assert launched == [["resume", "--allow-dirty"]]
+
+    # Reset state to paused with the same reason again
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    launched.clear()
+    res2 = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res2.verdict == "human"
+    assert "first proposal" in res2.reason
+    assert "Switch claude to sonnet" in res2.reason or "sonnet" in res2.reason
+    assert "recovery already attempted" not in res2.reason
+    assert launched == []
+
+
+def test_auto_asks_at_most_once_per_pause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    pause_reason = "Tests failed in stage 'draft'"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Stash changes and resume.",
+        "steps": [
+            {"action": "stash"},
+            {"action": "resume", "allow_dirty": False},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    ask_count = 0
+
+    def counting_runner(cmd, prompt, **kwargs):
+        nonlocal ask_count
+        ask_count += 1
+        return reply
+
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=counting_runner,
+    )
+    assert res.verdict == "human"
+    assert ask_count == 1
+
+    # Second call on the same pause: Auto must not ask the agent again
+    res2 = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=counting_runner,
+    )
+    assert res2.verdict == "human"
+    assert ask_count == 1
+
+
+def test_auto_safe_steps_set_model_quota_blocked_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+    # Mark sonnet as out of quota
+    monkeypatch.setattr(
+        recovery,
+        "find_out_until_models",
+        lambda root, **kw: {"claude": "claude · sonnet out until 25 Oct 18:00"},
+    )
+
+    pause_reason = "Draft stage failure"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Switch claude to sonnet, then resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res.verdict == "human"
+    assert "sonnet" in res.reason
+    assert launched == []
+
+
+def test_auto_safe_steps_set_roles_unusable_agent_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    # Only codex is usable; claude is not
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "codex": {"available": True, "label": "plus", "hint": None},
+            "claude": {"available": False, "label": "offline", "hint": None},
+        },
+    )
+
+    pause_reason = "Draft failure"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Set roles with unusable claude.",
+        "steps": [
+            {"action": "set-roles", "implementer": "claude"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res.verdict == "human"
+    assert launched == []
+
+
+def test_auto_safe_steps_retry_stage_once_per_task_shared_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    pause_reason = "Review visit cap hit"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "review",
+        }),
+        encoding="utf-8",
+    )
+
+    # First cap recovery manually recorded or via RSV-4
+    recovery.record_attempt(
+        repo,
+        task="ASK-4",
+        round=1,
+        kind="visit-cap",
+        option="retry-stage",
+        verdict="Retry stage",
+    )
+
+    reply_json = {
+        "diagnosis": "Retry stage again.",
+        "steps": [
+            {"action": "retry-stage"},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res.verdict == "human"
+    assert launched == []
+
+
+def test_auto_safe_steps_resume_unrelated_dirty_files_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    # Create an unrelated dirty file in the repo
+    (repo / "unrelated.py").write_text("# unrelated\n", encoding="utf-8")
+
+    pause_reason = "Paused on dirty files"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Resume with changes.",
+        "steps": [
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res.verdict == "human"
+    assert launched == []
+
+
+def test_auto_safe_steps_start_next_unchecked_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    # Plan where TASK-0 is the first unchecked task, but paused task is ASK-4
+    (repo / "plan.md").write_text(
+        "# Plan\n- [ ] TASK-0: Prior task\n- [ ] ASK-4: Current task\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "plan.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "plan"], cwd=repo, check=True)
+    pause_reason = "Approval failed"
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps({
+            "plan": "plan.md",
+            "branch": "main",
+            "task_id": "ASK-4",
+            "round": 1,
+            "base_commit": "HEAD",
+            "paused_reason": pause_reason,
+            "log_path": "round.log",
+            "stage": "draft",
+        }),
+        encoding="utf-8",
+    )
+
+    reply_json = {
+        "diagnosis": "Start relay for current task.",
+        "steps": [
+            {"action": "start"},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    launched: list[list[str]] = []
+    res = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=lambda cmd, prompt, **kwargs: reply,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    # Start on ASK-4 when TASK-0 is unchecked is not safe!
+    assert res.verdict == "human"
+    assert launched == []
+
+
+def test_auto_run_recreated_rule_pause_asks_agent_instead_of_once_per_round_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from whyline import account
+    from whyline.console import auto_run, relay_ops
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_ops.save_resolve_mode(repo, "auto")
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    dirty_file = repo / "work.py"
+    dirty_file.write_text("# working\n", encoding="utf-8")
+    (repo / ".whyline" / "active-handoff.json").write_text(
+        json.dumps({
+            "type": "Handoff",
+            "task": "ASK-4",
+            "files": ["work.py"],
+        }),
+        encoding="utf-8",
+    )
+
+    pause_reason = "Draft stage preflight failed: uncommitted changes in work.py"
+    state_payload = {
+        "plan": "plan.md",
+        "branch": "main",
+        "task_id": "ASK-4",
+        "round": 1,
+        "base_commit": "HEAD",
+        "paused_reason": pause_reason,
+        "log_path": "round.log",
+        "stage": "draft",
+    }
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps(state_payload),
+        encoding="utf-8",
+    )
+    (repo / "plan.md").write_text(
+        "# Plan\n- [ ] ASK-4: Auto applies the agent's safe steps\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "plan.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "plan"], cwd=repo, check=True)
+
+    agent_called = 0
+    reply_json = {
+        "diagnosis": "Switch claude to sonnet, then resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    def mock_runner(cmd, prompt, **kwargs):
+        nonlocal agent_called
+        agent_called += 1
+        return reply
+
+    launched: list[list[str]] = []
+
+    # 1. First pause: Auto automatically applies the safe rule fix (resume-keep)
+    res1 = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=mock_runner,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res1.verdict == "resolved"
+    assert launched == [["resume", "--allow-dirty"]]
+    # Safe rule fix was applied without calling the agent
+    assert agent_called == 0
+
+    # Verify recovery.json recorded the actual option "resume-keep"
+    attempts = recovery.load_attempts(repo)
+    assert any(
+        a.get("task") == "ASK-4"
+        and a.get("round") == 1
+        and a.get("kind") == "resolve-auto"
+        and a.get("option") == "resume-keep"
+        for a in attempts
+    )
+
+    # 2. Recreate that pause with dirty files still present
+    dirty_file.write_text("# working more\n", encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps(state_payload),
+        encoding="utf-8",
+    )
+
+    launched.clear()
+
+    # 3. Second pause: Auto must call the agent once instead of once-per-round rejection
+    res2 = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=mock_runner,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert agent_called == 1
+    assert res2.verdict == "resolved"
+    assert "recovery already attempted" not in res2.reason
+    assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
+    assert launched == [["resume", "--allow-dirty"]]
+
+    # 4. Third pause with the same reason after applied proposal: stops naming the first proposal
+    dirty_file.write_text("# working even more\n", encoding="utf-8")
+    (repo / ".whyline" / "relay" / "state.json").write_text(
+        json.dumps(state_payload),
+        encoding="utf-8",
+    )
+    launched.clear()
+    res3 = auto_run.recover_pause(
+        repo,
+        task_id="ASK-4",
+        round=1,
+        pause_reason=pause_reason,
+        runner=mock_runner,
+        launcher=lambda args: launched.append(list(args)),
+    )
+    assert res3.verdict == "human"
+    assert "first proposal" in res3.reason
+    assert "Switch claude to sonnet" in res3.reason or "sonnet" in res3.reason
+    assert agent_called == 1
+    assert launched == []
+
 
