@@ -335,7 +335,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a safe proposal is applied and recorded; a proposal containing stash stops with the steps shown; the same reason twice stops naming the first proposal; Auto asks at most once per pause.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-16: Auto accepts an existing synthesis, and redrafts a plan from feedback
+- [x] IDEA-16: Auto accepts an existing synthesis, and redrafts a plan from feedback
   Edit `src/whyline/console/auto_run.py` and `tests/console/test_auto_run.py`. No inbox code here.
   `run(..., synthesis: Path | None = None)` and `resume(..., synthesis=None)`: when given and the file contains `## Final Synthesis`, the research phase copies it to `brainstorm.shared_path(root, request.topic)` and accepts it with no model call. Without it, behaviour is unchanged. The fingerprint does not change: `synthesis` is not part of the request.
   `redraft_plan(root, request, feedback, *, progress=None, launcher=None, runner=None) -> dict` takes the lock, drops the `plan` artifact from the checkpoint, and runs the plan phase again with `feedback` added to the planner's request as "Changes asked for after review: ...". It returns the checkpoint at phase `plan` or paused, and never launches.
