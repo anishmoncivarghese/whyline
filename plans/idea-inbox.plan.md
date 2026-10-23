@@ -373,7 +373,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
 
 ## Phase 4: Email intake (whyline 0.3.49)
 
-- [ ] IDEA-21: Ideas and settings by email
+- [x] IDEA-21: Ideas and settings by email
   Add `src/whyline/ideas/email_in.py` and `tests/ideas/test_email_in.py`, using `whyline/agents/mail.py` for reading and `mail_send.py` for replies.
   Allowed senders are a list in `kv` key `email_allow`, managed by `whyline idea email allow|deny|list <address>`. Add an **Email** section to TGS-2's Inbox screen (allowed senders with Add and Remove) that writes through the same functions. A message is accepted only from an allowed sender whose `Authentication-Results` shows DKIM or SPF pass; anything else is recorded as handled with no reply. The subject `idea` (or no subject) captures the body through `store.add(source="email", source_ref=<Message-ID>)`; `key: value` lines in the body (the same keys as `IDEA-9`) become the brainstorm settings. Every action that a Telegram button would confirm is confirmed here by replying `yes <code>` to the bot's email, where `<code>` is a six-character code bound to the idea's revision; a stale or wrong code changes nothing. Documents go back as attachments. Ideas captured by email appear in Telegram too when a chat is allowed.
   Tests: an allowed, authenticated sender creates one idea with its settings; a repeated Message-ID is ignored; a sender failing DKIM and SPF is ignored; `yes <code>` with the current code starts the brainstorm and a stale code does not; the reply carries Word and PDF attachments.
