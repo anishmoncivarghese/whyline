@@ -2006,3 +2006,157 @@ class RelaySetupScreen(ModalScreen):
             self.query_one("#rs-resolve", Button).disabled = failures == 0
         except NoMatches:
             return  # the popup's children were removed during teardown
+
+
+class ResolveProposalScreen(ModalScreen):
+    """The Resolve proposal screen showing the diagnosis and numbered steps."""
+
+    DEFAULT_CSS = """
+    ResolveProposalScreen {
+        align: center middle;
+    }
+    #rps-dialog {
+        width: 80;
+        height: auto;
+        max-height: 85%;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #rps-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #rps-diagnosis {
+        margin-bottom: 1;
+    }
+    #rps-notes {
+        color: $warning;
+        margin-bottom: 1;
+    }
+    #rps-notes.-empty, #rps-result.-empty {
+        display: none;
+    }
+    #rps-result {
+        margin-bottom: 1;
+    }
+    #rps-steps {
+        margin-bottom: 1;
+    }
+    #rps-buttons {
+        height: auto;
+        align: right middle;
+    }
+    #rps-buttons Button {
+        margin-left: 1;
+    }
+    """
+
+    def __init__(
+        self,
+        root: Path | str,
+        diagnosis: str = "",
+        steps: list[dict] | None = None,
+        notes: list[str] | None = None,
+        *,
+        launch: object = None,
+        proposal: object = None,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self._root = Path(root).resolve()
+        if proposal is not None:
+            self._diagnosis = str(getattr(proposal, "diagnosis", diagnosis) or diagnosis)
+            self._steps = list(getattr(proposal, "steps", steps or []) or [])
+            self._notes = list(getattr(proposal, "notes", notes or []) or [])
+        else:
+            self._diagnosis = diagnosis
+            self._steps = list(steps or [])
+            self._notes = list(notes or [])
+        self._launch = launch
+        self._applying = False
+        self._result: object = None
+
+    def compose(self) -> ComposeResult:
+        from whyline.console import recovery
+
+        with Vertical(id="rps-dialog"):
+            yield Label("Agent Diagnosis & Proposed Steps", id="rps-title")
+            yield Static(f"Diagnosis:\n{self._diagnosis}", id="rps-diagnosis")
+            notes_text = "\n".join(f"- {n}" for n in self._notes) if self._notes else ""
+            notes_classes = "" if notes_text else "-empty"
+            yield Static(f"Notes:\n{notes_text}", id="rps-notes", classes=notes_classes)
+            step_lines = [
+                f"{i}. {recovery.format_step_label(step)}"
+                for i, step in enumerate(self._steps, 1)
+            ]
+            steps_content = "\n".join(step_lines) if step_lines else "No steps proposed."
+            yield Static(f"Proposed Steps:\n{steps_content}", id="rps-steps")
+            yield Static("", id="rps-result", classes="-empty")
+            with Horizontal(id="rps-buttons"):
+                yield Button(
+                    "Apply all", id="apply-all", variant="primary", disabled=not self._steps
+                )
+                yield Button("Apply step 1 only", id="apply-step-1", disabled=not self._steps)
+                yield Button("Cancel", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        if button_id == "apply-all":
+            self._start_apply(all_steps=True)
+        elif button_id == "apply-step-1":
+            self._start_apply(all_steps=False)
+        elif button_id == "cancel":
+            self.dismiss(self._result if self._result is not None else "cancel")
+
+    def _start_apply(self, all_steps: bool) -> None:
+        """Run the steps off the UI thread: the console's launcher reaches the
+        app through call_from_thread, which refuses the app's own thread."""
+        from whyline.console import recovery
+
+        if self._applying or self._result is not None:
+            return
+        self._applying = True
+        for bid in ("apply-all", "apply-step-1", "cancel"):
+            self.query_one(f"#{bid}", Button).disabled = True
+        steps_to_run = self._steps if all_steps else self._steps[:1]
+
+        def in_thread() -> None:
+            try:
+                res = recovery.apply_steps(self._root, steps_to_run, launch=self._launch)
+            except Exception as exc:
+                res = recovery.StepApplyResult(success=False, message=f"Resolve error: {exc}")
+            self.app.call_from_thread(self._apply_finished, res)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _apply_finished(self, res: object) -> None:
+        self._applying = False
+        self._result = res
+        try:
+            result = self.query_one("#rps-result", Static)
+            result.update(str(getattr(res, "message", res) or ""))
+            result.remove_class("-empty")
+            close = self.query_one("#cancel", Button)
+            close.label = "Close"
+            close.disabled = False
+        except NoMatches:
+            return  # the popup's children were removed during teardown
+
+    def _apply(self, all_steps: bool = True) -> None:
+        from whyline.console import recovery
+
+        steps_to_run = self._steps if all_steps else self._steps[:1]
+        res = recovery.apply_steps(self._root, steps_to_run, launch=self._launch)
+        try:
+            self.dismiss(res)
+        except Exception:
+            pass
+
+    def apply_all(self) -> None:
+        self._apply(all_steps=True)
+
+    def apply_step_1(self) -> None:
+        self._apply(all_steps=False)

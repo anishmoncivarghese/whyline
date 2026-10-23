@@ -5159,3 +5159,696 @@ def test_build_ask_agent_prompt_trims_large_non_log_section_while_facts_and_task
     assert "## Plan Task" in prompt_combined
     assert unique_task_marker in prompt_combined
 
+
+def test_reply_proposing_set_model_clear_override_and_resume_applies_all_three_in_order_with_one_config_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_dir = repo / ".whyline" / "relay"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+    config_file = relay_dir / "config.toml"
+    config_file.write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n[backup]\nchain = ["claude", "codex"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True)
+
+    from whyline_relay import failover
+
+    failover.write_override(
+        repo,
+        "reviewer",
+        failover.ActiveOverride(
+            agent="codex",
+            backup_for="claude",
+            reason="rate-limit",
+            since="2026-10-22T00:00:00",
+        ),
+    )
+    assert "reviewer" in failover.read_overrides(repo)
+
+    # Dirty file in working tree that must stay uncommitted
+    (repo / "dirty_code.py").write_text("uncommitted task code\n", encoding="utf-8")
+
+    reply_json = {
+        "diagnosis": "Claude hit a rate limit; switch to Sonnet, clear override, and resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "clear-override", "role": "reviewer"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"Here is my analysis:\n```json\n{json.dumps(reply_json)}\n```\n"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+
+    launched: list[list[str]] = []
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    assert res.diagnosis == "Claude hit a rate limit; switch to Sonnet, clear override, and resume."
+    assert len(res.steps) == 3
+
+    commits_before = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    apply_res = res.apply_all(repo, launch=lambda args: launched.append(list(args)))
+    assert apply_res.success is True
+
+    from whyline.console import relay_ops
+
+    # 1. set-model applied
+    assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
+
+    # 2. clear-override applied
+    assert "reviewer" not in failover.read_overrides(repo)
+
+    # 3. resume applied with allow_dirty
+    assert launched == [["resume", "--allow-dirty"]]
+
+    # 4. Exactly one config commit was created
+    commits_after = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert int(commits_after) == int(commits_before) + 1
+
+    # 5. Commit touched only config.toml
+    diff_files = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD~1", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip().splitlines()
+    assert all("config.toml" in f for f in diff_files)
+
+    # 6. Dirty file in working tree was NOT committed
+    assert (repo / "dirty_code.py").read_text() == "uncommitted task code\n"
+    status_out = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "?? dirty_code.py" in status_out
+
+
+def test_unknown_agent_or_model_is_dropped_with_a_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    reply_json = {
+        "diagnosis": "Proposing unknown agent and model.",
+        "steps": [
+            {"action": "set-model", "agent": "mars_agent", "model": "sonnet"},
+            {"action": "set-model", "agent": "claude", "model": "bad-nonexistent-model"},
+            {"action": "resume"},
+        ],
+        "confidence": "low",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    # Both invalid set-model steps dropped, resume kept
+    assert len(res.steps) == 1
+    assert res.steps[0]["action"] == "resume"
+    assert len(res.notes) == 2
+    assert any("mars_agent" in n for n in res.notes)
+    assert any("bad-nonexistent-model" in n for n in res.notes)
+
+
+def test_step_outside_catalog_is_dropped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    reply_json = {
+        "diagnosis": "Proposing outside catalog action.",
+        "steps": [
+            {"action": "reboot-server", "force": True},
+            {"action": "clear-override", "role": "reviewer"},
+        ],
+        "confidence": "medium",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    assert len(res.steps) == 1
+    assert res.steps[0]["action"] == "clear-override"
+    assert res.steps[0]["role"] == "reviewer"
+    assert len(res.notes) == 1
+    assert "reboot-server" in res.notes[0]
+
+
+def test_failing_step_stops_the_rest(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    launched: list[list[str]] = []
+
+    steps = [
+        {"action": "set-model", "agent": "claude", "model": "sonnet"},
+        {"action": "invalid-or-failing-step"},
+        {"action": "resume"},
+    ]
+
+    res = recovery.apply_steps(repo, steps, launch=lambda args: launched.append(list(args)))
+
+    assert res.success is False
+    assert "Step 2" in res.message or "step 2" in res.message.lower()
+    # Step 3 must NOT have executed
+    assert launched == []
+
+
+def test_reply_with_no_json_uses_recommend(tmp_path: Path) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    reply = (
+        "I analyzed the problem.\n"
+        "EXPLANATION: Preflight failure requires stage retry.\n"
+        "RECOMMEND: retry-stage\n"
+    )
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    assert res.status == "recommended"
+    assert res.recommendation == "retry-stage"
+    assert res.explanation == "Preflight failure requires stage retry."
+    assert res.option is not None
+    assert res.option.id == "retry-stage"
+
+
+def test_resolve_proposal_screen_renders_and_buttons_apply(tmp_path: Path) -> None:
+    from whyline.console.relay_screens import ResolveProposalScreen
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    launched: list[list[str]] = []
+
+    steps = [
+        {"action": "set-model", "agent": "claude", "model": "sonnet"},
+        {"action": "resume", "allow_dirty": True},
+    ]
+    notes = ["Dropped unknown step 'foo'."]
+
+    screen = ResolveProposalScreen(
+        repo,
+        diagnosis="Switch model to sonnet.",
+        steps=steps,
+        notes=notes,
+        launch=lambda args: launched.append(list(args)),
+    )
+
+    # Test applying step 1 only:
+    screen.apply_step_1()
+    from whyline.console import relay_ops
+
+    assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
+    assert launched == []  # Step 2 resume was not run
+
+    # Test applying all:
+    screen.apply_all()
+    assert launched == [["resume", "--allow-dirty"]]
+
+
+def test_clear_override_advertises_and_defaults_reviewer_and_rejects_other_roles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from whyline import account
+    from whyline_relay import failover
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    # 1. Prompt advertises clear-override reviewer, not implementer or tester
+    prompt = recovery.build_ask_agent_prompt(repo)
+    assert "- clear-override reviewer" in prompt
+    assert "- clear-override tester" not in prompt
+    assert "- clear-override implementer" not in prompt
+
+    # 2. Normalization defaults to reviewer
+    assert recovery.normalize_step("clear-override") == {"action": "clear-override", "role": "reviewer"}
+    assert recovery.normalize_step({"action": "clear-override"})["role"] == "reviewer"
+
+    # 3. Propose defaults, explicit reviewer, and other roles (implementer, tester)
+    reply_json = {
+        "diagnosis": "Testing clear-override catalog boundaries.",
+        "steps": [
+            {"action": "clear-override"},
+            {"action": "clear-override", "role": "reviewer"},
+            {"action": "clear-override", "role": "implementer"},
+            {"action": "clear-override", "role": "tester"},
+            "clear-override implementer",
+            "clear-override",
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    # Only reviewer steps kept (3 of them: dict default, explicit reviewer, string default)
+    assert len(res.steps) == 3
+    for s in res.steps:
+        assert s["action"] == "clear-override"
+        assert s["role"] == "reviewer"
+
+    # Other roles rejected
+    assert len(res.notes) == 3
+    assert any("implementer" in n for n in res.notes)
+    assert any("tester" in n for n in res.notes)
+
+    # 4. Applying clear-override clears reviewer override
+    failover.write_override(
+        repo,
+        "reviewer",
+        failover.ActiveOverride(
+            agent="codex",
+            backup_for="claude",
+            reason="rate-limit",
+            since="2026-10-22T00:00:00",
+        ),
+    )
+    assert "reviewer" in failover.read_overrides(repo)
+    apply_res = res.apply_step_1(repo)
+    assert apply_res.success is True
+    assert "reviewer" not in failover.read_overrides(repo)
+
+
+def test_undeclared_set_backup_proposals_are_dropped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    # set-backup is not in the fixed catalog
+    assert "set-backup" not in recovery.CATALOG_ACTIONS
+
+    reply_json = {
+        "diagnosis": "Proposing undeclared set-backup.",
+        "steps": [
+            {"action": "set-backup", "backup": ["codex"]},
+            "set-backup codex",
+            {"action": "resume"},
+        ],
+        "confidence": "low",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    # Both set-backup proposals dropped, resume kept
+    assert len(res.steps) == 1
+    assert res.steps[0]["action"] == "resume"
+    assert len(res.notes) == 2
+    assert all("set-backup" in n for n in res.notes)
+
+
+def test_set_model_drops_empty_and_absent_models(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    reply_json = {
+        "diagnosis": "Proposing empty and absent models.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": ""},
+            {"action": "set-model", "agent": "claude", "model": "   "},
+            {"action": "set-model", "agent": "claude"},
+            {"action": "set-model", "agent": "claude", "model": "absent-model-xyz"},
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+        ],
+        "confidence": "medium",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    # Only valid AGS-4 model 'sonnet' kept
+    assert len(res.steps) == 1
+    assert res.steps[0]["action"] == "set-model"
+    assert res.steps[0]["model"] == "sonnet"
+    # Four invalid models dropped with notes
+    assert len(res.notes) == 4
+    assert any("absent-model-xyz" in n for n in res.notes)
+
+
+def test_legacy_rec_4c_options_apply_end_to_end(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    relay_dir = repo / ".whyline" / "relay"
+    relay_dir.mkdir(parents=True, exist_ok=True)
+    config_file = relay_dir / "config.toml"
+    config_file.write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n[backup]\nchain = ["claude", "codex"]\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True)
+
+    # 1. Direct probe: apply_steps with legacy 'wait' action succeeds
+    wait_res = recovery.apply_steps(repo, [{"action": "wait"}])
+    assert wait_res.success is True
+    assert len(wait_res.applied) == 1
+
+    # 2. End-to-end: ask_agent proposes legacy REC-4C options (wait, resume-keep)
+    reply_json = {
+        "diagnosis": "Check status then resume keeping changes.",
+        "steps": [
+            {"action": "wait"},
+            {"action": "resume-keep"},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    from whyline.console.session import ConsoleSession
+
+    session = ConsoleSession(root=repo, agent="claude")
+    res = recovery.ask_agent(session, runner=lambda cmd, prompt, **kwargs: reply)
+
+    assert len(res.steps) == 2
+    assert res.steps[0]["action"] == "wait"
+    assert res.steps[1]["action"] == "resume-keep"
+    assert res.notes == []
+
+    launched: list[list[str]] = []
+    apply_res = res.apply_all(repo, launch=lambda args: launched.append(list(args)))
+    assert apply_res.success is True
+    assert len(apply_res.applied) == 2
+    assert launched == [["resume", "--allow-dirty"]]
+
+    # 3. Direct probe: apply_steps with 'stash' stashes uncommitted changes
+    dirty_file = repo / "some_change.txt"
+    dirty_file.write_text("temporary changes", encoding="utf-8")
+    status_before = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "?? some_change.txt" in status_before
+
+    stash_res = recovery.apply_steps(repo, [{"action": "stash"}])
+    assert stash_res.success is True
+    assert len(stash_res.applied) == 1
+    status_after = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "?? some_change.txt" not in status_after
+
+    # 4. Direct probe: apply_steps with 'use-codex' switches role and resumes
+    launched.clear()
+    use_res = recovery.apply_steps(
+        repo,
+        [{"action": "use-codex"}],
+        launch=lambda args: launched.append(list(args)),
+    )
+    assert use_res.success is True
+    from whyline_relay import config as relay_config, roles as relay_roles
+
+    settings = relay_config.load(repo)
+    assert relay_roles.current_roles(settings).get("implementer") == "codex"
+    assert launched == [["resume"]]
+
+
+@pytest.mark.asyncio
+async def test_console_proposal_offers_review_screen_with_apply_step_1_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from textual.app import App
+    from textual.widgets import Button, Static
+
+    from whyline import account
+    from whyline.console import relay_ops
+    from whyline.console.relay_screens import ResolveProposalScreen
+    from whyline.console.session import ConsoleSession
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+    repo = _init_scratch_repo(tmp_path / "repo")
+    reply_json = {
+        "diagnosis": "Switch claude to sonnet, then resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+    res = recovery.ask_agent(
+        ConsoleSession(root=repo, agent="claude"),
+        runner=lambda cmd, prompt, **kwargs: reply,
+    )
+
+    # The console mounts only res.option, so it must open the proposal screen.
+    assert res.option is not None and res.option.id == "proposal"
+    assert res.option.recommended is True
+
+    app = App()
+    launched: list[list[str]] = []
+
+    def launch(args: list[str]) -> None:
+        # Like the console's launcher: refuses to run on the app's own thread.
+        app.call_from_thread(launched.append, list(args))
+
+    problem = recovery.Problem(id="step", summary="paused", evidence=[], options=[res.option])
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = recovery.apply(repo, problem, "proposal", launch=launch)
+        assert isinstance(screen, ResolveProposalScreen)
+        dismissed: list[object] = []
+        app.push_screen(screen, dismissed.append)
+        await pilot.pause()
+        labels = [str(b.label) for b in screen.query(Button)]
+        assert labels == ["Apply all", "Apply step 1 only", "Cancel"]
+
+        await pilot.click("#apply-step-1")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if screen._result is not None:
+                break
+        assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
+        assert launched == []  # step 2, resume, did not run
+        assert str(screen.query_one("#cancel", Button).label) == "Close"
+        assert not screen.query_one("#rps-result", Static).has_class("-empty")
+        await pilot.click("#cancel")
+        await pilot.pause()
+        assert len(dismissed) == 1 and getattr(dismissed[0], "success", False) is True
+
+        again = recovery.apply(repo, problem, "proposal", launch=launch)
+        app.push_screen(again)
+        await pilot.pause()
+        await pilot.click("#apply-all")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert launched == [["resume", "--allow-dirty"]]
+
+
+@pytest.mark.asyncio
+async def test_live_console_flow_opens_proposal_screen_and_applies_step_1_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from whyline import account
+    from whyline.console import relay_ops, tui
+    from whyline.console.relay_screens import ResolveProposalScreen
+
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root: {
+            "claude": {"available": True, "label": "pro", "hint": None},
+            "codex": {"available": True, "label": "plus", "hint": None},
+        },
+    )
+    repo = _init_scratch_repo(tmp_path / "repo")
+    reply_json = {
+        "diagnosis": "Switch claude to sonnet, then resume.",
+        "steps": [
+            {"action": "set-model", "agent": "claude", "model": "sonnet"},
+            {"action": "resume", "allow_dirty": True},
+        ],
+        "confidence": "high",
+    }
+    reply = f"```json\n{json.dumps(reply_json)}\n```"
+
+    def fake_runner(cmd, prompt, **kwargs):
+        return reply
+
+    launched: list[list[str]] = []
+    app = tui.WhylineConsoleApp(root=repo, runner=fake_runner)
+    monkeypatch.setattr(app, "_launch_relay", lambda args: launched.append(list(args)))
+
+    async with app.run_test(size=(120, 50)) as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL test preflight error"])
+        await pilot.pause()
+
+        btn_ask = app.query_one("#resolve-ask-agent", tui.Button)
+        assert btn_ask.display is True
+        await pilot.click("#resolve-ask-agent")
+
+        for _ in range(300):
+            await pilot.pause(0.05)
+            try:
+                btn_prop = app.query_one("#resolve-proposal", tui.Button)
+                if btn_prop.display and not btn_prop.disabled:
+                    break
+            except Exception:
+                pass
+
+        btn_prop = app.query_one("#resolve-proposal", tui.Button)
+        assert btn_prop.display is True
+
+        await pilot.click("#resolve-proposal")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ResolveProposalScreen):
+                break
+
+        assert isinstance(app.screen, ResolveProposalScreen)
+        screen = app.screen
+        labels = [str(b.label) for b in screen.query(tui.Button)]
+        assert labels == ["Apply all", "Apply step 1 only", "Cancel"]
+
+        await pilot.click("#apply-step-1")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if getattr(screen, "_result", None) is not None:
+                break
+
+        assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
+        assert launched == []
+        assert str(screen.query_one("#cancel", tui.Button).label) == "Close"
+        await pilot.click("#cancel")
+        await pilot.pause()
+        assert not isinstance(app.screen, ResolveProposalScreen)
+
+
+

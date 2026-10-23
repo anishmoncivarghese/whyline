@@ -21646,3 +21646,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ae04a112dfab435e95dffba1837a3aa0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-22T21:00:48.552Z"} -->
+
+## 2026-10-23 — Align clear-override behavior to reviewer throughout prompt, normalization, validation, execution, and acceptance test
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASK-3
+
+**Because:** Task ASK-3 requires clear-override reviewer and set-model + clear-override reviewer + resume sequence; previous implementation incorrectly defaulted to and accepted only tester
+
+**Rejected:**
+
+- permitting tester or arbitrary roles — violates fixed catalog boundaries and reviewer specification
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 85fa7b9e8877436f9cecd4b50c03add4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T10:46:34.293Z"} -->
+
+## 2026-10-23 — ASK-3 Round 5 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASK-3
+
+**Because:** The targeted 128-test recovery suite and the full project suite both exit 0, and focused acceptance coverage verifies reviewer-only clear-override behavior plus the required set-model, clear-override reviewer, resume order with one config commit
+
+**Rejected:**
+
+- Fail for the prior tester-role mismatch — the prompt, normalization, validation, execution path, and acceptance test now consistently use reviewer
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py
+
+<!-- whyline-event: ac530ae30c9b471f8ab0c1a66db223f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T10:55:26.458Z"} -->
+
+## 2026-10-23 — ASK-3 Round 6 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASK-3
+
+**Because:** The diff implements fenced JSON proposal parsing, validates the fixed step catalog before display, presents diagnosis and numbered Apply all/Apply step 1 only/Cancel choices, applies the required set-model then clear-override reviewer then resume flow with one config-only commit, stops after a failing step, and preserves RECOMMEND fallback; both required pytest commands exit 0
+
+**Rejected:**
+
+- Request further changes for the prior tester-role mismatch — Round 6 consistently advertises, validates, executes, and tests reviewer instead
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4bf668b1eb0840e3979d98f89f250387 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T11:05:15.452Z"} -->

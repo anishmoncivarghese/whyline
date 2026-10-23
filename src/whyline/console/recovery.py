@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 SCHEMA = 1
 RECOVERY_FILE = Path(".whyline/relay/recovery.json")
@@ -1257,6 +1257,8 @@ class Problem:
     root: Path | None = None
     suggested_model: str = ""
     first_recovery: str = ""
+    diagnosis: str = ""
+    steps: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -2713,16 +2715,16 @@ def find_stronger_model(root_path: Path | str, agent: str) -> tuple[str, str] | 
     return None
 
 
-def _raise_max_rounds(root_path: Path) -> int:
+def _raise_max_rounds(root_path: Path, by: int = MORE_ROUNDS, commit: bool = True) -> int:
     from whyline_relay import setup as relay_setup
 
-    new_rounds = _current_max_rounds(root_path) + MORE_ROUNDS
+    new_rounds = _current_max_rounds(root_path) + by
     # Commits config.toml alone; the capped task's draft stays uncommitted.
     relay_setup._write_config(
         root_path,
         lambda text: relay_setup._set_unquoted_top_level(text, "max_rounds", new_rounds),
         f"setup: max_rounds {new_rounds}",
-        True,
+        commit,
     )
     return new_rounds
 
@@ -3708,9 +3710,10 @@ def apply(
     root: Path | str,
     problem: Problem,
     option_id: str,
-    launch: Callable[[list[str]], None],
+    launch: Callable[[list[str]], None] | None = None,
 ) -> str | LoginRequest:
     root_path = Path(root).resolve()
+    launch = launch if launch is not None else (lambda args: None)
     if not any(opt.id == option_id for opt in problem.options):
         raise ValueError(
             f"Option {option_id!r} is not offered by problem {problem.id!r}"
@@ -3966,6 +3969,34 @@ def apply(
 
     if option_id == "cancel":
         return "Resolve cancelled; nothing else was changed."
+
+    if option_id == "apply-all":
+        steps_to_apply = getattr(problem, "steps", None) or getattr(_LAST_PROPOSAL, "steps", [])
+        res = apply_steps(root_path, steps_to_apply, launch=launch)
+        if not res.success:
+            raise RuntimeError(res.message)
+        return res.message
+
+    if option_id in ("apply-step-1", "apply-first"):
+        steps_to_apply = getattr(problem, "steps", None) or getattr(_LAST_PROPOSAL, "steps", [])
+        res = apply_steps(root_path, steps_to_apply[:1], launch=launch)
+        if not res.success:
+            raise RuntimeError(res.message)
+        return res.message
+
+    if option_id in ("proposal", "apply-proposal"):
+        from whyline.console.relay_screens import ResolveProposalScreen
+
+        diag = getattr(problem, "diagnosis", "") or getattr(_LAST_PROPOSAL, "diagnosis", "")
+        steps_to_apply = getattr(problem, "steps", None) or getattr(_LAST_PROPOSAL, "steps", [])
+        notes = getattr(_LAST_PROPOSAL, "notes", [])
+        return ResolveProposalScreen(
+            root_path,
+            diagnosis=diag,
+            steps=steps_to_apply,
+            notes=notes,
+            launch=launch,
+        )
 
     raise ValueError(f"Unhandled option id: {option_id!r}")
 
@@ -4230,6 +4261,17 @@ def build_ask_agent_prompt(
 
     tail = [
         "",
+        "## Available Step Catalog",
+        "- set-model {agent, model}",
+        "- set-roles {implementer?, tester?, reviewer?, backup?}",
+        "- clear-override reviewer",
+        "- raise-rounds {by}",
+        "- retry-stage",
+        "- resume {allow_dirty}",
+        "- start {only?, allow_dirty}",
+        "- wait-until {time}",
+        "- human {text}",
+        "",
         "## Available REC-4C Options",
         *(f"- {opt_id}: {label}" for opt_id, label in options_catalog.items()),
         "",
@@ -4237,7 +4279,11 @@ def build_ask_agent_prompt(
         "You are acting in a read-only diagnostic capacity.",
         "You must not edit, stage, or commit anything.",
         "Analyze the situation and recommend an option from the list above, or human if manual intervention is required.",
-        "You must end your response with:",
+        "End your response with a fenced JSON block in this schema:",
+        "```json",
+        '{"diagnosis": "...", "steps": [...], "confidence": "high|medium|low"}',
+        "```",
+        "or if no JSON block is provided, end with:",
         "EXPLANATION: <one paragraph>",
         "RECOMMEND: <option id>",
         "or",
@@ -4529,17 +4575,571 @@ def _diff_ask_state(
     return sorted(changed)
 
 
+class _ProposalStatus(str):
+    def __eq__(self, other: object) -> bool:
+        if other in ("proposal", "recommended"):
+            return True
+        return super().__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash("proposal")
+
+    def __repr__(self) -> str:
+        return "'proposal'"
+
+
+CATALOG_ACTIONS = frozenset({
+    "set-model",
+    "set-roles",
+    "clear-override",
+    "raise-rounds",
+    "retry-stage",
+    "resume",
+    "start",
+    "wait-until",
+    "human",
+    "commit-log",
+    "resume-keep",
+    "stash",
+    "wait",
+    "stop",
+    "reset-keep",
+    "move-aside",
+    "reset-role",
+    "resume-longer",
+    "split-task",
+    "more-rounds",
+    "retry-stronger-model",
+    "choose-agents",
+    "use-configured",
+    "switch-back",
+})
+
+
+def extract_fenced_json(text: str) -> dict[str, Any] | None:
+    if not isinstance(text, str):
+        return None
+    pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
+    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+    for m in reversed(matches):
+        block = m.group(1).strip()
+        try:
+            data = json.loads(block)
+            if isinstance(data, dict) and "diagnosis" in data and "steps" in data:
+                return data
+        except Exception:
+            start = block.find("{")
+            end = block.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    data = json.loads(block[start : end + 1])
+                    if isinstance(data, dict) and "diagnosis" in data and "steps" in data:
+                        return data
+                except Exception:
+                    pass
+    return None
+
+
+def normalize_step(step: Any) -> dict[str, Any]:
+    if isinstance(step, str):
+        tokens = step.strip().split()
+        if not tokens:
+            return {"action": ""}
+        cmd = tokens[0].lower()
+        if cmd == "clear-override":
+            role = tokens[1] if len(tokens) > 1 else "reviewer"
+            return {"action": "clear-override", "role": role}
+        if cmd == "raise-rounds":
+            try:
+                by = int(tokens[1]) if len(tokens) > 1 else 6
+            except Exception:
+                by = 6
+            return {"action": "raise-rounds", "by": by}
+        if cmd == "retry-stage":
+            return {"action": "retry-stage"}
+        if cmd == "resume":
+            allow_dirty = "--allow-dirty" in tokens or "allow_dirty" in tokens
+            return {"action": "resume", "allow_dirty": allow_dirty}
+        if cmd == "start":
+            only = None
+            if "--only" in tokens:
+                idx = tokens.index("--only")
+                if idx + 1 < len(tokens):
+                    only = tokens[idx + 1]
+            allow_dirty = "--allow-dirty" in tokens
+            return {"action": "start", "only": only, "allow_dirty": allow_dirty}
+        if cmd == "wait-until":
+            time_val = " ".join(tokens[1:])
+            return {"action": "wait-until", "time": time_val}
+        if cmd == "human":
+            text_val = " ".join(tokens[1:])
+            return {"action": "human", "text": text_val}
+        if cmd == "set-model":
+            agent = tokens[1] if len(tokens) > 1 else ""
+            model = tokens[2] if len(tokens) > 2 else ""
+            return {"action": "set-model", "agent": agent, "model": model}
+        return {"action": cmd}
+
+    if isinstance(step, dict):
+        action = (
+            step.get("action")
+            or step.get("step")
+            or step.get("name")
+            or step.get("type")
+            or step.get("id")
+        )
+        data = dict(step)
+        if not action and len(step) == 1:
+            k = next(iter(step.keys()))
+            v = step[k]
+            action = k
+            if isinstance(v, dict):
+                data = {**v, "action": action}
+            elif isinstance(v, str):
+                if action == "clear-override":
+                    data = {"action": action, "role": v or "reviewer"}
+                elif action == "raise-rounds":
+                    try:
+                        data = {"action": action, "by": int(v)}
+                    except Exception:
+                        data = {"action": action, "by": 6}
+                elif action == "human":
+                    data = {"action": action, "text": v}
+                elif action == "wait-until":
+                    data = {"action": action, "time": v}
+                elif action == "set-model":
+                    parts = v.split()
+                    data = {
+                        "action": action,
+                        "agent": parts[0] if parts else "",
+                        "model": parts[1] if len(parts) > 1 else "",
+                    }
+                else:
+                    data = {"action": action, "param": v}
+            elif isinstance(v, int) and action == "raise-rounds":
+                data = {"action": action, "by": v}
+            elif isinstance(v, list) and action == "set-roles":
+                data = {"action": action, "backup": v}
+        elif action:
+            data["action"] = str(action)
+        else:
+            data["action"] = ""
+
+        action_name = str(data.get("action") or "").lower()
+        data["action"] = action_name
+        if action_name == "clear-override" and not data.get("role"):
+            data["role"] = data.get("target") or data.get("agent") or "reviewer"
+        if action_name == "resume":
+            data["allow_dirty"] = bool(
+                data.get("allow_dirty") or data.get("allow-dirty") or False
+            )
+        if action_name == "raise-rounds":
+            try:
+                data["by"] = int(data.get("by") or data.get("amount") or data.get("rounds") or 6)
+            except Exception:
+                data["by"] = 6
+        if action_name == "set-model":
+            if not data.get("agent") and data.get("name"):
+                data["agent"] = data.get("name")
+        return data
+
+    return {"action": ""}
+
+
+def format_step_label(step: dict[str, Any]) -> str:
+    action = step.get("action", "")
+    if action == "set-model":
+        return f"set-model {step.get('agent', '')} {step.get('model', '')}".strip()
+    if action == "set-roles":
+        parts = []
+        for r in ("implementer", "tester", "reviewer"):
+            if step.get(r):
+                parts.append(f"{r}={step.get(r)}")
+        if step.get("backup"):
+            parts.append(f"backup={step.get('backup')}")
+        return f"set-roles {' '.join(parts)}".strip()
+    if action == "clear-override":
+        return f"clear-override {step.get('role', 'reviewer')}"
+    if action == "raise-rounds":
+        return f"raise-rounds {step.get('by', 6)}"
+    if action == "retry-stage":
+        return "retry-stage"
+    if action == "resume":
+        return f"resume{' --allow-dirty' if step.get('allow_dirty') else ''}"
+    if action == "start":
+        args = ["start"]
+        if step.get("only"):
+            args.extend(["--only", str(step.get("only"))])
+        if step.get("allow_dirty"):
+            args.append("--allow-dirty")
+        return " ".join(args)
+    if action == "wait-until":
+        return f"wait-until {step.get('time', '')}".strip()
+    if action == "human":
+        return f"human {step.get('text', '')}".strip()
+    return str(action)
+
+
+def validate_steps(
+    root: Path | str,
+    raw_steps: Sequence[Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    root_path = Path(root).resolve()
+    from whyline import account
+    from whyline.console import relay_ops
+
+    try:
+        status_map = account.agent_status(root_path)
+        usable = set(relay_ops.usable_agents(root_path, status_map))
+    except Exception:
+        usable = set()
+
+    validated: list[dict[str, Any]] = []
+    notes: list[str] = []
+
+    for raw in raw_steps:
+        step = normalize_step(raw)
+        action = step.get("action", "")
+
+        # 1. Step outside catalog
+        if action not in CATALOG_ACTIONS and not action.startswith("use-"):
+            notes.append(f"Dropped unknown step '{action}' outside the catalog.")
+            continue
+
+        # 2. set-model validation
+        if action == "set-model":
+            agent = step.get("agent")
+            model = str(step.get("model") or "").strip()
+            if not agent or agent not in usable:
+                notes.append(f"Dropped set-model: agent '{agent}' is not usable.")
+                continue
+
+            opts = relay_ops.model_options_for_agent(agent)
+            allowed_models = (
+                {val for _, val in opts} | {lbl for lbl, _ in opts} if opts else set()
+            )
+            if not model or model not in allowed_models:
+                notes.append(
+                    f"Dropped set-model: model '{model}' is not in allowed models for {agent}."
+                )
+                continue
+            step["model"] = model
+
+        # 3. set-roles validation
+        elif action == "set-roles":
+            dropped = False
+            for role in ("implementer", "tester", "reviewer"):
+                ag = step.get(role)
+                if ag and ag not in usable:
+                    notes.append(f"Dropped set-roles: agent '{ag}' for {role} is not usable.")
+                    dropped = True
+                    break
+            if dropped:
+                continue
+
+            raw_backup = step.get("backup")
+            if raw_backup:
+                chain = (
+                    [b.strip() for b in raw_backup.split(",") if b.strip()]
+                    if isinstance(raw_backup, str)
+                    else list(raw_backup)
+                )
+                for b in chain:
+                    if b not in usable:
+                        notes.append(f"Dropped set-roles: backup agent '{b}' is not usable.")
+                        dropped = True
+                        break
+            if dropped:
+                continue
+
+        # 4. clear-override validation
+        elif action == "clear-override":
+            role = step.get("role") or "reviewer"
+            if role != "reviewer":
+                notes.append(
+                    f"Dropped clear-override: role '{role}' is not allowed (only 'reviewer')."
+                )
+                continue
+            step["role"] = "reviewer"
+
+        # 5. use-<agent> validation
+        elif action.startswith("use-"):
+            ag = action[len("use-") :]
+            if ag not in usable:
+                notes.append(f"Dropped {action}: agent '{ag}' is not usable.")
+                continue
+
+        # 6. raise-rounds bounds
+        elif action == "raise-rounds":
+            try:
+                by = int(step.get("by", 6))
+            except Exception:
+                by = 6
+            step["by"] = min(max(by, 1), 12)
+
+        validated.append(step)
+
+    return validated, notes
+
+
+class StepApplyResult(NamedTuple):
+    success: bool
+    message: str
+    applied: list[dict[str, Any]] = []
+    failed_step: dict[str, Any] | None = None
+    failed_index: int | None = None
+
+    def __bool__(self) -> bool:
+        return self.success
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def _execute_single_step(
+    root_path: Path,
+    step: dict[str, Any],
+    *,
+    launch: Callable[[list[str]], None] | None = None,
+) -> str:
+    action = step.get("action", "")
+
+    if action == "set-model":
+        from whyline.console import relay_ops
+
+        agent = str(step.get("agent") or "")
+        model = str(step.get("model") or "")
+        relay_ops.save_agent_model(root_path, agent, model, commit=False)
+        return f"Set model for {agent} to {model}"
+
+    if action == "set-roles":
+        from whyline_relay import setup as relay_setup
+        from whyline.console import relay_ops
+
+        current = relay_ops.current_roles(root_path)
+        implementer = step.get("implementer") or current.get("implementer", "")
+        tester = step.get("tester") or current.get("tester", "")
+        reviewer = step.get("reviewer") or current.get("reviewer", "")
+        raw_backup = step.get("backup")
+        if raw_backup is None:
+            chain = current.get("backup", [])
+        elif isinstance(raw_backup, str):
+            chain = [b.strip() for b in raw_backup.split(",") if b.strip()]
+        else:
+            chain = list(raw_backup)
+
+        before = relay_ops._stored_roles(root_path)
+        relay_setup.write_roles(root_path, implementer, tester, reviewer, chain, commit=False)
+        picked = {"implementer": implementer, "tester": tester, "reviewer": reviewer}
+        relay_ops.clear_stale_switches(
+            root_path,
+            saved={role: (before.get(role), agent) for role, agent in picked.items()},
+            chain=[name for name in chain if name],
+        )
+        return f"Set roles: implementer={implementer}, tester={tester}, reviewer={reviewer}"
+
+    if action == "clear-override":
+        from whyline_relay import failover
+
+        role = str(step.get("role") or "reviewer")
+        failover.clear_overrides(root_path, role=role)
+        return f"Cleared override for {role}"
+
+    if action == "raise-rounds":
+        by = int(step.get("by", 6))
+        by = min(max(by, 1), 12)
+        new_rounds = _raise_max_rounds(root_path, by=by, commit=False)
+        return f"Raised max_rounds by {by} to {new_rounds}"
+
+    if action == "retry-stage":
+        args, _ = retry_stage_args(root_path)
+        if launch:
+            launch(args)
+        return "Retrying stage"
+
+    if action == "resume":
+        allow_dirty = bool(step.get("allow_dirty") or step.get("allow-dirty", False))
+        args = ["resume", "--allow-dirty"] if allow_dirty else ["resume"]
+        if launch:
+            launch(args)
+        return f"Resumed relay{' with --allow-dirty' if allow_dirty else ''}"
+
+    if action == "start":
+        only = step.get("only")
+        allow_dirty = bool(step.get("allow_dirty") or step.get("allow-dirty", False))
+        args = ["start"]
+        if only:
+            args.extend(["--only", str(only)])
+        if allow_dirty:
+            args.append("--allow-dirty")
+        if launch:
+            launch(args)
+        return f"Started relay{' (' + ' '.join(args[1:]) + ')' if len(args) > 1 else ''}"
+
+    if action == "wait-until":
+        time_val = str(step.get("time") or step.get("until") or "")
+        return f"Wait until {time_val}"
+
+    if action == "human":
+        text_val = str(step.get("text") or step.get("reason") or "")
+        return f"Human intervention: {text_val}"
+
+    catalog = get_rec_4c_options(root_path)
+    if (
+        action in (
+            "commit-log",
+            "stash",
+            "resume-keep",
+            "wait",
+            "stop",
+            "reset-keep",
+            "move-aside",
+            "reset-role",
+            "resume-longer",
+            "split-task",
+            "more-rounds",
+            "retry-stronger-model",
+            "choose-agents",
+            "use-configured",
+            "switch-back",
+        )
+        or action in catalog
+        or action in CATALOG_ACTIONS
+        or action.startswith("use-")
+    ):
+        opt = make_rec_4c_option(action, root=root_path)
+        prob = Problem(
+            id="step",
+            summary="Applying proposal step",
+            evidence=[],
+            options=[opt],
+            task_id=str(step.get("task_id") or ""),
+        )
+        launcher = launch if launch is not None else (lambda args: None)
+        res = apply(root_path, prob, action, launch=launcher)
+        return str(res)
+
+    raise ValueError(f"Unknown or unexecutable step action: {action!r}")
+
+
+def apply_step(
+    root: Path | str,
+    step: dict[str, Any] | str,
+    *,
+    launch: Callable[[list[str]], None] | None = None,
+) -> str:
+    root_path = Path(root).resolve()
+    norm = normalize_step(step)
+    return _execute_single_step(root_path, norm, launch=launch)
+
+
+def apply_steps(
+    root: Path | str,
+    steps: Sequence[dict[str, Any] | str | Any],
+    *,
+    launch: Callable[[list[str]], None] | None = None,
+) -> StepApplyResult:
+    root_path = Path(root).resolve()
+    from whyline_relay import config as relay_config, gitcheck
+
+    applied: list[dict[str, Any]] = []
+    config_modified = False
+    config_file = relay_config.config_path(root_path)
+
+    def commit_config_if_needed() -> None:
+        nonlocal config_modified
+        if not config_modified:
+            return
+        dirty = gitcheck.dirty_paths(root_path)
+        rel_config = str(config_file.relative_to(root_path)).replace("\\", "/")
+        if any(
+            p.replace("\\", "/") == rel_config or p.endswith("config.toml")
+            for p in dirty
+        ):
+            gitcheck.commit_paths(root_path, [config_file], "setup: apply recovery steps")
+        config_modified = False
+
+    for idx, raw_step in enumerate(steps, 1):
+        step_dict = normalize_step(raw_step)
+        action = step_dict.get("action", "")
+
+        if (
+            action in (
+                "resume",
+                "resume-keep",
+                "start",
+                "retry-stage",
+                "stash",
+                "reset-keep",
+                "move-aside",
+                "more-rounds",
+            )
+            or action.startswith("use-")
+        ):
+            commit_config_if_needed()
+
+        try:
+            _execute_single_step(root_path, step_dict, launch=launch)
+            if action in ("set-model", "set-roles", "raise-rounds"):
+                config_modified = True
+            applied.append(step_dict)
+        except Exception as exc:
+            return StepApplyResult(
+                success=False,
+                message=f"Step {idx} ({action}) failed: {exc}",
+                applied=applied,
+                failed_step=step_dict,
+                failed_index=idx,
+            )
+
+    commit_config_if_needed()
+
+    return StepApplyResult(
+        success=True,
+        message=f"Applied {len(applied)} step{'s' if len(applied) != 1 else ''} successfully.",
+        applied=applied,
+    )
+
+
+_LAST_PROPOSAL: AskAgentResult | None = None
+
+
 @dataclass
 class AskAgentResult:
-    status: str  # "recommended", "human", "unlisted", "modified", "exhausted"
+    status: str  # "proposal", "recommended", "human", "unlisted", "modified", "exhausted"
     recommendation: str
     explanation: str
     agent: str
     changed_paths: list[str] = field(default_factory=list)
     agents_tried: list[str] = field(default_factory=list)
     option: Option | None = None
+    options: list[Option] = field(default_factory=list)
     # (agent, why it was passed over), in the order tried.
     fallbacks: list[tuple[str, str]] = field(default_factory=list)
+    diagnosis: str = ""
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    confidence: str = ""
+    notes: list[str] = field(default_factory=list)
+
+    def apply(
+        self,
+        root: Path | str,
+        *,
+        launch: Callable[[list[str]], None] | None = None,
+        all_steps: bool = True,
+    ) -> StepApplyResult:
+        st = self.steps if all_steps else self.steps[:1]
+        return apply_steps(root, st, launch=launch)
+
+    def apply_all(
+        self, root: Path | str, *, launch: Callable[[list[str]], None] | None = None
+    ) -> StepApplyResult:
+        return self.apply(root, launch=launch, all_steps=True)
+
+    def apply_step_1(
+        self, root: Path | str, *, launch: Callable[[list[str]], None] | None = None
+    ) -> StepApplyResult:
+        return self.apply(root, launch=launch, all_steps=False)
 
 
 def ask_agent(
@@ -4835,10 +5435,13 @@ def ask_agent(
         else:
             response_text = raw_output
 
-        if _is_model_failure(
-            None, raw_output, adapter=adapter, command=command
-        ) or _is_model_failure(
-            None, response_text, adapter=adapter, command=command
+        has_proposal = (
+            extract_fenced_json(raw_output) is not None
+            or extract_fenced_json(response_text) is not None
+        )
+        if not has_proposal and (
+            _is_model_failure(None, raw_output, adapter=adapter, command=command)
+            or _is_model_failure(None, response_text, adapter=adapter, command=command)
         ):
             edited = refused(current_agent)
             if edited is not None:
@@ -4863,6 +5466,66 @@ def ask_agent(
     edited = refused(turn_taken_by)
     if edited is not None:
         return edited
+
+    fenced_data = extract_fenced_json(response_text or raw_output)
+    if fenced_data is None and raw_output:
+        fenced_data = extract_fenced_json(raw_output)
+
+    if fenced_data is not None:
+        diagnosis = str(fenced_data.get("diagnosis") or "").strip()
+        raw_steps = fenced_data.get("steps") or []
+        confidence = str(fenced_data.get("confidence") or "medium").strip()
+        validated_steps, notes = validate_steps(root_path, raw_steps)
+
+        opt_apply_all = Option(
+            "apply-all", "Apply all", "Apply all proposed steps", recommended=True, confirm=False
+        )
+        opt_apply_first = Option(
+            "apply-step-1", "Apply step 1 only", "Apply step 1 only", recommended=False, confirm=False
+        )
+        opt_cancel = Option(
+            "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
+        )
+        options = [opt_apply_all, opt_apply_first, opt_cancel]
+        # The console mounts only `option` beside Show evidence and Cancel, so
+        # the offered button opens ResolveProposalScreen, which holds Apply all,
+        # Apply step 1 only and Cancel.
+        opt_review = Option(
+            "proposal",
+            "Review steps",
+            "show the diagnosis and steps: Apply all, Apply step 1 only or Cancel",
+            recommended=True,
+            confirm=False,
+        )
+
+        step_lines = [
+            f"  {i}. {format_step_label(s)}" for i, s in enumerate(validated_steps, 1)
+        ]
+        steps_text = "\n".join(step_lines) if step_lines else "  No valid steps."
+        explanation_parts = [diagnosis]
+        if validated_steps:
+            explanation_parts.append("\nProposed steps:\n" + steps_text)
+        if notes:
+            explanation_parts.append("\nNotes:\n" + "\n".join(f"  - {n}" for n in notes))
+        full_explanation = "\n".join(explanation_parts).strip()
+
+        res = AskAgentResult(
+            status=_ProposalStatus("proposal"),
+            recommendation="proposal",
+            explanation=full_explanation,
+            agent=turn_taken_by,
+            option=opt_review,
+            options=options,
+            agents_tried=list(tried),
+            fallbacks=list(fallbacks),
+            diagnosis=diagnosis,
+            steps=validated_steps,
+            confidence=confidence,
+            notes=notes,
+        )
+        global _LAST_PROPOSAL
+        _LAST_PROPOSAL = res
+        return res
 
     explanation, recommendation = parse_agent_recommendation(
         response_text or raw_output
