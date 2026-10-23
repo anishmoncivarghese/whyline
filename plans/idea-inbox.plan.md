@@ -342,7 +342,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a given synthesis skips the brainstorm call and the spec phase sees its text; a synthesis without `## Final Synthesis` is ignored and research runs as before; `redraft_plan` replaces the plan artifact and the planner request contains the feedback; `redraft_plan` with a live lock raises `AutoBusy`; neither change calls the launcher.
   Verify with `uv run pytest -q tests/console/test_auto_run.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-17: Draft the spec and plan, with questions over Telegram
+- [x] IDEA-17: Draft the spec and plan, with questions over Telegram
   Add `src/whyline/ideas/planning.py` and `tests/ideas/test_planning.py`, and a `plan` job kind in `worker.py`.
   **Confirm** on the Set up card queues a `plan` job. Before it runs, the target repository must have a clean `git status --porcelain` and `whyline_relay.running.live(root)` must be None; otherwise move to `plan_waiting`, tell the chat once ("Waiting: a relay is running in <repo>" or the dirty paths), and retry on each tick. A **Cancel** button on that message returns to `brainstormed`.
   The job calls `auto_run.run(root, request, dismissed, through="plan", synthesis=<brainstorm path>, progress=..., cancel_event=...)`. Progress goes to the chat at most once a minute. A pause with questions sends them as one message and moves nothing; the reply (`answer`) calls `auto_run.resume(root, request, answer=reply, ...)` through the same job kind. Any other pause sends its reason with **Retry** / **Cancel**.
