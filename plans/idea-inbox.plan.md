@@ -306,7 +306,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: each section appears from fakes; a long log is trimmed and the facts and task text stay; a token in an agent command is redacted.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] ASK-3: The agent proposes steps the console can apply
+- [x] ASK-3: The agent proposes steps the console can apply
   Edit `src/whyline/console/recovery.py` and `src/whyline/console/relay_screens.py`, with tests in `tests/console/test_recovery.py`.
   The agent ends with a fenced JSON block: `{"diagnosis": "...", "steps": [...], "confidence": "high|medium|low"}`. Each step is one of a fixed catalog that maps to an existing console function:
   - `set-model {agent, model}` (AGS-4's save)
