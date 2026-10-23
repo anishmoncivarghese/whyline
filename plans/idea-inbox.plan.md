@@ -356,7 +356,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests with fakes: a stale Start button does nothing; a preflight `FAIL` sends the lines and does not call the launcher; a pass calls the launcher once with `["start"]` in the target repository and moves to `running`; a relay that went live in between waits instead of starting; `caffeinate` is started with the relay's pid and its absence is not an error.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-19: Status, pause alerts with Resolve buttons, and Stop
+- [x] IDEA-19: Status, pause alerts with Resolve buttons, and Stop
   Add `src/whyline/ideas/watch.py` and `tests/ideas/test_watch.py`, and the handling in `bot.py` and `worker.py`.
   Each tick, for every idea in `running` or `paused`, read the target repository's relay state (`whyline_relay.state.load`), `running.live`, and the plan's checkboxes.
   **Status** (`/status`, `/status <id>`, the Status button, or an assistant `status` proposal) replies with: plan name, tasks done of total, current task id and stage, round, the agent working and for how long, the last five lines of its log with secrets redacted (`telegram.redact`), and **Stop** / **Refresh** buttons.
