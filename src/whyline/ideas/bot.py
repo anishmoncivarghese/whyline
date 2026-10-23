@@ -107,6 +107,7 @@ _LABEL_ACTION = {
     "Confirm": "confirm",
     "Edit": "edit",
     "Start": "start_plan",
+    "Start now": "start_now",
     "Change": "change_plan",
     "Discard": "discard_plan",
     "Retry": "retry_plan",
@@ -429,7 +430,14 @@ def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
     elif name == "plan":
         _open_setup(conn, row, idea)
     elif name == "start_plan":
-        _say(conn, row, "Not available yet.", idea_id=idea.id)
+        _ask_start_plan(conn, row, idea)
+    elif name == "start_now":
+        _start_now(conn, row, idea)
+    elif name == "retry_start":
+        from whyline.ideas import run as ideas_run
+
+        ideas_run.enqueue_start(conn, idea.id)
+        _say(conn, row, "Retrying…", idea_id=idea.id)
     elif name == "change_plan":
         _ask_change_plan(conn, row, idea)
     elif name == "discard_plan":
@@ -437,10 +445,16 @@ def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
     elif name == "discard_plan_yes":
         _discard_plan(conn, row, idea)
     elif name == "retry_plan":
-        from whyline.ideas import planning
+        if idea.status == "ready":
+            from whyline.ideas import run as ideas_run
 
-        planning.enqueue_plan(conn, idea.id, action="resume", answer=None)
-        _say(conn, row, "Retrying…", idea_id=idea.id)
+            ideas_run.enqueue_start(conn, idea.id)
+            _say(conn, row, "Retrying…", idea_id=idea.id)
+        else:
+            from whyline.ideas import planning
+
+            planning.enqueue_plan(conn, idea.id, action="resume", answer=None)
+            _say(conn, row, "Retrying…", idea_id=idea.id)
     elif name.startswith("repo_"):
         repo_name = name[len("repo_") :]
         _choose_repo(conn, row, idea, repo_name)
@@ -827,6 +841,15 @@ def _cancel(conn, row, idea: store.Idea) -> None:
         _retarget_buttons(conn, fresh, "brainstormed")
         _clear_card(conn, _field(row, "chat_id"))
         return
+    if idea.status == "ready":
+        start_job = _live_job(conn, idea.id, "start")
+        if start_job is not None:
+            _stop_job(conn, start_job)
+        fresh = _move_or_keep(conn, idea, "plan_discarded", "cancelled")
+        _say(conn, row, "Cancelled.", idea_id=idea.id)
+        _retarget_buttons(conn, fresh, "plan_discarded")
+        _clear_card(conn, _field(row, "chat_id"))
+        return
     card = _card_for(conn, _field(row, "chat_id"))
     kind = card.get("kind") if card else "capture"
     fresh = idea
@@ -856,6 +879,75 @@ def _ask_change_plan(conn, row, idea: store.Idea) -> None:
     chat_id = int(_field(row, "chat_id"))
     _set_open(conn, chat_id, {"kind": "change_plan", "idea_id": idea.id})
     _say(conn, row, "What should change?", idea_id=idea.id)
+
+
+def _ask_start_plan(conn, row, idea: store.Idea) -> None:
+    from whyline.ideas import planning, setup
+
+    repo_name, root = planning._get_repo_root(conn, idea)
+    plan_name = Path(idea.plan_path).name if idea.plan_path else (idea.title or "plan")
+
+    raw = _kv(conn, f"telegram_settings:{idea.id}") or _kv(conn, "telegram_settings")
+    fields = json.loads(raw) if raw else {}
+    req_fields = setup.request_from_fields(fields)
+    implementer = req_fields.implementer
+    tester = req_fields.tester
+    reviewer = req_fields.reviewer
+    has_explicit_timeout = "timeout" in fields
+    timeout = req_fields.timeout if has_explicit_timeout else None
+
+    if not implementer or not tester or not reviewer or timeout is None:
+        try:
+            req_def, _ = setup.defaults(conn, idea.id, repo_name, root)
+            implementer = implementer or req_def.implementer
+            tester = tester or req_def.tester
+            reviewer = reviewer or req_def.reviewer
+            if timeout is None:
+                timeout = req_def.timeout
+        except Exception:
+            pass
+
+    if timeout is None:
+        timeout = 30
+    timeout_str = str(timeout)
+    question = (
+        f"Start {plan_name} in {repo_name} with "
+        f"{implementer}, {tester}, {reviewer}, timeout {timeout_str}?"
+    )
+
+    keyboard = _keyboard(
+        (("Start now", "start_now"), ("Cancel", "cancel")),
+        idea.id,
+        idea.revision,
+    )
+    chat_id = int(_field(row, "chat_id"))
+    outbox_id = _say(conn, row, question, keyboard, idea_id=idea.id)
+    _remember_card(
+        conn, chat_id, "start_confirm", idea.id, outbox_id=outbox_id
+    )
+
+
+def _start_now(conn, row, idea: store.Idea) -> None:
+    from whyline.ideas import run as ideas_run
+
+    try:
+        fresh = store.transition(
+            conn,
+            idea.id,
+            "ready",
+            expected_revision=idea.revision,
+            actor="telegram",
+            note="start",
+        )
+    except store.StaleRevision:
+        _say(conn, row, OUT_OF_DATE, idea_id=idea.id)
+        return
+    except store.IllegalMove as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return
+
+    ideas_run.enqueue_start(conn, fresh.id)
+    _clear_card(conn, _field(row, "chat_id"))
 
 
 def _ask_discard_plan(conn, row, idea: store.Idea) -> None:

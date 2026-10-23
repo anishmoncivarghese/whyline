@@ -419,14 +419,24 @@ def work(job_id: int) -> int:
             _mark_failed(conn, job, str(exc), tell=True)
             _flush(conn)
             return 1
-        conn.execute(
-            """
-            UPDATE jobs
-            SET state = 'done', lease_until = NULL, error = NULL
-            WHERE id = ? AND state = 'running' AND pid = ?
-            """,
-            (job_id, os.getpid()),
-        )
+        if job["kind"] == "start":
+            conn.execute(
+                """
+                UPDATE jobs
+                SET state = 'done', lease_until = NULL, error = NULL
+                WHERE id = ? AND state = 'running'
+                """,
+                (job_id,),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET state = 'done', lease_until = NULL, error = NULL
+                WHERE id = ? AND state = 'running' AND pid = ?
+                """,
+                (job_id, os.getpid()),
+            )
         _publish(conn)
         _flush(conn)
         return 0
@@ -553,6 +563,8 @@ def _sleep_message(kind: str) -> str:
         name = "quick score"
     elif kind == "plan":
         name = "plan"
+    elif kind == "start":
+        name = "start"
     else:
         name = "job"
     return (
@@ -576,6 +588,8 @@ def _kind_label(kind: str) -> str:
         return "Quick score"
     if kind == "plan":
         return "Plan"
+    if kind == "start":
+        return "Start"
     return "Job"
 
 
@@ -592,6 +606,13 @@ def _start_one(conn, now: datetime, spawn) -> None:
     ).fetchone()
     if row is None:
         return
+
+    if row["kind"] == "start":
+        from whyline.ideas import run as ideas_run
+
+        ready, reason = ideas_run.check_repo_ready(conn, int(row["idea_id"]))
+        if not ready:
+            return
 
     if row["kind"] == "plan":
         from whyline.ideas import planning
@@ -682,7 +703,7 @@ def _start_one(conn, now: datetime, spawn) -> None:
 
 
 def _job_timeout(conn, row) -> int | str:
-    if row["kind"] in ("brainstorm", "plan"):
+    if row["kind"] in ("brainstorm", "plan", "start"):
         return _brainstorm_timeout(conn, int(row["idea_id"]))
     return SCORE_TIMEOUT_MINUTES
 
@@ -900,6 +921,11 @@ def _execute(conn, job) -> None:
         from whyline.ideas import planning
 
         planning.run(conn, idea_id)
+        return
+    if kind == "start":
+        from whyline.ideas import run as ideas_run
+
+        ideas_run.run(conn, idea_id, job_id=int(job["id"]))
         return
     raise RuntimeError(f"unknown job kind {kind}")
 

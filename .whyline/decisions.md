@@ -21933,3 +21933,107 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f09905613f43489e9c4226eb593826c4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T15:32:07.918Z"} -->
+
+## 2026-10-23 — Start relay on confirmed tap with repository readiness gate and detached caffeinated execution
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-18
+
+**Because:** ensures explicit human confirmation of plan, repo, and roles before launch, gates on repository readiness and no live relay, and prevents Mac sleeping during long relay execution
+
+**Rejected:**
+
+- launch directly without confirmation — risks starting in wrong repo or with unintended roles
+- run relay in foreground in worker — blocks worker tick and idea scheduler for the whole run
+
+**Files:** src/whyline/ideas/run.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: 2ca4c8bfc5ee4153bda690d4cfaddfd5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T16:04:23.440Z"} -->
+
+## 2026-10-23 — IDEA-18 Round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-18
+
+**Because:** The seven focused start-flow tests, all 385 ideas tests, and the full 2403-test repository suite passed; coverage exercises stale confirmation, preflight failure, detached target-repository launch with PID recording, relay-live waiting, and caffeinate presence, absence, and launch errors
+
+**Rejected:**
+
+- Fail the task — no behavioral failure was reproduced and every required command exited successfully
+
+**Files:** src/whyline/ideas/run.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, tests/ideas/test_run.py
+
+<!-- whyline-event: f11da61aa77c44daac05f68b51b3c298 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T16:14:55.192Z"} -->
+
+## 2026-10-23 — IDEA-18 Round 3 review rejected
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-18
+
+**Because:** The required ideas and full suites pass, but Start confirmation replaces an explicit timeout none with the repository default, and worker completion no longer checks PID ownership for existing score, brainstorm, and plan jobs
+
+**Rejected:**
+
+- Approve the implementation — the confirmation can misstate the actual launch timeout and the broad PID predicate removal violates the worker lease-ownership contract
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 02ed5352edc04210ada2c7a4fbdc9eaa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T16:46:10.036Z"} -->
+
+## 2026-10-23 — Preserve explicit timeout none in Start confirmation and retain PID predicate on worker job completion
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-18
+
+**Because:** shows the exact user-specified timeout in the confirmation prompt, prevents overriding explicit timeout none with repository defaults during run, and maintains lease-ownership PID predicate for score, brainstorm, and plan jobs while allowing start jobs to retain detached relay PID
+
+**Rejected:**
+
+- replace timeout none with repo default — misleading to the user who explicitly chose no timeout
+- remove PID predicate from completion across all job kinds — breaks worker lease-ownership contract and risks overwriting claimed jobs
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 8fa54c3506da42d8b084dc46eeeb3911 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T17:04:39.395Z"} -->
+
+## 2026-10-23 — IDEA-18 Round 5 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-18
+
+**Because:** The focused ideas suite and full project suite pass; targeted coverage verifies explicit timeout none survives confirmation and execution, start completion retains the detached relay PID, and score, brainstorm, and plan completion still enforce worker PID ownership
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 483c920dd2ef4963ba53f61d614b50e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T17:14:33.128Z"} -->
+
+## 2026-10-23 — IDEA-18 Round 6 approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-18
+
+**Because:** The start confirmation, queued worker path, duplicate readiness checks, Auto final-preflight failure handling, detached launch with retained relay PID, caffeinate behavior, and ready-to-running notification match the task; focused and full test suites plus diff validation pass
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly wrong behavior was found in the requested scope
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 37104bd7016f4da294ee8690e74c2b1a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T17:25:12.646Z"} -->
