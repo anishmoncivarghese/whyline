@@ -2040,3 +2040,241 @@ def test_auto_run_recover_pause_second_pause_in_same_round_stops_auto(tmp_path, 
     assert launched == []
 
 
+def test_given_synthesis_skips_brainstorm_and_spec_sees_its_text(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm
+
+    root = _repo(tmp_path / "repo")
+    request = _request(topic="my-feature")
+    dismissed = auto_run.fingerprint(root, request)
+
+    synthesis_file = tmp_path / "existing_synthesis.md"
+    synthesis_text = "# Feature\n\n## Final Synthesis\n\nExisting synthesis direction text.\n"
+    synthesis_file.write_text(synthesis_text, encoding="utf-8")
+
+    def fail_brainstorm(*args, **kwargs):
+        raise AssertionError("Brainstorm should not be called")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fail_brainstorm)
+
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+    _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
+
+    launcher_called = False
+
+    def fail_launcher(args):
+        nonlocal launcher_called
+        launcher_called = True
+        raise AssertionError("Launcher should not be called")
+
+    res = auto_run.run(
+        root,
+        request,
+        dismissed,
+        through="plan",
+        synthesis=synthesis_file,
+        launcher=fail_launcher,
+    )
+
+    assert not launcher_called
+    shared = brainstorm.shared_path(root, request.topic)
+    assert shared.is_file()
+    assert shared.read_text(encoding="utf-8") == synthesis_text
+    assert res["phase"] == "plan"
+    assert res["brainstorm"]["sha256"] == hashlib.sha256(synthesis_text.encode("utf-8")).hexdigest()
+    assert len(spec_calls) == 1
+    assert auto_run._shown(root, shared) in spec_calls[0]
+    assert "Existing synthesis direction text." in (root / auto_run._shown(root, shared)).read_text(
+        encoding="utf-8"
+    )
+
+
+def test_synthesis_without_final_synthesis_is_ignored_and_research_runs(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm
+
+    root = _repo(tmp_path / "repo")
+    request = _request(topic="my-feature")
+    dismissed = auto_run.fingerprint(root, request)
+
+    bad_synth = tmp_path / "no_final.md"
+    bad_synth.write_text(
+        "# Feature\n\nDraft discussion without a final synthesis header.\n",
+        encoding="utf-8",
+    )
+
+    brainstorm_called = []
+
+    def fake_brainstorm(_root, **kwargs):
+        brainstorm_called.append(kwargs.get("final_agent"))
+        _write_synthesis(root, _CLEAN, topic=request.topic)
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+    _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
+
+    launcher_called = False
+
+    def fail_launcher(args):
+        nonlocal launcher_called
+        launcher_called = True
+        raise AssertionError("Launcher should not be called")
+
+    res = auto_run.run(
+        root,
+        request,
+        dismissed,
+        through="plan",
+        synthesis=bad_synth,
+        launcher=fail_launcher,
+    )
+
+    assert not launcher_called
+    assert brainstorm_called == [request.final_agent]
+    assert res["phase"] == "plan"
+    shared = brainstorm.shared_path(root, request.topic)
+    assert shared.read_text(encoding="utf-8") == _CLEAN
+
+
+def test_redraft_plan_replaces_plan_artifact_and_passes_feedback(tmp_path, monkeypatch):
+    root = _repo(tmp_path / "repo")
+    request = _request(name="plan", topic="Initial topic")
+    dismissed = auto_run.fingerprint(root, request)
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN, topic=request.topic)
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+    _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
+
+    first_res = auto_run.run(root, request, dismissed, through="plan")
+    assert first_res["phase"] == "plan"
+    old_plan_record = dict(first_res["plan"])
+    assert old_plan_record["sha256"]
+    assert plan_calls == [request.topic]
+
+    launcher_called = False
+
+    def fail_launcher(args):
+        nonlocal launcher_called
+        launcher_called = True
+        raise AssertionError("launcher should not be called")
+
+    new_plan_text = "- [ ] RUN-6: updated plan with edge case tests\n"
+
+    def draft_plan_v2(_root, description, attachments=(), *, progress, spec=None):
+        plan_calls.append(description)
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", new_plan_text, "planner")
+
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan_v2)
+
+    feedback = "Please add edge case tests"
+    redrafted = auto_run.redraft_plan(
+        root,
+        request,
+        feedback,
+        launcher=fail_launcher,
+    )
+
+    assert not launcher_called
+    assert redrafted["phase"] == "plan"
+    assert "pause" not in redrafted
+    assert redrafted["plan"]["sha256"] != old_plan_record["sha256"]
+    assert len(plan_calls) == 2
+    second_call = plan_calls[1]
+    assert feedback in second_call
+    assert f"Changes asked for after review: {feedback}" in second_call
+    assert not auto_run.lock_path(root).exists()
+
+
+def test_redraft_plan_with_live_lock_raises_auto_busy(tmp_path):
+    root = _repo(tmp_path)
+    request = _request()
+    auto_run.acquire_lock(root)
+    try:
+        with pytest.raises(auto_run.AutoBusy):
+            auto_run.redraft_plan(root, request, "any feedback")
+    finally:
+        auto_run.release_lock(root)
+
+
+def test_redraft_plan_returns_paused_checkpoint_on_validation_failure(tmp_path, monkeypatch):
+    root = _repo(tmp_path / "repo")
+    request = _request(name="plan", topic="Initial topic")
+    dismissed = auto_run.fingerprint(root, request)
+
+    def fake_brainstorm(_root, **_kwargs):
+        _write_synthesis(root, _CLEAN, topic=request.topic)
+        return SessionEvent("output", "saved")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fake_brainstorm)
+
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+    _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
+
+    first_res = auto_run.run(root, request, dismissed, through="plan")
+    assert first_res["phase"] == "plan"
+
+    def bad_draft_plan(_root, description, attachments=(), *, progress, spec=None):
+        return _draft(root / ".whyline" / "relay" / "draft-plan.md", "invalid format", "planner")
+
+    monkeypatch.setattr(relay_ops, "draft_plan", bad_draft_plan)
+    monkeypatch.setattr(relay_ops, "validate_plan", lambda _text: ["Plan format is invalid"])
+
+    res = auto_run.redraft_plan(root, request, "some feedback")
+    assert res["phase"] == "plan"
+    assert "pause" in res
+    assert "Plan format is invalid" in res["pause"]["reason"]
+    assert not auto_run.lock_path(root).exists()
+
+
+def test_resume_with_given_synthesis_skips_brainstorm(tmp_path, monkeypatch):
+    from whyline_relay import brainstorm, preflight
+
+    root = _repo(tmp_path / "repo")
+    request = _request(topic="resume-topic")
+    dismissed = auto_run.fingerprint(root, request)
+
+    res = auto_run.run(root, request, dismissed, through="persist")
+    assert res["phase"] == "persist"
+
+    synthesis_file = tmp_path / "resume_synth.md"
+    synthesis_text = "# Resume Topic\n\n## Final Synthesis\n\nResumed synthesis.\n"
+    synthesis_file.write_text(synthesis_text, encoding="utf-8")
+
+    def fail_brainstorm(*args, **kwargs):
+        raise AssertionError("Brainstorm should not be called")
+
+    monkeypatch.setattr(adapters, "run_brainstorm", fail_brainstorm)
+
+    spec_calls: list[str] = []
+    plan_calls: list[str] = []
+    approved: list = []
+    _install_planning(monkeypatch, root, spec_calls, plan_calls, approved)
+    monkeypatch.setattr(preflight, "run", lambda _r, *a, **k: [])
+
+    launcher_called = []
+    resume_res = auto_run.resume(
+        root,
+        request,
+        synthesis=synthesis_file,
+        launcher=lambda args: launcher_called.append(list(args)),
+    )
+    assert launcher_called == [["start"]]
+    assert resume_res["phase"] == "relay"
+    shared = brainstorm.shared_path(root, request.topic)
+    assert shared.read_text(encoding="utf-8") == synthesis_text
+    assert resume_res["brainstorm"]["sha256"] == hashlib.sha256(synthesis_text.encode("utf-8")).hexdigest()
+
+

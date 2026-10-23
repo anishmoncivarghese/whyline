@@ -21787,3 +21787,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4bf45a72b0d64b159bca465072d2891e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T13:01:54.051Z"} -->
+
+## 2026-10-23 — Accept existing synthesis directly and redraft plan by appending review feedback
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-16
+
+**Because:** avoids redundant brainstorm model calls when an approved synthesis exists and reuses plan phase with feedback without modifying request schema
+
+**Rejected:**
+
+- include synthesis in request fingerprint — synthesis is an execution input rather than a form field; restart pipeline on redraft: redrafting is a plan revision that preserves prior spec and must not launch
+
+**Files:** src/whyline/console/auto_run.py
+
+<!-- whyline-event: d96e78efb3ef4a2d94cc6bfcab599237 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T13:26:44.251Z"} -->
+
+## 2026-10-23 — IDEA-16 round 2 passes behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-16
+
+**Because:** The focused auto-run suite passed all 60 tests, the full project suite completed at 100 percent with exit 0 and one skip, and coverage verifies synthesis acceptance and fallback, spec propagation, redraft replacement and feedback, lock contention, pause handling, and no unintended launch
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: 784597629c8d43ae9ab6ee71a9088e68 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T13:35:24.596Z"} -->
+
+## 2026-10-23 — Approve IDEA-16 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-16
+
+**Because:** The implementation accepts a supplied Final Synthesis without a brainstorm call, preserves invalid-input fallback and fingerprint semantics, redrafts only the plan with review feedback under the Auto lock without launching, and the focused 60-test suite plus the full suite passed independently
+
+**Rejected:**
+
+- Request changes — no requirement-level defect, unsafe behavior, scope violation, or inadequate test coverage was found
+
+**Files:** src/whyline/console/auto_run.py, tests/console/test_auto_run.py
+
+<!-- whyline-event: 2275bf0c54aa4a0582304ec7d8c61244 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T13:45:17.098Z"} -->

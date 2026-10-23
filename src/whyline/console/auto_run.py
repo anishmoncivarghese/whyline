@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 from contextlib import contextmanager
@@ -503,7 +504,7 @@ def _shown(root: Path, path: Path) -> str:
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return ""
 
 
@@ -928,7 +929,28 @@ def _accept_synthesis(current: dict, path: Path) -> dict:
     return current
 
 
-def _research_phase(root, request, current, *, saved_phase, progress, cancel_event, answer):
+def _research_phase(
+    root,
+    request,
+    current,
+    *,
+    saved_phase,
+    progress,
+    cancel_event,
+    answer,
+    synthesis: Path | None = None,
+):
+    if synthesis is not None:
+        synthesis_path = Path(synthesis)
+        if _has_final(synthesis_path):
+            from whyline_relay import brainstorm
+
+            target = brainstorm.shared_path(root, request.topic)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if synthesis_path.resolve() != target.resolve():
+                shutil.copyfile(synthesis_path, target)
+            return _accept_synthesis(current, target)
+
     if _hold_pause(current, saved_phase, "research", answer):
         return current
     path, _doc = _brainstorm_doc(root, request.topic)
@@ -1059,16 +1081,33 @@ def _spec_phase(root, request, current, *, saved_phase, progress, answer):
     return current
 
 
-def _draft_plan_once(root, request, spec_path: Path, progress, last_agent):
+def _draft_plan_once(
+    root,
+    request,
+    spec_path: Path,
+    progress,
+    last_agent,
+    feedback: str | None = None,
+):
     def print_fn(line=""):
         _on_planner_line(root, "plan", progress, line, last_agent)
 
     def call():
-        if relay_ops.pending_draft(root):
+        if feedback and relay_ops.pending_draft(root):
+            relay_ops.discard_draft(root, None)
+        elif relay_ops.pending_draft(root):
             return relay_ops.resume_draft(root, progress=print_fn)
+        plan_topic = request.topic
+        if feedback:
+            if feedback.startswith("Changes asked for after review:"):
+                feedback_line = feedback
+            else:
+                feedback_line = f"Changes asked for after review: {feedback}"
+            topic = request.topic.rstrip()
+            plan_topic = f"{topic}\n\n{feedback_line}" if topic else feedback_line
         return relay_ops.draft_plan(
             root,
-            request.topic,
+            plan_topic,
             list(request.attachments),
             progress=print_fn,
             spec=spec_path,
@@ -1077,7 +1116,13 @@ def _draft_plan_once(root, request, spec_path: Path, progress, last_agent):
     return _guard_draft(call)
 
 
-def _plan_with_failover(root, request, spec_path: Path, progress):
+def _plan_with_failover(
+    root,
+    request,
+    spec_path: Path,
+    progress,
+    feedback: str | None = None,
+):
     drafter = str(request.drafter)
     reviewer = str(request.reviewer)
     test_planner = _request_test_planner(request)
@@ -1088,7 +1133,14 @@ def _plan_with_failover(root, request, spec_path: Path, progress):
         if substituted:
             _use_planner(root, drafter, reviewer, test_planner)
         try:
-            return _draft_plan_once(root, request, spec_path, progress, last_agent)
+            return _draft_plan_once(
+                root,
+                request,
+                spec_path,
+                progress,
+                last_agent,
+                feedback=feedback,
+            )
         except _ModelFailure:
             failed = last_agent["name"] or drafter
             if failed not in tried:
@@ -1107,7 +1159,16 @@ def _plan_with_failover(root, request, spec_path: Path, progress):
             substituted = True
 
 
-def _plan_phase(root, request, current, *, saved_phase, progress, answer):
+def _plan_phase(
+    root,
+    request,
+    current,
+    *,
+    saved_phase,
+    progress,
+    answer,
+    feedback: str | None = None,
+):
     if _hold_pause(current, saved_phase, "plan", answer):
         return current
     if artifact_matches(current.get("plan")):
@@ -1122,7 +1183,9 @@ def _plan_phase(root, request, current, *, saved_phase, progress, answer):
     original = _config_text(root)
     try:
         try:
-            draft = _plan_with_failover(root, request, spec_path, progress)
+            draft = _plan_with_failover(
+                root, request, spec_path, progress, feedback=feedback
+            )
         except _NeedPause as error:
             return _mark_pause(
                 current, "plan", _reason_for_draft_pause(error, root, _plan_draft_path(root))
@@ -1138,7 +1201,7 @@ def _plan_phase(root, request, current, *, saved_phase, progress, answer):
         root,
         draft,
         _work_name(request),
-        replace=request.replace,
+        replace=True if feedback else request.replace,
         spec=spec_shown,
     )
     current["plan"] = _store_artifact(target)
@@ -1174,7 +1237,17 @@ def _halted(root: Path, current: dict, cancel_event: threading.Event | None) -> 
     return None
 
 
-def _after_persist(root, request, current, *, saved_phase, progress, cancel_event, answer):
+def _after_persist(
+    root,
+    request,
+    current,
+    *,
+    saved_phase,
+    progress,
+    cancel_event,
+    answer,
+    synthesis: Path | None = None,
+):
     current = _research_phase(
         root,
         request,
@@ -1183,6 +1256,7 @@ def _after_persist(root, request, current, *, saved_phase, progress, cancel_even
         progress=progress,
         cancel_event=cancel_event,
         answer=answer,
+        synthesis=synthesis,
     )
     if current.get("phase") != "stopped":
         _save(root, current)
@@ -1315,6 +1389,7 @@ def run(
     through: str = "relay",
     launcher=None,
     runner=None,
+    synthesis: Path | None = None,
 ) -> dict:
     """Revalidate, lock, persist, then research, spec, plan, preflight, and launch.
 
@@ -1372,6 +1447,7 @@ def run(
             progress=progress,
             cancel_event=cancel_event,
             answer=answer,
+            synthesis=synthesis,
         )
         if through == "plan" or current.get("phase") == "stopped" or "pause" in current:
             return current
@@ -1801,6 +1877,7 @@ def resume(
     answer: str | None = None,
     launcher=None,
     runner=None,
+    synthesis: Path | None = None,
 ) -> dict:
     """Continue from the first phase whose artifact is missing or stale.
 
@@ -1821,7 +1898,6 @@ def resume(
     st = None
     try:
         from whyline_relay import state as relay_state
-
         st = relay_state.load(root)
     except Exception:
         pass
@@ -1900,4 +1976,61 @@ def resume(
         through="relay",
         launcher=launcher,
         runner=runner,
+        synthesis=synthesis,
     )
+
+
+def redraft_plan(
+    root: Path,
+    request: AutoRunRequest,
+    feedback: str,
+    *,
+    progress=None,
+    launcher=None,
+    runner=None,
+) -> dict:
+    """Take the lock, drop the plan artifact from checkpoint, run plan phase with feedback.
+
+    The planner's request has feedback appended as "Changes asked for after review: ...".
+    Returns the checkpoint at phase "plan" or paused, and never launches.
+    """
+    from whyline_relay import agents as relay_agents
+
+    root = Path(root)
+    acquire_lock(root)
+    current = None
+    try:
+        path = checkpoint_path(root)
+        saved = load_object(path)
+        if not isinstance(saved, dict) or saved.get("schema") != SCHEMA:
+            fresh = document(root, request)
+            dismissed = fingerprint(root, request)
+            current = _checkpoint(
+                None,
+                request,
+                fresh,
+                dismissed,
+                phase="plan",
+                persist_commit=None,
+            )
+        else:
+            current = saved
+        current.pop("plan", None)
+        current.pop("pause", None)
+        _save(root, current)
+        current = _plan_phase(
+            root,
+            request,
+            current,
+            saved_phase=current.get("phase"),
+            progress=progress,
+            answer=None,
+            feedback=feedback,
+        )
+        return _save(root, current)
+    except relay_agents.AgentCancelled:
+        if not isinstance(current, dict):
+            raise
+        return _as_stopped(root, current)
+    finally:
+        release_lock(root)
