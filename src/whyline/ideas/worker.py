@@ -352,6 +352,13 @@ def _release_poll_lock(handle) -> None:
         _held_lock = None
 
 
+def enqueue_plan(conn: sqlite3.Connection, idea_id: int, **kwargs) -> bool:
+    """Queue one plan job. False when one is already queued or running."""
+    from whyline.ideas import planning
+
+    return planning.enqueue_plan(conn, idea_id, **kwargs)
+
+
 def enqueue_brainstorm(conn: sqlite3.Connection, idea_id: int, request) -> bool:
     """Queue one brainstorm. False when one is already queued or running.
 
@@ -399,7 +406,7 @@ def work(job_id: int) -> int:
             return 1
         if not _claim_pid(conn, job_id):
             return 0
-        if job["kind"] in ("score", "brainstorm"):
+        if job["kind"] in ("score", "brainstorm", "plan"):
             _keep_awake(os.getpid())
         try:
             _execute(conn, job)
@@ -544,6 +551,8 @@ def _sleep_message(kind: str) -> str:
         name = "brainstorm"
     elif kind == "score":
         name = "quick score"
+    elif kind == "plan":
+        name = "plan"
     else:
         name = "job"
     return (
@@ -565,6 +574,8 @@ def _kind_label(kind: str) -> str:
         return "Brainstorm"
     if kind == "score":
         return "Quick score"
+    if kind == "plan":
+        return "Plan"
     return "Job"
 
 
@@ -581,6 +592,59 @@ def _start_one(conn, now: datetime, spawn) -> None:
     ).fetchone()
     if row is None:
         return
+
+    if row["kind"] == "plan":
+        from whyline.ideas import planning
+
+        ready, reason = planning.check_repo_ready(conn, int(row["idea_id"]))
+        if not ready:
+            idea = store.get(conn, int(row["idea_id"]))
+            if idea is not None and idea.status != "plan_waiting":
+                try:
+                    idea = store.transition(
+                        conn,
+                        idea.id,
+                        "plan_waiting",
+                        expected_revision=idea.revision,
+                        actor="planning",
+                    )
+                except (store.IllegalMove, store.StaleRevision):
+                    pass
+            told_key = f"plan_waiting_told:{row['idea_id']}"
+            if not _kv(conn, told_key):
+                _kv_set(conn, told_key, "1")
+                chat_id = _chat_from_ref(idea.source_ref) if idea else None
+                if chat_id is not None:
+                    from whyline.ideas import bot
+
+                    rev = idea.revision if idea else 0
+                    keyboard = bot._keyboard(
+                        bot.buttons_for("plan_waiting"),
+                        int(row["idea_id"]),
+                        rev,
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO outbox (chat_id, kind, text, buttons_json, attempts, idea_id)
+                        VALUES (?, 'message', ?, ?, 0, ?)
+                        """,
+                        (chat_id, str(reason), json.dumps(keyboard), int(row["idea_id"])),
+                    )
+            return
+
+        _kv_set(conn, f"plan_waiting_told:{row['idea_id']}", "")
+        idea = store.get(conn, int(row["idea_id"]))
+        if idea is not None and idea.status in {"setup_configuring", "plan_waiting"}:
+            try:
+                store.transition(
+                    conn,
+                    idea.id,
+                    "planning",
+                    expected_revision=idea.revision,
+                    actor="planning",
+                )
+            except (store.IllegalMove, store.StaleRevision):
+                pass
     timeout = _job_timeout(conn, row)
     if timeout == "none":
         lease = None
@@ -618,7 +682,7 @@ def _start_one(conn, now: datetime, spawn) -> None:
 
 
 def _job_timeout(conn, row) -> int | str:
-    if row["kind"] == "brainstorm":
+    if row["kind"] in ("brainstorm", "plan"):
         return _brainstorm_timeout(conn, int(row["idea_id"]))
     return SCORE_TIMEOUT_MINUTES
 
@@ -831,6 +895,11 @@ def _execute(conn, job) -> None:
             brainstorm.run(conn, idea_id, request)
         except brainstorm.BrainstormError as exc:
             raise _AlreadyTold(str(exc)) from exc
+        return
+    if kind == "plan":
+        from whyline.ideas import planning
+
+        planning.run(conn, idea_id)
         return
     raise RuntimeError(f"unknown job kind {kind}")
 

@@ -574,14 +574,14 @@ def test_service_on_stays_off_when_the_scheduler_cannot_start(ideas_home, capsys
 def test_work_fails_an_unknown_kind_and_tells_the_chat(conn, monkeypatch):
     monkeypatch.setattr("whyline.agents.telegram.token_get", lambda **_kwargs: "")
     idea = _idea(conn)
-    job = _job(conn, idea, kind="plan", state="running", attempts=1, pid=None)
+    job = _job(conn, idea, kind="unknown", state="running", attempts=1, pid=None)
 
     assert worker.work(job["id"]) == 1
 
     row = conn.execute("SELECT state, error, pid FROM jobs WHERE id = ?", (job["id"],)).fetchone()
     assert row["state"] == "failed"
     assert row["pid"] == os.getpid()
-    assert "unknown job kind plan" in row["error"]
+    assert "unknown job kind unknown" in row["error"]
     sent = conn.execute("SELECT chat_id, text FROM outbox").fetchone()
     assert sent["chat_id"] == CHAT
     assert sent["text"] == row["error"]

@@ -21838,3 +21838,98 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2275bf0c54aa4a0582304ec7d8c61244 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T13:45:17.098Z"} -->
+
+## 2026-10-23 — Draft spec and plan with Telegram question gating and plan review
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-17
+
+**Because:** allows human to review plan and answer clarifying questions over Telegram before launching relay
+
+**Rejected:**
+
+- launch directly without review — user cannot inspect or redraft plan before execution
+
+**Files:** src/whyline/ideas/planning.py
+
+<!-- whyline-event: 9cff1f3c37a7480dbb903d75bfa26b10 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T14:31:18.563Z"} -->
+
+## 2026-10-23 — IDEA-17 Round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-17
+
+**Because:** The required ideas suite and full project suite both completed with exit code 0, covering the planning flow and project-wide regressions
+
+**Files:** src/whyline/ideas/planning.py
+
+<!-- whyline-event: 08206a8308d640cdb4390077efd12e99 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T14:39:52.154Z"} -->
+
+## 2026-10-23 — IDEA-17 Round 3 review rejected
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-17
+
+**Because:** Real auto_run plan pauses keep phase plan and include pause, but planning handles phase plan as success before pause; additionally answer resumes through relay with no launcher instead of stopping at plan review, while the fakes hide both integration defects
+
+**Rejected:**
+
+- Approve based on passing suites — the tests model pauses as phase paused and stub resume, so they do not exercise production checkpoint semantics
+
+**Files:** src/whyline/ideas/planning.py, tests/ideas/test_planning.py
+
+<!-- whyline-event: 8c6bee149b2b41ecb9d2a90b8df416d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T14:49:12.107Z"} -->
+
+## 2026-10-23 — Check pauses before plan-phase completion and parameterize auto_run.resume through='plan'
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** IDEA-17
+
+**Because:** auto_run sets phase to the current phase when pausing so pause must be checked first, and planning answer resumes must stop at plan review without launching relay
+
+**Rejected:**
+
+- check phase=='plan' first — treats pauses in plan phase and redraft as completions
+- hardcode through='relay' in resume — requires launcher and bypasses review
+
+**Files:** src/whyline/ideas/planning.py, src/whyline/console/auto_run.py
+
+<!-- whyline-event: e336e218ccbd49d385d8dc98e4062f13 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T15:13:23.626Z"} -->
+
+## 2026-10-23 — IDEA-17 Round 5 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** IDEA-17
+
+**Because:** The required ideas suite and full project suite both exited 0, including the real auto_run pause/resume integration that reaches plan review through plan without launching relay
+
+**Files:** src/whyline/console/auto_run.py, tests/ideas/test_planning.py
+
+<!-- whyline-event: dfa48ea57f59425eb1f0c865f5d900b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T15:22:39.635Z"} -->
+
+## 2026-10-23 — IDEA-17 Round 6 review approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** IDEA-17
+
+**Because:** The diff implements the required clean-repository and live-relay gates, Telegram question and retry flows, through-plan resume, review/redraft/discard behavior, and both the ideas suite and full suite passed independently
+
+**Rejected:**
+
+- Request more changes — the prior production pause-order and resume-through-plan defects are fixed and covered by a real auto_run integration test
+
+**Files:** src/whyline/ideas/planning.py, src/whyline/console/auto_run.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, tests/ideas/test_planning.py
+
+<!-- whyline-event: f09905613f43489e9c4226eb593826c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T15:32:07.918Z"} -->

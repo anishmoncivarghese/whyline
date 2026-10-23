@@ -76,6 +76,14 @@ _STATUS_BUTTONS = {
         ("Edit", "edit"),
         ("Cancel", "cancel"),
     ),
+    "plan_waiting": (("Cancel", "cancel"),),
+    "planning": (("Cancel", "cancel"),),
+    "plan_review": (
+        ("Start", "start_plan"),
+        ("Change", "change_plan"),
+        ("Discard", "discard_plan"),
+    ),
+    "plan_discarded": (("Reopen", "reopen"),),
     "dropped": (("Reopen", "reopen"),),
 }
 _DETECT_ORDER = ("claude", "codex", "grok")
@@ -98,6 +106,10 @@ _LABEL_ACTION = {
     "Excel": "excel",
     "Confirm": "confirm",
     "Edit": "edit",
+    "Start": "start_plan",
+    "Change": "change_plan",
+    "Discard": "discard_plan",
+    "Retry": "retry_plan",
 }
 _SCORE_FROM = frozenset({"captured", "scored"})
 _STAMP = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -416,6 +428,19 @@ def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
         _start_brainstorm(conn, row, idea, run_fn)
     elif name == "plan":
         _open_setup(conn, row, idea)
+    elif name == "start_plan":
+        _say(conn, row, "Not available yet.", idea_id=idea.id)
+    elif name == "change_plan":
+        _ask_change_plan(conn, row, idea)
+    elif name == "discard_plan":
+        _ask_discard_plan(conn, row, idea)
+    elif name == "discard_plan_yes":
+        _discard_plan(conn, row, idea)
+    elif name == "retry_plan":
+        from whyline.ideas import planning
+
+        planning.enqueue_plan(conn, idea.id, action="resume", answer=None)
+        _say(conn, row, "Retrying…", idea_id=idea.id)
     elif name.startswith("repo_"):
         repo_name = name[len("repo_") :]
         _choose_repo(conn, row, idea, repo_name)
@@ -488,7 +513,11 @@ def _answer(conn, row, routed: intent.Intent) -> None:
     chat_id = int(_field(row, "chat_id"))
     question = _open_for(conn, chat_id)
     _clear_open(conn, chat_id)
-    if not question or question.get("kind") != "refine":
+    if not question:
+        _say(conn, row, "Nothing is waiting for an answer.")
+        return
+    q_kind = question.get("kind")
+    if q_kind not in {"refine", "plan_question", "change_plan"}:
         _say(conn, row, "Nothing is waiting for an answer.")
         return
     try:
@@ -500,11 +529,30 @@ def _answer(conn, row, routed: intent.Intent) -> None:
     if idea is None:
         _say(conn, row, "No idea is waiting for an answer.")
         return
-    extra = routed.text.strip()
-    if extra:
-        _append_context(conn, idea, extra)
-        idea = store.get(conn, idea.id)
-    _quick_score(conn, row, idea)
+
+    if q_kind == "refine":
+        extra = routed.text.strip()
+        if extra:
+            _append_context(conn, idea, extra)
+            idea = store.get(conn, idea.id)
+        _quick_score(conn, row, idea)
+        return
+
+    if q_kind == "plan_question":
+        from whyline.ideas import planning
+
+        reply = routed.text.strip()
+        planning.enqueue_plan(conn, idea.id, action="resume", answer=reply)
+        _say(conn, row, "Resuming plan with your answer…", idea_id=idea.id)
+        return
+
+    if q_kind == "change_plan":
+        from whyline.ideas import planning
+
+        reply = routed.text.strip()
+        planning.enqueue_plan(conn, idea.id, action="redraft", feedback=reply)
+        _say(conn, row, "Redrafting plan with your changes…", idea_id=idea.id)
+        return
 
 
 def _free(conn, row, routed: intent.Intent, run_fn) -> None:
@@ -769,7 +817,11 @@ def _cancel(conn, row, idea: store.Idea) -> None:
         _retarget_buttons(conn, fresh, fresh.status)
         _clear_card(conn, _field(row, "chat_id"))
         return
-    if idea.status == "setup_configuring":
+    if idea.status in {"setup_configuring", "plan_waiting", "planning"}:
+        plan_job = _live_job(conn, idea.id, "plan")
+        if plan_job is not None:
+            _stop_job(conn, plan_job)
+        _kv_set_txn(conn, f"plan_waiting_told:{idea.id}", "")
         fresh = _move_or_keep(conn, idea, "brainstormed", "cancelled")
         _say(conn, row, "Cancelled.", idea_id=idea.id)
         _retarget_buttons(conn, fresh, "brainstormed")
@@ -791,7 +843,65 @@ def _confirm(conn, row, idea: store.Idea) -> None:
     fields = card.get("fields") if card else None
     if isinstance(fields, dict) and fields:
         _kv_set_txn(conn, f"{_SETTINGS_KEY}:{idea.id}", json.dumps(fields))
+    if idea.status == "setup_configuring" or (
+        card and card.get("kind") in {"setup", "plan_setup"}
+    ):
+        from whyline.ideas import planning
+
+        planning.enqueue_plan(conn, idea.id)
     _say(conn, row, "Confirmed.", idea_id=idea.id)
+
+
+def _ask_change_plan(conn, row, idea: store.Idea) -> None:
+    chat_id = int(_field(row, "chat_id"))
+    _set_open(conn, chat_id, {"kind": "change_plan", "idea_id": idea.id})
+    _say(conn, row, "What should change?", idea_id=idea.id)
+
+
+def _ask_discard_plan(conn, row, idea: store.Idea) -> None:
+    keyboard = _keyboard(
+        (("Discard", "discard_plan_yes"), ("Cancel", "cancel")),
+        idea.id,
+        idea.revision,
+    )
+    chat_id = int(_field(row, "chat_id"))
+    outbox_id = _say(conn, row, "Discard this plan?", keyboard, idea_id=idea.id)
+    _remember_card(
+        conn, chat_id, "discard_confirm", idea.id, outbox_id=outbox_id
+    )
+
+
+def _discard_plan(conn, row, idea: store.Idea) -> None:
+    from whyline.console import auto_run
+    from whyline.ideas import setup
+
+    repos = setup.list_repos(conn)
+    repo_name = idea.repo or ""
+    path_str = repos.get(repo_name)
+    if path_str:
+        root = Path(path_str)
+        try:
+            auto_run.stop(root)
+        except Exception:
+            pass
+
+    try:
+        fresh = store.transition(
+            conn,
+            idea.id,
+            "plan_discarded",
+            expected_revision=idea.revision,
+            actor="telegram",
+            note="discarded",
+        )
+    except (store.IllegalMove, store.StaleRevision) as exc:
+        _say(conn, row, str(exc), idea_id=idea.id)
+        return
+
+    text = f"Plan discarded.\nSpec: {fresh.spec_path}\nPlan: {fresh.plan_path}"
+    _say(conn, row, text, idea_id=fresh.id)
+    _retarget_buttons(conn, fresh, "plan_discarded")
+    _clear_card(conn, _field(row, "chat_id"))
 
 
 def _edit(conn, row, idea: store.Idea) -> None:
