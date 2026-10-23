@@ -73,13 +73,14 @@ full = ["draft", "test", "review"]
 [pipeline.stages.draft]
 role   = "implementer"
 prompt = "implement"
+max_visits = 6
 [pipeline.stages.draft.on]
 ready = "@next"
 
 [pipeline.stages.test]
 role       = "tester"
 prompt     = "test"
-max_visits = 5
+max_visits = 6
 [pipeline.stages.test.on]
 passed = "@next"
 failed = "draft"
@@ -87,6 +88,7 @@ failed = "draft"
 [pipeline.stages.review]
 role   = "reviewer"
 prompt = "review"
+max_visits = 6
 [pipeline.stages.review.on]
 approved = "@complete"
 rejected = "draft"
