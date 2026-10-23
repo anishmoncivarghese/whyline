@@ -22142,3 +22142,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0a1494f3f777462aaa6afc037334e4e1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T18:56:34.540Z"} -->
+
+## 2026-10-23 — Prepare whyline 0.3.48 as the IDEA-20 inbox-to-relay release
+
+**Actor:** codex
+**Role:** release
+**Task:** IDEA-20
+
+**Because:** All IDEA-15 through IDEA-19 work is present, the full suite passes, and locally built artifacts pass the same packaging and standalone-install checks as the release workflow
+
+**Rejected:**
+
+- Publish only the pyproject bump — runtime __version__ and uv.lock must identify the same artifact version
+- Generate GitHub notes from commits — hand-written notes explain the user-visible workflow and operational constraints more clearly
+
+**Files:** pyproject.toml, src/whyline/__init__.py, uv.lock, docs/releases/v0.3.48.md
+
+<!-- whyline-event: f157b5b7716f435b941e393ff345a394 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-23T19:26:47.974Z"} -->
