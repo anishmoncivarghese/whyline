@@ -323,7 +323,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: a reply proposing set-model, clear-override and resume applies all three in order with one config commit; an unknown agent or model is dropped with a note; a step outside the catalog is dropped; a failing step stops the rest; a reply with no JSON uses RECOMMEND.
   Verify with `uv run pytest -q tests/console/test_recovery.py` and `uv run pytest -q`. Change nothing else.
 
-- [ ] ASK-4: Auto applies the agent's safe steps
+- [x] ASK-4: Auto applies the agent's safe steps
   Edit Auto's path in `src/whyline/console/recovery.py`, with tests in `tests/console/test_recovery.py`.
   In Auto mode, when no rule-based fix is auto-safe or one was already applied to this pause, Auto asks the agent once per pause. Auto applies the steps only when every step is in a safe set:
   - `set-model` to a model with no recorded quota block
