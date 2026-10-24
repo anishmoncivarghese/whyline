@@ -14,7 +14,7 @@ whyline-relay repository edit. No new dependency. No version bump, tag, push,
 GitHub release, or PyPI publication. Tests never invoke a real provider, use a
 real home directory, access the network, or sleep for a fixed duration.
 
-- [ ] SUBS-1: Separate enabled subscriptions from detected readiness
+- [x] SUBS-1: Separate enabled subscriptions from detected readiness
   Edit `src/whyline/account.py`, `src/whyline/cli.py`, `tests/test_account.py`, and `tests/test_account_cli.py` only.
   Add an `enabled` field to the per-provider global account record and helpers `enabled_agents()`, pure `check_provider(agent)`, plus an atomic global writer used by `set_enabled(agent, enabled)` and `set_enabled_many(values, results=None)`. Preserve every unrelated field and merge supplied completed check results. Write a sibling temporary file and replace the target; clean up the temporary path on failure.
   A record with no `enabled` reads `enabled = bool(available)`. A legacy `manual` record follows the same rule. Reading does not rewrite it. `set_enabled_many` writes explicit booleans for Claude, Codex, Grok, and Antigravity in one replacement.
