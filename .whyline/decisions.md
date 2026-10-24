@@ -22789,3 +22789,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2bb715f9520641ed8ddfc9af942b720e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T17:24:14.581Z"} -->
+## 2026-10-24 — Raise Whyline's relay floor to 0.2.39 for the Grok cancellation parser fix
+
+**Actor:** codex
+**Role:** release
+**Task:** RELAY-039-FLOOR
+
+**Because:** A future uv sync must not reinstall whyline-relay 0.2.38, which cannot parse Grok's pretty-printed permission-required cancellation log and leaves the relay paused
+
+**Rejected:**
+
+- Keep >=0.2.38 and rely on newest-version resolution — existing lockfiles and environments can retain the affected 0.2.38 package
+- Duplicate the parser change in Whyline — cancellation parsing belongs to whyline-relay and is already released in 0.2.39
+
+**Test:** uv run pytest -q: passed full suite with one expected skip
+**Test:** uv build: built wheel and sdist
+**Test:** artifact gates: clean sdist and standalone base/console/ui/relay installs passed
+
+**Files:** pyproject.toml, uv.lock, docs/releases/v0.3.50.md
+
+<!-- whyline-event: 6cdbec1b1eb1491a89d519a729b8f4c5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T11:26:17.285Z"} -->
+
+## 2026-10-24 — Position Whyline as an idea-to-release-ready lifecycle powered by existing agent subscriptions
+
+**Actor:** codex
+**Role:** writer
+**Task:** README-LIFECYCLE
+
+**Because:** The former opening listed accurate features but buried the product's main adoption story: Whyline connects idea capture, multi-agent brainstorming, reviewed documents, Relay delivery, reusable Agents, and decision memory without requiring separate model API keys
+
+**Rejected:**
+
+- Lead with decision history alone — it describes Whyline's foundation but understates the current end-to-end product
+- Claim fully autonomous release — release remains human-controlled and Relay intentionally pauses at unsafe or manual boundaries
+
+**Test:** README links: all relative targets exist
+**Test:** displayed CLI surfaces: all help commands exited 0
+**Test:** standard environment: whyline-relay 0.2.39 imports automatically
+
+**Files:** README.md
+
+<!-- whyline-event: 7f0bf2c366084453b3b52b873007575c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:29:05.252Z"} -->

@@ -1,25 +1,49 @@
 # whyline
 
-Records why your code exists, and tells the next agent.
+## Build software from idea to release-ready code with the AI subscriptions you already have.
 
-Whyline is a locally controlled workspace for Claude Code, Codex, Grok, and
-Antigravity. It preserves why code changed, coordinates reviewed work, runs
-reusable read-only agents, and turns captured ideas into plans and
-implementation.
+Whyline coordinates Claude Code, Codex, Grok, and Antigravity through a
+review-gated software-delivery workflow. It can capture an idea, run a
+multi-agent brainstorm, create the specification and implementation plan,
+assign agents to build and review the work, verify the result, and preserve
+why every important decision was made.
 
-Whyline adds the continuity that a direct agent session does not have:
+```text
+idea
+  → score and multi-agent brainstorm
+  → reviewed specification and implementation plan
+  → preflight and role assignment
+  → implement → test → review → verify
+  → approved commit
+  → human-controlled release
+```
 
-- **Explain** a line from the decisions and commits that created it.
-- **Build with Relay** through implementation, testing, review, and verification.
-- **Run saved Agents** now, on a schedule, or from a local event.
-- **Capture Ideas** in the console, from Telegram, or by authenticated email.
+Whyline uses the agent CLIs already installed and signed in on your computer.
+The work runs through the Claude, ChatGPT/Codex, Grok, or Antigravity account
+you already use—without requiring separate model API keys or a Whyline
+subscription.
 
-It is free, Apache-2.0, and has no Whyline account, telemetry service, paid
-tier, or API key. It launches agent CLIs you already installed and signed in
-to, so prompts and selected context still go to those providers. Telegram and
-email use their own networks.
+### What Whyline gives you
 
-## Install and open the console
+- **A complete path from idea to implementation.** Start in the console, from
+  Telegram, or by authenticated email; finish with reviewed, verified code.
+- **Multi-agent brainstorming and planning.** Let several agents research an
+  idea, synthesize the findings, and produce reviewed planning documents.
+- **Controlled autonomous execution.** Relay can progress through safe stages
+  on its own while pausing for questions, unsafe recovery, manual checks, and
+  release work.
+- **The best agent for each role.** Choose different agents and models for
+  planning, implementation, testing, review, and verification, with ordered
+  backups when a provider is unavailable or out of quota.
+- **Reusable Agents.** Create accepted, read-only agents for recurring work;
+  run them now, on a schedule, or from a local event.
+- **Decision memory.** Record the reasoning and rejected alternatives behind
+  a change so the next agent understands the code instead of starting over.
+
+Whyline is free and Apache-2.0 licensed. It has no hosted Whyline account,
+telemetry service, paid tier, or model API key of its own.
+
+## Install
 
 You need Python 3.11 or newer, Git, and at least one supported agent CLI that
 is already installed and authenticated.
@@ -31,135 +55,83 @@ whyline init
 whyline
 ```
 
+That one installation includes Whyline's console and Relay. You do not need to
+install `whyline-relay` separately.
+
 `whyline init` creates the repository's `.whyline/` directory and offers to
-install project instructions and hooks. It is safe to run again when Whyline
-changes: managed instruction blocks are upgraded in place and the rest of
-your files are left alone.
-
-On first launch Whyline detects the agent CLIs available on this machine. The
-full-screen console has three modes:
-
-| Mode | What it does |
-|---|---|
-| **Chat** | Talks to the selected CLI with repository, model, backup, timeout, and attachment controls. |
-| **Relay** | Creates or opens a plan, assigns roles, checks readiness, runs it, and guides pauses or recovery. |
-| **Agents** | Creates and runs reusable read-only agents, and opens the Ideas and Inbox screens. |
+install project instructions and hooks. It is safe to run again after an
+upgrade: Whyline updates its managed instruction blocks without replacing the
+rest of your files.
 
 Bare `whyline` opens the full-screen console when its UI is available.
 `whyline console` opens the keyboard console, and `whyline console --ui`
-explicitly requests the full-screen version. The CLI remains available for
-scripts and explicit terminal workflows.
+explicitly requests the full-screen interface.
 
-## Decision memory
+## One console, four connected workflows
 
-Agents do not share their hidden conversations. Whyline gives the next one a
-small, explicit record of the choices that matter: what was chosen, why, what
-was rejected, which files were involved, and what remains risky.
+The console starts with three modes. Ideas and Inbox live inside Agents mode.
 
-```text
-$ whyline explain src/whyline/runner.py:46
+| Mode | Use it for |
+|---|---|
+| **Chat** | Talk to the selected agent CLI with repository, model, backup, timeout, and attachment controls. |
+| **Relay** | Brainstorm or open a plan, assign roles, check readiness, run the work, and resolve pauses. |
+| **Agents** | Create and run reusable read-only agents; open the Ideas backlog and Inbox settings. |
 
-src/whyline/runner.py:46
+The workflows connect rather than living as separate tools:
 
-Last touched by   anish
-Commit            bc677e4  ·  2026-08-17
+1. **Ideas** captures and develops the work.
+2. **Relay** plans, implements, tests, reviews, and verifies it.
+3. **Saved Agents** handle repeatable analysis and monitoring.
+4. **Decision memory** carries the reasoning into every future session.
 
-Decision          Resolve runner injection points at call time, not in the signature
-Because           default arguments bind at import time, so monkeypatching runner.shutil.which had no effect and a test exec'd the real codex binary, replacing the pytest process
-Rejected          patch the default argument tuple in tests
-                  couples every test to CPython internals
+## From idea to reviewed implementation
 
-Confidence        High — a recorded decision matches the commit for this line.
-                  one recorded decision matches the commit that wrote this line
-```
+Enter an idea in the console, send it from Telegram, or email it from an
+allowed address. Whyline can score and refine it before any repository work
+begins.
 
-That output is from this repository. An empty record produces an empty answer,
-and `explain` says when it is making an inference.
+### Brainstorm with multiple subscriptions
 
-### What is shared and what stays local
+A brainstorm can use several available agents, multiple review passes, a
+chosen final writer, a backup agent, and a timeout. Each agent researches
+independently before Whyline merges the work and asks the final writer for a
+synthesis.
 
-| Data | Location | Shared? |
-|---|---|---:|
-| Decisions and rejected alternatives | `.whyline/decisions.md` | Committed |
-| Active handoff, claims, and activity ledger | `.whyline/` runtime files | Local |
-| Repository saved-agent definitions | `.whyline/agents/` | May be committed |
-| Accepted-agent state, run history, and delivery settings | `~/.whyline/agents/` | Local |
-| Ideas, reports, documents, and workbook | `~/.whyline/ideas/` | Local unless delivered |
+The result is saved as a durable Markdown document. Idea Inbox workflows can
+also deliver reports and plans as Word and PDF documents, with an Excel export
+of the idea backlog.
 
-`whyline sync` compresses the active handoff, Git state, ownership warnings,
-and relevant decisions into a bounded context block. Raw prompt text is not
-included. See [how recording works](docs/recording.md) for the full layout.
+### Create the specification and plan
 
-The core commands are intentionally small:
+Choose an allowed repository and its saved setup. Whyline drafts a reviewed
+specification and implementation plan, routes any planner questions back to
+you, and keeps the documents attached to the idea that produced them.
 
-```bash
-whyline sync                         # active task context for this repository
-whyline brief --file src/a.py        # bounded history for the next agent
-whyline explain src/a.py:14          # why this line exists
-whyline note "chose X" --because "Y" --rejected "Z: too slow" \
-  --file src/a.py --actor codex --role implementer --task WL-42
-whyline status                       # whether recording is healthy here
-```
+Nothing starts merely because a plan exists. Whyline shows the repository,
+agents, models, timeout, and other run settings for final confirmation, then
+reruns preflight before Relay begins.
 
-### Manual handoff
+### Run the plan with Relay
 
-You can keep coordination completely explicit from the shell:
+Relay turns a Markdown plan into a controlled multi-agent run:
 
-```bash
-whyline claim WL-42 --actor codex --role implementer --file src/cache.py
-whyline run codex "implement bounded cache invalidation" --task-id WL-42
+- Assign a different agent and model to each role.
+- Configure an ordered backup chain for supported failover conditions.
+- Use **Check** to validate agent access, attachments, configuration,
+  repository state, and the plan without starting work.
+- Use **Run** after the exact checked configuration is ready.
+- Use **Auto** to advance through safe planning and delivery stages.
+- Use **Resolve** when a pause needs a constrained decision based on evidence.
+- Use **Resume** to continue checkpointed work and **Stop** to interrupt the
+  current attempt.
+- Use **Files** to follow files changed by the active Chat, brainstorm, or
+  Relay run from inside the console.
 
-whyline handoff WL-42 --from codex --to claude --status ready-for-review \
-  --summary "bounded invalidation implemented" \
-  --file src/cache.py --test "pytest -q: passed" \
-  --risk "large repositories not benchmarked"
+Relay coordinates implementation, tests, review, verification, and the
+approved commit. It pauses instead of guessing when a question, dangerous
+recovery step, manual verification, or release task needs a person.
 
-whyline run claude "review the cache change" --task-id WL-42
-```
-
-Claims are advisory warnings, not locks. A handoff is an explicit project
-record, not a transfer of the previous agent's private conversation.
-
-## Relay: reviewed delivery from request to release
-
-Relay is included with Whyline but does nothing until you configure and start
-it. It turns a Markdown plan into a controlled, multi-agent workflow:
-
-```text
-request
-  → brainstorm and synthesis
-  → reviewed spec and implementation plan
-  → optional test plan
-  → preflight and role assignment
-  → implement → test → review → verify
-  → approved commit
-  → human release work
-```
-
-Open **Relay**, choose **Plan**, and start from a brainstorm, a description, an
-existing plan, or **Auto**. Auto can carry one request through research, a
-reviewed spec and plan, preflight, and the relay run.
-
-Relay's controls make that automation bounded:
-
-- Assign a different agent and model to implementation, testing, review, and
-  other planning roles.
-- Use an ordered backup chain when a provider is unavailable, logged out, or
-  out of quota and failover is supported.
-- **Check** validates the exact configuration, attachments, agent access,
-  repository state, and plan without starting work.
-- **Run** is enabled only for the configuration and repository state that
-  passed Check; changing either invalidates the check.
-- **Auto** advances safe stages but pauses for open questions, dangerous
-  recovery, manual verification, and release tasks.
-- **Resolve** shows the evidence and constrained fixes. Potentially destructive
-  recovery still waits for you.
-- **Resume** continues checkpointed work; **Stop** interrupts the current
-  attempt rather than waiting for it to finish.
-- **Files** opens a read-only pane that follows files changed by the active
-  Chat, brainstorm, or Relay run.
-
-For scripts and terminal-first operation, start with:
+For terminal-first operation:
 
 ```bash
 whyline relay init
@@ -168,15 +140,11 @@ whyline relay setup
 whyline relay status
 ```
 
-The host-side Whyline committer may commit work after the configured review
-and verification gates pass. Release steps remain human-owned and pause the
-run until you mark them done or skip them.
+## Saved Agents: reusable work, not one-off prompts
 
-## Saved Agents: reusable, accepted, and read-only
-
-A Relay role collaborates on a repository plan. A saved Agent is different:
-it is a reusable instruction set for read-only work, with a primary CLI,
-backup chain, timeout, schedule or trigger, run history, and delivery settings.
+A Relay role collaborates on one repository plan. A saved Agent is a reusable
+instruction set for read-only work, with a primary CLI, backup chain, timeout,
+schedule or trigger, run history, and delivery settings.
 
 Create one from **Agents → New agent**, or keep a repository definition such
 as `.whyline/agents/dependency-watch.toml`:
@@ -197,7 +165,7 @@ at = "09:00"
 ```
 
 Before a repository Agent can run unattended on a Mac, its current definition
-must be accepted there:
+must be accepted on that computer:
 
 ```bash
 whyline agents accept dependency-watch
@@ -205,81 +173,137 @@ whyline agents run dependency-watch
 whyline agents history dependency-watch
 ```
 
-Changing the definition invalidates that acceptance and stops unattended
-runs until it is reviewed again. Claude Code, Codex, and Grok have verified
-read-only launch modes. Antigravity supports interactive Chat and Relay work,
-but saved unattended Agents exclude it because its CLI has no verified
+Changing the definition invalidates acceptance and prevents another
+unattended run until you review it again. Results can remain in local history
+or be delivered through email, Telegram, or an advanced after-run command.
+Delivery failure is recorded separately from the agent's result.
+
+Claude Code, Codex, and Grok have verified read-only launch modes for saved
+Agents. Antigravity can participate in Chat, brainstorms, and Relay, but is
+excluded from unattended saved Agents because its CLI has no verified
 read-only mode.
 
-Results can stay in local history or be delivered by email, Telegram, or an
-advanced after-run command, optionally with Markdown or Word attached.
-Delivery failure is recorded separately and does not rewrite a successful run
-as an agent failure.
-
-On-demand Agents are useful anywhere the CLI runs. Scheduling, folder watches,
-Mail rules, and the background heartbeat use macOS services. See the
+On-demand Agents work wherever the supported CLI runs. Scheduling, folder
+watches, Mail rules, and the background heartbeat use macOS services. See the
 [verified agent capabilities](docs/agents-capabilities.md) and
 [Mail trigger recipe](docs/agents-mail-recipe.md).
 
-## Idea Inbox: from a thought to reviewed work
+## Idea Inbox: start work away from the terminal
 
-Enter or send an idea, score and refine it, receive the brainstorm documents,
-choose an allowed repository, and start Relay only after final confirmation.
+Idea Inbox gives you a local backlog and three ways to add or control work:
 
-```text
-console, Telegram, or authenticated email
-  → local idea backlog
-  → quick score or multi-agent brainstorm
-  → Word / PDF / Excel exports
-  → reviewed spec and plan in an allowed repository
-  → final confirmation
-  → Relay
-```
-
-There are three entry points:
-
-- **Console:** open **Agents → Ideas** for the backlog and **Agents → Inbox**
-  for chats, senders, default agents, document formats, repositories, and the
-  service.
-- **Telegram:** `whyline idea telegram setup` connects a bot, finds private
-  chats, lets you allow one, and offers to start the inbox. Cards expose only
-  actions valid for the idea's current state, including status, Resolve, and
-  confirmed Stop while Relay runs.
-- **Email:** allow senders in the Inbox screen or with `whyline idea email
-  allow person@example.com`, then install the Mail rule with `whyline idea
-  email mail-script`. Mail is accepted only when the sender is allowed and
-  its authentication results show DKIM or SPF pass. Consequential actions
-  require a six-character confirmation code tied to the current idea revision.
-
-Telegram intake uses private allowlisted bot chats; it is not end-to-end
-encrypted. Email and the background inbox service currently rely on macOS
-Mail and scheduling integration. Telegram keeps bot updates only for a limited
-time, so the Mac must come back online to catch them.
+- **Console:** use **Agents → Ideas** to score, brainstorm, refine, reopen,
+  drop, export, or plan an idea. Use **Agents → Inbox** to configure chats,
+  senders, agents, document formats, repositories, and the background service.
+- **Telegram:** connect a bot to an allowlisted private chat. Its cards expose
+  only actions valid for the idea's current state, including confirmation,
+  status, Resolve, and Stop while Relay is running.
+- **Email:** allow a sender, then email an idea with optional brainstorm
+  settings in the body. Consequential steps require the six-character code
+  Whyline sends back, tied to that exact idea revision.
 
 Ideas run in their own workspace, not in arbitrary repositories. Planning is
-limited to repositories you explicitly allow. The SQLite database under
-`~/.whyline/ideas/` is authoritative; `ideas.xlsx` is a rebuilt export.
+limited to repositories you explicitly allow, and Relay starts only after the
+final confirmation.
+
+The SQLite database under `~/.whyline/ideas/` is authoritative;
+`ideas.xlsx` is a rebuilt export. Telegram is not end-to-end encrypted, and
+email intake requires both an allowed sender and a DKIM or SPF pass. The
+background inbox, Mail integration, and native PDF conversion are currently
+macOS features.
 
 See [Idea Inbox setup and troubleshooting](docs/idea-inbox.md).
 
-## Trust, privacy, and compatibility
+## Decision memory: preserve why, not hidden conversations
 
-Whyline is locally controlled, not isolated from every external service:
+Agent sessions do not share their private conversation history. Whyline gives
+the next agent a small, explicit record of what was chosen, why it was chosen,
+what was rejected, which files were involved, and what remains risky.
 
-- Whyline has no hosted account, telemetry service, paid tier, or API key of
-  its own.
-- Agent CLIs use their existing authentication, provider terms, and provider
-  data handling. Whyline never asks for or stores their API keys.
+```text
+$ whyline explain src/whyline/runner.py:46
+
+src/whyline/runner.py:46
+
+Last touched by   anish
+Commit            bc677e4  ·  2026-08-17
+
+Decision          Resolve runner injection points at call time, not in the signature
+Because           default arguments bind at import time, so monkeypatching runner.shutil.which had no effect and a test exec'd the real codex binary, replacing the pytest process
+Rejected          patch the default argument tuple in tests
+                  couples every test to CPython internals
+
+Confidence        High — a recorded decision matches the commit for this line.
+                  one recorded decision matches the commit that wrote this line
+```
+
+That output comes from this repository. An empty record produces an empty
+answer, and `explain` says when it is making an inference.
+
+| Data | Location | Shared? |
+|---|---|---:|
+| Decisions and rejected alternatives | `.whyline/decisions.md` | Committed |
+| Active handoff, claims, and activity ledger | `.whyline/` runtime files | Local |
+| Repository saved-Agent definitions | `.whyline/agents/` | May be committed |
+| Accepted-Agent state, run history, and delivery settings | `~/.whyline/agents/` | Local |
+| Ideas, reports, documents, and workbook | `~/.whyline/ideas/` | Local unless delivered |
+
+`whyline sync` turns the active handoff, Git state, ownership warnings, and
+relevant decisions into a bounded context block. It does not include raw
+prompt text. See [how recording works](docs/recording.md) for the full model.
+
+The core commands remain available for scripts and explicit workflows:
+
+```bash
+whyline sync                         # bounded context for this repository
+whyline brief --file src/a.py        # focused history for the next agent
+whyline explain src/a.py:14          # why this line exists
+whyline note "chose X" --because "Y" --rejected "Z: too slow" \
+  --file src/a.py --actor codex --role implementer --task WL-42
+whyline status                       # whether recording is healthy here
+```
+
+### Manual handoff
+
+```bash
+whyline claim WL-42 --actor codex --role implementer --file src/cache.py
+whyline run codex "implement bounded cache invalidation" --task-id WL-42
+
+whyline handoff WL-42 --from codex --to claude --status ready-for-review \
+  --summary "bounded invalidation implemented" \
+  --file src/cache.py --test "pytest -q: passed" \
+  --risk "large repositories not benchmarked"
+
+whyline run claude "review the cache change" --task-id WL-42
+```
+
+Claims are advisory warnings, not locks. A handoff is an explicit project
+record, not a transfer of the previous agent's hidden conversation.
+
+## Subscriptions, privacy, and control
+
+Whyline does not proxy model traffic or require model API credentials:
+
+- It launches the agent CLI you selected using the authentication already
+  active in that CLI. A CLI authenticated with a subscription or its own API
+  key still works; Whyline does not ask for, store, or forward that credential.
+- Prompts and selected context still go to the chosen agent provider under
+  that provider's terms and data-handling policy.
+- Whyline has no hosted account, telemetry service, or paid orchestration
+  tier. Project and workflow state are controlled from your machine.
 - Saved unattended Agents use tested read-only CLI modes and locally accepted
-  definitions. This does not promise isolation from every source or tool an
-  underlying CLI can read.
-- Telegram chats are allowlisted but are not end-to-end encrypted.
-- Email intake requires both an allowed sender and a DKIM or SPF pass; action
-  codes expire when the idea revision changes.
+  definitions. This is not a promise that an underlying CLI is isolated from
+  every source or tool it can access.
+- Telegram and email use their own networks and credentials. Telegram chats
+  are allowlisted but not end-to-end encrypted.
 - Relay pauses at dangerous recovery, manual verification, and release
   boundaries.
 
-### Agent support
+`whyline account detect` can refresh Claude and Codex subscription labels.
+Grok and Antigravity are shown as installed or missing because their CLIs do
+not expose the same plan check.
+
+### Supported agents
 
 | Agent | Chat, brainstorm, and Relay | Saved unattended Agent |
 |---|---:|---:|
@@ -288,18 +312,13 @@ Whyline is locally controlled, not isolated from every external service:
 | Grok | Yes | Yes, edit and write denied |
 | Antigravity | Yes, after repository trust approval | No verified read-only mode |
 
-Whyline uses the subscription or account already active in each CLI.
-`whyline account detect` refreshes Claude and Codex plan labels. Grok and
-Antigravity are reported as installed or missing because their CLIs do not
-expose the same plan check.
-
 ### Platform support
 
 | Platform | Support |
 |---|---|
-| macOS | Full console, Relay, saved Agents, scheduling, Mail integration, background inbox service, and native PDF conversion. |
+| macOS | Full console, Relay, saved Agents, scheduling, Mail integration, background Inbox service, and native PDF conversion. |
 | Linux | Core CLI and console, interactive agents, Relay, and on-demand workflows; no macOS service or Mail integration. |
-| Windows | Experimental and not a release gate. Some core paths are tested, but do not assume full workflow parity. |
+| Windows | Experimental and not a release gate. Some core paths are tested; do not assume full workflow parity. |
 
 ## Learn more
 
