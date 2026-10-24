@@ -445,11 +445,11 @@ def _add_account(subparsers: "argparse._SubParsersAction") -> None:
     account_sub.add_parser("status", help="Show the detected/confirmed account")
     account_sub.add_parser("detect", help="Re-run detection and refresh the global cache")
     enable_parser = account_sub.add_parser(
-        "enable", help="Manually mark an agent as available"
+        "enable", help="Enable an agent in Whyline"
     )
     enable_parser.add_argument("agent", choices=tuple(runner.AGENTS))
     disable_parser = account_sub.add_parser(
-        "disable", help="Manually mark an agent as unavailable"
+        "disable", help="Disable an agent in Whyline"
     )
     disable_parser.add_argument("agent", choices=tuple(runner.AGENTS))
 
@@ -1330,12 +1330,12 @@ def cmd_account(args: argparse.Namespace) -> int:
         _print_account(detected)
         return EXIT_OK
     if args.account_command == "enable":
-        account.set_manual(args.agent, True)
-        print(f"{args.agent}: manually marked available.")
+        account.set_enabled(args.agent, True)
+        print(f"{args.agent}: enabled in Whyline")
         return EXIT_OK
     if args.account_command == "disable":
-        account.set_manual(args.agent, False)
-        print(f"{args.agent}: manually marked unavailable.")
+        account.set_enabled(args.agent, False)
+        print(f"{args.agent}: disabled in Whyline")
         return EXIT_OK
 
     root = _require_repo()

@@ -22921,3 +22921,107 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 31acc2c99d5442eab986c31b1643cca8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:35:05.452Z"} -->
+
+## 2026-10-24 — Persist enabled=True when refresh checks a provider
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-1
+
+**Because:** Legacy records infer enabled from available; if detect writes available False and omits enabled, the next read would disable a subscription the user still wants
+
+**Rejected:**
+
+- Leave enabled absent on write — a failed PATH check would silently turn the provider off
+- Keep the old manual=True override of available — that mixed preference with readiness
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 71222111345547c1b19c49a381c69305 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:52:49.407Z"} -->
+
+## 2026-10-24 — ensure_detected launches nothing when no enabled set exists
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-1
+
+**Because:** A missing enabled field reads as bool(available); a fresh or pre-0.3.7 file has no enabled set, and Settings is the onboarding path
+
+**Rejected:**
+
+- Treat a stored plan as enabled and auto-detect — that still spawns provider CLIs on first use
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 7ba04e79e1264a3280ebfecf5364b46b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:52:54.478Z"} -->
+
+## 2026-10-24 — Global enablement is the authority over repo account.json
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-1
+
+**Because:** A machine-wide Settings choice must not be undone by a stale repo snapshot, in either direction
+
+**Rejected:**
+
+- Keep repo confirmation as a second availability gate — it could hide a provider just enabled in Settings
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: 4b4d3e3e5aac4ae38a355048cf058123 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:52:54.485Z"} -->
+
+## 2026-10-24 — Keep provider Settings global and add a separate one-time Idea Inbox setup flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** INBOX-SETUP-REVIEW
+
+**Because:** Agents → Inbox already stores Telegram, allowlists, agent defaults, documents, repositories, senders, and service state, but presents them as one long settings form with mixed save semantics and no readiness summary; a guided inbox wizard can reuse enabled providers without duplicating subscription configuration.
+
+**Rejected:**
+
+- Fold Idea Inbox configuration into global provider Settings — inbox channels, repositories, and service lifecycle are separate from which AI subscriptions Whyline may use.
+- Leave the current form as the first-run experience — Telegram token, repository, and email changes persist immediately while other fields wait for Save, so it does not behave like one coherent setup.
+
+**Files:** src/whyline/console/inbox_screen.py, src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 699486b556b74410b24fdcd200a12e5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:59:14.630Z"} -->
+
+## 2026-10-24 — SUBS-1 enablement/readiness split behaves as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-1
+
+**Because:** Task tests 67 passed and independent probes confirmed legacy enabled=bool(available) without rewrite, global enablement over repo, enabled+PATH for Grok/Antigravity, Claude/Codex plan and API-key labels, empty available set with no Claude default, enabled-only refresh/detect, atomic replace cleanup, and CLI enabled/disabled in Whyline wording. Full-suite failures are console and entry-menu tests still expecting auto-detect-all and the old agent_status keys, which SUBS-3 owns.
+
+**Rejected:**
+
+- Fail for full-suite console breakage — those files are out of SUBS-1 scope and still encode the pre-Settings contract
+
+**Files:** src/whyline/account.py, src/whyline/cli.py, tests/test_account.py, tests/test_account_cli.py
+
+<!-- whyline-event: 691cb8f46bf342b78aed887f4bf8fd9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:08:19.277Z"} -->
+
+## 2026-10-24 — SUBS-1 enablement/readiness split matches the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SUBS-1
+
+**Because:** account.py splits enabled from detected ready, keeps global enablement over repo data, skips disabled detectors, infers legacy enabled=bool(available) without rewrite, and replaces the global file atomically with temp cleanup. CLI enable/disable wording and enabled-only detect match. Task tests are in the passing full-suite set; the 25 failures are console, entry-menu, and model-default tests still on the pre-Settings contract, which this task was forbidden to edit.
+
+**Rejected:**
+
+- Fail the task for full-suite console breakage — those files are outside SUBS-1 and SUBS-3 owns the Settings cutover
+
+**Files:** src/whyline/account.py
+
+<!-- whyline-event: ecb77c5c7ff4410fa92d907eb442bbd1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:24:36.023Z"} -->

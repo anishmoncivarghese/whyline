@@ -11,9 +11,11 @@ from __future__ import annotations
 import base64
 import datetime
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
 from whyline import paths
 
@@ -115,51 +117,73 @@ def detect_grok(which=None) -> dict:
     }
 
 
+def check_provider(agent: str) -> dict:
+    """Probe one provider. Never writes the global account file."""
+    try:
+        if agent == "codex":
+            info = detect_codex()
+        elif agent == "claude":
+            info = detect_claude()
+        elif agent == "antigravity":
+            info = detect_antigravity()
+        elif agent == "grok":
+            info = detect_grok()
+        else:
+            return {
+                "plan": "unknown",
+                "available": False,
+                "reason": f"unknown agent: {agent}",
+            }
+    except Exception as error:
+        if agent in ("antigravity", "grok"):
+            return {
+                "plan": None,
+                "available": False,
+                "reason": f"could not detect {agent}: {error}",
+            }
+        return {
+            "plan": "unknown",
+            "available": False,
+            "reason": f"could not detect {agent}: {error}",
+        }
+    if agent in _LOGIN_CHECKED:
+        info["available"] = info.get("plan") != "unknown"
+    return info
+
+
 def detect() -> dict:
-    try:
-        codex = detect_codex()
-    except Exception as error:
-        codex = {"plan": "unknown", "reason": f"could not detect codex: {error}"}
-    codex["available"] = codex.get("plan") != "unknown"
-    try:
-        claude = detect_claude()
-    except Exception as error:
-        claude = {"plan": "unknown", "reason": f"could not detect claude: {error}"}
-    claude["available"] = claude.get("plan") != "unknown"
-    try:
-        antigravity = detect_antigravity()
-    except Exception as error:
-        antigravity = {
-            "plan": None, "available": False,
-            "reason": f"could not detect antigravity: {error}",
-        }
-    try:
-        grok = detect_grok()
-    except Exception as error:
-        grok = {
-            "plan": None, "available": False,
-            "reason": f"could not detect grok: {error}",
-        }
-    return {"codex": codex, "claude": claude, "antigravity": antigravity, "grok": grok}
+    return {
+        agent: check_provider(agent)
+        for agent in ("codex", "claude", "antigravity", "grok")
+    }
 
 
-def refresh() -> dict:
-    """Re-runs detect(), stamps detected_at, saves it globally, and
-    returns the merged result. An agent whose existing global record
-    has manual=True keeps that record's own available/manual instead of
-    the fresh value -- an explicit whyline account enable/disable must
-    survive a later `whyline account detect`."""
+def refresh(enabled: set[str] | None = None) -> dict:
+    """Re-check enabled providers, stamp detected_at, save globally, and
+    return the merged result. Disabled records keep their last detected
+    fields; their detectors are not called. `enabled` is the set of
+    names to check; when omitted, it is `enabled_agents()`."""
     existing = load_global() or {}
-    detected = detect()
+    names = (
+        enabled_agents()
+        if enabled is None
+        else {name for name in enabled if name in BINARIES}
+    )
     now = datetime.datetime.now().astimezone().isoformat()
-    for agent, info in detected.items():
-        info["detected_at"] = now
-        prior = existing.get(agent)
-        if isinstance(prior, dict) and prior.get("manual"):
-            info["available"] = prior["available"]
-            info["manual"] = True
-    save_global(detected)
-    return detected
+    result = dict(existing)
+    for agent in AGENT_ORDER:
+        if agent not in names:
+            continue
+        checked = check_provider(agent)
+        prior = result.get(agent)
+        merged = dict(prior) if isinstance(prior, dict) else {}
+        merged.update(checked)
+        merged["detected_at"] = now
+        merged["enabled"] = True
+        result[agent] = merged
+    if names:
+        save_global(result)
+    return result
 
 
 def _looks_current(data: dict) -> bool:
@@ -177,69 +201,115 @@ def _looks_current(data: dict) -> bool:
 
 
 def ensure_detected() -> dict | None:
-    """Runs refresh() unless global account data already exists in the
-    current schema -- the very first time anything needs it, anywhere, or
-    the first time after upgrading past a pre-0.3.7 install. Returns the
-    freshly detected data if it just ran, None if current data already
-    existed, or None if refresh() itself fails for any reason (this
-    module's own docstring already promises detection never blocks
-    anything else; a total refresh() failure -- e.g. a disk error saving
-    the global file -- must not crash whichever caller just wanted to know
-    what's available, matching detect()'s existing per-agent guarantee one
-    level up)."""
+    """Runs refresh() for enabled providers unless global account data
+    already exists in the current schema. A fresh machine, or any file
+    with no enabled set, returns without launching a provider. Returns
+    the freshly detected data if it just ran, None if current data
+    already existed or nothing is enabled, or None if refresh() itself
+    fails for any reason (this module's own docstring already promises
+    detection never blocks anything else; a total refresh() failure --
+    e.g. a disk error saving the global file -- must not crash whichever
+    caller just wanted to know what's available, matching detect()'s
+    existing per-agent guarantee one level up)."""
     existing = load_global()
     if existing is not None and _looks_current(existing):
         return None
+    names = enabled_agents()
+    if not names:
+        return None
     try:
-        return refresh()
+        return refresh(names)
     except Exception:
         return None
 
 
-def set_manual(agent: str, available: bool) -> None:
-    """Explicitly overrides `agent`'s availability -- the "add or
-    remove" surface -- surviving future refresh() calls until changed
-    again. Every other agent's record is left untouched."""
+def _record_enabled(info: object) -> bool:
+    """Enabled is an explicit field; a legacy record without it reads
+    as enabled when its stored `available` is truthy. Reading never
+    rewrites the file."""
+    if not isinstance(info, dict):
+        return False
+    if "enabled" in info:
+        return bool(info["enabled"])
+    return bool(info.get("available"))
+
+
+def _copy_record(info: object) -> dict:
+    return dict(info) if isinstance(info, dict) else {}
+
+
+def enabled_agents() -> set[str]:
+    """Providers the user has permitted Whyline to use, from the global
+    account file. Repo confirmation cannot add to this set."""
+    data = load_global()
+    if not isinstance(data, dict):
+        return set()
+    return {agent for agent in AGENT_ORDER if _record_enabled(data.get(agent))}
+
+
+def set_enabled(agent: str, enabled: bool) -> None:
+    """Set one provider's enablement, preserving every unrelated field."""
     data = load_global() or {}
-    data[agent] = {"available": available, "manual": True}
+    record = _copy_record(data.get(agent))
+    record["enabled"] = bool(enabled)
+    data[agent] = record
     save_global(data)
 
 
-def _has_availability_info(data: dict) -> bool:
-    """True if at least one agent entry in `data` carries an "available"
-    key -- the schema introduced in 0.3.7. A repo confirmation file
-    written before that (just plan/detected_at, no "available" key on any
-    agent) must not be read as "every agent confirmed unavailable here";
-    it simply predates the question, same as a pre-0.3.7 global file
-    (see _looks_current)."""
-    return any(
-        isinstance(data.get(agent), dict) and "available" in data[agent]
-        for agent in ("codex", "claude", "antigravity", "grok")
-    )
+def set_enabled_many(values: dict, results: dict | None = None) -> None:
+    """Write explicit `enabled` booleans for Claude, Codex, Grok, and
+    Antigravity in one replacement. Unrelated fields are preserved;
+    supplied completed check results are merged (enablement still comes
+    from `values`)."""
+    data = load_global() or {}
+    completed = results or {}
+    for agent in AGENT_ORDER:
+        record = _copy_record(data.get(agent))
+        extra = completed.get(agent)
+        if isinstance(extra, dict):
+            record.update(extra)
+        record["enabled"] = bool(values.get(agent, False))
+        data[agent] = record
+    save_global(data)
 
 
-def available_agents(root: Path) -> set[str]:
-    """Every agent currently considered available: repo-confirmed data
-    if present and from the current schema, else global data, else
-    nothing. Always ensures detection has run at least once first (see
+def set_manual(agent: str, available: bool) -> None:
+    """Backward-compatible alias for set_enabled."""
+    set_enabled(agent, available)
+
+
+def available_agents(root: Path, which=None) -> set[str]:
+    """Compatibility helper: providers that are enabled and currently
+    usable. Never silently defaults to Claude when the set is empty.
+    Always ensures detection has run at least once first (see
     ensure_detected)."""
     ensure_detected()
-    data = load_repo(root)
-    if data is None or not _has_availability_info(data):
-        data = load_global()
-    if data is None:
-        return set()
     return {
         agent
-        for agent in ("codex", "claude", "antigravity", "grok")
-        if isinstance(data.get(agent), dict) and data[agent].get("available") is True
+        for agent, row in _status_rows(root, which=which).items()
+        if row["available"]
     }
 
 
 def save_global(data: dict) -> None:
+    """Atomically replace the global account file via a sibling
+    temporary path. The temporary file is removed if replacement fails,
+    leaving any existing JSON intact."""
     target = paths.global_account_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
+    temporary_path = Path(temporary)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2))
+        temporary_path.replace(target)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def load_global() -> dict | None:
@@ -297,40 +367,72 @@ def login_hint(agent: str) -> str:
 
 
 def agent_status(root: Path, which=None) -> dict[str, dict]:
-    """Per agent: whether it's available plus a short human `label` and, when
-    it isn't, a `hint` saying how to fix it. Availability comes from
-    available_agents() (so repo confirmation and manual overrides still
-    decide it); the label and hint come from the detection details and a
-    live PATH check, so "not installed" is never stale."""
+    """Per agent: enablement, install, effective availability, a short
+    human `label`, and when it isn't usable, a `hint` saying how to fix
+    it. Enablement comes from the global record even when a repo account
+    file exists; repo data may supply cached plan/auth detail for labels
+    but cannot turn a globally disabled provider back on. Effective
+    availability is enabled AND detected ready. A live PATH check keeps
+    "not installed" from going stale."""
+    ensure_detected()
+    return _status_rows(root, which=which)
+
+
+def _status_rows(root: Path, which=None) -> dict[str, dict]:
     which = which if which is not None else shutil.which
-    available = available_agents(root)
     global_data = load_global() or {}
+    repo_data = load_repo(root) or {}
     status = {}
     for agent in AGENT_ORDER:
-        info = global_data.get(agent) if isinstance(global_data.get(agent), dict) else {}
+        global_info = (
+            global_data.get(agent) if isinstance(global_data.get(agent), dict) else {}
+        )
+        repo_info = (
+            repo_data.get(agent) if isinstance(repo_data.get(agent), dict) else {}
+        )
+        info = dict(repo_info)
+        info.update(global_info)
+        enabled = _record_enabled(global_info)
+        installed = which(BINARIES[agent]) is not None
         plan = info.get("plan")
-        if agent in available:
-            if plan and plan != "unknown":
-                label = plan
-            elif agent in _LOGIN_CHECKED:
-                # plan None *recorded* means detection saw an API key rather
-                # than a subscription; no record at all claims nothing.
-                label = "API key" if "plan" in info and plan is None else "available"
-            else:
-                label = "installed (login not checked)"
-            status[agent] = {"available": True, "label": label, "hint": None}
-            continue
-        if info.get("manual"):
-            label, hint = "turned off", f"Run: whyline account enable {agent}"
-        elif which(BINARIES[agent]) is None:
+        if not enabled:
+            label = "off in Settings"
+            hint = f"Open Settings or run: whyline account enable {agent}"
+            effective = False
+        elif not installed:
             label = "not installed"
             hint = f"Install {agent}, then /model refresh"
-        elif info.get("available"):
-            # globally fine, but this repo's confirmed account says no
-            label, hint = "off for this repo", "Run: whyline account (to re-confirm)"
-        elif agent in _LOGIN_CHECKED:
-            label, hint = "not logged in", login_hint(agent)
+            effective = False
+        elif agent not in _LOGIN_CHECKED:
+            label = "installed (login not checked)"
+            hint = None
+            effective = True
         else:
-            label, hint = "not detected yet", "Run /model refresh"
-        status[agent] = {"available": False, "label": label, "hint": hint}
+            if "available" in global_info:
+                ready = global_info["available"] is True
+            elif "plan" in global_info:
+                ready = global_info.get("plan") != "unknown"
+            else:
+                ready = False
+            if ready:
+                if plan and plan != "unknown":
+                    label = plan
+                elif "plan" in info and plan is None:
+                    # plan None *recorded* means detection saw an API key rather
+                    # than a subscription; no record at all claims nothing.
+                    label = "API key"
+                else:
+                    label = "available"
+                hint = None
+                effective = True
+            else:
+                label, hint = "not logged in", login_hint(agent)
+                effective = False
+        status[agent] = {
+            "enabled": enabled,
+            "installed": installed,
+            "available": effective,
+            "label": label,
+            "hint": hint,
+        }
     return status
