@@ -1,5 +1,5 @@
 # whyline-relay configuration. Every key is optional.
-plan = "plans/windows-release-gate.plan.md"
+plan = "plans/relay-files-pane.plan.md"
 max_rounds = 18
 timeout_minutes = 60
 branch_prefix = "relay/"
