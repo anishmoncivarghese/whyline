@@ -52,6 +52,7 @@ from whyline.console import (
     repo_setup,
     update,
 )
+from whyline.console.file_pane import active_plan_file
 from whyline.console.attachments_ui import (
     AttachMenuScreen,
     AttachmentTray,
@@ -800,8 +801,12 @@ class WhylineConsoleApp(App):
     #console-column { width: 1fr; height: 1fr; }
     #file-pane { width: 1fr; height: 1fr; display: none; }
     #file-path { width: 1fr; height: 1; padding: 0 1; }
-    #file-view { height: 1fr; }
+    #file-view { height: 1fr; min-height: 0; }
     #file-pane Horizontal { height: auto; }
+    #file-choices { width: 1fr; height: auto; }
+    /* One row at 80x24: default 3-row buttons would push #file-view off. */
+    #file-choices Button { height: 1; min-height: 1; border: none; padding: 0 1; }
+    #file-working, #file-plan, #file-all { display: none; }
     """
 
     def __init__(self, *, root: Path, runner: Any = None) -> None:
@@ -812,6 +817,10 @@ class WhylineConsoleApp(App):
         self.session.agent = model.resolve(root)[0]
         self.session._sync_timeout = self._cb_sync_timeout
         self._files_on: bool = False
+        self._file_choice: str = "working"
+        self._plan_shown_path: str | None = None
+        self._plan_snap: file_follow.Snap | None = None
+        self._plan_last_error: str | None = None
         # Shared with every other console through ~/.whyline/awake.json.
         self._awake: awake.Awake | None = awake.status()
         self._follow_base: dict[str, file_follow.Snap] = {}
@@ -930,12 +939,172 @@ class WhylineConsoleApp(App):
         earlier.disabled = (self._follow_index <= 0)
         later.disabled = (self._follow_index >= len(self._follow_order) - 1)
 
+    def _effective_file_choice(self) -> str:
+        if self.session.mode == "relay":
+            return self._file_choice
+        return "working"
+
+    def _sync_file_choice_widgets(self) -> None:
+        in_relay_files = bool(self._files_on) and self.session.mode == "relay"
+        if self.session.mode != "relay" and self._file_choice != "working":
+            self._file_choice = "working"
+            self._show_newest_working_file()
+        for name in ("working", "plan", "all"):
+            button = self._main_widget(f"#file-{name}", Button)
+            if button is None:
+                continue
+            button.display = in_relay_files
+            button.variant = "success" if self._file_choice == name else "default"
+        show_nav = self._effective_file_choice() == "working"
+        for selector in ("#file-earlier", "#file-later"):
+            button = self._main_widget(selector, Button)
+            if button is not None:
+                button.display = show_nav
+
+    def _hide_file_tree(self) -> None:
+        tree = self._main_widget("#file-tree")
+        if tree is not None:
+            tree.display = False
+        view = self._main_widget("#file-view")
+        if view is not None:
+            view.display = True
+
+    def _select_file_choice(self, choice: str) -> None:
+        self._file_choice = choice
+        self._sync_file_choice_widgets()
+        if choice == "plan":
+            self._hide_file_tree()
+            self._load_plan()
+        elif choice == "working":
+            self._hide_file_tree()
+            self._show_newest_working_file()
+
+    def _show_newest_working_file(self) -> None:
+        self._plan_shown_path = None
+        self._follow_hold = False
+        self._follow_user_scrolled = False
+        if not self._follow_order:
+            self._follow_index = None
+            self._set_file_path(
+                "No file yet. A file opens here when an agent writes one."
+            )
+            view = self._main_widget("#file-view", FollowView)
+            if view is not None:
+                self._follow_moving = True
+                try:
+                    view.load_text("")
+                    view.scroll_x = 0
+                    view.scroll_y = 0
+                finally:
+                    self._follow_moving = False
+            self._sync_follow_buttons()
+            return
+        path = self._follow_order[-1]
+        self._follow_index = len(self._follow_order) - 1
+        text = self._follow_shown.get(path, "")
+        self._set_file_path(path)
+        view = self._main_widget("#file-view", FollowView)
+        if view is not None:
+            self._follow_moving = True
+            try:
+                view.load_text(text)
+                view.move_cursor((0, 0))
+                view.scroll_cursor_visible()
+            finally:
+                self._follow_moving = False
+        self._sync_follow_buttons()
+
+    def _plan_relative(self, path: Path) -> str:
+        try:
+            return path.relative_to(self.session.root).as_posix()
+        except ValueError:
+            try:
+                return path.resolve().relative_to(self.session.root.resolve()).as_posix()
+            except Exception:
+                return path.as_posix()
+
+    def _show_plan_error(self, reason: str) -> None:
+        if reason == self._plan_last_error:
+            return
+        self._set_file_path(reason)
+        self._plan_last_error = reason
+
+    def _poll_plan(self) -> None:
+        path = active_plan_file(self.session.root)
+        if path is None:
+            if self._plan_shown_path is not None:
+                self._load_plan()
+            return
+        try:
+            st = path.stat()
+        except OSError as exc:
+            self._show_plan_error(f"{self._plan_relative(path)}: {exc}")
+            return
+        snap = file_follow.Snap(st.st_mtime_ns, st.st_size)
+        if snap == self._plan_snap and self._plan_relative(path) == self._plan_shown_path:
+            return
+        self._load_plan()
+
+    def _load_plan(self) -> None:
+        view = self._main_widget("#file-view", FollowView)
+        if view is None:
+            return
+        path = active_plan_file(self.session.root)
+        if path is None:
+            self._follow_moving = True
+            try:
+                view.load_text("")
+                view.scroll_x = 0
+                view.scroll_y = 0
+            finally:
+                self._follow_moving = False
+            self._set_file_path("No plan yet.")
+            self._plan_shown_path = None
+            self._plan_snap = None
+            self._plan_last_error = None
+            return
+        relative = self._plan_relative(path)
+        try:
+            raw = path.read_bytes()
+            st = path.stat()
+        except OSError as exc:
+            self._show_plan_error(f"{relative}: {exc}")
+            return
+        snap = file_follow.Snap(st.st_mtime_ns, st.st_size)
+        keep_scroll = (
+            self._effective_file_choice() == "plan"
+            and self._plan_shown_path == relative
+        )
+        sx, sy = view.scroll_x, view.scroll_y
+        notice = file_follow.classify(raw)
+        self._follow_moving = True
+        try:
+            if notice is not None:
+                view.load_text("")
+                self._set_file_path(f"{relative} — {notice}")
+            else:
+                view.load_text(raw.decode("utf-8"))
+                self._set_file_path(relative)
+            if keep_scroll:
+                view.scroll_x = sx
+                view.scroll_y = sy
+            else:
+                view.scroll_x = 0
+                view.scroll_y = 0
+        finally:
+            self._follow_moving = False
+        self._plan_shown_path = relative
+        self._plan_snap = snap
+        self._plan_last_error = None
+
     def _note_file_scroll(self) -> None:
         """Called by FollowView on scroll."""
         if not getattr(self, "_follow_moving", False):
             self._follow_user_scrolled = True
 
     def _on_file_earlier(self) -> None:
+        if self._effective_file_choice() != "working":
+            return
         if not self._follow_order:
             return
         if self._follow_index is None:
@@ -960,6 +1129,8 @@ class WhylineConsoleApp(App):
             self._sync_follow_buttons()
 
     def _on_file_later(self) -> None:
+        if self._effective_file_choice() != "working":
+            return
         if not self._follow_order or self._follow_index is None:
             return
         if self._follow_index < len(self._follow_order) - 1:
@@ -1061,6 +1232,8 @@ class WhylineConsoleApp(App):
         self._follow_flying = False
 
     def _follow_tick(self) -> None:
+        if self._effective_file_choice() == "plan":
+            self._poll_plan()
         if self._follow_flying:
             return
         self._follow_flying = True
@@ -1078,7 +1251,8 @@ class WhylineConsoleApp(App):
         self._follow_flying = False
         if reason and reason != getattr(self, "_follow_last_error", None):
             self._follow_last_error = reason
-            self._set_file_path(reason)
+            if self._effective_file_choice() not in ("plan", "all"):
+                self._set_file_path(reason)
 
     def _on_gather_result(
         self,
@@ -1201,7 +1375,10 @@ class WhylineConsoleApp(App):
         return new_baseline, new_offset, update
 
     def _apply_follow(self, update: file_follow.FollowUpdate) -> None:
+        divert = self._effective_file_choice() in ("plan", "all")
         if update.notice is not None:
+            if divert:
+                return
             self._set_file_path(f"{update.path} — {update.notice}")
             view = self._main_widget("#file-view", FollowView)
             if view is not None:
@@ -1217,6 +1394,10 @@ class WhylineConsoleApp(App):
 
         if update.path not in self._follow_order:
             self._follow_order.append(update.path)
+
+        if divert:
+            self._follow_shown[update.path] = update.text
+            return
 
         held_path = (
             self._follow_order[self._follow_index]
@@ -1292,6 +1473,7 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             return
         pane.display = self._files_on
+        self._sync_file_choice_widgets()
         stacked = self.size.width < 120
         split.set_class(stacked, "stacked")
         if stacked:
@@ -1528,6 +1710,7 @@ class WhylineConsoleApp(App):
             self._refresh_agents_status()
         self._sync_relay_buttons()
         self._sync_mode_buttons()
+        self._sync_file_choice_widgets()
 
     def _cb_sync_timeout(self) -> None:
         try:
@@ -2917,7 +3100,19 @@ class WhylineConsoleApp(App):
         )
         file_pane = Vertical(
             Horizontal(
-                Static("No file yet. A file opens here when an agent writes one.", id="file-path"),
+                Button("Working file", id="file-working", variant="success"),
+                Button("Plan", id="file-plan"),
+                Button("All files", id="file-all"),
+                id="file-choices",
+            ),
+            Horizontal(
+                # Plain text: OSError reasons contain "[Errno N]" which
+                # Textual would otherwise parse as markup and crash on.
+                Static(
+                    "No file yet. A file opens here when an agent writes one.",
+                    id="file-path",
+                    markup=False,
+                ),
                 Button("Earlier", id="file-earlier", disabled=True),
                 Button("Later", id="file-later", disabled=True),
             ),
@@ -2962,6 +3157,8 @@ class WhylineConsoleApp(App):
         elif button_id == "see-files":
             self._files_on = not self._files_on
             if self._files_on:
+                if self.session.mode == "relay":
+                    self._select_file_choice("working")
                 if bool(self._busy_text) or self._relay_running() or (self._live_relay() is not None):
                     self._arm_follow()
             else:
@@ -2969,6 +3166,8 @@ class WhylineConsoleApp(App):
             self._sync_split()
             self._cb_fit()
             self.call_after_refresh(self._cb_fit)
+        elif button_id in ("file-working", "file-plan", "file-all"):
+            self._select_file_choice(button_id.removeprefix("file-"))
         elif button_id == "file-earlier":
             self._on_file_earlier()
         elif button_id == "file-later":

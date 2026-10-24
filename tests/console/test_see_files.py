@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from whyline.console import tui
 from whyline.console.repl import _help_text
@@ -475,3 +477,265 @@ async def test_turning_files_on_mid_run_shows_the_newest_changed_file(tmp_path):
         assert str(path_label.renderable) == "new.py"
         assert app.query_one("#file-view", tui.FollowView).text == "b = 2\n"
         app._disarm_follow()
+
+
+def _write_relay_plan_config(root, rel: str, body: str):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    dest = root / ".whyline" / "relay" / "config.toml"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(f"plan = {json.dumps(rel)}\n", encoding="utf-8")
+    return path
+
+
+@pytest.mark.asyncio
+async def test_choices_are_relay_only(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#see-files")
+        await pilot.pause()
+        for mode in ("chat", "agents", "relay"):
+            await pilot.click(f"#mode-{mode}")
+            await pilot.pause()
+            assert app.query_one("#see-files", tui.Button).display is True
+            shown = mode == "relay"
+            assert app.query_one("#file-working", tui.Button).display is shown
+            assert app.query_one("#file-plan", tui.Button).display is shown
+            assert app.query_one("#file-all", tui.Button).display is shown
+
+
+@pytest.mark.asyncio
+async def test_working_file_starts_selected(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        working = app.query_one("#file-working", tui.Button)
+        assert working.display is True
+        assert working.variant == "success"
+        assert app.query_one("#file-plan", tui.Button).variant == "default"
+        assert app.query_one("#file-all", tui.Button).variant == "default"
+        assert app.query_one("#file-earlier", tui.Button).display is True
+        assert app.query_one("#file-later", tui.Button).display is True
+
+
+@pytest.mark.asyncio
+async def test_plan_shows_file_from_the_top(tmp_path):
+    body = "alpha\nbeta\ngamma\n"
+    _write_relay_plan_config(tmp_path, "plans/three.plan.md", body)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.text == body
+        assert view.scroll_y == 0
+        assert str(app.query_one("#file-path", tui.Static).renderable) == "plans/three.plan.md"
+        assert app.query_one("#file-earlier", tui.Button).display is False
+        assert app.query_one("#file-later", tui.Button).display is False
+        assert app.query_one("#file-plan", tui.Button).variant == "success"
+
+
+@pytest.mark.asyncio
+async def test_plan_reload_keeps_scroll(tmp_path):
+    body = "".join(f"line {i:03d}\n" for i in range(80))
+    plan = _write_relay_plan_config(tmp_path, "plans/long.plan.md", body)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        view.scroll_y = 12
+        await pilot.pause()
+        updated = "".join(f"changed {i:03d}\n" for i in range(80))
+        plan.write_text(updated, encoding="utf-8")
+        app._load_plan()
+        await pilot.pause()
+        assert view.scroll_y == 12
+        assert "changed 000" in view.text
+        other = tmp_path / "plans" / "other.plan.md"
+        other.write_text("other plan\n", encoding="utf-8")
+        dest = tmp_path / ".whyline" / "relay" / "config.toml"
+        dest.write_text(f"plan = {json.dumps('plans/other.plan.md')}\n", encoding="utf-8")
+        await pilot.click("#file-all")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        assert view.scroll_y == 0
+        assert "other plan" in view.text
+
+
+@pytest.mark.asyncio
+async def test_failed_plan_read_puts_reason_on_path_line(tmp_path):
+    body = "the plan body\n"
+    plan = _write_relay_plan_config(tmp_path, "plans/run.plan.md", body)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        path_label = app.query_one("#file-path", tui.Static)
+        assert view.text == body
+        plan.chmod(0o000)
+        try:
+            app._load_plan()
+            await pilot.pause()
+            assert view.text == body
+            shown = str(path_label.renderable)
+            assert shown.startswith("plans/run.plan.md:")
+            assert "[Errno" in shown
+            app._load_plan()
+            await pilot.pause()
+            assert str(path_label.renderable) == shown
+            assert view.text == body
+        finally:
+            plan.chmod(0o644)
+
+
+@pytest.mark.asyncio
+async def test_no_plan_yet(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        assert str(app.query_one("#file-path", tui.Static).renderable) == "No plan yet."
+        assert app.query_one("#file-view", tui.FollowView).text == ""
+
+
+@pytest.mark.asyncio
+async def test_follow_update_does_not_replace_plan(tmp_path):
+    body = "the plan body\n"
+    _write_relay_plan_config(tmp_path, "plans/run.plan.md", body)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.text == body
+        app._apply_follow(
+            tui.file_follow.FollowUpdate(
+                path="src/new.py",
+                text="def newest():\n    return 1\n",
+                notice=None,
+                changed_line=1,
+            )
+        )
+        await pilot.pause()
+        assert view.text == body
+        assert str(app.query_one("#file-path", tui.Static).renderable) == "plans/run.plan.md"
+        await pilot.click("#file-all")
+        await pilot.pause()
+        assert view.text == body
+        assert app._follow_shown["src/new.py"] == "def newest():\n    return 1\n"
+        await pilot.click("#file-working")
+        await pilot.pause()
+        assert view.text == "def newest():\n    return 1\n"
+        assert str(app.query_one("#file-path", tui.Static).renderable) == "src/new.py"
+        assert app.query_one("#file-working", tui.Button).variant == "success"
+        assert app._follow_hold is False
+
+
+@pytest.mark.asyncio
+async def test_plan_after_working_file_scrolls_from_the_top(tmp_path):
+    plan_body = "".join(f"plan {i:03d}\n" for i in range(80))
+    _write_relay_plan_config(tmp_path, "plans/long.plan.md", plan_body)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.scroll_y == 0
+        app._apply_follow(
+            tui.file_follow.FollowUpdate(
+                path="src/long.py",
+                text="".join(f"work {i:03d}\n" for i in range(80)),
+                notice=None,
+                changed_line=1,
+            )
+        )
+        await pilot.pause()
+        await pilot.click("#file-working")
+        await pilot.pause()
+        view.scroll_y = 12
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        assert view.text == plan_body
+        assert view.scroll_y == 0
+
+
+@pytest.mark.asyncio
+async def test_gather_error_does_not_replace_plan_path(tmp_path):
+    body = "the plan body\n"
+    _write_relay_plan_config(tmp_path, "plans/run.plan.md", body)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#see-files")
+        await pilot.pause()
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        path_label = app.query_one("#file-path", tui.Static)
+        assert str(path_label.renderable) == "plans/run.plan.md"
+        app._on_gather_error("git: fatal error reading porcelain status")
+        await pilot.pause()
+        assert str(path_label.renderable) == "plans/run.plan.md"
+        await pilot.click("#file-all")
+        await pilot.pause()
+        app._on_gather_error("git: another porcelain failure")
+        await pilot.pause()
+        assert str(path_label.renderable) == "plans/run.plan.md"
+
+
+@pytest.mark.asyncio
+async def test_choices_fit_at_80_and_120(tmp_path):
+    for size in ((80, 24), (120, 40)):
+        app = tui.WhylineConsoleApp(root=tmp_path)
+        async with app.run_test(size=size) as pilot:
+            await pilot.click("#mode-relay")
+            await pilot.pause()
+            await pilot.click("#see-files")
+            await pilot.pause()
+            width, height = size
+            for selector in (
+                "#file-working",
+                "#file-plan",
+                "#file-all",
+                "#file-path",
+                "#file-view",
+            ):
+                region = app.query_one(selector).region
+                assert region.width > 0
+                assert region.height > 0
+                assert 0 <= region.x < width
+                assert 0 <= region.y < height
+                assert region.right <= width
+                assert region.bottom <= height

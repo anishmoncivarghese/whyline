@@ -22508,3 +22508,194 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c2ead5980dab4eeba660a33da5711f9a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:36:27.946Z"} -->
+
+## 2026-10-24 — Flatten the Relay choice buttons and pin #file-view with min-height 0
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-3
+
+**Because:** At 80x24 a second row of default 3-row buttons plus a content-sized TextArea would push the view or cover the choice row. Height-1 buttons and min-height 0 keep Working file, Plan, All files, the path line, and #file-view on screen at 80x24 and 120x40.
+
+**Rejected:**
+
+- Default 3-row buttons — they overflow the stacked pane at 80x24.
+- A wrapping choice row at full button height — it still steals vertical space from #file-view.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: c29dfedf55d4441d9dbf14a746cf1fc7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:49:55.910Z"} -->
+
+## 2026-10-24 — All files is selectable now but leaves the current view and follow store alone
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-3
+
+**Because:** PANE-4 mounts the tree. Until then choosing All files must not raise and must not steal Working file's stored follow text, so the button only changes the selected choice, hides Earlier/Later, and lets _apply_follow record without replacing #file-view.
+
+**Rejected:**
+
+- Hide #file-view when All files is selected — there is no tree yet, so the pane would go blank and look broken.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 07439db3a9434a75862d4b3306b83cec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:50:00.933Z"} -->
+
+## 2026-10-24 — Chat and Agents keep the follow view even if Relay had Plan selected
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-3
+
+**Because:** The three choices are Relay-only. When mode is not relay, _effective_file_choice is working so Earlier/Later stay shown and _apply_follow still updates #file-view.
+
+**Rejected:**
+
+- Leave Plan selected after switching to Chat — Earlier/Later would stay hidden and a follow write would not replace the plan text.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 866a3b0796d74fd8b7f663ec9ec01831 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:50:08.265Z"} -->
+
+## 2026-10-24 — PANE-3 Relay choices and plan view behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** PANE-3
+
+**Because:** Named tests, extra spec checks (notice, failed read, existing follow timer, unarmed one-shot load, All files store), and full pytest all passed.
+
+**Rejected:**
+
+- Fail on a second pilot.click of Files at 80x24 — Button.press toggles off and hides the three choices; that miss is the click harness, not the pane.
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: f90a9f8bfeee48598e3a8530a4da9c41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:04:40.844Z"} -->
+
+## 2026-10-24 — Plan re-select after Working file applies the working view's scroll
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PANE-3
+
+**Because:** Keep-scroll in _load_plan reads #file-view live offsets whenever _plan_shown_path still matches. _show_newest_working_file never clears that, so choosing Plan again restores the working file's scroll instead of a first load at 0.
+
+**Rejected:**
+
+- approve — same-path keep-scroll is only valid while the view still shows the plan
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 1500b1e44f8b4a9e972339aff1e882dc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:21:02.555Z"} -->
+
+## 2026-10-24 — Plan after Working file is a first load at scroll 0
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-3
+
+**Because:** Keep-scroll in _load_plan reads live #file-view offsets whenever _plan_shown_path still matches. Clearing that path in _show_newest_working_file, and requiring the effective choice to still be plan, keeps same-path keep-scroll for poll/reload only.
+
+**Rejected:**
+
+- keep-scroll whenever _plan_shown_path matches — restores the working file's scroll on Plan re-select
+- store separate plan scroll offsets — extra state when clearing shown-path already makes re-entry a first load
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 646a2351d39b421d8ed60e60038dfc95 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:25:29.779Z"} -->
+
+## 2026-10-24 — Follow git errors do not replace the Plan or All files path line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-3
+
+**Because:** Skip _on_gather_error's _set_file_path while Plan or All files is selected so a follow porcelain failure cannot overwrite the plan path. Still record _follow_last_error so the same reason stays once.
+
+**Rejected:**
+
+- write the git error onto the path line anyway — would replace the plan path while the user is looking at Plan
+- skip recording _follow_last_error too — the same reason would re-fire after switching back to Working file
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 7ff1f3e89fee4241815718bc5576a4f8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:25:33.942Z"} -->
+
+## 2026-10-24 — Failed read of the plan file raises MarkupError instead of showing the reason
+
+**Actor:** grok
+**Role:** tester
+**Task:** PANE-3
+
+**Because:** CPython OSError strings contain [Errno N] and #file-path Static.update parses markup. chmod 000 then _load_plan left the previous body but crashed; _plan_last_error is set before update so a retry never paints the reason.
+
+**Rejected:**
+
+- pass on the green suites — the spec requires a failed read to put the reason on the path line once
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 8856a9b77f6d40c0ba63a0a8a83cf843 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:41:56.707Z"} -->
+
+## 2026-10-24 — Failed plan reads write the reason as plain text and record last_error after the path line updates
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-3
+
+**Because:** CPython OSError strings contain [Errno N] and #file-path Static.update parsed markup. Assigning _plan_last_error before that update left a retry silent after MarkupError. markup=False on #file-path matches the thinking widget, and _show_plan_error records the reason only after the paint.
+
+**Rejected:**
+
+- escape only the OSError reason — git errors and notices can also contain brackets; the path line is always a literal
+- wrap only the reason in Text() and leave markup on — _set_file_path is the single writer; the widget should not parse markup
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 06701db57902404aa42e02f1f0d76534 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T14:12:08.174Z"} -->
+
+## 2026-10-24 — Failed plan reads show the OSError on the path line as plain text
+
+**Actor:** grok
+**Role:** tester
+**Task:** PANE-3
+
+**Because:** CPython [Errno N] no longer raises MarkupError because #file-path uses markup=False and last_error is recorded after the paint. Named suites 32 passed. Independent chmod 000 then _load_plan kept the previous body and showed the reason once; binary notice, unarmed one-shot load, existing follow timer, scroll_x keep, All files store, and Files reopen via press all matched the spec. uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- fail on a second or third pilot.click of Files or Plan at 80x24 — Button.press and _load_plan show the specified behavior; the miss is the click harness
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: b7af632b7869458c910597bba1841585 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T14:37:47.183Z"} -->
+
+## 2026-10-24 — Approve Relay Files choices and plan view
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PANE-3
+
+**Because:** Compose, Relay-only display, Working file default, plan load/reload/notice/error, follow divert, and 80x24 layout match the spec. #file-path uses markup=False and last_error is recorded after the path line updates, so a failed read keeps the previous body and shows the OSError once. uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- request changes for no named test of the armed follow poll — _follow_tick stats the plan on the existing timer and selection still loads once when unarmed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: d66e05034b38496394810789599eab93 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T14:51:01.420Z"} -->
