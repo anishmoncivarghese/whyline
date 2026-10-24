@@ -6,7 +6,7 @@ branch_prefix = "relay/"
 
 [agents.codex]
 command = ["codex", "exec", "-s", "workspace-write", "--add-dir", "/Users/anish/whyline-relay", "--add-dir", "/Users/anish/.cache/uv", "--color", "never"]
-model = "gpt-5.6-sol"
+model = "gpt-5-codex"
 
 [agents.claude]
 command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "--settings", ".whyline/relay/claude-settings.json"]
