@@ -22417,3 +22417,25 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6cdbec1b1eb1491a89d519a729b8f4c5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T11:26:17.285Z"} -->
+
+## 2026-10-24 — Position Whyline as an idea-to-release-ready lifecycle powered by existing agent subscriptions
+
+**Actor:** codex
+**Role:** writer
+**Task:** README-LIFECYCLE
+
+**Because:** The former opening listed accurate features but buried the product's main adoption story: Whyline connects idea capture, multi-agent brainstorming, reviewed documents, Relay delivery, reusable Agents, and decision memory without requiring separate model API keys
+
+**Rejected:**
+
+- Lead with decision history alone — it describes Whyline's foundation but understates the current end-to-end product
+- Claim fully autonomous release — release remains human-controlled and Relay intentionally pauses at unsafe or manual boundaries
+
+**Test:** README links: all relative targets exist
+**Test:** displayed CLI surfaces: all help commands exited 0
+**Test:** standard environment: whyline-relay 0.2.39 imports automatically
+
+**Files:** README.md
+
+<!-- whyline-event: 7f0bf2c366084453b3b52b873007575c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:29:05.252Z"} -->
