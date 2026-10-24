@@ -1,3 +1,7 @@
+# Brainstorm: There are so many changes to Whyline but the readme in goithub is old I am thunking about updating the readme , go through teh repo and produce a good readme
+
+## Codex
+
 # Independent research: updating the Whyline README
 
 ## Bottom line
