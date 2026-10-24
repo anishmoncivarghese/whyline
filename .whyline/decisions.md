@@ -22699,3 +22699,76 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d66e05034b38496394810789599eab93 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T14:51:01.420Z"} -->
+
+## 2026-10-24 — All files uses a mounted RepoTree subclass that loads without DirectoryTree's perpetual worker
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-4
+
+**Because:** DirectoryTree._loader waits on an empty queue forever, so existing tests that await app.workers.wait_for_complete() would hang if the stock loader stayed running. _FileTree.reload and expand use reload_node's short-lived thread worker, keep one #file-tree mounted for the app lifetime, and still expand folders in place.
+
+**Rejected:**
+
+- compose stock RepoTree — wait_for_complete never returns
+- mount the tree only when All files is first chosen — the spec keeps one instance mounted for the life of the app
+- cancel the loader after the first listing — a later directory click would queue with no consumer
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 763ea502ddf240f59d6536155c65aada -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T15:30:42.141Z"} -->
+
+## 2026-10-24 — A missing tree file puts Deleted on the path line and clears the body
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-4
+
+**Because:** PANE-4's test_deleted_tree_file requires the path line to be Deleted and the view empty after FileSelected of a path that no longer exists. FileSelected is handled even while the tree is hidden so that second select works after the first open.
+
+**Rejected:**
+
+- keep the relative path on the path line and put Deleted in the body — that matches the older follower spec but not this task's test
+- path line '{relative} — Deleted' — the named test says the path line is Deleted
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e9970f52726e4ce490417441e0c254a5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T15:30:47.288Z"} -->
+
+## 2026-10-24 — PANE-4 All files tree, open, restore, follow, binary, and Deleted behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** PANE-4
+
+**Because:** Named tests all pass. One #file-tree (_FileTree/RepoTree) stays mounted; All files shows it and hides #file-view; Working file and Plan reverse that. FileSelected loads read-only with a repo-relative path, keeps All files selected, scrolls to the top, and classify notices match. Pressing All files again restores the same expanded instance; pressing it while the tree is showing leaves it displayed. Follow during All files does not change the open text or the selected choice. _FileTree.reload and expand use reload_node so wait_for_complete still returns. uv run pytest -q tests/console/test_see_files.py tests/console/test_file_pane.py: 39 passed. uv run pytest -q: exit 0 with 1 skip.
+
+**Rejected:**
+
+- fail because the design says Deleted keeps the path — PANE-4's named test requires the path line to be exactly Deleted
+- fail because the expand test calls reload_node instead of a click — NodeExpanded uses the same reload_node path and the tree stays on screen
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 8f5ef9450cf94546aed4526a37b7fac2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T15:43:05.631Z"} -->
+
+## 2026-10-24 — Approve PANE-4 All files tree, open, restore, follow, binary, and Deleted
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PANE-4
+
+**Because:** One #file-tree (_FileTree/RepoTree) stays mounted for the app lifetime. All files shows it and hides #file-view; Working file and Plan reverse that. FileSelected loads read-only with a repo-relative path, keeps All files selected, scrolls to the top, and classify notices match. Pressing All files again restores the same expanded instance; pressing it while the tree is showing leaves it displayed. Follow during All files does not change the open text or the selected choice. Named tests cover the required cases. uv run pytest -q tests/console/test_see_files.py tests/console/test_file_pane.py: 39 passed. uv run pytest -q: exit 0 with 1 skip.
+
+**Rejected:**
+
+- request changes because expand uses reload_node instead of a click — NodeExpanded uses that same reload_node path and the tester already accepted it
+- fail Deleted because the design keeps the path — PANE-4's named test requires the path line to be exactly Deleted
+
+**Files:** src/whyline/console/tui.py, tests/console/test_see_files.py
+
+<!-- whyline-event: 9d14e2adede449ecb97c1dde61f5e587 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T15:56:15.946Z"} -->

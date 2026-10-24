@@ -739,3 +739,196 @@ async def test_choices_fit_at_80_and_120(tmp_path):
                 assert 0 <= region.y < height
                 assert region.right <= width
                 assert region.bottom <= height
+
+
+def _all_files_layout(root):
+    src = root / "src"
+    src.mkdir()
+    (src / "main.py").write_text("hello", encoding="utf-8")
+    nested = src / "nested"
+    nested.mkdir()
+    (nested / "deep.py").write_text("nested\n", encoding="utf-8")
+    git = root / ".git"
+    git.mkdir()
+    (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+
+
+def _tree_child_names(node):
+    return {child.label.plain for child in node.children}
+
+
+def _tree_child(node, name: str):
+    for child in node.children:
+        if child.label.plain == name:
+            return child
+    raise AssertionError(f"no child named {name!r} in {_tree_child_names(node)}")
+
+
+async def _show_all_files_tree(pilot, app):
+    await pilot.click("#mode-relay")
+    await pilot.pause()
+    await pilot.click("#see-files")
+    await pilot.pause()
+    await pilot.click("#file-all")
+    await pilot.pause()
+    tree = app.query_one("#file-tree")
+    await tree.reload()
+    await pilot.pause()
+    return tree
+
+
+def _post_tree_file_selected(app, path):
+    from textual.widgets import DirectoryTree
+
+    tree = app.query_one("#file-tree")
+    tree.post_message(DirectoryTree.FileSelected(tree.root, path))
+
+
+@pytest.mark.asyncio
+async def test_all_files_lists_folder_and_hides_git(tmp_path):
+    _all_files_layout(tmp_path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        tree = await _show_all_files_tree(pilot, app)
+        names = _tree_child_names(tree.root)
+        assert "src" in names
+        assert ".git" not in names
+        assert tree.display is True
+        assert app.query_one("#file-view").display is False
+        assert app.query_one("#file-all", tui.Button).variant == "success"
+
+
+@pytest.mark.asyncio
+async def test_folder_expands_in_place(tmp_path):
+    _all_files_layout(tmp_path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        tree = await _show_all_files_tree(pilot, app)
+        src = _tree_child(tree.root, "src")
+        assert not src.is_expanded
+        src.expand()
+        await tree.reload_node(src)
+        await pilot.pause()
+        assert "main.py" in _tree_child_names(src)
+        nested = _tree_child(src, "nested")
+        assert not nested.is_expanded
+        assert tree.display is True
+        assert app.query_one("#file-view").display is False
+
+
+@pytest.mark.asyncio
+async def test_open_file_from_tree(tmp_path):
+    _all_files_layout(tmp_path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        tree = await _show_all_files_tree(pilot, app)
+        src = _tree_child(tree.root, "src")
+        src.expand()
+        await tree.reload_node(src)
+        await pilot.pause()
+        _post_tree_file_selected(app, tmp_path / "src" / "main.py")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.text == "hello"
+        assert view.display is True
+        assert tree.display is False
+        assert app.query_one("#file-all", tui.Button).variant == "success"
+        assert str(app.query_one("#file-path", tui.Static).renderable) == "src/main.py"
+
+
+@pytest.mark.asyncio
+async def test_all_files_again_restores_expanded_tree(tmp_path):
+    _all_files_layout(tmp_path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        tree = await _show_all_files_tree(pilot, app)
+        src = _tree_child(tree.root, "src")
+        src.expand()
+        await tree.reload_node(src)
+        await pilot.pause()
+        assert src.is_expanded
+        _post_tree_file_selected(app, tmp_path / "src" / "main.py")
+        await pilot.pause()
+        assert tree.display is False
+
+        await pilot.click("#file-all")
+        await pilot.pause()
+        restored = app.query_one("#file-tree")
+        assert restored is tree
+        assert tree.display is True
+        assert app.query_one("#file-view").display is False
+        assert _tree_child(tree.root, "src").is_expanded
+
+        await pilot.click("#file-plan")
+        await pilot.pause()
+        assert tree.display is False
+        await pilot.click("#file-all")
+        await pilot.pause()
+        assert app.query_one("#file-tree") is tree
+        assert tree.display is True
+        assert _tree_child(tree.root, "src").is_expanded
+
+        await pilot.click("#file-all")
+        await pilot.pause()
+        assert tree.display is True
+        assert app.query_one("#file-tree") is tree
+        assert _tree_child(tree.root, "src").is_expanded
+
+
+@pytest.mark.asyncio
+async def test_follow_does_not_steal_tree_file(tmp_path):
+    _all_files_layout(tmp_path)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        tree = await _show_all_files_tree(pilot, app)
+        _post_tree_file_selected(app, tmp_path / "src" / "main.py")
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.text == "hello"
+        app._apply_follow(
+            tui.file_follow.FollowUpdate(
+                path="src/other.py",
+                text="stolen\n",
+                notice=None,
+                changed_line=1,
+            )
+        )
+        await pilot.pause()
+        assert view.text == "hello"
+        assert app.query_one("#file-all", tui.Button).variant == "success"
+        assert app._follow_shown["src/other.py"] == "stolen\n"
+
+
+@pytest.mark.asyncio
+async def test_binary_tree_file_is_a_notice(tmp_path):
+    _all_files_layout(tmp_path)
+    blob = tmp_path / "src" / "blob.bin"
+    blob.write_bytes(b"hello\x00world")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _show_all_files_tree(pilot, app)
+        _post_tree_file_selected(app, blob)
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.text == ""
+        assert "binary, not shown" in str(app.query_one("#file-path", tui.Static).renderable)
+        assert view.display is True
+        assert app.query_one("#file-tree").display is False
+
+
+@pytest.mark.asyncio
+async def test_deleted_tree_file(tmp_path):
+    _all_files_layout(tmp_path)
+    target = tmp_path / "src" / "main.py"
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _show_all_files_tree(pilot, app)
+        _post_tree_file_selected(app, target)
+        await pilot.pause()
+        view = app.query_one("#file-view", tui.FollowView)
+        assert view.text == "hello"
+        target.unlink()
+        _post_tree_file_selected(app, target)
+        await pilot.pause()
+        assert str(app.query_one("#file-path", tui.Static).renderable) == "Deleted"
+        assert view.text == ""

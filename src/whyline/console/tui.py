@@ -25,8 +25,8 @@ try:
     from textual.screen import ModalScreen, Screen
     from rich.text import Text
     from textual.widgets import (
-        Button, Checkbox, Footer, Header, Input, Label, RichLog, Select, Static,
-        TextArea,
+        Button, Checkbox, DirectoryTree, Footer, Header, Input, Label, RichLog,
+        Select, Static, TextArea,
     )
     from textual.widgets._select import SelectOverlay
 
@@ -36,7 +36,7 @@ except ImportError:
     NoMatches = LookupError
     ComposeResult = None
     Horizontal = Vertical = VerticalScroll = None
-    Button = Checkbox = Footer = Header = Label = RichLog = Select = None
+    Button = Checkbox = DirectoryTree = Footer = Header = Label = RichLog = Select = None
     Static = Text = None
     events = None
     TUI_AVAILABLE = False
@@ -52,7 +52,7 @@ from whyline.console import (
     repo_setup,
     update,
 )
-from whyline.console.file_pane import active_plan_file
+from whyline.console.file_pane import RepoTree, active_plan_file
 from whyline.console.attachments_ui import (
     AttachMenuScreen,
     AttachmentTray,
@@ -677,6 +677,34 @@ class FollowView(TextArea):
             self.app._note_file_scroll()
 
 
+class _FileTree(RepoTree):
+    """RepoTree without DirectoryTree's perpetual loader worker.
+
+    DirectoryTree._loader waits on an empty queue forever. Existing
+    console tests await ``app.workers.wait_for_complete()``, which
+    would never return. ``reload_node`` already lists a directory on a
+    short-lived thread worker.
+    """
+
+    def reload(self):
+        from asyncio import Queue
+
+        self._load_queue = Queue()
+        return self.reload_node(self.root)
+
+    async def _on_tree_node_expanded(self, event) -> None:
+        event.stop()
+        dir_entry = event.node.data
+        if dir_entry is None:
+            return
+        if self._safe_is_dir(dir_entry.path):
+            if dir_entry.loaded:
+                return
+            await self.reload_node(event.node)
+        else:
+            self.post_message(self.FileSelected(event.node, dir_entry.path))
+
+
 def _retire_replaced_agent(repo_root: Path | None, agent_id: str, keep: Path) -> None:
     """Drop the definition and activation a rename left behind.
 
@@ -802,6 +830,7 @@ class WhylineConsoleApp(App):
     #file-pane { width: 1fr; height: 1fr; display: none; }
     #file-path { width: 1fr; height: 1; padding: 0 1; }
     #file-view { height: 1fr; min-height: 0; }
+    #file-tree { height: 1fr; min-height: 0; display: none; }
     #file-pane Horizontal { height: auto; }
     #file-choices { width: 1fr; height: auto; }
     /* One row at 80x24: default 3-row buttons would push #file-view off. */
@@ -948,6 +977,7 @@ class WhylineConsoleApp(App):
         in_relay_files = bool(self._files_on) and self.session.mode == "relay"
         if self.session.mode != "relay" and self._file_choice != "working":
             self._file_choice = "working"
+            self._hide_file_tree()
             self._show_newest_working_file()
         for name in ("working", "plan", "all"):
             button = self._main_widget(f"#file-{name}", Button)
@@ -969,7 +999,24 @@ class WhylineConsoleApp(App):
         if view is not None:
             view.display = True
 
+    def _show_file_tree(self) -> None:
+        tree = self._main_widget("#file-tree")
+        if tree is not None:
+            tree.display = True
+        view = self._main_widget("#file-view")
+        if view is not None:
+            view.display = False
+
     def _select_file_choice(self, choice: str) -> None:
+        if choice == "all":
+            tree = self._main_widget("#file-tree")
+            already_showing = tree is not None and tree.display
+            self._file_choice = "all"
+            self._sync_file_choice_widgets()
+            if already_showing:
+                return
+            self._show_file_tree()
+            return
         self._file_choice = choice
         self._sync_file_choice_widgets()
         if choice == "plan":
@@ -978,6 +1025,54 @@ class WhylineConsoleApp(App):
         elif choice == "working":
             self._hide_file_tree()
             self._show_newest_working_file()
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        control = getattr(event, "control", None)
+        if getattr(control, "id", None) != "file-tree":
+            return
+        if self._effective_file_choice() != "all":
+            return
+        self._open_tree_file(Path(event.path))
+
+    def _open_tree_file(self, path: Path) -> None:
+        self._hide_file_tree()
+        view = self._main_widget("#file-view", FollowView)
+        relative = self._plan_relative(path)
+        try:
+            raw = Path(path).read_bytes()
+        except FileNotFoundError:
+            if view is not None:
+                self._follow_moving = True
+                try:
+                    view.load_text("")
+                    view.scroll_x = 0
+                    view.scroll_y = 0
+                finally:
+                    self._follow_moving = False
+            self._set_file_path("Deleted")
+            return
+        except OSError as exc:
+            self._set_file_path(f"{relative}: {exc}")
+            return
+        notice = file_follow.classify(raw)
+        if view is None:
+            if notice is not None:
+                self._set_file_path(f"{relative} — {notice}")
+            else:
+                self._set_file_path(relative)
+            return
+        self._follow_moving = True
+        try:
+            if notice is not None:
+                view.load_text("")
+                self._set_file_path(f"{relative} — {notice}")
+            else:
+                view.load_text(raw.decode("utf-8"))
+                self._set_file_path(relative)
+            view.scroll_x = 0
+            view.scroll_y = 0
+        finally:
+            self._follow_moving = False
 
     def _show_newest_working_file(self) -> None:
         self._plan_shown_path = None
@@ -3117,6 +3212,7 @@ class WhylineConsoleApp(App):
                 Button("Later", id="file-later", disabled=True),
             ),
             FollowView(id="file-view", read_only=True, soft_wrap=False, show_line_numbers=True),
+            _FileTree(self.session.root, id="file-tree"),
             id="file-pane",
         )
         yield Header()
