@@ -22325,3 +22325,73 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b879825976374b708d60255041aa5e04 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:51:39.820Z"} -->
+
+## 2026-10-24 — Restructure the README around four console-first workflows
+
+**Actor:** codex
+**Role:** researcher
+**Task:** brainstorm-readme
+
+**Because:** v0.3.49 has grown beyond decision history into guided relay, saved read-only agents, and Telegram/email idea intake, while the v0.3.38-era README omits or misstates those primary paths
+
+**Rejected:**
+
+- Append recent features to Also in the box — it would preserve an outdated product hierarchy and bury the main workflows
+
+**Files:** .whyline/relay/brainstorm-tmp/codex.md
+
+<!-- whyline-event: ef2aa2d622bd4bcea0b2d56d6860619d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:56:40.777Z"} -->
+
+## 2026-10-24 — Rewrite the README around four current workflows
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** brainstorm-readme
+
+**Because:** The combined review confirms the v0.3.49 console, Relay, saved Agents, and Idea Inbox are primary product surfaces, while the existing README still frames them as optional extras
+
+**Rejected:**
+
+- Append a recent-features section — it would preserve contradictory interface claims and the obsolete product hierarchy
+- Block the rewrite on new guides and screenshots — accurate product copy can land first with existing links and a reserved visual slot
+
+**Files:** docs/brainstorm/there-are-so-many-changes-to-whyline-but-the-readme-in-goith.md
+
+<!-- whyline-event: 1f38ebc4cade4f148ea6166684f6e9c6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:59:24.352Z"} -->
+
+## 2026-10-24 — Synthesize the README brainstorm into a console-first structural rewrite
+
+**Actor:** codex
+**Role:** synthesizer
+**Task:** brainstorm-readme
+
+**Because:** The completed review supports four current workflows—decision memory, Relay, saved Agents, and Idea Inbox—and requires precise provider, transport, agent, and platform boundaries
+
+**Rejected:**
+
+- Append a recent-features section — it would retain the obsolete hierarchy and contradictory claims
+- Invent consensus from missing model sections — the Claude passes produced no content due to quota failures
+
+**Files:** docs/brainstorm/there-are-so-many-changes-to-whyline-but-the-readme-in-goith.md
+
+<!-- whyline-event: 81bb9ce992204994a14a681762c9cf99 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T06:00:11.254Z"} -->
+
+## 2026-10-24 — Rewrite README around Whyline's four current workflows
+
+**Actor:** codex
+**Role:** implementer
+**Task:** README
+
+**Because:** The existing README described the pre-Agents and pre-Inbox product hierarchy; the brainstorm and repository verification support a console-first guide covering decision memory, Relay, saved Agents, and Idea Inbox with explicit trust and platform boundaries
+
+**Rejected:**
+
+- Append a recent-features section — it would preserve obsolete Command mode and optional-feature framing
+
+**Files:** README.md
+
+<!-- whyline-event: 8139a781d03043e6b7cefcd36b8f158a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T06:18:03.750Z"} -->
