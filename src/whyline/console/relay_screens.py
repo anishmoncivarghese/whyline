@@ -1718,6 +1718,8 @@ class RelaySetupScreen(ModalScreen):
             if self.query(f"#{target_id}"):
                 widget = self.query_one(f"#{target_id}")
                 self.call_after_refresh(widget.focus)
+                row = self.query_one(f"#rs-model-row-{self._focus_agent}")
+                self.call_after_refresh(row.scroll_visible)
         self.call_after_refresh(self._ready)
 
     def _initial_model_agents(self) -> list[str]:

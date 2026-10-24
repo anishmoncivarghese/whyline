@@ -22308,3 +22308,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ba4c613cdfeb4195a707d18e016ddf92 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:32:09.236Z"} -->
+
+## 2026-10-24 — Scroll the whole focused model row into view in relay setup
+
+**Actor:** codex
+**Role:** release
+**Task:** IDEA-22
+
+**Because:** The model input alone could be visible while its out-until status line remained clipped at 80 columns on the macOS CI renderer; scrolling the containing row preserves the status the user opened Resolve to see
+
+**Rejected:**
+
+- Remove the compositor assertion as flaky — the missing line reflected a genuine visibility problem on a supported renderer
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: b879825976374b708d60255041aa5e04 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:51:39.820Z"} -->
