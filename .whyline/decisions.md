@@ -22395,3 +22395,25 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8139a781d03043e6b7cefcd36b8f158a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T06:18:03.750Z"} -->
+
+## 2026-10-24 — Raise Whyline's relay floor to 0.2.39 for the Grok cancellation parser fix
+
+**Actor:** codex
+**Role:** release
+**Task:** RELAY-039-FLOOR
+
+**Because:** A future uv sync must not reinstall whyline-relay 0.2.38, which cannot parse Grok's pretty-printed permission-required cancellation log and leaves the relay paused
+
+**Rejected:**
+
+- Keep >=0.2.38 and rely on newest-version resolution — existing lockfiles and environments can retain the affected 0.2.38 package
+- Duplicate the parser change in Whyline — cancellation parsing belongs to whyline-relay and is already released in 0.2.39
+
+**Test:** uv run pytest -q: passed full suite with one expected skip
+**Test:** uv build: built wheel and sdist
+**Test:** artifact gates: clean sdist and standalone base/console/ui/relay installs passed
+
+**Files:** pyproject.toml, uv.lock, docs/releases/v0.3.50.md
+
+<!-- whyline-event: 6cdbec1b1eb1491a89d519a729b8f4c5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T11:26:17.285Z"} -->
