@@ -39,7 +39,7 @@ Review focus, each one pinned by the test named in its task:
   The root is expanded one level when the widget mounts. Nested folders start collapsed. Do not read file contents in this task.
   Verify with `uv run pytest -q tests/console/test_file_pane.py`. Change nothing else.
 
-- [ ] PANE-3: Relay choices and the plan view
+- [x] PANE-3: Relay choices and the plan view
   Edit only `src/whyline/console/tui.py` and `tests/console/test_see_files.py`.
   Compose `#file-working`, `#file-plan`, and `#file-all` in `#file-pane`, labels `Working file`, `Plan`, and `All files`, in that order, on their own row above the path line. `display` is true only when Files is on and `session.mode == "relay"`. Elsewhere `display` is false, including Chat and Agents. The selected button uses `variant="success"`. Opening the pane in Relay selects Working file.
   `#file-earlier` and `#file-later` have `display` true only while Working file is selected.
