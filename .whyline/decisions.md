@@ -22274,3 +22274,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f95cb67d47894a15a14c25a38e6d5fee -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-23T21:57:53.752Z"} -->
+
+## 2026-10-24 — Prepare whyline 0.3.49 from the approved IDEA-21 email intake
+
+**Actor:** codex
+**Role:** release
+**Task:** IDEA-22
+
+**Because:** The complete suite passed, the sdist safety gate found no internal files or home paths, and isolated wheel installs passed for the base package and every extra
+
+**Rejected:**
+
+- Publish without local artifact verification — PyPI releases cannot be withdrawn
+
+**Files:** pyproject.toml, docs/releases/v0.3.49.md
+
+<!-- whyline-event: 157b1df2608d4848b666f5b53afa4377 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:21:35.226Z"} -->

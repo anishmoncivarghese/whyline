@@ -541,4 +541,3 @@ async def test_email_section_add_and_remove(tmp_path, ideas_home, monkeypatch):
             assert "bob@example.com" in senders
         finally:
             conn.close()
-

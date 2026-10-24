@@ -489,4 +489,3 @@ def test_cli_email_mail_script(tmp_path, monkeypatch, capsys):
     assert installed_file.is_file()
     text = installed_file.read_text(encoding="utf-8")
     assert "/opt/bin/whyline idea email intake --file" in text
-

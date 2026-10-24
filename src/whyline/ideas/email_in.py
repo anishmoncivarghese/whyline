@@ -351,4 +351,3 @@ def handle_file(
 ) -> store.Idea | None:
     """Handle an email from a file path."""
     return handle(conn, Path(path), mail_fn=mail_fn, run_fn=run_fn)
-
