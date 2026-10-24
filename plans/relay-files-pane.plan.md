@@ -58,7 +58,7 @@ Review focus, each one pinned by the test named in its task:
   Leave `#file-all` selectable. Its tree content is the next task. Until then, choosing it must not raise and must not steal Working file's stored follow text.
   Verify with `uv run pytest -q tests/console/test_see_files.py tests/console/test_file_pane.py`. Change nothing else.
 
-- [ ] PANE-4: All files, open a file, and come back
+- [x] PANE-4: All files, open a file, and come back
   Edit only `src/whyline/console/tui.py` and `tests/console/test_see_files.py`.
   Mount one `#file-tree` (`RepoTree` on the session root) in `#file-pane` and keep it mounted for the life of the app. Choosing All files shows `#file-tree`, hides `#file-view`, and leaves All files selected. Choosing Working file or Plan hides `#file-tree` and shows `#file-view`.
   A directory click expands or collapses in place. `DirectoryTree.FileSelected` hides `#file-tree`, shows `#file-view`, loads that file read-only, and keeps All files selected. The path line is repository-relative with forward slashes. The first load scrolls to the top. `classify` notices and a missing file (`Deleted` on the path line, body cleared) match the follower.
