@@ -19,7 +19,7 @@ Review focus, each one pinned by the test named in its task:
 - Pressing All files again after opening a file shows the same tree, still expanded. PANE-4, `test_all_files_again_restores_expanded_tree`.
 - Chat does not show the three choices. PANE-3, `test_choices_are_relay_only`.
 
-- [ ] PANE-1: Resolve the plan file
+- [x] PANE-1: Resolve the plan file
   Edit only `src/whyline/console/file_pane.py` (new) and `tests/console/test_file_pane.py` (new).
   `active_plan_file(root: Path) -> Path | None`.
   If `whyline_relay.state.load(root)` returns a state whose `plan` is non-empty, that string is the candidate. A relative path is under `root`. A missing file, a directory, a path that does not resolve inside `root.resolve()`, or any exception from `load` or from resolving the path yields `None`. Do not then read `relay_ops.configured_plan`.
