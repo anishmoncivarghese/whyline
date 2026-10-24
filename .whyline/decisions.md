@@ -22832,3 +22832,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7f0bf2c366084453b3b52b873007575c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T13:29:05.252Z"} -->
+
+## 2026-10-24 — Release the Relay Files pane as whyline 0.3.51
+
+**Actor:** codex
+**Role:** release
+**Task:** RELEASE-0.3.51
+
+**Because:** The completed PANE-1 through PANE-4 work is integrated with origin/main; the full suite passed with one expected skip, the wheel and sdist built cleanly, and base, console, ui, and relay installs passed from the wheel
+
+**Rejected:**
+
+- Ship without integrating main — that would regress the 0.3.50 relay dependency floor and README update
+- Reuse 0.3.50 — that version is already published and immutable
+
+**Files:** pyproject.toml, docs/releases/v0.3.51.md
+
+<!-- whyline-event: 966381cdbf6c4f218b121953e75d02b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T17:44:16.247Z"} -->
