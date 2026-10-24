@@ -22867,3 +22867,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: eb7cf872dbfc447babd1d30a7c164419 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T18:42:23.273Z"} -->
+
+## 2026-10-24 — Start job search with a read-only Job Scout Agent and keep application generation human-approved
+
+**Actor:** codex
+**Role:** researcher
+**Task:** JOB-AGENT-DESIGN
+
+**Because:** Whyline saved Agents are deliberately read-only and can schedule and deliver reports, while ai-job-search performs state writes, profile updates, CV and cover-letter generation, PDF compilation, and application tracking; separating discovery from application preserves the current safety boundary
+
+**Rejected:**
+
+- Port the complete ai-job-search workflow into one saved Agent — it requires write permissions and interactive factual approval that saved Agents intentionally do not have
+- Automatically submit applications — the source project does not do this and job postings are untrusted input
+
+**Files:** src/whyline/agents/runner.py, docs/agents-capabilities.md
+
+<!-- whyline-event: 2f8507fa53024d73a93251626adcf45d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:16:06.675Z"} -->
+
+## 2026-10-24 — Open Relay Set up before loading Antigravity models
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SETUP-LATENCY
+
+**Because:** The Set up screen synchronously runs agy models before rendering; measured calls took 5.543s, 4.035s, and 3.835s while all local setup reads took milliseconds.
+
+**Rejected:**
+
+- Optimize plan, config, or Git reads — measured setup reads are already fast and do not explain the delay.
+- Remove Antigravity model discovery — users still need its current model list, but it can load after the modal appears.
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py
+
+<!-- whyline-event: cadb6fbc2a254f11bddcdca1f4b15865 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:21:18.206Z"} -->
+
+## 2026-10-24 — Use explicit global provider enablement with non-blocking checks
+
+**Actor:** codex
+**Role:** designer
+**Task:** PROVIDER-SETTINGS
+
+**Because:** Installed, subscribed, and ready are different states; one Settings source of truth lets every console surface hide disabled providers and prevents slow provider commands from blocking modal rendering.
+
+**Rejected:**
+
+- Run live checks for all four providers on every Set up open — disabled subscriptions should not be invoked and synchronous agy models already causes a measured 3.8-5.5 second delay.
+- Reuse the existing available boolean as both preference and readiness — it cannot explain enabled-but-not-installed or disabled-but-previously-detected states safely.
+
+**Files:** docs/superpowers/specs/2026-10-25-console-provider-settings-design.md, plans/console-provider-settings.plan.md
+
+<!-- whyline-event: 31acc2c99d5442eab986c31b1643cca8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T20:35:05.452Z"} -->
