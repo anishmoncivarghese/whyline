@@ -60,4 +60,4 @@ review = "codex"
 test = ""
 
 [backup]
-chain = ["grok"]
+chain = ["codex"]
