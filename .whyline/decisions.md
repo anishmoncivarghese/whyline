@@ -22449,3 +22449,62 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8033051834f9477684aeeecc526fd831 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:06:24.974Z"} -->
+
+## 2026-10-24 — Drop .git by entry name and drop paths that resolve outside the tree root
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-2
+
+**Because:** A .git directory resolves inside the repository so a name check is the only way to hide it, and resolve plus is_relative_to matches PANE-1 so an outbound symlink is not listed
+
+**Rejected:**
+
+- gitignore-aware filter — the spec keeps ignored names and .whyline
+- hide every dot-directory — .whyline must stay
+
+**Files:** src/whyline/console/file_pane.py
+
+<!-- whyline-event: 208cb5ed74a847f3a76a84711ac68852 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:11:43.753Z"} -->
+
+## 2026-10-24 — RepoTree hides .git and outbound symlinks, keeps ignored names and .whyline, expands the root one level on mount
+
+**Actor:** grok
+**Role:** tester
+**Task:** PANE-2
+
+**Because:** Named tests passed 6/6. Full suite uv run pytest -q exited 0 with one skip. A mount probe without reload showed root.is_expanded, children src ignored.txt and .whyline, nested folders collapsed. Expanding src lists main.py and drops nested .git. Selecting ignored.txt posts FileSelected. filter_paths keeps .gitignore and an internal symlink and drops .git and an outbound symlink.
+
+**Rejected:**
+
+- fail because root expansion is DirectoryTree reload default not on_mount — mount without reload already expands one level
+- fail because FileSelected path is the iterdir path — select_node posts FileSelected whose name is ignored.txt and resolve matches
+- fail for no nested-.git named test — filter_paths drops any entry named .git including under src
+
+**Test:** uv run pytest -q tests/console/test_file_pane.py: 6 passed
+
+**Files:** src/whyline/console/file_pane.py, tests/console/test_file_pane.py
+
+<!-- whyline-event: 1ab54ec03e2441e083b3ccd6482a2383 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:24:28.659Z"} -->
+
+## 2026-10-24 — Approve RepoTree hiding .git and outbound symlinks, keeping ignored names and .whyline
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PANE-2
+
+**Because:** filter_paths drops .git by name and paths that resolve outside the tree root. The widget test mounts the specified layout, lists src ignored.txt and .whyline, omits .git and the outbound symlink, expands src to main.py, and FileSelected matches ignored.txt. DirectoryTree expands the root one level on mount. uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- request changes for no root.is_expanded assert — DirectoryTree reload on mount expands one level and the children assertions require that listing
+- request a dedicated filter_paths unit test — PANE-2 specifies the widget test
+
+**Test:** uv run pytest -q: exit 0, one skip
+
+**Files:** src/whyline/console/file_pane.py, tests/console/test_file_pane.py
+
+<!-- whyline-event: c2ead5980dab4eeba660a33da5711f9a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:36:27.946Z"} -->

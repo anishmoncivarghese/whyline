@@ -1,10 +1,16 @@
-"""Resolve the plan file the Files pane should show."""
+"""Plan file resolution and the repository tree for the Files pane."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from whyline.console import relay_ops
+
+try:
+    from textual.widgets import DirectoryTree
+except ImportError:
+    DirectoryTree = object  # type: ignore[misc, assignment]
 
 
 def active_plan_file(root: Path) -> Path | None:
@@ -42,3 +48,25 @@ def _repo_file(root: Path, candidate: str | Path) -> Path | None:
         return root / resolved.relative_to(root_resolved)
     except Exception:
         return None
+
+
+class RepoTree(DirectoryTree):
+    """Repository tree. Hides ``.git`` and anything that resolves outside the root."""
+
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        try:
+            root = Path(self.path).expanduser().resolve()
+        except Exception:
+            return []
+        kept: list[Path] = []
+        for path in paths:
+            if path.name == ".git":
+                continue
+            try:
+                resolved = path.resolve()
+            except Exception:
+                continue
+            if not resolved.is_relative_to(root):
+                continue
+            kept.append(path)
+        return kept
