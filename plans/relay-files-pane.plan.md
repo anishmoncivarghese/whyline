@@ -32,7 +32,7 @@ Review focus, each one pinned by the test named in its task:
   `test_no_plan` — no state and no config, result is `None`.
   Verify with `uv run pytest -q tests/console/test_file_pane.py`. Change nothing else.
 
-- [ ] PANE-2: Repository tree that hides .git
+- [x] PANE-2: Repository tree that hides .git
   Edit only `src/whyline/console/file_pane.py` and `tests/console/test_file_pane.py`.
   `RepoTree` subclasses `textual.widgets.DirectoryTree`. `filter_paths` drops a path whose name is `.git`, and drops a path that does not resolve inside the tree's root. Every other entry stays, including ignored names and `.whyline`.
   The widget test mounts `RepoTree` in a small Textual app on a temp directory that contains `.git/HEAD`, `.whyline/ledger.jsonl`, `ignored.txt`, and `src/main.py`. After load, the root's children include `src`, `ignored.txt`, and `.whyline`, and do not include `.git`. Expanding `src` shows `main.py`. Selecting `ignored.txt` posts `DirectoryTree.FileSelected` with that path. A symlink inside the temp directory whose target is outside it is not listed.
