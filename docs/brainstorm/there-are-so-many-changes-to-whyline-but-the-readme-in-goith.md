@@ -1,5 +1,29 @@
 # Brainstorm: There are so many changes to Whyline but the readme in goithub is old I am thunking about updating the readme , go through teh repo and produce a good readme
 
+## Final Synthesis
+
+Rewrite the README rather than appending a “recent features” section. The current document still presents Whyline mainly as decision history and manual handoffs, while the product now has four first-class workflows: decision memory, reviewed delivery through Relay, reusable read-only Agents, and the Idea Inbox. The new README should make those workflows understandable in one short scan and treat the console as the primary interface, with the CLI retained for scripting and expert use.
+
+The recommended product story is:
+
+> Whyline is a locally controlled workspace for Claude Code, Codex, Grok, and Antigravity: preserve why code changed, coordinate reviewed work, run reusable read-only agents, and turn captured ideas into plans and implementation.
+
+Keep the existing tagline—“Records why your code exists, and tells the next agent.”—and the real `whyline explain` example, because they remain the clearest expression of the foundation. Follow them with a five-minute console-first start (`uv tool install`, `whyline init`, `whyline`) and a compact explanation of the three top-level modes: Chat, Relay, and Agents. Ideas and Inbox should be introduced as part of Agents, not hidden in an “Also in the box” section.
+
+Organize the README around this sequence:
+
+1. **Hero and quick start** — say what Whyline adds beyond launching an agent CLI directly, list prerequisites, and orient the console modes.
+2. **Decision memory** — show `explain`, the committed-versus-local storage split, and the small core command set (`sync`, `brief`, `note`, `handoff`, and `claim`).
+3. **Relay** — show one reviewed flow from request through brainstorm, plan, implementation, testing, review, verification, approved commit, and human release work. Explain role assignment, backup chains, preflight checks, Auto, Resolve, Resume, and safety pauses as controls around that flow rather than as a command catalogue.
+4. **Saved Agents** — distinguish reusable read-only instructions from Relay roles, using one concrete scheduled example to cover acceptance, fallbacks, timeouts, history, and delivery.
+5. **Idea Inbox** — show how console, Telegram, and authenticated email intake turn an idea into reviewed work, with repository allowlists and final confirmation before Relay starts.
+6. **Trust and compatibility** — state precisely what remains local, what is committed, what reaches agent providers or transports, and which agent/platform combinations are supported.
+7. **Learn more** — link to focused guides, releases, issues, license, and `--help`; keep release chronology and exhaustive command lists out of the README.
+
+Accuracy matters more than marketing breadth. Do not claim that everything stays on the machine, that every agent is fully sandboxed, or that all features work on every platform. Whyline has no hosted account or telemetry service of its own, but prompts and selected context go to the configured providers; Telegram is not end-to-end encrypted; and email intake depends on sender allowlisting plus DKIM or SPF. macOS provides the full scheduling, Mail, and background-service experience; Linux supports the core interactive workflows; Windows remains experimental. Antigravity can participate in interactive and Relay work but should not be advertised for unattended saved Agents because it lacks a verified read-only mode.
+
+Implementation should be one structural rewrite of roughly 200–300 lines, not an incremental patch to the old hierarchy. Preserve the useful manual handoff example and storage explanation, add a current redacted console screenshot if available, and defer missing long-form guides rather than blocking the correction. Before merging, verify every shown command from a clean install and temporary repository, check capability and security claims against source and tests, and inspect the rendered GitHub page for links, table width, redaction, and mobile readability. Going forward, any new console-visible top-level workflow should update the README or record why no README change is required.
+
 ## Codex
 
 ### Revised recommendation
