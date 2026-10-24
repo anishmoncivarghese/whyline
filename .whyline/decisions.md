@@ -22291,3 +22291,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 157b1df2608d4848b666f5b53afa4377 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:21:35.226Z"} -->
+
+## 2026-10-24 — Isolate the cross-sender email confirmation test from installed local agents
+
+**Actor:** codex
+**Role:** release
+**Task:** IDEA-22
+
+**Because:** The first 0.3.49 release run failed only on a clean Ubuntu runner because the test relied on host agent discovery; storing a deterministic default agent and stubbing unattended capability tests the intended authorization path on every machine
+
+**Rejected:**
+
+- Change production fallback behavior — the defect was in test setup, and production correctly refuses unattended brainstorming with no usable agent
+
+**Files:** tests/ideas/test_email_in.py
+
+<!-- whyline-event: ba4c613cdfeb4195a707d18e016ddf92 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T05:32:09.236Z"} -->

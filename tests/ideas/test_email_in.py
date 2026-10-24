@@ -339,6 +339,15 @@ def test_cli_email_allow_rejects_invalid_address(capsys):
 def test_cross_sender_confirmation_is_rejected(conn, monkeypatch):
     email_in.allow(conn, "alice@example.com")
     email_in.allow(conn, "bob@example.com")
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude"]),),
+    )
+    monkeypatch.setattr(
+        email_in.brainstorm.capabilities,
+        "can_run_unattended",
+        lambda name: name == "claude",
+    )
     sent = []
 
     capture_raw = _make_email(
