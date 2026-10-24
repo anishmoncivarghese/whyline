@@ -124,8 +124,10 @@ Relay turns a Markdown plan into a controlled multi-agent run:
 - Use **Resolve** when a pause needs a constrained decision based on evidence.
 - Use **Resume** to continue checkpointed work and **Stop** to interrupt the
   current attempt.
-- Use **Files** to follow files changed by the active Chat, brainstorm, or
-  Relay run from inside the console.
+- Use **Files** during Relay to switch between **Working file**, **Plan**, and
+  **All files**. Follow the agent's latest output, read the live active plan,
+  or browse and open repository files from a persistent tree without leaving
+  the console. These views are read-only.
 
 Relay coordinates implementation, tests, review, verification, and the
 approved commit. It pauses instead of guessing when a question, dangerous

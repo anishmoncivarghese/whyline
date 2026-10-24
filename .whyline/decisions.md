@@ -22850,3 +22850,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 966381cdbf6c4f218b121953e75d02b7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T17:44:16.247Z"} -->
+
+## 2026-10-24 — Document the three Relay Files views in the README
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** README-FILES
+
+**Because:** The README currently says Files only follows changed files, while 0.3.51 also provides a live Plan view and a persistent read-only repository browser; this is a visible workflow and adoption benefit
+
+**Rejected:**
+
+- Rewrite the README again — the lifecycle positioning is current and only the Files description is stale
+
+**Files:** README.md
+
+<!-- whyline-event: eb7cf872dbfc447babd1d30a7c164419 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T18:42:23.273Z"} -->
