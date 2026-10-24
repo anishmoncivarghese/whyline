@@ -22395,3 +22395,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8139a781d03043e6b7cefcd36b8f158a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T06:18:03.750Z"} -->
+
+## 2026-10-24 — Return the plan as root joined to the resolved relative path
+
+**Actor:** grok
+**Role:** implementer
+**Task:** PANE-1
+
+**Because:** Callers will take the path relative to the original root, and on macOS tmp_path may be /var while resolve() is /private/var
+
+**Rejected:**
+
+- return path.resolve() — relative_to(root) fails when root is unresolved
+- return the unresolved candidate as given — a symlink to a file inside the repo would keep the link instead of the real inside-repo file
+
+**Files:** src/whyline/console/file_pane.py
+
+<!-- whyline-event: 49db4b5a3ad54b7ca772301e802b7f10 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T11:43:23.677Z"} -->
+
+## 2026-10-24 — active_plan_file behaves correctly: run wins, missing run stays None, idle uses config, outside paths rejected
+
+**Actor:** grok
+**Role:** tester
+**Task:** PANE-1
+
+**Because:** Named tests passed (5/5); full suite passed; a loaded empty plan stays None without reading config; returned path is root joined to the resolved relative path so it equals tmp_path on macOS where resolve() is /private/var
+
+**Rejected:**
+
+- fail for missing empty-plan named test — probed it and the implementation returns None without falling through
+- fail because return uses root/rel — named tests and a macOS probe both match the unresolved root, not path.resolve()
+
+**Files:** src/whyline/console/file_pane.py, tests/console/test_file_pane.py
+
+<!-- whyline-event: c9ae807c06c8446b9c747f7a2c8e8eca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T11:54:51.007Z"} -->
+
+## 2026-10-24 — Approve PANE-1: active_plan_file matches spec and tests
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PANE-1
+
+**Because:** Named cases are real: run wins, missing run does not fall through, idle uses config, outside path and escaping symlink are None, no plan is None. Full suite uv run pytest -q exited 0 with one skip. Containment uses resolve plus is_relative_to; return is root joined to the inside relative path so callers match the original root on macOS.
+
+**Rejected:**
+
+- request changes for .whyline/decisions.md — those lines are whyline notes for this task, required by Agents.md
+- fail for no directory named test — is_file rejects directories and the task named five tests only
+
+**Files:** src/whyline/console/file_pane.py, tests/console/test_file_pane.py
+
+<!-- whyline-event: 8033051834f9477684aeeecc526fd831 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T12:06:24.974Z"} -->
