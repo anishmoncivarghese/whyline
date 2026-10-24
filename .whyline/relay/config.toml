@@ -60,8 +60,8 @@ command = [
 
 [roles]
 implementer = "grok"
-tester      = "codex"
-reviewer    = "codex"
+tester      = "grok"
+reviewer    = "grok"
 release = "human"
 
 [pipeline]
@@ -99,4 +99,4 @@ review = "codex"
 test = ""
 
 [backup]
-chain = ["grok", "codex"]
+chain = ["grok"]
