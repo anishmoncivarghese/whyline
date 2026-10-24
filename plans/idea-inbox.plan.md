@@ -379,7 +379,7 @@ Review point: brainstorm a few real ideas through Telegram before starting this 
   Tests: an allowed, authenticated sender creates one idea with its settings; a repeated Message-ID is ignored; a sender failing DKIM and SPF is ignored; `yes <code>` with the current code starts the brainstorm and a stale code does not; the reply carries Word and PDF attachments.
   Verify with `uv run pytest -q tests/ideas` and `uv run pytest -q`. Change nothing else.
 
-- [ ] IDEA-22: Publish whyline 0.3.49
+- [x] IDEA-22: Publish whyline 0.3.49
   relay-profile: release
   Bump `pyproject.toml` to `0.3.49`. Write `docs/releases/v0.3.49.md`: email an idea from an allowed address (with optional brainstorm settings in the body) and confirm each step by replying with the code the bot sends; documents arrive as attachments. Run `uv run pytest -q` and confirm it exits 0. Tag `v0.3.49`, push, publish to PyPI the way the previous release was published, and confirm `uv tool install whyline@0.3.49` installs it.
 
