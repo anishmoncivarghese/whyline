@@ -2,171 +2,60 @@
 
 ## Codex
 
-# Independent research: updating the Whyline README
+### Revised recommendation
 
-## Bottom line
+The README needs a structural rewrite, not another feature paragraph. It still describes Whyline mainly as decision history plus manual handoffs, with the console, Relay, saved Agents, and automation relegated to “Optional” or “Also in the box.” In v0.3.49 those are primary product surfaces.
 
-The README should be rewritten around the product Whyline is now, rather than extended with another paragraph under “Also in the box.” The current README still presents decision provenance and manual handoffs as the product, with relay, console, saved agents, and automation as secondary extras. At v0.3.49, Whyline is better described as a local, console-first workspace for coordinating existing agent CLIs across four connected workflows:
+The durable product model is:
 
-1. Record why code changed and hand work between agents.
-2. Chat, brainstorm, draft a spec and plan, and run implementation through review.
-3. Save read-only agents that run on demand, on a schedule, or from an event.
-4. Capture an idea by console, Telegram, or email and carry it through scoring, research, planning, and a confirmed relay run.
+1. **Decision memory** — record why code changed and hand bounded context to the next agent.
+2. **Reviewed delivery** — brainstorm, plan, implement, test, review, verify, and release through Relay.
+3. **Reusable read-only Agents** — save accepted instructions and run them now, on a schedule, or from an event.
+4. **Idea Inbox** — capture an idea locally, from Telegram, or by authenticated email and carry it into the reviewed workflow.
 
-Keep the existing tagline, “Records why your code exists, and tells the next agent,” because it is sharp and still true. Follow it immediately with a broader sentence such as:
+The rewrite should be console-first, with the CLI shown as the automation and expert interface to the same capabilities. It should explain this model in roughly 200–300 lines, then link to focused guides instead of reproducing every command and release note.
 
-> Whyline is a local control console for Claude Code, Codex, Grok, and Antigravity. It preserves decisions, coordinates reviewed work across agents, runs accepted read-only agents, and can take an idea from your phone to a plan and implementation in your repository.
+### Positioning
 
-“Local” must be qualified: Whyline has no hosted account or telemetry service, but the agent CLIs send work to their providers, Telegram uses the Bot API, and Mail uses the user’s configured mail account. The accurate promise is “locally controlled,” not “nothing leaves this machine.”
+Keep the existing tagline because it is concise and still names Whyline’s foundation:
 
-## Why the current README now feels old
+> Records why your code exists, and tells the next agent.
 
-The latest README change is commit `b21ac7f` from 2026-10-10. It is contained in v0.3.38 and later tags, while the repository is now v0.3.49. The missing work is not one small feature; it spans the product’s main workflows.
+Add one sentence that reflects the product now:
+
+> Whyline is a locally controlled workspace for Claude Code, Codex, Grok, and Antigravity: preserve decisions, coordinate reviewed work, run reusable read-only agents, and turn ideas into plans and implementation.
+
+“Locally controlled” is more accurate than “everything stays local.” Whyline has no hosted account or telemetry service of its own, but the CLIs send prompts and selected context to their providers, and Telegram and email use their respective networks.
+
+The audience is a developer already using one or more supported agent CLIs who wants continuity, review gates, and automation without adopting a hosted orchestration platform. The README should answer “why not just launch the CLI directly?” near the top: isolated agent sessions do not share hidden conversation, remember rejected alternatives, or provide a reviewed cross-agent workflow.
+
+### Confirmed mismatches in the current README
 
 | Current README | Current repository |
 |---|---|
-| Says the console has Command, Chat, and Relay | Command mode was removed. The primary modes are Chat, Relay, and Agents; Ideas and Inbox are screens in Agents mode. |
-| Calls both `whyline` and `whyline console` the full-screen app | Bare `whyline` opens the Textual UI when available. `whyline console` is the keyboard-only console; `whyline console --ui` explicitly opens the full-screen UI. |
-| Describes relay mainly as `init`, `doctor`, `start`, and `status` | Relay now has a guided Run flow, brainstorm/spec/plan creation, optional test planning, role assignment, preflight, Auto execution, manual verification and release gates, Resume, and Resolve. |
-| Gives saved agents one short paragraph | Agents now have repo or personal definitions, local acceptance, read-only enforcement, backups, schedules, folder/event triggers, run history, failure handling, and email/Telegram/command delivery. |
-| Does not mention Idea Inbox | Ideas can be captured locally, scored, refined, dropped/reopened, exported to Excel, brainstormed into Word/PDF, and received and controlled through Telegram or authenticated email. |
-| Does not mention modern console affordances | The console has agent/model/repository/backup/timeout controls, attachments, live file following, one-step repository setup, update detection, Stop, Awake, and guided recovery. |
-| Presents `whyline-relay` as an optional box beside Whyline | Relay is still opt-in at the repository/workflow level, but `whyline-relay` and both console front ends are required package dependencies. “Optional workflow, included installation” is clearer. |
-| Says Codex implements and stops because its sandbox cannot write `.git` | That is true for a direct Codex session, but the relay can commit approved work through Whyline’s host-side committer. The distinction should be explained where roles and trust boundaries are documented. |
-| Leads with the measured 3-of-7 read rate | This is valuable evidence, but it is too specific and stale-looking for the main product path. Keep a short honest caveat and link to `docs/measurement.md`. |
+| Console has Command, Chat, and Relay | Command mode is gone. The top-level modes are Chat, Relay, and Agents; Ideas and Inbox live under Agents. |
+| `whyline` and `whyline console` are presented as equivalent full-screen entry points | Bare `whyline` opens the Textual UI when available. `whyline console` is the keyboard console; `whyline console --ui` explicitly requests the full-screen UI. |
+| Relay is summarized as `init`, `doctor`, `start`, and `status` | The console now guides brainstorm, spec/plan creation, optional test planning, role/model selection, preflight, Run/Auto, Resume, Resolve, verification, and release gates. |
+| Saved agents get one paragraph | Saved Agents now include personal/repository definitions, local acceptance, backup chains, timeouts, schedules and triggers, run history, and several delivery paths. |
+| Idea Inbox is absent | Ideas can be captured, scored, refined, brainstormed, exported, received by Telegram or email, turned into documents and plans, and started only after confirmation. |
+| `whyline-relay` is presented as an optional installed extra | Relay setup is optional, but `whyline-relay` is a required package dependency because Chat and Relay import it directly. |
+| “Codex implements and stops” is stated without qualification | That describes a direct sandboxed Codex session. Relay can use Whyline’s host-side committer after approved work. |
+| macOS and Linux are treated broadly alike | Core interactive work is portable, while scheduling, Mail integration, the background service, and some document behavior are macOS-specific. Windows remains experimental/non-gating. |
 
-The README should not enumerate every release. It should explain the stable mental model produced by those releases.
+This is why an additive edit would fail: it would preserve the wrong hierarchy and leave contradictory claims in place.
 
-## The product story the README should tell
+### Recommended README information architecture
 
-### 1. Whyline remembers the reason
+#### 1. Hero
 
-This remains the foundation and should retain the real `whyline explain` example. Decisions are committed as readable Markdown, while the active handoff, ownership claims, and activity ledger stay local. `sync`, `brief`, `explain`, `note`, `handoff`, and `claim` are the compact CLI vocabulary for this layer.
+- Product name, existing tagline, and the broader positioning sentence.
+- Four short outcomes: Explain, Build with Relay, Run saved Agents, Capture Ideas.
+- One redacted screenshot of the current Textual console showing Chat / Relay / Agents and the context bar. There are no maintained screenshots in the repository today.
+- Avoid a CI badge that implies supported Windows releases while its CI job is non-gating.
 
-Explain why this matters before showing syntax: a new agent session does not inherit another agent’s hidden conversation. Whyline gives it an explicit, bounded handoff and the decisions relevant to the files it is about to touch.
+#### 2. Install and five-minute start
 
-### 2. The console is the main door
-
-The project instruction is “console first,” and the README should follow it. After installation and `whyline init`, the primary next command should be:
-
-```bash
-whyline
-```
-
-Then briefly orient the user:
-
-- Chat: talk to the selected CLI, attach files or screenshots, choose a model, backup chain, timeout, and repository.
-- Relay: brainstorm, create or select a plan, assign roles, check readiness, run, resume, and resolve pauses.
-- Agents: create reusable read-only agents, inspect runs and schedules, and open Inbox or Ideas.
-- Any normal Whyline command remains reachable as a slash command, such as `/status` or `/relay doctor`.
-
-This is a better first-run story than leading with a long shell-only handoff example. Keep that example later for automation and expert use.
-
-### 3. Relay is a reviewed workflow, not merely a loop
-
-Describe the current guided flow in one compact sequence:
-
-```text
-idea or request
-  -> multi-agent brainstorm and synthesis
-  -> reviewed spec
-  -> implementation plan and optional test plan
-  -> preflight and role assignment
-  -> implement -> test -> review -> verify
-  -> Whyline commits approved work
-  -> human release tasks
-```
-
-The important selling points are the controls around the loop:
-
-- Each role can use a different agent and model.
-- A shared ordered backup chain handles missing CLIs, login failures, quota, and supported failover cases.
-- Check validates the exact form and repository state before Run is enabled.
-- Auto can carry the work from brainstorm to relay, but open questions, unsafe recovery, manual checks, and release tasks still pause for the user.
-- Resolve presents evidence and constrained recovery choices instead of silently rewriting or discarding work.
-- Stop interrupts the active attempt; Resume continues from saved state.
-- The Files pane shows the files being changed without turning the console into a full editor.
-
-This is much more distinctive than “run a Markdown plan,” and it should get a main README section.
-
-### 4. Saved Agents are a separate concept
-
-Avoid blurring Relay roles with saved Agents. Relay roles work on a repository plan. A saved agent is a reusable instruction set that runs read-only, either personally or from a definition committed in a repository.
-
-The README should say:
-
-- A definition names its instructions, primary CLI, backups, timeout, and optional schedule or trigger.
-- A repo definition changed by a pull does not run unattended until it is accepted on that Mac.
-- Codex, Claude, and Grok have verified read-only launch modes. Antigravity is available for interactive and relay work but is excluded from saved unattended agents because its CLI has no verified read-only mode.
-- Runs keep an answer and log. Results can be sent by email, Telegram, or an advanced after-run command; delivery failure does not change the run result.
-- Scheduling, folder watches, Mail rules, and the background heartbeat are currently macOS features. “Run now” remains useful without scheduling.
-
-A tiny example agent is worth more than a command inventory. For example, a “dependency-watch” agent that checks release notes weekly and delivers a Word report demonstrates instructions, schedule, read-only operation, backup, and delivery in one story. Create it through the console first; show CLI equivalents afterward.
-
-### 5. Idea Inbox deserves a first-class section
-
-Idea Inbox is the largest omission. Its story is unusually concrete:
-
-> Send an idea from your phone, score or brainstorm it, receive the documents, turn the approved result into a spec and plan for an allowed repository, and start the relay only after a final confirmation.
-
-The section should cover three entry points without drowning in commands:
-
-- Console: Agents -> Ideas and Agents -> Inbox.
-- Telegram: one BotFather bot, private allowlisted chats, cards and confirmation taps, Word/PDF results, status/resolve/stop controls.
-- Email: Mail.app intake from allowlisted senders, DKIM or SPF pass required, revision-bound confirmation codes, and document attachments in replies.
-
-Also mention the local data model: ideas live under `~/.whyline/ideas`, the SQLite database is authoritative, and `ideas.xlsx` is rebuilt as an export. The Telegram workflow runs in the inbox’s own workspace rather than in arbitrary repositories, and repository planning is limited to configured repositories.
-
-Do not present future MCP/API tools as implemented. The current repository has no per-agent tool approval or `tool-exec` boundary. That belongs in a future roadmap after it exists.
-
-## Recommended README structure
-
-1. **Hero**
-   - Name, existing tagline, expanded one-sentence description.
-   - Badges only if they are accurate; do not use a green aggregate CI badge to imply Windows is supported while Windows is non-gating.
-   - One current screenshot of the Textual console showing the three modes and context bar. There are no image assets in the repository now, so this must be captured before the rewrite lands. Redact home paths, repository names, emails, and Telegram details.
-
-2. **What you can do**
-   - Four short cards or bullets: Explain, Build with Relay, Run saved Agents, Capture Ideas.
-   - Link each to its fuller section.
-
-3. **Install and five-minute start**
-   - Requirements: Python 3.11+, Git, `uv`, and at least one supported CLI already installed and signed in.
-   - Install: `uv tool install whyline@latest`.
-   - Existing repository: `cd ...`, `whyline init`, `whyline`.
-   - State that first run detects available agents; `whyline account detect` refreshes detection.
-   - Existing users: `uv tool upgrade whyline` or the console’s Update action.
-
-4. **The console**
-   - Chat, Relay, Agents; Inbox and Ideas under Agents.
-   - Context bar, attachments, Files, Stop, timeouts, backup chain, slash commands.
-
-5. **Four workflows**
-   - Preserve decisions and hand off work.
-   - Take a change from brainstorm to reviewed release.
-   - Create and run a read-only saved agent.
-   - Capture and develop an idea remotely.
-
-6. **How data and trust work**
-   - A concise storage table.
-   - Provider/network boundaries.
-   - Unattended-agent acceptance and read-only matrix.
-   - Remote input allowlists and confirmation gates.
-
-7. **Compatibility and limits**
-   - Feature-by-platform and feature-by-agent tables.
-   - Honest experimental Windows status.
-   - macOS-only scheduler, Mail integration, and native PDF behavior.
-
-8. **CLI and deeper documentation**
-   - A small command map, not every flag.
-   - Links to recording, measurement, performance, Idea Inbox, Mail recipe, attachment capability, agent capability, releases, issues, and licence.
-
-This order lets a new visitor understand the product before reading implementation details, while experienced users still get exact commands and design evidence.
-
-## Proposed quick start
-
-The README’s shortest successful path should be console-first:
+Lead with the console path:
 
 ```bash
 uv tool install whyline@latest
@@ -175,109 +64,157 @@ whyline init
 whyline
 ```
 
-Then say, in prose:
+State the actual prerequisites: Python 3.11+, Git, and at least one supported agent CLI already installed and authenticated. First run detects available agents; the console and `whyline account detect` can refresh that state.
 
-1. Choose Chat, Relay, or Agents.
-2. Pick an installed agent and model from the top bar.
-3. In Relay, choose Run to brainstorm or select a plan; Check must pass before work starts.
-4. In Agents, choose New for a reusable read-only agent, or Inbox to connect Telegram/email intake.
+Then orient the three modes in four lines:
 
-Follow this with the existing shell handoff example for users who want explicit multi-terminal control. The README should show both interfaces calling the same underlying functions, not imply that the console and CLI are different products.
+- **Chat** talks to the selected CLI with attachments, model, backup, timeout, and repository controls.
+- **Relay** brainstorms or selects a plan, assigns roles, checks readiness, runs it, and handles pauses.
+- **Agents** creates and runs reusable read-only agents and opens Ideas and Inbox.
+- Slash commands expose normal Whyline operations from any mode.
 
-## Trust, privacy, and security wording
+The manual shell workflow belongs later. It remains important for scripts and users who prefer explicit terminals, but it should no longer be the first product tour.
 
-This needs a dedicated section because the product now accepts remote input and launches unattended processes.
+#### 3. Whyline remembers why
 
-Accurate claims:
+Retain the real `whyline explain` output from this repository. It is the strongest concrete demonstration in the existing README.
 
-- Whyline has no hosted account, paid tier, or telemetry service of its own.
-- Project decisions are readable Markdown. Active state, run logs, accepted definitions, ideas, and delivery settings are stored locally.
-- Whyline launches CLIs the user already installed and authenticated. Their provider terms and data handling still apply.
-- Saved unattended agents use verified read-only modes and locally accepted definitions; Antigravity is excluded from this feature today.
-- Telegram inbox reads private chats that the user explicitly allows. Telegram bot chats are not end-to-end encrypted.
-- On macOS the Telegram bot token is stored in Keychain; elsewhere it is stored in a mode-0600 local file.
-- Email idea intake requires an allowlisted sender plus a DKIM or SPF pass, and consequential steps use revision-bound confirmation codes.
-- Relay preflight fingerprints the selected configuration and repository state; dangerous recovery, manual verification, and release actions wait for the user.
+Explain the storage split briefly:
 
-Claims to avoid:
+| Data | Location/shape | Shared? |
+|---|---|---:|
+| Decisions and rejected alternatives | `.whyline/decisions.md` | Committed |
+| Active handoff, claims, and ledger | `.whyline/` runtime files | Local |
+| Personal accepted agents, run records, settings | user Whyline data directory | Local |
+| Ideas and generated exports | `~/.whyline/ideas` | Local unless delivered |
 
-- “Everything stays on your machine.” Prompts and selected files can go to model providers; Telegram and email necessarily use their networks.
-- “No secrets are exposed.” The current Telegram Keychain write invokes the macOS `security` command with the token in its argument vector. Until that implementation is changed, the README should claim storage location and hidden input, not perfect process-level secrecy.
-- “Unattended agents are sandboxed from all user data.” They are launched in read-only modes, but the exact visibility and inherited configuration come from the underlying CLI. Current agent and relay launches can inherit normal provider configuration, including configured tools. State the verified guarantee narrowly: Whyline blocks repository writes through the tested launch mode.
-- “All four agents work everywhere.” Capability varies by workflow, and platform support varies too.
+Keep a compact CLI map for `sync`, `brief`, `explain`, `note`, `handoff`, and `claim`, plus the existing caveats that claims are advisory, hidden conversations are not transferred, and an empty record gives an empty answer.
 
-## Compatibility tables the README needs
+#### 4. Relay: a reviewed path from request to release
 
-An agent table should make the asymmetry obvious:
+Use a single flow rather than a list of subcommands:
 
-| Agent | Chat / brainstorm / relay | Saved unattended Agent |
+```text
+request
+  -> brainstorm and synthesis
+  -> reviewed spec and plan
+  -> optional test plan
+  -> preflight and role assignment
+  -> implement -> test -> review -> verify
+  -> approved commit
+  -> human release tasks
+```
+
+The differentiators are the controls around this flow:
+
+- A different agent and model can fill each role.
+- A shared ordered backup chain handles unavailable or limited providers where failover is supported.
+- Check fingerprints the selected configuration and repository state before Run.
+- Auto advances through safe stages but pauses for open questions, unsafe recovery, manual verification, and release work.
+- Resolve shows evidence and constrained choices; Resume continues saved work; Stop interrupts the current attempt.
+- Files lets the user follow changes without pretending the console is a full editor.
+
+Call Relay an included workflow that remains inactive until configured, not an optional package “in the box.”
+
+#### 5. Saved Agents: reusable and read-only
+
+Make the distinction explicit: Relay roles collaborate on a repository plan; a saved Agent is a reusable instruction set intended for read-only work.
+
+A small example is better than a command catalogue. A weekly “dependency-watch” Agent can demonstrate instructions, primary and backup CLIs, timeout, schedule, local acceptance, run history, and Word/email delivery in one scenario.
+
+The section must also state:
+
+- Repository definitions do not run unattended on a Mac until their current contents are accepted there.
+- Claude Code, Codex, and Grok have verified read-only launch modes for saved Agents.
+- Antigravity supports interactive and Relay work but is excluded from unattended saved Agents because its CLI has no verified read-only mode.
+- Delivery can use email, Telegram, or an advanced after-run command; delivery failure is separate from run success.
+- Scheduling, folder watching, Mail rules, and the background heartbeat are macOS features. On-demand runs remain useful elsewhere.
+
+#### 6. Idea Inbox: from phone or email to reviewed work
+
+Give this a first-class section; it is the largest omission from the current README.
+
+The one-sentence story should be:
+
+> Send or enter an idea, score and refine it, receive the brainstorm documents, choose an allowed repository, and start Relay only after final confirmation.
+
+Describe the three entry points without listing every subcommand:
+
+- **Console:** Agents → Ideas for the backlog and Agents → Inbox for connections and allowed repositories/senders.
+- **Telegram:** private allowlisted bot chats, confirmation buttons, documents, and status/resolve/stop controls.
+- **Email:** Mail.app intake from an allowlisted sender with DKIM or SPF pass; consequential actions require revision-bound confirmation codes.
+
+Clarify that the SQLite database is authoritative and `ideas.xlsx` is a rebuilt export. The inbox works in its own workspace; it does not grant arbitrary repository access, and planning is limited to configured repositories.
+
+#### 7. Trust, privacy, and compatibility
+
+These claims should be precise enough to survive a security review:
+
+- Whyline has no account, paid tier, API key, or telemetry service of its own.
+- It launches CLIs the user already installed and authenticated; provider terms and data handling still apply.
+- Saved unattended Agents use tested read-only launch modes and locally accepted definitions. Do not claim isolation from all user data or tools exposed by an underlying CLI.
+- Telegram chats are allowlisted but are not end-to-end encrypted.
+- Email intake requires both an allowed sender and DKIM or SPF pass; confirmation codes are tied to the current idea revision.
+- Relay pauses at dangerous recovery, manual verification, and release boundaries.
+
+Avoid absolute promises such as “everything stays on your machine,” “no secrets are exposed,” “fully sandboxed,” or “all four agents work everywhere.”
+
+Include a small agent matrix:
+
+| Agent | Chat / brainstorm / Relay | Saved unattended Agent |
 |---|---:|---:|
-| Claude Code | Yes | Yes, read-only plan mode |
+| Claude Code | Yes | Yes, verified read-only mode |
 | Codex | Yes | Yes, read-only sandbox |
 | Grok | Yes | Yes, edit/write denied |
 | Antigravity | Yes, after repository trust approval | No verified read-only mode |
 
-A platform table should distinguish the portable core from Mac automation. Before publishing exact cells, rerun the supported-platform tests and validate them on clean installs. The repository currently supports this broad statement:
+Use a second compact platform matrix only after validating exact cells on clean installs. The safe summary today is: macOS provides the full experience; Linux supports core CLI/console, interactive work, Relay, and on-demand features; Windows is experimental. Do not imply the always-on incoming Idea service is portable merely because Telegram’s network API is portable.
 
-- macOS is the full experience.
-- Linux supports the core CLI, console, interactive work, relay, and on-demand features, but not LaunchAgent/Mail automation or native macOS PDF conversion.
-- Windows is experimental: it is present in CI with `continue-on-error`, and the current README correctly says it is not supported/tested as a release guarantee.
+#### 8. Learn more
 
-Do not let “Telegram works on every system” imply that the always-on incoming Idea service does: the documented Idea service uses the agents scheduler and currently requires macOS.
+End with a small command map and links to stable guides, releases, issues, and Apache-2.0. Keep release chronology out of the README.
 
-## What to keep from the existing README
+### Keep, cut, and defer
 
-- The concise title and tagline.
-- The real `whyline explain` output. It proves the product is dogfooded and makes an abstract feature tangible.
-- The “What gets written down” table, expanded to include personal agents, runs, ideas, and per-Mac settings.
-- The manual handoff example and compact core-command list.
-- The statements that claims are advisory, hidden conversations are not transferred, and an empty record produces an empty answer.
-- Links to measurement and performance rather than marketing over those limits.
-- Apache-2.0 and the no-Whyline-account/no-telemetry positioning, with the network qualification above.
+Keep:
 
-## What to cut or move
+- The title, tagline, real Explain example, storage table, and manual handoff example.
+- The no-Whyline-account/no-telemetry positioning, qualified by provider and transport boundaries.
+- Honest statements about advisory claims and separate agent sessions.
+- Links to measurement and performance evidence.
 
-- Move the 3-of-7 prompt-compliance statistic out of the main flow and keep it in the linked measurement document.
-- Replace the long explanation of Codex hook approval in Install with a shorter setup note plus `whyline status`/`whyline doctor` troubleshooting.
-- Do not list every `idea`, `agents`, or `relay` subcommand in the README. Link `--help` and focused docs.
-- Do not narrate release history. Write the stable workflow and leave versions in `docs/releases/`.
-- Do not call features “optional” when they install by default; say whether the workflow is disabled until configured.
-- Avoid an enormous feature checklist at the top. Four workflows are enough.
+Cut or move:
 
-## Documentation gaps to fix alongside the README
+- Move the “3 of 7 sessions” measurement out of the main narrative; retain it in `docs/measurement.md`.
+- Replace the long hook-approval explanation in Install with a short troubleshooting link to `status`/`doctor` guidance.
+- Do not enumerate all `relay`, `agents`, and `idea` subcommands; point to `--help` and task-focused docs.
+- Remove “Also in the box,” which encodes an obsolete product hierarchy.
+- Do not narrate releases or market unreleased MCP/tool-execution ideas as current behavior.
 
-The README rewrite will expose several navigation gaps:
+Defer from the README change only if necessary:
 
-1. There is no single user guide for the full guided Relay/Auto/Resolve flow. The behavior is spread across release notes and design specs. Add a stable `docs/relay.md` before linking to it.
-2. There is no stable saved-Agents overview covering creation, acceptance, scheduling, triggers, and delivery together. `docs/agents-mail-recipe.md` and capability spikes are supporting documents, not an entry guide. Add `docs/agents.md`.
-3. `docs/idea-inbox.md` covers Telegram well but should gain an email section or link to a new email-intake guide.
-4. The console has no screenshot or short visual tour. Add one maintained screenshot, not a gallery likely to become stale.
-5. Security and data boundaries are currently distributed across specs and source comments. Add a short stable `docs/security.md` or keep a carefully maintained README section.
-6. Release notes recommend a mixture of `uv tool upgrade`, `uv tool install ...@latest`, and pinned installs. Pick one install/update convention in the README and use it consistently going forward.
+- A polished screenshot can land separately, but reserve its location and avoid blocking the accurate text rewrite on it.
+- New comprehensive guides are valuable, but the README can link existing focused docs initially instead of delaying the correction. The clearest missing long-lived guides are `docs/relay.md`, `docs/agents.md`, and a consolidated security/data-boundary page.
 
-These docs should be linked from the README, not duplicated into it.
+### Implementation and verification plan
 
-## Suggested implementation order
+1. Rewrite the README around the eight-section structure above; do not append to the current layout.
+2. Preserve the real Explain output and manual CLI example, but move them under the new workflow hierarchy.
+3. Verify every shown command from a clean `uv tool` install and a fresh temporary Git repository.
+4. Check each capability and security statement against source and tests, especially read-only modes, platform limits, remote authentication, and commit behavior.
+5. Render on GitHub and inspect relative links, table widths, screenshot redaction, and mobile readability.
+6. Add a release-review rule: a new console-visible top-level workflow must update the README or record why no README change is needed.
 
-1. Confirm the positioning sentence and four-workflow information architecture.
-2. Add or update the stable Relay, Agents, Idea/email, and security docs needed as link targets.
-3. Capture a redacted v0.3.49 console screenshot at a narrow but readable size.
-4. Rewrite the README in one pass, preserving the real Explain example and the useful storage/handoff material.
-5. Verify every command from a clean tool installation and a fresh temporary Git repository.
-6. Test the README on GitHub rendering: relative links, table width, screenshot size, and mobile readability.
-7. Have a reviewer compare every support/security statement against source and tests, not only release notes.
-8. Add a release checklist item: every feature that adds a console-visible top-level workflow must update the README or explicitly record why it does not.
+### Definition of done
 
-## Definition of done
+A first-time visitor should be able to answer, without reading release notes:
 
-The README update is complete when a first-time visitor can answer, without opening release notes:
-
-- What is Whyline, and why would I use it instead of launching one agent CLI directly?
-- Which agent CLIs and operating systems work for the workflow I want?
-- How do I install it and reach the full console?
+- What does Whyline add beyond launching an agent CLI directly?
+- How do I install it and open the main console?
 - What is the difference between Chat, Relay, a saved Agent, and Idea Inbox?
-- What will be committed to my repository, what stays local, and what is sent to external providers?
-- Where are human confirmation and release gates?
-- How do I troubleshoot or learn the detailed commands?
+- Which agents and platforms support the workflow I want?
+- What is committed, what remains local, and what leaves the machine?
+- Where does Whyline require review or confirmation?
+- Where do I find deeper operational instructions?
 
-The rewrite should remain compact enough to scan. A target of roughly 200–300 lines plus one screenshot is reasonable; deeper operational detail belongs in focused docs.
+If those answers are visible in a short scan, the README will describe the current product rather than its v0.3.38-era shape.
