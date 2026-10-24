@@ -22772,3 +22772,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9d14e2adede449ecb97c1dde61f5e587 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T15:56:15.946Z"} -->
+
+## 2026-10-24 — Relay Files pane is complete on its feature branch but still needs integration into main
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PANE-4
+
+**Because:** All four PANE tasks are checked, the focused 39 tests and full pytest suite exit successfully, and the implementation tree was clean; origin/main has two newer release/documentation commits and the feature branch has 17 unique commits
+
+**Rejected:**
+
+- publish a new package now — the approved plan explicitly excludes version bump, tag, push, and publish
+
+**Files:** plans/relay-files-pane.plan.md, src/whyline/console/tui.py
+
+<!-- whyline-event: 2bb715f9520641ed8ddfc9af942b720e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T17:24:14.581Z"} -->
