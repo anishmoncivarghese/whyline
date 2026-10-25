@@ -23025,3 +23025,90 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ecb77c5c7ff4410fa92d907eb442bbd1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:24:36.023Z"} -->
+
+## 2026-10-24 — Constructor takes records, check_provider, and save_enabled matching account helpers
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-2
+
+**Because:** SUBS-3 can pass account.check_provider and account.set_enabled_many with no wrapper, and this module never imports the main app
+
+**Rejected:**
+
+- Default the callables to account.check_provider/set_enabled_many — a missing inject would hit real providers in tests
+- Build the screen from WhylineConsoleApp methods — the task forbids importing the main app
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: f921188d883045cfb445538c9f8957b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:45:34.275Z"} -->
+
+## 2026-10-24 — Settings lists Claude, Codex, Grok, Antigravity, not account.AGENT_ORDER
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-2
+
+**Because:** The spec and task pin that display order; AGENT_ORDER is claude, codex, antigravity, grok
+
+**Rejected:**
+
+- Reuse AGENT_ORDER — Antigravity would appear before Grok and fail the stable-order requirement
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 19c53c5892cd4210b81d41484a38a314 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:45:37.937Z"} -->
+
+## 2026-10-24 — Cached compose paints first; checks start after refresh; Save writes on the UI thread
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-2
+
+**Because:** The spec requires paint-before-work and no synchronous provider call in on_mount; Save is an atomic JSON write so disabling the button around a direct call is enough, and Cancel can still dismiss None without persisting check results
+
+**Rejected:**
+
+- Call check_provider in on_mount — that would be a synchronous provider check
+- Run Save in a worker — a local JSON replace is not the slow path, and tests assert the call, failure-stays-open, and dismiss set directly
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 8f078404096448f79fe8777b46b8e33e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:45:43.046Z"} -->
+
+## 2026-10-24 — SUBS-2 Settings screen behaves as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-2
+
+**Because:** Task tests 12 passed. Independent probes confirmed paint-before-check, staged-on-only workers, enable starts one provider, uncheck suppresses late row updates and later Check selected, token refresh, Save writes four booleans plus completed results, Cancel and Escape write nothing, save failure stays open, Grok/Antigravity PATH wording, one-line check errors, and reachable buttons at 80x24 and 120x40. Full-suite 25 failures are console, entry-menu, and model-default tests still on the pre-Settings contract, which SUBS-2 was forbidden to edit.
+
+**Rejected:**
+
+- Fail for full-suite console breakage — those files are out of SUBS-2 scope and still encode the pre-Settings contract
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 82fc0a9d886548b396114127ea000468 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-24T21:59:36.822Z"} -->
+
+## 2026-10-25 — SUBS-2 transactional Settings screen approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-2
+
+**Because:** The scoped implementation meets the modal, staging, worker/token, status, persistence, error, and responsive-layout requirements; its 12 focused tests pass and git diff --check is clean. The plain full-suite run completed with 25 failures only in pre-Settings console, entry-menu, and model-default expectations outside these two new files, which do not import the new screen.
+
+**Rejected:**
+
+- Request changes for the 25 full-suite failures — they arise in out-of-scope integration tests and code on the branch and cannot be caused by this unreferenced new screen module
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 04499555421b4711b60ed9f3955ae549 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T03:35:58.292Z"} -->
