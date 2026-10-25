@@ -35,3 +35,21 @@ folder>:/usr/bin:/bin`, stdin closed, no terminal).
 - **Login markers seen:** "not logged in" (claude), "Not signed in" (grok),
   "401 Unauthorized" (codex).
 - The Mail recipe (spike step 5) is verified in plan Task 16.
+
+## Settings and saved-agent runs
+
+Whyline uses only the providers enabled in console **Settings**. Disabled
+providers are neither offered as a new saved-agent CLI or backup nor checked
+for account or model discovery. Grok and Antigravity login is not
+automatically verified. Enablement is a Settings choice; whether the CLI is
+on `PATH` is a separate installed check. When both are true, Whyline treats
+them as ready with login unchecked. The logged-out rows in the table above
+are what those CLIs print when they are actually invoked.
+
+A saved Agent whose runner is later turned off stays listed. Opening it to
+edit keeps the saved name visible, so Cancel leaves the definition unchanged.
+A run skips that CLI and uses an enabled configured backup under the existing
+backup rules, the same order used for quota and login failure. If no enabled
+backup is usable, the run fails before a provider subprocess and says to
+enable the CLI in Settings or choose another provider. Turning the provider
+back on restores the saved runner; the definition stays as it was.

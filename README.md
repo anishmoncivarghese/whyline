@@ -67,6 +67,26 @@ Bare `whyline` opens the full-screen console when its UI is available.
 `whyline console` opens the keyboard console, and `whyline console --ui`
 explicitly requests the full-screen interface.
 
+## Choose which AI subscriptions Whyline may use
+
+Whyline uses the Claude, Codex, Grok, or Antigravity CLI subscription already
+signed in on this computer. Open **Settings** from the shared console controls
+in Chat, Relay, and Agents, and choose which of those providers Whyline may
+use. With none enabled, agent-dependent surfaces show that no AI subscriptions
+are enabled and ask you to open Settings; Brainstorm and Relay Set up include
+an Open Settings button. Disabled providers are neither offered in agent
+choices nor checked.
+
+Grok and Antigravity login is not automatically verified. When those CLIs are
+enabled and on `PATH`, Whyline treats them as ready and labels them installed
+with login unchecked. Claude and Codex keep their existing detected plan or
+API-key labels.
+
+The same machine-wide choice is available to scripts as
+`whyline account status`, `whyline account enable`,
+`whyline account disable`, and `whyline account detect`. Detect checks
+enabled providers only.
+
 ## One console, four connected workflows
 
 The console starts with three modes. Ideas and Inbox live inside Agents mode.
@@ -179,6 +199,14 @@ Changing the definition invalidates acceptance and prevents another
 unattended run until you review it again. Results can remain in local history
 or be delivered through email, Telegram, or an advanced after-run command.
 Delivery failure is recorded separately from the agent's result.
+
+Turning a provider off in Settings leaves a saved Agent listed and
+inspectable. Editing it keeps the saved CLI visible, so Cancel leaves the
+definition unchanged. A run skips that CLI and uses an enabled configured
+backup under the existing backup rules. When no enabled backup is usable, the
+run fails before a provider starts and asks you to enable the CLI in Settings
+or choose another provider. Enabling the provider again restores the saved
+runner; the definition stays as it was.
 
 Claude Code, Codex, and Grok have verified read-only launch modes for saved
 Agents. Antigravity can participate in Chat, brainstorms, and Relay, but is
@@ -301,9 +329,10 @@ Whyline does not proxy model traffic or require model API credentials:
 - Relay pauses at dangerous recovery, manual verification, and release
   boundaries.
 
-`whyline account detect` can refresh Claude and Codex subscription labels.
-Grok and Antigravity are shown as installed or missing because their CLIs do
-not expose the same plan check.
+`whyline account detect` refreshes Claude and Codex subscription labels for
+providers enabled in Settings. Grok and Antigravity are shown as installed or
+missing because their CLIs do not expose the same plan check, and login is
+not automatically verified.
 
 ### Supported agents
 

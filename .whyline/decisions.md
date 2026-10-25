@@ -24692,3 +24692,138 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 184cf7841a86404ba6cf0dd30c1982db -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:23:49.524Z"} -->
+
+## 2026-10-25 — Keep Settings as its own README section after Install
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-6
+
+**Because:** Settings is the onboarding path for choosing providers, so a dedicated section makes the console workflow primary while the later Subscriptions bullets keep existing API-key wording
+
+**Rejected:**
+
+- Fold Settings into Subscriptions, privacy, and control — that buries enablement under privacy caveats
+- Replace the API-key bullets with Settings-only wording — the task asked to keep existing API-key wording truthful
+
+**Files:** README.md
+
+<!-- whyline-event: 9cfbf1681757405fb40739395f01f2d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:37:24.731Z"} -->
+
+## 2026-10-25 — Append Settings policy to agents-capabilities.md instead of rewriting the spike table
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-6
+
+**Because:** The 2026-10-04 table is measured CLI behaviour; enablement is Whyline policy on top of those CLIs
+
+**Rejected:**
+
+- Rewrite the spike table to mention Settings — that would mix dated measurements with later product policy
+
+**Files:** docs/agents-capabilities.md
+
+<!-- whyline-event: 36c9970fa3ad4c03bb00fa9685e31fa7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:37:27.940Z"} -->
+
+## 2026-10-25 — Fail SUBS-6: README claims a fresh install auto-opens Settings
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-6
+
+**Because:** The console never pushes Settings on first agent-dependent action. With no account file, enabled_agents() is empty and pickers show the no-subscriptions message; Brainstorm and Relay Set up offer an Open Settings button. The extra sentence is false product behaviour.
+
+**Rejected:**
+
+- Pass the extra sentence as writing — it describes a Settings open that does not happen
+
+**Files:** README.md
+
+<!-- whyline-event: e772c0cf506f487e806f7883eb221f8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:51:14.559Z"} -->
+
+## 2026-10-25 — Fail agents-capabilities PATH wording for Grok/Antigravity
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-6
+
+**Because:** Enablement is a Settings choice; PATH is a separate installed check. The colon reads as if enabling Grok or Antigravity means they are on PATH, which contradicts account.py treating enabled plus PATH as ready with login unchecked.
+
+**Rejected:**
+
+- Leave the compressed colon as-is — it contradicts the account labels this file is documenting
+
+**Files:** docs/agents-capabilities.md
+
+<!-- whyline-event: 930247f56f4549679d285775d26c024f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:51:18.973Z"} -->
+
+## 2026-10-25 — Describe the no-subscriptions empty state instead of claiming Settings auto-opens
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-6
+
+**Because:** The console never pushes Settings. With no account file, enabled_agents() is empty and pickers show NO_SUBSCRIPTIONS; Brainstorm and Relay Set up include an Open Settings button.
+
+**Rejected:**
+
+- Keep the extra sentence as onboarding writing — it describes a Settings open that does not happen
+- Say the console opens Settings on first launch — same false auto-open
+
+**Files:** README.md
+
+<!-- whyline-event: 46db7d4a389840f38b3192dde9767994 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:52:58.639Z"} -->
+
+## 2026-10-25 — Split Grok/Antigravity enablement from PATH in agents-capabilities
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-6
+
+**Because:** Enablement is a Settings choice; PATH is a separate installed check. account.py treats enabled plus PATH as ready with login unchecked.
+
+**Rejected:**
+
+- Leave the compressed colon as-is — it reads as if enabling a provider means it is on PATH
+
+**Files:** docs/agents-capabilities.md
+
+<!-- whyline-event: 38dceab27e654dd88abf50a77e48a119 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:53:01.317Z"} -->
+
+## 2026-10-25 — Pass SUBS-6: Settings docs match product behaviour
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-6
+
+**Because:** README describes console Settings, the no-subscriptions empty state with Open Settings on Brainstorm and Relay Set up, disabled providers neither offered nor checked, Grok/Antigravity ready only when enabled and on PATH with login unchecked, saved-agent skip-to-backup, and CLI counterparts as scripts. agents-capabilities splits enablement from PATH. git diff --check clean; uv run pytest -q exit 0 with one skip.
+
+**Rejected:**
+
+- Fail for auto-open — none remains; empty-state wording matches NO_SUBSCRIPTIONS
+- Fail PATH/enablement conflation — both docs require enabled and on PATH before ready/login-unchecked
+
+**Files:** README.md, docs/agents-capabilities.md
+
+<!-- whyline-event: d262e27d21494a129de3f08185fb6d77 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T21:13:56.440Z"} -->
+
+## 2026-10-25 — Approve SUBS-6 documentation of provider Settings and saved-agent fallback
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-6
+
+**Because:** README and agents-capabilities accurately describe console-first enablement, disabled-provider gating, unchecked Grok/Antigravity login, CLI counterparts, and saved-runner backup behavior; git diff --check and the full pytest suite pass
+
+**Files:** README.md, docs/agents-capabilities.md
+
+<!-- whyline-event: 300867596cde4aeb941e91fe05b6b784 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T21:25:27.329Z"} -->
