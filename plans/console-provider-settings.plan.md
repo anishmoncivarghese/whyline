@@ -75,7 +75,7 @@ real home directory, access the network, or sleep for a fixed duration.
   Edit only `tests/console/test_chat_attachments.py`, `tests/console/test_mode_buttons.py` and, only where a code bug is proven, `src/whyline/console/tui.py`.
   Verify with `uv run pytest -q tests/console/test_chat_attachments.py tests/console/test_mode_buttons.py tests/console/test_tui.py`. Change nothing else.
 
-- [ ] SUBS-FIX-3: Isolate the recovery cap tests from this repository's real relay state
+- [x] SUBS-FIX-3: Isolate the recovery cap tests from this repository's real relay state
   `tests/console/test_recovery.py::test_auto_run_visit_cap_first_retried_and_second_stops_naming_first` and `tests/console/test_recovery.py::test_auto_run_round_cap_first_retried_and_second_stops_naming_first` fail on the committed code: their output names AGS-5 and commit 875c359, so they read real `.whyline` state or a real ask-agent result instead of their fixtures.
   Find the leak and point every path the tests touch (relay state, logs, decisions, ask-agent output, home directory) at `tmp_path`, so the tests pass regardless of this repository's history. If the leak is a recovery code path that ignores its root argument, fix that path in `src/whyline/console/recovery.py`. Never weaken the assertions.
   Edit only `tests/console/test_recovery.py` and, only where a code bug is proven, `src/whyline/console/recovery.py`.
