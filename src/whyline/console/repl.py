@@ -24,6 +24,22 @@ _RELAY_MISSING = (
     "Chat and Relay need whyline-relay, which is missing from this install. "
     "Run: uv tool install --reinstall whyline"
 )
+NO_SUBSCRIPTIONS = (
+    "No AI subscriptions are enabled. Open Settings and choose the providers Whyline may use."
+)
+
+
+def provider_enabled(info: object) -> bool:
+    """True when this status row is an enabled subscription.
+
+    `agent_status` always includes `enabled`. A stub without that key stays
+    listed so unavailable providers can still show as `!`.
+    """
+    if not isinstance(info, dict):
+        return False
+    if "enabled" in info:
+        return bool(info["enabled"])
+    return True
 
 
 SLASH_COMMANDS = (
@@ -495,22 +511,78 @@ def _agent_table(session: ConsoleSession) -> str:
 
     status = account.agent_status(session.root)
     chosen = model.load(session.root)
-    active = session.agent or "claude"  # dispatch()'s own chat default
+    active = session.agent or model.resolve(session.root)[0]
     lines = []
     for agent in account.AGENT_ORDER:
-        info = status[agent]
-        mark = "✓" if info["available"] else "✗"
-        line = f"  {agent:<12} {mark} {info['label']:<30}"
-        if info["available"]:
+        info = status.get(agent) or {}
+        if not provider_enabled(info):
+            continue
+        mark = "✓" if info.get("available") else "✗"
+        line = f"  {agent:<12} {mark} {info.get('label', ''):<30}"
+        if info.get("available"):
             line += f"model: {chosen.get(agent) or 'default'}"
             if agent == active:
                 line += "  (active)"
         else:
-            line += f"-> {info['hint']}"
+            line += f"-> {info.get('hint')}"
         lines.append(line)
+    if not lines:
+        return NO_SUBSCRIPTIONS
     return "\n".join(
         ["Agents:", *lines, "Switch with /model <agent> [model]; /model refresh re-checks."]
     )
+
+
+def _usable_enabled(status: dict) -> list[str]:
+    from whyline import account
+
+    return [
+        agent
+        for agent in account.AGENT_ORDER
+        if (status.get(agent) or {}).get("available")
+    ]
+
+
+def _chat_agent(session: ConsoleSession, status: dict) -> str | None:
+    """The agent this turn may run, or None when nothing usable is enabled.
+
+    A set session agent that is still available wins. An unset session
+    agent uses the saved default when that default is usable, otherwise
+    the first usable enabled provider. Claude is never substituted.
+    """
+    from whyline import model
+
+    usable = _usable_enabled(status)
+    agent = session.agent
+    if agent and (status.get(agent) or {}).get("available"):
+        return agent
+    if agent:
+        return None
+    if not usable:
+        return None
+    saved = model.resolve(session.root)[0]
+    return saved if saved in usable else usable[0]
+
+
+def _chat_blocked_event(session: ConsoleSession) -> SessionEvent | None:
+    """P8 when nothing usable is enabled; otherwise None if this turn can run.
+
+    Never substitutes Claude for a missing or disabled session agent.
+    """
+    from whyline import account
+
+    status = account.agent_status(session.root)
+    if _chat_agent(session, status):
+        return None
+    if not _usable_enabled(status):
+        return SessionEvent(kind="error", text=NO_SUBSCRIPTIONS, accepted=False)
+    info = status.get(session.agent) or {}
+    label = info.get("label") or "unavailable"
+    hint = info.get("hint") or ""
+    text = f"{session.agent} isn't available: {label}."
+    if hint:
+        text = f"{text} {hint}."
+    return SessionEvent(kind="error", text=text, accepted=False)
 
 
 def _unknown_agent(agent: str) -> SessionEvent:
@@ -573,15 +645,23 @@ def _model_event(session: ConsoleSession, text: str) -> SessionEvent:
     if agent not in account.AGENT_ORDER:
         return _unknown_agent(agent)
     status = account.agent_status(session.root)
-    if not status[agent]["available"]:
-        # Re-check before refusing: detection otherwise runs only once, so
-        # an agent installed or logged into since then would stay refused.
+    info = status.get(agent) or {}
+    if not provider_enabled(info):
+        return SessionEvent(
+            kind="error",
+            text=f"{agent} isn't available: {info.get('label')}. {info.get('hint')}.",
+        )
+    if not info.get("available"):
+        # Re-check enabled providers before refusing: detection otherwise
+        # runs only once, so an agent installed or logged into since then
+        # would stay refused. Disabled providers are never probed.
         account.refresh()
         status = account.agent_status(session.root)
-    info = status[agent]
-    if not info["available"]:
+        info = status.get(agent) or {}
+    if not info.get("available"):
         return SessionEvent(
-            kind="error", text=f"{agent} isn't available: {info['label']}. {info['hint']}."
+            kind="error",
+            text=f"{agent} isn't available: {info.get('label')}. {info.get('hint')}.",
         )
     if len(parts) == 3:
         model.set_one(session.root, agent, parts[2])
@@ -848,14 +928,21 @@ def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> No
     """The keyboard console's version of the TUI's brainstorm form."""
     from whyline import account
 
+    status = account.agent_status(session.root)
+    enabled = [
+        agent for agent in BRAINSTORM_AGENTS if provider_enabled(status.get(agent))
+    ]
+    if not enabled:
+        print_fn(NO_SUBSCRIPTIONS)
+        return
     topic = _ask(prompt_session, "What should we brainstorm? ")
     if not topic:
         print_fn("Brainstorm cancelled.")
         return
-    status = account.agent_status(session.root)
     menu = ", ".join(
         f"{n} {a}" + ("" if status[a]["available"] else " (unavailable)")
         for n, a in enumerate(BRAINSTORM_AGENTS, start=1)
+        if a in enabled
     )
     agents = None
     while agents is None:
@@ -863,9 +950,14 @@ def _brainstorm_prompts(session: ConsoleSession, prompt_session, print_fn) -> No
         if raw is None:
             print_fn("Brainstorm cancelled.")
             return
-        agents = parse_brainstorm_agents(raw)
-        if agents is None:
+        parsed = parse_brainstorm_agents(raw)
+        if parsed is None:
             print_fn("Use numbers or names separated by commas, e.g. 1,2 or claude,grok.")
+            continue
+        agents = [agent for agent in parsed if agent in enabled]
+        if not agents:
+            print_fn("Use numbers or names separated by commas, e.g. 1,2 or claude,grok.")
+            agents = None
     raw = _ask(prompt_session, "How many review passes? [1] ") or "1"
     passes = int(raw) if raw.isdigit() else 1
     raw = (_ask(prompt_session, f"Who writes the final synthesis? [{agents[0]}] ") or agents[0]).lower()
@@ -1008,7 +1100,14 @@ def _dispatch(
     if session.mode in ("chat", "relay") and _is_home(session.root):
         return SessionEvent(kind="error", text=_HOME_REFUSAL, accepted=False)
     if session.mode == "chat":
-        agent = session.agent or "claude"
+        blocked = _chat_blocked_event(session)
+        if blocked is not None:
+            return blocked
+        from whyline import account
+
+        agent = _chat_agent(session, account.agent_status(session.root))
+        if not agent:
+            return SessionEvent(kind="error", text=NO_SUBSCRIPTIONS, accepted=False)
         timeout = (
             session.chat_timeout_seconds
             if timeout_seconds is _UNSET

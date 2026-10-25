@@ -63,6 +63,7 @@ from whyline.console.attachments_ui import (
 from whyline.console.relay_process import RelayProcess
 from whyline.console.repl import (
     BRAINSTORM_AGENTS,
+    NO_SUBSCRIPTIONS,
     RESET_BUSY_TEXT,
     _HOME_REFUSAL,
     _RELAY_MISSING,
@@ -80,6 +81,7 @@ from whyline.console.repl import (
     home_repo_warning,
     login_argv,
     NO_RELEASE_PAUSE,
+    provider_enabled,
     strip_relay_prefix,
     named_row,
     repo_switch_warning,
@@ -106,7 +108,7 @@ _MODE_BUTTONS = {
         "agents-ideas",
     ),
 }
-_SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy")
+_SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy", "settings")
 _AWAKE_ON_TEXT = (
     "The Mac stays awake until you turn this off, even after the console closes. "
     "Closing the lid still sleeps it unless it is plugged into a display."
@@ -182,10 +184,14 @@ _CB_TIMEOUT_OPTIONS: list[tuple[str, int | str]] = [
 
 
 def _cb_options(status: dict) -> list[tuple[str, str]]:
-    """Available agents first, then unavailable ones with a `!` value."""
+    """Enabled providers only: available first, then unusable ones with `!`."""
     available: list[tuple[str, str]] = []
     unavailable: list[tuple[str, str]] = []
     for agent, info in status.items():
+        if not isinstance(info, dict):
+            info = {}
+        if not provider_enabled(info):
+            continue
         detail = info.get("label", "")
         label = f"{agent} · {_CB_SHORT_LABELS.get(detail, detail)}"
         if info.get("available"):
@@ -195,19 +201,31 @@ def _cb_options(status: dict) -> list[tuple[str, str]]:
     return available + unavailable
 
 
-def _cb_status_key(status: dict) -> tuple[tuple[str, bool, str], ...]:
-    """Availability and labels. The saved agent, model and repo are separate."""
+def _cb_select_options(status: dict) -> list[tuple[str, str]]:
+    """Options for the agent Select; never a silent Claude fallback."""
+    return _cb_options(status) or [("No subscriptions", "")]
+
+
+def _cb_status_key(status: dict) -> tuple[tuple[str, bool, bool, str], ...]:
+    """Enablement, availability and labels. The saved agent, model and repo are separate."""
     key = []
     for agent, info in status.items():
         if not isinstance(info, dict):
             info = {}
-        key.append((str(agent), bool(info.get("available")), str(info.get("label") or "")))
+        key.append((
+            str(agent),
+            provider_enabled(info),
+            bool(info.get("available")),
+            str(info.get("label") or ""),
+        ))
     return tuple(key)
 
 
 def _cb_match_option(current: object, options: list[tuple[str, str]]) -> str:
     """The same agent in `options`, keeping or dropping the unavailable `!`."""
     values = [value for _label, value in options]
+    if not values:
+        return ""
     if isinstance(current, str) and current != _CB_BACKUP_MENU:
         name = current[1:] if current.startswith("!") else current
         for candidate in (name, f"!{name}"):
@@ -372,20 +390,48 @@ class _BrainstormChoice(dict):
 
 
 def brainstorm_field_widgets(
-    status: dict, default_final: str, root: Path | None = None, session: str | None = None
+    status: dict,
+    default_final: str,
+    root: Path | None = None,
+    session: str | None = None,
+    *,
+    keep_disabled_ids: bool = True,
 ) -> list:
     """Topic, models, passes, final writer, timeout, and attachments -- shared by the
-    Brainstorm popup and the Plan popup's brainstorm source."""
+    Brainstorm popup and the Plan popup's brainstorm source.
+
+    Disabled providers are not shown. `keep_disabled_ids` (the default) still
+    mounts hidden, unchecked boxes so Plan's existing per-id `#bs-*` queries
+    resolve without this task editing relay_screens.py. BrainstormScreen
+    passes False and omits those ids entirely.
+    """
+    enabled = [
+        agent for agent in BRAINSTORM_AGENTS if provider_enabled(status.get(agent))
+    ]
     boxes = []
+    if not enabled:
+        boxes.append(Static(NO_SUBSCRIPTIONS, id="bs-empty", markup=False))
     for agent in BRAINSTORM_AGENTS:
-        info = status[agent]
-        boxes.append(
-            Checkbox(f"{agent:<12} {info['label']}", value=info["available"],
-                     disabled=not info["available"], id=f"bs-{agent}")
-        )
-    usable = [a for a in BRAINSTORM_AGENTS if status.get(a, {}).get("available")]
-    if not usable:
-        usable = list(BRAINSTORM_AGENTS)
+        info = status.get(agent) or {}
+        if provider_enabled(info):
+            boxes.append(
+                Checkbox(
+                    f"{agent:<12} {info.get('label', '')}",
+                    value=bool(info.get("available")),
+                    disabled=not info.get("available"),
+                    id=f"bs-{agent}",
+                )
+            )
+            continue
+        if keep_disabled_ids:
+            box = Checkbox(
+                f"{agent:<12} {info.get('label', '')}",
+                value=False,
+                disabled=True,
+                id=f"bs-{agent}",
+            )
+            box.display = False
+            boxes.append(box)
     default_test = ""
     if root is not None:
         try:
@@ -394,31 +440,35 @@ def brainstorm_field_widgets(
                 default_test = str(planner_cfg[2])
         except Exception:
             default_test = ""
-    test_options: list[tuple[str, str]] = [("None", ""), *((a, a) for a in usable)]
-    if default_test and default_test not in usable:
-        test_options.append((default_test, default_test))
-    return [
+    test_options: list[tuple[str, str]] = [("None", ""), *((a, a) for a in enabled)]
+    final_value = default_final if default_final in enabled else (enabled[0] if enabled else "")
+    fields = [
         Input(placeholder="Topic, e.g. how the relay should handle a failed Codex run",
               id="bs-topic"),
         Label("Models:", classes="field-label"),
         *boxes,
         Horizontal(Label("Review passes:", classes="field-label"), Input("1", id="bs-passes")),
-        Horizontal(
-            Label("Final write-up:", classes="field-label"),
-            Select([(a, a) for a in BRAINSTORM_AGENTS], value=default_final,
-                   allow_blank=False, id="bs-final"),
-        ),
-        Horizontal(
-            Label("Test planner:", classes="field-label"),
-            Select(
-                test_options,
-                value=default_test if any(v == default_test for _, v in test_options) else "",
-                allow_blank=False,
-                id="bs-test-planner",
+    ]
+    if enabled:
+        fields.extend([
+            Horizontal(
+                Label("Final write-up:", classes="field-label"),
+                Select([(a, a) for a in enabled], value=final_value,
+                       allow_blank=False, id="bs-final"),
             ),
-            id="bs-test-planner-row",
-        ),
-        Static(_TEST_PLANNER_TIP, id="bs-test-planner-tip", markup=False),
+            Horizontal(
+                Label("Test planner:", classes="field-label"),
+                Select(
+                    test_options,
+                    value=default_test if any(v == default_test for _, v in test_options) else "",
+                    allow_blank=False,
+                    id="bs-test-planner",
+                ),
+                id="bs-test-planner-row",
+            ),
+            Static(_TEST_PLANNER_TIP, id="bs-test-planner-tip", markup=False),
+        ])
+    fields.extend([
         Horizontal(
             Label("Per-agent timeout:", classes="field-label"),
             Select(
@@ -428,7 +478,60 @@ def brainstorm_field_widgets(
             ),
         ),
         AttachmentsField(root or Path("."), session or "", id="bs-attachments"),
+    ])
+    return fields
+
+
+def _bound_query(query_one):
+    """The owner's `query` when `query_one` is a bound method, else None."""
+    owner = getattr(query_one, "__self__", None)
+    query = getattr(owner, "query", None) if owner is not None else None
+    return query if callable(query) else None
+
+
+def _rendered_brainstorm_checkboxes(query_one) -> list[tuple[str, object]] | None:
+    """Provider checkboxes that were actually composed, or None if unknown.
+
+    Bound screens list Checkbox widgets so disabled (unrendered) ids are
+    never queried. An unbound `query_one(selector)` callable has no owner
+    `query`; callers then use the original per-id lookups.
+    """
+    query = _bound_query(query_one)
+    if query is None or Checkbox is None:
+        return None
+    by_agent = {}
+    for widget in query(Checkbox):
+        if getattr(widget, "display", True) is False:
+            continue
+        ident = getattr(widget, "id", None) or ""
+        if not ident.startswith("bs-"):
+            continue
+        agent = ident[3:]
+        if agent in BRAINSTORM_AGENTS:
+            by_agent[agent] = widget
+    return [(agent, by_agent[agent]) for agent in BRAINSTORM_AGENTS if agent in by_agent]
+
+
+def _brainstorm_checkbox_values(query_one) -> list[tuple[str, object]]:
+    """Visible provider checkboxes from a bound owner, else per-id lookups."""
+    rendered = _rendered_brainstorm_checkboxes(query_one)
+    if rendered is not None:
+        return rendered
+    return [
+        (agent, query_one(f"#bs-{agent}", Checkbox)) for agent in BRAINSTORM_AGENTS
     ]
+
+
+def brainstorm_checked_agents(query_one) -> list[str]:
+    """Ids of composed #bs-* checkboxes that are on.
+
+    Bound owners never probe unrendered ids. Unbound query_one callables
+    keep the original per-id BRAINSTORM_AGENTS lookups.
+    """
+    boxes = _brainstorm_checkbox_values(query_one)
+    if not boxes:
+        return []
+    return [agent for agent, box in boxes if box.value]
 
 
 def collect_brainstorm(query_one) -> "dict | str":
@@ -437,7 +540,10 @@ def collect_brainstorm(query_one) -> "dict | str":
     topic = query_one("#bs-topic", Input).value.strip()
     if not topic:
         return "Enter a topic."
-    agents = [a for a in BRAINSTORM_AGENTS if query_one(f"#bs-{a}", Checkbox).value]
+    rendered = _brainstorm_checkbox_values(query_one)
+    if not rendered:
+        return NO_SUBSCRIPTIONS
+    agents = [agent for agent, box in rendered if box.value]
     if not agents:
         return "Pick at least one model."
     raw = query_one("#bs-passes", Input).value.strip() or "0"
@@ -506,9 +612,14 @@ class BrainstormScreen(ModalScreen):
     def __init__(self, status: dict, active: str) -> None:
         super().__init__()
         self._status = status
-        self._usable = [a for a in BRAINSTORM_AGENTS if status[a]["available"]]
+        self._enabled = [
+            agent for agent in BRAINSTORM_AGENTS if provider_enabled(status.get(agent))
+        ]
+        self._usable = [
+            agent for agent in self._enabled if (status.get(agent) or {}).get("available")
+        ]
         self._default_final = active if active in self._usable else (
-            self._usable[0] if self._usable else BRAINSTORM_AGENTS[0]
+            self._usable[0] if self._usable else (self._enabled[0] if self._enabled else "")
         )
 
     def compose(self) -> ComposeResult:
@@ -518,18 +629,28 @@ class BrainstormScreen(ModalScreen):
             Label("Brainstorm: each model researches on its own, reviews the others, "
                   "then one writes it up in docs/brainstorm/."),
             *brainstorm_field_widgets(
-                self._status, self._default_final, self.app.session.root, self.app._attach_session
+                self._status,
+                self._default_final,
+                self.app.session.root,
+                self.app._attach_session,
+                keep_disabled_ids=False,
             ),
             id="bs-fields",
         )
+        if self._enabled:
+            buttons = [
+                Button("Start", id="bs-start", variant="success"),
+                Button("Cancel", id="bs-cancel"),
+            ]
+        else:
+            buttons = [
+                Button("Open Settings", id="bs-open-settings", variant="primary"),
+                Button("Cancel", id="bs-cancel"),
+            ]
         yield Vertical(
             fields,
             Static("", id="bs-error", classes="-empty", markup=False),
-            Horizontal(
-                Button("Start", id="bs-start", variant="success"),
-                Button("Cancel", id="bs-cancel"),
-                id="bs-buttons",
-            ),
+            Horizontal(*buttons, id="bs-buttons"),
         )
 
     def on_mount(self) -> None:
@@ -582,7 +703,7 @@ class BrainstormScreen(ModalScreen):
             field = self.query_one("#bs-attachments", AttachmentsField)
         except Exception:
             return
-        agents = [a for a in BRAINSTORM_AGENTS if self.query_one(f"#bs-{a}", Checkbox).value]
+        agents = brainstorm_checked_agents(self.query_one)
         field.set_agents(agents)
         try:
             test_val = self.query_one("#bs-test-planner", Select).value
@@ -602,12 +723,18 @@ class BrainstormScreen(ModalScreen):
 
     def on_input_submitted(self, event: "Input.Submitted") -> None:
         event.stop()  # handled here; must not reach the console behind
-        self.query_one("#bs-start", Button).press()
+        try:
+            self.query_one("#bs-start", Button).press()
+        except NoMatches:
+            return
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
         if event.button.id == "bs-cancel":
             self.dismiss(None)
+            return
+        if event.button.id == "bs-open-settings":
+            self.dismiss("open-settings")
             return
         chosen = self.collect()
         if isinstance(chosen, str):
@@ -783,6 +910,12 @@ class WhylineConsoleApp(App):
     Horizontal > Button { min-width: 6; width: auto; }
     RichLog#transcript { height: 1fr; }
     #modes, #input-row, #controls { height: auto; }
+    /* Agents has six mode buttons plus Settings; wrap so every control
+       stays inside 80 columns. Chat and Relay still fit on one row. */
+    #controls.wrap {
+      layout: grid;
+      grid-size: 6;
+    }
     /* One row. A wrapped prompt would push Save onto a second line. */
     #context-bar { height: 1; text-wrap: nowrap; }
     #modes-label { width: auto; padding: 1 1 0 1; }
@@ -1827,10 +1960,12 @@ class WhylineConsoleApp(App):
         if not awake.available():
             wanted.discard("awake")
         self._main("#awake", Button).label = "Awake ●" if self._awake else "Awake"
-        for button in self._main("#controls").query(Button):
+        controls = self._main("#controls")
+        for button in controls.query(Button):
             if button.id in ("relay-resolve", "relay-retry-stage", "update", "update-restart"):
                 continue
             button.display = button.id in wanted
+        controls.set_class(self.session.mode == "agents", "wrap")
         self._main("#attach").display = self.session.mode == "chat"
         try:
             self._main("#agents-bar").display = self.session.mode == "agents"
@@ -2408,7 +2543,11 @@ class WhylineConsoleApp(App):
             (f"Automatic · {resolved}", "automatic"),
             ("None — no fallback", "none"),
         ]
-        installed = list(relay_ops.relay_agents(root))
+        installed = [
+            name
+            for name in relay_ops.relay_agents(root)
+            if provider_enabled(status.get(name))
+        ]
         names = installed + [name for name in saved_chain if name not in installed]
         for name in names:
             options.append((f"{name} — {self._cb_backup_detail(name, status)}", name))
@@ -2495,7 +2634,7 @@ class WhylineConsoleApp(App):
         from whyline import account
 
         status = account.agent_status(self.session.root)
-        base = _cb_options(status) or [("claude", "claude")]
+        base = _cb_select_options(status)
         if self.size.width < 80:
             head = self._cb_bak_head()
             options = [
@@ -2674,16 +2813,25 @@ class WhylineConsoleApp(App):
 
         root = self.session.root
         try:
-            agents = relay_ops.relay_agents(root)
+            installed = relay_ops.relay_agents(root)
         except (OSError, ValueError):
-            agents = []
-        # Unfiltered: a configured name the install cannot run stays visible.
+            installed = []
+        status = account.agent_status(root)
+        agents = [
+            name for name in installed if provider_enabled(status.get(name))
+        ]
+        # Saved names stay unfiltered so a disabled head remains a stale row.
         chain = list(self._cb_chain)
         primary = self._cb_saved[0] if self._cb_saved else "claude"
 
         def fill() -> list[str]:
-            status = account.agent_status(root)
-            return relay_ops.staged_backup(primary, relay_ops.usable_agents(root, status))
+            current = account.agent_status(root)
+            usable = [
+                name
+                for name in relay_ops.usable_agents(root, current)
+                if provider_enabled(current.get(name))
+            ]
+            return relay_ops.staged_backup(primary, usable)
 
         screen = BackupChainScreen(
             agents,
@@ -2787,7 +2935,7 @@ class WhylineConsoleApp(App):
         self._cb_refreshing = True
         try:
             status = account.agent_status(self.session.root)
-            options = _cb_options(status) or [("claude", "claude")]
+            options = _cb_select_options(status)
             agent, model_name, repo_text, chain = self._cb_saved_tuple()
             chosen = _cb_match_option(agent, options)
             backup_options = self._cb_backup_options(chain, agent)
@@ -2828,7 +2976,7 @@ class WhylineConsoleApp(App):
         key = _cb_status_key(status)
         if key == self._cb_status_seen:
             return
-        options = _cb_options(status) or [("claude", "claude")]
+        options = _cb_select_options(status)
         current = self._cb_agent_shown if select.value == _CB_BACKUP_MENU else select.value
         chosen = _cb_match_option(current, options)
         saved_chain = self._cb_saved[3] if self._cb_saved else ()
@@ -3095,7 +3243,7 @@ class WhylineConsoleApp(App):
     def compose(self) -> ComposeResult:
         from whyline import account
 
-        options = _cb_options(account.agent_status(self.session.root)) or [("claude", "claude")]
+        options = _cb_select_options(account.agent_status(self.session.root))
         self._transcript = RichLog(id="transcript", wrap=True)
         console_column = Vertical(
             Horizontal(
@@ -3182,6 +3330,7 @@ class WhylineConsoleApp(App):
                 Button("Schedule", id="agents-scheduler"),
                 Button("Inbox", id="agents-inbox"),
                 Button("Ideas", id="agents-ideas"),
+                Button("Settings", id="settings"),
                 Button("Files", id="see-files"),
                 Button("Awake", id="awake"),
                 Button("Stop", id="stop", disabled=True),
@@ -3318,6 +3467,8 @@ class WhylineConsoleApp(App):
             self._set_awake(None)
         elif button_id == "copy":
             self._copy_transcript()
+        elif button_id == "settings":
+            self._open_settings()
         elif button_id == "update":
             self._open_update()
         elif button_id == "update-restart":
@@ -3869,7 +4020,7 @@ class WhylineConsoleApp(App):
 
             self.push_screen(
                 BrainstormScreen(account.agent_status(self.session.root),
-                                 self.session.agent or "claude"),
+                                 self.session.agent or ""),
                 self._start_brainstorm,
             )
             return True
@@ -3948,6 +4099,9 @@ class WhylineConsoleApp(App):
     def _start_brainstorm(self, choice: "dict | None") -> None:
         if choice is None:
             return
+        if choice == "open-settings":
+            self._open_settings()
+            return
 
         def proceed(allowed: bool) -> None:
             if not allowed:
@@ -4017,9 +4171,68 @@ class WhylineConsoleApp(App):
         # Login rechecks every agent without changing the saved tuple.
         self._sync_mode_indicator()
 
+    def _open_settings(self) -> None:
+        from whyline import account
+        from whyline.console.settings_screen import ProviderSettingsScreen
+
+        self.push_screen(
+            ProviderSettingsScreen(
+                account.load_global() or {},
+                account.check_provider,
+                account.set_enabled_many,
+            ),
+            self._settings_closed,
+        )
+
+    def _settings_closed(self, enabled: object) -> None:
+        if enabled is None:
+            return
+        self._apply_settings()
+
+    def _apply_settings(self) -> None:
+        """Refresh pickers after a Settings Save; do not change mode or persist defaults."""
+        from whyline import account, model
+
+        status = account.agent_status(self.session.root)
+        saved = model.resolve(self.session.root)[0]
+        usable = [
+            agent
+            for agent in account.AGENT_ORDER
+            if provider_enabled(status.get(agent))
+            and (status.get(agent) or {}).get("available")
+        ]
+        any_enabled = any(
+            provider_enabled(status.get(agent)) for agent in account.AGENT_ORDER
+        )
+        saved_enabled = provider_enabled(status.get(saved))
+        saved_usable = saved_enabled and bool((status.get(saved) or {}).get("available"))
+        current = self.session.agent or saved
+        if not provider_enabled(status.get(current)):
+            if saved_usable:
+                self.session.agent = saved
+            elif usable:
+                self.session.agent = usable[0]
+                if not saved_enabled:
+                    self.render_event(SessionEvent(
+                        kind="output",
+                        text=(
+                            "The saved agent is off in Settings; "
+                            f"using {usable[0]} for this session."
+                        ),
+                    ))
+            elif not any_enabled:
+                self.render_event(SessionEvent(kind="error", text=NO_SUBSCRIPTIONS))
+        elif current and (status.get(current) or {}).get("available"):
+            self.session.agent = current
+        self._cb_agent_shown = self.session.agent
+        self._cb_status_seen = None
+        self._cb_refresh_status()
+        self._cb_reload_backup_options()
+        self._sync_mode_indicator()
+
     def _dispatch_text(self, text: str, attachments=()) -> None:
         in_chat = self.session.mode == "chat"
-        uses = in_chat and (self.session.agent or "claude") == "antigravity"
+        uses = in_chat and self.session.agent == "antigravity"
         timeout_seconds = (
             self.session.chat_timeout_seconds if in_chat else _UNSET
         )

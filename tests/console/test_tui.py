@@ -1,5 +1,42 @@
 import pytest
+from whyline.account import AGENT_ORDER
 from whyline.console import tui
+from whyline.console.repl import NO_SUBSCRIPTIONS
+
+
+def _status(available=(), enabled=None):
+    """A full agent_status map. `available` is the usable set; `enabled`
+    defaults to every provider so unavailable rows still show as `!`."""
+    available = set(available)
+    enabled = set(AGENT_ORDER) if enabled is None else set(enabled)
+    status = {}
+    for agent in AGENT_ORDER:
+        on = agent in enabled
+        ok = agent in available and on
+        status[agent] = {
+            "enabled": on,
+            "installed": ok,
+            "available": ok,
+            "label": "ready" if ok else ("off in Settings" if not on else "not installed"),
+            "hint": (
+                None
+                if ok
+                else (
+                    f"Open Settings or run: whyline account enable {agent}"
+                    if not on
+                    else f"Install {agent}, then /model refresh"
+                )
+            ),
+        }
+    return status
+
+
+def _stub_status(monkeypatch, available=(), enabled=None):
+    from whyline import account
+
+    status = _status(available, enabled)
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: status)
+    return status
 
 
 def _clickable(app, selector: str) -> bool:
@@ -38,7 +75,7 @@ async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
         assert app.query_one("#prompt") is not None
         for button_id in (
             "send", "model", "mode-chat", "mode-relay", "mode-agents",
-            "history", "stop", "help", "copy",
+            "history", "stop", "help", "copy", "settings",
             "relay-plan", "relay-setup", "relay-resume",
         ):
             assert app.query_one(f"#{button_id}") is not None
@@ -209,9 +246,7 @@ async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
 async def test_model_button_actually_lists_available_agents(tmp_path, monkeypatch):
-    from whyline import account
-
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.click("#model")
@@ -271,8 +306,15 @@ async def test_resume_is_enabled_when_a_run_is_paused(tmp_path, monkeypatch):
 async def test_all_bottom_buttons_fit_in_80_columns(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)):
+        settings = app.query_one("#settings", tui.Button)
+        assert settings.display
+        assert settings.region.area > 0
         for button in app.query("#controls Button"):
-            assert button.region.right <= 80, button.id
+            if not button.display:
+                continue
+            assert button.region.x >= 0, button.id
+            assert button.region.y >= 0, button.id
+            assert button.region.bottom <= 24, button.id
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
@@ -503,8 +545,11 @@ async def test_login_suspends_the_app_runs_the_login_and_reports(tmp_path, monke
     from whyline import account
 
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-    available = set()
-    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    available: set[str] = set()
+    monkeypatch.setattr(
+        account, "agent_status",
+        lambda root, which=None: _status(available=available),
+    )
     monkeypatch.setattr(account, "refresh", lambda: available.add("claude") or {})
     app = tui.WhylineConsoleApp(root=tmp_path)
     suspended = []
@@ -564,9 +609,9 @@ async def test_thinking_line_shows_while_a_reply_is_pending(tmp_path, monkeypatc
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
 async def test_context_label_shows_agent_model_and_repo(tmp_path, monkeypatch):
-    from whyline import account, model
+    from whyline import model
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"codex"})
+    _stub_status(monkeypatch, available={"codex"})
     model.set_one(tmp_path, "codex", "gpt-5")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(140, 30)) as pilot:
@@ -585,11 +630,10 @@ async def test_context_label_shows_agent_model_and_repo(tmp_path, monkeypatch):
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
 async def test_brainstorm_form_validates_then_runs_with_progress(tmp_path, monkeypatch):
-    from whyline import account
     from whyline.console import adapters
     from whyline.console.session import SessionEvent
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     calls = []
 
     def fake_run(root, *, progress, cancel_event=None, **choice):
@@ -677,9 +721,7 @@ async def test_a_focused_brainstorm_checkbox_keeps_its_label_visible(tmp_path, m
     # Textual's own `:focus` style adds a tall border; on a one-line
     # checkbox that border ate the only line, so the focused model turned
     # into what looked like an empty text box.
-    from whyline import account
-
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         await pilot.click("#brainstorm")
@@ -739,11 +781,10 @@ async def test_enter_in_the_brainstorm_topic_starts_it_instead_of_crashing(tmp_p
     # Regression: Enter in the form's topic box bubbled Input.Submitted up
     # to the app, whose handler looked for #prompt on the (modal) active
     # screen and crashed the console with NoMatches.
-    from whyline import account
     from whyline.console import adapters
     from whyline.console.session import SessionEvent
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     calls = []
     monkeypatch.setattr(
         adapters, "run_brainstorm",
@@ -875,6 +916,7 @@ async def test_thinking_line_shows_brackets_literally(tmp_path):
 async def test_bottom_bar_run_opens_plan_when_no_plan_exists(tmp_path, monkeypatch, installed_agents):
     from whyline.console import relay_ops
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
+    _stub_status(monkeypatch, available={"claude", "codex"})
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         app.session.mode = "relay"
@@ -2415,6 +2457,7 @@ async def test_relay_setup_and_plan_with_one_agent_opens_screens(tmp_path, monke
     from whyline.console.relay_screens import RelayPlanScreen, RelaySetupScreen
 
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["codex"])
+    _stub_status(monkeypatch, available={"codex"})
     monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "codex", ""))
     monkeypatch.setattr(
         relay_ops,
@@ -2454,6 +2497,7 @@ async def test_relay_setup_and_plan_with_one_agent_opens_screens(tmp_path, monke
 async def test_send_passes_300_900_1800_2700_3600_and_none_into_chat_run_turn(tmp_path, monkeypatch):
     from whyline_relay import chat
 
+    _stub_status(monkeypatch, available={"claude"})
     seen = []
 
     def fake_run_turn(root, *, agent, prompt, settings, attachments, timeout_seconds=None, **kwargs):
@@ -2518,6 +2562,7 @@ async def test_timeout_select_disables_while_chat_or_brainstorm_runs_and_stays_e
 
     monkeypatch.setattr(adapters, "run_chat_turn", slow_chat_turn)
     monkeypatch.setattr(adapters, "run_brainstorm", slow_brainstorm)
+    _stub_status(monkeypatch, available={"claude", "codex"})
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 30)) as pilot:
@@ -2610,6 +2655,7 @@ async def test_send_captures_timeout_before_select_changes_mid_run(tmp_path, mon
         return SessionEvent(kind="output", text="done")
 
     monkeypatch.setattr(adapters, "run_chat_turn", slow_chat_turn)
+    _stub_status(monkeypatch, available={"claude"})
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 30)) as pilot:
@@ -2659,6 +2705,7 @@ async def test_timeout_slash_command_updates_session_and_select_including_none(
         return {"agent": agent, "response": "ok", "ok": True, "rate_limited": False}
 
     monkeypatch.setattr(chat, "run_turn", fake_run_turn)
+    _stub_status(monkeypatch, available={"claude"})
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 30)) as pilot:
@@ -2770,6 +2817,7 @@ async def test_stop_cancels_the_in_flight_chat_attempt(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "whyline_relay.init.ensure_permission_files", lambda *a, **k: []
     )
+    _stub_status(monkeypatch, available={"claude"})
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 30)) as pilot:
@@ -2815,7 +2863,6 @@ async def test_newer_brainstorm_ignores_a_late_chat_stop(tmp_path, monkeypatch):
     that worker's late Stopped. neither renders nor clears Brainstorm busy."""
     import threading
 
-    from whyline import account
     from whyline.console import adapters
     from whyline.console.session import SessionEvent
     from whyline_relay import agents
@@ -2850,7 +2897,7 @@ async def test_newer_brainstorm_ignores_a_late_chat_stop(tmp_path, monkeypatch):
 
     monkeypatch.setattr(agents, "run", fake_run)
     monkeypatch.setattr(adapters, "run_brainstorm", slow_brainstorm)
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     monkeypatch.setattr(
         "whyline_relay.init.ensure_permission_files", lambda *a, **k: []
     )
@@ -2967,12 +3014,11 @@ async def test_approved_plan_with_test_plan_prints_both_paths(tmp_path):
 async def test_brainstorm_screen_saves_and_restores_test_planner_and_shows_tip(
     tmp_path, monkeypatch
 ):
-    from whyline import account
     from whyline.console import adapters, relay_ops
     from whyline.console.session import SessionEvent
 
     _init_test_repo(tmp_path)
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     monkeypatch.setattr(
         adapters,
         "run_brainstorm",
@@ -3447,7 +3493,10 @@ async def test_picking_login_claude_that_succeeds_prints_ready_and_resolved(
 
     monkeypatch.setattr(recovery, "run_login_status", fake_status)
     available: set[str] = set()
-    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(
+        account, "agent_status",
+        lambda root, which=None: _status(available=available),
+    )
     monkeypatch.setattr(
         account, "refresh", lambda: available.add("claude") if logged_in.get("claude") else {}
     )
@@ -3596,5 +3645,512 @@ async def test_auto_mode_logged_out_does_not_run_login_without_a_click(
         assert any("Auto stopped" in line for line in lines)
 
 
+def _select_values(select) -> list:
+    return [
+        value
+        for _label, value in select._options
+        if value is not tui.Select.BLANK
+    ]
+
+
+def _enable_installed(monkeypatch):
+    import shutil
+    from whyline import account
+
+    account.save_global({
+        agent: {"enabled": True, "available": True, "plan": "max"}
+        for agent in AGENT_ORDER
+    })
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        account, "check_provider",
+        lambda agent: {"available": True, "plan": "max"},
+    )
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_settings_appears_in_chat_relay_and_agents(tmp_path, monkeypatch):
+    from whyline.console import adapters
+
+    monkeypatch.setattr(adapters, "relay_is_configured", lambda root: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        for mode_id in ("mode-chat", "mode-relay", "mode-agents"):
+            await pilot.click(f"#{mode_id}")
+            await pilot.pause()
+            button = app.query_one("#settings", tui.Button)
+            assert button.display is True
+            assert button.region.area > 0
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_settings_cancel_leaves_menus_unchanged(tmp_path, monkeypatch):
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    _enable_installed(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        agent_before = _select_values(app.query_one("#cb-agent", tui.Select))
+        backup_before = _select_values(app.query_one("#cb-backup", tui.Select))
+        mode = app.session.mode
+        await pilot.click("#settings")
+        await pilot.pause()
+        assert isinstance(app.screen, ProviderSettingsScreen)
+        await pilot.click("#ss-cancel")
+        await pilot.pause()
+        assert not isinstance(app.screen, ProviderSettingsScreen)
+        assert app.session.mode == mode
+        assert _select_values(app.query_one("#cb-agent", tui.Select)) == agent_before
+        assert _select_values(app.query_one("#cb-backup", tui.Select)) == backup_before
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_settings_save_removes_disabled_providers_immediately(tmp_path, monkeypatch):
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    _enable_installed(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        assert "antigravity" in _select_values(app.query_one("#cb-agent", tui.Select))
+        await pilot.click("#settings")
+        await pilot.pause()
+        assert isinstance(app.screen, ProviderSettingsScreen)
+        app.screen.query_one("#ss-antigravity", tui.Checkbox).value = False
+        await pilot.pause()
+        await pilot.click("#ss-save")
+        for _ in range(40):
+            if not isinstance(app.screen, ProviderSettingsScreen):
+                break
+            await pilot.pause(0.05)
+        values = _select_values(app.query_one("#cb-agent", tui.Select))
+        assert "antigravity" not in values
+        assert "!antigravity" not in values
+        backup = _select_values(app.query_one("#cb-backup", tui.Select))
+        assert "antigravity" not in backup
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_disabled_antigravity_absent_from_chat_backup_brainstorm_and_not_run(
+    tmp_path, monkeypatch
+):
+    import shutil
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+
+    account.save_global({
+        "claude": {"enabled": True, "available": True, "plan": "max"},
+        "codex": {"enabled": True, "available": True, "plan": "plus"},
+        "grok": {"enabled": True, "available": True},
+        "antigravity": {"enabled": False, "available": True},
+    })
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    checked = []
+    monkeypatch.setattr(
+        account, "check_provider",
+        lambda agent: checked.append(agent) or {"available": True, "plan": "max"},
+    )
+    ran = []
+    monkeypatch.setattr(
+        adapters, "run_chat_turn",
+        lambda *args, **kwargs: ran.append(kwargs.get("agent") or args) or SessionEvent(
+            kind="output", text="ok"
+        ),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        agent_values = _select_values(app.query_one("#cb-agent", tui.Select))
+        assert "antigravity" not in agent_values
+        assert "!antigravity" not in agent_values
+        backup = _select_values(app.query_one("#cb-backup", tui.Select))
+        assert "antigravity" not in backup
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, tui.BrainstormScreen)
+        assert not form.query("#bs-antigravity")
+        await pilot.click("#bs-cancel")
+        await pilot.pause()
+        assert checked == []
+        assert ran == []
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_manage_chain_excludes_disabled_providers_and_keeps_saved_stale(
+    tmp_path, monkeypatch
+):
+    from whyline import account
+    from whyline.console.chain_editor import BackupChainScreen, OrderedChain
+
+    _enable_installed(monkeypatch)
+    account.save_global({
+        "claude": {"enabled": True, "available": True, "plan": "max"},
+        "codex": {"enabled": True, "available": True, "plan": "plus"},
+        "grok": {"enabled": False, "available": True},
+        "antigravity": {"enabled": False, "available": True},
+    })
+    config = tmp_path / ".whyline" / "relay" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[backup]\nchain = ["codex", "grok"]\n', encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        backup = _select_values(app.query_one("#cb-backup", tui.Select))
+        assert "codex" in backup
+        assert "grok" in backup
+        assert "antigravity" not in backup
+        app.query_one("#cb-backup", tui.Select).value = "manage"
+        for _ in range(40):
+            if isinstance(app.screen, BackupChainScreen):
+                break
+            await pilot.pause(0.05)
+        assert isinstance(app.screen, BackupChainScreen)
+        for _ in range(40):
+            if app.screen.query("#chain-check-codex"):
+                break
+            await pilot.pause(0.05)
+        screen = app.screen
+        claude = screen.query_one("#chain-check-claude", tui.Checkbox)
+        codex = screen.query_one("#chain-check-codex", tui.Checkbox)
+        grok = screen.query_one("#chain-check-grok", tui.Checkbox)
+        assert claude.disabled is False
+        assert codex.disabled is False
+        assert codex.value is True
+        assert grok.disabled is True
+        assert grok.display is True
+        assert not screen.query("#chain-check-antigravity")
+        assert screen.query_one("#bc-chain", OrderedChain).order() == ["codex"]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_stale_default_session_fallback_is_not_persisted(tmp_path, monkeypatch):
+    from whyline import model
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    _enable_installed(monkeypatch)
+    model.set_default_agent(tmp_path, "claude")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        assert model.resolve(tmp_path)[0] == "claude"
+        await pilot.click("#settings")
+        await pilot.pause()
+        app.screen.query_one("#ss-claude", tui.Checkbox).value = False
+        await pilot.pause()
+        await pilot.click("#ss-save")
+        for _ in range(40):
+            if not isinstance(app.screen, ProviderSettingsScreen):
+                break
+            await pilot.pause(0.05)
+        assert app.session.agent == "codex"
+        assert model.resolve(tmp_path)[0] == "claude"
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any(
+            "The saved agent is off in Settings; using codex for this session." in line
+            for line in lines
+        )
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_all_off_never_launches_claude(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console import adapters
+    from whyline.console.settings_screen import ProviderSettingsScreen
+    from whyline.console.session import SessionEvent
+
+    _enable_installed(monkeypatch)
+    called = []
+    monkeypatch.setattr(
+        adapters, "run_chat_turn",
+        lambda *args, **kwargs: called.append(kwargs.get("agent")) or SessionEvent(
+            kind="output", text="should not run"
+        ),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.click("#settings")
+        await pilot.pause()
+        for agent in ("claude", "codex", "grok", "antigravity"):
+            app.screen.query_one(f"#ss-{agent}", tui.Checkbox).value = False
+        await pilot.pause()
+        await pilot.click("#ss-save")
+        for _ in range(40):
+            if not isinstance(app.screen, ProviderSettingsScreen):
+                break
+            await pilot.pause(0.05)
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any(NO_SUBSCRIPTIONS in line for line in lines)
+        app.query_one("#prompt", tui.Input).value = "hello"
+        await pilot.click("#send")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert called == []
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any(NO_SUBSCRIPTIONS in line for line in lines)
+        assert account.enabled_agents() == set()
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_brainstorm_final_and_test_selects_cannot_name_a_disabled_provider(
+    tmp_path, monkeypatch
+):
+    _stub_status(monkeypatch, available={"claude", "codex"}, enabled={"claude", "codex"})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, tui.BrainstormScreen)
+        assert not form.query("#bs-grok")
+        assert not form.query("#bs-antigravity")
+        final = _select_values(form.query_one("#bs-final", tui.Select))
+        test = _select_values(form.query_one("#bs-test-planner", tui.Select))
+        assert "grok" not in final and "antigravity" not in final
+        assert "grok" not in test and "antigravity" not in test
+        assert "claude" in final and "codex" in final
+
+
+class _RenderedBrainstormOwner:
+    """A query_one owner that lists only composed provider checkboxes.
+
+    `query` returns those widgets; `query_one` records every selector so a
+    test can prove disabled/unrendered ids were never requested.
+    """
+
+    def __init__(self, widgets, checkboxes):
+        self.queried = []
+        self._widgets = dict(widgets)
+        self._checkboxes = list(checkboxes)
+
+    def query_one(self, selector, cls=None):
+        self.queried.append(selector)
+        if selector not in self._widgets:
+            raise LookupError(selector)
+        return self._widgets[selector]
+
+    def query(self, selector):
+        if isinstance(selector, str) and selector.startswith("#"):
+            self.queried.append(selector)
+        if selector is tui.Checkbox:
+            return list(self._checkboxes)
+        return []
+
+
+def _assert_never_queried(queried, selectors):
+    requested = [selector for selector in selectors if selector in queried]
+    assert requested == [], f"unrendered brainstorm ids were queried: {requested}"
+
+
+def test_collect_brainstorm_does_not_query_unrendered_checkbox_ids():
+    from types import SimpleNamespace
+
+    claude = SimpleNamespace(id="bs-claude", value=True)
+    owner = _RenderedBrainstormOwner(
+        {
+            "#bs-topic": SimpleNamespace(value="retry policy"),
+            "#bs-passes": SimpleNamespace(value="1"),
+            "#bs-claude": claude,
+            "#bs-final": SimpleNamespace(value="claude"),
+            "#bs-timeout": SimpleNamespace(value=15),
+            "#bs-attachments": SimpleNamespace(pending=SimpleNamespace(paths=lambda: [])),
+            "#bs-test-planner": SimpleNamespace(value=""),
+        },
+        [claude],
+    )
+
+    choice = tui.collect_brainstorm(owner.query_one)
+    assert choice["agents"] == ["claude"]
+    assert choice["final_agent"] == "claude"
+    _assert_never_queried(
+        owner.queried, ("#bs-codex", "#bs-antigravity", "#bs-grok", "#bs-empty")
+    )
+
+
+def test_collect_brainstorm_unbound_query_one_still_collects_checkbox_values():
+    """The established query_one(selector) callable, with no bound owner.query."""
+    from types import SimpleNamespace
+    from whyline.console.repl import BRAINSTORM_AGENTS
+
+    values = {
+        "#bs-topic": "retry policy",
+        "#bs-passes": "1",
+        "#bs-final": "claude",
+        "#bs-timeout": "none",
+        "#bs-test-planner": "",
+    }
+    for agent in BRAINSTORM_AGENTS:
+        values[f"#bs-{agent}"] = agent == "claude"
+    queried = []
+
+    def query_one(selector, cls=None):
+        queried.append(selector)
+        if selector == "#bs-attachments":
+            return SimpleNamespace(pending=SimpleNamespace(paths=lambda: []))
+        return SimpleNamespace(value=values[selector])
+
+    choice = tui.collect_brainstorm(query_one)
+    assert choice["agents"] == ["claude"]
+    assert choice["final_agent"] == "claude"
+    assert choice["timeout_unlimited"] is True
+    assert "timeout_minutes" not in choice
+    for agent in BRAINSTORM_AGENTS:
+        assert f"#bs-{agent}" in queried
+
+    values["#bs-timeout"] = 30
+    finite = tui.collect_brainstorm(query_one)
+    assert finite["timeout_minutes"] == 30
+    assert finite["timeout_unlimited"] is False
+
+
+class _QueryRecorder:
+    """Wrap a live screen so collect_brainstorm still sees bound query/query_one."""
+
+    def __init__(self, owner):
+        self._owner = owner
+        self.queried = []
+
+    def query_one(self, selector, *args, **kwargs):
+        self.queried.append(selector)
+        return self._owner.query_one(selector, *args, **kwargs)
+
+    def query(self, selector):
+        if isinstance(selector, str) and selector.startswith("#"):
+            self.queried.append(selector)
+        return self._owner.query(selector)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_collect_brainstorm_on_live_screen_never_queries_disabled_provider_ids(
+    tmp_path, monkeypatch
+):
+    _stub_status(monkeypatch, available={"claude", "codex"}, enabled={"claude", "codex"})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, tui.BrainstormScreen)
+        assert not form.query("#bs-grok")
+        assert not form.query("#bs-antigravity")
+        form.query_one("#bs-topic", tui.Input).value = "retry policy"
+        recorder = _QueryRecorder(form)
+        choice = tui.collect_brainstorm(recorder.query_one)
+        assert choice["agents"] == ["claude", "codex"]
+        _assert_never_queried(recorder.queried, ("#bs-grok", "#bs-antigravity", "#bs-empty"))
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_brainstorm_all_off_shows_p8_and_open_settings(tmp_path, monkeypatch):
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    _stub_status(monkeypatch, available=(), enabled=set())
+    monkeypatch.setattr(
+        "whyline.account.check_provider",
+        lambda agent: {"available": True, "plan": "max"},
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#brainstorm")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, tui.BrainstormScreen)
+        assert NO_SUBSCRIPTIONS in str(form.query_one("#bs-empty").renderable)
+        assert not form.query("#bs-claude")
+        assert not form.query("#bs-start")
+        await pilot.click("#bs-open-settings")
+        await pilot.pause()
+        assert isinstance(app.screen, ProviderSettingsScreen)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_settings_reachable_at_narrow_and_wide_sizes(tmp_path, monkeypatch):
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    _enable_installed(monkeypatch)
+    for size in ((80, 24), (120, 40)):
+        app = tui.WhylineConsoleApp(root=tmp_path)
+        async with app.run_test(size=size) as pilot:
+            button = app.query_one("#settings", tui.Button)
+            assert button.display is True
+            assert button.region.area > 0
+            await pilot.click("#settings")
+            await pilot.pause()
+            assert isinstance(app.screen, ProviderSettingsScreen)
+            await pilot.click("#ss-cancel")
+            await pilot.pause()
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_agents_mode_controls_fit_80_columns_with_settings(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    monkeypatch.setattr(adapters, "relay_is_configured", lambda root: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.click("#mode-agents")
+        await pilot.pause()
+        settings = app.query_one("#settings", tui.Button)
+        assert settings.display is True
+        assert settings.region.area > 0
+        shown = [b for b in app.query("#controls Button") if b.display]
+        assert all(b.region.right <= 80 and b.region.width > 0 for b in shown), [
+            (b.id, str(b.label), b.region.x, b.region.width, b.region.right)
+            for b in shown
+        ]
+        await pilot.click("#settings")
+        await pilot.pause()
+        assert isinstance(app.screen, ProviderSettingsScreen)
+        await pilot.click("#ss-cancel")
+        await pilot.pause()
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_plan_opens_when_no_providers_are_enabled(tmp_path, monkeypatch, installed_agents):
+    from whyline.console import relay_ops
+    from whyline.console.relay_screens import RelayPlanScreen
+
+    _stub_status(monkeypatch, available=(), enabled=set())
+    monkeypatch.setattr(relay_ops, "list_plans", lambda root: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.click("#mode-relay")
+        await pilot.pause()
+        await pilot.click("#relay-plan")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, RelayPlanScreen)
+        assert NO_SUBSCRIPTIONS in str(form.query_one("#bs-empty").renderable)
+        for agent in ("claude", "codex", "antigravity", "grok"):
+            box = form.query_one(f"#bs-{agent}", tui.Checkbox)
+            assert box.display is False
+            assert box.disabled is True
+            assert box.value is False
+
+
+def test_brainstorm_checked_agents_does_not_query_unrendered_ids():
+    from types import SimpleNamespace
+
+    claude = SimpleNamespace(id="bs-claude", value=True)
+    owner = _RenderedBrainstormOwner(
+        {"#bs-claude": claude},
+        [claude],
+    )
+
+    assert tui.brainstorm_checked_agents(owner.query_one) == ["claude"]
+    _assert_never_queried(
+        owner.queried, ("#bs-codex", "#bs-antigravity", "#bs-grok", "#bs-empty")
+    )
 
 

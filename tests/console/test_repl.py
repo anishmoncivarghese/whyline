@@ -2,8 +2,43 @@ from pathlib import Path
 
 import pytest
 
+from whyline.account import AGENT_ORDER
 from whyline.console import editor, repl
+from whyline.console.repl import NO_SUBSCRIPTIONS
 from whyline.console.session import SessionEvent
+
+
+def _status(available=(), enabled=None):
+    available = set(available)
+    enabled = set(AGENT_ORDER) if enabled is None else set(enabled)
+    status = {}
+    for agent in AGENT_ORDER:
+        on = agent in enabled
+        ok = agent in available and on
+        status[agent] = {
+            "enabled": on,
+            "installed": ok,
+            "available": ok,
+            "label": "ready" if ok else ("off in Settings" if not on else "not installed"),
+            "hint": (
+                None
+                if ok
+                else (
+                    f"Open Settings or run: whyline account enable {agent}"
+                    if not on
+                    else f"Install {agent}, then /model refresh"
+                )
+            ),
+        }
+    return status
+
+
+def _stub_status(monkeypatch, available=(), enabled=None):
+    from whyline import account
+
+    status = _status(available, enabled)
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: status)
+    return status
 
 
 @pytest.fixture(autouse=True)
@@ -125,9 +160,7 @@ def test_ctrl_c_during_dispatch_is_caught_and_the_session_continues(
 
 
 def test_model_slash_command_lists_available_agents(tmp_path, monkeypatch):
-    from whyline import account
-
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     monkeypatch.setattr(
         editor,
         "build_session",
@@ -139,9 +172,7 @@ def test_model_slash_command_lists_available_agents(tmp_path, monkeypatch):
 
 
 def test_model_slash_command_sets_the_active_agent(tmp_path, monkeypatch):
-    from whyline import account
-
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     monkeypatch.setattr(
         editor,
         "build_session",
@@ -156,10 +187,9 @@ def test_end_to_end_model_route_relay_doctor_and_chat(tmp_path, monkeypatch):
     """Exercises /model, /route relay -> doctor, /route chat -> a turn,
     /exit -- confirming the console layer disturbs no relay/chat state of
     its own (spec's own end-to-end bar)."""
-    from whyline import account
     from whyline.console import adapters
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     monkeypatch.setattr(
         adapters,
         "run_doctor",
@@ -189,10 +219,10 @@ def test_end_to_end_model_route_relay_doctor_and_chat(tmp_path, monkeypatch):
 
 
 def test_model_slash_command_sets_model_and_active_agent(tmp_path, monkeypatch):
-    from whyline import account, model
+    from whyline import model
 
     recorded = []
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     monkeypatch.setattr(
         model, "set_one", lambda root, agent, m: recorded.append((agent, m))
     )
@@ -210,12 +240,7 @@ def test_model_slash_command_sets_model_and_active_agent(tmp_path, monkeypatch):
 def test_model_slash_command_with_no_available_agents_or_unknown_agent(
     tmp_path, monkeypatch
 ):
-    from whyline import account
-
-    import shutil
-
-    monkeypatch.setattr(shutil, "which", lambda name: None)
-    monkeypatch.setattr(account, "available_agents", lambda root: set())
+    _stub_status(monkeypatch, available=(), enabled=set())
     monkeypatch.setattr(
         editor,
         "build_session",
@@ -223,14 +248,10 @@ def test_model_slash_command_with_no_available_agents_or_unknown_agent(
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
-    # every agent is still listed, each with why it's missing
-    table = next(line for line in lines if line.startswith("Agents:"))
-    for agent in ("claude", "codex", "antigravity", "grok"):
-        assert f"{agent}" in table
-    assert table.count("✗ not installed") == 4
+    assert any(NO_SUBSCRIPTIONS in line for line in lines)
     assert any("Unknown agent 'cluade'" in line for line in lines)
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"codex"})
+    _stub_status(monkeypatch, available={"codex"}, enabled={"codex"})
     monkeypatch.setattr(
         editor,
         "build_session",
@@ -238,7 +259,7 @@ def test_model_slash_command_with_no_available_agents_or_unknown_agent(
     )
     lines = []
     repl.run(tmp_path, print_fn=lines.append)
-    assert any("claude isn't available: not installed" in line for line in lines)
+    assert any("claude isn't available: off in Settings" in line for line in lines)
 
 
 def test_slash_help_and_stop_and_unknown(tmp_path, monkeypatch):
@@ -398,10 +419,9 @@ def test_route_to_current_relay_mode_does_not_rerun_setup(tmp_path):
 
 
 def test_model_lists_agents_and_marks_the_active_one(tmp_path, monkeypatch):
-    from whyline import account
     from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     session = ConsoleSession(root=tmp_path, agent="codex")
     event = handle_slash_command(session, "/model")
     lines = event.text.splitlines()
@@ -470,10 +490,9 @@ def test_route_relay_with_no_config_execs_into_setup(tmp_path, monkeypatch):
 
 
 def test_model_agent_name_is_case_insensitive(tmp_path, monkeypatch):
-    from whyline import account
     from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     session = ConsoleSession(root=tmp_path)
     event = handle_slash_command(session, "/model Claude")
     assert event.kind == "output"
@@ -497,6 +516,7 @@ def test_dispatch_turns_a_missing_relay_into_a_fix_it_message(tmp_path, monkeypa
         raise ModuleNotFoundError("No module named 'whyline_relay'", name="whyline_relay")
 
     monkeypatch.setattr(adapters, "run_chat_turn", missing)
+    _stub_status(monkeypatch, available={"claude"})
     event = dispatch(ConsoleSession(root=tmp_path, mode="chat"), "hello")
     assert event.kind == "error"
     assert "uv tool install --reinstall whyline" in event.text
@@ -512,6 +532,7 @@ def test_dispatch_does_not_swallow_other_missing_modules(tmp_path, monkeypatch):
         raise ModuleNotFoundError("No module named 'yaml'", name="yaml")
 
     monkeypatch.setattr(adapters, "run_chat_turn", missing)
+    _stub_status(monkeypatch, available={"claude"})
     with pytest.raises(ModuleNotFoundError):
         dispatch(ConsoleSession(root=tmp_path, mode="chat"), "hello")
 
@@ -529,19 +550,22 @@ def test_agent_status_explains_each_unavailable_agent(tmp_path, monkeypatch):
     from whyline import account
 
     account.save_global({
-        "claude": {"plan": "max", "available": True},
-        "codex": {"plan": "unknown", "available": False, "reason": "no auth.json"},
-        "antigravity": {"available": False, "manual": True},
-        "grok": {"plan": None, "available": False},
+        "claude": {"plan": "max", "available": True, "enabled": True},
+        "codex": {"plan": "unknown", "available": False, "reason": "no auth.json", "enabled": True},
+        "antigravity": {"available": False, "manual": True, "enabled": False},
+        "grok": {"plan": None, "available": False, "enabled": True},
     })
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
     status = account.agent_status(
         tmp_path, which=_fake_which({"claude", "codex", "antigravity"})
     )
-    assert status["claude"] == {"available": True, "label": "max", "hint": None}
+    assert status["claude"]["available"] is True
+    assert status["claude"]["enabled"] is True
+    assert status["claude"]["label"] == "max"
+    assert status["codex"]["enabled"] is True
     assert status["codex"]["label"] == "not logged in"
     assert status["codex"]["hint"] == "Run /login codex"
-    assert status["antigravity"]["label"] == "turned off"
+    assert status["antigravity"]["enabled"] is False
+    assert status["antigravity"]["label"] == "off in Settings"
     assert "whyline account enable antigravity" in status["antigravity"]["hint"]
     assert status["grok"]["label"] == "not installed"
 
@@ -555,10 +579,9 @@ def test_agent_status_labels_api_key_and_unchecked_logins(tmp_path, monkeypatch)
         "antigravity": {"plan": None, "available": True},
         "grok": {"plan": None, "available": True},
     })
-    monkeypatch.setattr(
-        account, "available_agents", lambda root: {"claude", "codex", "antigravity", "grok"}
+    status = account.agent_status(
+        tmp_path, which=_fake_which({"claude", "codex", "antigravity", "grok"})
     )
-    status = account.agent_status(tmp_path, which=_fake_which(set()))
     assert status["claude"]["label"] == "API key"
     assert status["codex"]["label"] == "plus"
     assert status["grok"]["label"] == "installed (login not checked)"
@@ -579,7 +602,10 @@ def test_model_rechecks_before_refusing_and_accepts_a_newly_available_agent(
         available.add("codex")  # e.g. the user logged into codex meanwhile
         return {}
 
-    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(
+        account, "agent_status",
+        lambda root, which=None: _status(available=available),
+    )
     monkeypatch.setattr(account, "refresh", refresh)
     session = ConsoleSession(root=tmp_path)
     event = handle_slash_command(session, "/model codex")
@@ -593,7 +619,7 @@ def test_model_on_an_available_agent_does_not_recheck(tmp_path, monkeypatch):
     from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     monkeypatch.setattr(account, "refresh", lambda: (_ for _ in ()).throw(AssertionError))
     event = handle_slash_command(ConsoleSession(root=tmp_path), "/model claude")
     assert "fable | opus | sonnet" in event.text
@@ -607,7 +633,7 @@ def test_model_refresh_rechecks_and_shows_the_table(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     event = handle_slash_command(ConsoleSession(root=tmp_path), "/model refresh")
     assert calls == [1]
     assert event.text.startswith("Re-checked every agent.")
@@ -619,11 +645,75 @@ def test_model_table_shows_each_agents_configured_model(tmp_path, monkeypatch):
     from whyline.console.repl import handle_slash_command
     from whyline.console.session import ConsoleSession
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     model.set_one(tmp_path, "claude", "opus")
     event = handle_slash_command(ConsoleSession(root=tmp_path), "/model")
     claude_line = next(l for l in event.text.splitlines() if l.strip().startswith("claude"))
     assert "model: opus" in claude_line and "(active)" in claude_line
+
+
+def test_model_lists_enabled_providers_only(tmp_path, monkeypatch):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    _stub_status(monkeypatch, available={"claude"}, enabled={"claude"})
+    event = handle_slash_command(ConsoleSession(root=tmp_path, agent="claude"), "/model")
+    assert "claude" in event.text
+    assert "  grok" not in event.text
+    assert "  antigravity" not in event.text
+    assert "  codex" not in event.text
+
+
+def test_model_refresh_lists_enabled_providers_only(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    calls = []
+    monkeypatch.setattr(account, "refresh", lambda: calls.append(1) or {})
+    _stub_status(monkeypatch, available={"codex"}, enabled={"codex"})
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/model refresh")
+    assert calls == [1]
+    assert "codex" in event.text
+    assert "  claude" not in event.text
+
+
+def test_model_all_off_uses_no_subscriptions_wording(tmp_path, monkeypatch):
+    from whyline.console.repl import handle_slash_command
+    from whyline.console.session import ConsoleSession
+
+    _stub_status(monkeypatch, available=(), enabled=set())
+    event = handle_slash_command(ConsoleSession(root=tmp_path), "/model")
+    assert event.text == NO_SUBSCRIPTIONS
+
+
+def test_dispatch_all_off_never_launches_claude(tmp_path, monkeypatch):
+    from whyline.console import adapters
+    from whyline.console.repl import dispatch
+    from whyline.console.session import ConsoleSession
+
+    called = []
+    monkeypatch.setattr(
+        adapters, "run_chat_turn",
+        lambda *a, **k: called.append(k.get("agent")) or SessionEvent(kind="output", text="nope"),
+    )
+    _stub_status(monkeypatch, available=(), enabled=set())
+    session = ConsoleSession(root=tmp_path, mode="chat", agent="claude")
+    event = dispatch(session, "hello")
+    assert called == []
+    assert event.kind == "error"
+    assert event.text == NO_SUBSCRIPTIONS
+
+
+def test_repl_brainstorm_all_off_prints_no_subscriptions(tmp_path, monkeypatch):
+    _stub_status(monkeypatch, available=(), enabled=set())
+    monkeypatch.setattr(
+        editor, "build_session",
+        lambda root: FakePromptSession(["/brainstorm", "/exit"]),
+    )
+    lines = []
+    repl.run(tmp_path, print_fn=lines.append)
+    assert any(NO_SUBSCRIPTIONS in line for line in lines)
 
 
 def test_login_validates_the_agent(tmp_path, monkeypatch):
@@ -659,7 +749,10 @@ def test_repl_login_runs_the_agents_own_login_then_rechecks(tmp_path, monkeypatc
 
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
     available = set()
-    monkeypatch.setattr(account, "available_agents", lambda root: set(available))
+    monkeypatch.setattr(
+        account, "agent_status",
+        lambda root, which=None: _status(available=available),
+    )
     monkeypatch.setattr(account, "refresh", lambda: available.add("codex") or {})
     monkeypatch.setattr(
         editor, "build_session", lambda root: FakePromptSession(["/login codex", "/exit"])
@@ -676,7 +769,16 @@ def test_repl_login_that_does_not_take_says_so(tmp_path, monkeypatch):
     from whyline import account
 
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(account, "available_agents", lambda root: set())
+    monkeypatch.setattr(
+        account, "agent_status",
+        lambda root, which=None: {
+            **_status(available=set()),
+            "claude": {
+                "enabled": True, "installed": True, "available": False,
+                "label": "not logged in", "hint": "Run /login claude",
+            },
+        },
+    )
     monkeypatch.setattr(
         editor, "build_session", lambda root: FakePromptSession(["/login claude", "/exit"])
     )
@@ -798,7 +900,7 @@ def test_repl_brainstorm_asks_then_runs(tmp_path, monkeypatch):
     from whyline.console import adapters
     from whyline.console.session import SessionEvent
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude", "codex"})
+    _stub_status(monkeypatch, available={"claude", "codex"})
     calls = []
     monkeypatch.setattr(
         adapters, "run_brainstorm",
@@ -823,7 +925,7 @@ def test_repl_brainstorm_failure_does_not_end_the_console(tmp_path, monkeypatch)
     from whyline import account
     from whyline.console import adapters
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
 
     def boom(root, **kw):
         raise RuntimeError("agent crashed")
@@ -844,7 +946,7 @@ def test_repl_brainstorm_timeout_defaults_to_15_when_chat_session_is_none(tmp_pa
     from whyline.console import adapters
     from whyline.console.session import ConsoleSession
 
-    monkeypatch.setattr(account, "available_agents", lambda root: {"claude"})
+    _stub_status(monkeypatch, available={"claude"})
     calls = []
     prompts = []
     monkeypatch.setattr(
@@ -1065,6 +1167,7 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
         "run_chat_turn",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("relay must not be called")),
     )
+    _stub_status(monkeypatch, available={"claude"})
     session = ConsoleSession(root=tmp_path)
     assert session.chat_timeout_seconds == 300
 
