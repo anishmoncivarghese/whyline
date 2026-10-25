@@ -36,7 +36,7 @@ real home directory, access the network, or sleep for a fixed duration.
   Tests use events, not sleep: screen appears while a fake check is blocked; only staged-on providers are called; enabling starts that provider; unchecking suppresses its late row update; a second refresh ignores the first token; Cancel writes nothing; Save passes all four booleans once; save failure stays open; both sizes keep buttons on-screen.
   Verify with `uv run pytest -q tests/console/test_settings_screen.py`. Change nothing else.
 
-- [ ] SUBS-3: Wire Settings into the console and filter Chat and Brainstorm choices
+- [x] SUBS-3: Wire Settings into the console and filter Chat and Brainstorm choices
   Edit `src/whyline/console/tui.py`, `src/whyline/console/repl.py`, `tests/console/test_tui.py`, and `tests/console/test_repl.py` only.
   Add `Settings` (`#settings`) to the shared bottom controls, visible in Chat, Relay, and Agents. Pressing it builds `ProviderSettingsScreen` from account data and injected account functions. On a saved result, refresh the context agent options, backup options, and mode state without restarting or changing mode. On Cancel, change nothing.
   If the saved chat default is now disabled, select the first usable enabled provider for the current session, print `The saved agent is off in Settings; using <agent> for this session.`, and leave the repository/global default untouched until the existing context-bar Save. With no usable enabled provider, never fall back to Claude; show the exact no-subscriptions message from spec P8 and block an agent turn.
