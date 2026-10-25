@@ -81,7 +81,7 @@ real home directory, access the network, or sleep for a fixed duration.
   Edit only `tests/console/test_recovery.py` and, only where a code bug is proven, `src/whyline/console/recovery.py`.
   Verify with `uv run pytest -q tests/console/test_recovery.py`. Change nothing else.
 
-- [ ] SUBS-6: Document the Settings workflow and run the complete regression gate
+- [x] SUBS-6: Document the Settings workflow and run the complete regression gate
   Edit `README.md`, `docs/agents-capabilities.md`, and tests only if a full-suite failure proves a test expectation must change for this spec. Do not change application code in this task.
   Add a concise README section: Whyline uses the user's existing Claude, Codex, Grok, or Antigravity CLI subscription; open console Settings to choose which providers Whyline may use; disabled providers are neither offered nor checked; Grok/Antigravity login is not automatically verified. Keep existing API-key wording truthful where already documented.
   Document saved-agent behaviour when a provider is disabled and how an enabled backup is handled. Mention the CLI counterparts `whyline account status|enable|disable|detect` without making terminal use the primary workflow.
