@@ -42,6 +42,27 @@ def token(monkeypatch):
     return TOKEN
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
+
+
 def _http(calls, *, fail=False):
     def http(method, token, fields, files):
         calls.append((method, fields, files))
@@ -1027,3 +1048,75 @@ def test_an_offline_notice_goes_to_each_allowed_chat_and_leaves_the_card(conn):
         (11, text, None),
         (22, text, None),
     ]
+
+
+def test_score_agents_skips_disabled_and_keeps_the_enabled_backup(conn):
+    _set_enabled({"codex"})
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude", "codex"]),),
+    )
+    assert bot.score_agents(conn) == ["codex"]
+
+
+def test_quick_score_refuses_a_disabled_provider_before_a_job(conn, token):
+    _set_enabled({"codex"})
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude"]),),
+    )
+    idea = _capture(conn)
+    data = _button(_outbox(conn, "message")[0], "Quick score")["callback_data"]
+
+    bot.handle(conn, _press(data, "cb-1", update_id=2))
+
+    assert _jobs(conn) == []
+    texts = [row["text"] for row in _outbox(conn, "message")]
+    assert HINT.format(agent="claude") in texts[-1]
+    assert idea.status == store.get(conn, idea.id).status
+
+
+def test_start_brainstorm_refuses_a_mixed_saved_chain_before_enqueue(
+    conn, token, monkeypatch,
+):
+    _set_enabled({"claude", "grok", "codex"})
+    from whyline import account
+
+    monkeypatch.setattr(
+        account,
+        "detect",
+        lambda: {
+            "claude": {"available": True},
+            "codex": {"available": True},
+            "grok": {"available": True},
+            "antigravity": {"available": True},
+        },
+    )
+    idea = _capture(conn)
+    bot.handle(
+        conn,
+        _press(
+            _button(_outbox(conn, "message")[0], "Brainstorm")["callback_data"],
+            "cb-b",
+            update_id=2,
+        ),
+    )
+    bot.handle(
+        conn,
+        _message("models: claude, grok\nfinal: claude\nbackup: codex", update_id=3, message_id=6),
+    )
+    card = json.loads(
+        conn.execute("SELECT value FROM kv WHERE key = 'telegram_card'").fetchone()[0]
+    )
+    fields = card[str(CHAT)]["fields"]
+    assert fields["models"] == ["claude", "grok"]
+    assert fields["final"] == "claude"
+
+    _set_enabled({"grok", "codex"})
+    start = _button(_outbox(conn, "message")[-1], "Start")
+    bot.handle(conn, _press(start["callback_data"], "cb-start", update_id=4))
+
+    assert _jobs(conn) == []
+    texts = [row["text"] for row in _outbox(conn, "message")]
+    assert HINT.format(agent="claude") in texts[-1]
+    assert store.get(conn, idea.id).status == "brainstorm_configuring"

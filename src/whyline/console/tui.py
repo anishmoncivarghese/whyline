@@ -2128,15 +2128,18 @@ class WhylineConsoleApp(App):
 
     def _open_new_agent(self, existing=None, delivery=None, *, editing_id=None,
                         lock_name: bool = False) -> None:
-        from whyline import account
+        from whyline.console import relay_ops
         from whyline.console.agents_screens import NewAgentScreen
 
         if editing_id is None:
             editing_id = existing.agent_id if existing is not None else None
         self._editing_agent_id = editing_id
         self.push_screen(
-            NewAgentScreen(self.session.root, account.agent_status(self.session.root),
-                           existing=existing, delivery=delivery, lock_name=lock_name),
+            NewAgentScreen(
+                self.session.root,
+                relay_ops.cached_agent_status(self.session.root),
+                existing=existing, delivery=delivery, lock_name=lock_name,
+            ),
             self._new_agent_done,
         )
 

@@ -195,8 +195,8 @@ def selected(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
     if stored is not None:
         return stored
     chat, chat_backup = _chat_pair()
-    if _unattended(chat):
-        backup = chat_backup if _unattended(chat_backup) and chat_backup != chat else None
+    if _usable(chat):
+        backup = chat_backup if _usable(chat_backup) and chat_backup != chat else None
         if backup is None:
             backup = next((name for name in _detected_agents() if name != chat), None)
         return chat, backup
@@ -213,7 +213,11 @@ def allowlist(conn: sqlite3.Connection) -> Allowed:
     checks that a named agent is installed. A repo can be named only after
     it is stored under the ``repos`` key.
     """
-    agents = frozenset(name for name in _DETECT_ORDER if capabilities.can_run_unattended(name))
+    agents = frozenset(
+        name
+        for name in _DETECT_ORDER
+        if capabilities.can_run_unattended(name) and _subscription_enabled(name)
+    )
     ids = frozenset(
         int(row["id"]) for row in conn.execute("SELECT id FROM ideas").fetchall()
     )
@@ -250,7 +254,20 @@ def propose(
         run_fn = relay_agents.run
     prompt = _prompt(text, current, context, allowed)
     idea_id = current.id if current is not None else 0
-    for agent in _order(*selected(conn)):
+    order = list(_order(*selected(conn)))
+    if not order:
+        stored_primary = _kv(conn, ASSISTANT_KEY)
+        stored_backup = _kv(conn, BACKUP_KEY)
+        for name in (stored_primary, stored_backup):
+            if name and not _subscription_enabled(name):
+                return Proposal(
+                    kind="none",
+                    fields={},
+                    summary="",
+                    error=_enable_hint(name),
+                )
+        return _unreadable()
+    for agent in order:
         parsed = _turn(agent, idea_id, prompt, run_fn)
         if parsed is None:
             continue
@@ -351,34 +368,57 @@ def parse(text: str) -> Proposal:
     return Proposal(kind=kind.strip(), fields=fields, summary=summary)
 
 
+def _enable_hint(name: str) -> str:
+    return f"Enable {name} in Settings or choose another provider."
+
+
+def _subscription_enabled(name: str) -> bool:
+    from whyline.agents.runner import _cli_permitted
+
+    return _cli_permitted(name)
+
+
 def _require_unattended(name: str) -> None:
     if name not in intent.AGENTS:
         raise AssistantError(f"unknown agent {name}")
     if not capabilities.can_run_unattended(name):
         raise AssistantError(f"{name}: not cleared for unattended runs")
+    if not _subscription_enabled(name):
+        raise AssistantError(_enable_hint(name))
 
 
 def _unattended(name: object) -> bool:
     return isinstance(name, str) and capabilities.can_run_unattended(name)
 
 
+def _usable(name: object) -> bool:
+    return _unattended(name) and _subscription_enabled(name)
+
+
 def _stored_pair(conn: sqlite3.Connection) -> tuple[str, str | None] | None:
     primary = _kv(conn, ASSISTANT_KEY)
-    if not primary or not _unattended(primary):
+    if not primary:
         return None
     backup = _kv(conn, BACKUP_KEY)
-    if not backup or backup == primary or not _unattended(backup):
+    if not backup or backup == primary:
         backup = None
-    return primary, backup
+    if _usable(primary):
+        return primary, (backup if backup and _usable(backup) else None)
+    if backup and _usable(backup):
+        return backup, None
+    if _unattended(primary):
+        # Saved but turned off in Settings. Do not fall through to detected.
+        return primary, backup
+    return None
 
 
 def _chat_pair() -> tuple[str | None, str | None]:
     agent, chain = _chat_settings()
     backup = next(
-        (name for name in chain if name != agent and _unattended(name)),
+        (name for name in chain if name != agent and _usable(name)),
         None,
     )
-    if not _unattended(agent):
+    if not _usable(agent):
         return None, backup
     return agent, backup
 
@@ -435,6 +475,8 @@ def _detected_agents() -> list[str]:
     for name in _DETECT_ORDER:
         if not capabilities.can_run_unattended(name):
             continue
+        if not _subscription_enabled(name):
+            continue
         info = detected.get(name)
         if isinstance(info, Mapping) and info.get("available"):
             names.append(name)
@@ -444,7 +486,7 @@ def _detected_agents() -> list[str]:
 def _order(primary: str | None, backup: str | None) -> list[str]:
     names: list[str] = []
     for name in (primary, backup):
-        if name and name not in names and _unattended(name):
+        if name and name not in names and _usable(name):
             names.append(name)
     return names
 

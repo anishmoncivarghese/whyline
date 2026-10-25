@@ -32,6 +32,27 @@ def token(monkeypatch):
     return TOKEN
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
+
+
 def _http(calls):
     def http(method, token, fields, files):
         calls.append((method, fields, files))
@@ -224,6 +245,88 @@ def test_default_agents_fill_models_and_the_rest_is_backup(conn, monkeypatch):
     assert notes == ("antigravity: not cleared for unattended runs",)
 
 
+def test_defaults_skip_a_disabled_provider_and_keep_the_enabled_backup(
+    conn, monkeypatch,
+):
+    _set_enabled({"codex"})
+    _install_detect(monkeypatch, claude=True, codex=True, grok=True)
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude", "codex"]),),
+    )
+    request, notes = brainstorm.defaults(conn)
+    assert request.models == ("codex",)
+    assert request.final == "codex"
+    assert any(HINT.format(agent="claude") in note for note in notes)
+
+
+def test_run_refuses_a_disabled_provider_before_a_subprocess(conn, monkeypatch):
+    _set_enabled({"codex"})
+    idea = store.add(
+        conn, "Ship a quiet ledger", source="telegram", source_ref=f"{CHAT}:5"
+    )
+    calls, run_fn = _runner()
+    request = brainstorm.Request(("claude",), 1, "claude", (), 15)
+    with pytest.raises(brainstorm.BrainstormError, match="Enable claude"):
+        brainstorm.run(conn, idea.id, request, run_fn=run_fn)
+    assert calls == []
+    assert store.get(conn, idea.id).status == "captured"
+
+
+def test_request_from_fields_keeps_a_disabled_model_and_final():
+    _set_enabled({"grok"})
+    request, notes = brainstorm.request_from_fields({
+        "models": ["claude", "grok"],
+        "final": "claude",
+        "backup": ["codex"],
+        "passes": 1,
+        "timeout": 15,
+    })
+    assert request.models == ("claude", "grok")
+    assert request.final == "claude"
+    assert request.backup == ("codex",)
+    assert any(HINT.format(agent="claude") in note for note in notes)
+
+
+def test_request_from_fields_does_not_replace_a_disabled_final_with_models_0():
+    _set_enabled({"grok"})
+    request, notes = brainstorm.request_from_fields({
+        "models": ["grok"],
+        "final": "claude",
+        "passes": 1,
+        "timeout": 15,
+    })
+    assert request.final == "claude"
+    assert "claude" in request.models
+    assert any(HINT.format(agent="claude") in note for note in notes)
+
+
+def test_run_refuses_a_mixed_chain_before_a_subprocess(conn, monkeypatch):
+    _set_enabled({"grok", "codex"})
+    idea = store.add(
+        conn, "Ship a quiet ledger", source="telegram", source_ref=f"{CHAT}:5"
+    )
+    calls, run_fn = _runner()
+    request = brainstorm.Request(("claude", "grok"), 1, "claude", ("codex",), 15)
+    with pytest.raises(brainstorm.BrainstormError, match="Enable claude"):
+        brainstorm.run(conn, idea.id, request, run_fn=run_fn)
+    assert calls == []
+    assert store.get(conn, idea.id).status == "captured"
+
+
+def test_run_does_not_replace_a_disabled_final_with_another_model(conn, monkeypatch):
+    _set_enabled({"grok"})
+    idea = store.add(
+        conn, "Ship a quiet ledger", source="telegram", source_ref=f"{CHAT}:5"
+    )
+    calls, run_fn = _runner()
+    request = brainstorm.Request(("grok",), 1, "claude", (), 15)
+    with pytest.raises(brainstorm.BrainstormError, match="Enable claude"):
+        brainstorm.run(conn, idea.id, request, run_fn=run_fn)
+    assert calls == []
+    assert store.get(conn, idea.id).status == "captured"
+
+
 def test_a_settings_message_updates_the_card_or_names_the_line(conn, monkeypatch):
     _install_detect(monkeypatch, claude=True, codex=True)
     idea = _press_brainstorm(conn, _capture(conn))
@@ -354,6 +457,30 @@ def test_timeout_none_reaches_the_runner_as_no_limit(conn, monkeypatch):
 
     assert calls
     assert {call["timeout_seconds"] for call in calls} == {None}
+
+
+def test_run_skips_a_disabled_backup_and_uses_the_next_enabled_one(conn, monkeypatch):
+    _set_enabled({"claude", "codex"})
+    _export(monkeypatch)
+    idea = store.add(
+        conn, "Fail over past a disabled backup", source="telegram",
+        source_ref=f"{CHAT}:5",
+    )
+    calls, run_fn = _runner(fail_final="claude", marker="backup synthesis")
+    request = brainstorm.Request(("claude",), 1, "claude", ("grok", "codex"), 15)
+
+    dest = brainstorm.run(conn, idea.id, request, run_fn=run_fn)
+
+    synthesis_agents = [
+        call["agent_name"]
+        for call in calls
+        if "Final Synthesis" in call["prompt"]
+    ]
+    assert synthesis_agents == ["claude", "codex"]
+    assert all(call.get("agent_name") != "grok" for call in calls)
+    text = dest.read_text(encoding="utf-8")
+    assert "backup synthesis" in text
+    assert store.get(conn, idea.id).status == "brainstormed"
 
 
 def test_a_failing_final_writer_hands_the_synthesis_to_the_backup(conn, monkeypatch):

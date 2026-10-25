@@ -191,6 +191,67 @@ def test_a_personal_claude_agent_runs_without_a_missing_settings_file(tmp_path, 
     assert argv[argv.index("--permission-mode") + 1] == "plan"
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    """Redirect the global account file. Path.home() ignores HOME on macOS,
+    so tests/agents/conftest.py is not enough to keep save_global off the
+    developer's account.json."""
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
+
+
+def test_disabled_runner_uses_enabled_backup(repo):
+    _set_enabled({"codex"})
+    run_fn, calls = _script(Result(0, "done by codex"))
+    rec = runner.execute_once(_agent(repo), source="manual", now=NOW, run_fn=run_fn)
+    assert rec.outcome == "succeeded" and rec.cli == "codex"
+    assert rec.used_backup == {
+        "cli": "codex",
+        "because": HINT.format(agent="claude"),
+    }
+    assert len(calls) == 1
+    assert calls[0][0][0] == "codex"
+    assert rec.attempts[0] == {
+        "cli": "claude",
+        "outcome": "skipped",
+        "reason": HINT.format(agent="claude"),
+    }
+
+
+def test_disabled_runner_and_backup_fail_before_a_subprocess(repo):
+    _set_enabled(set())
+    run_fn, calls = _script(Result(0, "should not run"))
+    rec = runner.execute_once(_agent(repo), source="manual", now=NOW, run_fn=run_fn)
+    assert calls == []
+    assert rec.outcome == "all_unavailable"
+    assert HINT.format(agent="claude") in rec.reason
+
+
+def test_enabling_restores_the_saved_runner(repo):
+    _set_enabled({"claude", "codex"})
+    run_fn, calls = _script(
+        Result(0, json.dumps({"result": "All quiet.", "permission_denials": []}))
+    )
+    rec = runner.execute_once(_agent(repo), source="manual", now=NOW, run_fn=run_fn)
+    assert rec.outcome == "succeeded" and rec.cli == "claude" and rec.used_backup is None
+    assert calls[0][0][0] == "claude"
+
+
 def test_a_repo_claude_agent_keeps_its_settings_file(repo):
     settings = repo / ".whyline/relay/claude-settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)

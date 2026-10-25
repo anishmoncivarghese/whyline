@@ -251,13 +251,40 @@ def handle(
 
         # Current code matches: start the brainstorm
         raw_settings = _kv(conn, f"telegram_settings:{idea.id}")
+        notes: tuple[str, ...] = ()
+        fields = None
         if raw_settings:
             try:
-                request, _ = brainstorm.request_from_fields(json.loads(raw_settings))
-            except brainstorm.SettingsError:
-                request, _ = brainstorm.defaults(conn)
+                parsed = json.loads(raw_settings)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                fields = parsed
+                try:
+                    request, notes = brainstorm.request_from_fields(fields)
+                except brainstorm.SettingsError:
+                    request, notes = brainstorm.defaults(conn)
+            else:
+                request, notes = brainstorm.defaults(conn)
         else:
-            request, _ = brainstorm.defaults(conn)
+            request, notes = brainstorm.defaults(conn)
+        disabled = brainstorm.disabled_provider(request)
+        if disabled is None and isinstance(fields, dict):
+            disabled = brainstorm.disabled_in_fields(fields)
+        if disabled:
+            raise brainstorm.BrainstormError(
+                f"Enable {disabled} in Settings or choose another provider."
+            )
+        if not request.models or not request.final:
+            hint = next(
+                (
+                    note.split(": ", 1)[-1]
+                    for note in notes
+                    if " in Settings or choose another provider." in note
+                ),
+                "No agent can brainstorm unattended.",
+            )
+            raise brainstorm.BrainstormError(hint)
 
         dest = brainstorm.run(conn, idea.id, request, run_fn=run_fn)
         fresh = store.get(conn, idea.id)

@@ -20,6 +20,36 @@ async def _until(pilot, condition, what):
     raise AssertionError(f"never happened: {what}")
 
 
+_CLIS = ("claude", "codex", "grok", "antigravity")
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+def _status(*, enabled=None, available=None):
+    enabled = set(_CLIS) if enabled is None else set(enabled)
+    available = set(_CLIS) if available is None else set(available)
+    return {
+        agent: {
+            "enabled": agent in enabled,
+            "available": agent in available,
+            "label": "ok" if agent in enabled and agent in available else (
+                "off in Settings" if agent not in enabled else "not installed"
+            ),
+        }
+        for agent in _CLIS
+    }
+
+
+ENABLED_STATUS = _status()
+
+
+def _runner_values(screen):
+    return [
+        value
+        for _label, value in screen.query_one("#na-runner", tui.Select)._options
+        if value is not tui.Select.BLANK
+    ]
+
+
 @pytest.fixture(autouse=True)
 def home(tmp_path, monkeypatch):
     folder = tmp_path / "home"
@@ -37,9 +67,13 @@ def _fill_basic(screen, work):
     screen.query_one("#na-workdir", tui.Input).value = str(work)
 
 
-async def _open_form(app, pilot, existing=None):
+async def _open_form(app, pilot, existing=None, status=None):
     result = []
-    app.push_screen(NewAgentScreen(app.session.root, {}, existing=existing), result.append)
+    app.push_screen(
+        NewAgentScreen(app.session.root, ENABLED_STATUS if status is None else status,
+                       existing=existing),
+        result.append,
+    )
     await _until(
         pilot,
         lambda: isinstance(app.screen, NewAgentScreen) and app.screen.query("#na-email"),
@@ -146,7 +180,7 @@ async def test_review_back_reopens_the_form_with_the_delivery(tmp_path, monkeypa
     defn = d.parse(f'name="jobs"\ninstructions="x"\nrunner="codex"\nworkdir={json.dumps(str(work))}\n',
                    kind="personal", path=tmp_path / "jobs.toml")
     delivery = dl.Delivery(email=("a@example.com",), subject="Daily")
-    monkeypatch.setattr(account, "agent_status", lambda root: {})
+    monkeypatch.setattr(account, "agent_status", lambda root: ENABLED_STATUS)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 40)) as pilot:
         # Follow the real form -> review -> back path.  Calling the completion
@@ -186,7 +220,7 @@ async def test_edit_renames_through_the_form_and_moves_deliveries(tmp_path, home
         email=("a@example.com",), subject="Daily", attach="md", on_failure="silent",
     )
     dl.save(old.agent_id, kept)
-    monkeypatch.setattr(account, "agent_status", lambda root: {})
+    monkeypatch.setattr(account, "agent_status", lambda root: ENABLED_STATUS)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 40)) as pilot:
         app._open_new_agent(existing=old)
@@ -297,3 +331,126 @@ async def test_set_up_telegram_from_the_form_and_back_does_not_crash(tmp_path, m
         app.screen.query_one("#tg-done", tui.Button).press()
         await _until(pilot, lambda: app.screen is form, "back again")
         assert form.query_one("#na-telegram", tui.Select).value == -200
+
+
+async def test_new_agent_omits_a_disabled_provider(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await _open_form(app, pilot, status=_status(enabled={"codex", "grok"}))
+        values = _runner_values(app.screen)
+        assert "codex" in values and "grok" in values
+        assert "claude" not in values
+        with pytest.raises(tui.NoMatches):
+            app.screen.query_one("#na-backup-claude", tui.Checkbox)
+
+
+async def test_new_agent_omits_an_enabled_but_unusable_provider(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await _open_form(
+            app,
+            pilot,
+            status=_status(
+                enabled={"claude", "codex", "grok"},
+                available={"codex", "grok"},
+            ),
+        )
+        values = _runner_values(app.screen)
+        assert "codex" in values and "grok" in values
+        assert "claude" not in values
+        with pytest.raises(tui.NoMatches):
+            app.screen.query_one("#na-backup-claude", tui.Checkbox)
+
+
+async def test_edit_keeps_an_unusable_runner_visible_and_cancel_is_lossless(tmp_path, home):
+    work = tmp_path / "work"
+    work.mkdir()
+    path = home / ".whyline" / "agents" / "jobs.toml"
+    text = (
+        f'name="jobs"\ninstructions="x"\nrunner="claude"\nbackup=["codex"]\n'
+        f'workdir={json.dumps(str(work))}\n'
+    )
+    existing = d.parse(text, kind="personal", path=path)
+    d.save(existing)
+    before = path.read_text()
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await _open_form(
+            app,
+            pilot,
+            existing=existing,
+            status=_status(enabled={"claude", "codex"}, available={"codex"}),
+        )
+        screen = app.screen
+        assert screen.query_one("#na-runner", tui.Select).value == "claude"
+        assert "claude" in _runner_values(screen)
+        box = screen.query_one("#na-backup-codex", tui.Checkbox)
+        assert box.value is True
+        screen.query_one("#na-cancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, NewAgentScreen), "closed")
+    assert path.read_text() == before
+
+
+async def test_edit_keeps_a_disabled_runner_visible_and_cancel_is_lossless(tmp_path, home):
+    work = tmp_path / "work"
+    work.mkdir()
+    path = home / ".whyline" / "agents" / "jobs.toml"
+    text = (
+        f'name="jobs"\ninstructions="x"\nrunner="claude"\nbackup=["codex"]\n'
+        f'workdir={json.dumps(str(work))}\n'
+    )
+    existing = d.parse(text, kind="personal", path=path)
+    d.save(existing)
+    before = path.read_text()
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await _open_form(
+            app, pilot, existing=existing, status=_status(enabled={"codex"}),
+        )
+        screen = app.screen
+        assert screen.query_one("#na-runner", tui.Select).value == "claude"
+        assert "claude" in _runner_values(screen)
+        labels = dict(screen.query_one("#na-runner", tui.Select)._options)
+        assert any("claude" in str(label) and "unavailable" in str(label) for label in labels)
+        box = screen.query_one("#na-backup-codex", tui.Checkbox)
+        assert box.value is True
+        screen.query_one("#na-cancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, NewAgentScreen), "closed")
+    assert path.read_text() == before
+
+
+async def test_save_refuses_a_disabled_runner(tmp_path, home):
+    work = tmp_path / "work"
+    work.mkdir()
+    path = home / ".whyline" / "agents" / "jobs.toml"
+    text = (
+        f'name="jobs"\ninstructions="x"\nrunner="claude"\n'
+        f'workdir={json.dumps(str(work))}\n'
+    )
+    existing = d.parse(text, kind="personal", path=path)
+    d.save(existing)
+    before = path.read_text()
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        result = await _open_form(
+            app, pilot, existing=existing, status=_status(enabled={"codex"}),
+        )
+        app.screen.query_one("#na-next", tui.Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, NewAgentScreen)
+        assert HINT.format(agent="claude") in str(app.screen.query_one("#na-error").renderable)
+        assert result == []
+    assert path.read_text() == before
+
+
+async def test_enabling_restores_a_provider_to_new_agent_choices(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await _open_form(app, pilot, status=_status(enabled={"codex"}))
+        assert "claude" not in _runner_values(app.screen)
+        app.screen.query_one("#na-cancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, NewAgentScreen), "closed")
+        await _open_form(app, pilot, status=_status(enabled={"claude", "codex"}))
+        assert "claude" in _runner_values(app.screen)

@@ -88,8 +88,13 @@ def _read_saved() -> _Saved:
 
 def _offered() -> list[str]:
     from whyline.agents import capabilities, definitions
+    from whyline.ideas import cli
 
-    return [name for name in definitions.CLIS if capabilities.can_run_unattended(name)]
+    return [
+        name
+        for name in definitions.CLIS
+        if capabilities.can_run_unattended(name) and cli._subscription_enabled(name)
+    ]
 
 
 def _blocked(offered: list[str]) -> list[tuple[str, str]]:
@@ -627,6 +632,12 @@ class IdeaInboxScreen(ModalScreen):
         if not assistant:
             return "assistant needs an agent"
         from whyline.ideas import assistant as assistant_mod
+        from whyline.ideas import cli as idea_cli
+
+        if assistant and not idea_cli._subscription_enabled(assistant):
+            return idea_cli._enable_hint(assistant)
+        if backup and not idea_cli._subscription_enabled(backup):
+            return idea_cli._enable_hint(backup)
         from whyline.ideas import store
 
         conn = store.connect()

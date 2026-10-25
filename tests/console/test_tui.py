@@ -4164,3 +4164,33 @@ def test_brainstorm_checked_agents_does_not_query_unrendered_ids():
     )
 
 
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_new_agent_from_agents_mode_omits_disabled_providers(tmp_path, monkeypatch):
+    from whyline import account
+    from whyline.console.agents_screens import NewAgentScreen
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("New agent launched provider detection")
+
+    _stub_status(monkeypatch, available={"claude", "codex"}, enabled={"claude"})
+    monkeypatch.setattr(account, "ensure_detected", boom)
+    monkeypatch.setattr(account, "refresh", boom)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.click("#mode-agents")
+        await pilot.pause()
+        await pilot.click("#agents-new")
+        await pilot.pause()
+        assert isinstance(app.screen, NewAgentScreen)
+        values = [
+            value
+            for _label, value in app.screen.query_one("#na-runner", tui.Select)._options
+            if value is not tui.Select.BLANK
+        ]
+        assert "claude" in values
+        assert "codex" not in values
+        assert "grok" not in values
+        with pytest.raises(tui.NoMatches):
+            app.screen.query_one("#na-backup-codex", tui.Checkbox)
+

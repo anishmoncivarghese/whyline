@@ -341,11 +341,23 @@ def enqueue_score(conn: sqlite3.Connection, idea_id: int) -> bool:
         return True
 
 
+def _enable_hint(name: str) -> str:
+    return f"Enable {name} in Settings or choose another provider."
+
+
+def _subscription_enabled(name: str) -> bool:
+    from whyline.agents.runner import _cli_permitted
+
+    return _cli_permitted(name)
+
+
 def score_agents(conn: sqlite3.Connection) -> list[str]:
     """Agents a quick score will try, first one named in the progress reply.
 
     ``default_agents`` wins when it is set. Otherwise every unattended
     agent that is installed and logged in, in Claude, Codex, Grok order.
+    A stored name that Settings has turned off is skipped so a configured
+    enabled backup can run; it is not replaced by some other provider.
     """
     stored = _stored_agents(conn)
     names = stored if stored is not None else _detected_agents()
@@ -353,9 +365,19 @@ def score_agents(conn: sqlite3.Connection) -> list[str]:
     for name in names:
         if name in chosen:
             continue
-        if capabilities.can_run_unattended(name):
+        if capabilities.can_run_unattended(name) and _subscription_enabled(name):
             chosen.append(name)
     return chosen
+
+
+def score_unavailable_reason(conn: sqlite3.Connection) -> str:
+    """Why ``score_agents`` is empty. Names a disabled saved agent when that is why."""
+    stored = _stored_agents(conn)
+    if stored:
+        off = next((name for name in stored if not _subscription_enabled(name)), None)
+        if off:
+            return _enable_hint(off)
+    return "No agent can score unattended."
 
 
 def _dispatch(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
@@ -671,7 +693,7 @@ def _quick_score(conn, row, idea: store.Idea) -> None:
         return
     agents = score_agents(conn)
     if not agents:
-        _say(conn, row, "No agent can score unattended.", idea_id=idea.id)
+        _say(conn, row, score_unavailable_reason(conn), idea_id=idea.id)
         return
     if not enqueue_score(conn, idea.id):
         _say(conn, row, "Already scoring.", idea_id=idea.id)
@@ -1339,8 +1361,17 @@ def _start_brainstorm(conn, row, idea: store.Idea, _run_fn) -> None:
     except brainstorm.SettingsError as exc:
         _say(conn, row, str(exc), idea_id=idea.id)
         return
+    disabled = brainstorm.disabled_provider(request)
+    if disabled is None and isinstance(fields, dict):
+        disabled = brainstorm.disabled_in_fields(fields)
+    if disabled:
+        _say(conn, row, _enable_hint(disabled), idea_id=idea.id)
+        return
     if not request.models or not request.final:
-        _say(conn, row, "No agent can brainstorm unattended.", idea_id=idea.id)
+        text = "No agent can brainstorm unattended."
+        if _notes:
+            text = text + "\n" + "\n".join(_notes)
+        _say(conn, row, text, idea_id=idea.id)
         return
     # The tick handles this row. Running the brainstorm here would hold the
     # scheduler for the whole timeout. The detached job runs it instead.
@@ -2499,6 +2530,8 @@ def _detected_agents() -> list[str]:
     names: list[str] = []
     for name in _DETECT_ORDER:
         if not capabilities.can_run_unattended(name):
+            continue
+        if not _subscription_enabled(name):
             continue
         info = detected.get(name)
         if isinstance(info, dict) and info.get("available"):

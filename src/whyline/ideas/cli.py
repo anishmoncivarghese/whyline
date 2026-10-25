@@ -242,6 +242,21 @@ def _stored_agents(conn) -> list[str] | None:
     return [str(item).strip() for item in parsed if str(item).strip()]
 
 
+def _enable_hint(name: str) -> str:
+    return f"Enable {name} in Settings or choose another provider."
+
+
+def _subscription_enabled(name: str) -> bool:
+    """True unless Settings has turned this provider off.
+
+    No global account file means Settings has not been used, so existing
+    installs and tests keep the previous unattended-only filter.
+    """
+    from whyline.agents.runner import _cli_permitted
+
+    return _cli_permitted(name)
+
+
 def _detected_agents() -> list[str]:
     """Unattended-capable agents that are installed and logged in."""
     from whyline import account
@@ -251,6 +266,8 @@ def _detected_agents() -> list[str]:
     names: list[str] = []
     for name in ("claude", "codex", "grok"):
         if not capabilities.can_run_unattended(name):
+            continue
+        if not _subscription_enabled(name):
             continue
         info = detected.get(name)
         if isinstance(info, dict) and info.get("available"):
@@ -264,8 +281,26 @@ def _agents_for(conn, args: argparse.Namespace) -> list[str]:
         return chosen
     stored = _stored_agents(conn)
     if stored is not None:
-        return stored
+        return [name for name in stored if _subscription_enabled(name)]
     return _detected_agents()
+
+
+def _require_agents(conn, args: argparse.Namespace) -> tuple[list[str] | None, str | None]:
+    chosen = _chosen_agents(args)
+    if chosen is not None:
+        refused = _reject_agents(chosen)
+        if refused:
+            return None, refused
+        return chosen, None
+    agents = _agents_for(conn, args)
+    stored = _stored_agents(conn)
+    if stored and not agents:
+        off = next(
+            (name for name in stored if not _subscription_enabled(name)),
+            stored[0],
+        )
+        return None, _enable_hint(off)
+    return agents, None
 
 
 def _print_scores(analysis: store.Analysis) -> None:
@@ -314,7 +349,11 @@ def cmd_add(args: argparse.Namespace) -> int:
         idea = store.add(conn, text, source=_SOURCE)
         print(idea.id)
         if args.score:
-            return _run_score(conn, idea.id, _agents_for(conn, args))
+            agents, error = _require_agents(conn, args)
+            if error:
+                print(error, file=sys.stderr)
+                return EXIT_ERROR
+            return _run_score(conn, idea.id, agents or [])
         return _finish(conn)
     finally:
         conn.close()
@@ -409,7 +448,11 @@ def cmd_score(args: argparse.Namespace) -> int:
     try:
         if store.get(conn, args.id) is None:
             return _missing(args.id)
-        return _run_score(conn, args.id, _agents_for(conn, args))
+        agents, error = _require_agents(conn, args)
+        if error:
+            print(error, file=sys.stderr)
+            return EXIT_ERROR
+        return _run_score(conn, args.id, agents or [])
     finally:
         conn.close()
 
@@ -461,8 +504,13 @@ def cmd_refine(args: argparse.Namespace) -> int:
             )
             return EXIT_ERROR
         _remember_context(conn, idea, extra)
+        agents, error = _require_agents(conn, args)
+        if error:
+            print(error, file=sys.stderr)
+            _publish(conn)
+            return EXIT_ERROR
         try:
-            analysis = analyse.analyse(conn, idea.id, agents=_agents_for(conn, args))
+            analysis = analyse.analyse(conn, idea.id, agents=agents or [])
         except LookupError as exc:
             print(str(exc), file=sys.stderr)
             _publish(conn)
@@ -547,12 +595,23 @@ def _reject_agents(names: list[str]) -> str | None:
         return "; ".join(
             f"{name}: not cleared for unattended runs" for name in blocked
         )
+    disabled = [name for name in names if not _subscription_enabled(name)]
+    if disabled:
+        return "; ".join(_enable_hint(name) for name in disabled)
     return None
 
 
 def cmd_assistant(args: argparse.Namespace) -> int:
     from whyline.ideas import assistant
 
+    names = [str(args.agent).strip()]
+    backup = getattr(args, "backup", None)
+    if backup is not None and str(backup).strip():
+        names.append(str(backup).strip())
+    refused = _reject_agents(names)
+    if refused:
+        print(refused, file=sys.stderr)
+        return EXIT_ERROR
     conn = _connect()
     if conn is None:
         return EXIT_ERROR
@@ -667,16 +726,83 @@ def _schema_check() -> _Check:
     return _Check("schema", True, f"schema version {version}")
 
 
+def _stored_disabled_names() -> list[str]:
+    """Saved inbox agent names that Settings has turned off."""
+    from whyline.ideas import assistant as assistant_mod
+
+    folder = paths.configured_home()
+    database = folder / "ideas.sqlite3"
+    if not database.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(
+            f"{database.resolve().as_uri()}?mode=ro", uri=True, timeout=10
+        )
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return []
+    try:
+        names: list[str] = []
+        stored = _stored_agents(conn) or []
+        names.extend(stored)
+        for key in (assistant_mod.ASSISTANT_KEY, assistant_mod.BACKUP_KEY):
+            row = conn.execute(
+                "SELECT value FROM kv WHERE key = ?", (key,)
+            ).fetchone()
+            if row is None:
+                continue
+            value = row["value"]
+            if isinstance(value, str) and value.strip():
+                names.append(value.strip())
+        off: list[str] = []
+        for name in names:
+            if name and name not in off and not _subscription_enabled(name):
+                off.append(name)
+        return off
+    finally:
+        conn.close()
+
+
 def _agents_check() -> _Check:
     from whyline.agents import capabilities
 
-    capable = [name for name in _AGENT_ORDER if capabilities.can_run_unattended(name)]
+    capable = [
+        name
+        for name in _AGENT_ORDER
+        if capabilities.can_run_unattended(name) and _subscription_enabled(name)
+    ]
     blocked = [name for name in _AGENT_ORDER if name not in capable]
+    stored_off = _stored_disabled_names()
     if not capable:
+        if stored_off:
+            return _Check(
+                "agents", False, "; ".join(_enable_hint(name) for name in stored_off)
+            )
+        disabled = [
+            name
+            for name in _AGENT_ORDER
+            if capabilities.can_run_unattended(name) and not _subscription_enabled(name)
+        ]
+        if disabled:
+            return _Check(
+                "agents", False, "; ".join(_enable_hint(name) for name in disabled)
+            )
         return _Check("agents", False, "no agent can run unattended")
     detail = f"{', '.join(capable)} can run unattended"
     if blocked:
-        detail += f"; {', '.join(blocked)} cannot"
+        unattended_blocked = [
+            name for name in blocked if not capabilities.can_run_unattended(name)
+        ]
+        disabled = [name for name in blocked if name not in unattended_blocked]
+        if unattended_blocked:
+            detail += f"; {', '.join(unattended_blocked)} cannot"
+        if disabled:
+            detail += f"; {'; '.join(_enable_hint(name) for name in disabled)}"
+    if stored_off:
+        extra = "; ".join(_enable_hint(name) for name in stored_off)
+        if extra not in detail:
+            detail += f"; {extra}"
+        return _Check("agents", False, detail)
     return _Check("agents", True, detail)
 
 

@@ -26,6 +26,27 @@ def conn(ideas_home):
     return store.connect()
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
+
+
 def _make_email(
     sender: str = "boss@example.com",
     subject: str = "idea",
@@ -226,6 +247,84 @@ def test_yes_code_starts_brainstorm_and_reply_carries_word_and_pdf(conn, monkeyp
     assert to_addrs == ["boss@example.com"]
     assert docx_file in attachments
     assert pdf_file in attachments
+
+
+def test_yes_code_does_not_run_a_disabled_provider(conn, monkeypatch):
+    from whyline.ideas import brainstorm
+
+    _set_enabled({"claude", "codex"})
+    email_in.allow(conn, "boss@example.com")
+    sent = []
+    capture_raw = _make_email(
+        sender="boss@example.com",
+        subject="idea",
+        body="Build a markdown parser\nmodels: claude\ntimeout: 15",
+        message_id="<md-disabled-1@example.com>",
+    )
+    idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
+    assert idea is not None
+    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", sent[0][2])
+    assert match is not None
+    code = match.group(1)
+
+    _set_enabled({"codex"})
+    called = []
+    monkeypatch.setattr(
+        adapters, "run_brainstorm", lambda *a, **k: called.append(True)
+    )
+    reply_raw = _make_email(
+        sender="boss@example.com",
+        subject="Re: idea",
+        body=f"yes {code}",
+        message_id="<md-disabled-reply@example.com>",
+    )
+    with pytest.raises(brainstorm.BrainstormError, match="Enable claude"):
+        email_in.handle(conn, reply_raw, mail_fn=lambda *a: sent.append(a))
+    assert called == []
+    assert store.get(conn, idea.id).status == "captured"
+
+
+def test_yes_code_refuses_a_mixed_saved_chain_before_a_subprocess(conn, monkeypatch):
+    from whyline.ideas import brainstorm
+
+    _set_enabled({"claude", "grok", "codex"})
+    email_in.allow(conn, "boss@example.com")
+    sent = []
+    capture_raw = _make_email(
+        sender="boss@example.com",
+        subject="idea",
+        body="Build a markdown parser\nmodels: claude, grok\nfinal: claude\nbackup: codex",
+        message_id="<md-mixed-1@example.com>",
+    )
+    idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
+    assert idea is not None
+    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", sent[0][2])
+    assert match is not None
+    code = match.group(1)
+    stored = json.loads(
+        conn.execute(
+            "SELECT value FROM kv WHERE key = ?",
+            (f"telegram_settings:{idea.id}",),
+        ).fetchone()[0]
+    )
+    assert stored["models"] == ["claude", "grok"]
+    assert stored["final"] == "claude"
+
+    _set_enabled({"grok", "codex"})
+    called = []
+    monkeypatch.setattr(
+        adapters, "run_brainstorm", lambda *a, **k: called.append(True)
+    )
+    reply_raw = _make_email(
+        sender="boss@example.com",
+        subject="Re: idea",
+        body=f"yes {code}",
+        message_id="<md-mixed-reply@example.com>",
+    )
+    with pytest.raises(brainstorm.BrainstormError, match="Enable claude"):
+        email_in.handle(conn, reply_raw, mail_fn=lambda *a: sent.append(a))
+    assert called == []
+    assert store.get(conn, idea.id).status == "captured"
 
 
 def test_stale_code_does_not_start_brainstorm(conn, monkeypatch):

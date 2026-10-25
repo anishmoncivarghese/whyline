@@ -24,6 +24,27 @@ def conn(ideas_home):
     return store.connect()
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
+
+
 def _block(kind="plan_setup", fields=None, summary="Use grok as the implementer with a one hour limit."):
     payload = {
         "kind": kind,
@@ -501,3 +522,42 @@ def test_idea_assistant_refuses_an_agent_that_cannot_run_unattended(ideas_home, 
     finally:
         conn.close()
     assert row is None
+
+
+def test_propose_skips_a_disabled_primary_and_uses_the_backup(conn):
+    _set_enabled({"grok"})
+    idea = store.add(conn, "Ship the inbox", source="test")
+    _set_pair(conn, "claude", "grok")
+    calls, run_fn = _runner([_block(summary="Backup read the request.")])
+
+    proposal = assistant.propose(
+        conn,
+        "implement with grok, one hour timeout",
+        idea=idea,
+        context="Set up card",
+        run_fn=run_fn,
+    )
+
+    assert [call["agent_name"] for call in calls] == ["grok"]
+    assert proposal.agent == "grok"
+    assert proposal.card is not None
+    assert proposal.error is None
+
+
+def test_propose_refuses_disabled_pair_before_a_subprocess(conn):
+    _set_enabled(set())
+    idea = store.add(conn, "Ship the inbox", source="test")
+    _set_pair(conn, "claude", "grok")
+    calls, run_fn = _runner([_block()])
+
+    proposal = assistant.propose(
+        conn,
+        "implement with grok, one hour timeout",
+        idea=idea,
+        context="Set up card",
+        run_fn=run_fn,
+    )
+
+    assert calls == []
+    assert proposal.card is None
+    assert HINT.format(agent="claude") in str(proposal)

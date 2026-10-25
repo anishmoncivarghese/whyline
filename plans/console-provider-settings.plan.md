@@ -63,6 +63,24 @@ real home directory, access the network, or sleep for a fixed duration.
   Tests: disabled provider absent for a new agent and inbox choice; existing disabled definitions/config remain inspectable; Cancel is lossless; Save/runtime refuses disabled; an enabled backup is used only by the existing backup path; no disabled provider subprocess runs; enabling restores eligibility.
   Verify the named focused tests, then `uv run pytest -q tests/console/test_new_agent_deliveries.py tests/console/test_inbox_screen.py`. Change nothing else.
 
+- [ ] SUBS-FIX-1: Repair the account and provider-enablement test failures
+  These fail on the committed code before this task: `tests/test_cli_chat_delegation.py::test_entry_menu_runs_detection_on_the_very_first_call`, `tests/test_cli_chat_delegation.py::test_entry_menu_redetects_a_pre_0_3_7_account_file`, `tests/test_model_defaults.py::test_model_command_saves_the_default_agent`, `tests/console/test_tui_relay_run.py::test_resume_in_setup_saves_and_then_resumes`, `tests/console/test_antigravity_trust.py::test_setup_screen_forgets_antigravity_decline_when_antigravity_saved`, and `tests/console/test_adapters_whyline.py::test_repl_dispatch_passes_session_chat_timeout_seconds`.
+  For each, find the cause first. If the test only lacks the enabled-provider state the spec now requires, update its fixture to enable the providers it uses and keep its original assertion. If the code is wrong against the spec (for example the entry menu no longer saves detection, or a detected row loses `available`), fix the code instead. Never delete a test or weaken an assertion to make it pass. Record one `whyline note` per test saying which it was.
+  Edit only those six test files and, only where a code bug is proven, the application module that test exercises.
+  Verify with `uv run pytest -q tests/test_cli_chat_delegation.py tests/test_model_defaults.py tests/console/test_tui_relay_run.py tests/console/test_antigravity_trust.py tests/console/test_adapters_whyline.py`. Change nothing else.
+
+- [ ] SUBS-FIX-2: Repair the chat attachment and mode-button test failures
+  These fail on the committed code before this task: `tests/console/test_chat_attachments.py::test_send_with_a_warning_asks_once_then_sends_with_attachments`, `tests/console/test_chat_attachments.py::test_send_with_secret_warning_asks_before_sending`, `tests/console/test_chat_attachments.py::test_repo_switch_clears_pending_attachments`, and both `tests/console/test_mode_buttons.py::test_each_mode_shows_only_its_buttons_within_80_columns` cases (chat and relay).
+  For each, find the cause first. If the attachment tests send nothing because no provider is enabled in their fixture, enable the provider they use. If the mode-button sets changed because SUBS-3 added Settings, update the expected sets to the spec's buttons and keep the 80-column check. If the code is wrong against the spec, fix the code instead. Never delete a test or weaken an assertion. Record one `whyline note` per cause.
+  Edit only `tests/console/test_chat_attachments.py`, `tests/console/test_mode_buttons.py` and, only where a code bug is proven, `src/whyline/console/tui.py`.
+  Verify with `uv run pytest -q tests/console/test_chat_attachments.py tests/console/test_mode_buttons.py tests/console/test_tui.py`. Change nothing else.
+
+- [ ] SUBS-FIX-3: Isolate the recovery cap tests from this repository's real relay state
+  `tests/console/test_recovery.py::test_auto_run_visit_cap_first_retried_and_second_stops_naming_first` and `tests/console/test_recovery.py::test_auto_run_round_cap_first_retried_and_second_stops_naming_first` fail on the committed code: their output names AGS-5 and commit 875c359, so they read real `.whyline` state or a real ask-agent result instead of their fixtures.
+  Find the leak and point every path the tests touch (relay state, logs, decisions, ask-agent output, home directory) at `tmp_path`, so the tests pass regardless of this repository's history. If the leak is a recovery code path that ignores its root argument, fix that path in `src/whyline/console/recovery.py`. Never weaken the assertions.
+  Edit only `tests/console/test_recovery.py` and, only where a code bug is proven, `src/whyline/console/recovery.py`.
+  Verify with `uv run pytest -q tests/console/test_recovery.py`. Change nothing else.
+
 - [ ] SUBS-6: Document the Settings workflow and run the complete regression gate
   Edit `README.md`, `docs/agents-capabilities.md`, and tests only if a full-suite failure proves a test expectation must change for this spec. Do not change application code in this task.
   Add a concise README section: Whyline uses the user's existing Claude, Codex, Grok, or Antigravity CLI subscription; open console Settings to choose which providers Whyline may use; disabled providers are neither offered nor checked; Grok/Antigravity login is not automatically verified. Keep existing API-key wording truthful where already documented.

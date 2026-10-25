@@ -14,6 +14,25 @@ from whyline.ideas import bot, brainstorm, paths, store, telegram_in, worker
 NOW = datetime(2026, 10, 20, 12, 0, 0)
 PAST = "2026-10-20T11:00:00"
 CHAT = 11
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
 
 
 @pytest.fixture
@@ -868,6 +887,51 @@ def test_quick_score_edits_one_status_on_fallback_and_when_it_lands(conn, monkey
     assert seen == ["claude failed (rate limit); trying codex…"]
     assert texts[0] == "Quick score done ↓"
     assert "Usefulness: 5/9" in texts[-1]
+
+
+def test_score_job_does_not_run_a_disabled_provider(conn, monkeypatch):
+    _set_enabled({"codex"})
+    idea = _idea(conn)
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES ('default_agents', ?)",
+        (json.dumps(["claude"]),),
+    )
+    monkeypatch.setattr(
+        bot.capabilities, "can_run_unattended", lambda name: True
+    )
+    called = []
+    monkeypatch.setattr(
+        "whyline.ideas.analyse.analyse",
+        lambda *a, **k: called.append(True),
+    )
+    with pytest.raises(RuntimeError, match="Enable claude"):
+        worker._execute(conn, {"kind": "score", "idea_id": idea.id})
+    assert called == []
+
+
+def test_brainstorm_job_refuses_a_mixed_saved_chain_before_a_subprocess(
+    conn, monkeypatch,
+):
+    _set_enabled({"grok", "codex"})
+    idea = _idea(conn)
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?, ?)",
+        (
+            f"telegram_settings:{idea.id}",
+            json.dumps({
+                "models": ["claude", "grok"],
+                "passes": 1,
+                "final": "claude",
+                "backup": ["codex"],
+                "timeout": 15,
+            }),
+        ),
+    )
+    called = []
+    monkeypatch.setattr(brainstorm, "run", lambda *a, **k: called.append(True))
+    with pytest.raises(RuntimeError, match="Enable claude"):
+        worker._execute(conn, {"kind": "brainstorm", "idea_id": idea.id})
+    assert called == []
 
 
 @pytest.mark.parametrize("kind", ["score", "brainstorm"])

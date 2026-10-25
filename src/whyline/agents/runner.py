@@ -13,6 +13,24 @@ _CANT_RUN = ("usage_limit", "login_needed", "missing")
 _RESET = re.compile(r"resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
 
 
+def _enable_hint(cli: str) -> str:
+    return f"Enable {cli} in Settings or choose another provider."
+
+
+def _cli_permitted(cli: str) -> bool:
+    """True unless Settings has turned this provider off.
+
+    No global account file means Settings has not been used, so existing
+    installs keep running. An account file that sets enabled=False refuses.
+    """
+    from whyline import account
+
+    data = account.load_global()
+    if not isinstance(data, dict):
+        return True
+    return cli in account.enabled_agents()
+
+
 def build_prompt(defn, sources: list[Path], event_files: list[Path]) -> str:
     def shown(path: Path) -> str:
         try:
@@ -161,6 +179,10 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
     env_note = {"GIT_TERMINAL_PROMPT": "0"}
     final, unavailable = "", []
     for cli in order:
+        if not _cli_permitted(cli):
+            record.attempts.append({"cli": cli, "outcome": "skipped",
+                                    "reason": _enable_hint(cli)})
+            continue
         if unattended and not capabilities.can_run_unattended(cli):
             record.attempts.append({"cli": cli, "outcome": "skipped",
                                     "reason": "not cleared for unattended runs"})

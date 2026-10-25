@@ -24027,3 +24027,299 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 13c3cb3882a24b9fbc699c71b0df52a1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T15:36:32.833Z"} -->
+
+## 2026-10-25 — Missing account.json leaves providers eligible at runtime
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** Pre-Settings installs and tests this task cannot edit have no global enablement file; treating that as all-off would skip every saved-agent and idea run. An account file with enabled=False still refuses before a subprocess.
+
+**Rejected:**
+
+- Always use enabled_agents() even with no file — that would break tests/agents/test_service.py and idea tests we cannot edit, and would stop existing saved agents until the user opens Settings.
+
+**Files:** src/whyline/agents/runner.py, src/whyline/ideas/cli.py
+
+<!-- whyline-event: 12ce86c6c7ec482880b8577901071815 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T15:55:12.307Z"} -->
+
+## 2026-10-25 — New Agent reads cached status; unattended refusal stays ahead of enablement
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** Opening New Agent used account.agent_status which can launch detect. cached_agent_status is the SUBS-4 source of truth and keeps compose subprocess-free. Inbox/CLI still reject antigravity as not cleared for unattended runs before the Settings hint so unattended safety is not weakened.
+
+**Rejected:**
+
+- Filter New Agent choices by can_run_unattended only — that would hide on-demand CLIs the form already offered. Reject disabled before unattended: antigravity's existing doctor/inbox wording would change.
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/agents_screens.py, src/whyline/ideas/cli.py
+
+<!-- whyline-event: 2917817eee284ad28a6d96379df9b4e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T15:55:18.356Z"} -->
+
+## 2026-10-25 — Disabled runner uses only the configured enabled backup
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** The spec forbids substituting an unconfigured provider. execute_once already walks runner then backup; skipping a disabled CLI and running the next permitted one is that path. If none remain, fail with Enable <agent> in Settings or choose another provider. before any run_fn.
+
+**Rejected:**
+
+- Pick the first enabled provider on the machine — that would silently change the saved agent. Raise instead of skip-and-backup: that would block a configured enabled backup.
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 311de874724f4043b60baf3a45e551b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T15:55:23.379Z"} -->
+
+## 2026-10-25 — SUBS-5 passed: enabled providers gate New Agent, Inbox, execute_once, and idea CLI
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-5
+
+**Because:** Focused command 32 passed. Runner, idea CLI, and test_tui 169 passed. Disabled providers are absent from new agent and inbox choices; saved disabled names stay visible; Cancel is lossless; Save and execute_once refuse with Enable <agent> in Settings or choose another provider.; an enabled configured backup is used; enabling restores eligibility. Full pytest had 12 failures in files this task cannot edit (mode buttons, chat attachments, adapters timeout, CLI detect, /model, setup trust, recovery).
+
+**Rejected:**
+
+- fail for bot.score_agents still returning a disabled Claude — bot.py, worker.py, and analyse.py are outside the allowed files; CLI score and saved-agent execute_once already refuse before a subprocess
+- fail the task for the 12 full-suite errors — they live in SUBS-1/3/4 files this task may not change
+
+**Test:** uv run pytest -q tests/console/test_new_agent_deliveries.py tests/console/test_inbox_screen.py: 32 passed
+**Test:** uv run pytest -q tests/agents/test_runner.py tests/ideas/test_cli.py tests/console/test_tui.py: 169 passed
+**Test:** uv run pytest -q: 12 failed, 1 skipped, none in SUBS-5 files
+
+**Files:** src/whyline/agents/runner.py, src/whyline/console/agents_screens.py, src/whyline/console/inbox_screen.py, src/whyline/console/tui.py, src/whyline/ideas/cli.py
+
+<!-- whyline-event: 75887025fc4e4489acd95a02732f29c8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T16:13:47.155Z"} -->
+
+## 2026-10-25 — Rejected SUBS-5 because disabled Inbox providers can still run and tests leak global settings
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-5
+
+**Because:** CLI and console filtering do not gate bot.score_agents, brainstorm defaults, or assistant runtime paths used by email/Telegram, and test_inbox_screen calls account.save_global without redirecting the account path, mutating the real user account and contaminating the full suite
+
+**Rejected:**
+
+- Approve the focused green tests — they do not cover the required email/Telegram runtime paths and the test isolation defect is unsafe
+
+**Files:** src/whyline/ideas/cli.py, tests/console/test_inbox_screen.py
+
+<!-- whyline-event: ddac0940dc57486bad1f48297dca9f67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T16:27:00.385Z"} -->
+
+## 2026-10-25 — Gate email/Telegram score, brainstorm, and assistant at the runtime that launches a subprocess
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** CLI and console filters never reached bot.score_agents, brainstorm.defaults/run, or assistant.propose, which email and Telegram actually call. Skipping a disabled name in the saved chain keeps the configured enabled backup; an empty chain fails with the Settings hint before run_fn.
+
+**Rejected:**
+
+- CLI-only filtering — email/Telegram would still spawn a disabled provider.
+- Pick the first enabled provider on the machine — that silently changes the saved agent.
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/brainstorm.py, src/whyline/ideas/assistant.py, src/whyline/ideas/email_in.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: 91be2ac8a3ec462e99e2c00b1f9071d7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T16:56:19.977Z"} -->
+
+## 2026-10-25 — Isolate enablement tests by patching global_whyline_dir, not HOME
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** account.save_global writes Path.home()/ .whyline/account.json, and pathlib Path.home on macOS ignores HOME, so tests/agents/conftest HOME isolation does not protect the developer account. Redirecting account.paths.global_whyline_dir to a temp dir keeps Settings writes inside the test.
+
+**Rejected:**
+
+- Rely on console conftest alone — test_inbox_screen still looked like it wrote the real account, and tests/agents/test_runner was outside that conftest.
+- Isolate via HOME — Path.home uses the password database on macOS.
+
+**Files:** tests/console/test_inbox_screen.py, tests/agents/test_runner.py
+
+<!-- whyline-event: 9f86f7222c2d46f1be1c9ea84b98da00 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T16:56:24.792Z"} -->
+
+## 2026-10-25 — SUBS-5 passed: enabled providers gate New Agent, Inbox, execute_once, and email/Telegram runtime
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-5
+
+**Because:** Focused command 32 passed. Runner, idea runtime, and test_tui 283 passed. Disabled providers are absent from new agent and inbox choices; saved disabled names stay visible; Cancel is lossless; Save and execute_once refuse with Enable <agent> in Settings or choose another provider.; an enabled configured backup is used; bot.score_agents, brainstorm.defaults/run, assistant.propose, email yes-code, and worker score refuse before a subprocess; enabling restores eligibility; enablement tests patch global_whyline_dir so they do not write the developer account. Full pytest had 13 failures in files this task cannot edit.
+
+**Rejected:**
+
+- fail for 13 full-suite errors — they live in SUBS-1/3/4 files this task may not change
+- fail for worker brainstorm empty-request using the generic unattended message — email_in and brainstorm.run still refuse with the Settings hint before a subprocess, and an enabled stored backup still runs
+
+**Files:** src/whyline/agents/runner.py, src/whyline/ideas/bot.py, src/whyline/ideas/brainstorm.py, src/whyline/ideas/assistant.py, src/whyline/ideas/email_in.py, tests/console/test_inbox_screen.py
+
+<!-- whyline-event: 4beb8d8da7b84955a95076d694fe1589 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T17:10:52.055Z"} -->
+
+## 2026-10-25 — SUBS-5 needs changes because saved brainstorm settings can silently replace disabled providers
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-5
+
+**Because:** request_from_fields drops a disabled model and replaces a disabled final writer with the first enabled model, so Telegram/email worker execution can proceed instead of returning the required Settings guidance before any provider invocation
+
+**Rejected:**
+
+- Approve — focused tests pass, but they omit mixed enabled/disabled brainstorm settings and the explicit runtime rejection rule is violated
+
+**Files:** src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: 4e1bca9a5b754deb9aaef62494a0f6c6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T17:24:53.806Z"} -->
+
+## 2026-10-25 — Reject disabled models/final in saved brainstorm fields; keep them visible; use enabled backup only on writer failover
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** A mixed saved chain used to drop a disabled model and replace a disabled final with models[0], which launched remaining enabled providers before enqueue or invocation
+
+**Rejected:**
+
+- drop disabled models and run the rest — that silently substitutes another provider
+- replace a disabled final writer with models[0] — that is not the configured backup path
+- auto-switch a disabled final to backup at start — backup is for runtime writer failure; mixed-chain must be zero subprocesses
+
+**Files:** src/whyline/ideas/brainstorm.py, src/whyline/ideas/email_in.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: ef554cc9059349a6b222f9081da43f61 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T17:35:51.900Z"} -->
+
+## 2026-10-25 — SUBS-5 passed: mixed saved brainstorm chains refuse before enqueue or a subprocess
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-5
+
+**Because:** Focused console pair is 32 passed. Runner, TUI, and idea runtime files are 291 passed. apply() keeps disabled models/final visible with Settings notes. Telegram Start, email yes-code, worker, and brainstorm.run refuse mixed chains with zero subprocesses. An enabled configured backup is used only on writer failover. New Agent and Inbox omit disabled names for new choices; saved disabled names stay inspectable; Cancel is lossless; Save and execute_once refuse with Enable <agent> in Settings or choose another provider.; enabling restores eligibility. Full pytest had 13 failures in files this task cannot edit.
+
+**Rejected:**
+
+- fail for 13 full-suite errors — they live in SUBS-1/3/4 files this task may not change
+- fail because score_agents skips a disabled name when a stored backup remains — that is the existing backup path
+
+**Test:** uv run pytest -q tests/console/test_new_agent_deliveries.py tests/console/test_inbox_screen.py: 32 passed
+**Test:** uv run pytest -q tests/agents/test_runner.py tests/console/test_tui.py tests/ideas/test_assistant.py tests/ideas/test_bot.py tests/ideas/test_brainstorm.py tests/ideas/test_cli.py tests/ideas/test_email_in.py tests/ideas/test_worker.py: 291 passed
+**Test:** uv run pytest -q: 13 failed, 1 skipped, none in SUBS-5 files
+
+**Files:** src/whyline/ideas/brainstorm.py, src/whyline/ideas/email_in.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, src/whyline/agents/runner.py, src/whyline/console/agents_screens.py, src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: 474232d823894090a72cfe6aa4b6d3e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T17:52:42.976Z"} -->
+
+## 2026-10-25 — Add SUBS-FIX-1..3 before SUBS-6 to clear the 13 full-suite failures already on the committed code
+
+**Actor:** claude
+**Role:** planner
+**Task:** SUBS-5
+
+**Because:** All 13 fail at b9edf0a (verified in a clean worktree), every SUBS-4/5 review called them unrelated, and SUBS-6 must pass uv run pytest -q without changing app code, so it could never be approved. Split three ways by cause (provider fixtures, chat/mode buttons, recovery test isolation) to keep each task small. Added mid-SUBS-5, so the plans/ change lands in SUBS-5's commit; reviewer: that file change is this plan update, not SUBS-5 scope creep
+
+**Rejected:**
+
+- let SUBS-6 find them — it is forbidden to change app code and would loop to the cap like SUBS-4
+- one task for all 13 — three unrelated causes, too big for a relay round, as TGS-5 and SUBS-4 showed
+- stop the relay to edit — the relay re-reads the plan each round, and unchecked tasks after SUBS-5 are picked up without a restart
+
+**Files:** plans/console-provider-settings.plan.md
+
+<!-- whyline-event: c8a1a4fcd76c44488bd2749c8d3ce721 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T17:54:38.420Z"} -->
+
+## 2026-10-25 — SUBS-5 still offers enabled but unusable providers in New Agent
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-5
+
+**Because:** NewAgentScreen._runnable checks capabilities.can_run and provider_enabled only; a cached status row with enabled=True and available=False is still returned as a new runner/backup choice, contrary to the task and spec distinction that operational choices must be enabled and usable
+
+**Rejected:**
+
+- Approve based on green focused tests — they cover disabled providers but omit the enabled-yet-unusable status case
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 722d328c90d24d14b162f32f2c981cae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:07:03.996Z"} -->
+
+## 2026-10-25 — New Agent choices require status.available as well as enablement and can_run
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-5
+
+**Because:** An enabled row with available=False is not operationally usable; new main/backup picks must be enabled and usable. Saved names still appear on edit so Cancel is lossless. Save still refuses only disabled providers with the Settings hint, because unusable is install/login rather than enablement.
+
+**Rejected:**
+
+- Keep offering enabled-unusable names — they cannot actually run
+- Refuse Save for available=False with the Settings enable hint — that message is wrong for not-installed or not-logged-in
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 1e10e6ea948f42a99cd551ffab2f657f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:12:42.541Z"} -->
+
+## 2026-10-25 — SUBS-5 passed: New Agent choices require enabled usable providers; runtime still refuses disabled names before a subprocess
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-5
+
+**Because:** Focused console pair is 34 passed. Runner, TUI, and idea runtime files are 291 passed. New Agent omits disabled and enabled-but-unusable names; edit keeps saved unusable or disabled names visible; Cancel is lossless; Save and execute_once refuse disabled with Enable <agent> in Settings or choose another provider.; an enabled configured backup is used only by the existing backup path; mixed saved brainstorm chains, email yes-code, worker, and assistant refuse before a subprocess; Inbox omits disabled new choices, keeps saved names inspectable, and doctor reports them; enabling restores eligibility. Full pytest had 13 failed, 2265 passed, 1 skipped, all 13 in SUBS-FIX-1..3 files this task cannot edit.
+
+**Rejected:**
+
+- Fail for 13 full-suite errors — they match SUBS-FIX-1..3 and none are in SUBS-5 files
+- Fail because Inbox new choices do not also require status.available — the task asks Inbox for enabled intersected with the unattended-safe set, and the last review required available on New Agent
+
+**Test:** uv run pytest -q tests/console/test_new_agent_deliveries.py tests/console/test_inbox_screen.py: 34 passed
+**Test:** uv run pytest -q tests/agents/test_runner.py tests/console/test_tui.py tests/ideas/test_assistant.py tests/ideas/test_bot.py tests/ideas/test_brainstorm.py tests/ideas/test_cli.py tests/ideas/test_email_in.py tests/ideas/test_worker.py: 291 passed
+**Test:** uv run pytest -q: 13 failed, 2265 passed, 1 skipped, none in SUBS-5 files
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/inbox_screen.py, src/whyline/agents/runner.py, src/whyline/ideas/brainstorm.py, tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 2f244d31f79545bb96b684c5b84509cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:28:37.299Z"} -->
+
+## 2026-10-25 — Approve SUBS-5 provider gating across saved Agents and the Idea Inbox
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-5
+
+**Because:** The diff filters new choices by enablement, usability, and existing capability rules; preserves disabled saved names for inspection and lossless Cancel; refuses disabled providers before subprocess launch; and uses only configured enabled backups through existing fallback paths. The required console pair passed 34 tests, git diff --check passed, and the full plain suite reproduced the documented 13 failures outside SUBS-5 changed tests with 2265 passed and 1 skipped.
+
+**Rejected:**
+
+- Request changes for the 13 full-suite failures — they are the pre-recorded SUBS-FIX-1..3 fixture, controls, and recovery-isolation failures rather than regressions in SUBS-5 files.
+- Request changes for fallback behavior — runner, score, assistant, and brainstorm paths only skip to already-configured backups and never choose an arbitrary provider.
+
+**Files:** src/whyline/agents/runner.py, src/whyline/console/agents_screens.py, src/whyline/console/inbox_screen.py, src/whyline/ideas/brainstorm.py
+
+<!-- whyline-event: db182b6c8a614f15b7e413227edd154d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:40:19.701Z"} -->

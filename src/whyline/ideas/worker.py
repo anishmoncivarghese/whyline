@@ -907,7 +907,7 @@ def _execute(conn, job) -> None:
     if kind == "score":
         agents = bot.score_agents(conn)
         if not agents:
-            raise RuntimeError("No agent can score unattended.")
+            raise RuntimeError(bot.score_unavailable_reason(conn))
 
         def on_fallback(agent, reason, nxt):
             short = str(reason).split("—", 1)[0].split(" - ", 1)[0]
@@ -926,6 +926,15 @@ def _execute(conn, job) -> None:
         return
     if kind == "brainstorm":
         request = _request_for(conn, idea_id)
+        disabled = brainstorm.disabled_provider(request)
+        if disabled is None:
+            fields = _stored_fields(conn, idea_id)
+            if isinstance(fields, dict):
+                disabled = brainstorm.disabled_in_fields(fields)
+        if disabled:
+            raise RuntimeError(
+                f"Enable {disabled} in Settings or choose another provider."
+            )
         if not request.models or not request.final:
             raise RuntimeError("No agent can brainstorm unattended.")
         try:
@@ -952,11 +961,15 @@ def _request_for(conn, idea_id: int):
     fields = _stored_fields(conn, idea_id)
     if fields:
         try:
-            request, _notes = brainstorm.request_from_fields(fields)
+            request, notes = brainstorm.request_from_fields(fields)
         except brainstorm.SettingsError:
             request = None
         else:
+            if brainstorm.disabled_provider(request) or brainstorm.disabled_in_fields(fields):
+                return request
             if request.models and request.final:
+                return request
+            if any(" in Settings or choose another provider." in note for note in notes):
                 return request
     request, _notes = brainstorm.defaults(conn)
     return request

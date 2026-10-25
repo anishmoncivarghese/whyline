@@ -145,9 +145,11 @@ def apply(
     A passes value outside 1–3, an unknown agent, or a timeout outside
     ``15, 30, 45, 60, none`` raises ``SettingsError`` naming that line.
     Antigravity, and any other agent that cannot run unattended, is removed.
-    The returned notes say why. An explicit ``final`` outside the models is
-    added to them. Changing ``models`` so the current writer is left out
-    makes the first of the new models the writer instead.
+    The returned notes say why. A provider Settings has turned off stays
+    named, with a Settings note, so a saved card remains inspectable.
+    An explicit ``final`` outside the models is added to them. Changing
+    ``models`` so the current writer is left out makes the first of the
+    new models the writer instead.
     """
     models = list(base.models)
     passes = base.passes
@@ -197,9 +199,12 @@ def apply(
     if errors:
         raise SettingsError(errors)
 
-    if final and _block_reason(final):
-        notes.append(f"{final}: {_block_reason(final)}")
+    unattended = _unattended_reason(final) if final else None
+    if unattended:
+        notes.append(f"{final}: {unattended}")
         final = ""
+    elif final and not _subscription_enabled(final):
+        notes.append(f"{final}: {_enable_hint(final)}")
     if final and final not in models:
         if final_set:
             # Only an explicit final: may add an agent the models line omitted.
@@ -218,7 +223,7 @@ def apply(
         final = ""
     # A backup may also be one of the models. The template names codex as both.
     # Only the default list keeps the remainder that is not already a model.
-    backup = [name for name in backup if not _block_reason(name)]
+    backup = [name for name in backup if not _unattended_reason(name)]
     unique_notes = list(dict.fromkeys(note for note in notes if note))
     return (
         Request(tuple(models), passes, final, tuple(backup), timeout),
@@ -273,12 +278,26 @@ def run(
     already in it. ``timeout`` ``none`` is an unlimited runner budget.
     Phase lines edit one status message in the idea's chat.
     """
-    root = ensure_workspace()
     idea = store.get(conn, idea_id)
     if idea is None:
         raise LookupError(f"no idea {idea_id}")
-    if not request.models or not request.final:
+    disabled = disabled_provider(request)
+    if disabled:
+        raise BrainstormError(_enable_hint(disabled))
+    models = tuple(name for name in request.models if not _unattended_reason(name))
+    # Failover may use an enabled configured backup; a disabled backup is skipped.
+    backup = tuple(
+        name
+        for name in request.backup
+        if not _unattended_reason(name) and _subscription_enabled(name)
+    )
+    final = request.final
+    if final and _unattended_reason(final):
+        final = ""
+    if not models or not final:
         raise BrainstormError("No agent can brainstorm unattended.")
+    request = Request(models, request.passes, final, backup, request.timeout)
+    root = ensure_workspace()
     idea = _begin(conn, idea)
     chat_id = _chat_id(idea.source_ref)
     progress = _progress(conn, chat_id, idea.id)
@@ -880,19 +899,73 @@ def _split_unattended(names: list[str]) -> tuple[list[str], list[str]]:
     for name in names:
         if name in kept:
             continue
-        reason = _block_reason(name)
+        reason = _unattended_reason(name)
         if reason:
             notes.append(f"{name}: {reason}")
             continue
+        if not _subscription_enabled(name):
+            notes.append(f"{name}: {_enable_hint(name)}")
         kept.append(name)
     return kept, notes
 
 
-def _block_reason(name: str) -> str | None:
+def _enable_hint(name: str) -> str:
+    return f"Enable {name} in Settings or choose another provider."
+
+
+def _subscription_enabled(name: str) -> bool:
+    from whyline.agents.runner import _cli_permitted
+
+    return _cli_permitted(name)
+
+
+def disabled_provider(request: Request) -> str | None:
+    """First model or final writer that Settings has turned off.
+
+    Backup names are not reported here. Failover may skip a disabled
+    backup and use the next enabled configured one.
+    """
+    for name in (*request.models, request.final):
+        if name and not _subscription_enabled(name):
+            return name
+    return None
+
+
+def disabled_in_fields(fields: Mapping) -> str | None:
+    """First saved model or final that Settings has turned off.
+
+    Reads the stored card, not a rewritten request, so a mixed chain
+    cannot drop a disabled model and run the rest.
+    """
+    names: list[str] = []
+    models = fields.get("models") or []
+    if isinstance(models, str):
+        models = [models]
+    if isinstance(models, (list, tuple)):
+        names.extend(str(item).strip() for item in models if str(item).strip())
+    final = fields.get("final")
+    if isinstance(final, str) and final.strip():
+        names.append(final.strip())
+    for name in names:
+        if name and not _subscription_enabled(name):
+            return name
+    return None
+
+
+def _unattended_reason(name: str) -> str | None:
     if name == "human":
         return _UNATTENDED
     if not capabilities.can_run_unattended(name):
         return _UNATTENDED
+    return None
+
+
+def _block_reason(name: str) -> str | None:
+    reason = _unattended_reason(name)
+    if reason:
+        return reason
+    if not _subscription_enabled(name):
+        return _enable_hint(name)
     return None
 
 
@@ -967,6 +1040,8 @@ def _detected_agents() -> list[str]:
     names: list[str] = []
     for name in _DETECT_ORDER:
         if not capabilities.can_run_unattended(name):
+            continue
+        if not _subscription_enabled(name):
             continue
         info = detected.get(name)
         if isinstance(info, dict) and info.get("available"):

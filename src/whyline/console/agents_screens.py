@@ -834,14 +834,43 @@ class NewAgentScreen(ModalScreen):
         self._sources: list[str] = list(existing.sources) if existing else []
         self._picking = False
 
+    def _provider_enabled(self, cli: str) -> bool:
+        from whyline.console.repl import provider_enabled
+
+        return provider_enabled(self._status.get(cli))
+
+    def _provider_usable(self, cli: str) -> bool:
+        info = self._status.get(cli)
+        return (
+            self._provider_enabled(cli)
+            and isinstance(info, dict)
+            and bool(info.get("available"))
+        )
+
     def _runnable(self) -> list[str]:
-        return [cli for cli in d.CLIS if capabilities.can_run(cli)]
+        return [
+            cli for cli in d.CLIS
+            if capabilities.can_run(cli) and self._provider_usable(cli)
+        ]
+
+    def _choice_clis(self) -> list[str]:
+        """Enabled usable CLIs, plus a saved disabled or unusable runner or backup."""
+        names = list(self._runnable())
+        existing = self._existing
+        if existing is None:
+            return names
+        for cli in (existing.runner, *existing.backup):
+            if cli and cli not in names:
+                names.append(cli)
+        return names
 
     def _cli_label(self, cli: str) -> str:
         info = self._status.get(cli)
         status = str(info.get("label") or "") if isinstance(info, dict) else ""
         text = f"{cli} · {status}" if status else cli
-        if not capabilities.can_run_unattended(cli):
+        if not self._provider_enabled(cli):
+            text += " · unavailable"
+        elif not capabilities.can_run_unattended(cli):
             text += " · on demand only"
         return text
 
@@ -864,12 +893,14 @@ class NewAgentScreen(ModalScreen):
         kind = existing.kind if existing else "repo"
         when = existing.trigger.kind if existing else "manual"
         runnable = self._runnable()
-        runner = existing.runner if existing and existing.runner in runnable else (
-            runnable[0] if runnable else None
-        )
+        offered = self._choice_clis()
+        if existing:
+            runner = existing.runner
+        else:
+            runner = runnable[0] if runnable else None
         backups = set(existing.backup) if existing else set()
         boxes = []
-        for cli in runnable:
+        for cli in offered:
             box = Checkbox(
                 self._cli_label(cli),
                 value=cli in backups and cli != runner,
@@ -938,9 +969,9 @@ class NewAgentScreen(ModalScreen):
             HorizontalGroup(
                 Label("Main CLI", classes="field-label"),
                 Select(
-                    [(self._cli_label(cli), cli) for cli in runnable],
+                    [(self._cli_label(cli), cli) for cli in offered],
                     value=runner if runner is not None else Select.BLANK,
-                    allow_blank=not runnable,
+                    allow_blank=not offered,
                     prompt="No CLI can run an agent",
                     id="na-runner",
                 ),
@@ -1081,7 +1112,7 @@ class NewAgentScreen(ModalScreen):
             runner = self._choice("#na-runner")
         except NoMatches:
             return
-        for cli in self._runnable():
+        for cli in self._choice_clis():
             try:
                 box = self.query_one(f"#na-backup-{cli}", Checkbox)
             except NoMatches:
@@ -1184,7 +1215,7 @@ class NewAgentScreen(ModalScreen):
         runner = self._choice("#na-runner")
         when = self._choice("#na-when") or "manual"
         backups = [
-            cli for cli in self._runnable()
+            cli for cli in self._choice_clis()
             if cli != runner and self.query_one(f"#na-backup-{cli}", Checkbox).value
         ]
         lines = [
@@ -1256,6 +1287,12 @@ class NewAgentScreen(ModalScreen):
         if self._name_taken(defn):
             self._show_error(f"an agent named {defn.name} already exists")
             return
+        for cli in (defn.runner, *defn.backup):
+            if cli and not self._provider_enabled(cli):
+                self._show_error(
+                    f"Enable {cli} in Settings or choose another provider."
+                )
+                return
         try:
             delivery = self._delivery()
             from whyline.agents import telegram

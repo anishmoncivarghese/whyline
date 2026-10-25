@@ -287,6 +287,93 @@ def test_agents_sets_the_default_used_by_score(ideas_home, capsys, monkeypatch):
     assert [call["agent_name"] for call in calls] == ["codex"]
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(monkeypatch, tmp_path, enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in account.AGENT_ORDER
+    })
+
+
+def test_agents_refuses_a_disabled_provider(ideas_home, capsys, monkeypatch, tmp_path):
+    _set_enabled(monkeypatch, tmp_path, {"codex"})
+    code, _out, err = invoke(["idea", "agents", "claude"], capsys)
+    assert code == 1
+    assert HINT.format(agent="claude") in err
+    conn = store.connect()
+    try:
+        row = conn.execute(
+            "SELECT value FROM kv WHERE key = 'default_agents'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is None
+
+
+def test_score_refuses_a_disabled_named_agent_before_invocation(
+    ideas_home, capsys, monkeypatch, tmp_path,
+):
+    _set_enabled(monkeypatch, tmp_path, {"codex"})
+    calls, run_fn = _runner([_wrap(_payload())])
+    monkeypatch.setattr("whyline_relay.agents.run", run_fn)
+    idea_id = _add(capsys, "Score with a disabled agent")
+    code, _out, err = invoke(["idea", "score", idea_id, "--agent", "claude"], capsys)
+    assert code == 1
+    assert HINT.format(agent="claude") in err
+    assert calls == []
+
+
+def test_score_uses_enabled_backup_from_the_saved_chain(
+    ideas_home, capsys, monkeypatch, tmp_path,
+):
+    _set_enabled(monkeypatch, tmp_path, {"claude", "codex"})
+    calls, run_fn = _runner([_wrap(_payload())])
+    monkeypatch.setattr("whyline_relay.agents.run", run_fn)
+    idea_id = _add(capsys, "Use the enabled backup")
+    code, _out, err = invoke(["idea", "agents", "claude", "codex"], capsys)
+    assert code == 0, err
+    _set_enabled(monkeypatch, tmp_path, {"codex"})
+    code, out, err = invoke(["idea", "score", idea_id], capsys)
+    assert code == 0, err
+    assert "agent: codex" in out
+    assert [call["agent_name"] for call in calls] == ["codex"]
+
+
+def test_doctor_reports_a_saved_disabled_agent(
+    ideas_home, capsys, monkeypatch, tmp_path, pdf_available,
+):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    _set_enabled(monkeypatch, tmp_path, {"claude", "codex"})
+    invoke(["idea", "agents", "claude", "codex"], capsys)
+    _set_enabled(monkeypatch, tmp_path, {"codex"})
+    code, out, err = invoke(["idea", "doctor"], capsys)
+    text = out + err
+    assert HINT.format(agent="claude") in text
+
+
+def test_assistant_refuses_a_disabled_provider(
+    ideas_home, capsys, monkeypatch, tmp_path,
+):
+    _set_enabled(monkeypatch, tmp_path, {"codex"})
+    code, _out, err = invoke(["idea", "assistant", "claude"], capsys)
+    assert code == 1
+    assert HINT.format(agent="claude") in err
+
+
 def test_documents_stores_the_format(ideas_home, capsys):
     code, out, err = invoke(["idea", "documents", "word"], capsys)
     assert code == 0, err

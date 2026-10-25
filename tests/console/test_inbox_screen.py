@@ -68,6 +68,37 @@ def _rows():
         conn.close()
 
 
+HINT = "Enable {agent} in Settings or choose another provider."
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_account(monkeypatch, tmp_path):
+    """Redirect the global account file so enablement writes cannot touch
+    the developer's ~/.whyline/account.json or leak into other tests."""
+    from whyline import account
+
+    home = tmp_path / "whyline-account"
+    home.mkdir()
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home)
+
+
+def _set_enabled(enabled):
+    from whyline import account
+
+    account.save_global({
+        name: {"enabled": name in set(enabled), "available": True}
+        for name in ("claude", "codex", "grok", "antigravity")
+    })
+
+
+def _select_values(select) -> list:
+    return [
+        value
+        for _label, value in select._options
+        if value is not tui.Select.BLANK
+    ]
+
+
 def _seed(values: dict[str, str]) -> None:
     conn = store.connect()
     try:
@@ -367,6 +398,89 @@ async def test_agents_mode_inbox_button_opens_the_screen(tmp_path, ideas_home):
         await _until(pilot, lambda: isinstance(app.screen, IdeaInboxScreen), "inbox shown")
         assert "No bot yet" in _plain(app.screen.query_one("#ib-bot"))
         assert not (ideas_home / "ideas.sqlite3").exists()
+
+
+async def test_disabled_provider_is_absent_from_new_inbox_choices(ideas_home):
+    _set_enabled({"codex", "grok"})
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        chain = screen.query_one("#ib-agents", OrderedChain)
+        assert "claude" not in chain.order()
+        with pytest.raises(tui.NoMatches):
+            screen.query_one("#chain-check-claude")
+        assert "claude" not in _select_values(screen.query_one("#ib-assistant", tui.Select))
+        assert "codex" in _select_values(screen.query_one("#ib-assistant", tui.Select))
+        box = screen.query_one("#ib-blocked-claude", tui.Checkbox)
+        assert box.disabled
+        assert HINT.format(agent="claude") in _plain(box)
+
+
+async def test_saved_disabled_agent_stays_visible_and_cancel_is_lossless(
+    ideas_home, monkeypatch,
+):
+    _set_enabled({"codex"})
+    _seed({
+        "default_agents": json.dumps(["claude", "codex"]),
+        "assistant": "claude",
+        "assistant_backup": "codex",
+    })
+    before = _rows()
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        assert screen.query_one("#ib-assistant", tui.Select).value == "claude"
+        assert "claude" in _select_values(screen.query_one("#ib-assistant", tui.Select))
+        box = screen.query_one("#ib-blocked-claude", tui.Checkbox)
+        assert HINT.format(agent="claude") in _plain(box)
+        await _until(pilot, lambda: screen.query("#chain-check-claude"), "saved claude row")
+        assert screen.query_one("#chain-check-claude", tui.Checkbox).disabled
+        await pilot.click("#ib-cancel")
+        await _until(pilot, lambda: not isinstance(app.screen, IdeaInboxScreen), "closed")
+    assert _rows() == before
+
+
+async def test_save_refuses_changing_to_a_disabled_assistant(ideas_home):
+    _set_enabled({"codex"})
+    _seed({"assistant": "codex", "assistant_backup": "claude"})
+    before = _rows()
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        screen.query_one("#ib-assistant", tui.Select).value = "claude"
+        screen.query_one("#ib-backup", tui.Select).value = "none"
+        await pilot.click("#ib-save")
+        await pilot.pause()
+        assert HINT.format(agent="claude") in _plain(screen.query_one("#ib-message"))
+        assert isinstance(app.screen, IdeaInboxScreen)
+    assert _rows() == before
+
+
+async def test_check_reports_a_saved_disabled_agent(ideas_home):
+    _set_enabled({"codex"})
+    _seed({"default_agents": json.dumps(["claude", "codex"])})
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        await pilot.click("#ib-check")
+        await pilot.pause()
+        text = _plain(screen.query_one("#ib-checks"))
+    assert HINT.format(agent="claude") in text
+
+
+async def test_enabling_restores_inbox_eligibility(ideas_home):
+    _set_enabled({"codex"})
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        assert "claude" not in _select_values(screen.query_one("#ib-assistant", tui.Select))
+        await pilot.click("#ib-cancel")
+        await _until(pilot, lambda: not isinstance(app.screen, IdeaInboxScreen), "closed")
+        _set_enabled({"claude", "codex"})
+        screen = await _open(pilot, app)
+        assert "claude" in _select_values(screen.query_one("#ib-assistant", tui.Select))
+        with pytest.raises(tui.NoMatches):
+            screen.query_one("#ib-blocked-claude")
 
 
 async def test_a_rejected_token_is_not_shown(ideas_home, monkeypatch):
