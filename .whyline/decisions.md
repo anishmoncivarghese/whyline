@@ -24644,3 +24644,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bb74fcf24f1b45a5ba30330be1ea112c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:52:32.611Z"} -->
+
+## 2026-10-25 — Second cap Auto recovery stops without asking an agent or reading cwd
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-3
+
+**Because:** auto_option fell through to a real ask-agent on the second visit/round cap, and find_task_cap_recovery used Path.cwd() when root was missing, so the tests named this repo's AGS-5 history. Returning None on an already-recorded cap recovery matches the first-recovery stop, and the lookup now uses only the given root.
+
+**Rejected:**
+
+- Isolate tests only — the assertions require diagnose's first-recovery summary, which a stubbed ask-agent proposal would not produce
+- Keep Path.cwd() fallback — that ignores the root argument and reads this checkout's recovery.json
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: bea5ca0cdb804ecbaa2bc83226afdd74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:00:26.426Z"} -->
+
+## 2026-10-25 — Second cap Auto recovery is isolated and stops without asking an agent
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-3
+
+**Because:** The two named tests pass with refuse_ask/refuse_runner, so a second visit/round cap never calls a real agent or reads this checkout. First visit cap still launches retry-stage and first round cap still raises max_rounds; non-cap Auto still asks the agent (safe-proposal and recreated-rule tests). auto_option returns None on an already-recorded cap and find_task_cap_recovery uses only the given root. Recovery file 138 tests and full suite 2279 collected both exit 0.
+
+**Rejected:**
+
+- Fail isolation as test-only stubs — refuse_ask would raise if auto_option still fell through, and the assertions still require diagnose's first-recovery summary
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: a8c304ca699749f6a713943d6b7e4780 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:12:45.852Z"} -->
+
+## 2026-10-25 — SUBS-FIX-3 approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-FIX-3
+
+**Because:** The second visit/round cap now stops on the recorded first recovery before ask-agent fallback, cap history is read only from the supplied root, and the regression fixtures isolate HOME, cwd, relay state, decisions, logs, and agent execution under tmp_path without weakening assertions. The focused 138-test recovery suite and plain full 2279-test suite both passed, with one expected skip in the full run.
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 184cf7841a86404ba6cf0dd30c1982db -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T20:23:49.524Z"} -->

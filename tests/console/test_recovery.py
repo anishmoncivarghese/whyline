@@ -4358,17 +4358,45 @@ def test_different_task_is_allowed_first_cap(tmp_path: Path) -> None:
     assert opt.id == "retry-stage"
 
 
-def test_auto_run_visit_cap_first_retried_and_second_stops_naming_first(tmp_path: Path) -> None:
+def _isolate_cap_auto_run(tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin Auto recovery to this scratch repo: HOME, cwd, logs, and ask-agent.
+
+    A second cap must stop on the first recovery. It must not read this
+    checkout's `.whyline`, HOME, or a real ask-agent result.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(repo)
+    logs = repo / ".whyline" / "relay" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "ask-agent-codex.log").write_text("fixture ask-agent log\n", encoding="utf-8")
+    recovery.reset_asked_pauses()
+    monkeypatch.setattr(recovery, "_AUTO_RUNNER", None)
+
+    def refuse_ask(*_args, **_kwargs):
+        raise AssertionError("cap recovery must not call ask-agent")
+
+    monkeypatch.setattr(recovery, "ask_agent", refuse_ask)
+
+
+def test_auto_run_visit_cap_first_retried_and_second_stops_naming_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Integration regression driving the Auto recovery entry point through first and second caps."""
     from whyline.console import auto_run, relay_ops
 
     repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _isolate_cap_auto_run(tmp_path, repo, monkeypatch)
     relay_ops.save_resolve_mode(repo, "auto")
     for summary in _UNRELATED_REJECTIONS:
         _record_rejection(repo, "AGS-5", summary)
 
     launched: list[list[str]] = []
     lines: list[str] = []
+
+    def refuse_runner(*_args, **_kwargs):
+        raise AssertionError("cap recovery must not call a real agent runner")
 
     # First visit cap: Auto automatically applies retry-stage
     res1 = auto_run.recover_pause(
@@ -4378,6 +4406,7 @@ def test_auto_run_visit_cap_first_retried_and_second_stops_naming_first(tmp_path
         pause_reason=_VISIT_CAP_REASON,
         progress=lines.append,
         launcher=lambda args: launched.append(list(args)),
+        runner=refuse_runner,
     )
     assert res1.verdict == "resolved"
     assert launched == [["resume", "--retry-stage", "--allow-dirty"]]
@@ -4401,6 +4430,7 @@ def test_auto_run_visit_cap_first_retried_and_second_stops_naming_first(tmp_path
         pause_reason=_VISIT_CAP_REASON,
         progress=lines.append,
         launcher=lambda args: launched.append(list(args)),
+        runner=refuse_runner,
     )
     assert res2.verdict == "human"
     assert "Retry stage" in res2.reason
@@ -4409,11 +4439,14 @@ def test_auto_run_visit_cap_first_retried_and_second_stops_naming_first(tmp_path
     assert launched == []
 
 
-def test_auto_run_round_cap_first_retried_and_second_stops_naming_first(tmp_path: Path) -> None:
+def test_auto_run_round_cap_first_retried_and_second_stops_naming_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Integration regression driving the Auto recovery entry point through first and second round caps."""
     from whyline.console import auto_run, relay_ops
 
     repo = _capped_repo(tmp_path / "repo", _ROUND_CAP_REASON)
+    _isolate_cap_auto_run(tmp_path, repo, monkeypatch)
     relay_ops.save_resolve_mode(repo, "auto")
     for summary in _UNRELATED_REJECTIONS:
         _record_rejection(repo, "AGS-5", summary)
@@ -4421,6 +4454,9 @@ def test_auto_run_round_cap_first_retried_and_second_stops_naming_first(tmp_path
     initial_rounds = recovery._current_max_rounds(repo)
     launched: list[list[str]] = []
     lines: list[str] = []
+
+    def refuse_runner(*_args, **_kwargs):
+        raise AssertionError("cap recovery must not call a real agent runner")
 
     # First round cap: Auto gives 6 more rounds
     res1 = auto_run.recover_pause(
@@ -4430,6 +4466,7 @@ def test_auto_run_round_cap_first_retried_and_second_stops_naming_first(tmp_path
         pause_reason=_ROUND_CAP_REASON,
         progress=lines.append,
         launcher=lambda args: launched.append(list(args)),
+        runner=refuse_runner,
     )
     assert res1.verdict == "resolved"
     assert launched == [["resume", "--allow-dirty"]]
@@ -4445,6 +4482,7 @@ def test_auto_run_round_cap_first_retried_and_second_stops_naming_first(tmp_path
         pause_reason=_ROUND_CAP_REASON,
         progress=lines.append,
         launcher=lambda args: launched.append(list(args)),
+        runner=refuse_runner,
     )
     assert res2.verdict == "human"
     assert f"Give it {recovery.MORE_ROUNDS} more rounds" in res2.reason

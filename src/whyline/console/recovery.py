@@ -1721,17 +1721,19 @@ def auto_option(
         if summary_kind not in _HUMAN_KINDS:
             is_cap = problem.id in _CAP_KINDS or summary_kind in _CAP_KINDS
             if is_cap:
-                if not getattr(problem, "first_recovery", ""):
-                    check_root = eff_root or Path.cwd()
-                    if not (eff_task and find_task_cap_recovery(check_root, eff_task)):
-                        for opt in problem.options:
-                            if opt.recommended and not opt.confirm and "model" not in opt.id:
-                                if (problem.id == "visit-cap" or summary_kind == "visit-cap") and opt.id == "retry-stage":
-                                    safe_rule_opt = opt
-                                    break
-                                if (problem.id == "round-cap" or summary_kind == "round-cap") and opt.id == "more-rounds":
-                                    safe_rule_opt = opt
-                                    break
+                already = bool(getattr(problem, "first_recovery", ""))
+                if not already and eff_root is not None and eff_task:
+                    already = find_task_cap_recovery(eff_root, eff_task) is not None
+                if already:
+                    return None
+                for opt in problem.options:
+                    if opt.recommended and not opt.confirm and "model" not in opt.id:
+                        if (problem.id == "visit-cap" or summary_kind == "visit-cap") and opt.id == "retry-stage":
+                            safe_rule_opt = opt
+                            break
+                        if (problem.id == "round-cap" or summary_kind == "round-cap") and opt.id == "more-rounds":
+                            safe_rule_opt = opt
+                            break
             else:
                 for opt in problem.options:
                     if opt.recommended and not opt.confirm:
