@@ -25,7 +25,7 @@ real home directory, access the network, or sleep for a fixed duration.
   Tests: legacy migration without write; repo data cannot override global enablement; enabled+missing binary is unavailable; Grok/Antigravity login wording is honest; all disabled yields an empty available set; disabled Claude detector is not called; multi-save preserves plan/auth fields; replacement failure preserves the old JSON; CLI wording and enabled-only detect.
   Verify with `uv run pytest -q tests/test_account.py tests/test_account_cli.py`. Change nothing else.
 
-- [ ] SUBS-2: Add the transactional Settings screen
+- [x] SUBS-2: Add the transactional Settings screen
   Add `src/whyline/console/settings_screen.py` and `tests/console/test_settings_screen.py`. Edit no other file.
   Implement `ProviderSettingsScreen`, a modal with title `Settings`, section `AI subscriptions`, four provider checkboxes in the stable order Claude, Codex, Grok, Antigravity, a plain-text status per row, the exact explanatory sentence `Disabled providers are not checked or shown in agent choices.`, and `Check selected`, `Save`, and `Cancel` buttons.
   The constructor receives the current records plus injected callables for checking one provider and atomically saving the four staged booleans with completed staged results. This module must not import the main app to call its methods.
