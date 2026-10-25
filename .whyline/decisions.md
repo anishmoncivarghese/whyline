@@ -24573,3 +24573,74 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c1bf669a6ed04c1b8e634af518081a1c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:12:44.363Z"} -->
+
+## 2026-10-25 — Attachment send tests stub an enabled usable provider so dispatch can reach run_chat_turn
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-2
+
+**Because:** Console tests isolate HOME with no account file, so agent_status reports nothing enabled and P8 returns NO_SUBSCRIPTIONS without calling run_chat_turn; sent stays empty. The grok and codex send tests enable those agents; repo-switch enables claude because switch_repo sets session.agent from model.resolve.
+
+**Rejected:**
+
+- Fix tui.py to send with nothing enabled — contradicts spec P8
+- Weaken the sent[] assertions — the task forbids it
+
+**Files:** tests/console/test_chat_attachments.py
+
+<!-- whyline-event: e9bcc1d2896449d6b210fd7fb0bc2699 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:22:33.818Z"} -->
+
+## 2026-10-25 — Mode-button expected sets include Settings after SUBS-3
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-2
+
+**Because:** Spec P1 and SUBS-3 added Settings to the shared bottom controls, so the chat and relay visible sets gained settings; the 80-column equality failed on that extra id. The code matches the spec.
+
+**Rejected:**
+
+- Remove Settings from tui.py — contradicts spec P1
+- Drop the set-equality assertion — the task forbids weakening assertions
+
+**Files:** tests/console/test_mode_buttons.py
+
+<!-- whyline-event: 5af662a24333463da6574c04524b4c1f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:22:37.258Z"} -->
+
+## 2026-10-25 — Pass SUBS-FIX-2: send fixtures enable the used provider and mode-button sets include Settings
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-2
+
+**Because:** The five named failures now pass without weakened assertions. Isolated HOME has no account file, so P8 returns NO_SUBSCRIPTIONS unless the send tests stub agent_status; grok and codex sends enable those agents, and repo-switch enables claude because switch_repo sets session.agent from model.resolve before the post-switch send. Mode-button expected sets gained settings to match spec P1 and _SHARED_BUTTONS, and the 80-column equality remains. tui.py was correctly left unchanged. Required pytest files passed.
+
+**Rejected:**
+
+- Fail because the full suite has two test_recovery.py failures — those files are outside SUBS-FIX-2's allowed edits and fail independently of this test-only diff
+- Require a tui.py change — Settings is already in _SHARED_BUTTONS and dispatch already returns NO_SUBSCRIPTIONS when nothing is enabled
+
+**Test:** uv run pytest -q tests/console/test_chat_attachments.py tests/console/test_mode_buttons.py tests/console/test_tui.py: 122 passed
+**Test:** uv run pytest --tb=short five named failures: 5 passed in 2.88s
+**Test:** uv run pytest -q: 2 failed in tests/console/test_recovery.py (out of scope)
+
+**Files:** tests/console/test_chat_attachments.py, tests/console/test_mode_buttons.py
+
+<!-- whyline-event: e10cb1ed5e6e41628f8f2ad9c0bfa512 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:40:34.561Z"} -->
+
+## 2026-10-25 — Approve SUBS-FIX-2 test repairs
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-FIX-2
+
+**Because:** The attachment cases now enable the exact provider used by dispatch, the mode expectations include the spec-required Settings control without weakening exact-set or 80-column assertions, the scoped suite passes 122 tests, and the only full-suite failures are unrelated recovery assertions outside the allowed files.
+
+**Files:** tests/console/test_chat_attachments.py, tests/console/test_mode_buttons.py
+
+<!-- whyline-event: bb74fcf24f1b45a5ba30330be1ea112c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:52:32.611Z"} -->

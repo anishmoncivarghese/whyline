@@ -26,6 +26,23 @@ def _lines(app):
     return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 
 
+def _enable_agent(monkeypatch, agent):
+    """Make `agent` enabled and usable so a chat send can reach run_chat_turn."""
+    from whyline import account
+
+    status = {}
+    for name in account.AGENT_ORDER:
+        on = name == agent
+        status[name] = {
+            "enabled": on,
+            "installed": on,
+            "available": on,
+            "label": "ready" if on else "off in Settings",
+            "hint": None if on else f"Open Settings or run: whyline account enable {name}",
+        }
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: status)
+
+
 async def _chat(app, pilot, agent="codex"):
     app.session.mode = "chat"
     app.session.agent = agent
@@ -74,6 +91,7 @@ async def test_send_with_a_warning_asks_once_then_sends_with_attachments(repo, m
     monkeypatch.setattr(adapters, "run_chat_turn",
                         lambda root, agent, prompt, attachments=(), **kw: sent.append((prompt, list(attachments)))
                         or tui.SessionEvent(kind="output", text="[grok] ok"))
+    _enable_agent(monkeypatch, "grok")
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 40)) as pilot:
         await _chat(app, pilot, agent="grok")
@@ -172,6 +190,7 @@ async def test_send_with_secret_warning_asks_before_sending(repo, monkeypatch, t
     monkeypatch.setattr(adapters, "run_chat_turn",
                         lambda root, agent, prompt, attachments=(), **kw: sent.append((prompt, list(attachments)))
                         or tui.SessionEvent(kind="output", text="[codex] ok"))
+    _enable_agent(monkeypatch, "codex")
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 40)) as pilot:
         await _chat(app, pilot, agent="codex")
@@ -206,6 +225,7 @@ async def test_repo_switch_clears_pending_attachments(repo, monkeypatch, tmp_pat
     monkeypatch.setattr(adapters, "run_chat_turn",
                         lambda root, agent, prompt, attachments=(), **kw: sent.append((prompt, list(attachments)))
                         or tui.SessionEvent(kind="output", text="ok"))
+    _enable_agent(monkeypatch, "claude")
 
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 40)) as pilot:
