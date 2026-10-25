@@ -24827,3 +24827,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 300867596cde4aeb941e91fe05b6b784 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T21:25:27.329Z"} -->
+
+## 2026-10-25 — Personal assistant plan: hybrid keyword verbs + proposal-only AI router over a fixed action registry; writes need a tapped nonce
+
+**Actor:** claude
+**Role:** planner
+**Task:** ASST-PLAN
+
+**Because:** The inbox already routes this way (intent.py + assistant.py); a fixed registry keeps read-only actions unattended and confines code writes to the relay behind a confirmed tap, avoiding OpenClaw's broad shell/skills risk
+
+**Rejected:**
+
+- AI router that acts directly — prompt injection from forwarded mail could trigger side effects
+- Keywords only — plain-English requests would be lost
+- Arbitrary shell/browser/skills like OpenClaw — unbounded blast radius
+
+**Files:** plans/personal-assistant.plan.md, docs/superpowers/specs/2026-10-26-personal-assistant-design.md
+
+<!-- whyline-event: e5d71957e51f4cca8832a261c4b6393d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T21:27:30.655Z"} -->
