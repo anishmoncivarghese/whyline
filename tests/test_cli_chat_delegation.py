@@ -91,6 +91,9 @@ def test_main_with_no_args_prints_usage_when_whyline_relay_is_absent(monkeypatch
 def test_entry_menu_runs_detection_on_the_very_first_call(monkeypatch, tmp_path, capsys):
     from whyline import account, cli
     monkeypatch.setattr(account.paths.Path, "home", lambda: tmp_path)
+    account.set_enabled_many(
+        {"codex": True, "claude": True, "antigravity": True, "grok": True}
+    )
     monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
     monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
     monkeypatch.setattr(
@@ -141,6 +144,9 @@ def test_entry_menu_redetects_a_pre_0_3_7_account_file(monkeypatch, tmp_path):
         "codex": {"auth_mode": "chatgpt", "plan": "plus"},
         "claude": {"auth_method": "claude.ai", "plan": "pro"},
     })
+    account.set_enabled_many(
+        {"codex": True, "claude": True, "antigravity": True, "grok": True}
+    )
     monkeypatch.setattr(account, "detect_codex", lambda: {"plan": "plus"})
     monkeypatch.setattr(account, "detect_claude", lambda: {"plan": "pro"})
     monkeypatch.setattr(

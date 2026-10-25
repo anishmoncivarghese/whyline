@@ -200,9 +200,31 @@ async def test_model_slash_command_forgets_antigravity_decline(tmp_path, trust, 
 
 
 async def test_setup_screen_forgets_antigravity_decline_when_antigravity_saved(tmp_path, trust, monkeypatch):
+    from whyline import account
+
     saved_roles = []
     saved_releases = []
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: ["antigravity", "claude"])
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root, which=None: {
+            "antigravity": {
+                "enabled": True,
+                "installed": True,
+                "available": True,
+                "label": "ready",
+                "hint": None,
+            },
+            "claude": {
+                "enabled": True,
+                "installed": True,
+                "available": True,
+                "label": "ready",
+                "hint": None,
+            },
+        },
+    )
     monkeypatch.setattr(
         relay_ops, "current_roles",
         lambda root: {"implementer": "antigravity", "tester": "claude", "reviewer": "claude", "backup": []},

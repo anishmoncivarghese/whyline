@@ -24323,3 +24323,253 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: db182b6c8a614f15b7e413227edd154d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:40:19.701Z"} -->
+
+## 2026-10-25 — Entry-menu first-call detection failed for missing enablement, not a save bug
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-1
+
+**Because:** ensure_detected correctly skips when enabled_agents is empty (spec P3). Enabling the four providers the test already mocks lets refresh save, and the original load_global/plan assertions still hold.
+
+**Rejected:**
+
+- Restore detect-all on a fresh machine — contradicts spec P3 and test_ensure_detected_does_not_launch_when_nothing_is_enabled
+- Weaken load_global is not None — the task forbids weakening assertions
+
+**Files:** tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: 99146ebf27eb4273a86b49784f7b5b2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:46:48.260Z"} -->
+
+## 2026-10-25 — Pre-0.3.7 redetect failed because legacy rows read as disabled
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-1
+
+**Because:** Records without available or enabled are not enabled, so ensure_detected correctly returns without refresh. Enabling all four providers after the old save keeps the available and antigravity assertions.
+
+**Rejected:**
+
+- Treat missing available as enabled and auto-detect every provider — contradicts test_ensure_detected_does_not_launch_for_a_pre_0_3_7_file_without_available
+- Drop the antigravity-in-refreshed assertion — the task forbids weakening assertions
+
+**Files:** tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: da715714afae45bb89bbe45c2dac887a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:46:52.294Z"} -->
+
+## 2026-10-25 — /model default-agent save failed for missing enabled status, not a save bug
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-1
+
+**Because:** _model_event now gates on provider_enabled from agent_status. The old available_agents stub never reached that check. Stubbing enabled+available for codex and claude keeps the output and model.json assertions.
+
+**Rejected:**
+
+- Honor available_agents in /model — that helper is no longer the enablement source of truth
+- Change the assertion from output to error — the task forbids weakening assertions
+
+**Files:** tests/test_model_defaults.py
+
+<!-- whyline-event: 2d8175baa9e5468aabfea0801fa3bf07 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:46:56.002Z"} -->
+
+## 2026-10-25 — Resume-in-setup failed because Set up had no enabled providers
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-1
+
+**Because:** RelaySetupScreen only renders #rs-implementer from setup_choice_agents, which filters by provider_enabled. Stubbing agent_status for the four agents the test already lists restores the selects without changing the resume assertions.
+
+**Rejected:**
+
+- Render role selects for disabled providers — contradicts spec P7
+- Drop the antigravity implementer assignment — the task forbids weakening assertions
+
+**Files:** tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 2b5130ef3d994134a7e0a5583ff0ec9c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:47:00.083Z"} -->
+
+## 2026-10-25 — Antigravity-forget Check never ran because no provider was enabled
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-1
+
+**Because:** _check returns immediately when _agents is empty. Stubbing agent_status so antigravity and claude are enabled lets Check save and call forget_antigravity_decline, keeping forgot==1.
+
+**Rejected:**
+
+- Forget the decline with no enabled providers — Check is supposed to be a no-op in the no-subscriptions path
+- Drop the forgot==1 assertion — the task forbids weakening assertions
+
+**Files:** tests/console/test_antigravity_trust.py
+
+<!-- whyline-event: 7e8bbaa6aa3b484b8e6e59e5e532a2f4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:47:03.262Z"} -->
+
+## 2026-10-25 — Dispatch timeout forwarding failed because chat was blocked with no subscriptions
+
+**Actor:** grok
+**Role:** implementer
+**Task:** SUBS-FIX-1
+
+**Because:** _chat_blocked_event returns NO_SUBSCRIPTIONS before run_chat_turn when nothing is enabled. Stubbing agent_status so the default claude agent is enabled and usable keeps the original timeout tuple assertions.
+
+**Rejected:**
+
+- Bypass the no-subscriptions gate for this timeout test — would hide the enablement contract
+- Expect an empty seen list — the task forbids weakening assertions
+
+**Files:** tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 0916592bbc3048b9b3ae0deab79dca0d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T18:47:07.780Z"} -->
+
+## 2026-10-25 — Pass: first-call detection was a missing-enablement fixture, not a save bug
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** ensure_detected correctly returns without refresh when nothing is enabled (spec P3). set_enabled_many for the four mocked providers lets refresh save, and load_global is not None plus codex plan plus still hold.
+
+**Rejected:**
+
+- Treat this as a code bug and restore detect-all on a fresh machine — contradicts spec P3 and test_ensure_detected_does_not_launch_when_nothing_is_enabled
+- Fail the task because the fixture enables providers before the first call — that is the enabled-provider state the spec now requires
+
+**Files:** tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: 777e868b6dc748268316459809fd3b7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:01:52.207Z"} -->
+
+## 2026-10-25 — Pass: pre-0.3.7 redetect was a missing-enablement fixture, not a lost-available bug
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** Legacy rows without available or enabled read as disabled, so ensure_detected correctly skips refresh. Enabling the four providers after the old save keeps available is True and antigravity in refreshed.
+
+**Rejected:**
+
+- Treat missing available as enabled and auto-detect every provider — contradicts test_ensure_detected_does_not_launch_for_a_pre_0_3_7_file_without_available
+
+**Files:** tests/test_cli_chat_delegation.py
+
+<!-- whyline-event: 7598b75859914b3583df8bd9eda1f899 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:01:52.207Z"} -->
+
+## 2026-10-25 — Pass: /model save was a missing enabled agent_status stub, not a persistence bug
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** _model_event now gates on provider_enabled from agent_status. Stubbing enabled plus available for codex and claude keeps event.kind output, session.agent codex, and model.json default_agent plus codex model.
+
+**Rejected:**
+
+- Honor the old available_agents stub in /model — agent_status is the enablement source of truth
+
+**Files:** tests/test_model_defaults.py
+
+<!-- whyline-event: 1a53fe96f01c4e558a3569cc5d742458 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:01:52.228Z"} -->
+
+## 2026-10-25 — Pass: resume-in-setup was a missing enabled-provider stub, not a resume bug
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** RelaySetupScreen only renders role selects from setup_choice_agents, which filters by provider_enabled. Stubbing agent_status for the four listed agents restores the selects and keeps the resume assertions including the antigravity implementer line.
+
+**Rejected:**
+
+- Render role selects for disabled providers — contradicts spec P7
+
+**Files:** tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 75a9a981aadc43b2bf274f299a2ef3cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:01:52.239Z"} -->
+
+## 2026-10-25 — Pass: antigravity-forget Check was a missing enabled-provider stub, not a forget bug
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** _check returns immediately when _agents is empty. Stubbing agent_status so antigravity and claude are enabled lets Check save and call forget_antigravity_decline, keeping forgot==1 and the saved-roles assertions.
+
+**Rejected:**
+
+- Forget the decline with no enabled providers — Check is a no-op in the no-subscriptions path
+
+**Files:** tests/console/test_antigravity_trust.py
+
+<!-- whyline-event: 047b5e08bf8149e0ab3024b6602e0a41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:01:52.242Z"} -->
+
+## 2026-10-25 — Pass: timeout forwarding was a missing enabled-provider stub, not a dispatch bug
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** _chat_blocked_event returns NO_SUBSCRIPTIONS before run_chat_turn when nothing is enabled. Stubbing agent_status so default claude is enabled and usable keeps the original timeout tuple assertions.
+
+**Rejected:**
+
+- Bypass the no-subscriptions gate for this timeout test — would hide the enablement contract
+
+**Files:** tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: e49da095568b42e48789ce0bc011e062 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:01:52.246Z"} -->
+
+## 2026-10-25 — Pass SUBS-FIX-1: six fixture updates keep original assertions; no application code change
+
+**Actor:** grok
+**Role:** tester
+**Task:** SUBS-FIX-1
+
+**Because:** Each of the six named tests failed because nothing was enabled, matching spec P3 and the SUBS-1 ensure_detected contract. The diffs only add set_enabled_many or agent_status enabled stubs. Original assertions are unchanged. Focused pytest is 76 passed. Full suite is 2271 passed, 7 failed, 1 skipped; the 7 failures are the pre-recorded SUBS-FIX-2 and SUBS-FIX-3 cases.
+
+**Rejected:**
+
+- Fail this task for the remaining 7 full-suite failures — they are SUBS-FIX-2 attachments/mode-buttons and SUBS-FIX-3 recovery isolation, which this task must not edit
+- Change ensure_detected so the entry menu auto-detects on a fresh machine — contradicts spec P3 and the SUBS-1 launch-nothing tests
+
+**Test:** uv run pytest -q tests/test_cli_chat_delegation.py tests/test_model_defaults.py tests/console/test_tui_relay_run.py tests/console/test_antigravity_trust.py tests/console/test_adapters_whyline.py: 76 passed
+**Test:** uv run pytest -q: 2271 passed, 7 failed, 1 skipped; remaining failures are SUBS-FIX-2 and SUBS-FIX-3 only
+
+**Files:** tests/test_cli_chat_delegation.py, tests/test_model_defaults.py, tests/console/test_tui_relay_run.py, tests/console/test_antigravity_trust.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: 2d812df09a3b40ebaf1460a460f31fb5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:02:00.461Z"} -->
+
+## 2026-10-25 — Approve SUBS-FIX-1: all six failures were corrected with enabled-provider fixtures
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SUBS-FIX-1
+
+**Because:** The diff changes only the five files containing the six named tests, adds the provider-enabled state required by the current contract, preserves the original assertions, and makes every named test pass. Independent uv run pytest -q completed with 2271 passed, 7 failed, 1 skipped; all seven failures are the already-separated SUBS-FIX-2 attachment/mode-button and SUBS-FIX-3 recovery cases.
+
+**Rejected:**
+
+- Request changes for application code — no product defect was demonstrated and the provider gates correctly reject an empty enabled set
+- Request changes for the seven full-suite failures — they are outside SUBS-FIX-1 and occur only in the pre-recorded SUBS-FIX-2 and SUBS-FIX-3 tests
+
+**Files:** tests/test_cli_chat_delegation.py, tests/test_model_defaults.py, tests/console/test_tui_relay_run.py, tests/console/test_antigravity_trust.py, tests/console/test_adapters_whyline.py
+
+<!-- whyline-event: c1bf669a6ed04c1b8e634af518081a1c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-25T19:12:44.363Z"} -->

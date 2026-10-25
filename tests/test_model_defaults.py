@@ -78,7 +78,24 @@ def test_model_command_saves_the_default_agent(tmp_path, monkeypatch):
     from whyline.console.session import ConsoleSession
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setattr(account, "available_agents", lambda root: {"codex", "claude"})
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root, which=None: {
+            "codex": {
+                "enabled": True,
+                "available": True,
+                "label": "plus",
+                "hint": None,
+            },
+            "claude": {
+                "enabled": True,
+                "available": True,
+                "label": "pro",
+                "hint": None,
+            },
+        },
+    )
     (tmp_path / ".whyline").mkdir()
     session = ConsoleSession(root=tmp_path)
     event = handle_slash_command(session, "/model codex gpt-5.6")

@@ -291,10 +291,26 @@ async def test_resume_in_setup_saves_and_then_resumes(tmp_path, monkeypatch):
     ]
     monkeypatch.setattr(relay_ops, "list_plans", lambda root: plans)
     monkeypatch.setattr(relay_ops, "select_plan", lambda *a: None)
+    from whyline import account
+
     monkeypatch.setattr(
         relay_ops,
         "relay_agents",
         lambda root=None, which=None: ["claude", "codex", "grok", "antigravity"],
+    )
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root, which=None: {
+            agent: {
+                "enabled": True,
+                "installed": True,
+                "available": True,
+                "label": "ready",
+                "hint": None,
+            }
+            for agent in ("claude", "codex", "grok", "antigravity")
+        },
     )
     monkeypatch.setattr(
         relay_ops,

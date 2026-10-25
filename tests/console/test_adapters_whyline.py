@@ -217,6 +217,7 @@ def test_run_chat_turn_keeps_agent_timeout_wording(tmp_path, monkeypatch):
 
 
 def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch):
+    from whyline import account
     from whyline.console import repl
     from whyline.console.session import ConsoleSession, SessionEvent
 
@@ -227,6 +228,19 @@ def test_repl_dispatch_passes_session_chat_timeout_seconds(tmp_path, monkeypatch
         return SessionEvent(kind="output", text="ok")
 
     monkeypatch.setattr(adapters, "run_chat_turn", fake_run_chat_turn)
+    monkeypatch.setattr(
+        account,
+        "agent_status",
+        lambda root, which=None: {
+            "claude": {
+                "enabled": True,
+                "installed": True,
+                "available": True,
+                "label": "ready",
+                "hint": None,
+            }
+        },
+    )
 
     session = ConsoleSession(root=tmp_path)
     for seconds in (300, 900, 1800, 2700, 3600, "none", 900):
