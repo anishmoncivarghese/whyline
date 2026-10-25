@@ -69,7 +69,7 @@ real home directory, access the network, or sleep for a fixed duration.
   Edit only those six test files and, only where a code bug is proven, the application module that test exercises.
   Verify with `uv run pytest -q tests/test_cli_chat_delegation.py tests/test_model_defaults.py tests/console/test_tui_relay_run.py tests/console/test_antigravity_trust.py tests/console/test_adapters_whyline.py`. Change nothing else.
 
-- [ ] SUBS-FIX-2: Repair the chat attachment and mode-button test failures
+- [x] SUBS-FIX-2: Repair the chat attachment and mode-button test failures
   These fail on the committed code before this task: `tests/console/test_chat_attachments.py::test_send_with_a_warning_asks_once_then_sends_with_attachments`, `tests/console/test_chat_attachments.py::test_send_with_secret_warning_asks_before_sending`, `tests/console/test_chat_attachments.py::test_repo_switch_clears_pending_attachments`, and both `tests/console/test_mode_buttons.py::test_each_mode_shows_only_its_buttons_within_80_columns` cases (chat and relay).
   For each, find the cause first. If the attachment tests send nothing because no provider is enabled in their fixture, enable the provider they use. If the mode-button sets changed because SUBS-3 added Settings, update the expected sets to the spec's buttons and keep the 80-column check. If the code is wrong against the spec, fix the code instead. Never delete a test or weaken an assertion. Record one `whyline note` per cause.
   Edit only `tests/console/test_chat_attachments.py`, `tests/console/test_mode_buttons.py` and, only where a code bug is proven, `src/whyline/console/tui.py`.
