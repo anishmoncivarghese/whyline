@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace as dc_replace
@@ -662,7 +663,21 @@ AGENT_MODELS: dict[str, list[str]] = {
     ],
 }
 
-_AGY_MODELS_CACHE: list[tuple[str, str]] | None = None
+_AGY_MODELS_TIMEOUT = 10
+_AGY_NEGATIVE_TTL = 60.0
+_clock = time.monotonic
+_agy_runner = subprocess.run
+
+
+@dataclass(frozen=True)
+class _AgyMiss:
+    """Negative cache for a failed or empty `agy models` run."""
+
+    expires_at: float
+
+
+# None = never tried; list = session-long success; _AgyMiss = failure/empty TTL.
+_AGY_MODELS_CACHE: list[tuple[str, str]] | _AgyMiss | None = None
 
 
 def clear_antigravity_models_cache() -> None:
@@ -670,54 +685,164 @@ def clear_antigravity_models_cache() -> None:
     _AGY_MODELS_CACHE = None
 
 
-def antigravity_models(*, runner=subprocess.run) -> list[tuple[str, str]] | None:
-    """The models reported by `agy models`, cached for the session.
+def antigravity_models_status(*, now: float | None = None) -> str:
+    """Cache state for Antigravity's dynamic catalogue: `untried`, `ok`, or `failed`.
 
-    Returns a list of (label, model_id) tuples, or None on failure.
+    `None` is only the untried cache slot. A failed or empty fetch is an
+    `_AgyMiss`, so tests can tell those states apart. After the negative TTL
+    the status becomes `untried` again and a later fetch may retry.
+    """
+    cache = _AGY_MODELS_CACHE
+    if cache is None:
+        return "untried"
+    if isinstance(cache, _AgyMiss):
+        tick = _clock() if now is None else now
+        if tick < cache.expires_at:
+            return "failed"
+        return "untried"
+    return "ok"
+
+
+def cached_model_options(agent: str, *, now: float | None = None) -> list[tuple[str, str]] | None:
+    """Static or cached options. Never launches a provider subprocess.
+
+    Claude, Codex, and Grok return their built-in lists. Antigravity returns
+    the session cache on success and None when untried or negatively cached;
+    call `antigravity_models_status` to tell those two None cases apart.
+    """
+    if agent == "antigravity":
+        if antigravity_models_status(now=now) == "ok" and isinstance(
+            _AGY_MODELS_CACHE, list
+        ):
+            return list(_AGY_MODELS_CACHE)
+        return None
+    if agent in AGENT_MODELS:
+        return [(m, m) for m in AGENT_MODELS[agent]]
+    return None
+
+
+def _parse_agy_models(stdout: str) -> list[tuple[str, str]]:
+    models: list[tuple[str, str]] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Fetching") or line.startswith("⠋") or line.startswith("..."):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            model_id = parts[0].strip()
+            label = parts[1].strip()
+        else:
+            tokens = line.split(None, 1)
+            if not tokens:
+                continue
+            model_id = tokens[0].strip()
+            label = tokens[1].strip() if len(tokens) > 1 else model_id
+        if model_id and (label, model_id) not in models:
+            models.append((label, model_id))
+    return models
+
+
+def antigravity_models(
+    *, runner=None, clock=None, now: float | None = None
+) -> list[tuple[str, str]] | None:
+    """Fetch `agy models` unless a live cache says not to.
+
+    Success is cached for the console session. Failure, an empty list, and
+    an exception are cached for 60 seconds using `clock` (default
+    `time.monotonic`), sampled when the miss is recorded after the call
+    completes. Returns the (label, model_id) list, or None on
+    failure/empty/negative cache.
     """
     global _AGY_MODELS_CACHE
-    if _AGY_MODELS_CACHE is not None:
+    tick_fn = clock or _clock
+    run = runner if runner is not None else _agy_runner
+    tick = tick_fn() if now is None else now
+    status = antigravity_models_status(now=tick)
+    if status == "ok" and isinstance(_AGY_MODELS_CACHE, list):
         return list(_AGY_MODELS_CACHE)
+    if status == "failed":
+        return None
+
+    def record_miss() -> None:
+        global _AGY_MODELS_CACHE
+        _AGY_MODELS_CACHE = _AgyMiss(tick_fn() + _AGY_NEGATIVE_TTL)
+
     try:
-        res = runner(["agy", "models"], capture_output=True, text=True, timeout=10)
+        res = run(
+            ["agy", "models"],
+            capture_output=True,
+            text=True,
+            timeout=_AGY_MODELS_TIMEOUT,
+        )
         if res.returncode != 0:
+            record_miss()
             return None
-        models: list[tuple[str, str]] = []
-        for line in res.stdout.splitlines():
-            line = line.strip()
-            if not line or line.startswith("Fetching") or line.startswith("⠋") or line.startswith("..."):
-                continue
-            parts = line.split("\t")
-            if len(parts) >= 2:
-                model_id = parts[0].strip()
-                label = parts[1].strip()
-            else:
-                tokens = line.split(None, 1)
-                if not tokens:
-                    continue
-                model_id = tokens[0].strip()
-                label = tokens[1].strip() if len(tokens) > 1 else model_id
-            if model_id and (label, model_id) not in models:
-                models.append((label, model_id))
+        models = _parse_agy_models(res.stdout)
         if not models:
+            record_miss()
             return None
         _AGY_MODELS_CACHE = models
         return list(models)
     except Exception:
+        record_miss()
         return None
 
 
-def model_options_for_agent(agent: str) -> list[tuple[str, str]] | None:
-    """List of (label, model_id) options for `agent`.
+def model_options_for_agent(agent: str, *, now: float | None = None) -> list[tuple[str, str]] | None:
+    """Cached/static read of (label, model_id) options. Never launches a provider.
 
-    Antigravity's list comes from `agy models` (cached for the session; None
-    on failure). Claude, Codex, Grok use short preset lists kept in relay_ops.
+    Antigravity uses the session cache (None if untried or negatively cached).
+    Claude, Codex, and Grok use the short preset lists in AGENT_MODELS.
     """
-    if agent == "antigravity":
-        return antigravity_models()
-    if agent in AGENT_MODELS:
-        return [(m, m) for m in AGENT_MODELS[agent]]
-    return None
+    return cached_model_options(agent, now=now)
+
+
+def stale_setup_names(roles: dict, release: str, enabled: set[str]) -> list[str]:
+    """Saved role, release, and backup names that are not enabled providers."""
+    names: list[str] = []
+    for key in ("implementer", "tester", "reviewer"):
+        agent = roles.get(key) or ""
+        if agent and agent not in enabled:
+            names.append(agent)
+    if release and release not in ("human", "you") and release not in enabled:
+        names.append(release)
+    for agent in roles.get("backup") or []:
+        if agent and agent not in enabled:
+            names.append(agent)
+    return list(dict.fromkeys(names))
+
+
+def cached_agent_status(root: Path, which=None) -> dict:
+    """Enablement and cached availability. Never launches a provider.
+
+    `account.agent_status` calls `ensure_detected`, which may run `refresh`
+    and `claude auth status` for up to 15 seconds. This helper reads the
+    same rows from the account files and PATH.
+
+    A test that replaced `account.agent_status` keeps that map: those stubs
+    are the enablement source the rest of the console suite already pins.
+    Production always uses `_status_rows`, including `enabled=False` when
+    the global account has no enablement record.
+    """
+    from whyline import account
+
+    impl = account.agent_status
+    if getattr(impl, "__module__", "") != "whyline.account":
+        try:
+            return impl(root, which)
+        except TypeError:
+            return impl(root)
+    return account._status_rows(root, which=which)
+
+
+def setup_choice_agents(root: Path, status: dict | None = None, which=shutil.which) -> list[str]:
+    """Enabled providers intersected with installed/configured relay agents."""
+    from whyline.console.repl import provider_enabled
+
+    if status is None:
+        status = cached_agent_status(root)
+    known = relay_agents(root, which=which)
+    return [name for name in known if provider_enabled(status.get(name))]
 
 
 def read_agent_model(root: Path, agent: str) -> str:

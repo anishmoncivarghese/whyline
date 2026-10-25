@@ -1,10 +1,22 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from whyline import account as account_module
+from whyline.account import AGENT_ORDER
 from whyline.console import relay_ops, tui
 from whyline.console.chain_editor import OrderedChain
-from whyline.console.relay_screens import RelaySetupScreen
+from whyline.console.relay_screens import (
+    CHECKING_MODELS,
+    MODEL_REFRESH_FAILED,
+    RelaySetupScreen,
+)
+from whyline.console.repl import NO_SUBSCRIPTIONS
+
+# Captured before the autouse stub so a regression can restore the real
+# `agent_status` and prove Set up does not call it.
+_REAL_AGENT_STATUS = account_module.agent_status
 
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
@@ -12,8 +24,44 @@ pytestmark = [
 ]
 
 
+def _status_map(enabled=None, available=None):
+    enabled = set(AGENT_ORDER) if enabled is None else set(enabled)
+    available = set(enabled) if available is None else set(available)
+    status = {}
+    for agent in AGENT_ORDER:
+        on = agent in enabled
+        ok = agent in available and on
+        status[agent] = {
+            "enabled": on,
+            "installed": ok,
+            "available": ok,
+            "label": "ready" if ok else ("off in Settings" if not on else "not installed"),
+            "hint": None if ok else (
+                f"Open Settings or run: whyline account enable {agent}"
+                if not on
+                else f"Install {agent}, then /model refresh"
+            ),
+        }
+    return status
+
+
 @pytest.fixture(autouse=True)
 def ops(monkeypatch):
+    from whyline import account
+
+    relay_ops.clear_antigravity_models_cache()
+    relay_ops.antigravity_models(
+        runner=lambda *_a, **_k: SimpleNamespace(
+            returncode=0, stdout="gemini-3.8-flash-high\tGemini Flash\n"
+        )
+    )
+
+    def _no_agy(*_args, **_kwargs):
+        raise AssertionError("test invoked real agy")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", _no_agy)
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: _status_map())
+    monkeypatch.setattr(account, "enabled_agents", lambda: set(AGENT_ORDER))
     monkeypatch.setattr(
         relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex"]
     )
@@ -631,14 +679,18 @@ async def test_save_writes_auto_and_reopening_setup_shows_it(tmp_path, monkeypat
 
 
 async def test_relay_setup_screen_with_no_agents(tmp_path, monkeypatch):
+    from whyline import account
+
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: [])
-    from whyline.console.relay_screens import NO_AGENTS_SETUP
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: _status_map(enabled=set()))
+    monkeypatch.setattr(account, "enabled_agents", lambda: set())
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, results = await _open(app, pilot)
-        # mounts without raising and shows the message
-        assert any(NO_AGENTS_SETUP in str(label.renderable) for label in screen.query(tui.Label))
+        assert NO_SUBSCRIPTIONS in str(screen.query_one("#rs-empty").renderable)
+        assert str(screen.query_one("#rs-open-settings", tui.Button).label) == "Open Settings"
+        assert screen.query_one("#rs-open-settings").display
         assert screen.query_one("#rs-check", tui.Button).disabled
         assert screen.query_one("#rs-start", tui.Button).disabled
         assert screen.query_one("#rs-make-plan", tui.Button).disabled
@@ -842,11 +894,10 @@ async def test_setup_screen_saves_model_for_agents(tmp_path, monkeypatch):
             "backup": ["grok"],
         },
     )
-    monkeypatch.setattr(
-        relay_ops,
-        "antigravity_models",
-        lambda runner=None: [("Gemini Flash", "gemini-3.8-flash-high")],
+    proc = SimpleNamespace(
+        returncode=0, stdout="gemini-3.8-flash-high\tGemini Flash\n"
     )
+    relay_ops.antigravity_models(runner=lambda *a, **k: proc)
     monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
 
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -905,11 +956,10 @@ async def test_setup_screen_cli_default_removes_model(tmp_path, monkeypatch):
             "backup": ["grok"],
         },
     )
-    monkeypatch.setattr(
-        relay_ops,
-        "antigravity_models",
-        lambda runner=None: [("Gemini Flash", "gemini-3.8-flash-high")],
+    proc = SimpleNamespace(
+        returncode=0, stdout="gemini-3.8-flash-high\tGemini Flash\n"
     )
+    relay_ops.antigravity_models(runner=lambda *a, **k: proc)
     monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
 
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -959,7 +1009,10 @@ async def test_setup_screen_agy_models_failure_falls_back_to_typing_name(tmp_pat
             "backup": [],
         },
     )
-    monkeypatch.setattr(relay_ops, "antigravity_models", lambda runner=None: None)
+    relay_ops.clear_antigravity_models_cache()
+    relay_ops.antigravity_models(
+        runner=lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr="no")
+    )
     monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
 
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -967,6 +1020,9 @@ async def test_setup_screen_agy_models_failure_falls_back_to_typing_name(tmp_pat
         screen, results = await _open(app, pilot)
         antigravity_input = screen.query_one("#rs-model-antigravity", tui.Input)
         assert isinstance(antigravity_input, tui.Input)
+        assert MODEL_REFRESH_FAILED in str(
+            screen.query_one("#rs-model-status-antigravity").renderable
+        )
         antigravity_input.value = "claude-opus-5-5-high"
 
         await pilot.click("#rs-check")
@@ -1536,5 +1592,757 @@ async def test_setup_screen_out_until_widget_visible_within_80_columns(tmp_path,
         await pilot.pause()
         screen_rows = [strip.text for strip in screen._compositor.render_strips()]
         assert any(expected_line in text for text in screen_rows), "\n".join(screen_rows)
+
+
+def _plain(widget) -> str:
+    renderable = getattr(widget, "renderable", None)
+    if renderable is None:
+        return str(getattr(widget, "label", ""))
+    return renderable.plain if hasattr(renderable, "plain") else str(renderable)
+
+
+def _enable(monkeypatch, enabled, available=None):
+    from whyline import account
+
+    status = _status_map(enabled=enabled, available=available)
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: status)
+    monkeypatch.setattr(account, "enabled_agents", lambda: set(enabled))
+    return status
+
+
+async def test_setup_shows_checking_models_before_agy_returns(tmp_path, monkeypatch):
+    import threading
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_agy(*_args, **_kwargs):
+        started.set()
+        release.wait(timeout=2)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="gemini-4-argon-high\tGemini 4 Argon (High)\n",
+        )
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", blocked_agy)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    _enable(monkeypatch, {"claude", "codex", "antigravity"})
+    relay_ops.clear_antigravity_models_cache()
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+        await pilot.click("#relay-setup")
+        await pilot.pause()
+        assert started.wait(timeout=2.0)
+        screen = app.screen
+        assert isinstance(screen, RelaySetupScreen)
+        assert not isinstance(screen, ProviderSettingsScreen)
+        assert CHECKING_MODELS in _plain(screen.query_one("#rs-model-status-antigravity"))
+        assert isinstance(screen.query_one("#rs-model-antigravity"), tui.Input)
+        release.set()
+        await _wait_for(
+            pilot,
+            lambda: isinstance(screen.query_one("#rs-model-antigravity"), tui.Select),
+            "antigravity dropdown",
+        )
+        values = [
+            value
+            for _label, value in screen.query_one("#rs-model-antigravity", tui.Select)._options
+            if value is not tui.Select.BLANK
+        ]
+        assert "gemini-4-argon-high" in values
+
+
+async def test_disabled_antigravity_starts_no_agy_worker(tmp_path, monkeypatch):
+    called = []
+
+    def spy(*_args, **_kwargs):
+        called.append("agy")
+        raise AssertionError("disabled antigravity launched agy")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", spy)
+    monkeypatch.setattr(relay_ops, "antigravity_models", spy)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "claude",
+            "tester": "codex",
+            "reviewer": "codex",
+            "backup": ["claude"],
+        },
+    )
+    _enable(monkeypatch, {"claude", "codex"})
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert called == []
+        assert not screen.query("#rs-model-row-antigravity")
+        assert "antigravity" not in [
+            value
+            for _label, value in screen.query_one("#rs-implementer", tui.Select)._options
+            if value is not tui.Select.BLANK
+        ]
+
+
+async def test_antigravity_success_is_cached_for_the_session(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_agy(*_args, **_kwargs):
+        calls.append("agy")
+        return SimpleNamespace(returncode=0, stdout="flash\tGemini Flash\n")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", fake_agy)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "claude",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    _enable(monkeypatch, {"claude", "antigravity"})
+    relay_ops.clear_antigravity_models_cache()
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        await _wait_for(
+            pilot,
+            lambda: isinstance(screen.query_one("#rs-model-antigravity"), tui.Select),
+            "first fetch",
+        )
+        assert calls == ["agy"]
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+        screen2, _ = await _open(app, pilot)
+        await pilot.pause()
+        assert isinstance(screen2.query_one("#rs-model-antigravity"), tui.Select)
+        assert calls == ["agy"]
+
+
+async def test_antigravity_negative_cache_skips_rerun_until_clock_expires(
+    tmp_path, monkeypatch
+):
+    calls = []
+    clock = {"t": 0.0}
+
+    def fail_agy(*_args, **_kwargs):
+        calls.append(clock["t"])
+        return SimpleNamespace(returncode=1, stdout="", stderr="no")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", fail_agy)
+    monkeypatch.setattr(relay_ops, "_clock", lambda: clock["t"])
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["codex", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "codex",
+            "backup": [],
+        },
+    )
+    _enable(monkeypatch, {"codex", "antigravity"})
+    relay_ops.clear_antigravity_models_cache()
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        await _wait_for(
+            pilot,
+            lambda: MODEL_REFRESH_FAILED in _plain(
+                screen.query_one("#rs-model-status-antigravity")
+            ),
+            "first failure",
+        )
+        assert isinstance(screen.query_one("#rs-model-antigravity"), tui.Input)
+        assert calls == [0.0]
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+        clock["t"] = 30.0
+        screen2, results2 = await _open(app, pilot)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert MODEL_REFRESH_FAILED in _plain(
+            screen2.query_one("#rs-model-status-antigravity")
+        )
+        assert calls == [0.0]
+        screen2.dismiss(None)
+        await _wait_for(pilot, lambda: results2 == [None], "closed again")
+        clock["t"] = 60.0
+        screen3, _ = await _open(app, pilot)
+        await _wait_for(
+            pilot,
+            lambda: MODEL_REFRESH_FAILED in _plain(
+                screen3.query_one("#rs-model-status-antigravity")
+            )
+            and len(calls) == 2,
+            "retry after ttl",
+        )
+        assert calls == [0.0, 60.0]
+
+
+async def test_late_agy_result_after_close_does_not_touch_widgets(tmp_path, monkeypatch):
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_agy(*_args, **_kwargs):
+        started.set()
+        release.wait(timeout=2)
+        return SimpleNamespace(returncode=0, stdout="flash\tGemini Flash\n")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", blocked_agy)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "claude",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    _enable(monkeypatch, {"claude", "antigravity"})
+    relay_ops.clear_antigravity_models_cache()
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        assert started.wait(timeout=2.0)
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert results == [None]
+        assert relay_ops.antigravity_models_status() == "ok"
+
+
+async def test_stale_disabled_role_warns_and_check_fails_without_saving(
+    tmp_path, monkeypatch, ops
+):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "grok",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _enable(monkeypatch, {"claude", "codex"})
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        warning = _plain(screen.query_one("#rs-stale"))
+        assert "grok" in warning
+        assert "off in Settings" in warning
+        implementer = screen.query_one("#rs-implementer", tui.Select)
+        impl_values = [
+            value
+            for _label, value in implementer._options
+            if value is not tui.Select.BLANK
+        ]
+        assert "grok" not in impl_values
+        assert implementer.value is tui.Select.BLANK
+        release_values = [
+            value
+            for _label, value in screen.query_one("#rs-release", tui.Select)._options
+            if value is not tui.Select.BLANK
+        ]
+        assert "grok" not in release_values
+        assert not screen.query("#chain-check-grok")
+        screen.query_one("#rs-check", tui.Button).press()
+        await pilot.pause()
+        checks = _checks_text(screen)
+        assert "FAIL" in checks
+        assert "Open Settings" in checks
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert ops == []
+        implementer.value = "claude"
+        await pilot.pause()
+        assert screen.query_one("#rs-implementer", tui.Select).value == "claude"
+        screen.query_one("#rs-check", tui.Button).press()
+        await pilot.pause()
+        still_stale = _checks_text(screen)
+        assert "FAIL" in still_stale
+        assert "grok" in still_stale
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert ops == []
+        screen.query_one("#chain-none", tui.Button).press()
+        await pilot.pause()
+        assert not screen.query("#chain-check-grok")
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        assert ops[0][0] == "claude"
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+
+
+async def test_guided_stale_disabled_role_warns_and_check_fails(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "grok",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _enable(monkeypatch, {"claude", "codex"})
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        results = []
+        app.push_screen(RelaySetupScreen(app.session.root, guided=True), results.append)
+        await pilot.pause()
+        screen = app.screen
+        warning = _plain(screen.query_one("#rs-stale"))
+        assert "grok" in warning
+        assert "off in Settings" in warning
+        implementer = screen.query_one("#rs-implementer", tui.Select)
+        impl_values = [
+            value
+            for _label, value in implementer._options
+            if value is not tui.Select.BLANK
+        ]
+        assert "grok" not in impl_values
+        assert implementer.value is tui.Select.BLANK
+        screen.query_one("#rs-check", tui.Button).press()
+        await pilot.pause()
+        checks = _checks_text(screen)
+        assert "FAIL" in checks
+        assert "Open Settings" in checks
+        assert "grok" in checks
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert ops == []
+        implementer.value = "claude"
+        await pilot.pause()
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        assert ops[0][0] == "claude"
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+
+
+async def test_guided_first_run_does_not_treat_unsaved_defaults_as_stale(
+    tmp_path, monkeypatch, ops
+):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "codex",
+            "tester": "claude",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: False)
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _enable(monkeypatch, {"grok"})
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        results = []
+        app.push_screen(RelaySetupScreen(app.session.root, guided=True), results.append)
+        await pilot.pause()
+        screen = app.screen
+        assert "Recommended for the agents you have" in str(
+            screen.query_one("#rs-recommended", tui.Static).renderable
+        )
+        assert screen.query_one("#rs-implementer", tui.Select).value == "grok"
+        assert screen.query_one("#rs-tester", tui.Select).value == "grok"
+        assert screen.query_one("#rs-reviewer", tui.Select).value == "grok"
+        warning = _plain(screen.query_one("#rs-stale"))
+        assert "Saved configuration" not in warning
+        assert "codex" not in warning
+        assert "claude" not in warning
+        assert "off in Settings" not in warning
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        assert ops[0][0] == "grok"
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+
+
+async def test_guided_substitutes_enabled_not_logged_in_antigravity(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
+    _enable(
+        monkeypatch,
+        {"claude", "codex", "antigravity"},
+        available={"claude", "codex"},
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        app.push_screen(RelaySetupScreen(app.session.root, guided=True))
+        await pilot.pause()
+        screen = app.screen
+        assert screen.query_one("#rs-implementer", tui.Select).value == "codex"
+        assert "⚠ antigravity isn't logged in" in str(
+            screen.query_one("#rs-summary", tui.Static).renderable
+        )
+        warning = _plain(screen.query_one("#rs-stale"))
+        assert "antigravity" not in warning
+        assert "off in Settings" not in warning
+
+
+async def test_disabled_backup_chain_member_blocks_check_until_removed(
+    tmp_path, monkeypatch, ops
+):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "claude",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    _enable(monkeypatch, {"claude", "codex"})
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, results = await _open(app, pilot)
+        warning = _plain(screen.query_one("#rs-stale"))
+        assert "grok" in warning
+        assert "off in Settings" in warning
+        assert screen.query_one("#rs-implementer", tui.Select).value == "claude"
+        assert not screen.query("#chain-check-grok")
+        assert screen.query_one("#rs-backup", OrderedChain).order() == []
+        screen.query_one("#rs-check", tui.Button).press()
+        await pilot.pause()
+        checks = _checks_text(screen)
+        assert "FAIL" in checks
+        assert "grok" in checks
+        assert "Open Settings" in checks
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert ops == []
+
+        screen.query_one("#chain-none", tui.Button).press()
+        await pilot.pause()
+        assert not screen.query("#chain-check-grok")
+        assert "grok" not in _plain(screen.query_one("#rs-stale"))
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "start"
+        )
+        assert ops[0] == ("claude", "codex", "claude", [])
+        screen.dismiss(None)
+        await _wait_for(pilot, lambda: results == [None], "closed")
+
+
+async def test_opening_and_cancelling_does_not_rewrite_config(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "grok",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": ["grok"],
+        },
+    )
+    monkeypatch.setattr(relay_ops, "roles_configured", lambda root: True)
+    _enable(monkeypatch, {"claude", "codex"})
+    before = list(ops)
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, results = await _open(app, pilot)
+        assert "grok" in _plain(screen.query_one("#rs-stale"))
+        await pilot.click("#rs-cancel")
+        await _wait_for(pilot, lambda: results == [None], "cancelled")
+    assert ops == before
+
+
+async def test_set_up_with_empty_relay_agents_opens_no_subscriptions_screen(
+    tmp_path, monkeypatch
+):
+    from whyline.console.relay_screens import NO_AGENTS_SETUP
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: [])
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+        await pilot.click("#relay-setup")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, RelaySetupScreen)
+        assert len(app.screen_stack) == 2
+        assert NO_SUBSCRIPTIONS in _plain(screen.query_one("#rs-empty"))
+        assert screen.query_one("#rs-open-settings").display
+        assert str(screen.query_one("#rs-open-settings", tui.Button).label) == "Open Settings"
+        assert not screen.query("#rs-implementer")
+        assert not any(
+            NO_AGENTS_SETUP in getattr(event, "text", "")
+            for event in app.session.transcript
+        )
+        await pilot.click("#rs-open-settings")
+        await _wait_for(
+            pilot, lambda: isinstance(app.screen, ProviderSettingsScreen), "settings"
+        )
+
+
+async def test_no_enabled_provider_opens_settings_action(tmp_path, monkeypatch):
+    from whyline.console.settings_screen import ProviderSettingsScreen
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex"],
+    )
+    _enable(monkeypatch, set())
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+        await pilot.click("#relay-setup")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, RelaySetupScreen)
+        assert NO_SUBSCRIPTIONS in _plain(screen.query_one("#rs-empty"))
+        assert screen.query_one("#rs-open-settings").display
+        assert str(screen.query_one("#rs-open-settings", tui.Button).label) == "Open Settings"
+        assert not screen.query("#rs-implementer")
+        await pilot.click("#rs-open-settings")
+        await _wait_for(
+            pilot, lambda: isinstance(app.screen, ProviderSettingsScreen), "settings"
+        )
+
+
+async def test_setup_fits_80x24_and_120x40_with_checking_and_empty_states(
+    tmp_path, monkeypatch
+):
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_agy(*_args, **_kwargs):
+        started.set()
+        release.wait(timeout=5)
+        return SimpleNamespace(returncode=1, stdout="")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", blocked_agy)
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "antigravity",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    _enable(monkeypatch, {"claude", "codex", "antigravity"})
+
+    for size in ((80, 24), (120, 40)):
+        relay_ops.clear_antigravity_models_cache()
+        started.clear()
+        release.clear()
+        app = tui.WhylineConsoleApp(root=tmp_path)
+        async with app.run_test(size=size) as pilot:
+            screen, _ = await _open(app, pilot)
+            await _wait_for(pilot, started.is_set, "agy started")
+            for button_id in ("#rs-check", "#rs-cancel", "#rs-start"):
+                region = screen.query_one(button_id).region
+                assert region.height > 0
+                assert region.bottom <= size[1]
+            assert CHECKING_MODELS in _plain(
+                screen.query_one("#rs-model-status-antigravity")
+            )
+            screen.dismiss(None)
+            await pilot.pause()
+            release.set()
+            await app.workers.wait_for_complete()
+
+    _enable(monkeypatch, set())
+    for size in ((80, 24), (120, 40)):
+        app = tui.WhylineConsoleApp(root=tmp_path)
+        async with app.run_test(size=size) as pilot:
+            screen, _ = await _open(app, pilot)
+            settings = screen.query_one("#rs-open-settings")
+            cancel = screen.query_one("#rs-cancel")
+            assert settings.display
+            assert settings.region.height > 0
+            assert settings.region.bottom <= size[1]
+            assert cancel.region.height > 0
+            assert cancel.region.bottom <= size[1]
+            assert NO_SUBSCRIPTIONS in _plain(screen.query_one("#rs-empty"))
+            screen.dismiss(None)
+            await pilot.pause()
+
+
+async def test_construct_on_mount_and_automatic_do_not_probe_providers(
+    tmp_path, monkeypatch
+):
+    from whyline import account, model
+
+    probes = []
+
+    def boom(*_args, **_kwargs):
+        probes.append("probed")
+        raise AssertionError("Relay Set up launched provider detection")
+
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "grok"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "codex",
+            "tester": "claude",
+            "reviewer": "grok",
+            "backup": [],
+        },
+    )
+    model.set_default_agent(tmp_path, "codex")
+    account.set_enabled_many(
+        {"claude": True, "codex": True, "grok": True, "antigravity": False}
+    )
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        # Restore the real agent_status only after the app has composed, so
+        # this pins Relay Set up rather than the context bar.
+        monkeypatch.setattr(account, "agent_status", _REAL_AGENT_STATUS)
+        monkeypatch.setattr(account, "ensure_detected", boom)
+        monkeypatch.setattr(account, "refresh", boom)
+        monkeypatch.setattr(account, "detect_claude", boom)
+        monkeypatch.setattr(account, "check_provider", boom)
+        screen, _ = await _open(app, pilot)
+        assert probes == []
+        assert screen.query("#rs-implementer")
+        chain = screen.query_one("#rs-backup", OrderedChain)
+        screen.query_one("#chain-none", tui.Button).press()
+        await pilot.pause()
+        assert chain.order() == []
+        screen.query_one("#chain-automatic", tui.Button).press()
+        await pilot.pause()
+        assert probes == []
+        assert screen.query("#rs-implementer")
 
 

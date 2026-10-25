@@ -2413,7 +2413,8 @@ async def test_review_mode_applies_nothing_without_click(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_relay_setup_and_plan_with_no_agents_prints_message_and_pushes_no_screen(tmp_path, monkeypatch):
     from whyline.console import relay_ops
-    from whyline.console.relay_screens import NO_AGENTS_SETUP, NO_AGENTS_PLAN
+    from whyline.console.relay_screens import NO_AGENTS_SETUP, NO_AGENTS_PLAN, RelaySetupScreen
+    from whyline.console.repl import NO_SUBSCRIPTIONS
 
     monkeypatch.setattr(relay_ops, "relay_agents", lambda root=None, which=None: [])
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -2427,14 +2428,23 @@ async def test_relay_setup_and_plan_with_no_agents_prints_message_and_pushes_no_
         assert not btn_setup.disabled
         assert not btn_plan.disabled
 
-        # Press Set up
+        # Press Set up: no installed-agent early return; open the no-subscriptions screen.
         await pilot.click("#relay-setup")
         await pilot.pause()
+        assert len(app.screen_stack) == 2
+        screen = app.screen
+        assert isinstance(screen, RelaySetupScreen)
+        empty = screen.query_one("#rs-empty")
+        empty_text = empty.renderable.plain if hasattr(empty.renderable, "plain") else str(empty.renderable)
+        assert NO_SUBSCRIPTIONS in empty_text
+        assert str(screen.query_one("#rs-open-settings", tui.Button).label) == "Open Settings"
+        assert not any(
+            NO_AGENTS_SETUP in getattr(event, "text", "")
+            for event in app.session.transcript
+        )
+        await pilot.click("#rs-cancel")
+        await pilot.pause()
         assert len(app.screen_stack) == 1
-        assert any(NO_AGENTS_SETUP in e.text for e in app.session.transcript)
-        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
-        assert any("No agent is installed here" in line for line in lines)
-        assert any("Set up again" in line for line in lines)
         assert not btn_setup.disabled
         assert not btn_plan.disabled
 

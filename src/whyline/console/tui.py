@@ -4865,16 +4865,6 @@ class WhylineConsoleApp(App):
     def _open_relay_setup(self, guided: bool = False, plan: Path | None = None) -> None:
         if self._refuse_in_home():
             return
-        if not relay_ops.relay_agents(self.session.root):
-            self._run_flow = False
-            from whyline.console.relay_screens import NO_AGENTS_SETUP
-
-            msg = NO_AGENTS_SETUP
-            doctor_lines = self._doctor_agent_lines()
-            if doctor_lines:
-                msg = f"{msg}\n" + "\n".join(doctor_lines)
-            self.render_event(SessionEvent(kind="output", text=msg))
-            return
         from whyline.console.relay_screens import RelaySetupScreen
 
         try:
@@ -4888,6 +4878,10 @@ class WhylineConsoleApp(App):
         )
 
     def _setup_done(self, choice: Any) -> None:
+        if choice == "open-settings":
+            self._run_flow = False
+            self._open_settings()
+            return
         if choice == "start":
             self._run_flow = False
             self._launch_relay(["start"])

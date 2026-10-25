@@ -19,6 +19,7 @@ from whyline.console import relay_ops
 from whyline.console.attachments_ui import AttachmentsField
 from whyline.console.chain_editor import OrderedChain
 from whyline.console.plan_job import PlanRequest
+from whyline.console.repl import NO_SUBSCRIPTIONS, provider_enabled
 from whyline.console.tui import ConfirmScreen
 
 _SOURCES = [
@@ -31,6 +32,9 @@ NO_AGENTS_SETUP = (
     "No agent is installed here, so the relay has nobody to run. "
     "Install one of claude, codex, antigravity or grok, log in, then press Set up again."
 )
+CHECKING_MODELS = "Checking models…"
+MODEL_REFRESH_FAILED = "Could not refresh models; using the saved/default value."
+STALE_CHECK_HINT = "Open Settings or choose an enabled provider."
 NO_AGENTS_PLAN = (
     "No agent is installed here, so the relay has nobody to run. "
     "Install one of claude, codex, antigravity or grok, log in, then press Plan again."
@@ -1331,16 +1335,34 @@ class _SetupChain(OrderedChain):
     Those edits never reach ``RelaySetupScreen``, and Check has already
     written the previous order by the time Start runs. Tell the screen when
     the order actually changes so Start cannot launch an unchecked chain.
+    None also clears a hidden disabled saved member so it can be removed
+    without enabling it in Settings or showing it as a choice.
     """
+
+    def parked(self) -> list[str]:
+        """Saved names that are not enabled choices."""
+        return list(self._unknown)
+
+    def _clear(self) -> None:
+        self._unknown = []
+        super()._clear()
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         before = self.order()
+        before_parked = self.parked()
         super().on_button_pressed(event)
         event.prevent_default()
-        if self.order() == before:
-            return
         screen = self.screen
+        if isinstance(screen, RelaySetupScreen) and event.button.id == "chain-none":
+            screen._backup_stale = []
+            screen._invalidate()
+            screen._update_models()
+            return
+        if self.order() == before and self.parked() == before_parked:
+            return
         if isinstance(screen, RelaySetupScreen):
+            if event.button.id == "chain-automatic":
+                screen._backup_stale = []
             screen._invalidate()
             screen._update_models()
 
@@ -1373,10 +1395,15 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen .model-input.-empty { display: none; }
     RelaySetupScreen .model-out { padding: 0 0 0 2; color: $warning; height: auto; }
     RelaySetupScreen .model-out.-empty { display: none; }
+    RelaySetupScreen .model-status { padding: 0 0 0 2; color: $text-muted; height: auto; }
+    RelaySetupScreen .model-status.-empty { display: none; }
     RelaySetupScreen .model-row { height: auto; }
     RelaySetupScreen .model-row.-empty { display: none; }
     RelaySetupScreen .model-row Horizontal { height: auto; }
     RelaySetupScreen #rs-models { height: auto; }
+    RelaySetupScreen #rs-stale { color: $warning; height: auto; }
+    RelaySetupScreen #rs-stale.-empty { display: none; }
+    RelaySetupScreen #rs-empty { height: auto; }
     RelaySetupScreen #rs-plan { width: 70; }
     RelaySetupScreen #rs-no-plan { color: $warning; padding: 1 0 0 0; }
     RelaySetupScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; }
@@ -1394,6 +1421,7 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen #rs-error.-empty { display: none; }
     RelaySetupScreen #rs-buttons { margin-top: 1; }
     RelaySetupScreen #rs-buttons Button { margin-right: 2; }
+    RelaySetupScreen #rs-open-settings { display: none; }
     """
 
     ROLES = (("implementer", "Implementer:"), ("tester", "Tester:"), ("reviewer", "Reviewer:"))
@@ -1435,7 +1463,15 @@ class RelaySetupScreen(ModalScreen):
         except Exception:
             self._overrides = {}
         self._cleared_info: dict[str, str] = {}
-        self._agents = relay_ops.relay_agents(root)
+        try:
+            status = relay_ops.cached_agent_status(root)
+        except Exception:
+            status = {}
+        self._status = status
+        self._enabled_providers = {
+            name for name, row in status.items() if provider_enabled(row)
+        }
+        self._agents = relay_ops.setup_choice_agents(root, status)
         self._saved_models = {a: relay_ops.read_agent_model(root, a) for a in self._agents}
         self._roles = relay_ops.current_roles(root)
         self._configured_roles = dict(self._roles)
@@ -1451,19 +1487,23 @@ class RelaySetupScreen(ModalScreen):
             self._plan_default = listed[0] if listed else None
 
         if self._guided:
-            from whyline import account
-
-            self._usable = relay_ops.usable_agents(root, account.agent_status(root))
+            self._usable = relay_ops.usable_agents(root, status)
             self._recommended = relay_ops.recommend_roles(self._usable)
             in_use = [self._roles[r] for r in ("implementer", "tester", "reviewer")]
             self._unusable = [a for a in dict.fromkeys(in_use) if a not in self._usable]
-            if not self._configured or self._unusable:
-                self._roles = {**self._recommended} if not self._configured else {
+            if not self._configured:
+                self._roles = {**self._recommended}
+            elif self._unusable:
+                # Keep disabled saved roles so stale_setup_names and blank
+                # dropdowns still show them; only substitute enabled agents
+                # that are not logged in.
+                self._roles = {
                     **self._roles,
                     **{
                         r: self._recommended[r]
                         for r in ("implementer", "tester", "reviewer")
                         if self._roles[r] in self._unusable
+                        and self._roles[r] in self._enabled_providers
                     },
                 }
         else:
@@ -1472,11 +1512,27 @@ class RelaySetupScreen(ModalScreen):
             self._unusable = []
 
         self._release = relay_ops.release_role(root)
+        self._release_saved = self._release
+        # current_roles() fills unsaved defaults; those are not a saved
+        # configuration, so first-run must not treat them as stale.
+        if self._configured:
+            self._stale = relay_ops.stale_setup_names(
+                self._configured_roles, self._release, self._enabled_providers
+            )
+            self._backup_stale = [
+                agent
+                for agent in (self._configured_roles.get("backup") or [])
+                if agent and agent not in self._enabled_providers
+            ]
+        else:
+            self._stale = []
+            self._backup_stale = []
         self._summary = self._guided and self._configured and bool(self._agents)
         self._backup = list(self._roles.get("backup") or [])
         self._timeout = relay_ops.relay_timeout(root)
         self._resolve_mode = relay_ops.resolve_mode(root)
         self._token: object | None = None
+        self._model_token: object | None = None
         self._filling = True  # ignore change events while the form is built
         self._fail_lines: list[str] = []
 
@@ -1493,6 +1549,31 @@ class RelaySetupScreen(ModalScreen):
         return line
 
     @staticmethod
+    def _stale_warning_text(names: list[str]) -> str:
+        if not names:
+            return ""
+        listed = ", ".join(names)
+        verb = "is" if len(names) == 1 else "are"
+        return (
+            f"Saved configuration uses {listed}, which {verb} off in Settings. "
+            "Check cannot pass until you choose enabled providers."
+        )
+
+    def _role_options(self, wanted: str) -> list[tuple[str, str]]:
+        return [(a, a) for a in self._agents]
+
+    def _role_value(self, wanted: str) -> str | None:
+        if wanted and wanted in self._agents:
+            return wanted
+        if wanted:
+            return None
+        return self._agents[0] if self._agents else None
+
+    @staticmethod
+    def _is_blank(value: object) -> bool:
+        return value is Select.BLANK or value is None or value == ""
+
+    @staticmethod
     def _plan_label(info: "relay_ops.PlanInfo" | str) -> str:
         if isinstance(info, str):
             return info
@@ -1500,18 +1581,25 @@ class RelaySetupScreen(ModalScreen):
         return " · ".join(part for part in parts if part)
 
     def compose(self) -> ComposeResult:
+        stale_text = self._stale_warning_text(self._stale)
+        stale_widget = Static(
+            stale_text,
+            id="rs-stale",
+            markup=False,
+            classes="" if stale_text else "-empty",
+        )
         if self._agents:
             rows = []
             for role, label in self.ROLES:
+                wanted = self._roles.get(role) or ""
+                value = self._role_value(wanted)
                 rows.append(
                     Horizontal(
                         Label(label, classes="field-label"),
                         Select(
-                            [(a, a) for a in self._agents],
-                            value=self._roles.get(role)
-                            if self._roles.get(role) in self._agents
-                            else (self._agents[0] if self._agents else None),
-                            allow_blank=False,
+                            self._role_options(wanted),
+                            value=value if value is not None else Select.BLANK,
+                            allow_blank=value is None,
                             id=f"rs-{role}",
                         ),
                     )
@@ -1530,63 +1618,63 @@ class RelaySetupScreen(ModalScreen):
                     )
                 )
             chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
-            chain.load(self._backup)
+            chain.load([agent for agent in self._backup if agent in self._agents])
             model_rows = []
             initial_active = set(self._initial_model_agents())
             for agent in self._agents:
-                row_items = [Label(f"Model ({agent}):", classes="field-label")]
-                model_opts = relay_ops.model_options_for_agent(agent)
                 current_model = self._saved_models.get(agent, "")
-                if model_opts is not None:
-                    opts = [("CLI default", "")]
-                    for lbl, val in model_opts:
-                        opts.append((lbl, val))
-                    known_vals = {v for _, v in opts}
-                    if current_model and current_model not in known_vals:
-                        opts.append((current_model, current_model))
-                    opts.append(("Other…", "other"))
-                    select_val = current_model if current_model in {v for _, v in opts} else "other"
-                    row_items.append(
-                        Select(
-                            opts,
-                            value=select_val,
-                            allow_blank=False,
-                            id=f"rs-model-{agent}",
-                        )
-                    )
-                    row_items.append(
-                        Input(
-                            value=current_model if select_val == "other" else "",
-                            placeholder="type model name",
-                            classes="model-input" + ("" if select_val == "other" else " -empty"),
-                            id=f"rs-model-input-{agent}",
-                        )
-                    )
-                else:
-                    row_items.append(
-                        Input(
-                            value=current_model,
-                            placeholder="CLI default",
-                            classes="model-input",
-                            id=f"rs-model-{agent}",
-                        )
-                    )
-                out_line = self._out_until.get(agent, "")
-                out_widget = Static(
-                    out_line,
-                    id=f"rs-model-out-{agent}",
-                    classes="model-out" + ("" if out_line else " -empty"),
+                model_opts = relay_ops.cached_model_options(agent)
+                agy_status = (
+                    relay_ops.antigravity_models_status() if agent == "antigravity" else "ok"
                 )
+                checking = agent == "antigravity" and agy_status == "untried"
+                failed = agent == "antigravity" and agy_status == "failed"
+                picker = Horizontal(
+                    *self._model_picker_controls(agent, model_opts, current_model),
+                    id=f"rs-model-picker-{agent}",
+                )
+                status_text = (
+                    CHECKING_MODELS if checking else (MODEL_REFRESH_FAILED if failed else "")
+                )
+                out_line = self._out_until.get(agent, "")
                 model_rows.append(
                     Vertical(
-                        Horizontal(*row_items),
-                        out_widget,
+                        Horizontal(
+                            Label(f"Model ({agent}):", classes="field-label"),
+                            picker,
+                        ),
+                        Static(
+                            status_text,
+                            id=f"rs-model-status-{agent}",
+                            markup=False,
+                            classes="model-status" + ("" if status_text else " -empty"),
+                        ),
+                        Static(
+                            out_line,
+                            id=f"rs-model-out-{agent}",
+                            markup=False,
+                            classes="model-out" + ("" if out_line else " -empty"),
+                        ),
                         id=f"rs-model-row-{agent}",
                         classes="model-row" + ("" if agent in initial_active else " -empty"),
                     )
                 )
+            release_options = [("you", "human")] + [(a, a) for a in self._agents]
+            release_values = [value for _label, value in release_options]
+            release_blank = bool(
+                self._release
+                and self._release not in ("human", "you")
+                and self._release not in self._agents
+            )
+            if release_blank:
+                release = Select.BLANK
+            elif self._release in release_values:
+                release = self._release
+            else:
+                release = "human"
             roles_body = [
                 Static("Recommended for the agents you have.", id="rs-recommended"),
+                stale_widget,
                 *rows,
                 Horizontal(
                     Static("Committer: whyline (automatic)", id="rs-committer"),
@@ -1594,9 +1682,9 @@ class RelaySetupScreen(ModalScreen):
                 Horizontal(
                     Label("Release:", classes="field-label"),
                     Select(
-                        [("you", "human")] + [(a, a) for a in self._agents],
-                        value=self._release if self._release in (["human"] + self._agents) else "human",
-                        allow_blank=False,
+                        release_options,
+                        value=release,
+                        allow_blank=release_blank,
                         id="rs-release",
                     ),
                 ),
@@ -1627,7 +1715,10 @@ class RelaySetupScreen(ModalScreen):
                 Vertical(*model_rows, id="rs-models"),
             ]
         else:
-            roles_body = [Label(NO_AGENTS_SETUP)]
+            roles_body = [
+                Static(NO_SUBSCRIPTIONS, id="rs-empty", markup=False),
+                stale_widget,
+            ]
 
         title = (
             "Run: check who does what, then start."
@@ -1671,6 +1762,7 @@ class RelaySetupScreen(ModalScreen):
             VerticalScroll(Static("", id="rs-checks", markup=False), id="rs-results"),
             Static("", id="rs-error", classes="-empty", markup=False),
             Horizontal(
+                Button("Open Settings", id="rs-open-settings", variant="primary"),
                 Button("Make a plan", id="rs-make-plan", variant="primary", disabled=not self._agents),
                 Button("Check", id="rs-check", variant="primary", disabled=(not self._plans or not self._agents)),
                 Button("Resolve", id="rs-resolve", variant="warning", disabled=True),
@@ -1687,10 +1779,15 @@ class RelaySetupScreen(ModalScreen):
         return [(f"{m} minutes", m) for m in minutes] + [("none (no limit)", 0)]
 
     def on_mount(self) -> None:
-        self.query_one("#rs-make-plan").display = not self._plans
-        if not self._agents:
+        has_choices = bool(self._agents)
+        self.query_one("#rs-open-settings").display = not has_choices
+        self.query_one("#rs-make-plan").display = has_choices and not self._plans
+        if not has_choices:
+            self.query_one("#rs-check", Button).display = False
             self.query_one("#rs-check", Button).disabled = True
+            self.query_one("#rs-start", Button).display = False
             self.query_one("#rs-start", Button).disabled = True
+            self.query_one("#rs-resolve", Button).display = False
             self.query_one("#rs-make-plan", Button).disabled = True
             if self.query("#rs-summary-row"):
                 self.query_one("#rs-summary-row").display = False
@@ -1710,7 +1807,13 @@ class RelaySetupScreen(ModalScreen):
         # compose() loads before the chain is mounted, and the chain's own
         # on_mount sync returns while is_mounted is still false.
         # Nothing saved yet: open on Automatic rather than on no backup.
-        self.query_one("#rs-backup", OrderedChain).load(self._backup or self._fill_backup())
+        # Disabled saved members stay out of the editor; they remain a
+        # separate stale blocker until None or Automatic replaces them.
+        chain = self.query_one("#rs-backup", OrderedChain)
+        if self._backup:
+            chain.load([agent for agent in self._backup if agent in self._agents])
+        else:
+            chain.load(self._fill_backup())
         self._update_meaning()
         self._update_models()
         if getattr(self, "_focus_agent", None):
@@ -1743,10 +1846,12 @@ class RelaySetupScreen(ModalScreen):
     def _chosen_release(self) -> str:
         try:
             if self.query("#rs-release"):
-                return self.query_one("#rs-release", Select).value
+                value = self.query_one("#rs-release", Select).value
+                return "" if self._is_blank(value) else value
         except Exception:
             pass
-        return getattr(self, "_release", "human")
+        value = getattr(self, "_release", "human")
+        return "" if self._is_blank(value) else value
 
     def _model_agents(self) -> list[str]:
         if not self._agents:
@@ -1793,10 +1898,10 @@ class RelaySetupScreen(ModalScreen):
 
     def _fill_backup(self) -> list[str]:
         """Names for an empty editor. Automatic is not a value Check stores."""
-        from whyline import account, model
+        from whyline import model
 
         primary, _chosen_model = model.resolve(self._root)
-        usable = relay_ops.usable_agents(self._root, account.agent_status(self._root))
+        usable = relay_ops.usable_agents(self._root, self._status)
         return relay_ops.staged_backup(primary, usable)
 
     def _update_meaning(self) -> None:
@@ -1806,15 +1911,133 @@ class RelaySetupScreen(ModalScreen):
             return
         i, t, r, _ = self._chosen()
         rel = self._chosen_release()
+        if any(self._is_blank(value) for value in (i, t, r, rel)):
+            self.query_one("#rs-meaning", Static).update("")
+            return
         self.query_one("#rs-meaning", Static).update(relay_ops.role_meaning(i, t, r, rel))
 
     def _ready(self) -> None:
         self._filling = False
+        self._start_model_discovery()
+
+    def _model_picker_controls(
+        self, agent: str, model_opts: list[tuple[str, str]] | None, current_model: str
+    ) -> list:
+        if model_opts is not None:
+            opts = [("CLI default", "")]
+            for lbl, val in model_opts:
+                opts.append((lbl, val))
+            known_vals = {v for _, v in opts}
+            if current_model and current_model not in known_vals:
+                opts.append((current_model, current_model))
+            opts.append(("Other…", "other"))
+            select_val = current_model if current_model in {v for _, v in opts} else "other"
+            return [
+                Select(
+                    opts,
+                    value=select_val,
+                    allow_blank=False,
+                    id=f"rs-model-{agent}",
+                ),
+                Input(
+                    value=current_model if select_val == "other" else "",
+                    placeholder="type model name",
+                    classes="model-input" + ("" if select_val == "other" else " -empty"),
+                    id=f"rs-model-input-{agent}",
+                ),
+            ]
+        return [
+            Input(
+                value=current_model,
+                placeholder="CLI default",
+                classes="model-input",
+                id=f"rs-model-{agent}",
+            )
+        ]
+
+    def _set_model_status(self, agent: str, text: str) -> None:
+        if not self.query(f"#rs-model-status-{agent}"):
+            return
+        widget = self.query_one(f"#rs-model-status-{agent}", Static)
+        widget.update(text)
+        widget.set_class(not text, "-empty")
+
+    def _rebuild_model_picker(
+        self,
+        agent: str,
+        model_opts: list[tuple[str, str]] | None,
+        *,
+        checking: bool = False,
+        failed: bool = False,
+    ) -> None:
+        if not self.query(f"#rs-model-picker-{agent}"):
+            return
+        picker = self.query_one(f"#rs-model-picker-{agent}")
+        current = self._chosen_model(agent) or self._saved_models.get(agent, "")
+        self._filling = True
+        try:
+            picker.remove_children()
+            for child in list(picker.children):
+                picker._nodes._remove(child)
+            for widget in self._model_picker_controls(agent, model_opts, current):
+                picker.mount(widget)
+            if checking:
+                status = CHECKING_MODELS
+            elif failed:
+                status = MODEL_REFRESH_FAILED
+            else:
+                status = ""
+            self._set_model_status(agent, status)
+        finally:
+            self._filling = False
+
+    def _start_model_discovery(self) -> None:
+        """After paint: one worker for an enabled Antigravity row with no cache."""
+        if "antigravity" not in self._agents:
+            return
+        if relay_ops.antigravity_models_status() != "untried":
+            return
+        if not self.query("#rs-model-row-antigravity"):
+            return
+        token = object()
+        self._model_token = token
+
+        def work() -> None:
+            try:
+                models = relay_ops.antigravity_models()
+            except Exception:
+                models = None
+            try:
+                self.app.call_from_thread(self._on_antigravity_models, models, token)
+            except Exception:
+                return
+
+        self.run_worker(work, thread=True, group="agy-models")
+
+    def _on_antigravity_models(
+        self, models: list[tuple[str, str]] | None, token: object
+    ) -> None:
+        if token is not self._model_token or not self.is_attached:
+            return
+        try:
+            self._rebuild_model_picker(
+                "antigravity", models, checking=False, failed=not models
+            )
+        except NoMatches:
+            return
 
     def _error(self, text: str) -> None:
         error = self.query_one("#rs-error", Static)
         error.update(text)
         error.set_class(not text, "-empty")
+
+    def _refresh_stale_warning(self) -> None:
+        if not self.query("#rs-stale"):
+            return
+        text = self._stale_warning_text(self._disabled_selected())
+        widget = self.query_one("#rs-stale", Static)
+        widget.update(text)
+        widget.set_class(not text, "-empty")
 
     def _invalidate(self) -> None:
         if self._filling:
@@ -1825,11 +2048,14 @@ class RelaySetupScreen(ModalScreen):
         self.query_one("#rs-resolve", Button).disabled = True
         self._fail_lines = []
         self._cleared_info = None
+        self._refresh_stale_warning()
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         try:
             if self.query("#rs-release"):
-                self._release = self.query_one("#rs-release", Select).value
+                value = self.query_one("#rs-release", Select).value
+                if not self._is_blank(value):
+                    self._release = value
         except Exception:
             pass
         if event.select.id and event.select.id.startswith("rs-model-"):
@@ -1862,13 +2088,23 @@ class RelaySetupScreen(ModalScreen):
             self.query_one(f"#rs-{role}", Select).value for role, _ in self.ROLES
         )
         backup = self.query_one("#rs-backup", OrderedChain).order()
-        return implementer, tester, reviewer, backup
+        return (
+            "" if self._is_blank(implementer) else implementer,
+            "" if self._is_blank(tester) else tester,
+            "" if self._is_blank(reviewer) else reviewer,
+            backup,
+        )
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
         if event.button.id == "rs-cancel":
             self._token = object()
+            self._model_token = object()
             self.dismiss(None)
+        elif event.button.id == "rs-open-settings":
+            self._token = object()
+            self._model_token = object()
+            self.dismiss("open-settings")
         elif event.button.id == "rs-start":
             if not self._agents:
                 return
@@ -1904,8 +2140,58 @@ class RelaySetupScreen(ModalScreen):
             self.dismiss("plan")
 
 
+    def _disabled_selected(self) -> list[str]:
+        """Role, release, or backup-chain values that are still off in Settings."""
+        if not self.query("#rs-implementer"):
+            return list(self._stale)
+        implementer, tester, reviewer, backup = self._chosen()
+        release = self._chosen_release()
+        found: list[str] = []
+        for role, value in (
+            ("implementer", implementer),
+            ("tester", tester),
+            ("reviewer", reviewer),
+        ):
+            if self._is_blank(value):
+                if self._configured:
+                    saved = self._configured_roles.get(role) or ""
+                    if saved and saved not in self._enabled_providers:
+                        found.append(saved)
+                continue
+            if value not in ("human", "you") and value not in self._enabled_providers:
+                found.append(value)
+        if self._is_blank(release):
+            saved_release = self._release_saved
+            if (
+                self._configured
+                and saved_release
+                and saved_release not in ("human", "you")
+                and saved_release not in self._enabled_providers
+            ):
+                found.append(saved_release)
+        elif release not in ("human", "you") and release not in self._enabled_providers:
+            found.append(release)
+        for agent in backup:
+            if agent and agent not in self._enabled_providers:
+                found.append(agent)
+        found.extend(self._backup_stale)
+        return list(dict.fromkeys(name for name in found if name))
+
     def _check(self) -> None:
         if not self._agents:
+            return
+        stale = self._disabled_selected()
+        if stale:
+            listed = ", ".join(stale)
+            self._token = object()
+            self._error("")
+            self.query_one("#rs-start", Button).disabled = True
+            self.query_one("#rs-resolve", Button).disabled = True
+            self._fail_lines = []
+            self.query_one("#rs-checks", Static).update(
+                f"FAIL  Saved configuration uses {listed}, which is off in Settings.\n"
+                f"      fix: {STALE_CHECK_HINT}"
+            )
             return
         token = object()
         self._token = token

@@ -1473,6 +1473,9 @@ def test_generic_command_keeps_other_flags_and_order(repo):
 
 def test_antigravity_models_caching_and_failure():
     relay_ops.clear_antigravity_models_cache()
+    assert relay_ops.antigravity_models_status() == "untried"
+    assert relay_ops.cached_model_options("antigravity") is None
+    assert relay_ops.model_options_for_agent("antigravity") is None
 
     calls = []
 
@@ -1494,18 +1497,217 @@ def test_antigravity_models_caching_and_failure():
         ("Claude Opus 5.5 (High)", "claude-opus-5-5-high"),
     ]
     assert len(calls) == 1
+    assert relay_ops.antigravity_models_status() == "ok"
+    assert relay_ops.cached_model_options("antigravity") == models
+    assert relay_ops.model_options_for_agent("antigravity") == models
 
     # Cached for the session: second call does not run the subprocess again
     cached = relay_ops.antigravity_models(runner=fake_runner)
     assert cached == models
     assert len(calls) == 1
 
-    # Failure falls back to None
+    # Failure is distinct from untried and is negatively cached
     relay_ops.clear_antigravity_models_cache()
+    assert relay_ops.antigravity_models_status() == "untried"
 
     def failing_runner(*args, **kwargs):
+        calls.append("fail")
         raise FileNotFoundError("agy not found")
 
-    assert relay_ops.antigravity_models(runner=failing_runner) is None
+    clock = {"t": 0.0}
+
+    def tick():
+        return clock["t"]
+
+    assert relay_ops.antigravity_models(runner=failing_runner, clock=tick) is None
+    assert relay_ops.antigravity_models_status(now=0.0) == "failed"
+    assert relay_ops.cached_model_options("antigravity", now=0.0) is None
+    assert relay_ops.model_options_for_agent("antigravity", now=0.0) is None
+    assert calls.count("fail") == 1
+
+    clock["t"] = 59.0
+    assert relay_ops.antigravity_models(runner=failing_runner, clock=tick) is None
+    assert relay_ops.antigravity_models_status(now=59.0) == "failed"
+    assert calls.count("fail") == 1
+
+    clock["t"] = 60.0
+    assert relay_ops.antigravity_models_status(now=60.0) == "untried"
+    assert relay_ops.antigravity_models(runner=failing_runner, clock=tick) is None
+    assert calls.count("fail") == 2
     relay_ops.clear_antigravity_models_cache()
+
+
+def test_cached_model_options_never_launches_agy(monkeypatch):
+    relay_ops.clear_antigravity_models_cache()
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("cached read launched agy")
+
+    monkeypatch.setattr(relay_ops, "_agy_runner", boom)
+    assert relay_ops.antigravity_models_status() == "untried"
+    assert relay_ops.model_options_for_agent("antigravity") is None
+    assert relay_ops.cached_model_options("claude")[0] == (
+        "claude-opus-5-5-high",
+        "claude-opus-5-5-high",
+    )
+    assert relay_ops.cached_model_options("codex")[0][0] == "gpt-5.6-sol"
+    assert relay_ops.cached_model_options("grok") == [("grok-4.6", "grok-4.6"), ("grok-4", "grok-4")]
+
+
+def test_empty_agy_models_is_failed_not_untried():
+    relay_ops.clear_antigravity_models_cache()
+    clock = {"t": 10.0}
+
+    class Empty:
+        returncode = 0
+        stdout = "Fetching available models...\n"
+
+    assert relay_ops.antigravity_models(
+        runner=lambda *a, **k: Empty(), clock=lambda: clock["t"]
+    ) is None
+    assert relay_ops.antigravity_models_status(now=10.0) == "failed"
+    assert relay_ops.antigravity_models_status(now=69.9) == "failed"
+    assert relay_ops.antigravity_models_status(now=70.0) == "untried"
+    relay_ops.clear_antigravity_models_cache()
+
+
+def test_negative_cache_ttl_starts_when_agy_models_completes():
+    """A slow miss keeps the 60s TTL after the runner returns, not from the pre-call tick."""
+
+    class Failed:
+        returncode = 1
+        stdout = ""
+        stderr = "no"
+
+    class Empty:
+        returncode = 0
+        stdout = "Fetching available models...\n"
+
+    def timeout():
+        raise TimeoutError("agy models timed out")
+
+    call_duration = 10.0
+    ttl = 60.0
+    for make_result in (lambda: Failed(), lambda: Empty(), timeout):
+        relay_ops.clear_antigravity_models_cache()
+        clock = {"t": 0.0}
+        calls = {"n": 0}
+
+        def tick():
+            return clock["t"]
+
+        def runner(*_a, **_k):
+            calls["n"] += 1
+            clock["t"] += call_duration
+            return make_result()
+
+        assert relay_ops.antigravity_models(runner=runner, clock=tick) is None
+        done = clock["t"]
+        assert done == call_duration
+        assert calls["n"] == 1
+        assert relay_ops.antigravity_models_status(now=done) == "failed"
+        assert relay_ops.antigravity_models_status(now=done + ttl - 0.1) == "failed"
+        clock["t"] = done + ttl - 0.1
+        assert relay_ops.antigravity_models(runner=runner, clock=tick) is None
+        assert calls["n"] == 1
+        clock["t"] = done + ttl
+        assert relay_ops.antigravity_models_status(now=done + ttl) == "untried"
+        assert relay_ops.antigravity_models(runner=runner, clock=tick) is None
+        assert calls["n"] == 2
+    relay_ops.clear_antigravity_models_cache()
+
+
+def test_stale_setup_names_lists_disabled_role_release_and_backup():
+    roles = {
+        "implementer": "grok",
+        "tester": "claude",
+        "reviewer": "codex",
+        "backup": ["antigravity", "claude"],
+    }
+    assert relay_ops.stale_setup_names(roles, "antigravity", {"claude", "codex"}) == [
+        "grok",
+        "antigravity",
+    ]
+    assert relay_ops.stale_setup_names(roles, "human", {"claude", "codex", "grok", "antigravity"}) == []
+
+
+def test_setup_choice_agents_intersects_enabled_with_installed(monkeypatch):
+    from whyline import account
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok"]
+    )
+    status = {
+        "claude": {"enabled": True},
+        "codex": {"enabled": False},
+        "grok": {"enabled": True},
+        "antigravity": {"enabled": True},
+    }
+    monkeypatch.setattr(account, "agent_status", lambda root, which=None: status)
+    assert relay_ops.setup_choice_agents(Path("/r"), status) == ["claude", "grok"]
+
+
+def test_cached_agent_status_does_not_probe_providers(monkeypatch, tmp_path):
+    from whyline import account
+
+    probes = []
+
+    def boom(*_args, **_kwargs):
+        probes.append("probed")
+        raise AssertionError("cached status launched provider detection")
+
+    monkeypatch.setattr(account, "ensure_detected", boom)
+    monkeypatch.setattr(account, "refresh", boom)
+    monkeypatch.setattr(account, "detect_claude", boom)
+    monkeypatch.setattr(account, "check_provider", boom)
+    rows = relay_ops.cached_agent_status(tmp_path)
+    assert probes == []
+    assert "claude" in rows
+    assert rows["claude"]["enabled"] is False
+
+
+def test_cached_agent_status_preserves_explicit_enabled_flags(tmp_path):
+    from whyline import account
+
+    account.set_enabled_many(
+        {"claude": True, "codex": False, "grok": True, "antigravity": False}
+    )
+    rows = relay_ops.cached_agent_status(tmp_path)
+    assert rows["claude"]["enabled"] is True
+    assert rows["codex"]["enabled"] is False
+    assert rows["grok"]["enabled"] is True
+    assert rows["antigravity"]["enabled"] is False
+
+
+def test_setup_choice_agents_without_enablement_record_excludes_installed(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex"]
+    )
+    assert relay_ops.setup_choice_agents(tmp_path) == []
+
+
+def test_setup_choice_agents_without_status_does_not_call_agent_status(
+    monkeypatch, tmp_path
+):
+    from whyline import account
+
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex"]
+    )
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("setup_choice_agents probed agent_status")
+
+    monkeypatch.setattr(account, "agent_status", boom)
+    monkeypatch.setattr(
+        relay_ops,
+        "cached_agent_status",
+        lambda root, which=None: {
+            "claude": {"enabled": True},
+            "codex": {"enabled": False},
+        },
+    )
+    assert relay_ops.setup_choice_agents(tmp_path) == ["claude"]
 
