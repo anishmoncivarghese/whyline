@@ -4,12 +4,13 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from whyline import cli
-from whyline.agents import launchd, telegram
-from whyline.ideas import bot, brainstorm, paths, store, telegram_in, worker
+from whyline.agents import launchd, service, state, telegram
+from whyline.ideas import bot, brainstorm, paths, requests, store, telegram_in, worker
 
 NOW = datetime(2026, 10, 20, 12, 0, 0)
 PAST = "2026-10-20T11:00:00"
@@ -86,6 +87,39 @@ def _job(conn, idea, **fields):
     return conn.execute(
         "SELECT * FROM jobs WHERE id = ?", (cursor.lastrowid,)
     ).fetchone()
+
+
+def _saved_run_request(conn, monkeypatch, tmp_path, *, runner="claude"):
+    home = tmp_path / "home"
+    workdir = tmp_path / "work"
+    agents = home / ".whyline" / "agents"
+    agents.mkdir(parents=True)
+    workdir.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    path = agents / "nightly.toml"
+    path.write_text(
+        'name = "nightly"\n'
+        'instructions = "Check the inbox."\n'
+        f'runner = {json.dumps(runner)}\n'
+        f'workdir = {json.dumps(str(workdir))}\n',
+        encoding="utf-8",
+    )
+    defn = service.find("nightly", None)
+    state.accept(state.connect(), defn)
+    request = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(CHAT),
+        chat_id=CHAT,
+        action="run_agent",
+        args={"agent": "nightly"},
+        proposed_by="keyword",
+    )
+    conn.execute(
+        "UPDATE requests SET state = 'running' WHERE id = ?", (request.id,)
+    )
+    return request, defn, path
 
 
 def _run(**overrides):
@@ -324,6 +358,213 @@ def test_one_queued_job_is_started_once_across_two_ticks(conn):
         "SELECT state FROM jobs WHERE id = ?", (second["id"],)
     ).fetchone()
     assert waiting["state"] == "queued"
+
+
+def test_idea_job_and_request_share_one_detached_process_slot(conn):
+    _enable(conn)
+    idea = _idea(conn)
+    job = _job(conn, idea)
+    request = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(CHAT),
+        chat_id=CHAT,
+        action="run_agent",
+        args={"agent": "nightly"},
+        proposed_by="keyword",
+    )
+
+    seen = _run()
+
+    assert seen["spawn"] == [job["id"]]
+    assert conn.execute(
+        "SELECT state FROM requests WHERE id = ?", (request.id,)
+    ).fetchone()["state"] == "queued"
+
+
+def test_only_one_queued_request_is_claimed_per_tick(conn):
+    _enable(conn)
+    first = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(CHAT),
+        chat_id=CHAT,
+        action="run_agent",
+        args={"agent": "first"},
+        proposed_by="keyword",
+    )
+    second = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(CHAT),
+        chat_id=CHAT,
+        action="run_agent",
+        args={"agent": "second"},
+        proposed_by="keyword",
+    )
+
+    seen = _run()
+
+    assert seen["spawn"] == [first.id]
+    rows = conn.execute(
+        "SELECT id, state FROM requests ORDER BY id"
+    ).fetchall()
+    assert [(row["id"], row["state"]) for row in rows] == [
+        (first.id, "running"),
+        (second.id, "queued"),
+    ]
+    assert conn.execute(
+        "SELECT text FROM outbox ORDER BY id DESC LIMIT 1"
+    ).fetchone()["text"] == "Started first."
+
+
+def test_request_subprocess_calls_run_now_and_configured_delivery(
+    conn, monkeypatch,
+):
+    request = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(CHAT),
+        chat_id=CHAT,
+        action="run_agent",
+        args={"agent": "nightly"},
+        proposed_by="keyword",
+    )
+    conn.execute(
+        "UPDATE requests SET state = 'running' WHERE id = ?", (request.id,)
+    )
+    called = []
+    delivered = []
+    launched = []
+    defn = SimpleNamespace(name="nightly")
+    record = SimpleNamespace(
+        run_id="run-1", outcome="succeeded", reason="", deliveries=[]
+    )
+
+    def popen(argv, **kwargs):
+        launched.append((list(argv), kwargs))
+        return SimpleNamespace(pid=4242)
+
+    monkeypatch.setattr(worker.subprocess, "Popen", popen)
+    monkeypatch.setattr(worker, "_require_remote_runnable", lambda _name: defn)
+    monkeypatch.setattr(
+        "whyline.agents.service.run_now",
+        lambda name, root: called.append((name, root)) or record,
+    )
+    monkeypatch.setattr(
+        "whyline.agents.deliver.after_run",
+        lambda found, result: delivered.append((found, result)) or [],
+    )
+
+    assert worker._spawn_request(request.id) == 4242
+    argv, options = launched[0]
+    assert argv == [
+        worker.sys.executable,
+        "-m",
+        "whyline",
+        "idea",
+        "request",
+        str(request.id),
+    ]
+    assert options["start_new_session"] is True
+    assert cli.main(argv[3:]) == 0
+
+    assert called == [("nightly", None)]
+    assert delivered == [(defn, record)]
+    row = conn.execute(
+        "SELECT state, error FROM requests WHERE id = ?", (request.id,)
+    ).fetchone()
+    assert (row["state"], row["error"]) == ("done", None)
+
+
+def test_request_refuses_a_disabled_provider_before_its_subprocess(
+    conn, monkeypatch, tmp_path,
+):
+    request, _defn, _path = _saved_run_request(conn, monkeypatch, tmp_path)
+    _set_enabled(set())
+    provider_calls = []
+    monkeypatch.setattr(
+        "whyline_relay.agents.run",
+        lambda *args, **kwargs: provider_calls.append((args, kwargs)),
+    )
+
+    assert worker.request(request.id) == 1
+
+    row = conn.execute(
+        "SELECT state, error FROM requests WHERE id = ?", (request.id,)
+    ).fetchone()
+    assert row["state"] == "failed"
+    assert row["error"] == HINT.format(agent="claude")
+    assert provider_calls == []
+    assert conn.execute(
+        "SELECT text FROM outbox ORDER BY id DESC LIMIT 1"
+    ).fetchone()["text"] == (
+        "nightly: all_unavailable — claude: " + HINT.format(agent="claude")
+    )
+
+
+@pytest.mark.parametrize("blocked", ["paused", "needs_review", "backoff"])
+def test_request_obeys_activation_gates_before_the_provider_subprocess(
+    conn, monkeypatch, tmp_path, blocked,
+):
+    request, defn, path = _saved_run_request(conn, monkeypatch, tmp_path)
+    _set_enabled({"claude"})
+    activation_conn = state.connect()
+    if blocked == "paused":
+        state.set_status(activation_conn, defn.agent_id, "paused", "by you")
+    elif blocked == "needs_review":
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "Check the inbox.", "Check the changed inbox."
+            ),
+            encoding="utf-8",
+        )
+    else:
+        state.update(
+            activation_conn,
+            defn.agent_id,
+            backoff_until="2999-10-26T12:00:00",
+        )
+    provider_calls = []
+    monkeypatch.setattr(
+        "whyline_relay.agents.run",
+        lambda *args, **kwargs: provider_calls.append((args, kwargs)),
+    )
+
+    assert worker.request(request.id) == 1
+
+    row = conn.execute(
+        "SELECT state, error FROM requests WHERE id = ?", (request.id,)
+    ).fetchone()
+    assert row["state"] == "failed"
+    assert blocked.replace("_", " ") in row["error"]
+    assert provider_calls == []
+
+
+def test_request_uses_unattended_provider_clearance(
+    conn, monkeypatch, tmp_path,
+):
+    request, _defn, _path = _saved_run_request(conn, monkeypatch, tmp_path)
+    _set_enabled({"claude"})
+    monkeypatch.setattr(
+        "whyline.agents.capabilities.can_run_unattended", lambda _name: False
+    )
+    provider_calls = []
+    monkeypatch.setattr(
+        "whyline_relay.agents.run",
+        lambda *args, **kwargs: provider_calls.append((args, kwargs)),
+    )
+
+    assert worker.request(request.id) == 1
+
+    row = conn.execute(
+        "SELECT state, error FROM requests WHERE id = ?", (request.id,)
+    ).fetchone()
+    assert (row["state"], row["error"]) == (
+        "failed",
+        "claude: not cleared for unattended runs",
+    )
+    assert provider_calls == []
 
 
 def test_an_expired_lease_requeues_once_then_fails_with_a_chat_message(conn):

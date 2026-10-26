@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from whyline.agents import capabilities, service, telegram
+from whyline.agents import capabilities, deliveries, service, telegram
 from whyline.ideas import (
     actions,
     assistant,
@@ -165,6 +165,7 @@ Commands:
 /new
 /list
 /status [id]
+/run <saved-agent>
 /excel
 /brainstorm [id]
 /plan [id]
@@ -623,12 +624,88 @@ def _command(conn, row, routed: intent.Intent, *, http=None) -> None:
         _command_drop(conn, row, routed)
     elif name == "status":
         _command_status(conn, row, routed)
+    elif name == "run":
+        _command_run(conn, row, routed)
     elif name == "stop":
         _command_stop(conn, row, routed)
     elif name == "new":
         _say(conn, row, "Send the idea as a message.")
     else:
         _say(conn, row, "Not available yet.")
+
+
+def create_run_request(
+    conn: sqlite3.Connection,
+    name: str,
+    *,
+    channel: str,
+    actor: str,
+    chat_id: int | None,
+) -> tuple[requests.Request | None, str | None]:
+    """Create a keyword run request for one exact saved-agent name."""
+    found = next(
+        (
+            item
+            for item in service.rows(None)
+            if getattr(getattr(item, "defn", None), "name", None) == name
+        ),
+        None,
+    )
+    if found is None:
+        return None, f"No saved agent named {name}."
+    request = requests.create(
+        conn,
+        channel=channel,
+        actor=actor,
+        chat_id=chat_id,
+        action="run_agent",
+        args={"agent": name},
+        proposed_by="keyword",
+    )
+    defn = found.defn
+    delivery = deliveries.get(defn.agent_id)
+    needs_tap = int(getattr(defn, "timeout_minutes", 15)) > 15 or bool(
+        delivery is not None and str(getattr(delivery, "command", "")).strip()
+    )
+    if needs_tap and request.state == "queued":
+        conn.execute(
+            """
+            UPDATE requests SET state = 'waiting_tap', approval = 'tap'
+            WHERE id = ? AND state = 'queued'
+            """,
+            (request.id,),
+        )
+        request = requests._request(
+            conn.execute(
+                "SELECT * FROM requests WHERE id = ?", (request.id,)
+            ).fetchone()
+        )
+    return request, None
+
+
+def _command_run(conn, row, routed: intent.Intent) -> None:
+    if len(routed.args) != 1 or str(_field(row, "kind", "")).endswith(
+        "_attachment"
+    ):
+        _say(conn, row, "run takes only a saved agent's name.")
+        return
+    chat_id = int(_field(row, "chat_id"))
+    request, error = create_run_request(
+        conn,
+        routed.args[0],
+        channel="telegram",
+        actor=str(chat_id),
+        chat_id=chat_id,
+    )
+    if error:
+        _say(conn, row, error)
+        return
+    if request is None:
+        return
+    if request.state == "waiting_tap":
+        offer_request(conn, request)
+    elif request.state == "refused":
+        _say(conn, row, request.error or "Run is turned off in the console.")
 
 
 def _settings(conn, row, routed: intent.Intent) -> None:

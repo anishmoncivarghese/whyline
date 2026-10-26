@@ -630,6 +630,92 @@ def test_bare_status_keeps_idea_status_and_records_the_request(conn, token):
     assert (req["action"], req["state"]) == ("status", "done")
 
 
+def test_run_exact_saved_name_queues_and_extra_words_are_refused(
+    conn, token, monkeypatch,
+):
+    defn = SimpleNamespace(
+        name="morning-brief", agent_id="personal:morning-brief", timeout_minutes=15
+    )
+    monkeypatch.setattr(
+        bot.service, "rows", lambda root: [SimpleNamespace(defn=defn)]
+    )
+    monkeypatch.setattr(bot.deliveries, "get", lambda _agent_id: None)
+
+    bot.handle(conn, _message("run morning-brief"))
+
+    req = _latest_request(conn)
+    assert (req["action"], req["state"], req["approval"]) == (
+        "run_agent", "queued", "none"
+    )
+    assert json.loads(req["args_json"]) == {"agent": "morning-brief"}
+
+    bot.handle(conn, _message("run morning-brief now", update_id=2))
+    assert _outbox(conn, "message")[-1]["text"] == (
+        "run takes only a saved agent's name."
+    )
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 1
+
+
+def test_run_with_a_telegram_file_is_refused(conn, token, monkeypatch):
+    defn = SimpleNamespace(
+        name="nightly", agent_id="personal:nightly", timeout_minutes=15
+    )
+    monkeypatch.setattr(
+        bot.service, "rows", lambda root: [SimpleNamespace(defn=defn)]
+    )
+    monkeypatch.setattr(bot.deliveries, "get", lambda _agent_id: None)
+    telegram_in._ingest(
+        conn,
+        {
+            "update_id": 1,
+            "message": {
+                "message_id": 5,
+                "date": 1,
+                "chat": {"id": CHAT, "type": "private"},
+                "caption": "run nightly",
+                "document": {"file_id": "attached"},
+            },
+        },
+        {CHAT},
+    )
+    inbound = conn.execute(
+        "SELECT * FROM inbound WHERE update_id = 1"
+    ).fetchone()
+
+    assert inbound["kind"] == "message_attachment"
+    bot.handle(conn, inbound)
+
+    assert _outbox(conn, "message")[-1]["text"] == (
+        "run takes only a saved agent's name."
+    )
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+
+
+def test_run_with_a_command_delivery_needs_a_tap(conn, token, monkeypatch):
+    defn = SimpleNamespace(name="nightly", agent_id="personal:nightly", timeout_minutes=15)
+    monkeypatch.setattr(
+        bot.service, "rows", lambda root: [SimpleNamespace(defn=defn)]
+    )
+    monkeypatch.setattr(
+        bot.deliveries, "get", lambda _agent_id: SimpleNamespace(command="notify.sh")
+    )
+
+    bot.handle(conn, _message("run nightly"))
+
+    req = _latest_request(conn)
+    assert (req["state"], req["approval"]) == ("waiting_tap", "tap")
+    assert _button(_outbox(conn, "message")[-1], "Confirm")
+
+
+def test_run_unknown_saved_name_is_refused(conn, token, monkeypatch):
+    monkeypatch.setattr(bot.service, "rows", lambda _root: [])
+
+    bot.handle(conn, _message("run nowhere"))
+
+    assert _outbox(conn, "message")[-1]["text"] == "No saved agent named nowhere."
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+
+
 def test_settings_open_the_matching_confirm_card(conn, token):
     _capture(conn)
     bot.handle(conn, _message("models: claude\ntimeout: 30", update_id=6, message_id=6))

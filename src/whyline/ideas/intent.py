@@ -20,6 +20,7 @@ COMMANDS = (
     "new",
     "list",
     "status",
+    "run",
     "excel",
     "brainstorm",
     "plan",
@@ -249,9 +250,6 @@ def _callback(data: str) -> Intent | None:
 
 
 def _command(body: str) -> Intent | None:
-    # A command is one line. A newline means prose or settings.
-    if "\n" in body or "\r" in body:
-        return None
     parts = body.split()
     if not parts:
         return None
@@ -259,6 +257,14 @@ def _command(body: str) -> Intent | None:
     if name is None:
         return None
     args = parts[1:]
+    # Run is deliberately strict, but all of its trailing text still reaches
+    # the command handler so it can give the deterministic refusal instead of
+    # sending an ad-hoc prompt through the assistant.
+    if name == "run":
+        return command(name, tuple(args))
+    # Every other command is one line. A newline means prose or settings.
+    if "\n" in body or "\r" in body:
+        return None
     if name in _NO_ARG:
         if args:
             return None

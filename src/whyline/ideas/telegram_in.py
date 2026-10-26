@@ -37,6 +37,17 @@ _BODY_KEYS = (
     "chat_join_request",
 )
 
+_ATTACHMENT_KEYS = (
+    "animation",
+    "audio",
+    "document",
+    "photo",
+    "sticker",
+    "video",
+    "video_note",
+    "voice",
+)
+
 
 class AllowError(Exception):
     pass
@@ -238,6 +249,8 @@ def _parse(update: dict) -> dict | None:
         reply_id = reply.get("message_id")
         message_id = body.get("message_id")
         callback_id = None
+        if any(key in body for key in _ATTACHMENT_KEYS):
+            kind = f"{kind}_attachment"
     chat_id = chat.get("id")
     if chat_id is not None:
         try:

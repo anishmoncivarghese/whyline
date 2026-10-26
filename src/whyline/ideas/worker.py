@@ -25,7 +25,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
-from whyline.ideas import paths, store
+from whyline.ideas import paths, requests as assistant_requests, store
 
 ENABLED_KEY = "enabled"
 _ON = frozenset({"1", "on", "true", "yes"})
@@ -171,6 +171,7 @@ def run_once(
     stop=None,
     clock=None,
     watch=None,
+    request_spawn=None,
 ) -> None:
     """One scheduler pass. Returns immediately when the inbox is off.
 
@@ -187,7 +188,11 @@ def run_once(
     from whyline.ideas import bot, telegram_in
 
     clock = clock or datetime.now
+    supplied_spawn = spawn
     spawn = spawn or _spawn
+    request_spawn = request_spawn or (
+        spawn if supplied_spawn is not None else _spawn_request
+    )
     poll = poll or telegram_in.poll_once
     handle = handle or bot.handle
     flush = flush or bot.flush_outbox
@@ -205,6 +210,7 @@ def run_once(
             conn,
             clock=clock,
             spawn=spawn,
+            request_spawn=request_spawn,
             poll=poll,
             handle=handle,
             flush=flush,
@@ -222,6 +228,7 @@ def _poll_while_in_use(
     *,
     clock,
     spawn,
+    request_spawn,
     poll,
     handle,
     flush,
@@ -237,6 +244,7 @@ def _poll_while_in_use(
     told = False
     quiet_from = started
     first = True
+    request_claimed = False
     # A row whose handler raised stays for a later tick. Retrying it on
     # every long poll would reset the quiet window and hold this lock.
     failed: set[int] = set()
@@ -275,7 +283,12 @@ def _poll_while_in_use(
             # poll, repeated while a job looks live, runs far past that instant.
             moment = clock()
             _recover(conn, moment, pid_alive, stop)
+            _recover_requests(conn, moment, pid_alive, stop)
             _start_one(conn, moment, spawn)
+            if not request_claimed:
+                request_claimed = _start_one_request(
+                    conn, moment, request_spawn
+                )
             _watch(conn, watch_fn=watch)
             flush(conn)
             # ``handled`` is rows that ran. A failure is not new activity.
@@ -316,11 +329,19 @@ def _job_live(conn) -> bool:
     found = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
     ).fetchone()
-    if found is None:
-        return False
+    if found is not None:
+        row = conn.execute(
+            """
+            SELECT 1 FROM jobs
+            WHERE state IN ('queued', 'running')
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is not None:
+            return True
     row = conn.execute(
         """
-        SELECT 1 FROM jobs
+        SELECT 1 FROM requests
         WHERE state IN ('queued', 'running')
         LIMIT 1
         """
@@ -444,6 +465,151 @@ def work(job_id: int) -> int:
         _publish(conn)
         _flush(conn)
         return 0
+    finally:
+        conn.close()
+
+
+def request(request_id: int) -> int:
+    """Run one claimed assistant request in its detached process."""
+    from whyline.agents import service
+
+    conn = store.connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM requests WHERE id = ?", (request_id,)
+        ).fetchone()
+        if row is None:
+            print(f"no request {request_id}", file=sys.stderr)
+            return 1
+        if row["state"] != "running":
+            print(f"request {request_id} is {row['state']}", file=sys.stderr)
+            return 1
+        current = _pid(row["pid"])
+        if current is not None and current != os.getpid():
+            return 0
+        if current is None:
+            claimed = conn.execute(
+                """
+                UPDATE requests SET pid = ?
+                WHERE id = ? AND state = 'running' AND pid IS NULL
+                """,
+                (os.getpid(), request_id),
+            )
+            if claimed.rowcount != 1:
+                return 0
+        if row["action"] != "run_agent":
+            error = f"unknown request action {row['action']}"
+            assistant_requests.finish(conn, request_id, error=error)
+            _notify_request(conn, row, error)
+            _flush(conn)
+            return 1
+        name = _request_agent(row)
+        if name == "agent":
+            error = "run request has no saved agent name"
+            assistant_requests.finish(conn, request_id, error=error)
+            _notify_request(conn, row, error)
+            _flush(conn)
+            return 1
+        try:
+            record = _run_remote_agent(name)
+        except Exception as exc:
+            error = " ".join(str(exc).split()) or "the run did not finish"
+            assistant_requests.finish(conn, request_id, error=error)
+            _notify_request(conn, row, f"{name}: failed — {error}")
+            _flush(conn)
+            return 1
+        run_id = getattr(record, "run_id", "")
+        # The run ledger owns the actual private path. Keeping its stable id
+        # here avoids reopening (and chmodding) that directory just to refer
+        # to a result the agent service has already recorded.
+        result_path = str(run_id) if run_id else None
+        reason = " ".join(str(record.reason or "").split())
+        outcome = str(record.outcome or "failed")
+        text = f"{name}: {outcome}"
+        if reason:
+            text += f" — {reason}"
+        if outcome.startswith("succeeded"):
+            assistant_requests.finish(conn, request_id, result_path=result_path)
+            code = 0
+        else:
+            error = _request_error(reason or outcome)
+            assistant_requests.finish(
+                conn, request_id, result_path=result_path, error=error
+            )
+            code = 1
+        _notify_request(conn, row, text)
+        _flush(conn)
+        return code
+    finally:
+        conn.close()
+
+
+def _request_error(detail: str) -> str:
+    marker = "Enable "
+    if marker in detail and " in Settings or choose another provider." in detail:
+        return marker + detail.split(marker, 1)[1]
+    return detail
+
+
+def _run_remote_agent(name: str):
+    """Run a chat request through the scheduled-agent safety boundary.
+
+    ``service.run_now`` remains the public execution path (and therefore
+    still owns history and after-run state), but its ordinary callers are
+    watched, manual runs.  This detached caller first uses the scheduler's
+    activation gate and forces the runner's unattended provider filtering.
+    """
+    from whyline.agents import deliver, runner, service
+
+    defn = _require_remote_runnable(name)
+    execute_once = runner.execute_once
+
+    def execute_unattended(defn, **kwargs):
+        kwargs["unattended"] = True
+        return execute_once(defn, **kwargs)
+
+    runner.execute_once = execute_unattended
+    try:
+        record = service.run_now(name, None)
+    finally:
+        runner.execute_once = execute_once
+    # ``run_now`` currently delivers through ``after.finish`` even though it
+    # suppresses the watched/manual desktop notification.  Keep the detached
+    # request boundary explicit and compatible with a run_now implementation
+    # that only finalizes: deliver here when it returned no delivery results.
+    # A configured email, Telegram, or command delivery always contributes a
+    # result, so a real delivery is never sent twice.
+    if not getattr(record, "deliveries", None):
+        try:
+            deliver.after_run(defn, record)
+        except Exception:
+            pass  # configured delivery must never change the run outcome
+    return record
+
+
+def _require_remote_runnable(name: str):
+    """Refuse remote starts that the scheduler would hold back."""
+    from whyline.agents import service, state, tick
+
+    defn = service.find(name, None)
+    conn = state.connect()
+    now = datetime.now().replace(microsecond=0)
+    try:
+        if tick._runnable(conn, defn.agent_id, now) is not None:
+            return defn
+        act = state.get(conn, defn.agent_id)
+        status = state.status_of(conn, defn).replace("_", " ")
+        if act is not None and act.backoff_until:
+            try:
+                backoff_until = datetime.fromisoformat(act.backoff_until)
+            except ValueError:
+                backoff_until = None
+            if backoff_until is not None and backoff_until > now:
+                raise ValueError(
+                    f"{defn.label} is in backoff until "
+                    f"{act.backoff_until[:16].replace('T', ' ')} after a usage limit"
+                )
+        raise ValueError(f"{defn.label} is {status}; it can't be run remotely")
     finally:
         conn.close()
 
@@ -600,6 +766,11 @@ def _kind_label(kind: str) -> str:
 def _start_one(conn, now: datetime, spawn) -> None:
     # One running job at a time. A second tick must not start another copy
     # of a job that is still inside its lease.
+    request_busy = conn.execute(
+        "SELECT id FROM requests WHERE state = 'running' LIMIT 1"
+    ).fetchone()
+    if request_busy is not None:
+        return
     busy = conn.execute(
         "SELECT id FROM jobs WHERE state = 'running' LIMIT 1"
     ).fetchone()
@@ -704,6 +875,131 @@ def _start_one(conn, now: datetime, spawn) -> None:
             "UPDATE jobs SET pid = ? WHERE id = ?",
             (int(pid), row["id"]),
         )
+
+
+def _recover_requests(conn, now: datetime, pid_alive, stop) -> None:
+    """Requeue request processes lost to sleep or an expired lease."""
+    rows = conn.execute(
+        "SELECT * FROM requests WHERE state = 'running' ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        alive = bool(pid_alive(row["pid"]))
+        expired = False
+        if alive and row["lease_until"]:
+            try:
+                expired = datetime.fromisoformat(str(row["lease_until"])) <= now
+            except ValueError:
+                expired = True
+        if alive and not expired:
+            continue
+        if alive:
+            _stop_pid(row["pid"], stop)
+        conn.execute(
+            """
+            UPDATE requests
+            SET state = 'queued', lease_until = NULL, pid = NULL
+            WHERE id = ? AND state = 'running'
+            """,
+            (row["id"],),
+        )
+        if not alive:
+            _notify_request(conn, row, "The Mac slept")
+
+
+def _start_one_request(conn, now: datetime, spawn) -> bool:
+    """Claim and detach one assistant request when no idea process owns the slot."""
+    if conn.execute(
+        "SELECT 1 FROM jobs WHERE state = 'running' LIMIT 1"
+    ).fetchone() is not None:
+        return False
+    if conn.execute(
+        "SELECT 1 FROM requests WHERE state = 'running' LIMIT 1"
+    ).fetchone() is not None:
+        return False
+    row = conn.execute(
+        "SELECT * FROM requests WHERE state = 'queued' ORDER BY id LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return False
+    timeout = _request_timeout(row)
+    lease = _stamp(now + timedelta(minutes=timeout) + LEASE_MARGIN)
+    claimed = conn.execute(
+        """
+        UPDATE requests
+        SET state = 'running', started_at = ?, lease_until = ?, pid = NULL
+        WHERE id = ? AND state = 'queued'
+        """,
+        (_stamp(now), lease, row["id"]),
+    )
+    if claimed.rowcount != 1:
+        return False
+    try:
+        pid = spawn(int(row["id"]))
+    except Exception:
+        log.exception("could not start assistant request %s", row["id"])
+        conn.execute(
+            """
+            UPDATE requests
+            SET state = 'queued', started_at = NULL, lease_until = NULL, pid = NULL
+            WHERE id = ? AND state = 'running'
+            """,
+            (row["id"],),
+        )
+        return True
+    if pid is not None:
+        conn.execute(
+            "UPDATE requests SET pid = ? WHERE id = ? AND state = 'running'",
+            (int(pid), row["id"]),
+        )
+    _notify_request(conn, row, f"Started {_request_agent(row)}.")
+    return True
+
+
+def _request_agent(row) -> str:
+    try:
+        args = json.loads(row["args_json"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return "agent"
+    if not isinstance(args, dict):
+        return "agent"
+    name = args.get("agent")
+    return name if isinstance(name, str) and name else "agent"
+
+
+def _request_timeout(row) -> int:
+    if row["action"] != "run_agent":
+        return SCORE_TIMEOUT_MINUTES
+    name = _request_agent(row)
+    try:
+        from whyline.agents import service
+
+        found = next(
+            item
+            for item in service.rows(None)
+            if getattr(getattr(item, "defn", None), "name", None) == name
+        )
+    except Exception:
+        return SCORE_TIMEOUT_MINUTES
+    return int(getattr(found.defn, "timeout_minutes", SCORE_TIMEOUT_MINUTES))
+
+
+def _notify_request(conn, row, text: str) -> None:
+    channel = str(row["channel"] or "")
+    if channel == "telegram" and row["chat_id"] is not None:
+        conn.execute(
+            """
+            INSERT INTO outbox (chat_id, kind, text, attempts)
+            VALUES (?, 'message', ?, 0)
+            """,
+            (int(row["chat_id"]), text),
+        )
+    elif channel == "email" and row["actor"]:
+        from whyline.agents import mail_send
+
+        try:
+            mail_send.send([str(row["actor"])], f"Run {_request_agent(row)}", text, [])
+        except Exception:
+            log.exception("could not email assistant request %s", row["id"])
 
 
 def _watch(conn: sqlite3.Connection, watch_fn=None) -> None:
@@ -819,6 +1115,21 @@ def _spawn(job_id: int) -> int:
         "stderr": subprocess.DEVNULL,
     }
     # start_new_session is POSIX-only; Windows rejects it with ValueError.
+    if os.name == "nt":
+        options["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+    proc = subprocess.Popen(command, **options)
+    return proc.pid
+
+
+def _spawn_request(request_id: int) -> int:
+    command = [sys.executable, "-m", "whyline", "idea", "request", str(request_id)]
+    options: dict = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
     if os.name == "nt":
         options["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     else:

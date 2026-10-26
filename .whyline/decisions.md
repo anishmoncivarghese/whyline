@@ -25582,3 +25582,263 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 72a641b1917c4d339898401f1556d8c1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T11:03:57.103Z"} -->
+
+## 2026-10-26 — Escalate risky saved-agent runs when creating the request and share the idea worker's process slot
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-9
+
+**Because:** The tap requirement depends on the selected agent's timeout and delivery command, while one scheduler must prevent idea jobs and assistant requests from overlapping
+
+**Rejected:**
+
+- Raise run_agent globally to tap — safe 15-minute agents without command deliveries are allowed to queue immediately
+- Use a separate request scheduler — it could launch alongside an idea job and violate the single detached-process limit
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: 41ea62b44abe4785bfe4b0e33d472f85 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:05:15.729Z"} -->
+
+## 2026-10-26 — Pass ASST-9 run-agent routing and execution behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-9
+
+**Because:** All 246 tests in the four required ASST-9 files pass; the full suite completes with only seven pre-existing unrelated console navigation and schema-version expectation failures
+
+**Files:** src/whyline/ideas/intent.py, src/whyline/ideas/bot.py, src/whyline/ideas/worker.py, src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 28a532f63dae4f8ab82d62d2ce9d4ca6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:15:44.982Z"} -->
+
+## 2026-10-26 — Reject ASST-9 because its detached request command is not registered
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-9
+
+**Because:** worker._spawn_request launches whyline idea request <id>, but the idea CLI parser has no request subcommand, so the production subprocess exits with argparse code 2 and never calls service.run_now; the direct worker.request unit test misses this integration path
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: d780ff3569d948d28639be927d5cb9ef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:25:59.445Z"} -->
+
+## 2026-10-26 — Expose assistant requests through the detached worker CLI path
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-9
+
+**Because:** The scheduler already launches a distinct whyline idea request <id> process, so the parser and dispatcher must route that exact command to worker.request for production runs to reach service.run_now
+
+**Rejected:**
+
+- Reuse idea work — request ids belong to a separate table and require different execution and notification semantics
+
+**Files:** src/whyline/ideas/cli.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: 8eccfbee1915465dafb59e459bab0a3b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:28:30.854Z"} -->
+
+## 2026-10-26 — Pass ASST-9 round 5 test gate
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-9
+
+**Because:** All 246 required intent, bot, worker, and email tests pass; the full suite has 2364 passes and only the seven previously documented unrelated console-navigation and schema-version expectation failures
+
+**Rejected:**
+
+- Fail ASST-9 — none of the full-suite failures exercise the run-agent implementation, and the complete task-specific gate passes
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: b78b5bd4f39e41a0bbacb7b8a4a5805c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:40:41.108Z"} -->
+
+## 2026-10-26 — Reject ASST-9 round 6 because Telegram file-bearing run commands are accepted
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-9
+
+**Because:** Telegram parsing retains only a document's caption, and bot._command_run validates only token count, so a document captioned 'run nightly' queues a run_agent request despite the requirement that any file be refused; the required disabled-provider Settings-hint/no-subprocess path is also not covered by the new worker test
+
+**Files:** src/whyline/ideas/telegram_in.py, src/whyline/ideas/bot.py, tests/ideas/test_bot.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: 900857fdc12b4ee2bc07ad02f8e2f5f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:51:38.167Z"} -->
+
+## 2026-10-26 — Preserve Telegram attachment presence in the inbound kind before routing run commands
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-9
+
+**Because:** The inbound schema has no attachment column and previously collapsed a file caption into indistinguishable plain text; an attachment suffix preserves the security-relevant bit without a schema migration, and the bot can refuse all Telegram media-bearing run commands
+
+**Rejected:**
+
+- Infer attachments from captions — captions are identical to ordinary message text after ingestion
+- Add an inbound schema column — unnecessary migration risk for a single boolean distinction
+
+**Files:** src/whyline/ideas/telegram_in.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: 38049243da00454eb24f39d060df7900 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:54:39.171Z"} -->
+
+## 2026-10-26 — Exercise the disabled-provider gate through the real saved-agent runner
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-9
+
+**Because:** Mocking service.run_now cannot prove Settings refusal happens before the provider subprocess; a temporary personal agent with its provider disabled covers the actual runner path and asserts no provider invocation
+
+**Rejected:**
+
+- Unit-test worker error formatting with a mocked run record — it would not verify the no-subprocess guarantee
+
+**Files:** tests/ideas/test_worker.py
+
+<!-- whyline-event: 1952e9e77c384427bfab3bb26b112d1b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T12:54:39.236Z"} -->
+
+## 2026-10-26 — ASST-9 passes behavioral testing despite unrelated baseline failures
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-9
+
+**Because:** All four required test files pass, the ten focused run-agent cases pass, and the seven full-suite failures are confined to unchanged console navigation and schema-version-5 expectations rather than ASST-9 behavior
+
+**Rejected:**
+
+- Fail ASST-9 for the full-suite exit code — the failing assertions exercise unchanged code and stale expectations unrelated to this implementation
+
+**Files:** tests/ideas/test_worker.py
+
+<!-- whyline-event: 7db2b8294b0c471b906d539dfab749a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:05:25.283Z"} -->
+
+## 2026-10-26 — Reject ASST-9 because remote runs bypass unattended activation gates
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-9
+
+**Because:** worker.request calls the watched/manual service.run_now path; run_now does not reject paused or backoff-bound activations and invokes runner.execute_once with unattended=False, while the new tests cover only provider enablement and therefore miss the required pause, backoff, and unattended-clearance gates
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: b17731f21944465891929796ce6e561d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:17:12.882Z"} -->
+
+## 2026-10-26 — Route remote agent runs through the scheduler gate and unattended provider filter
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-9
+
+**Because:** Telegram and email starts are detached and unwatched, so the scheduler's accepted-active-backoff gate must run immediately before service.run_now, and its runner invocation must filter providers with unattended clearance
+
+**Rejected:**
+
+- Use service.run_now directly — it is a watched manual path that permits paused or backoff-bound activations and sets unattended false
+- Duplicate the scheduler rules in the request worker — sharing tick._runnable avoids gate drift
+
+**Files:** src/whyline/ideas/worker.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: a660b71a54c449a08347185d620e9b85 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:20:27.877Z"} -->
+
+## 2026-10-26 — Pass ASST-9 remote run behavior despite unrelated branch-wide test failures
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-9
+
+**Because:** All four required ASST-9 test files pass, including exact-name parsing, extra-input refusal, tap approval, detached-process serialization, name-only execution, and scheduler gate failures; the seven full-suite failures are stale console navigation and schema-version expectations outside this task's behavior
+
+**Rejected:**
+
+- Fail ASST-9 for the full-suite result — the failures do not exercise or intersect the ASST-9 request path and would send correct task behavior back for unrelated work
+
+**Files:** tests/ideas/test_worker.py
+
+<!-- whyline-event: f25c0ccf86164758baa302c85102a8df -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:30:13.867Z"} -->
+
+## 2026-10-26 — Reject ASST-9 because remote runs skip the agent's configured delivery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-9
+
+**Because:** worker._run_remote_agent calls service.run_now, which finalizes via after.finish(..., notify=False), and worker never calls deliver.after_run; therefore only the request channel gets the outcome while the task explicitly requires the agent's own delivery to still send its result, and the added tests do not cover that behavior
+
+**Rejected:**
+
+- Approve based on the four green task test files — those tests omit the configured-delivery requirement
+
+**Files:** src/whyline/ideas/worker.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: 8a2370299fee414c9c46a0c42cf287d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:40:07.881Z"} -->
+
+## 2026-10-26 — Guarantee configured delivery for detached agent runs without sending it twice
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-9
+
+**Because:** service.run_now currently delivers through after.finish even with notify=False, so the worker only falls back to deliver.after_run when the returned record has no delivery results; this preserves delivery if run_now only finalizes while avoiding duplicate email, Telegram, or command sends
+
+**Rejected:**
+
+- Always call deliver.after_run after service.run_now — current service.run_now already calls it and would duplicate configured deliveries
+- Rely only on service.run_now implicitly — the detached request boundary and its regression test would not make the required delivery guarantee explicit
+
+**Files:** src/whyline/ideas/worker.py, tests/ideas/test_worker.py
+
+<!-- whyline-event: cec77338de674a319b7a8c31ee65ba00 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:42:39.209Z"} -->
+
+## 2026-10-26 — Pass ASST-9 after task tests and baseline comparison
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-9
+
+**Because:** all four required test files pass, and every failure from the full suite reproduces on a clean HEAD snapshot, so the implementation introduces no observed behavioral regression
+
+**Rejected:**
+
+- Fail ASST-9 for the seven full-suite failures — the exact failures reproduce on clean HEAD and are unrelated baseline console/schema expectation failures
+
+**Files:** tests/ideas/test_worker.py
+
+<!-- whyline-event: 2a54edb4ff464664adb1b15b3aa9253d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T13:52:49.026Z"} -->
+
+## 2026-10-26 — Approve ASST-9 run-agent routing and detached execution
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-9
+
+**Because:** The implementation enforces exact saved-agent names and no extra input, raises command or long-timeout runs to tap, serializes request work behind idea jobs, preserves activation/provider/read-only/delivery gates, and all four required test files pass; the seven full-suite failures exactly match the clean-HEAD baseline
+
+**Rejected:**
+
+- Request changes for the seven full-suite failures — they are unchanged baseline console-navigation and schema-version expectation failures unrelated to ASST-9
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: b1f8414adb374c259da5ad811e0ca3c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:04:29.759Z"} -->

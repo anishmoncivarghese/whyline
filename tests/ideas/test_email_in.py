@@ -11,7 +11,7 @@ import pytest
 from whyline import cli
 from whyline.agents import telegram
 from whyline.console import adapters
-from whyline.ideas import documents, email_in, paths, requests, store, telegram_in
+from whyline.ideas import bot, documents, email_in, paths, requests, store, telegram_in
 from whyline_relay import brainstorm as relay_brainstorm
 
 
@@ -125,6 +125,39 @@ def test_empty_subject_captures_idea(conn):
     assert idea.status == "captured"
     assert idea.title == "Track daily habits with friends"
     assert len(sent) == 1
+
+
+def test_run_subject_queues_exact_saved_agent_and_body_is_refused(
+    conn, monkeypatch,
+):
+    email_in.allow(conn, "boss@example.com")
+    defn = SimpleNamespace(name="nightly", agent_id="personal:nightly", timeout_minutes=15)
+    monkeypatch.setattr(
+        bot.service, "rows", lambda root: [SimpleNamespace(defn=defn)]
+    )
+    monkeypatch.setattr(bot.deliveries, "get", lambda _agent_id: None)
+    sent = []
+
+    email_in.handle(
+        conn,
+        _make_email(subject="run nightly", body="", message_id="<run-1@example.com>"),
+        mail_fn=lambda *args: sent.append(args),
+    )
+
+    row = conn.execute("SELECT * FROM requests").fetchone()
+    assert (row["action"], row["state"]) == ("run_agent", "queued")
+    assert json.loads(row["args_json"]) == {"agent": "nightly"}
+    assert sent == []
+
+    email_in.handle(
+        conn,
+        _make_email(
+            subject="run nightly", body="extra prompt", message_id="<run-2@example.com>"
+        ),
+        mail_fn=lambda *args: sent.append(args),
+    )
+    assert sent[-1][2] == "run takes only a saved agent's name."
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 1
 
 
 def test_repeated_message_id_is_ignored(conn):

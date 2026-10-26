@@ -336,6 +336,21 @@ def _confirm_request(conn: sqlite3.Connection, code: str, binding: dict, sender:
         return
 
 
+def _has_attachment(msg: Message) -> bool:
+    return any(
+        part.get_filename()
+        or "attachment" in str(part.get("Content-Disposition", "")).lower()
+        for part in msg.walk()
+        if part is not msg
+    )
+
+
+def _reply(mail_fn, sender: str, subject: str, text: str) -> None:
+    sender_fn = mail_fn or mail_send.send
+    reply_subject = f"Re: {subject}" if subject else "Whyline"
+    sender_fn([sender], reply_subject, text, [])
+
+
 def handle(
     conn: sqlite3.Connection,
     raw_or_msg,
@@ -364,6 +379,32 @@ def handle(
     allowed = set(allowed_senders(conn))
     if sender not in allowed or not is_authenticated(msg, authserv):
         _record_handled(conn, body)
+        return None
+
+    # A run is chosen only by the authenticated sender's subject. Its body
+    # and attachments are never treated as a prompt or passed to the agent.
+    subject_parts = subject.split()
+    if subject_parts and subject_parts[0].lower() == "run":
+        if len(subject_parts) != 2 or body.strip() or _has_attachment(msg):
+            _record_handled(conn, body)
+            _reply(mail_fn, sender, subject, "run takes only a saved agent's name.")
+            return None
+        from whyline.ideas import bot
+
+        request, error = bot.create_run_request(
+            conn,
+            subject_parts[1],
+            channel="email",
+            actor=sender,
+            chat_id=None,
+        )
+        _record_handled(conn, body)
+        if error:
+            _reply(mail_fn, sender, subject, error)
+        elif request is not None and request.state == "waiting_tap":
+            offer_request(conn, request, mail_fn=mail_fn)
+        elif request is not None and request.state == "refused":
+            _reply(mail_fn, sender, subject, request.error or "Run is turned off in the console.")
         return None
 
     # 2. Check for confirmation reply: "yes <code>"

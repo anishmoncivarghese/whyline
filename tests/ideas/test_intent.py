@@ -49,6 +49,8 @@ def _route(text, callback=None, *, open_question=False):
         ("status agents", "status", ("agents",)),
         ("/status relay", "status", ("relay",)),
         ("status morning-brief", "status", ("morning-brief",)),
+        ("run morning-brief", "run", ("morning-brief",)),
+        ("/run morning-brief", "run", ("morning-brief",)),
         ("/staus", "status", ()),
         ("/staus 4", "status", ("4",)),
         ("STAUS 9", "status", ("9",)),
@@ -99,6 +101,15 @@ def test_drop_without_the_required_id_is_capture(text):
 def test_status_takes_only_one_target():
     text = "status morning brief"
     assert _route(text) == capture(text)
+
+
+def test_run_keeps_extra_words_for_a_deterministic_refusal():
+    assert _route("run morning-brief with a prompt") == command(
+        "run", ("morning-brief", "with", "a", "prompt")
+    )
+    assert _route("run morning-brief\nextra prompt") == command(
+        "run", ("morning-brief", "extra", "prompt")
+    )
 
 
 def test_command_near_miss_uses_the_spec_cutoff(monkeypatch):

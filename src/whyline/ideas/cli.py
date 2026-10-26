@@ -120,6 +120,12 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     work.add_argument("job_id", type=int)
 
+    request = sub.add_parser(
+        "request",
+        help="Run one assistant request (called by the scheduler)",
+    )
+    request.add_argument("request_id", type=int)
+
     repos = sub.add_parser(
         "repos",
         help="Repositories an idea may be planned into",
@@ -182,7 +188,7 @@ def run(args: argparse.Namespace) -> int:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
             "export|documents|agents|assistant|doctor|telegram|service|work|"
-            "repos|email|actions",
+            "request|repos|email|actions",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1110,6 +1116,12 @@ def cmd_work(args: argparse.Namespace) -> int:
     return worker.work(int(args.job_id))
 
 
+def cmd_request(args: argparse.Namespace) -> int:
+    from whyline.ideas import worker
+
+    return worker.request(int(args.request_id))
+
+
 def _id_count(raw: str | None) -> int:
     if not raw:
         return 0
@@ -1412,6 +1424,7 @@ _COMMANDS = {
     "telegram": cmd_telegram,
     "service": cmd_service,
     "work": cmd_work,
+    "request": cmd_request,
     "repos": cmd_repos,
     "email": cmd_email,
     "actions": cmd_actions,
