@@ -497,6 +497,8 @@ def request(request_id: int) -> int:
             )
             if claimed.rowcount != 1:
                 return 0
+        if row["action"] == "ask_repo":
+            return _run_ask_request(conn, row)
         if row["action"] != "run_agent":
             error = f"unknown request action {row['action']}"
             assistant_requests.finish(conn, request_id, error=error)
@@ -549,6 +551,47 @@ def _request_error(detail: str) -> str:
     if marker in detail and " in Settings or choose another provider." in detail:
         return marker + detail.split(marker, 1)[1]
     return detail
+
+
+def _run_ask_request(conn: sqlite3.Connection, row) -> int:
+    from whyline.agents import convert
+    from whyline.ideas import ask
+
+    try:
+        args = json.loads(row["args_json"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        args = {}
+    repo = args.get("repo") if isinstance(args, dict) else None
+    question = args.get("question") if isinstance(args, dict) else None
+    if (
+        not isinstance(repo, str)
+        or not repo
+        or not isinstance(question, str)
+        or not question
+    ):
+        error = "ask request has no repository or question"
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+    try:
+        answer = ask.run(conn, int(row["id"]), repo, question)
+    except Exception as exc:
+        error = " ".join(str(exc).split()) or "the question was not answered"
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+    assistant_requests.finish(
+        conn, int(row["id"]), result_path=str(answer.path)
+    )
+    if len(answer.text) < 3500:
+        _notify_request(conn, row, answer.text)
+    else:
+        docx = convert.to_docx(answer.path, answer.path.with_suffix(".docx"))
+        _notify_request_document(conn, row, docx or answer.path)
+    _flush(conn)
+    return 0
 
 
 def _run_remote_agent(name: str):
@@ -921,8 +964,12 @@ def _start_one_request(conn, now: datetime, spawn) -> bool:
     ).fetchone()
     if row is None:
         return False
-    timeout = _request_timeout(row)
-    lease = _stamp(now + timedelta(minutes=timeout) + LEASE_MARGIN)
+    timeout = _request_timeout(conn, row)
+    lease = (
+        None
+        if timeout is None
+        else _stamp(now + timedelta(minutes=timeout) + LEASE_MARGIN)
+    )
     claimed = conn.execute(
         """
         UPDATE requests
@@ -951,7 +998,7 @@ def _start_one_request(conn, now: datetime, spawn) -> bool:
             "UPDATE requests SET pid = ? WHERE id = ? AND state = 'running'",
             (int(pid), row["id"]),
         )
-    _notify_request(conn, row, f"Started {_request_agent(row)}.")
+    _notify_request(conn, row, f"Started {_request_label(row)}.")
     return True
 
 
@@ -966,7 +1013,17 @@ def _request_agent(row) -> str:
     return name if isinstance(name, str) and name else "agent"
 
 
-def _request_timeout(row) -> int:
+def _request_label(row) -> str:
+    if row["action"] == "ask_repo":
+        return "ask"
+    return _request_agent(row)
+
+
+def _request_timeout(conn, row) -> int | None:
+    if row["action"] == "ask_repo":
+        from whyline.ideas import ask
+
+        return ask.timeout_minutes(conn)
     if row["action"] != "run_agent":
         return SCORE_TIMEOUT_MINUTES
     name = _request_agent(row)
@@ -998,6 +1055,27 @@ def _notify_request(conn, row, text: str) -> None:
 
         try:
             mail_send.send([str(row["actor"])], f"Run {_request_agent(row)}", text, [])
+        except Exception:
+            log.exception("could not email assistant request %s", row["id"])
+
+
+def _notify_request_document(conn, row, path) -> None:
+    channel = str(row["channel"] or "")
+    if channel == "telegram" and row["chat_id"] is not None:
+        conn.execute(
+            """
+            INSERT INTO outbox (chat_id, kind, text, document_path, attempts)
+            VALUES (?, 'document', 'Answer', ?, 0)
+            """,
+            (int(row["chat_id"]), str(path)),
+        )
+    elif channel == "email" and row["actor"]:
+        from whyline.agents import mail_send
+
+        try:
+            mail_send.send(
+                [str(row["actor"])], "Repository answer", "Answer attached.", [path]
+            )
         except Exception:
             log.exception("could not email assistant request %s", row["id"])
 

@@ -51,6 +51,8 @@ def _route(text, callback=None, *, open_question=False):
         ("status morning-brief", "status", ("morning-brief",)),
         ("run morning-brief", "run", ("morning-brief",)),
         ("/run morning-brief", "run", ("morning-brief",)),
+        ("ask app where is config", "ask", ("app", "where", "is", "config")),
+        ("/ask where is config", "ask", ("where", "is", "config")),
         ("/staus", "status", ()),
         ("/staus 4", "status", ("4",)),
         ("STAUS 9", "status", ("9",)),
@@ -109,6 +111,12 @@ def test_run_keeps_extra_words_for_a_deterministic_refusal():
     )
     assert _route("run morning-brief\nextra prompt") == command(
         "run", ("morning-brief", "extra", "prompt")
+    )
+
+
+def test_ask_keeps_the_whole_question_for_the_command_handler():
+    assert _route("ask app how does this work") == command(
+        "ask", ("app", "how", "does", "this", "work")
     )
 
 

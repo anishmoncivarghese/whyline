@@ -716,6 +716,42 @@ def test_run_unknown_saved_name_is_refused(conn, token, monkeypatch):
     assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
 
 
+def test_ask_unknown_repo_lists_allowed_names_without_a_request(
+    conn, token, monkeypatch,
+):
+    monkeypatch.setattr(
+        bot.setup,
+        "list_repos",
+        lambda _conn: {"app": "/repos/app", "api": "/repos/api"},
+    )
+
+    bot.handle(conn, _message("ask nowhere what changed"))
+
+    assert _outbox(conn, "message")[-1]["text"] == (
+        "Unknown repo nowhere. Allowed repos: app, api."
+    )
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+
+
+def test_ask_single_repo_shorthand_queues_the_question(conn, token, monkeypatch):
+    monkeypatch.setattr(
+        bot.setup, "list_repos", lambda _conn: {"app": "/repos/app"}
+    )
+
+    bot.handle(conn, _message("ask where is config loaded"))
+
+    req = _latest_request(conn)
+    assert (req["action"], req["state"], req["approval"]) == (
+        "ask_repo",
+        "queued",
+        "none",
+    )
+    assert json.loads(req["args_json"]) == {
+        "repo": "app",
+        "question": "where is config loaded",
+    }
+
+
 def test_settings_open_the_matching_confirm_card(conn, token):
     _capture(conn)
     bot.handle(conn, _message("models: claude\ntimeout: 30", update_id=6, message_id=6))

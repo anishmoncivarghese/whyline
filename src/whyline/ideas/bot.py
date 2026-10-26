@@ -166,6 +166,7 @@ Commands:
 /list
 /status [id]
 /run <saved-agent>
+/ask <repo> <question>
 /excel
 /brainstorm [id]
 /plan [id]
@@ -626,6 +627,8 @@ def _command(conn, row, routed: intent.Intent, *, http=None) -> None:
         _command_status(conn, row, routed)
     elif name == "run":
         _command_run(conn, row, routed)
+    elif name == "ask":
+        _command_ask(conn, row, routed)
     elif name == "stop":
         _command_stop(conn, row, routed)
     elif name == "new":
@@ -706,6 +709,46 @@ def _command_run(conn, row, routed: intent.Intent) -> None:
         offer_request(conn, request)
     elif request.state == "refused":
         _say(conn, row, request.error or "Run is turned off in the console.")
+
+
+def _command_ask(conn, row, routed: intent.Intent) -> None:
+    repos = setup.list_repos(conn)
+    args = list(routed.args)
+    if not args:
+        _say(conn, row, "ask needs a question.")
+        return
+    if len(repos) == 1:
+        repo = next(iter(repos))
+        question_parts = args[1:] if args[0] == repo else args
+    else:
+        repo = args[0]
+        question_parts = args[1:]
+        if repo not in repos:
+            allowed = ", ".join(repos) if repos else "(none)"
+            _say(conn, row, f"Unknown repo {repo}. Allowed repos: {allowed}.")
+            return
+    if repo not in repos:
+        allowed = ", ".join(repos) if repos else "(none)"
+        _say(conn, row, f"Unknown repo {repo}. Allowed repos: {allowed}.")
+        return
+    question = " ".join(question_parts).strip()
+    if not question:
+        _say(conn, row, "ask needs a question.")
+        return
+    chat_id = int(_field(row, "chat_id"))
+    created = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(chat_id),
+        chat_id=chat_id,
+        action="ask_repo",
+        args={"repo": repo, "question": question},
+        proposed_by="keyword",
+    )
+    if created.state == "waiting_tap":
+        offer_request(conn, created)
+    elif created.state == "refused":
+        _say(conn, row, created.error or "Ask is turned off in the console.")
 
 
 def _settings(conn, row, routed: intent.Intent) -> None:

@@ -25842,3 +25842,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b1f8414adb374c259da5ad811e0ca3c0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:04:29.759Z"} -->
+
+## 2026-10-26 — Re-resolve ask repositories and reuse the filtered score chain at execution
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-10
+
+**Because:** A queued ask stores only the repository name and question, so the worker can enforce the current setup.list_repos allowlist while bot.score_agents supplies only enabled unattended-cleared providers in configured failover order
+
+**Rejected:**
+
+- Store the repository path in request args — a stale or forged request could run outside the current allowlist
+- Choose a provider in the bot — provider enablement can change before the detached worker starts
+
+**Files:** src/whyline/ideas/ask.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: cd662b76c71f42119df38f17ce1e4676 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:09:52.261Z"} -->
+
+## 2026-10-26 — Pass ASST-10 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-10
+
+**Because:** All 199 task-specific tests pass, covering unknown-repo refusal, single-repo shorthand, read-only argv and cwd, provider fallback and disabled-provider skipping, and long-answer document delivery; the full suite's seven failures exactly match the documented clean-HEAD baseline console-navigation and schema-version expectation failures
+
+**Rejected:**
+
+- Fail for the full-suite result — all seven failures are established baseline failures outside ASST-10 and none touch the allowed task files or required behavior
+
+**Files:** tests/ideas/test_ask.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: 1c8314da1b4b4994993829a5e2c2296a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:19:24.431Z"} -->
+
+## 2026-10-26 — Approve ASST-10 repository question workflow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-10
+
+**Because:** The implementation revalidates the repository allowlist at execution, derives every provider command through the read-only capability boundary, preserves enabled unattended score-chain failover, stores private Markdown answers, and delivers long answers through DOCX; all 199 focused tests pass, while the full suite's seven failures are pre-existing console-navigation and schema-version expectations outside the task files
+
+**Files:** src/whyline/ideas/ask.py
+
+<!-- whyline-event: 869184053703452d8e5371f947538ba5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:30:17.297Z"} -->
