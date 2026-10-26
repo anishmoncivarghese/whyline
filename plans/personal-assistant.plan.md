@@ -176,7 +176,7 @@ Rules every task keeps:
   - the 80x24 layout
   Verify with `uv run pytest -q tests/console/test_mode_buttons.py tests/console/test_agents_mode.py tests/console/test_tui.py`. Change nothing else.
 
-- [ ] ASST-7: Assistant screen in the console: actions and history
+- [x] ASST-7: Assistant screen in the console: actions and history
   Add `src/whyline/console/assistant_screen.py` and `tests/console/test_assistant_screen.py`. Edit `src/whyline/console/tui.py` and `tests/console/test_mode_buttons.py` only to wire the Assistant mode's `Assistant…` button (from ASST-MODE) to open it.
   Later tasks that add a section to `assistant_screen.py` (Reminders, Memory, Help/doctor, Morning brief) put it on this screen, so every assistant setting is reached from Assistant mode.
   `AssistantScreen` is a modal with two sections:
