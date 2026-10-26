@@ -194,7 +194,7 @@ Rules every task keeps:
 
 ## Phase 3: read-only verbs
 
-- [ ] ASST-8: `status` for agents and the relay
+- [x] ASST-8: `status` for agents and the relay
   Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `tests/ideas/test_intent.py`, and `tests/ideas/test_bot.py` only.
   `status` keeps today's idea behaviour. Add these forms, all with no model call:
   - `status agents`: each saved agent from `whyline.agents.service.rows(None)` with its last run outcome and time, and whether it is paused
