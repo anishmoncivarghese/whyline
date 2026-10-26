@@ -156,8 +156,29 @@ Rules every task keeps:
   - idea buttons still work unchanged
   Verify with `uv run pytest -q tests/ideas/test_intent.py tests/ideas/test_bot.py tests/ideas/test_email_in.py`. Change nothing else.
 
+- [ ] ASST-MODE: An Assistant mode in the console
+  Added 2026-10-26 at the user's request: the assistant gets its own console mode beside Chat, Relay and Agents, so all of its setup and settings are in one place.
+  Edit `src/whyline/console/tui.py`, `tests/console/test_mode_buttons.py`, `tests/console/test_agents_mode.py`, and `tests/console/test_tui.py` only.
+  - Add `"assistant"` to `_MODES` and an `Assistant` button (`#mode-assistant`) after `Agents` in the mode bar. Mode switching, the `mode:` sub-title and the button highlight work as for the other modes. Settings stays a shared control in all four modes.
+  - The Assistant mode's controls row has these buttons:
+    - `Inbox` and `Ideas`, moved from Agents mode with new ids `#assistant-inbox` and `#assistant-ideas`, still opening through `_open_inbox` and `_open_ideas`
+    - `Assistant…`, a placeholder that ASST-7 wires to `AssistantScreen`
+    - `Check`, which runs the existing inbox Check
+  - Agents mode keeps saved agents only. Remove `#agents-inbox` and `#agents-ideas` from it, and update the tests that pressed them to press the Assistant-mode buttons instead, keeping what they check.
+  - Typing in the input while in Assistant mode prints `Use the buttons above, or message the bot on Telegram.` and runs no agent.
+  - At 80x24 the four mode buttons and Settings fit on one row, and the Assistant controls stay reachable.
+  Tests:
+  - switching to Assistant mode and back
+  - the highlight
+  - Inbox and Ideas open their screens from Assistant mode
+  - Agents mode no longer shows them
+  - input in Assistant mode runs nothing
+  - the 80x24 layout
+  Verify with `uv run pytest -q tests/console/test_mode_buttons.py tests/console/test_agents_mode.py tests/console/test_tui.py`. Change nothing else.
+
 - [ ] ASST-7: Assistant screen in the console: actions and history
-  Add `src/whyline/console/assistant_screen.py` and `tests/console/test_assistant_screen.py`. Edit `src/whyline/console/inbox_screen.py` and `tests/console/test_inbox_screen.py` only to add an `Assistant…` button that opens it.
+  Add `src/whyline/console/assistant_screen.py` and `tests/console/test_assistant_screen.py`. Edit `src/whyline/console/tui.py` and `tests/console/test_mode_buttons.py` only to wire the Assistant mode's `Assistant…` button (from ASST-MODE) to open it.
+  Later tasks that add a section to `assistant_screen.py` (Reminders, Memory, Help/doctor, Morning brief) put it on this screen, so every assistant setting is reached from Assistant mode.
   `AssistantScreen` is a modal with two sections:
   - **Actions:** one row per `actions.REGISTRY` entry, with an on/off checkbox and an approval select. A writing action's select offers only `tap`. Save calls `actions.set_policy` once per changed row and stays open, with the error, on a refusal.
   - **History:** the last 50 `requests.history` rows, showing time, channel, action, state, and the error or result path.
@@ -169,7 +190,7 @@ Rules every task keeps:
   - Cancel writes nothing
   - history renders states
   - both sizes keep buttons on-screen
-  Verify with `uv run pytest -q tests/console/test_assistant_screen.py tests/console/test_inbox_screen.py`. Change nothing else.
+  Verify with `uv run pytest -q tests/console/test_assistant_screen.py tests/console/test_mode_buttons.py`. Change nothing else.
 
 ## Phase 3: read-only verbs
 
