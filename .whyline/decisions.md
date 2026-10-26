@@ -25478,3 +25478,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 46e5a03fdeb94355bb084ec5d005f389 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:14:42.571Z"} -->
+
+## 2026-10-26 — Keep Assistant policy staged while pinning modal controls outside the scroll body
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-7
+
+**Because:** Cancel must write nothing, changed rows must each use actions.set_policy, refusal must remain visible, and Save/Cancel must stay reachable at 80x24 while all registry rows and history remain accessible
+
+**Rejected:**
+
+- write on widget change — it would make Cancel persist changes
+- put buttons inside the scroll body — eleven actions plus history can push them off a 24-row terminal
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 4083803f4d9340cb944f269b45ff3369 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:17:24.512Z"} -->
+
+## 2026-10-26 — Pass ASST-7 behavioral testing despite unrelated full-suite failures
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-7
+
+**Because:** The required Assistant screen and mode-button suite passes all 12 tests, covering registry rows, write approval constraints, changed-only saves, cancel behavior, history states, no-Telegram operation, and both terminal sizes; the full suite's seven failures are the already documented four stale pre-Assistant mode expectations and three unrelated schema-version-5 expectations
+
+**Rejected:**
+
+- Fail ASST-7 for the seven full-suite failures — none identifies an Assistant screen actions/history defect and all match the documented unrelated baseline
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: faff3729e3f0464d90b371e758769da7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:27:48.027Z"} -->
+
+## 2026-10-26 — Approve ASST-7 Assistant actions and history screen
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-7
+
+**Because:** The modal lists every registry action, enforces tap approval where required, stages and saves only changed policies, preserves the modal with an error on refusal, renders the latest 50 request records, works without Telegram configuration, and keeps controls reachable at both required sizes; the plain full suite completed with only seven documented unrelated stale mode/schema expectations
+
+**Rejected:**
+
+- Request changes — code inspection, task tests, and the full test run found no ASST-7 defect
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: bc1ea70e37464fff8de25e74a26929f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:39:30.082Z"} -->

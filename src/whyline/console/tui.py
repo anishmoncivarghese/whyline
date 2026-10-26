@@ -2127,6 +2127,11 @@ class WhylineConsoleApp(App):
 
         self.push_screen(IdeasScreen())
 
+    def _open_assistant(self) -> None:
+        from whyline.console.assistant_screen import AssistantScreen
+
+        self.push_screen(AssistantScreen())
+
     def _check_inbox(self) -> None:
         from whyline.console.inbox_screen import _doctor_text
 
@@ -3482,6 +3487,8 @@ class WhylineConsoleApp(App):
             self._open_inbox()
         elif button_id == "assistant-ideas":
             self._open_ideas()
+        elif button_id == "assistant-open":
+            self._open_assistant()
         elif button_id == "assistant-check":
             self._check_inbox()
         elif button_id == "awake":
