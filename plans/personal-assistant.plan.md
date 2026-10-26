@@ -73,7 +73,7 @@ Rules every task keeps:
   - the existing email confirm flow still starts the brainstorm with a current code
   Verify with `uv run pytest -q tests/ideas/test_confirm.py tests/ideas/test_email_in.py`. Change nothing else.
 
-- [ ] ASST-3: Install the Mail rule script from the console
+- [x] ASST-3: Install the Mail rule script from the console
   Edit `src/whyline/console/inbox_screen.py`, `src/whyline/console/agents_screens.py`, `tests/console/test_inbox_screen.py`, and the closest existing agent detail screen test file only.
   `whyline idea email mail-script` and `whyline agents mail-script <name>` have no console counterpart.
   - Add `Install Mail rule…` to the Inbox screen's email section, and the same button to the saved-agent detail screen (shown only for agents whose trigger is manual or folder). Both call `whyline.agents.mail.install(name)` (`"idea"` for the inbox), exactly as the CLI does.
