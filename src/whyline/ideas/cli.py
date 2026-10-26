@@ -151,6 +151,29 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     handle_e.add_argument("--file", action="append", default=[], help="Path to email file")
     email_sub.add_parser("mail-script", help="Install Mail.app rule script for email intake")
 
+    actions = sub.add_parser(
+        "actions",
+        help="Assistant actions and their approval policy",
+    )
+    actions_sub = actions.add_subparsers(dest="idea_actions_command", required=True)
+    actions_sub.add_parser("list", help="List actions, on/off, approval, and summary")
+    set_a = actions_sub.add_parser("set", help="Change an action's policy")
+    set_a.add_argument("name", help="Action name")
+    switch = set_a.add_mutually_exclusive_group()
+    switch.add_argument(
+        "--on", action="store_const", const=True, dest="enabled", help="Enable the action"
+    )
+    switch.add_argument(
+        "--off", action="store_const", const=False, dest="enabled", help="Disable the action"
+    )
+    set_a.add_argument(
+        "--approval",
+        choices=("none", "tap"),
+        default=None,
+        help="Approval the action needs",
+    )
+    set_a.set_defaults(enabled=None)
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -158,7 +181,8 @@ def run(args: argparse.Namespace) -> int:
     if handler is None:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
-            "export|documents|agents|assistant|doctor|telegram|service|work|repos|email",
+            "export|documents|agents|assistant|doctor|telegram|service|work|"
+            "repos|email|actions",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1335,6 +1359,43 @@ def cmd_email(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_actions(args: argparse.Namespace) -> int:
+    from whyline.ideas import actions
+
+    action = getattr(args, "idea_actions_command", None)
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        if action == "list":
+            policy = actions.policy(conn)
+            for name, spec in actions.REGISTRY.items():
+                row = policy[name]
+                state = "on" if row["enabled"] else "off"
+                print(f"{name}  {state}  {row['approval']}  {spec.summary}")
+            return EXIT_OK
+        if action == "set":
+            try:
+                actions.set_policy(
+                    conn,
+                    args.name,
+                    enabled=getattr(args, "enabled", None),
+                    approval=getattr(args, "approval", None),
+                )
+            except actions.PolicyError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            row = actions.policy(conn)[args.name]
+            state = "on" if row["enabled"] else "off"
+            spec = actions.REGISTRY[args.name]
+            print(f"{args.name}  {state}  {row['approval']}  {spec.summary}")
+            return EXIT_OK
+        print("usage: whyline idea actions list|set", file=sys.stderr)
+        return EXIT_USAGE
+    finally:
+        conn.close()
+
+
 _COMMANDS = {
     "add": cmd_add,
     "list": cmd_list,
@@ -1353,4 +1414,5 @@ _COMMANDS = {
     "work": cmd_work,
     "repos": cmd_repos,
     "email": cmd_email,
+    "actions": cmd_actions,
 }

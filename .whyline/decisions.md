@@ -25118,3 +25118,70 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ac32b28e4965478cb267db207a44be67 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:56:18.150Z"} -->
+
+## 2026-10-26 — REGISTRY is a name-keyed MappingProxyType; missing policy fields default to enabled and default_approval
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-4
+
+**Because:** ASST-5 checks name in REGISTRY and looks up the Action; policy() must return every registry name even when kv is empty or holds unknown keys
+
+**Rejected:**
+
+- a tuple of Action — membership would need a comprehension at every caller
+- error on unknown saved keys — the merge test only requires they stay out of the returned map
+
+**Files:** src/whyline/ideas/actions.py
+
+<!-- whyline-event: 5ad9ecab3b50448dacd133b0850e3b84 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:02:48.215Z"} -->
+
+## 2026-10-26 — Verbs are the keyword users type, summaries are card titles
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-4
+
+**Because:** ASST-5 refusal text and ASST-17 help use Action.verb, and ASST-6 titles a confirm card with Action.summary; the plan table omitted both so they follow the design-doc keyword column (idea, run, ask, do, stop)
+
+**Rejected:**
+
+- verb equals the action name — capture/run_agent/do_task are not what users type
+- longer summaries — card titles need to stay short
+
+**Files:** src/whyline/ideas/actions.py
+
+<!-- whyline-event: c52e699e61704c97b101d355ba51aae1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:02:48.215Z"} -->
+
+## 2026-10-26 — ASST-4 action registry and policy behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** ASST-4
+
+**Because:** REGISTRY has the 11 named actions with the planned writes/cost/approval fields; policy() merges assistant_policy and drops unknown keys; set_policy refuses unknown names and approvals below min_approval with the specified tap message (including brainstorm); approval_for always returns tap for proposed_by=assistant; CLI list/set go through those functions. uv run pytest -q tests/ideas/test_actions.py tests/ideas/test_cli.py: 51 passed. uv run pytest -q: full suite passed with 1 skip. Extra probes: Action is frozen, REGISTRY is immutable, set_policy persists, invalid approval is refused.
+
+**Rejected:**
+
+- fail for no console Actions screen — this task is CLI-only and ASST-MODE owns the console counterpart
+- fail because verb/summary are not in the plan table — the table omitted them, tests only require they are present, and values follow the design-doc keywords
+
+**Files:** src/whyline/ideas/actions.py, src/whyline/ideas/cli.py, tests/ideas/test_actions.py, tests/ideas/test_cli.py
+
+<!-- whyline-event: a6656671c0a34ebfa6e0df7ed5342b1f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:14:41.892Z"} -->
+
+## 2026-10-26 — ASST-4 action registry and policy approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-4
+
+**Because:** The frozen 11-action registry, persisted policy merge, minimum-approval enforcement, assistant proposal escalation, and CLI list/set behavior match the task; the tests cover each required case and the full uv run pytest -q suite exited 0 with one skip.
+
+**Files:** src/whyline/ideas/actions.py, src/whyline/ideas/cli.py, tests/ideas/test_actions.py, tests/ideas/test_cli.py
+
+<!-- whyline-event: 116fd33c510b491b97cdb27dfb84ed8e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:24:41.175Z"} -->

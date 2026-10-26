@@ -9,7 +9,7 @@ import pytest
 
 from whyline import cli
 from whyline.agents import launchd, telegram
-from whyline.ideas import documents, email_in, store, telegram_in
+from whyline.ideas import actions, documents, email_in, store, telegram_in
 
 
 TOKEN = "123:secret"
@@ -1138,3 +1138,60 @@ def test_doctor_reports_unset_email_authserv(
     text = out + err
     assert email_in.AUTHSERV_UNSET_NOTE in text
     assert "email authserv" in text
+
+
+def _action_line(out, name):
+    for line in out.splitlines():
+        if line.split()[:1] == [name]:
+            return line
+    raise AssertionError(f"no row for {name} in:\n{out}")
+
+
+def test_actions_list_shows_defaults(ideas_home, capsys):
+    code, out, err = invoke(["idea", "actions", "list"], capsys)
+    assert code == 0, err
+    lines = [line for line in out.splitlines() if line.strip()]
+    assert [line.split()[0] for line in lines] == list(actions.REGISTRY)
+    for name, spec in actions.REGISTRY.items():
+        line = _action_line(out, name)
+        assert f"{name}  on  {spec.default_approval}  {spec.summary}" == line
+
+
+def test_actions_set_updates_policy(ideas_home, capsys):
+    code, out, err = invoke(
+        ["idea", "actions", "set", "capture", "--off", "--approval", "tap"],
+        capsys,
+    )
+    assert code == 0, err
+    spec = actions.REGISTRY["capture"]
+    assert out.strip() == f"capture  off  tap  {spec.summary}"
+    conn = store.connect()
+    try:
+        row = actions.policy(conn)["capture"]
+    finally:
+        conn.close()
+    assert row == {"enabled": False, "approval": "tap"}
+    code, listed, err = invoke(["idea", "actions", "list"], capsys)
+    assert code == 0, err
+    assert _action_line(listed, "capture") == f"capture  off  tap  {spec.summary}"
+    assert "on" in _action_line(listed, "status")
+
+
+def test_actions_set_refuses_do_task_none(ideas_home, capsys):
+    code, out, err = invoke(
+        ["idea", "actions", "set", "do_task", "--approval", "none"],
+        capsys,
+    )
+    assert code == 1
+    assert "do_task changes things, so it always needs a tap." in err
+    conn = store.connect()
+    try:
+        assert actions.policy(conn)["do_task"]["approval"] == "tap"
+    finally:
+        conn.close()
+
+
+def test_actions_set_refuses_an_unknown_name(ideas_home, capsys):
+    code, out, err = invoke(["idea", "actions", "set", "explode", "--on"], capsys)
+    assert code == 1
+    assert "unknown action explode" in err
