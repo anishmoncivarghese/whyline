@@ -298,7 +298,7 @@ def test_yes_code_starts_brainstorm_and_reply_carries_word_and_pdf(conn, monkeyp
     assert len(sent) == 1
     confirmation_body = sent[0][2]
     import re
-    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", confirmation_body)
+    match = re.search(r"yes\s+([a-zA-Z0-9]{8})", confirmation_body)
     assert match is not None
     code = match.group(1)
 
@@ -356,7 +356,7 @@ def test_yes_code_does_not_run_a_disabled_provider(conn, monkeypatch):
     )
     idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
     assert idea is not None
-    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", sent[0][2])
+    match = re.search(r"yes\s+([a-zA-Z0-9]{8})", sent[0][2])
     assert match is not None
     code = match.group(1)
 
@@ -391,7 +391,7 @@ def test_yes_code_refuses_a_mixed_saved_chain_before_a_subprocess(conn, monkeypa
     )
     idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
     assert idea is not None
-    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", sent[0][2])
+    match = re.search(r"yes\s+([a-zA-Z0-9]{8})", sent[0][2])
     assert match is not None
     code = match.group(1)
     stored = json.loads(
@@ -431,7 +431,7 @@ def test_stale_code_does_not_start_brainstorm(conn, monkeypatch):
     )
     idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
     assert idea is not None
-    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", sent[0][2])
+    match = re.search(r"yes\s+([a-zA-Z0-9]{8})", sent[0][2])
     old_code = match.group(1)
 
     # Bump revision so old_code becomes stale
@@ -455,6 +455,44 @@ def test_stale_code_does_not_start_brainstorm(conn, monkeypatch):
     assert len(sent) == 1  # No second email sent
 
 
+def test_old_email_code_keys_are_ignored(conn, monkeypatch):
+    email_in.allow(conn, "boss@example.com")
+    sent = []
+    capture_raw = _make_email(
+        sender="boss@example.com",
+        subject="idea",
+        body="Legacy confirmation keys must not start a brainstorm",
+        message_id="<legacy-1@example.com>",
+    )
+    idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
+    assert idea is not None
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?, ?)",
+        (
+            "email_code:deadbeef",
+            json.dumps({
+                "idea_id": idea.id,
+                "revision": idea.revision,
+                "action": "start_brainstorm",
+                "sender": "boss@example.com",
+            }),
+        ),
+    )
+    called = []
+    monkeypatch.setattr(adapters, "run_brainstorm", lambda *a, **k: called.append(True))
+    reply_raw = _make_email(
+        sender="boss@example.com",
+        subject="Re: idea",
+        body="yes deadbeef",
+        message_id="<legacy-reply@example.com>",
+    )
+    result = email_in.handle(conn, reply_raw, mail_fn=lambda *a: sent.append(a))
+    assert result is None
+    assert called == []
+    assert store.get(conn, idea.id).status == "captured"
+    assert len(sent) == 1
+
+
 def test_wrong_code_changes_nothing(conn, monkeypatch):
     email_in.allow(conn, "boss@example.com")
     sent = []
@@ -473,7 +511,7 @@ def test_wrong_code_changes_nothing(conn, monkeypatch):
     reply_raw = _make_email(
         sender="boss@example.com",
         subject="Re: idea",
-        body="yes 999999",
+        body="yes 99999999",
         message_id="<diff-reply@example.com>",
     )
     result = email_in.handle(conn, reply_raw, mail_fn=lambda *a: sent.append(a))
@@ -551,7 +589,7 @@ def test_cross_sender_confirmation_is_rejected(conn, monkeypatch):
     idea = email_in.handle(conn, capture_raw, mail_fn=lambda *a: sent.append(a))
     assert idea is not None
     assert len(sent) == 1
-    match = re.search(r"yes\s+([a-zA-Z0-9]{6})", sent[0][2])
+    match = re.search(r"yes\s+([a-zA-Z0-9]{8})", sent[0][2])
     assert match is not None
     code = match.group(1)
 

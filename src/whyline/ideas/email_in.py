@@ -10,7 +10,6 @@ the idea's revision. Documents go back as Word and PDF attachments.
 from __future__ import annotations
 
 import email.utils
-import hashlib
 import json
 import re
 import sqlite3
@@ -18,7 +17,7 @@ from email.message import Message
 from pathlib import Path
 
 from whyline.agents import mail, mail_send
-from whyline.ideas import brainstorm, documents, intent, store
+from whyline.ideas import brainstorm, confirm, documents, intent, store
 
 ALLOW_KEY = "email_allow"
 AUTHSERV_KEY = "email_authserv"
@@ -27,7 +26,9 @@ AUTHSERV_UNSET_NOTE = (
 )
 AUTHSERV_HINTS = ("mx.google.com", "icloud.com", "mx.microsoft.com")
 _SETTING_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$")
-_YES_CODE_RE = re.compile(r"\byes\b\s*[:,-]?\s*([a-zA-Z0-9]{6})\b", re.IGNORECASE)
+_YES_CODE_RE = re.compile(r"\byes\b\s*[:,-]?\s*([a-zA-Z0-9]{8})\b", re.IGNORECASE)
+_EMAIL_SCOPE = "email"
+_IDEA_SUBJECT_RE = re.compile(r"^idea:(\d+):rev:(\d+)$")
 _COMMENT_RE = re.compile(r"\([^)]*\)")
 _METHOD_RE = re.compile(r"(\w+)\s*=\s*(\w+)", re.IGNORECASE)
 _PROP_RE = re.compile(r"(\w+)\s*\.\s*(\w+)\s*=\s*([^\s;]+)", re.IGNORECASE)
@@ -111,9 +112,15 @@ def deny(conn: sqlite3.Connection, address: str) -> None:
     _save_allowed(conn, current)
 
 
-def code_for(idea_id: int, revision: int) -> str:
-    """Generate a 6-character code bound to this idea's revision."""
-    return hashlib.sha256(f"whyline-email:{idea_id}:{revision}".encode("utf-8")).hexdigest()[:6]
+def _idea_subject(idea_id: int, revision: int) -> str:
+    return f"idea:{idea_id}:rev:{revision}"
+
+
+def _parse_idea_subject(subject: str) -> tuple[int, int] | None:
+    match = _IDEA_SUBJECT_RE.fullmatch(subject)
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
 
 
 def configured_authserv(conn: sqlite3.Connection) -> str | None:
@@ -326,24 +333,21 @@ def handle(
     yes_match = _YES_CODE_RE.search(body)
     if yes_match:
         code = yes_match.group(1).lower()
-        code_entry = _kv(conn, f"email_code:{code}")
-        if not code_entry:
-            # Wrong code changes nothing
+        binding = confirm._payload(conn, code)
+        if not binding:
             return None
-        try:
-            code_data = json.loads(code_entry)
-        except json.JSONDecodeError:
+        subject_token = binding.get("subject")
+        if not isinstance(subject_token, str):
             return None
-        idea_id = code_data.get("idea_id")
-        expected_revision = code_data.get("revision")
-        if idea_id is None or expected_revision is None:
+        parsed = _parse_idea_subject(subject_token)
+        if parsed is None:
             return None
-
-        # Cross-sender confirmation rejection: only the originating authenticated sender may confirm
-        originating_sender = code_data.get("sender") or _kv(conn, f"email_sender:{idea_id}")
-        if originating_sender and sender != originating_sender.strip().lower():
+        if binding.get("scope") != _EMAIL_SCOPE or binding.get("actor") != sender:
             return None
-
+        expires_at = binding.get("expires_at")
+        if not isinstance(expires_at, str) or store._now() >= expires_at:
+            return None
+        idea_id, expected_revision = parsed
         idea = store.get(conn, int(idea_id))
         if idea is None or idea.revision != expected_revision:
             # Stale code changes nothing
@@ -385,6 +389,14 @@ def handle(
                 "No agent can brainstorm unattended.",
             )
             raise brainstorm.BrainstormError(hint)
+        if not confirm.consume(
+            conn,
+            code,
+            scope=_EMAIL_SCOPE,
+            subject=subject_token,
+            actor=sender,
+        ):
+            return None
 
         dest = brainstorm.run(conn, idea.id, request, run_fn=run_fn)
         fresh = store.get(conn, idea.id)
@@ -434,20 +446,12 @@ def handle(
         request = base
     _kv_set(conn, f"telegram_settings:{idea.id}", json.dumps(request.as_fields()))
 
-    # Generate six-character code bound to the idea's revision
-    code = code_for(idea.id, idea.revision)
-    _kv_set(
+    code = confirm.issue(
         conn,
-        f"email_code:{code}",
-        json.dumps({
-            "idea_id": idea.id,
-            "revision": idea.revision,
-            "action": "start_brainstorm",
-            "sender": sender,
-        }),
+        scope=_EMAIL_SCOPE,
+        subject=_idea_subject(idea.id, idea.revision),
+        actor=sender,
     )
-    _kv_set(conn, f"email_rev_code:{idea.id}:{idea.revision}", code)
-    _kv_set(conn, f"email_sender:{idea.id}", sender)
 
     # Send confirmation email
     reply_sender = mail_fn or mail_send.send

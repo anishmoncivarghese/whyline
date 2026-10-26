@@ -24987,3 +24987,73 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8136fe18d3c04022b2686665e1a73784 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:47:52.406Z"} -->
+
+## 2026-10-26 — Store confirmation codes under confirm:{code}
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-2
+
+**Because:** consume looks up the code the user typed; scope, subject and actor live in the JSON so a mismatch fails without deleting the row
+
+**Rejected:**
+
+- key confirm — {scope}:{code}: a wrong scope would miss the row instead of leaving it unchanged
+- HMAC with a Keychain secret — the plan chose a random kv nonce with expiry
+
+**Files:** src/whyline/ideas/confirm.py
+
+<!-- whyline-event: 4e1bdc78783446aa8ee7c53808eb9565 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:57:04.551Z"} -->
+
+## 2026-10-26 — Email peeks the stored binding then consumes after provider checks
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-2
+
+**Because:** consume returns bool and requires subject, while the reply only carries the code; peeking recovers idea:{id}:rev:{n}, and delaying consume keeps a disabled-provider error retryable with the same code
+
+**Rejected:**
+
+- keep writing email_code — {code}: old keys are ignored, not migrated
+- consume first then run — a disabled-provider error would burn the code
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 8b304a7d60a3463cb2da2c9dc2b3ed4a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:57:08.485Z"} -->
+
+## 2026-10-26 — ASST-2 passed: random bound one-shot codes and the email confirm flow hold
+
+**Actor:** grok
+**Role:** tester
+**Task:** ASST-2
+
+**Because:** Focused suite 33 passed and full pytest exited 0 with one skip. issue stores an 8-char secrets code under confirm:{code} as JSON bound to scope/subject/actor with a 30-minute expiry; consume rejects a wrong code, actor, subject, expired token and a second use without deleting; email confirmation issues and consumes with actor equal to the authenticated sender, starts a brainstorm on a current code, and ignores old email_code keys.
+
+**Rejected:**
+
+- fail ASST-2 — every required behavior held under the task suite and the full project suite
+
+**Files:** src/whyline/ideas/confirm.py, src/whyline/ideas/email_in.py
+
+<!-- whyline-event: edca46b74cc747fd8120d1f3cbdff251 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:09:05.392Z"} -->
+
+## 2026-10-26 — Approve ASST-2 random bound confirmation codes and email integration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-2
+
+**Because:** The diff implements eight-character secrets-based codes stored under confirm:{code}, validates scope, subject, actor, and expiry without mutation on failure, deletes on successful consumption, ignores legacy email_code keys, and the reviewer-run full suite uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- Request changes — no correctness, safety, coverage, or scope defect was found.
+
+**Files:** src/whyline/ideas/confirm.py, src/whyline/ideas/email_in.py, tests/ideas/test_confirm.py, tests/ideas/test_email_in.py
+
+<!-- whyline-event: 981529f96ecb43bd93b93aae5913a782 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:18:53.267Z"} -->
