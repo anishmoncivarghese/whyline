@@ -2275,6 +2275,15 @@ async def test_setup_fits_80x24_and_120x40_with_checking_and_empty_states(
             await pilot.pause()
             release.set()
             await app.workers.wait_for_complete()
+            # Dismissing cancels the screen's worker, so wait_for_complete can
+            # return while its thread is still running. Wait until that thread
+            # records its miss; otherwise it can land after the next pass
+            # clears the cache and stop that pass's fetch from starting.
+            await _wait_for(
+                pilot,
+                lambda: relay_ops.antigravity_models_status() == "failed",
+                "agy fetch recorded",
+            )
 
     _enable(monkeypatch, set())
     for size in ((80, 24), (120, 40)):
