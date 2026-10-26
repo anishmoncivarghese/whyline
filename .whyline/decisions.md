@@ -25890,3 +25890,150 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 869184053703452d8e5371f947538ba5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:30:17.297Z"} -->
+
+## 2026-10-26 — Keep reminder scheduling in local wall time and claim due rows atomically
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-11
+
+**Because:** The accepted grammar is explicitly local-time based, and inserting the outbox row in the same transaction that marks a reminder sent prevents repeat ticks from delivering it twice
+
+**Rejected:**
+
+- Store UTC timestamps — it would make date words and daylight-saving transitions diverge from the user's local wall clock
+- Mark sent after Telegram delivery — retries could enqueue duplicate outbox rows before delivery
+
+**Files:** src/whyline/ideas/reminders.py, src/whyline/ideas/worker.py
+
+<!-- whyline-event: ff36877bfddb4c958502e2b724842e43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T14:34:55.772Z"} -->
+
+## 2026-10-26 — Pass ASST-11 after verifying deterministic reminder parsing, outbox delivery, and CLI list/cancel
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-11
+
+**Because:** All 247 tests across the four task test files pass; time forms, bad time replies, once-only outbox delivery, Mac sleep late note, and CLI list/cancel behave per spec with no regressions
+
+**Rejected:**
+
+- Fail ASST-11 for the full suite failures — all 6 failures are existing baseline test expectations in console and telegram schema migration
+
+**Files:** tests/ideas/test_reminders.py
+
+<!-- whyline-event: 4adbaacf01cb423e93024068d90fd908 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T19:53:07.547Z"} -->
+
+## 2026-10-26 — Reject ASST-11 because reminder management is absent from whyline console
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-11
+
+**Because:** The task adds CLI list and cancel operations, but the project requires every new CLI command to have a console counterpart using the same reminders.pending and reminders.cancel functions; the existing Assistant screen exposes neither operation
+
+**Rejected:**
+
+- Approve the otherwise-correct reminder implementation — that would leave terminal-only user functionality contrary to the project instruction
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 5a1768073f564486b853d25c91cd0f5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T20:04:09.764Z"} -->
+
+## 2026-10-26 — Add reminder list, cancel, and add to AssistantScreen wired through shared reminders functions
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-11
+
+**Because:** Project instructions require every CLI command to have a console counterpart using the shared functions; Codex rejected ASST-11 for missing console reminder management
+
+**Rejected:**
+
+- Defer console support to ASST-12 — fails review under the project console-first rule
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: e3d832ed839440f3a321a54650f71807 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T20:14:03.510Z"} -->
+
+## 2026-10-26 — Pass ASST-11 reminder parsing, bot handling, worker dispatch, CLI, and console verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-11
+
+**Because:** All 259 reminder, intent, worker, CLI, and console assistant screen tests pass; the six full-suite failures are known pre-existing test expectations from ASST-MODE and schema version 6
+
+**Files:** src/whyline/ideas/reminders.py
+
+<!-- whyline-event: 2bc583d7f03241c3964dda254b9f59cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T20:23:55.642Z"} -->
+
+## 2026-10-26 — Reject ASST-11 round 6 for stale worker time and undeliverable console reminders
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-11
+
+**Because:** worker.run_once freezes the tick-start now value even though production passes now and the long-poll contract requires a fresh clock after each poll; the console Add path also stores chat_id NULL while queue_due excludes NULL destinations, so those reminders never fire
+
+**Rejected:**
+
+- Approve based on passing focused tests — the uncovered production paths are behaviorally broken
+
+**Files:** src/whyline/ideas/worker.py, src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: fccb3f9c625a44cc906b8ab75ed4904a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T20:34:04.275Z"} -->
+
+## 2026-10-26 — Preserve live default clock in worker.run_once and scope AssistantScreen to reminder list and cancel
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-11
+
+**Because:** worker.run_once needs a live default clock when tick-start now is passed so reminders queue as time advances, and console reminders are scoped to listing and cancelling pending reminders matching CLI functionality without creating deliverless chat_id NULL reminders
+
+**Rejected:**
+
+- Add deliverable chat selection to console — adds unnecessary complexity beyond CLI counterpart
+- Keep frozen clock lambda — broke reminder delivery as time advances during worker poll loops
+
+**Files:** src/whyline/ideas/worker.py, src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 154078d72d1144d99d9ee18461bd50c7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T20:44:05.036Z"} -->
+
+## 2026-10-26 — Pass ASST-11 after verifying live clock advancing during worker long-polling and reminder console integration
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-11
+
+**Because:** All 258 focused reminder, intent, worker, CLI, and console assistant screen tests pass; worker default clock advances after polling when tick-start now is passed, queue_due sends due reminders once, late note triggers beyond 2 hours, and CLI/console list and cancel operate correctly
+
+**Rejected:**
+
+- Fail for full suite failures — the 6 failures are existing baseline test expectations (schema version 6 migration and mode-assistant layout)
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: 64d0a18bf0ec471d9b67f4953299ee9a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T20:55:57.714Z"} -->
+
+## 2026-10-26 — Approve ASST-11 after round 9 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-11
+
+**Because:** The deterministic parser covers every required form and boundary, bot storage and wording are correct, due reminders are atomically queued once with the over-two-hour late note, CLI and console share list/cancel functions, and the full uv run pytest -q completed with only six pre-existing failures in unchanged mode/schema expectation files
+
+**Files:** src/whyline/ideas/reminders.py
+
+<!-- whyline-event: 2cbbb1822a0045d79878cd48352f1556 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:07:48.011Z"} -->

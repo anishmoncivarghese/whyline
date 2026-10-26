@@ -53,6 +53,12 @@ def _route(text, callback=None, *, open_question=False):
         ("/run morning-brief", "run", ("morning-brief",)),
         ("ask app where is config", "ask", ("app", "where", "is", "config")),
         ("/ask where is config", "ask", ("where", "is", "config")),
+        (
+            "remind tomorrow 9am buy milk",
+            "remind",
+            ("tomorrow", "9am", "buy", "milk"),
+        ),
+        ("/remind in 2h stretch", "remind", ("in", "2h", "stretch")),
         ("/staus", "status", ()),
         ("/staus 4", "status", ("4",)),
         ("STAUS 9", "status", ("9",)),

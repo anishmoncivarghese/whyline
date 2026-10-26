@@ -25,6 +25,7 @@ from whyline.ideas import (
     confirm,
     documents,
     intent,
+    reminders,
     requests,
     setup,
     store,
@@ -167,6 +168,7 @@ Commands:
 /status [id]
 /run <saved-agent>
 /ask <repo> <question>
+/remind <when> <text>
 /excel
 /brainstorm [id]
 /plan [id]
@@ -204,7 +206,14 @@ drafter: claude
 plan_reviewer: codex"""
 
 
-def handle(conn: sqlite3.Connection, inbound, *, run_fn=None, http=None) -> None:
+def handle(
+    conn: sqlite3.Connection,
+    inbound,
+    *,
+    run_fn=None,
+    http=None,
+    now: datetime | None = None,
+) -> None:
     """Route one inbound row and queue the reply.
 
     A row already marked handled is ignored. The tap itself was answered
@@ -222,7 +231,7 @@ def handle(conn: sqlite3.Connection, inbound, *, run_fn=None, http=None) -> None
     callback = _field(inbound, "callback_data")
     question = _open_for(conn, int(chat_id))
     routed = intent.route(text, callback, open_question=question)
-    _dispatch(conn, inbound, routed, run_fn, http=http)
+    _dispatch(conn, inbound, routed, run_fn, http=http, now=now)
     _mark_handled(conn, inbound)
 
 
@@ -426,7 +435,9 @@ def score_unavailable_reason(conn: sqlite3.Connection) -> str:
     return "No agent can score unattended."
 
 
-def _dispatch(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
+def _dispatch(
+    conn, row, routed: intent.Intent, run_fn, *, http=None, now: datetime | None = None
+) -> None:
     kind = routed.kind
     if kind == "capture":
         _capture(conn, row, routed)
@@ -435,7 +446,7 @@ def _dispatch(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
     elif kind == "request":
         _request_tap(conn, row, routed)
     elif kind == "command":
-        _command(conn, row, routed, http=http)
+        _command(conn, row, routed, http=http, now=now)
     elif kind == "settings":
         _settings(conn, row, routed)
     elif kind == "answer":
@@ -613,7 +624,9 @@ def _unbound(conn, row, routed: intent.Intent) -> None:
         _say(conn, row, "Not available yet.")
 
 
-def _command(conn, row, routed: intent.Intent, *, http=None) -> None:
+def _command(
+    conn, row, routed: intent.Intent, *, http=None, now: datetime | None = None
+) -> None:
     name = routed.name
     if name == "list":
         _list(conn, row)
@@ -629,12 +642,32 @@ def _command(conn, row, routed: intent.Intent, *, http=None) -> None:
         _command_run(conn, row, routed)
     elif name == "ask":
         _command_ask(conn, row, routed)
+    elif name == "remind":
+        _command_remind(conn, row, routed, now=now)
     elif name == "stop":
         _command_stop(conn, row, routed)
     elif name == "new":
         _say(conn, row, "Send the idea as a message.")
     else:
         _say(conn, row, "Not available yet.")
+
+
+def _command_remind(
+    conn, row, routed: intent.Intent, *, now: datetime | None = None
+) -> None:
+    moment = now or datetime.now().astimezone().replace(tzinfo=None)
+    try:
+        reminder = reminders.add(
+            conn,
+            int(_field(row, "chat_id")),
+            " ".join(routed.args),
+            now=moment,
+        )
+    except reminders.TimeParseError:
+        _say(conn, row, reminders.BAD_TIME)
+        return
+    due = datetime.fromisoformat(reminder.due_at)
+    _say(conn, row, f"I'll remind you {reminders.due_in_words(due, moment)}.")
 
 
 def create_run_request(

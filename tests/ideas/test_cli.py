@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,7 +10,7 @@ import pytest
 
 from whyline import cli
 from whyline.agents import launchd, telegram
-from whyline.ideas import actions, documents, email_in, store, telegram_in
+from whyline.ideas import actions, documents, email_in, reminders, store, telegram_in
 
 
 TOKEN = "123:secret"
@@ -249,7 +250,7 @@ def test_doctor_reads_an_existing_ledger_without_changing_it(ideas_home, capsys)
     _code, out, err = invoke(["idea", "doctor"], capsys)
 
     text = out + err
-    assert "ok     schema: schema version 5" in text
+    assert "ok     schema: schema version 6" in text
     assert f"ok     folder: {ideas_home} mode 0700" in text
     assert database.read_bytes() == before
     assert database.stat().st_mode & 0o777 == mode
@@ -1195,3 +1196,39 @@ def test_actions_set_refuses_an_unknown_name(ideas_home, capsys):
     code, out, err = invoke(["idea", "actions", "set", "explode", "--on"], capsys)
     assert code == 1
     assert "unknown action explode" in err
+
+
+def test_reminder_list_and_cancel(ideas_home, capsys):
+    conn = store.connect()
+    try:
+        first = reminders.create(
+            conn,
+            11,
+            datetime(2026, 10, 27, 9, 0),
+            "buy milk",
+            now=datetime(2026, 10, 26, 12, 0),
+        )
+        reminders.create(
+            conn,
+            11,
+            datetime(2026, 10, 26, 20, 0),
+            "lock up",
+            now=datetime(2026, 10, 26, 12, 0),
+        )
+    finally:
+        conn.close()
+
+    code, out, err = invoke(["idea", "remind", "list"], capsys)
+    assert code == 0, err
+    assert "2026-10-26 20:00  lock up" in out
+    assert f"{first.id}  2026-10-27 09:00  buy milk" in out
+
+    code, out, err = invoke(
+        ["idea", "remind", "cancel", str(first.id)], capsys
+    )
+    assert code == 0, err
+    assert out.strip() == f"reminder {first.id} cancelled"
+    code, out, err = invoke(["idea", "remind", "list"], capsys)
+    assert code == 0, err
+    assert "buy milk" not in out
+    assert "lock up" in out

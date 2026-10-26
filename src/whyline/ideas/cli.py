@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from whyline.ideas import analyse, documents, paths, store, xlsx
+from whyline.ideas import analyse, documents, paths, reminders, store, xlsx
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -126,6 +126,12 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     request.add_argument("request_id", type=int)
 
+    remind = sub.add_parser("remind", help="List or cancel reminders")
+    remind_sub = remind.add_subparsers(dest="idea_remind_command", required=True)
+    remind_sub.add_parser("list", help="List pending reminders")
+    cancel_r = remind_sub.add_parser("cancel", help="Cancel a pending reminder")
+    cancel_r.add_argument("id", type=int)
+
     repos = sub.add_parser(
         "repos",
         help="Repositories an idea may be planned into",
@@ -188,7 +194,7 @@ def run(args: argparse.Namespace) -> int:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
             "export|documents|agents|assistant|doctor|telegram|service|work|"
-            "request|repos|email|actions",
+            "request|remind|repos|email|actions",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1371,6 +1377,33 @@ def cmd_email(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_remind(args: argparse.Namespace) -> int:
+    action = getattr(args, "idea_remind_command", None)
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        if action == "list":
+            rows = reminders.pending(conn)
+            if not rows:
+                print("No reminders.")
+                return EXIT_OK
+            for row in rows:
+                due = row.due_at.replace("T", " ")[:16]
+                print(f"{row.id}  {due}  {row.text}")
+            return EXIT_OK
+        if action == "cancel":
+            if not reminders.cancel(conn, args.id):
+                print(f"no pending reminder {args.id}", file=sys.stderr)
+                return EXIT_ERROR
+            print(f"reminder {args.id} cancelled")
+            return EXIT_OK
+        print("usage: whyline idea remind list|cancel <id>", file=sys.stderr)
+        return EXIT_USAGE
+    finally:
+        conn.close()
+
+
 def cmd_actions(args: argparse.Namespace) -> int:
     from whyline.ideas import actions
 
@@ -1425,6 +1458,7 @@ _COMMANDS = {
     "service": cmd_service,
     "work": cmd_work,
     "request": cmd_request,
+    "remind": cmd_remind,
     "repos": cmd_repos,
     "email": cmd_email,
     "actions": cmd_actions,

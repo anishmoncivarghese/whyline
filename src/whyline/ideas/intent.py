@@ -22,6 +22,7 @@ COMMANDS = (
     "status",
     "run",
     "ask",
+    "remind",
     "excel",
     "brainstorm",
     "plan",
@@ -261,7 +262,7 @@ def _command(body: str) -> Intent | None:
     # Run is deliberately strict, but all of its trailing text still reaches
     # the command handler so it can give the deterministic refusal instead of
     # sending an ad-hoc prompt through the assistant.
-    if name in {"run", "ask"}:
+    if name in {"run", "ask", "remind"}:
         return command(name, tuple(args))
     # Every other command is one line. A newline means prose or settings.
     if "\n" in body or "\r" in body:

@@ -25,7 +25,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
-from whyline.ideas import paths, requests as assistant_requests, store
+from whyline.ideas import paths, reminders, requests as assistant_requests, store
 
 ENABLED_KEY = "enabled"
 _ON = frozenset({"1", "on", "true", "yes"})
@@ -282,6 +282,7 @@ def _poll_while_in_use(
             # After the poll, not the tick's original timestamp. A 25s long
             # poll, repeated while a job looks live, runs far past that instant.
             moment = clock()
+            reminders.queue_due(conn, moment)
             _recover(conn, moment, pid_alive, stop)
             _recover_requests(conn, moment, pid_alive, stop)
             _start_one(conn, moment, spawn)

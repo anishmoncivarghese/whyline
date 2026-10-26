@@ -10,7 +10,16 @@ import pytest
 
 from whyline import cli
 from whyline.agents import launchd, service, state, telegram
-from whyline.ideas import bot, brainstorm, paths, requests, store, telegram_in, worker
+from whyline.ideas import (
+    bot,
+    brainstorm,
+    paths,
+    reminders,
+    requests,
+    store,
+    telegram_in,
+    worker,
+)
 
 NOW = datetime(2026, 10, 20, 12, 0, 0)
 PAST = "2026-10-20T11:00:00"
@@ -1472,3 +1481,95 @@ def test_a_30_hour_gap_adds_the_day_limit(conn):
         "so anything older may be lost; please resend it."
     ]
     assert "Catching up" not in flushes[0][0]
+
+
+def test_due_reminders_are_queued_once(conn):
+    _enable(conn)
+    reminder = reminders.create(
+        conn,
+        CHAT,
+        NOW - timedelta(minutes=5),
+        "join the call",
+        now=NOW - timedelta(days=1),
+    )
+
+    _run()
+    _run()
+
+    rows = conn.execute(
+        "SELECT chat_id, text FROM outbox WHERE text LIKE 'Reminder:%'"
+    ).fetchall()
+    assert [(row["chat_id"], row["text"]) for row in rows] == [
+        (CHAT, "Reminder: join the call")
+    ]
+    saved = conn.execute(
+        "SELECT state, sent_at FROM reminders WHERE id = ?", (reminder.id,)
+    ).fetchone()
+    assert saved["state"] == "sent"
+    assert saved["sent_at"] == "2026-10-20T12:00:00"
+
+
+def test_a_reminder_more_than_two_hours_late_gets_the_sleep_note(conn):
+    _enable(conn)
+    reminders.create(
+        conn,
+        CHAT,
+        NOW - timedelta(hours=2, seconds=1),
+        "check the oven",
+        now=NOW - timedelta(days=1),
+    )
+
+    _run()
+
+    text = conn.execute(
+        "SELECT text FROM outbox WHERE text LIKE 'Reminder:%'"
+    ).fetchone()["text"]
+    assert text == "Reminder: check the oven\n(late: this Mac was asleep)"
+
+
+def test_time_advances_after_polling_when_now_is_passed(conn, monkeypatch):
+    """Production passes now=<tick-start> without clock; default clock must advance after polling."""
+    _enable(conn)
+    future = NOW + timedelta(minutes=5)
+    reminder = reminders.create(
+        conn,
+        CHAT,
+        future,
+        "standup meeting",
+        now=NOW,
+    )
+
+    current = [NOW]
+
+    class LiveClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current[0]
+
+    monkeypatch.setattr(worker, "datetime", LiveClock)
+
+    def poll(db, timeout=0):
+        current[0] = future + timedelta(seconds=1)
+        return 0
+
+    worker.run_once(
+        now=NOW,
+        poll=poll,
+        handle=lambda _db, _row: None,
+        flush=lambda _db: 0,
+        spawn=lambda _job_id: 4242,
+        pid_alive=lambda _pid: False,
+        stop=lambda _pid: None,
+    )
+
+    rows = conn.execute(
+        "SELECT chat_id, text FROM outbox WHERE text LIKE 'Reminder:%'"
+    ).fetchall()
+    assert [(row["chat_id"], row["text"]) for row in rows] == [
+        (CHAT, "Reminder: standup meeting")
+    ]
+    saved = conn.execute(
+        "SELECT state FROM reminders WHERE id = ?", (reminder.id,)
+    ).fetchone()
+    assert saved["state"] == "sent"
+

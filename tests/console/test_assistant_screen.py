@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from textual.widgets import DataTable
 
 from whyline.console import tui
 from whyline.console.assistant_screen import AssistantScreen
-from whyline.ideas import actions, store
+from whyline.ideas import actions, reminders, store
 
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
@@ -166,3 +168,79 @@ async def test_buttons_stay_on_screen(assistant_home, size):
             assert region.height > 0
             assert 0 <= region.x and region.right <= size[0]
             assert region.bottom <= size[1]
+
+
+async def test_reminders_list_renders_pending_reminders(assistant_home):
+    conn = store.connect()
+    try:
+        r1 = reminders.create(
+            conn,
+            11,
+            datetime(2026, 10, 27, 9, 0),
+            "buy milk",
+            now=datetime(2026, 10, 26, 12, 0),
+        )
+        r2 = reminders.create(
+            conn,
+            11,
+            datetime(2026, 10, 28, 14, 0),
+            "call dentist",
+            now=datetime(2026, 10, 26, 12, 0),
+        )
+    finally:
+        conn.close()
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        row1 = screen.query_one(f"#as-reminder-{r1.id}")
+        assert "buy milk" in _plain(row1.query_one(".as-reminder-text").renderable)
+        assert "2026-10-27 09:00" in _plain(row1.query_one(".as-reminder-due").renderable)
+        assert screen.query_one(f"#as-reminder-cancel-{r1.id}", tui.Button) is not None
+
+        row2 = screen.query_one(f"#as-reminder-{r2.id}")
+        assert "call dentist" in _plain(row2.query_one(".as-reminder-text").renderable)
+        assert "2026-10-28 14:00" in _plain(row2.query_one(".as-reminder-due").renderable)
+        assert screen.reminder_cancel_button(r2.id) is not None
+
+
+async def test_reminder_cancel_removes_from_screen_and_calls_cancel(monkeypatch, assistant_home):
+    conn = store.connect()
+    try:
+        r1 = reminders.create(
+            conn,
+            11,
+            datetime(2026, 10, 27, 9, 0),
+            "buy milk",
+            now=datetime(2026, 10, 26, 12, 0),
+        )
+    finally:
+        conn.close()
+
+    cancelled = []
+    real_cancel = reminders.cancel
+
+    def spy_cancel(conn, reminder_id):
+        cancelled.append(reminder_id)
+        return real_cancel(conn, reminder_id)
+
+    monkeypatch.setattr(reminders, "cancel", spy_cancel)
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        assert screen.query_one(f"#as-reminder-{r1.id}") is not None
+        screen.reminder_cancel_button(r1.id).press()
+        await pilot.pause()
+        assert cancelled == [r1.id]
+        with pytest.raises(tui.NoMatches):
+            screen.query_one(f"#as-reminder-{r1.id}")
+        assert screen.query_one("#as-reminders-empty") is not None
+
+    conn = store.connect()
+    try:
+        assert reminders.pending(conn) == []
+    finally:
+        conn.close()
