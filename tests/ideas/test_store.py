@@ -56,18 +56,28 @@ def test_home_uses_env_and_is_private(ideas_home):
     assert paths.workbook() == ideas_home / "ideas.xlsx"
 
 
-def test_connect_creates_schema_5(conn, ideas_home):
+def test_connect_creates_schema_6(conn, ideas_home):
     version = conn.execute(
         "SELECT value FROM kv WHERE key = 'schema_version'"
     ).fetchone()[0]
-    assert version == "5"
+    assert version == "6"
     tables = {
         row[0]
         for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         )
     }
-    assert {"ideas", "events", "analyses", "kv", "inbound", "outbox", "jobs"} <= tables
+    assert {
+        "ideas",
+        "events",
+        "analyses",
+        "kv",
+        "inbound",
+        "outbox",
+        "jobs",
+        "requests",
+        "reminders",
+    } <= tables
     jobs = [row[1] for row in conn.execute("PRAGMA table_info(jobs)")]
     assert jobs == [
         "id",
@@ -78,6 +88,37 @@ def test_connect_creates_schema_5(conn, ideas_home):
         "attempts",
         "error",
         "pid",
+    ]
+    requests = [row[1] for row in conn.execute("PRAGMA table_info(requests)")]
+    assert requests == [
+        "id",
+        "created_at",
+        "channel",
+        "actor",
+        "chat_id",
+        "action",
+        "args_json",
+        "proposed_by",
+        "state",
+        "approval",
+        "confirmed_at",
+        "started_at",
+        "finished_at",
+        "lease_until",
+        "pid",
+        "result_path",
+        "error",
+    ]
+    reminders = [row[1] for row in conn.execute("PRAGMA table_info(reminders)")]
+    assert reminders == [
+        "id",
+        "created_at",
+        "chat_id",
+        "due_at",
+        "text",
+        "state",
+        "sent_at",
+        "request_id",
     ]
     if os.name != "nt":
         assert (paths.db_path().stat().st_mode & 0o777) == 0o600
@@ -158,10 +199,79 @@ def test_events_are_appended_in_order(conn):
 
 def test_newer_schema_version_is_refused(ideas_home):
     conn = store.connect()
-    conn.execute("UPDATE kv SET value = '6' WHERE key = 'schema_version'")
+    conn.execute("UPDATE kv SET value = '7' WHERE key = 'schema_version'")
     conn.close()
-    with pytest.raises(store.SchemaError, match="schema version 6"):
+    with pytest.raises(store.SchemaError, match="schema version 7"):
         store.connect()
+
+
+def test_schema_5_migrates_to_6_keeping_ideas_jobs_and_outbox(ideas_home):
+    paths.home()
+    path = paths.db_path()
+    raw = sqlite3.connect(path)
+    try:
+        for statement in store._SCHEMA:
+            raw.execute(statement)
+        store._apply_schema_2(raw)
+        store._apply_schema_3(raw)
+        store._apply_schema_4(raw)
+        store._apply_schema_5(raw)
+        raw.execute(
+            "INSERT INTO kv (key, value) VALUES ('schema_version', '5')"
+        )
+        raw.execute(
+            """
+            INSERT INTO ideas (
+              created_at, source, original_text, title, status, revision
+            ) VALUES (
+              '2026-10-20T12:00:00.000Z', 'telegram', 'keep this idea',
+              'keep this idea', 'captured', 0
+            )
+            """
+        )
+        raw.execute(
+            """
+            INSERT INTO jobs (idea_id, kind, state, attempts, error, pid)
+            VALUES (1, 'score', 'queued', 2, 'later', 4242)
+            """
+        )
+        raw.execute(
+            """
+            INSERT INTO outbox (chat_id, kind, text, attempts, idea_id)
+            VALUES (11, 'message', 'still sending', 1, 1)
+            """
+        )
+        raw.commit()
+    finally:
+        raw.close()
+
+    conn = store.connect()
+    try:
+        version = conn.execute(
+            "SELECT value FROM kv WHERE key = 'schema_version'"
+        ).fetchone()[0]
+        assert version == "6"
+        idea = conn.execute("SELECT original_text, status FROM ideas").fetchone()
+        assert tuple(idea) == ("keep this idea", "captured")
+        job = conn.execute(
+            "SELECT idea_id, kind, state, attempts, error, pid FROM jobs"
+        ).fetchone()
+        assert tuple(job) == (1, "score", "queued", 2, "later", 4242)
+        outbox = conn.execute(
+            "SELECT chat_id, kind, text, attempts, idea_id FROM outbox"
+        ).fetchone()
+        assert tuple(outbox) == (11, "message", "still sending", 1, 1)
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert {"requests", "reminders"} <= tables
+        assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM reminders").fetchone()[0] == 0
+    finally:
+        conn.close()
 
 
 def test_get_list_set_paths_and_analysis_versions(conn):

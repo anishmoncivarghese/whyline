@@ -1,4 +1,4 @@
-"""SQLite ledger for ideas: schema 5, statuses, and the allowed moves."""
+"""SQLite ledger for ideas: schema 6, statuses, and the allowed moves."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from whyline.ideas import paths
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 STATUSES = (
     "captured",
@@ -175,6 +175,44 @@ _SCHEMA_4 = (
     """,
 )
 
+# Schema 6: assistant requests and reminders. CREATE IF NOT EXISTS so a
+# crash between the tables and the version bump is safe to retry.
+_SCHEMA_6 = (
+    """
+    CREATE TABLE IF NOT EXISTS requests (
+      id INTEGER PRIMARY KEY,
+      created_at TEXT,
+      channel TEXT,
+      actor TEXT,
+      chat_id INTEGER,
+      action TEXT NOT NULL,
+      args_json TEXT NOT NULL,
+      proposed_by TEXT NOT NULL,
+      state TEXT NOT NULL,
+      approval TEXT NOT NULL,
+      confirmed_at TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      lease_until TEXT,
+      pid INTEGER,
+      result_path TEXT,
+      error TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS reminders (
+      id INTEGER PRIMARY KEY,
+      created_at TEXT,
+      chat_id INTEGER,
+      due_at TEXT NOT NULL,
+      text TEXT NOT NULL,
+      state TEXT NOT NULL,
+      sent_at TEXT,
+      request_id INTEGER
+    )
+    """,
+)
+
 
 class IllegalMove(Exception):
     pass
@@ -295,6 +333,11 @@ def _apply_schema_5(conn: sqlite3.Connection) -> None:
     )
 
 
+def _apply_schema_6(conn: sqlite3.Connection) -> None:
+    for statement in _SCHEMA_6:
+        conn.execute(statement)
+
+
 def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
     found = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in found:
@@ -330,6 +373,8 @@ def _check_schema(conn: sqlite3.Connection) -> None:
             _apply_schema_4(conn)
         if version < 5:
             _apply_schema_5(conn)
+        if version < 6:
+            _apply_schema_6(conn)
         if version == 0:
             conn.execute(
                 "INSERT INTO kv (key, value) VALUES ('schema_version', ?)",

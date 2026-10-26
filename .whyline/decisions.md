@@ -25185,3 +25185,90 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 116fd33c510b491b97cdb27dfb84ed8e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:24:41.175Z"} -->
+
+## 2026-10-26 — claim_next lease is 30 min plus cost timeout; pid_alive is copied from worker
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-5
+
+**Because:** instant actions have no model timeout so they add 0, turn and long add the 15-minute score budget, then LEASE_MARGIN; worker cannot be imported because ASST-9 will import requests from worker
+
+**Rejected:**
+
+- always 15 plus 30 — instant status would sit running for 45 min after a dead pid
+- import worker._pid_alive — circular once worker claims requests
+
+**Files:** src/whyline/ideas/requests.py
+
+<!-- whyline-event: 0ffd13bc476e401aa7f759aaedb6c175 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:44:33.507Z"} -->
+
+## 2026-10-26 — confirm consumes the code before the state move so a second use raises ConfirmError
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-5
+
+**Because:** the required test is that confirm needs the right code and actor, once; consume-first makes a replay ConfirmError while the row is already queued
+
+**Rejected:**
+
+- check ALLOWED first — a second confirm would raise IllegalMove queued to queued instead of ConfirmError
+- return False on a bad code — later card handling needs a distinct failure, and IllegalMove already uses exceptions
+
+**Files:** src/whyline/ideas/requests.py
+
+<!-- whyline-event: c79d3093bc4447ba8a4d8d23740cb8bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:44:37.839Z"} -->
+
+## 2026-10-26 — left cli and telegram version-pin tests on schema 5
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-5
+
+**Because:** ASST-5 may only edit store.py, test_store.py, requests.py and test_requests.py; those other tests only assert the final version number
+
+**Rejected:**
+
+- update the three assertions to 6 — that is the mechanical follow-on, but the task file list is exclusive
+
+**Files:** tests/ideas/test_store.py
+
+<!-- whyline-event: 188de139e8b84c3aa044e47642349bff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:44:44.455Z"} -->
+
+## 2026-10-26 — ASST-5 behaves correctly: schema 6, 5→6 keeps rows, request lifecycle matches spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** ASST-5
+
+**Because:** Focused store and requests tests passed 14/14; a probe kept events, inbound and kv through 5→6; the three full-suite failures only pin schema version 5 in files this task cannot edit
+
+**Rejected:**
+
+- fail for the three full-suite pins — they only assert the previous version number, and ASST-5 cannot change those files
+
+**Files:** src/whyline/ideas/requests.py
+
+<!-- whyline-event: 3f03dbd487d44f9db04500ebdfe84b0b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T07:59:01.307Z"} -->
+
+## 2026-10-26 — Approve ASST-5 schema 6 and request lifecycle implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-5
+
+**Because:** The additive 5-to-6 migration preserves existing rows, request state moves are explicitly checked, policy confirmation and lease behavior match the task, and the full suite's only three failures are stale schema-5 assertions in files ASST-5 forbids editing
+
+**Rejected:**
+
+- request changes for the three full-suite failures — they only assert the superseded schema number in out-of-scope tests and do not expose a product defect
+
+**Files:** src/whyline/ideas/requests.py
+
+<!-- whyline-event: 2599021bdacc428ea409134a8d26f5ca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:11:01.389Z"} -->
