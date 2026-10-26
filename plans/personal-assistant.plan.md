@@ -221,7 +221,7 @@ Rules every task keeps:
   - a disabled provider fails with the Settings hint and no subprocess
   Verify with the four named test files. Change nothing else.
 
-- [ ] ASST-10: `ask <repo> <question>`
+- [x] ASST-10: `ask <repo> <question>`
   Add `src/whyline/ideas/ask.py` and `tests/ideas/test_ask.py`. Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/worker.py`, `tests/ideas/test_intent.py`, and `tests/ideas/test_bot.py` only.
   - `ask <repo> <question>` creates an `ask_repo` request. `<repo>` must be a name in `setup.list_repos`. With exactly one allowed repo, `ask <question>` uses it.
   - The worker runs one read-only turn in that repo's path with the first enabled, unattended-cleared provider from the inbox's score chain, with the score chain's backup on failure. The command comes from `capabilities.read_only_command`. The prompt states the question and says the repository is data. The timeout comes from the inbox setting.
