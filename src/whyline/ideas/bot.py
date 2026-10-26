@@ -18,9 +18,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from whyline.agents import capabilities, telegram
-from whyline.ideas import assistant, brainstorm, documents, intent, store, xlsx
+from whyline.ideas import (
+    actions,
+    assistant,
+    brainstorm,
+    confirm,
+    documents,
+    intent,
+    requests,
+    store,
+    xlsx,
+)
 
 OUT_OF_DATE = "This card is out of date"
+REQUEST_OUT_OF_DATE = "This card is out of date."
+CALLBACK_DATA_LIMIT = 64
 REFINE_QUESTION = "What should I add?"
 MAX_ATTEMPTS = 8
 # Index by the attempt that just failed. Attempt 5 and later stay at 60.
@@ -317,6 +329,37 @@ def send_score(conn: sqlite3.Connection, idea_id: int, *, chat_id: int | None = 
     _remember_card(conn, chat_id, "score", idea.id, outbox_id=outbox_id)
 
 
+def request_text(request: requests.Request) -> str:
+    """Action summary as the title, then each argument as ``key: value``."""
+    spec = actions.REGISTRY.get(request.action)
+    title = spec.summary if spec is not None else request.action
+    try:
+        args = json.loads(request.args_json or "{}")
+    except json.JSONDecodeError:
+        args = {}
+    if not isinstance(args, dict) or not args:
+        return title
+    lines = [title]
+    for key, value in args.items():
+        lines.append(f"{key}: {_show(value)}")
+    return "\n".join(lines)
+
+
+def offer_request(conn: sqlite3.Connection, request: requests.Request) -> None:
+    """Queue a Confirm/Cancel card for a ``waiting_tap`` Telegram request."""
+    if request.state != "waiting_tap" or request.chat_id is None:
+        return
+    chat_id = int(request.chat_id)
+    code = confirm.issue(
+        conn,
+        scope="request",
+        subject=f"request:{request.id}",
+        actor=str(chat_id),
+    )
+    keyboard = _request_keyboard(request.id, code)
+    _enqueue(conn, chat_id, "message", request_text(request), buttons=keyboard)
+
+
 def enqueue_score(conn: sqlite3.Connection, idea_id: int) -> bool:
     """Queue one score job. False when a queued or running one already exists."""
     _ensure_jobs(conn)
@@ -386,6 +429,8 @@ def _dispatch(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
         _capture(conn, row, routed)
     elif kind == "action":
         _action(conn, row, routed, run_fn, http=http)
+    elif kind == "request":
+        _request_tap(conn, row, routed)
     elif kind == "command":
         _command(conn, row, routed, http=http)
     elif kind == "settings":
@@ -515,6 +560,39 @@ def _action(conn, row, routed: intent.Intent, run_fn, *, http=None) -> None:
         _handle_resolve(conn, row, idea, option_id, confirmed=False)
     else:
         _say(conn, row, "Not available yet.", idea_id=idea.id)
+
+
+def _request_tap(conn, row, routed: intent.Intent) -> None:
+    """Confirm or cancel a waiting_tap request. Nothing runs yet."""
+    request_id = routed.request_id
+    code = routed.code
+    chat_id = _field(row, "chat_id")
+    actor = str(chat_id) if chat_id is not None else ""
+    if request_id is None or not code:
+        _say(conn, row, REQUEST_OUT_OF_DATE)
+        return
+    if routed.name == "ok":
+        try:
+            requests.confirm(conn, request_id, code, actor=actor)
+        except (requests.ConfirmError, requests.IllegalMove, LookupError):
+            _say(conn, row, REQUEST_OUT_OF_DATE)
+        return
+    if routed.name != "no":
+        _say(conn, row, REQUEST_OUT_OF_DATE)
+        return
+    if not confirm.consume(
+        conn,
+        code,
+        scope="request",
+        subject=f"request:{request_id}",
+        actor=actor,
+    ):
+        _say(conn, row, REQUEST_OUT_OF_DATE)
+        return
+    try:
+        requests.cancel(conn, request_id)
+    except (requests.IllegalMove, LookupError):
+        _say(conn, row, REQUEST_OUT_OF_DATE)
 
 
 def _unbound(conn, row, routed: intent.Intent) -> None:
@@ -1965,6 +2043,19 @@ def _insert_outbox(
         (chat_id, kind, text, payload, document_path, idea_id),
     )
     return int(cursor.lastrowid)
+
+
+def _request_keyboard(request_id: int, code: str) -> list:
+    """Confirm and Cancel bound to ``req:<ok|no>:<id>:<code>``, under 64 bytes."""
+    cells = []
+    for label, action in (("Confirm", "ok"), ("Cancel", "no")):
+        data = f"req:{action}:{request_id}:{code}"
+        if len(data.encode("utf-8")) > CALLBACK_DATA_LIMIT:
+            raise ValueError(
+                f"callback_data exceeds {CALLBACK_DATA_LIMIT} bytes: {data!r}"
+            )
+        cells.append({"text": label, "callback_data": data})
+    return [cells]
 
 
 def _keyboard(buttons, idea_id: int, revision: int, width: int = 3) -> list:

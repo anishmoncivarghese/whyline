@@ -17,7 +17,7 @@ from email.message import Message
 from pathlib import Path
 
 from whyline.agents import mail, mail_send
-from whyline.ideas import brainstorm, confirm, documents, intent, store
+from whyline.ideas import brainstorm, confirm, documents, intent, requests, store
 
 ALLOW_KEY = "email_allow"
 AUTHSERV_KEY = "email_authserv"
@@ -28,7 +28,9 @@ AUTHSERV_HINTS = ("mx.google.com", "icloud.com", "mx.microsoft.com")
 _SETTING_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$")
 _YES_CODE_RE = re.compile(r"\byes\b\s*[:,-]?\s*([a-zA-Z0-9]{8})\b", re.IGNORECASE)
 _EMAIL_SCOPE = "email"
+_REQUEST_SCOPE = "request"
 _IDEA_SUBJECT_RE = re.compile(r"^idea:(\d+):rev:(\d+)$")
+_REQUEST_SUBJECT_RE = re.compile(r"^request:(\d+)$")
 _COMMENT_RE = re.compile(r"\([^)]*\)")
 _METHOD_RE = re.compile(r"(\w+)\s*=\s*(\w+)", re.IGNORECASE)
 _PROP_RE = re.compile(r"(\w+)\s*\.\s*(\w+)\s*=\s*([^\s;]+)", re.IGNORECASE)
@@ -299,6 +301,41 @@ def _forward_to_telegram(conn: sqlite3.Connection, idea: store.Idea) -> None:
             )
 
 
+def offer_request(conn: sqlite3.Connection, request, *, mail_fn=None) -> None:
+    """Email a waiting_tap request so the sender can reply ``yes <code>``."""
+    from whyline.ideas import bot
+
+    if request.state != "waiting_tap":
+        return
+    actor = (request.actor or "").strip().lower()
+    if not actor:
+        return
+    code = confirm.issue(
+        conn,
+        scope=_REQUEST_SCOPE,
+        subject=f"request:{request.id}",
+        actor=actor,
+    )
+    text = bot.request_text(request)
+    subject = text.split("\n", 1)[0]
+    body = f"{text}\n\nReply yes {code} to confirm"
+    reply_sender = mail_fn or mail_send.send
+    reply_sender([actor], subject, body, [])
+
+
+def _confirm_request(conn: sqlite3.Connection, code: str, binding: dict, sender: str) -> None:
+    subject_token = binding.get("subject")
+    if not isinstance(subject_token, str):
+        return
+    parsed = _REQUEST_SUBJECT_RE.fullmatch(subject_token)
+    if parsed is None:
+        return
+    try:
+        requests.confirm(conn, int(parsed.group(1)), code, actor=sender)
+    except (requests.ConfirmError, requests.IllegalMove, LookupError):
+        return
+
+
 def handle(
     conn: sqlite3.Connection,
     raw_or_msg,
@@ -335,6 +372,9 @@ def handle(
         code = yes_match.group(1).lower()
         binding = confirm._payload(conn, code)
         if not binding:
+            return None
+        if binding.get("scope") == _REQUEST_SCOPE:
+            _confirm_request(conn, code, binding, sender)
             return None
         subject_token = binding.get("subject")
         if not isinstance(subject_token, str):

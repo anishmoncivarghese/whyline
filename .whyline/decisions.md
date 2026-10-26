@@ -25272,3 +25272,127 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2599021bdacc428ea409134a8d26f5ca -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:11:01.389Z"} -->
+
+## 2026-10-26 — Request taps are a new Intent kind request
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-6
+
+**Because:** _action looks up ideas by id, so a request_id in that slot would miss or mutate an idea
+
+**Rejected:**
+
+- reuse kind=action with name ok/no — _action treats the id as an idea_id
+
+**Files:** src/whyline/ideas/intent.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: 36db1fff70b54154893809c143fd53b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:20:34.967Z"} -->
+
+## 2026-10-26 — Telegram request codes are bound to str(chat_id)
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-6
+
+**Because:** Confirm must call requests.confirm with actor equal to the chat id, so a foreign tap fails consume
+
+**Rejected:**
+
+- bind to request.actor — create may store a name while the tap reports a numeric chat id
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: dc9a4dfc69fb48b1b6009f818ad2ce0e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:20:42.743Z"} -->
+
+## 2026-10-26 — Cancel consumes the confirmation code before requests.cancel
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-6
+
+**Because:** requests.cancel does not check actor or expiry, so a foreign or used tap would cancel without consume
+
+**Rejected:**
+
+- cancel by request_id only — another chat could cancel from the callback data
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: de17f8aeb0124d77b48c6cdff0daec8f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:20:48.315Z"} -->
+
+## 2026-10-26 — Request cards, taps, and email yes behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** ASST-6
+
+**Because:** Task tests cover card shape, 64-byte callbacks, confirm queues, cancel cancels, used/expired/foreign taps stay waiting_tap with the out-of-date line, email yes queues only for the same sender, and idea buttons still use action:id:rev. Full-suite failures assert schema 5 after SCHEMA_VERSION became 6 in an earlier task and are outside ASST-6 files.
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 093332a7256b4090ba5d674ce5ad94a9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:34:12.769Z"} -->
+
+## 2026-10-26 — Reject ASST-6 until request taps use the exact out-of-date reply
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-6
+
+**Because:** bot.OUT_OF_DATE omits the required final period, and the new tests compare against that same constant rather than the literal contract, so used, expired, and foreign request taps all return the wrong user-visible sentence without tests catching it. The full plain suite ran and had only three unrelated stale schema-5 assertions in test_cli.py and test_telegram_in.py.
+
+**Rejected:**
+
+- approve as-is — the quoted response text is an exact task requirement and its tests currently mask the mismatch
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 75ed5380051a4f9ba85e256a4d9f80a4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:45:11.398Z"} -->
+
+## 2026-10-26 — Keep request-card expiry text exact without changing legacy idea-card copy
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-6
+
+**Because:** ASST-6 requires the punctuated request-tap sentence while idea buttons must remain unchanged
+
+**Rejected:**
+
+- change OUT_OF_DATE globally — that would alter the existing idea flow outside this task
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: cc188ddb70904dd8877612ea8b979bff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:47:23.672Z"} -->
+
+## 2026-10-26 — Pass ASST-6 request card, Telegram tap, and email confirmation behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-6
+
+**Because:** The required intent, bot, and email suites pass; the full suite has only three unrelated stale assertions expecting schema version 5 after the repository advanced to schema 6
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/email_in.py, src/whyline/ideas/intent.py
+
+<!-- whyline-event: 3aec9282bdfe4d0b9f1e10c3088dca9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T08:58:03.263Z"} -->
+
+## 2026-10-26 — Approve ASST-6 request cards and confirmations
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-6
+
+**Because:** The scoped diff implements actor-bound Telegram and email confirmation, exact stale-card text, cancellation, callback parsing and legacy idea behavior; all 199 focused tests pass, while the plain full suite has only three known out-of-scope assertions expecting schema version 5 instead of 6
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/email_in.py, src/whyline/ideas/intent.py
+
+<!-- whyline-event: bf91ac17188349428dfd3d1fd065c440 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T09:08:15.604Z"} -->

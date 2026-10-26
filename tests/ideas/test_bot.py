@@ -15,6 +15,7 @@ from whyline.ideas import (
     documents,
     paths,
     report,
+    requests,
     store,
     telegram_in,
 )
@@ -1120,3 +1121,144 @@ def test_start_brainstorm_refuses_a_mixed_saved_chain_before_enqueue(
     texts = [row["text"] for row in _outbox(conn, "message")]
     assert HINT.format(agent="claude") in texts[-1]
     assert store.get(conn, idea.id).status == "brainstorm_configuring"
+
+
+def _waiting(conn, **overrides):
+    kwargs = {
+        "channel": "telegram",
+        "actor": str(CHAT),
+        "chat_id": CHAT,
+        "action": "brainstorm",
+        "args": {"idea_id": 1},
+        "proposed_by": "keyword",
+    }
+    kwargs.update(overrides)
+    return requests.create(conn, **kwargs)
+
+
+def _request_row(conn, request_id):
+    return conn.execute(
+        "SELECT * FROM requests WHERE id = ?", (request_id,)
+    ).fetchone()
+
+
+def test_waiting_tap_sends_a_card_under_64_bytes(conn, token):
+    req = _waiting(conn)
+    bot.offer_request(conn, req)
+
+    card = _outbox(conn, "message")[-1]
+    assert card["text"] == "Brainstorm an idea\nidea_id: 1"
+    keyboard = json.loads(card["buttons_json"])
+    assert [cell["text"] for cell in keyboard[0]] == ["Confirm", "Cancel"]
+    confirm_data = _button(card, "Confirm")["callback_data"]
+    cancel_data = _button(card, "Cancel")["callback_data"]
+    assert confirm_data.startswith(f"req:ok:{req.id}:")
+    assert cancel_data.startswith(f"req:no:{req.id}:")
+    confirm_code = confirm_data.split(":")[-1]
+    cancel_code = cancel_data.split(":")[-1]
+    assert confirm_code == cancel_code
+    assert len(confirm_code) == 8
+    assert confirm_data == f"req:ok:{req.id}:{confirm_code}"
+    assert cancel_data == f"req:no:{req.id}:{cancel_code}"
+    assert len(confirm_data.encode("utf-8")) <= bot.CALLBACK_DATA_LIMIT
+    assert len(cancel_data.encode("utf-8")) <= bot.CALLBACK_DATA_LIMIT
+    assert _request_row(conn, req.id)["state"] == "waiting_tap"
+
+
+def test_request_confirm_queues(conn, token):
+    req = _waiting(conn)
+    bot.offer_request(conn, req)
+    data = _button(_outbox(conn, "message")[-1], "Confirm")["callback_data"]
+
+    bot.handle(conn, _press(data, "cb-ok"))
+
+    row = _request_row(conn, req.id)
+    assert row["state"] == "queued"
+    assert row["confirmed_at"]
+    assert row["finished_at"] is None
+    assert row["error"] is None
+
+
+def test_request_cancel_cancels(conn, token):
+    req = _waiting(conn)
+    bot.offer_request(conn, req)
+    data = _button(_outbox(conn, "message")[-1], "Cancel")["callback_data"]
+
+    bot.handle(conn, _press(data, "cb-no"))
+
+    row = _request_row(conn, req.id)
+    assert row["state"] == "cancelled"
+    assert row["confirmed_at"] is None
+
+
+def test_a_second_request_tap_is_out_of_date(conn, token):
+    req = _waiting(conn)
+    bot.offer_request(conn, req)
+    data = _button(_outbox(conn, "message")[-1], "Confirm")["callback_data"]
+    bot.handle(conn, _press(data, "cb-ok", update_id=2))
+    queued = _request_row(conn, req.id)
+    assert queued["state"] == "queued"
+
+    bot.handle(conn, _press(data, "cb-again", update_id=3))
+
+    again = _request_row(conn, req.id)
+    assert again["state"] == "queued"
+    assert again["confirmed_at"] == queued["confirmed_at"]
+    assert [row["text"] for row in _outbox(conn, "message")].count(
+        "This card is out of date."
+    ) == 1
+
+
+def test_another_chat_request_tap_is_refused(conn, token):
+    req = _waiting(conn)
+    bot.offer_request(conn, req)
+    data = _button(_outbox(conn, "message")[-1], "Confirm")["callback_data"]
+    foreign = _press(data, "cb-foreign")
+    foreign["chat_id"] = 22
+
+    bot.handle(conn, foreign)
+
+    row = _request_row(conn, req.id)
+    assert row["state"] == "waiting_tap"
+    assert row["confirmed_at"] is None
+    texts = [item["text"] for item in _outbox(conn, "message") if item["chat_id"] == 22]
+    assert texts == ["This card is out of date."]
+
+
+def test_an_expired_request_tap_is_out_of_date(conn, token):
+    req = _waiting(conn)
+    bot.offer_request(conn, req)
+    card = _outbox(conn, "message")[-1]
+    data = _button(card, "Confirm")["callback_data"]
+    code = data.split(":")[-1]
+    raw = conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (f"confirm:{code}",)
+    ).fetchone()[0]
+    payload = json.loads(raw)
+    payload["expires_at"] = "2020-01-01T00:00:00.000Z"
+    conn.execute(
+        "UPDATE kv SET value = ? WHERE key = ?",
+        (json.dumps(payload), f"confirm:{code}"),
+    )
+
+    bot.handle(conn, _press(data, "cb-exp"))
+
+    row = _request_row(conn, req.id)
+    assert row["state"] == "waiting_tap"
+    assert row["confirmed_at"] is None
+    assert _outbox(conn, "message")[-1]["text"] == "This card is out of date."
+
+
+def test_idea_buttons_still_use_action_id_revision(conn, token, monkeypatch):
+    _allow_claude(conn, monkeypatch)
+    idea = _capture(conn)
+    card = _outbox(conn, "message")[0]
+    data = _button(card, "Brainstorm")["callback_data"]
+    assert data == f"brainstorm:{idea.id}:{idea.revision}"
+    assert not data.startswith("req:")
+
+    bot.handle(conn, _press(data, "cb-brain"))
+
+    assert store.get(conn, idea.id).status == "brainstorm_configuring"
+    labels = _flat(_button_rows(conn)[-1])
+    assert labels == ["Start", "Edit", "Cancel"]

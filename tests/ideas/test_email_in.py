@@ -11,7 +11,7 @@ import pytest
 from whyline import cli
 from whyline.agents import telegram
 from whyline.console import adapters
-from whyline.ideas import documents, email_in, paths, store, telegram_in
+from whyline.ideas import documents, email_in, paths, requests, store, telegram_in
 from whyline_relay import brainstorm as relay_brainstorm
 
 
@@ -728,3 +728,62 @@ def test_cli_email_mail_script(tmp_path, monkeypatch, capsys):
     assert installed_file.is_file()
     text = installed_file.read_text(encoding="utf-8")
     assert "/opt/bin/whyline idea email intake --file" in text
+
+
+def test_email_yes_queues_a_request_only_for_the_same_sender(conn):
+    email_in.allow(conn, "alice@example.com")
+    email_in.allow(conn, "bob@example.com")
+    req = requests.create(
+        conn,
+        channel="email",
+        actor="alice@example.com",
+        chat_id=None,
+        action="brainstorm",
+        args={"idea_id": 1},
+        proposed_by="keyword",
+    )
+    assert req.state == "waiting_tap"
+    sent = []
+    email_in.offer_request(conn, req, mail_fn=lambda *a: sent.append(a))
+    assert len(sent) == 1
+    to_addrs, subj, body, attachments = sent[0]
+    assert to_addrs == ["alice@example.com"]
+    assert subj == "Brainstorm an idea"
+    assert body.startswith("Brainstorm an idea\nidea_id: 1")
+    assert attachments == []
+    match = re.search(r"yes\s+([a-zA-Z0-9]{8})", body)
+    assert match is not None
+    code = match.group(1)
+    assert f"Reply yes {code} to confirm" in body
+
+    bob_reply = _make_email(
+        sender="bob@example.com",
+        subject="Re: Brainstorm an idea",
+        body=f"yes {code}",
+        message_id="<bob-req@example.com>",
+    )
+    result = email_in.handle(conn, bob_reply, mail_fn=lambda *a: sent.append(a))
+    assert result is None
+    row = conn.execute(
+        "SELECT * FROM requests WHERE id = ?", (req.id,)
+    ).fetchone()
+    assert row["state"] == "waiting_tap"
+    assert row["confirmed_at"] is None
+    assert len(sent) == 1
+    assert store.list_ideas(conn) == []
+
+    alice_reply = _make_email(
+        sender="alice@example.com",
+        subject="Re: Brainstorm an idea",
+        body=f"yes {code}",
+        message_id="<alice-req@example.com>",
+    )
+    result = email_in.handle(conn, alice_reply, mail_fn=lambda *a: sent.append(a))
+    assert result is None
+    row = conn.execute(
+        "SELECT * FROM requests WHERE id = ?", (req.id,)
+    ).fetchone()
+    assert row["state"] == "queued"
+    assert row["confirmed_at"]
+    assert len(sent) == 1
+    assert store.list_ideas(conn) == []

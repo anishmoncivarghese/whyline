@@ -15,6 +15,7 @@ from whyline.ideas.intent import (
     command,
     free,
     normalise_agent,
+    request,
     route,
     settings,
 )
@@ -144,6 +145,40 @@ def test_callback_parses_exactly(data, name, idea_id, revision):
 )
 def test_malformed_callback_is_free(data):
     assert _route("idea text", data) == free(data)
+
+
+@pytest.mark.parametrize(
+    ("data", "name", "request_id", "code"),
+    [
+        ("req:ok:7:abcdefgh", "ok", 7, "abcdefgh"),
+        ("req:no:12:xyz23456", "no", 12, "xyz23456"),
+        ("req:ok:1:ABCDEFGH", "ok", 1, "abcdefgh"),
+    ],
+)
+def test_request_callback_parses(data, name, request_id, code):
+    assert _route("the card text", data) == request(name, request_id, code)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        "req:ok:7",
+        "req:yes:7:abcdefgh",
+        "req:ok:x:abcdefgh",
+        "req:ok:7:abcd efg",
+        "req:ok:7:abcdefgh:x",
+        "req:ok:7:",
+        "req::7:abcdefgh",
+    ],
+)
+def test_malformed_request_callback_is_free(data):
+    assert _route("idea text", data) == free(data)
+
+
+def test_a_request_callback_wins_over_an_open_question():
+    assert _route(
+        "ignore", "req:ok:4:abcdefgh", open_question=True
+    ) == request("ok", 4, "abcdefgh")
 
 
 def test_empty_callback_falls_through_to_the_text():

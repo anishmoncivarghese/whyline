@@ -84,6 +84,8 @@ _STRONG_OPS = frozenset({
 _CONTROL_WORDS = frozenset({"timeout", "implementer", "drafter", "plan_reviewer"})
 
 _ID = re.compile(r"^[0-9]+$")
+_REQ_CODE = re.compile(r"^[A-Za-z0-9]+$")
+_REQ_ACTIONS = frozenset({"ok", "no"})
 _SETTING_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$")
 _SPLIT = re.compile(r"[\s,]+")
 _WORD = re.compile(r"[A-Za-z]+")
@@ -139,6 +141,8 @@ class Intent:
     # A factory, not the proxy itself: Python 3.11 rejects any unhashable
     # dataclass default, and a mappingproxy is unhashable.
     fields: Mapping[str, Field] = field(default_factory=lambda: _EMPTY_FIELDS)
+    request_id: int | None = None
+    code: str = ""
 
 
 def capture(text: str) -> Intent:
@@ -163,6 +167,10 @@ def answer(text: str) -> Intent:
 
 def free(text: str) -> Intent:
     return Intent(kind="free", text=text)
+
+
+def request(name: str, request_id: int, code: str) -> Intent:
+    return Intent(kind="request", name=name, request_id=request_id, code=code)
 
 
 def normalise_agent(word: str) -> str | None:
@@ -190,10 +198,11 @@ def route(
 ) -> Intent:
     """Route one message.
 
-    A non-empty callback is parsed exactly as ``action:idea_id:revision``
-    and wins over the text. Then a command, then a settings message, then
-    a reply to an open question. What remains is ``capture`` when it is
-    plainly an idea, and ``free`` when it is an instruction.
+    A non-empty callback is parsed exactly as ``action:idea_id:revision``,
+    or as ``req:ok|no:request_id:code`` for a request card, and wins over
+    the text. Then a command, then a settings message, then a reply to an
+    open question. What remains is ``capture`` when it is plainly an idea,
+    and ``free`` when it is an instruction.
     """
     if callback_data:
         parsed = _callback(callback_data)
@@ -220,6 +229,15 @@ def _token(word: str) -> str:
 
 def _callback(data: str) -> Intent | None:
     parts = data.split(":")
+    if len(parts) == 4 and parts[0] == "req":
+        _, name, request_s, code = parts
+        if name not in _REQ_ACTIONS:
+            return None
+        if _ID.fullmatch(request_s) is None:
+            return None
+        if _REQ_CODE.fullmatch(code) is None:
+            return None
+        return request(name, int(request_s), code.lower())
     if len(parts) != 3:
         return None
     name, idea_s, rev_s = parts
