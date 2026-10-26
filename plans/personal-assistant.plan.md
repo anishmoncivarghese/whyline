@@ -256,7 +256,7 @@ Rules every task keeps:
   - CLI list and cancel
   Verify with `uv run pytest -q tests/ideas/test_reminders.py tests/ideas/test_intent.py tests/ideas/test_worker.py tests/ideas/test_cli.py`. Change nothing else.
 
-- [ ] ASST-12: Reminders in the console
+- [x] ASST-12: Reminders in the console
   Edit `src/whyline/console/assistant_screen.py` and `tests/console/test_assistant_screen.py` only.
   Add a **Reminders** section to `AssistantScreen`:
   - pending reminders with due time and text, each with `Cancel`, through the same function `whyline idea remind cancel` uses
