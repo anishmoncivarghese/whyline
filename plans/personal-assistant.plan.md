@@ -280,7 +280,7 @@ Rules every task keeps:
   - CLI and console use the same functions
   Verify with `uv run pytest -q tests/ideas/test_memory.py tests/ideas/test_assistant.py tests/console/test_assistant_screen.py`. Change nothing else.
 
-- [ ] ASST-14: Summarise forwarded email, with a content guard
+- [x] ASST-14: Summarise forwarded email, with a content guard
   Add `src/whyline/ideas/guard.py`, `src/whyline/ideas/summarise.py`, `tests/ideas/test_guard.py`, and `tests/ideas/test_summarise.py`. Edit `src/whyline/ideas/email_in.py`, `src/whyline/ideas/worker.py`, and `tests/ideas/test_email_in.py` only.
   `guard.clean(text) -> (clean_text, flags)`:
   - strips HTML tags, comments, zero-width and bidi control characters, and CSS-hidden blocks
