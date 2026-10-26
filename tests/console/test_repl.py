@@ -1162,6 +1162,7 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
     assert "/timeout" in SLASH_COMMANDS
     assert "/timeout" in _COMMAND_HELP
 
+    real_run_chat_turn = adapters.run_chat_turn
     monkeypatch.setattr(
         adapters,
         "run_chat_turn",
@@ -1220,7 +1221,9 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
     # /timeout none passes chat.NO_LIMIT into chat.run_turn, and a later finite choice passes seconds again.
     from whyline_relay import chat
 
-    monkeypatch.undo()
+    # Restore only the chat adapter. monkeypatch.undo() would also drop the
+    # conftest's home isolation and read this machine's real account.
+    monkeypatch.setattr(adapters, "run_chat_turn", real_run_chat_turn)
     seen_timeouts = []
 
     def fake_run_turn(root, *, agent, prompt, settings, attachments, timeout_seconds=None, **kwargs):

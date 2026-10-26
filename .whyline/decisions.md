@@ -24846,3 +24846,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e5d71957e51f4cca8832a261c4b6393d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-25T21:27:30.655Z"} -->
+
+## 2026-10-26 — Fix 7 CI-only test failures with fixtures, not code
+
+**Actor:** claude
+**Role:** release
+**Task:** REL-0.3.52
+
+**Because:** Since SUBS-1 a provider is available only when enabled and its CLI is on PATH; these tests passed locally only because real CLIs and the real ~/.whyline account were visible (test_repl's monkeypatch.undo() dropped conftest home isolation; relay_agents binds shutil.which as a default arg)
+
+**Rejected:**
+
+- Change account availability to ignore PATH — contradicts SUBS-1 spec
+- Skip the tests on CI — hides real regressions
+
+**Files:** tests/test_model_cli.py, tests/console/test_repl.py, tests/console/test_tui.py
+
+<!-- whyline-event: 150fef19e6244f98916ab9336deff89f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T04:04:37.692Z"} -->

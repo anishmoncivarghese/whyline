@@ -18,7 +18,11 @@ def run_in(repo, argv, capsys, monkeypatch=None, input_answers=None):
 
 
 def _mark_all_available(monkeypatch, tmp_path, home):
+    import shutil
+
     monkeypatch.setattr(account.paths.Path, "home", lambda: home)
+    # Available now also needs the CLI on PATH; CI has none installed.
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
     account.save_global({
         agent: {"plan": None, "available": True}
         for agent in ("codex", "claude", "antigravity", "grok")
@@ -95,6 +99,9 @@ def test_interactive_model_selection_only_offers_available_agents(
         "antigravity": {"plan": None, "available": False},
         "grok": {"plan": None, "available": False},
     })
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
     code, out = run_in(
         repo, ["model"], capsys, monkeypatch, input_answers=["gpt-5-codex"]
     )
@@ -166,9 +173,14 @@ def test_gitignore_lines_contain_account_and_model():
     assert "model.json" in cli.GITIGNORE_LINES
 
 
-def test_interactive_model_selection_prints_plan_from_account(repo, monkeypatch, capsys):
+def test_interactive_model_selection_prints_plan_from_account(
+    repo, monkeypatch, capsys, tmp_path
+):
     from whyline import account
 
+    # Isolate the machine-wide record, which decides enablement; without
+    # this the test read the real ~/.whyline account on the developer's Mac.
+    _mark_all_available(monkeypatch, tmp_path, tmp_path / "home")
     account.save_repo(repo.path, {"codex": {"plan": "plus", "available": True}, "confirmed": True})
     code, out = run_in(
         repo,

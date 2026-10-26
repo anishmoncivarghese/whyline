@@ -3795,9 +3795,16 @@ async def test_manage_chain_excludes_disabled_providers_and_keeps_saved_stale(
     tmp_path, monkeypatch
 ):
     from whyline import account
+    from whyline.console import relay_ops
     from whyline.console.chain_editor import BackupChainScreen, OrderedChain
 
     _enable_installed(monkeypatch)
+    # relay_agents binds shutil.which as a default argument, so the patch in
+    # _enable_installed does not reach it; CI has no agent CLIs installed.
+    monkeypatch.setattr(
+        relay_ops, "relay_agents",
+        lambda root=None, which=None: ["antigravity", "claude", "codex", "grok"],
+    )
     account.save_global({
         "claude": {"enabled": True, "available": True, "plan": "max"},
         "codex": {"enabled": True, "available": True, "plan": "plus"},
