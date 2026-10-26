@@ -78,8 +78,8 @@ def test_whyline_help_lists_relay(capsys):
     assert exit_info.value.code == cli.EXIT_OK
     help_output = " ".join(capsys.readouterr().out.split())
     assert (
-        "Run a plan through Codex and Claude unattended "
-        "(needs the whyline-relay package)."
+        "Run a plan with a team of agents: implement, test, review "
+        "and verify, with backups when one runs out."
     ) in help_output
 
 

@@ -379,8 +379,8 @@ def _add_relay(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "relay",
         help=(
-            "Run a plan through Codex and Claude unattended "
-            "(needs the whyline-relay package)."
+            "Run a plan with a team of agents: implement, test, review "
+            "and verify, with backups when one runs out."
         ),
         add_help=False,
         # Treat every possible command-line token as positional. Without this,
@@ -542,7 +542,10 @@ def _add_idea(subparsers: "argparse._SubParsersAction") -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
-        description="Records why your code exists, and tells the next agent.",
+        description=(
+            "Your Claude, Codex, Grok and Antigravity subscriptions, working "
+            "together. Records why your code exists, and tells the next agent."
+        ),
     )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
