@@ -9,7 +9,7 @@ import pytest
 
 from whyline import cli
 from whyline.agents import launchd, telegram
-from whyline.ideas import documents, store, telegram_in
+from whyline.ideas import documents, email_in, store, telegram_in
 
 
 TOKEN = "123:secret"
@@ -1101,3 +1101,40 @@ def test_doctor_proves_the_pdf_route_on_this_mac(ideas_home, capsys):
 
     assert "ok     pdf: AppKit" in out + err
     assert "Traceback" not in err
+
+
+def test_email_authserv_saves_through_set_authserv(ideas_home, capsys, monkeypatch):
+    called = []
+    real = email_in.set_authserv
+
+    def spy(conn, value):
+        called.append(value)
+        return real(conn, value)
+
+    monkeypatch.setattr(email_in, "set_authserv", spy)
+    code, out, err = invoke(["idea", "email", "authserv", "mx.microsoft.com"], capsys)
+    assert code == 0, err
+    assert called == ["mx.microsoft.com"]
+    assert out.strip() == "mx.microsoft.com"
+    conn = store.connect()
+    try:
+        row = conn.execute(
+            "SELECT value FROM kv WHERE key = ?", (email_in.AUTHSERV_KEY,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["value"] == "mx.microsoft.com"
+    code, out, err = invoke(["idea", "email", "authserv"], capsys)
+    assert code == 0, err
+    assert out.strip() == "mx.microsoft.com"
+
+
+def test_doctor_reports_unset_email_authserv(
+    ideas_home, capsys, monkeypatch, pdf_available
+):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    code, out, err = invoke(["idea", "doctor"], capsys)
+    text = out + err
+    assert email_in.AUTHSERV_UNSET_NOTE in text
+    assert "email authserv" in text

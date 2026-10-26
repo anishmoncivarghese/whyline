@@ -41,6 +41,7 @@ class _Saved:
     service_on: bool
     repos: dict[str, str] = field(default_factory=dict)
     email_allow: tuple[str, ...] = field(default_factory=tuple)
+    email_authserv: str | None = None
 
 
 def _db_path():
@@ -65,7 +66,7 @@ def _read_saved() -> _Saved:
     """Saved settings. Does not create the inbox database."""
     path = _db_path()
     if path is None:
-        return _Saved((), None, None, None, None, False, {}, ())
+        return _Saved((), None, None, None, None, False, {}, (), None)
     from whyline.ideas import assistant, cli, email_in, setup, telegram_in, worker
 
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=10)
@@ -81,6 +82,7 @@ def _read_saved() -> _Saved:
             service_on=worker.enabled(conn),
             repos=setup.list_repos(conn),
             email_allow=tuple(email_in.allowed_senders(conn)),
+            email_authserv=email_in.configured_authserv(conn),
         )
     finally:
         conn.close()
@@ -193,6 +195,7 @@ class IdeaInboxScreen(ModalScreen):
     IdeaInboxScreen #ib-email-address { width: 1fr; }
     IdeaInboxScreen .ib-email-row { height: auto; }
     IdeaInboxScreen .ib-email-label { width: 1fr; padding: 1 0; }
+    IdeaInboxScreen #ib-email-authserv { width: 1fr; }
     """
 
     def __init__(self) -> None:
@@ -240,7 +243,7 @@ class IdeaInboxScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         from whyline.agents import telegram
-        from whyline.ideas import telegram_in
+        from whyline.ideas import email_in, telegram_in
 
         saved = _read_saved()
         self._token = telegram.token_get()
@@ -361,6 +364,12 @@ class IdeaInboxScreen(ModalScreen):
                     Input(placeholder="user@example.com", id="ib-email-address"),
                     Button("Add", id="ib-email-add"),
                     id="ib-email-add-row",
+                ),
+                Label("Email provider check"),
+                Input(
+                    saved.email_authserv or "",
+                    placeholder=", ".join(email_in.AUTHSERV_HINTS),
+                    id="ib-email-authserv",
                 ),
                 Label("Check"),
                 Static("", id="ib-checks", markup=False),
@@ -580,6 +589,9 @@ class IdeaInboxScreen(ModalScreen):
         message = self._save_service(saved)
         if message:
             errors.append(message)
+        message = self._save_authserv(saved)
+        if message:
+            errors.append(message)
         return " ".join(errors)
 
     def _checked_chats(self) -> list[int]:
@@ -679,6 +691,23 @@ class IdeaInboxScreen(ModalScreen):
             cli.cmd_service,
             argparse.Namespace(idea_service_command="on" if on else "off"),
         )
+
+    def _save_authserv(self, saved: _Saved) -> str:
+        from whyline.ideas import email_in, store
+
+        value = self.query_one("#ib-email-authserv", Input).value.strip()
+        current = (saved.email_authserv or "").strip()
+        if value == current or not value:
+            return ""
+        conn = store.connect()
+        try:
+            try:
+                email_in.set_authserv(conn, value)
+            except ValueError as exc:
+                return str(exc)
+        finally:
+            conn.close()
+        return ""
 
     def _show_message(self, text: str) -> None:
         widget = self.query_one("#ib-message", Static)

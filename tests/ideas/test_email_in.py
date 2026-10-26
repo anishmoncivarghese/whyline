@@ -2,6 +2,7 @@
 
 import json
 import re
+from email import message_from_string
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,7 +24,9 @@ def ideas_home(tmp_path, monkeypatch):
 
 @pytest.fixture
 def conn(ideas_home):
-    return store.connect()
+    connection = store.connect()
+    email_in.set_authserv(connection, "mx.google.com")
+    return connection
 
 
 HINT = "Enable {agent} in Settings or choose another provider."
@@ -52,7 +55,7 @@ def _make_email(
     subject: str = "idea",
     body: str = "A local accounting ledger for contractors",
     message_id: str = "<msg-101@example.com>",
-    auth: str = "mx.google.com; dkim=pass; spf=pass",
+    auth: str | list[str] | None = "mx.google.com; dkim=pass header.d=example.com",
 ) -> str:
     lines = [
         f"From: {sender}",
@@ -60,10 +63,16 @@ def _make_email(
         f"Message-ID: {message_id}",
     ]
     if auth is not None:
-        lines.append(f"Authentication-Results: {auth}")
+        headers = auth if isinstance(auth, list) else [auth]
+        for header in headers:
+            lines.append(f"Authentication-Results: {header}")
     lines.append("")
     lines.append(body)
     return "\n".join(lines)
+
+
+def _auth_msg(auth, sender: str = "boss@example.com"):
+    return message_from_string(_make_email(sender=sender, auth=auth))
 
 
 def test_allowed_authenticated_sender_creates_idea_with_settings(conn):
@@ -74,7 +83,7 @@ def test_allowed_authenticated_sender_creates_idea_with_settings(conn):
         subject="idea",
         body="A tool for scanning invoices\nmodels: codex, grok\npasses: 2\ntimeout: 30",
         message_id="<invoice-1@example.com>",
-        auth="mx.google.com; dkim=pass",
+        auth="mx.google.com; dkim=pass header.d=example.com",
     )
     idea = email_in.handle(conn, raw, mail_fn=lambda *a: sent.append(a))
     assert idea is not None
@@ -108,7 +117,7 @@ def test_empty_subject_captures_idea(conn):
         subject="",
         body="Track daily habits with friends",
         message_id="<habits-1@example.com>",
-        auth="mx.google.com; spf=pass",
+        auth="mx.google.com; dkim=pass header.d=example.com",
     )
     idea = email_in.handle(conn, raw, mail_fn=lambda *a: sent.append(a))
     assert idea is not None
@@ -183,12 +192,96 @@ def test_unallowed_sender_is_ignored(conn):
         subject="idea",
         body="Unsolicited idea",
         message_id="<stranger-1@example.com>",
-        auth="mx.google.com; dkim=pass",
+        auth="mx.google.com; dkim=pass header.d=example.com",
     )
     idea = email_in.handle(conn, raw, mail_fn=lambda *a: sent.append(a))
     assert idea is None
     assert len(store.list_ideas(conn)) == 0
     assert len(sent) == 0
+
+
+def test_forged_header_below_the_real_one_is_ignored():
+    msg = _auth_msg(
+        [
+            "mx.google.com; dkim=fail",
+            "mx.google.com; dkim=pass header.d=example.com",
+        ]
+    )
+    assert email_in.is_authenticated(msg, "mx.google.com") is False
+
+
+def test_header_from_another_authserv_is_ignored():
+    msg = _auth_msg(
+        [
+            "evil.example; dkim=pass header.d=example.com",
+            "mx.google.com; dkim=fail",
+        ]
+    )
+    assert email_in.is_authenticated(msg, "mx.google.com") is False
+    only_other = _auth_msg("evil.example; dkim=pass header.d=example.com")
+    assert email_in.is_authenticated(only_other, "mx.google.com") is False
+
+
+def test_dkim_pass_for_a_different_domain_is_refused():
+    msg = _auth_msg("mx.google.com; dkim=pass header.d=attacker.com")
+    assert email_in.is_authenticated(msg, "mx.google.com") is False
+
+
+def test_dkim_pass_with_an_aligned_subdomain_is_accepted():
+    msg = _auth_msg(
+        "mx.google.com; dkim=pass header.d=example.com",
+        sender="boss@mail.example.com",
+    )
+    assert email_in.is_authenticated(msg, "mx.google.com") is True
+
+
+def test_dmarc_pass_is_accepted():
+    msg = _auth_msg("mx.google.com; dmarc=pass")
+    assert email_in.is_authenticated(msg, "mx.google.com") is True
+
+
+def test_spf_only_is_refused():
+    msg = _auth_msg("mx.google.com; spf=pass")
+    assert email_in.is_authenticated(msg, "mx.google.com") is False
+
+
+def test_unset_authserv_refuses_with_the_note(ideas_home):
+    conn = store.connect()
+    email_in.allow(conn, "boss@example.com")
+    sent = []
+    raw = _make_email(
+        sender="boss@example.com",
+        subject="idea",
+        body="Should be refused until authserv is set",
+        message_id="<unset-authserv@example.com>",
+        auth="mx.google.com; dkim=pass header.d=example.com",
+    )
+    idea = email_in.handle(conn, raw, mail_fn=lambda *a: sent.append(a))
+    assert idea is None
+    assert len(store.list_ideas(conn)) == 0
+    assert sent == []
+    rows = conn.execute("SELECT * FROM inbound WHERE kind = 'email'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["handled"] == 1
+    assert rows[0]["text"] == email_in.AUTHSERV_UNSET_NOTE
+
+
+def test_cli_email_authserv_saves_through_set_authserv(conn, capsys, monkeypatch):
+    called = []
+    real = email_in.set_authserv
+
+    def spy(connection, value):
+        called.append(value)
+        return real(connection, value)
+
+    monkeypatch.setattr(email_in, "set_authserv", spy)
+    assert cli.main(["idea", "email", "authserv", "icloud.com"]) == 0
+    out = capsys.readouterr().out
+    assert called == ["icloud.com"]
+    assert out.strip() == "icloud.com"
+    assert cli.main(["idea", "email", "authserv"]) == 0
+    out = capsys.readouterr().out
+    assert out.strip() == "icloud.com"
 
 
 def test_yes_code_starts_brainstorm_and_reply_carries_word_and_pdf(conn, monkeypatch):
@@ -528,7 +621,7 @@ def test_mail_production_path_preserves_headers_and_invokes_handler(conn, tmp_pa
         subject="idea",
         body="A production path idea via Mail.app",
         message_id="<prod-msg-42@example.com>",
-        auth="mx.google.com; dkim=pass",
+        auth="mx.google.com; dkim=pass header.d=example.com",
     )
     mail_file = tmp_path / "incoming.eml"
     mail_file.write_text(email_content, encoding="utf-8")
@@ -556,7 +649,7 @@ def test_mail_production_path_preserves_headers_and_invokes_handler(conn, tmp_pa
             subject="idea",
             body="A second production idea",
             message_id="<prod-msg-43@example.com>",
-            auth="mx.google.com; spf=pass",
+            auth="mx.google.com; dkim=pass header.d=example.com",
         ),
         encoding="utf-8",
     )
@@ -573,7 +666,7 @@ def test_mail_production_path_preserves_headers_and_invokes_handler(conn, tmp_pa
             subject="idea",
             body="A third idea via agents trigger",
             message_id="<prod-msg-44@example.com>",
-            auth="mx.google.com; dkim=pass",
+            auth="mx.google.com; dkim=pass header.d=example.com",
         ),
         encoding="utf-8",
     )

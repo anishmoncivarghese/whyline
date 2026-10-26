@@ -655,3 +655,59 @@ async def test_email_section_add_and_remove(tmp_path, ideas_home, monkeypatch):
             assert "bob@example.com" in senders
         finally:
             conn.close()
+
+
+async def test_email_provider_check_saves_through_set_authserv(ideas_home, monkeypatch):
+    from whyline.ideas import email_in
+
+    called = []
+    real = email_in.set_authserv
+
+    def spy(conn, value):
+        called.append(value)
+        return real(conn, value)
+
+    monkeypatch.setattr(email_in, "set_authserv", spy)
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        field = screen.query_one("#ib-email-authserv", tui.Input)
+        placeholder = field.placeholder
+        assert "mx.google.com" in placeholder
+        assert "icloud.com" in placeholder
+        assert "mx.microsoft.com" in placeholder
+        field.value = "mx.google.com"
+        await pilot.click("#ib-save")
+        await pilot.pause()
+    assert called == ["mx.google.com"]
+    conn = store.connect()
+    try:
+        row = conn.execute(
+            "SELECT value FROM kv WHERE key = 'email_authserv'"
+        ).fetchone()
+        value = email_in.configured_authserv(conn)
+    finally:
+        conn.close()
+    assert row["value"] == "mx.google.com"
+    assert value == "mx.google.com"
+
+
+async def test_check_reports_unset_email_authserv(ideas_home):
+    from whyline.ideas import email_in
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        await pilot.click("#ib-check")
+        await pilot.pause()
+        text = _plain(screen.query_one("#ib-checks"))
+    assert email_in.AUTHSERV_UNSET_NOTE in text
+
+
+async def test_email_provider_check_shows_the_saved_value(ideas_home):
+    _seed({"email_authserv": "icloud.com"})
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app)
+        field = screen.query_one("#ib-email-authserv", tui.Input)
+        assert field.value == "icloud.com"

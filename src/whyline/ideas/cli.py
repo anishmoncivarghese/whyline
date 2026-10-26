@@ -140,6 +140,11 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     deny_e.add_argument("address", help="Email address")
     list_e = email_sub.add_parser("list", help="List allowed email addresses")
     list_e.add_argument("address", nargs="?", default=None, help=argparse.SUPPRESS)
+    authserv_e = email_sub.add_parser(
+        "authserv",
+        help="Mail provider id in Authentication-Results (authserv-id)",
+    )
+    authserv_e.add_argument("authserv_id", nargs="?", default=None, metavar="id")
     intake_e = email_sub.add_parser("intake", help="Process incoming email from file or stdin")
     intake_e.add_argument("--file", action="append", default=[], help="Path to email file")
     handle_e = email_sub.add_parser("handle", help="Process incoming email from file or stdin")
@@ -1178,6 +1183,20 @@ def _webhook_check() -> _Check:
     return _Check("webhook", True, "none")
 
 
+def _email_authserv_check() -> _Check:
+    from whyline.ideas import email_in, worker
+
+    value = worker.read_kv(email_in.AUTHSERV_KEY)
+    if not value or not str(value).strip():
+        return _Check(
+            "email authserv",
+            True,
+            email_in.AUTHSERV_UNSET_NOTE,
+            level="warn",
+        )
+    return _Check("email authserv", True, str(value).strip())
+
+
 def cmd_doctor(_args: argparse.Namespace) -> int:
     checks = (
         _folder_check(),
@@ -1190,6 +1209,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         _service_check(),
         _webhook_check(),
         _description_check(),
+        _email_authserv_check(),
     )
     for check in checks:
         print(f"{check.level:<6} {check.name}: {check.detail}")
@@ -1265,6 +1285,22 @@ def cmd_email(args: argparse.Namespace) -> int:
             for addr in sorted(senders):
                 print(addr)
             return EXIT_OK
+        if action == "authserv":
+            given = getattr(args, "authserv_id", None)
+            if given is None or not str(given).strip():
+                current = email_in.configured_authserv(conn)
+                if current:
+                    print(current)
+                else:
+                    print(email_in.AUTHSERV_UNSET_NOTE)
+                return EXIT_OK
+            try:
+                saved = email_in.set_authserv(conn, given)
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            print(saved)
+            return EXIT_OK
         if action in ("intake", "handle"):
             files = getattr(args, "file", []) or []
             if not files:
@@ -1290,7 +1326,10 @@ def cmd_email(args: argparse.Namespace) -> int:
                 return EXIT_ERROR
             print(path.as_posix())
             return EXIT_OK
-        print("usage: whyline idea email allow|deny|list <address>", file=sys.stderr)
+        print(
+            "usage: whyline idea email allow|deny|list|authserv [<id>]",
+            file=sys.stderr,
+        )
         return EXIT_USAGE
     finally:
         conn.close()

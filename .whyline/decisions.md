@@ -24902,3 +24902,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6ec25e8e27e64e1d8cd7ecd84aebf075 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:09:01.757Z"} -->
+
+## 2026-10-26 — Doctor warns when email_authserv is unset, and does not fail
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-1
+
+**Because:** Check must report the missing provider, but failing doctor would break every install that does not use email
+
+**Rejected:**
+
+- fail the doctor check — every existing doctor-pass test and non-email user would go red
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 7c2174ac985147a08924777c5f337642 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:23:56.878Z"} -->
+
+## 2026-10-26 — DKIM alignment is From-domain suffix match without a public suffix list
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-1
+
+**Because:** the task asks for header.d equal to the From domain or a parent of it
+
+**Rejected:**
+
+- PSL organizational-domain match — no new dependency, and the task wording is suffix alignment
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 7861c046e48d4dd68888219f7a8f25ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:23:56.878Z"} -->
+
+## 2026-10-26 — Unset authserv refusal is stored as inbound text
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-1
+
+**Because:** the events table requires an idea_id, and a refused message has none yet
+
+**Rejected:**
+
+- insert an events row — foreign keys are on and idea_id is NOT NULL
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 62a15d1b0e464f448d0ca7656dd49525 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:23:56.878Z"} -->
+
+## 2026-10-26 — ASST-1 email auth behaves as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** ASST-1
+
+**Because:** is_authenticated uses only the topmost matching authserv-id header; dmarc=pass and aligned dkim=pass are accepted; SPF-only and unaligned dkim are refused; unset email_authserv refuses every message with the setup note; CLI and Inbox both save through set_authserv. Specified files 90 passed, full suite exit 0, independent probe 28 cases.
+
+**Rejected:**
+
+- fail for storing the unset note on inbound instead of events — events require idea_id and the required note is stored
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 715ae71c14e446588c142d27ed27cd0d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:36:57.139Z"} -->
+
+## 2026-10-26 — Approve ASST-1 email authentication provider checks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-1
+
+**Because:** The diff uses only the topmost matching authserv-id header, accepts DMARC or From-aligned DKIM but not SPF, refuses unset configuration with the required note, and routes CLI and Inbox saves through set_authserv; the full suite and the required focused suite both passed independently.
+
+**Rejected:**
+
+- request changes — no task-caused defect was found; a transient environment-sensitive focused run did not reproduce when the exact command was run standalone
+
+**Files:** src/whyline/ideas/email_in.py
+
+<!-- whyline-event: 8136fe18d3c04022b2686665e1a73784 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:47:52.406Z"} -->

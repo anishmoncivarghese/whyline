@@ -1,10 +1,11 @@
 """Email intake for ideas: ideas and settings by email (IDEA-21).
 
 Allowed senders live in kv key `email_allow`. Incoming messages are verified
-with DKIM or SPF pass in Authentication-Results. Captures an idea when subject
-is "idea" (or empty). Body key: value lines become brainstorm settings.
-Action confirmations use "yes <code>" bound to the idea's revision.
-Documents go back as Word and PDF attachments.
+against the user's own `Authentication-Results` authserv-id (`email_authserv`):
+DMARC pass, or DKIM pass whose `header.d` aligns with the From domain.
+Captures an idea when subject is "idea" (or empty). Body key: value lines
+become brainstorm settings. Action confirmations use "yes <code>" bound to
+the idea's revision. Documents go back as Word and PDF attachments.
 """
 from __future__ import annotations
 
@@ -20,8 +21,16 @@ from whyline.agents import mail, mail_send
 from whyline.ideas import brainstorm, documents, intent, store
 
 ALLOW_KEY = "email_allow"
+AUTHSERV_KEY = "email_authserv"
+AUTHSERV_UNSET_NOTE = (
+    "email authentication is not set up: choose your mail provider in Inbox"
+)
+AUTHSERV_HINTS = ("mx.google.com", "icloud.com", "mx.microsoft.com")
 _SETTING_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$")
 _YES_CODE_RE = re.compile(r"\byes\b\s*[:,-]?\s*([a-zA-Z0-9]{6})\b", re.IGNORECASE)
+_COMMENT_RE = re.compile(r"\([^)]*\)")
+_METHOD_RE = re.compile(r"(\w+)\s*=\s*(\w+)", re.IGNORECASE)
+_PROP_RE = re.compile(r"(\w+)\s*\.\s*(\w+)\s*=\s*([^\s;]+)", re.IGNORECASE)
 
 
 class AllowError(Exception):
@@ -107,14 +116,101 @@ def code_for(idea_id: int, revision: int) -> str:
     return hashlib.sha256(f"whyline-email:{idea_id}:{revision}".encode("utf-8")).hexdigest()[:6]
 
 
-def is_authenticated(msg: Message) -> bool:
-    """Check Authentication-Results for a DKIM or SPF pass."""
+def configured_authserv(conn: sqlite3.Connection) -> str | None:
+    """The saved Authentication-Results authserv-id, or None when unset."""
+    raw = _kv(conn, AUTHSERV_KEY)
+    if not raw:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def set_authserv(conn: sqlite3.Connection, value: str) -> str:
+    """Save the mail provider authserv-id used to trust Authentication-Results."""
+    token = (value or "").strip()
+    if not token:
+        raise ValueError("mail provider is required")
+    with store._txn(conn):
+        _kv_set(conn, AUTHSERV_KEY, token)
+    return token
+
+
+def _authserv_id(header: str) -> str:
+    before = header.strip().split(";", 1)[0]
+    tokens = before.split()
+    return tokens[0] if tokens else ""
+
+
+def _unquote(value: str) -> str:
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1]
+    return text
+
+
+def _from_domain(msg: Message) -> str | None:
+    addr = email.utils.parseaddr(msg.get("From", ""))[1].strip()
+    if "@" not in addr:
+        return None
+    domain = addr.rsplit("@", 1)[1].strip().lower().rstrip(".")
+    return domain or None
+
+
+def _domain_aligned(header_d: str, from_domain: str) -> bool:
+    dkim_d = _unquote(header_d).strip().lower().lstrip("@").rstrip(".")
+    from_d = from_domain.strip().lower().rstrip(".")
+    if not dkim_d or not from_d:
+        return False
+    return from_d == dkim_d or from_d.endswith("." + dkim_d)
+
+
+def _method_results(header: str) -> list[tuple[str, str, dict[str, str]]]:
+    text = _COMMENT_RE.sub(" ", header)
+    parts = text.split(";")[1:]
+    results: list[tuple[str, str, dict[str, str]]] = []
+    for part in parts:
+        method_match = _METHOD_RE.search(part)
+        if not method_match:
+            continue
+        method = method_match.group(1).lower()
+        result = method_match.group(2).lower()
+        props: dict[str, str] = {}
+        for prop in _PROP_RE.finditer(part):
+            key = f"{prop.group(1).lower()}.{prop.group(2).lower()}"
+            props[key] = _unquote(prop.group(3))
+        results.append((method, result, props))
+    return results
+
+
+def is_authenticated(msg: Message, authserv: str) -> bool:
+    """Trust only the topmost Authentication-Results header from *authserv*.
+
+    Accepts ``dmarc=pass``, or ``dkim=pass`` whose ``header.d`` is the From
+    domain or a parent of it. SPF alone does not count.
+    """
+    wanted = (authserv or "").strip().lower()
+    if not wanted:
+        return False
     headers = msg.get_all("Authentication-Results") or []
     if isinstance(headers, str):
         headers = [headers]
+    chosen = None
     for header in headers:
-        if re.search(r"\b(?:dkim|spf)\s*=\s*pass\b", header, re.IGNORECASE):
+        if not header:
+            continue
+        if _authserv_id(str(header)).lower() == wanted:
+            chosen = str(header)
+            break
+    if chosen is None:
+        return False
+    from_domain = _from_domain(msg)
+    for method, result, props in _method_results(chosen):
+        if method == "dmarc" and result == "pass":
             return True
+        if method == "dkim" and result == "pass" and from_domain:
+            header_d = props.get("header.d", "")
+            if header_d and _domain_aligned(header_d, from_domain):
+                return True
     return False
 
 
@@ -206,7 +302,7 @@ def handle(
     """Ingest one incoming email message.
 
     Accepts raw RFC 822 string, bytes, Path, Message, or dict.
-    Verifies allowed sender and DKIM/SPF authentication.
+    Verifies allowed sender and the user's Authentication-Results authserv.
     Captures idea on subject "idea" or no subject.
     Executes confirmed action on reply "yes <code>".
     """
@@ -217,8 +313,12 @@ def handle(
     body = extract_body(msg)
 
     # 1. Verification of sender and authentication
+    authserv = configured_authserv(conn)
+    if not authserv:
+        _record_handled(conn, AUTHSERV_UNSET_NOTE)
+        return None
     allowed = set(allowed_senders(conn))
-    if sender not in allowed or not is_authenticated(msg):
+    if sender not in allowed or not is_authenticated(msg, authserv):
         _record_handled(conn, body)
         return None
 
