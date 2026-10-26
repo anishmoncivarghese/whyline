@@ -26037,3 +26037,99 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2cbbb1822a0045d79878cd48352f1556 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:07:48.011Z"} -->
+
+## 2026-10-26 — Add reminder row to AssistantScreen using parse_when with inline error display
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-12
+
+**Because:** Allows interactive entry of reminders with deterministic parsing matching CLI and bot capabilities, keeping errors localized to the section
+
+**Rejected:**
+
+- Use screen-level #as-error — obscures inline error feedback within the scrollable section
+- Add explicit chat selector input — adds unnecessary complexity when allowed telegram chat can be automatically bound
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 81e6798f29db4de08140fac67bb8adf6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:17:18.917Z"} -->
+
+## 2026-10-26 — Pass ASST-12: Reminders section in AssistantScreen with inline error and shared cancel
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-12
+
+**Because:** Verified pending reminder listing, shared reminders.cancel invocation, parse_when handling in Add row with inline error display, and all 13 tests passing in tests/console/test_assistant_screen.py
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 7c4c54ad1ec0480889d0fb3fcbe94bc5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:28:05.166Z"} -->
+
+## 2026-10-26 — Reject ASST-12 because console Add can create undeliverable or misdirected reminders
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-12
+
+**Because:** The Add path stores chat_id NULL when no Telegram chat is allowed even though queue_due excludes NULL destinations, and its last-reminder fallback can select a chat that is no longer allowed; focused tests pass but do not cover either production case, while the full suite has only the six established unrelated mode/schema failures
+
+**Rejected:**
+
+- Approve based on 13 passing assistant-screen tests — those tests always seed an allowed chat and miss the broken no-allowed-chat path
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 94e330653a094a0ead4e158444177323 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:38:04.258Z"} -->
+
+## 2026-10-26 — Require an active allowed Telegram chat for console Add reminder
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-12
+
+**Because:** Reminders require a deliverable Telegram chat destination; without an allowed chat, queued due reminders cannot be delivered
+
+**Rejected:**
+
+- Fall back to last reminder chat — a previously used chat may no longer be allowed
+- Allow chat_id NULL — queue_due excludes reminders with chat_id NULL making them undeliverable
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 7572cf57dbc0474abe9feae6920f08da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:45:09.717Z"} -->
+
+## 2026-10-26 — Pass ASST-12: Reminders section in AssistantScreen with allowed-chat requirement and shared cancel
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-12
+
+**Because:** Verified pending reminder listing, shared reminders.cancel invocation, parse_when handling with inline error, allowed-chat enforcement preventing undeliverable/misdirected reminders, and 14 passing tests in tests/console/test_assistant_screen.py
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 89b68bea6d24406e8863bc4105d58d99 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T21:58:03.319Z"} -->
+
+## 2026-10-26 — Approve ASST-12 console reminders after round-six review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-12
+
+**Because:** The console lists pending reminders, adds through reminders.parse_when with inline errors and an allowed Telegram destination, cancels through the CLI-shared reminders.cancel function, and all 14 focused tests pass; the six full-suite failures are established unrelated navigation and schema-version expectations
+
+**Rejected:**
+
+- Request further changes — no task-scoped defect remains and the stale-chat/NULL-destination regression is now covered
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: cb7b38876cae4b41b1aeaa89324f5ee0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:09:04.833Z"} -->

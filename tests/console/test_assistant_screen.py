@@ -244,3 +244,211 @@ async def test_reminder_cancel_removes_from_screen_and_calls_cancel(monkeypatch,
         assert reminders.pending(conn) == []
     finally:
         conn.close()
+
+
+async def test_reminder_add_uses_parse_when_and_renders_row(monkeypatch, assistant_home):
+    conn = store.connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO kv (key, value) VALUES ('telegram_allow', '[11]')"
+        )
+    finally:
+        conn.close()
+
+    parsed = []
+    real_parse_when = reminders.parse_when
+
+    def spy_parse_when(text, now):
+        parsed.append(text)
+        return real_parse_when(text, now)
+
+    monkeypatch.setattr(reminders, "parse_when", spy_parse_when)
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        assert screen.query_one("#as-reminders-empty") is not None
+
+        screen.query_one("#as-reminder-when", tui.Input).value = "tomorrow 9am"
+        screen.query_one("#as-reminder-text", tui.Input).value = "buy groceries"
+        screen.reminder_add_button().press()
+        await pilot.pause()
+
+        assert parsed == ["tomorrow 9am"]
+        with pytest.raises(tui.NoMatches):
+            screen.query_one("#as-reminders-empty")
+
+        assert screen.query_one("#as-reminder-when", tui.Input).value == ""
+        assert screen.query_one("#as-reminder-text", tui.Input).value == ""
+
+        conn = store.connect()
+        try:
+            pending = reminders.pending(conn)
+            assert len(pending) == 1
+            rem = pending[0]
+            assert rem.text == "buy groceries"
+            assert rem.chat_id == 11
+        finally:
+            conn.close()
+
+        row = screen.query_one(f"#as-reminder-{rem.id}")
+        assert "buy groceries" in _plain(row.query_one(".as-reminder-text").renderable)
+        assert screen.reminder_cancel_button(rem.id) is not None
+
+
+async def test_reminder_add_bad_time_shows_inline_error(assistant_home):
+    conn = store.connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO kv (key, value) VALUES ('telegram_allow', '[11]')"
+        )
+    finally:
+        conn.close()
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+
+        error_widget = screen.query_one("#as-reminder-error", tui.Static)
+        assert "-empty" in error_widget.classes
+
+        screen.query_one("#as-reminder-when", tui.Input).value = "not a valid time"
+        screen.query_one("#as-reminder-text", tui.Input).value = "something"
+        screen.reminder_add_button().press()
+        await pilot.pause()
+
+        assert "-empty" not in error_widget.classes
+        assert "couldn't read the time" in _plain(error_widget.renderable)
+
+        # The global screen error remains empty
+        assert "-empty" in screen.query_one("#as-error", tui.Static).classes
+
+        # No reminder was created
+        conn = store.connect()
+        try:
+            assert reminders.pending(conn) == []
+        finally:
+            conn.close()
+
+        # Correcting the when input clears the error on success
+        screen.query_one("#as-reminder-when", tui.Input).value = "in 2h"
+        screen.reminder_add_button().press()
+        await pilot.pause()
+
+        assert "-empty" in error_widget.classes
+        conn = store.connect()
+        try:
+            assert len(reminders.pending(conn)) == 1
+        finally:
+            conn.close()
+
+
+async def test_reminder_add_on_input_submitted(assistant_home):
+    conn = store.connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO kv (key, value) VALUES ('telegram_allow', '[11]')"
+        )
+    finally:
+        conn.close()
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+
+        screen.query_one("#as-reminder-when", tui.Input).value = "in 30m"
+        text_input = screen.query_one("#as-reminder-text", tui.Input)
+        text_input.value = "submit on enter"
+        await text_input.action_submit()
+        await pilot.pause()
+
+        conn = store.connect()
+        try:
+            pending = reminders.pending(conn)
+            assert len(pending) == 1
+            assert pending[0].text == "submit on enter"
+            assert pending[0].chat_id == 11
+        finally:
+            conn.close()
+
+
+async def test_reminder_add_requires_allowed_chat_and_does_not_fallback(assistant_home):
+    # Seed an old reminder in the database with a formerly used chat_id
+    conn = store.connect()
+    try:
+        old_rem = reminders.create(
+            conn, 99, datetime(2026, 10, 26, 8, 0), "old reminder"
+        )
+        conn.execute("DELETE FROM kv WHERE key = 'telegram_allow'")
+    finally:
+        conn.close()
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+
+        error_widget = screen.query_one("#as-reminder-error", tui.Static)
+        assert "-empty" in error_widget.classes
+
+        # Attempt to add reminder without an allowed chat
+        screen.query_one("#as-reminder-when", tui.Input).value = "in 1h"
+        screen.query_one("#as-reminder-text", tui.Input).value = "call home"
+        screen.reminder_add_button().press()
+        await pilot.pause()
+
+        # Inline error shown and not empty
+        assert "-empty" not in error_widget.classes
+        assert "No allowed Telegram chat" in _plain(error_widget.renderable)
+
+        # Global modal error must remain empty
+        assert "-empty" in screen.query_one("#as-error", tui.Static).classes
+
+        # Inputs are preserved so user doesn't lose text
+        assert screen.query_one("#as-reminder-when", tui.Input).value == "in 1h"
+        assert screen.query_one("#as-reminder-text", tui.Input).value == "call home"
+
+        # Verify no reminder with NULL chat_id was created and old chat_id 99 was not reused
+        conn = store.connect()
+        try:
+            pending = reminders.pending(conn)
+            assert len(pending) == 1
+            assert pending[0].id == old_rem.id
+            null_chats = conn.execute(
+                "SELECT * FROM reminders WHERE chat_id IS NULL"
+            ).fetchall()
+            assert len(null_chats) == 0
+        finally:
+            conn.close()
+
+        # Now configure an allowed chat (e.g., chat_id 42)
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO kv (key, value) VALUES ('telegram_allow', '[42]')"
+            )
+        finally:
+            conn.close()
+
+        # Press Add again
+        screen.reminder_add_button().press()
+        await pilot.pause()
+
+        # Error is cleared and fields are reset
+        assert "-empty" in error_widget.classes
+        assert screen.query_one("#as-reminder-when", tui.Input).value == ""
+        assert screen.query_one("#as-reminder-text", tui.Input).value == ""
+
+        # Verify new reminder was created with allowed chat 42 (NOT 99, NOT NULL)
+        conn = store.connect()
+        try:
+            pending = reminders.pending(conn)
+            assert len(pending) == 2
+            new_rem = [r for r in pending if r.id != old_rem.id][0]
+            assert new_rem.text == "call home"
+            assert new_rem.chat_id == 42
+        finally:
+            conn.close()

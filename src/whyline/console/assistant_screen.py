@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Label, Select, Static
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
-from whyline.ideas import actions, reminders, requests, store
+from whyline.ideas import actions, reminders, requests, store, telegram_in
+
+NO_ALLOWED_CHAT = "No allowed Telegram chat to deliver reminders."
 
 
 def _cell(value: object) -> Text:
@@ -48,6 +52,12 @@ class AssistantScreen(ModalScreen):
     AssistantScreen .as-reminder-text { width: 1fr; padding: 1 1; }
     AssistantScreen .as-reminder-cancel { min-width: 8; width: auto; margin-right: 1; }
     AssistantScreen #as-reminders-empty { padding: 1 1; color: $text-muted; }
+    AssistantScreen #as-reminder-add-row { height: auto; margin-top: 1; }
+    AssistantScreen #as-reminder-when { width: 22; margin-right: 1; }
+    AssistantScreen #as-reminder-text { width: 1fr; margin-right: 1; }
+    AssistantScreen #as-reminder-add { min-width: 8; width: auto; margin-right: 1; }
+    AssistantScreen #as-reminder-error { height: auto; max-height: 3; color: $error; }
+    AssistantScreen #as-reminder-error.-empty { display: none; }
     AssistantScreen #as-history { height: 12; min-height: 4; }
     AssistantScreen #as-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-error.-empty { display: none; }
@@ -84,6 +94,12 @@ class AssistantScreen(ModalScreen):
             return self.query_one(f"#as-reminder-cancel-{reminder_id}", Button)
         except Exception:
             return self.query_one(f"#as-cancel-reminder-{reminder_id}", Button)
+
+    def reminder_add_button(self) -> Button:
+        try:
+            return self.query_one("#as-reminder-add", Button)
+        except Exception:
+            return self.query_one("#as-add-reminder", Button)
 
     def compose(self) -> ComposeResult:
         action_rows = []
@@ -136,6 +152,13 @@ class AssistantScreen(ModalScreen):
                 *action_rows,
                 Label("Reminders", classes="as-section", id="as-reminders-title"),
                 Vertical(*reminder_rows, id="as-reminders"),
+                Horizontal(
+                    Input(placeholder="When", id="as-reminder-when"),
+                    Input(placeholder="Text", id="as-reminder-text"),
+                    Button("Add", id="as-reminder-add"),
+                    id="as-reminder-add-row",
+                ),
+                Static("", id="as-reminder-error", markup=False, classes="-empty"),
                 Label("History", classes="as-section", id="as-history-title"),
                 table,
                 id="as-body",
@@ -159,6 +182,9 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-save":
             event.stop()
             self._save()
+        elif button_id in ("as-reminder-add", "as-add-reminder"):
+            event.stop()
+            self._add_reminder()
         elif button_id.startswith("as-reminder-cancel-") or button_id.startswith(
             "as-cancel-reminder-"
         ):
@@ -170,10 +196,74 @@ class AssistantScreen(ModalScreen):
             except ValueError:
                 pass
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "as-reminder-when":
+            event.stop()
+            text_input = self.query_one("#as-reminder-text", Input)
+            if not text_input.value.strip():
+                text_input.focus()
+                return
+            self._add_reminder()
+        elif event.input.id == "as-reminder-text":
+            event.stop()
+            self._add_reminder()
+
     def _set_error(self, message: str) -> None:
         error = self.query_one("#as-error", Static)
         error.update(message)
         error.set_class(not message, "-empty")
+
+    def _set_reminder_error(self, message: str) -> None:
+        try:
+            error = self.query_one("#as-reminder-error", Static)
+            error.update(message)
+            error.set_class(not message, "-empty")
+        except Exception:
+            pass
+
+    def _add_reminder(self) -> None:
+        when_input = self.query_one("#as-reminder-when", Input)
+        text_input = self.query_one("#as-reminder-text", Input)
+        when_text = when_input.value.strip()
+        text_text = text_input.value.strip()
+
+        if not when_text:
+            self._set_reminder_error(reminders.BAD_TIME)
+            return
+
+        now = datetime.now().astimezone().replace(tzinfo=None)
+        try:
+            due, rest = reminders.parse_when(when_text, now)
+        except (reminders.TimeParseError, ValueError) as exc:
+            self._set_reminder_error(str(exc))
+            return
+
+        body = (f"{rest} {text_text}" if rest else text_text).strip()
+        if not body:
+            self._set_reminder_error(reminders.BAD_TIME)
+            return
+
+        conn = store.connect()
+        try:
+            chats = telegram_in.allowed_chats(conn)
+            if not chats:
+                self._set_reminder_error(NO_ALLOWED_CHAT)
+                return
+            chat_id = chats[0]
+            reminders.create(conn, chat_id, due, body, now=now)
+        except (reminders.TimeParseError, ValueError) as exc:
+            self._set_reminder_error(str(exc))
+            return
+        except Exception as exc:
+            self._set_reminder_error(str(exc))
+            return
+        finally:
+            conn.close()
+
+        when_input.value = ""
+        text_input.value = ""
+        self._set_reminder_error("")
+        self._refresh_reminders()
 
     def _cancel_reminder(self, reminder_id: int) -> None:
         conn = store.connect()
@@ -191,6 +281,8 @@ class AssistantScreen(ModalScreen):
             conn.close()
         container = self.query_one("#as-reminders", Vertical)
         container.remove_children()
+        for child in list(container.children):
+            container._nodes._remove(child)
         if not self._reminders:
             container.mount(
                 Static("No reminders.", id="as-reminders-empty", markup=False)
