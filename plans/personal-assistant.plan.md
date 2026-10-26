@@ -121,7 +121,7 @@ Rules every task keeps:
   - CLI list and set
   Verify with `uv run pytest -q tests/ideas/test_actions.py tests/ideas/test_cli.py`. Change nothing else.
 
-- [ ] ASST-5: Requests table, reminders table and ledger schema 6
+- [x] ASST-5: Requests table, reminders table and ledger schema 6
   Edit `src/whyline/ideas/store.py` and `tests/ideas/test_store.py`. Add `src/whyline/ideas/requests.py` and `tests/ideas/test_requests.py`. Edit nothing else.
   Bump `SCHEMA_VERSION` to 6 with a forward migration from 5 that keeps every existing row. Add these tables:
   - `requests(id INTEGER PRIMARY KEY, created_at, channel TEXT, actor TEXT, chat_id INTEGER, action TEXT NOT NULL, args_json TEXT NOT NULL, proposed_by TEXT NOT NULL, state TEXT NOT NULL, approval TEXT NOT NULL, confirmed_at, started_at, finished_at, lease_until, pid INTEGER, result_path, error)`. `state` is one of `waiting_tap`, `queued`, `running`, `done`, `failed`, `refused`, `cancelled`.
