@@ -156,7 +156,7 @@ Rules every task keeps:
   - idea buttons still work unchanged
   Verify with `uv run pytest -q tests/ideas/test_intent.py tests/ideas/test_bot.py tests/ideas/test_email_in.py`. Change nothing else.
 
-- [ ] ASST-MODE: An Assistant mode in the console
+- [x] ASST-MODE: An Assistant mode in the console
   Added 2026-10-26 at the user's request: the assistant gets its own console mode beside Chat, Relay and Agents, so all of its setup and settings are in one place.
   Edit `src/whyline/console/tui.py`, `tests/console/test_mode_buttons.py`, `tests/console/test_agents_mode.py`, and `tests/console/test_tui.py` only.
   - Add `"assistant"` to `_MODES` and an `Assistant` button (`#mode-assistant`) after `Agents` in the mode bar. Mode switching, the `mode:` sub-title and the button highlight work as for the other modes. Settings stays a shared control in all four modes.
