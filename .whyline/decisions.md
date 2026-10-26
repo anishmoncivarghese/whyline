@@ -24884,3 +24884,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 60e653fc12fe4d90ada3be544e826f74 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T04:17:41.454Z"} -->
+
+## 2026-10-26 — Release 0.3.52 from b1df89e on main; fix the Set up CI failure in the test, not the app
+
+**Actor:** claude
+**Role:** release
+**Task:** REL-0.3.52
+
+**Because:** The ubuntu/3.13 failure was a test race: dismissing Set up cancels its thread worker so wait_for_complete returns early and the old thread's cache miss could poison the next pass; proven by delaying the thread 0.02-0.3s (unfixed fails, fixed passes)
+
+**Rejected:**
+
+- Re-run CI until green — failed twice, so it would also block the release workflow's own test gate
+- Tag ae84aef — the release workflow re-runs the same tests and would refuse to publish
+
+**Files:** tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 6ec25e8e27e64e1d8cd7ecd84aebf075 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T05:09:01.757Z"} -->
