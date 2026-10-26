@@ -1,6 +1,7 @@
 """Cards, buttons, and the retrying outbox."""
 
 import json
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -460,6 +461,173 @@ def test_list_shows_the_ten_newest_ideas_with_status(conn, token):
     assert lines[0].startswith("12  captured  idea 11")
     assert lines[-1].startswith("3  captured  idea 2")
     assert all("captured" in line for line in lines)
+
+
+def _latest_request(conn):
+    return conn.execute("SELECT * FROM requests ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def test_status_agents_lists_last_run_and_pause_state_without_a_model(
+    conn, token, monkeypatch,
+):
+    found = [
+        SimpleNamespace(
+            defn=SimpleNamespace(name="morning-brief"),
+            status="active",
+            last_outcome="succeeded",
+            last_run="2026-10-25 07:00",
+        ),
+        SimpleNamespace(
+            defn=SimpleNamespace(name="inbox-watch"),
+            status="paused",
+            last_outcome="failed",
+            last_run="2026-10-24 09:30",
+        ),
+    ]
+    monkeypatch.setattr(bot.service, "rows", lambda root: found if root is None else [])
+    monkeypatch.setattr(
+        bot.assistant,
+        "propose",
+        lambda *_args, **_kwargs: pytest.fail("status called the model"),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("status ran a subprocess"),
+    )
+
+    bot.handle(
+        conn,
+        _message("status agents"),
+        run_fn=lambda *_args, **_kwargs: pytest.fail("status ran a provider"),
+    )
+
+    text = _outbox(conn, "message")[-1]["text"]
+    assert "morning-brief — succeeded — 2026-10-25 07:00 — not paused" in text
+    assert "inbox-watch — failed — 2026-10-24 09:30 — paused" in text
+    req = _latest_request(conn)
+    assert (req["action"], req["state"]) == ("status", "done")
+
+
+def test_status_agent_lists_three_runs_and_only_the_reason_first_line(
+    conn, token, monkeypatch,
+):
+    runs = [
+        SimpleNamespace(
+            started=f"2026-10-{day:02d}T08:15:00",
+            outcome=outcome,
+            reason=f"reason {day}\nprivate detail",
+        )
+        for day, outcome in ((26, "failed"), (25, "succeeded"), (24, "cancelled"))
+    ]
+    seen = []
+
+    def history(name, root, n):
+        seen.append((name, root, n))
+        return runs
+
+    monkeypatch.setattr(bot.service, "history", history)
+    bot.handle(conn, _message("status morning-brief"))
+
+    text = _outbox(conn, "message")[-1]["text"]
+    assert seen == [("morning-brief", None, 3)]
+    assert text.splitlines() == [
+        "2026-10-26 08:15 — failed — reason 26",
+        "2026-10-25 08:15 — succeeded — reason 25",
+        "2026-10-24 08:15 — cancelled — reason 24",
+    ]
+    assert "private detail" not in text
+    assert (_latest_request(conn)["action"], _latest_request(conn)["state"]) == (
+        "status",
+        "done",
+    )
+
+
+def test_status_unknown_agent_is_explicit(conn, token, monkeypatch):
+    def missing(_name, _root, _n):
+        raise bot.service.AgentNotFound("missing")
+
+    monkeypatch.setattr(bot.service, "history", missing)
+    bot.handle(conn, _message("status nowhere"))
+
+    assert _outbox(conn, "message")[-1]["text"] == "No saved agent named nowhere."
+    assert _latest_request(conn)["state"] == "done"
+
+
+def test_status_relay_lists_only_allowed_repos_with_state_files(
+    conn, token, monkeypatch, tmp_path,
+):
+    from whyline_relay import state as relay_state
+
+    active = tmp_path / "active"
+    idle = tmp_path / "idle"
+    relay_state.path(active).parent.mkdir(parents=True)
+    relay_state.path(active).write_text(
+        json.dumps({
+            "plan": "plans/ship.plan.md",
+            "branch": "relay/ship",
+            "task_id": "SHIP-2",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "waiting for approval",
+            "log_path": "relay.log",
+            "stage": "review",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        bot.setup,
+        "list_repos",
+        lambda _conn: {"active": str(active), "idle": str(idle)},
+    )
+
+    bot.handle(conn, _message("status relay"))
+
+    text = _outbox(conn, "message")[-1]["text"]
+    assert text == (
+        "active — plan: plans/ship.plan.md; task: SHIP-2; stage: review; "
+        "paused: waiting for approval"
+    )
+    assert "idle" not in text
+    assert _latest_request(conn)["state"] == "done"
+
+
+def test_status_agents_truncates_to_one_telegram_message(conn, token, monkeypatch):
+    found = [
+        SimpleNamespace(
+            defn=SimpleNamespace(name=f"agent-{index}-" + "x" * 90),
+            status="active",
+            last_outcome="succeeded",
+            last_run="2026-10-26 08:15",
+        )
+        for index in range(80)
+    ]
+    monkeypatch.setattr(bot.service, "rows", lambda _root: found)
+
+    bot.handle(conn, _message("status agents"))
+
+    messages = _outbox(conn, "message")
+    assert len(messages) == 1
+    text = messages[0]["text"]
+    assert len(text) < 4096
+    suffix = text.splitlines()[-1]
+    assert suffix.startswith("…and ") and suffix.endswith(" more")
+    omitted = int(suffix.removeprefix("…and ").removesuffix(" more"))
+    assert omitted == len(found) - (len(text.splitlines()) - 1)
+
+
+def test_bare_status_keeps_idea_status_and_records_the_request(conn, token):
+    idea = _capture(conn)
+
+    bot.handle(conn, _message("status", update_id=2, message_id=6))
+
+    card = _outbox(conn, "message")[-1]
+    assert "Plan: A quiet ledger" in card["text"]
+    labels = [cell["text"] for line in json.loads(card["buttons_json"]) for cell in line]
+    assert labels == ["Stop", "Refresh"]
+    assert store.get(conn, idea.id).status == "captured"
+    req = _latest_request(conn)
+    assert (req["action"], req["state"]) == ("status", "done")
 
 
 def test_settings_open_the_matching_confirm_card(conn, token):

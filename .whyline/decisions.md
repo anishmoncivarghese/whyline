@@ -25530,3 +25530,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bc1ea70e37464fff8de25e74a26929f5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:39:30.082Z"} -->
+
+## 2026-10-26 — Handle keyword status synchronously and truncate on whole status rows
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-8
+
+**Because:** Agent and relay status are read-only local lookups, must not enter the model or worker queue, and Telegram replies must retain an exact omitted-row count below 4096 characters
+
+**Rejected:**
+
+- Queue status through requests.create — it would leave an instant read-only command pending for a worker instead of recording it done
+- Rely on send-time clipping — it would omit the required …and N more suffix and lose row boundaries
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: ddfc4c4edc474b70950bb8ea4ce3a851 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:43:23.074Z"} -->
+
+## 2026-10-26 — Pass ASST-8 status command testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-8
+
+**Because:** All 182 focused intent and bot tests pass, covering agent, named-agent, relay, truncation, unknown-name, preserved idea status, request recording, and no provider or subprocess calls; the seven full-suite failures are unrelated existing console-mode and stale schema-version assertions outside the scoped files
+
+**Rejected:**
+
+- Fail ASST-8 for the full-suite failures — none exercises or originates from the ASST-8 implementation, and the known schema assertions expect version 5 while the repository is already at version 6
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/intent.py
+
+<!-- whyline-event: 9ab59b6ea65c4291b4044d5e149c7bab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:52:47.755Z"} -->
+
+## 2026-10-26 — Approve ASST-8 agent and relay status commands
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-8
+
+**Because:** The scoped implementation handles every requested status form synchronously, records terminal status requests, preserves idea status behavior, truncates safely below Telegram's limit, and the full plain pytest run showed only seven unrelated existing console/schema expectation failures
+
+**Rejected:**
+
+- Request changes for full-suite failures — all seven failures are outside the scoped files and concern existing console navigation or schema version 5 expectations
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/intent.py
+
+<!-- whyline-event: 72a641b1917c4d339898401f1556d8c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T11:03:57.103Z"} -->

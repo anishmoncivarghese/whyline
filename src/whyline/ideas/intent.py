@@ -129,7 +129,7 @@ class Intent:
     """One routed message.
 
     ``fields`` is the settings map in the order the keys were written.
-    ``args`` is the id tokens after a command, empty when none were given.
+    ``args`` is the argument after a command, empty when none was given.
     """
 
     kind: str
@@ -263,11 +263,17 @@ def _command(body: str) -> Intent | None:
         if args:
             return None
         return command(name, ())
-    # status, brainstorm, plan, and stop take an optional id. `/drop <id>`
-    # requires one. A bare "drop", or any other extra word, is prose.
+    # Brainstorm, plan, and stop take an optional id. `/drop <id>` requires
+    # one. A bare "drop", or any other extra word, is prose.
     if name == "drop":
         if len(args) == 1 and _ID.fullmatch(args[0]) is not None:
             return command(name, (args[0],))
+        return None
+    # Status also addresses saved agents and the relay. Its existing empty and
+    # numeric forms still mean the latest idea and an explicit idea id.
+    if name == "status":
+        if len(args) <= 1:
+            return command(name, tuple(args))
         return None
     if len(args) > 1 or (len(args) == 1 and _ID.fullmatch(args[0]) is None):
         return None

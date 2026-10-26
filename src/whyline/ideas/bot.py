@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from whyline.agents import capabilities, telegram
+from whyline.agents import capabilities, service, telegram
 from whyline.ideas import (
     actions,
     assistant,
@@ -26,6 +26,7 @@ from whyline.ideas import (
     documents,
     intent,
     requests,
+    setup,
     store,
     xlsx,
 )
@@ -1167,10 +1168,23 @@ def _send_status(
 
 
 def _command_status(conn: store.sqlite3.Connection, row, routed: intent.Intent) -> None:
+    target = routed.args[0] if routed.args else ""
+    lookup = target.lower()
+    _record_status_request(conn, row, target)
+    if lookup == "agents":
+        _say(conn, row, _agents_status())
+        return
+    if lookup == "relay":
+        _say(conn, row, _relay_status(conn))
+        return
+    if target and not target.isdigit():
+        _say(conn, row, _agent_status(lookup, shown_name=target))
+        return
+
     from whyline.ideas import watch
 
     chat_id = _field(row, "chat_id")
-    idea_id = int(routed.args[0]) if routed.args else None
+    idea_id = int(target) if target else None
     idea = watch.find_idea_for_status(
         conn, chat_id=int(chat_id) if chat_id is not None else None, idea_id=idea_id
     )
@@ -1178,6 +1192,98 @@ def _command_status(conn: store.sqlite3.Connection, row, routed: intent.Intent) 
         _say(conn, row, "No idea in progress.")
         return
     _send_status(conn, row, idea)
+
+
+def _record_status_request(conn: sqlite3.Connection, row, target: str) -> None:
+    """Record a synchronous keyword status request without queueing a worker."""
+    moment = store._now()
+    chat_id = _field(row, "chat_id")
+    actor = None if chat_id is None else str(chat_id)
+    args = {"target": target} if target else {}
+    conn.execute(
+        """
+        INSERT INTO requests (
+          created_at, channel, actor, chat_id, action, args_json,
+          proposed_by, state, approval, started_at, finished_at
+        ) VALUES (?, 'telegram', ?, ?, 'status', ?, 'keyword', 'done', 'none', ?, ?)
+        """,
+        (moment, actor, chat_id, json.dumps(args), moment, moment),
+    )
+
+
+def _agents_status() -> str:
+    found = service.rows(None)
+    lines = []
+    for item in found:
+        defn = item.defn
+        name = getattr(defn, "name", None)
+        if not name:
+            name = getattr(getattr(defn, "path", None), "stem", "unknown")
+        paused = "paused" if item.status == "paused" else "not paused"
+        if item.last_outcome or item.last_run:
+            outcome = item.last_outcome or "unknown outcome"
+            when = item.last_run or "unknown time"
+            lines.append(f"{name} — {outcome} — {when} — {paused}")
+        else:
+            lines.append(f"{name} — no runs — {paused}")
+    return _limited_lines(lines, empty="No saved agents.")
+
+
+def _agent_status(name: str, *, shown_name: str | None = None) -> str:
+    shown_name = shown_name or name
+    try:
+        runs = service.history(name, None, 3)
+    except service.AgentNotFound:
+        return f"No saved agent named {shown_name}."
+    except service.Ambiguous as error:
+        return str(error)
+    if not runs:
+        return f"{shown_name} has not run yet."
+    lines = []
+    for run in runs:
+        when = run.started[:16].replace("T", " ") if run.started else "unknown time"
+        outcome = run.outcome or "unknown outcome"
+        reason = (run.reason or "").splitlines()[0].strip() if run.reason else ""
+        lines.append(f"{when} — {outcome} — {reason or 'no reason'}")
+    return _limited_lines(lines)
+
+
+def _relay_status(conn: sqlite3.Connection) -> str:
+    from whyline_relay import state as relay_state
+
+    lines = []
+    for name, raw_root in setup.list_repos(conn).items():
+        root = Path(raw_root)
+        if not relay_state.path(root).is_file():
+            continue
+        saved = relay_state.load(root)
+        if saved is None:
+            lines.append(
+                f"{name} — plan: —; task: —; stage: —; paused: unreadable state"
+            )
+            continue
+        paused = saved.paused_reason or "not paused"
+        lines.append(
+            f"{name} — plan: {saved.plan or '—'}; task: {saved.task_id or '—'}; "
+            f"stage: {saved.stage or '—'}; paused: {paused}"
+        )
+    return _limited_lines(lines, empty="No relay state found.")
+
+
+def _limited_lines(lines: list[str], *, empty: str = "") -> str:
+    """Fit whole logical rows in one Telegram message, naming omitted rows."""
+    if not lines:
+        return empty
+    full = "\n".join(lines)
+    if len(full) < _MESSAGE_LIMIT:
+        return full
+    for kept in range(len(lines) - 1, -1, -1):
+        suffix = f"…and {len(lines) - kept} more"
+        prefix = "\n".join(lines[:kept])
+        candidate = f"{prefix}\n{suffix}" if prefix else suffix
+        if len(candidate) < _MESSAGE_LIMIT:
+            return candidate
+    return f"…and {len(lines)} more"
 
 
 def _command_stop(conn: store.sqlite3.Connection, row, routed: intent.Intent) -> None:

@@ -46,6 +46,9 @@ def _route(text, callback=None, *, open_question=False):
         ("status", "status", ()),
         ("/status 4", "status", ("4",)),
         ("status 4", "status", ("4",)),
+        ("status agents", "status", ("agents",)),
+        ("/status relay", "status", ("relay",)),
+        ("status morning-brief", "status", ("morning-brief",)),
         ("/staus", "status", ()),
         ("/staus 4", "status", ("4",)),
         ("STAUS 9", "status", ("9",)),
@@ -90,6 +93,11 @@ def test_prose_that_starts_like_a_command_is_capture(text):
 @pytest.mark.parametrize("text", ["/drop", "drop", "/DROP", "DROP", "drp"])
 def test_drop_without_the_required_id_is_capture(text):
     # `/drop <id>` is the grammar. A missing id is not command("drop", ()).
+    assert _route(text) == capture(text)
+
+
+def test_status_takes_only_one_target():
+    text = "status morning brief"
     assert _route(text) == capture(text)
 
 
