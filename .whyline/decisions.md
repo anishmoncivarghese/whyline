@@ -26133,3 +26133,83 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cb7b38876cae4b41b1aeaa89324f5ee0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:09:04.833Z"} -->
+
+## 2026-10-26 — Store memory as 1-indexed Markdown in memory.md with mode 0600
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-13
+
+**Because:** Markdown format keeps notes human-readable and editable while 0600 ensures per-user privacy and renumbering supports forget/edit operations
+
+**Rejected:**
+
+- Store in SQLite kv — violated explicit spec for paths.home()/memory.md
+- Unnumbered bullet list — line-numbered references are required for forget and edit operations
+
+**Files:** src/whyline/ideas/memory.py
+
+<!-- whyline-event: fd0c225feda04032bda14b6821a027ca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:24:33.025Z"} -->
+
+## 2026-10-26 — Label memory as data notes in assistant prompt and omit from agent prompts
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-13
+
+**Because:** Memory notes must be treated strictly as data to prevent prompt injection and must never leak to agent turns unless explicitly passed
+
+**Rejected:**
+
+- Pass memory to agent prompts — violates security boundary isolating memory notes to assistant proposal turn only
+- Always include an empty memory block — pollutes prompt tokens when no user notes exist
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 832b3b9c10944a4aaefc06628df67957 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:24:39.032Z"} -->
+
+## 2026-10-26 — Share memory module functions across CLI and AssistantScreen with inline console editing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-13
+
+**Because:** CLI and console share exact show, add, edit, forget, clear functions, and inline editing simplifies single-line edits in AssistantScreen
+
+**Rejected:**
+
+- Separate modal screen for line editing — unnecessary complexity compared to inline row toggling
+- Duplicate file I/O in console — violates the requirement that CLI and console use the same functions
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 868279935abb479c8c2281741012a2d8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:24:44.116Z"} -->
+
+## 2026-10-26 — Approve memory commands, Markdown file persistence, prompt data block isolation, and console management
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-13
+
+**Because:** All task requirements verified: 0600 Markdown list, 300 char and 100 line caps, prompt data block isolation, CLI memory commands, and shared console memory functions all pass tests
+
+**Files:** src/whyline/ideas/memory.py
+
+<!-- whyline-event: 9cf2e42b7fd341b78816e1975a6d477f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:32:37.039Z"} -->
+
+## 2026-10-26 — Approve ASST-13 memory commands, persistence, prompt isolation, and console management
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-13
+
+**Because:** The scoped implementation meets the numbered Markdown, 0600 mode, 300-character and 100-line caps, count replies, assistant-only data block, shared CLI and console functions, and confirmed clear requirements; the full plain test run exercised all ASST-13 tests successfully, with only six established unrelated navigation and schema-version expectation failures
+
+**Files:** src/whyline/ideas/memory.py
+
+<!-- whyline-event: a853bf3a9902407ab47c9430794543b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:42:33.653Z"} -->

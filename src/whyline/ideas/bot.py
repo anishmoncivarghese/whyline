@@ -25,6 +25,7 @@ from whyline.ideas import (
     confirm,
     documents,
     intent,
+    memory,
     reminders,
     requests,
     setup,
@@ -169,6 +170,8 @@ Commands:
 /run <saved-agent>
 /ask <repo> <question>
 /remind <when> <text>
+/remember <fact>
+/forget <n>
 /excel
 /brainstorm [id]
 /plan [id]
@@ -644,6 +647,10 @@ def _command(
         _command_ask(conn, row, routed)
     elif name == "remind":
         _command_remind(conn, row, routed, now=now)
+    elif name == "remember":
+        _command_remember(conn, row, routed)
+    elif name == "forget":
+        _command_forget(conn, row, routed)
     elif name == "stop":
         _command_stop(conn, row, routed)
     elif name == "new":
@@ -668,6 +675,36 @@ def _command_remind(
         return
     due = datetime.fromisoformat(reminder.due_at)
     _say(conn, row, f"I'll remind you {reminders.due_in_words(due, moment)}.")
+
+
+def _command_remember(conn, row, routed: intent.Intent) -> None:
+    fact = " ".join(routed.args).strip()
+    if not fact:
+        _say(conn, row, "remember needs a fact.")
+        return
+    try:
+        count = memory.add(fact)
+    except memory.MemoryFullError:
+        _say(conn, row, memory.MEMORY_FULL)
+        return
+    _say(conn, row, f"Remembered ({count}).")
+
+
+def _command_forget(conn, row, routed: intent.Intent) -> None:
+    if not routed.args:
+        _say(conn, row, "forget needs a line number.")
+        return
+    try:
+        n = int(routed.args[0])
+    except ValueError:
+        _say(conn, row, "forget needs a line number.")
+        return
+    try:
+        count = memory.forget(n)
+    except (IndexError, ValueError):
+        _say(conn, row, f"No memory item {n}.")
+        return
+    _say(conn, row, f"Forgot ({count}).")
 
 
 def create_run_request(

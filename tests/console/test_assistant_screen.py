@@ -9,7 +9,7 @@ from textual.widgets import DataTable
 
 from whyline.console import tui
 from whyline.console.assistant_screen import AssistantScreen
-from whyline.ideas import actions, reminders, store
+from whyline.ideas import actions, memory, reminders, store
 
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
@@ -452,3 +452,159 @@ async def test_reminder_add_requires_allowed_chat_and_does_not_fallback(assistan
             assert new_rem.chat_id == 42
         finally:
             conn.close()
+
+
+async def test_memory_section_show_and_forget(assistant_home):
+    memory.add("First item")
+    memory.add("Second item")
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+
+        assert "First item" in _plain(screen.query_one("#as-memory-text-1", tui.Static).renderable)
+        assert "Second item" in _plain(screen.query_one("#as-memory-text-2", tui.Static).renderable)
+
+        screen.memory_forget_button(1).press()
+        await pilot.pause()
+
+        assert memory.show() == ["Second item"]
+        assert "Second item" in _plain(screen.query_one("#as-memory-text-1", tui.Static).renderable)
+        assert len(screen.query("#as-memory-text-2")) == 0
+
+
+async def test_memory_section_edit_one_line(assistant_home):
+    memory.add("Original line")
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+
+        screen.memory_edit_button(1).press()
+        await pilot.pause()
+
+        input_widget = screen.query_one("#as-memory-edit-input-1", tui.Input)
+        assert input_widget.value == "Original line"
+
+        input_widget.value = "Modified line"
+        screen.memory_save_button(1).press()
+        await pilot.pause()
+
+        assert memory.show() == ["Modified line"]
+        assert "Modified line" in _plain(screen.query_one("#as-memory-text-1", tui.Static).renderable)
+
+
+async def test_memory_section_clear_all_with_confirm(assistant_home):
+    memory.add("Line A")
+    memory.add("Line B")
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+
+        screen.memory_clear_button().press()
+        await pilot.pause()
+
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        app.screen.query_one("#cancel", tui.Button).press()
+        await pilot.pause()
+
+        assert not isinstance(app.screen, tui.ConfirmScreen)
+        assert memory.show() == ["Line A", "Line B"]
+
+        screen.memory_clear_button().press()
+        await pilot.pause()
+
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        app.screen.query_one("#confirm", tui.Button).press()
+        await pilot.pause()
+
+        assert not isinstance(app.screen, tui.ConfirmScreen)
+        assert memory.show() == []
+        assert screen.query_one("#as-memory-empty", tui.Static)
+
+
+async def test_cli_and_console_use_same_functions(assistant_home, monkeypatch):
+    import argparse
+    from whyline.ideas import cli
+
+    calls = []
+    real_show = memory.show
+    real_add = memory.add
+    real_forget = memory.forget
+    real_edit = memory.edit
+    real_clear = memory.clear
+
+    def tracked_show():
+        calls.append("show")
+        return real_show()
+
+    def tracked_add(fact):
+        calls.append(("add", fact))
+        return real_add(fact)
+
+    def tracked_forget(n):
+        calls.append(("forget", n))
+        return real_forget(n)
+
+    def tracked_edit(n, fact):
+        calls.append(("edit", n, fact))
+        return real_edit(n, fact)
+
+    def tracked_clear():
+        calls.append("clear")
+        return real_clear()
+
+    monkeypatch.setattr(memory, "show", tracked_show)
+    monkeypatch.setattr(memory, "add", tracked_add)
+    monkeypatch.setattr(memory, "forget", tracked_forget)
+    monkeypatch.setattr(memory, "edit", tracked_edit)
+    monkeypatch.setattr(memory, "clear", tracked_clear)
+
+    # CLI uses memory.add, show, forget, clear
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+    cli.add_parser(subparsers)
+
+    cli.run(parser.parse_args(["idea", "memory", "add", "Fact from CLI"]))
+    assert ("add", "Fact from CLI") in calls
+    cli.run(parser.parse_args(["idea", "memory", "show"]))
+    assert "show" in calls
+    cli.run(parser.parse_args(["idea", "memory", "forget", "1"]))
+    assert ("forget", 1) in calls
+    cli.run(parser.parse_args(["idea", "memory", "clear"]))
+    assert "clear" in calls
+
+    # Now Console uses the exact same functions: show, edit, forget, clear
+    real_add("Fact for console")
+    calls.clear()
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        assert "show" in calls
+
+        # Edit line 1
+        screen.memory_edit_button(1).press()
+        await pilot.pause()
+        screen.query_one("#as-memory-edit-input-1", tui.Input).value = "Console edited"
+        screen.memory_save_button(1).press()
+        await pilot.pause()
+        assert ("edit", 1, "Console edited") in calls
+
+        # Forget line 1
+        screen.memory_forget_button(1).press()
+        await pilot.pause()
+        assert ("forget", 1) in calls
+
+        # Clear all
+        real_add("Another item")
+        screen.memory_clear_button().press()
+        await pilot.pause()
+        app.screen.query_one("#confirm", tui.Button).press()
+        await pilot.pause()
+        assert "clear" in calls

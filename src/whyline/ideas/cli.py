@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from whyline.ideas import analyse, documents, paths, reminders, store, xlsx
+from whyline.ideas import analyse, documents, memory, paths, reminders, store, xlsx
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -186,6 +186,15 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     set_a.set_defaults(enabled=None)
 
+    mem = sub.add_parser("memory", help="Show, add, forget, or clear memory")
+    mem_sub = mem.add_subparsers(dest="idea_memory_command", required=True)
+    mem_sub.add_parser("show", help="Show memory")
+    add_m = mem_sub.add_parser("add", help="Add a fact to memory")
+    add_m.add_argument("fact", nargs="+", help="Fact to remember")
+    forget_m = mem_sub.add_parser("forget", help="Forget a fact by number")
+    forget_m.add_argument("n", type=int, help="Line number to forget")
+    mem_sub.add_parser("clear", help="Clear all memory")
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -194,7 +203,7 @@ def run(args: argparse.Namespace) -> int:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
             "export|documents|agents|assistant|doctor|telegram|service|work|"
-            "request|remind|repos|email|actions",
+            "request|remind|repos|email|actions|memory",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1441,6 +1450,44 @@ def cmd_actions(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_memory(args: argparse.Namespace) -> int:
+    action = getattr(args, "idea_memory_command", None)
+    if action == "show":
+        facts = memory.show()
+        if not facts:
+            print("No memory.")
+            return EXIT_OK
+        for i, fact in enumerate(facts, 1):
+            print(f"{i}. {fact}")
+        return EXIT_OK
+    if action == "add":
+        fact = " ".join(args.fact).strip()
+        if not fact:
+            print("add needs a fact.", file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            count = memory.add(fact)
+        except memory.MemoryFullError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"remembered ({count})")
+        return EXIT_OK
+    if action == "forget":
+        try:
+            count = memory.forget(args.n)
+        except (IndexError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"forgot ({count})")
+        return EXIT_OK
+    if action == "clear":
+        memory.clear()
+        print("memory cleared")
+        return EXIT_OK
+    print("usage: whyline idea memory show|add|forget <n>|clear", file=sys.stderr)
+    return EXIT_USAGE
+
+
 _COMMANDS = {
     "add": cmd_add,
     "list": cmd_list,
@@ -1462,4 +1509,5 @@ _COMMANDS = {
     "repos": cmd_repos,
     "email": cmd_email,
     "actions": cmd_actions,
+    "memory": cmd_memory,
 }
