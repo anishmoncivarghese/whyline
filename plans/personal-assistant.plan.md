@@ -88,7 +88,7 @@ Rules every task keeps:
 
 ## Phase 2: the action registry and requests
 
-- [ ] ASST-4: Action registry and policy
+- [x] ASST-4: Action registry and policy
   Add `src/whyline/ideas/actions.py` and `tests/ideas/test_actions.py`. Edit `src/whyline/ideas/cli.py` and `tests/ideas/test_cli.py` only.
   Define a frozen `Action(name, verb, writes, cost, default_approval, min_approval, summary)`, with `approval` one of `none`, `tap`. Define `REGISTRY` with exactly these actions:
 
