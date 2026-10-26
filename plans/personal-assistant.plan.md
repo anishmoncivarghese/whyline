@@ -204,7 +204,7 @@ Rules every task keeps:
   Tests: each form, truncation, an unknown name, the existing idea status unchanged, and no provider or subprocess called.
   Verify with `uv run pytest -q tests/ideas/test_intent.py tests/ideas/test_bot.py`. Change nothing else.
 
-- [ ] ASST-9: `run <agent>` from Telegram or email
+- [x] ASST-9: `run <agent>` from Telegram or email
   Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/worker.py`, `src/whyline/ideas/email_in.py`, `tests/ideas/test_intent.py`, `tests/ideas/test_bot.py`, `tests/ideas/test_worker.py`, and `tests/ideas/test_email_in.py` only.
   - `run <name>` (Telegram), or an email with subject `run <name>`, creates a `run_agent` request with `{"agent": name}`.
   - The name must match a saved agent from `service.rows(None)` exactly. The message can carry no other argument, prompt or file. Any extra words are refused with `run takes only a saved agent's name.`
