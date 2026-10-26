@@ -40,7 +40,7 @@ Rules every task keeps:
 
 ## Phase 1: make the email path safe
 
-- [ ] ASST-1: Email authentication checks the user's own provider and the From domain
+- [x] ASST-1: Email authentication checks the user's own provider and the From domain
   Edit `src/whyline/ideas/email_in.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/inbox_screen.py`, `tests/ideas/test_email_in.py`, `tests/ideas/test_cli.py`, and `tests/console/test_inbox_screen.py` only.
   Today `is_authenticated` accepts any `Authentication-Results` header containing `dkim=pass` or `spf=pass`. A sender can add that header themselves, and a pass for the sender's own domain also counts.
   Add kv key `email_authserv` (for example `mx.google.com`, `icloud.com`, `mx.microsoft.com`). `is_authenticated(msg, authserv)` must:
