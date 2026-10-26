@@ -24864,3 +24864,23 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 150fef19e6244f98916ab9336deff89f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T04:04:37.692Z"} -->
+
+## 2026-10-26 — Job search ships as three plans that run after the ASST plan, and the assistant gets its own console mode (ASST-MODE)
+
+**Actor:** claude
+**Role:** planner
+**Task:** ASST-MODE
+
+**Because:** Separate plans keep relay runs short and independently stoppable; ASST already covers the email fixes and the before step, so job search builds on ASST-1..3, ASST-14 and ASST-20 instead of repeating them; one Assistant mode puts every assistant setting in one place
+
+**Rejected:**
+
+- one merged plan — a single long relay run most likely to hit the round cap
+- separate email-safety and PA plans — duplicate ASST-1..17 and conflict on plans/personal-assistant.plan.md
+- Assistant as a modal behind Inbox — hard to find
+- agents browse job sites themselves — read-only unattended runs have no reliable web access, so whyline fetches public job boards deterministically
+
+**Files:** plans/personal-assistant.plan.md, plans/job-search-1-profile-and-companies.plan.md, plans/job-search-2-daily-shortlist.plan.md, plans/job-search-3-alerts-and-applications.plan.md
+
+<!-- whyline-event: 60e653fc12fe4d90ada3be544e826f74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T04:17:41.454Z"} -->
