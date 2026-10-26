@@ -60,7 +60,7 @@ Rules every task keeps:
   - CLI and console both save through `set_authserv`
   Verify with `uv run pytest -q tests/ideas/test_email_in.py tests/ideas/test_cli.py tests/console/test_inbox_screen.py`. Change nothing else.
 
-- [ ] ASST-2: Confirmation codes are random, bound and short-lived
+- [x] ASST-2: Confirmation codes are random, bound and short-lived
   Add `src/whyline/ideas/confirm.py` and `tests/ideas/test_confirm.py`. Edit `src/whyline/ideas/email_in.py` and `tests/ideas/test_email_in.py` only.
   Today `email_in.code_for` is an unkeyed `sha256("whyline-email:{id}:{rev}")[:6]`, which anyone can compute. Replace it with `confirm.issue(conn, *, scope, subject, actor, ttl_minutes=30) -> str` and `confirm.consume(conn, code, *, scope, subject, actor, now=None) -> bool`:
   - **issue** stores a random 8-character code from `secrets` (lower-case letters and digits, without look-alikes) in kv as JSON `{scope, subject, actor, expires_at}`.
