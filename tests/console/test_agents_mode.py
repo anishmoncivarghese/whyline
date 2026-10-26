@@ -6,6 +6,8 @@ from textual.css.query import NoMatches
 from whyline.agents import definitions as d, records, service
 from whyline.console import tui
 from whyline.console.agents_screens import AgentDetailScreen, AgentsListScreen
+from whyline.console.ideas_screen import IdeasScreen
+from whyline.console.inbox_screen import IdeaInboxScreen
 
 NO_AGENTS = "No agents yet. Create one with New in the console's Agents tab."
 
@@ -34,6 +36,11 @@ async def _agents_mode(app, pilot):
     await pilot.pause()
 
 
+async def _assistant_mode(app, pilot):
+    await pilot.click("#mode-assistant")
+    await pilot.pause()
+
+
 async def test_agents_mode_shows_its_own_bar_within_80_columns(tmp_path, agent_rows):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)) as pilot:
@@ -43,8 +50,24 @@ async def test_agents_mode_shows_its_own_bar_within_80_columns(tmp_path, agent_r
             widget = app.query_one(button)
             assert widget.display and widget.region.right <= 80
         assert not app.query_one("#relay-plan").display
+        assert not app.query_one("#assistant-inbox").display
+        assert not app.query_one("#assistant-ideas").display
         status = str(app.query_one("#agents-status").renderable)
         assert status.startswith("Scheduler:") or status.startswith("Scheduling needs macOS")
+
+
+async def test_assistant_mode_opens_inbox_and_ideas(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _assistant_mode(app, pilot)
+        await pilot.click("#assistant-inbox")
+        await pilot.pause()
+        assert isinstance(app.screen, IdeaInboxScreen)
+        app.screen.dismiss(None)
+        await pilot.pause()
+        await pilot.click("#assistant-ideas")
+        await pilot.pause()
+        assert isinstance(app.screen, IdeasScreen)
 
 
 async def test_an_empty_agents_list_says_how_to_create_one(tmp_path, monkeypatch):

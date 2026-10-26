@@ -74,7 +74,7 @@ async def test_app_composes_header_transcript_prompt_and_controls(tmp_path):
         assert app.query_one("#transcript") is not None
         assert app.query_one("#prompt") is not None
         for button_id in (
-            "send", "model", "mode-chat", "mode-relay", "mode-agents",
+            "send", "model", "mode-chat", "mode-relay", "mode-agents", "mode-assistant",
             "history", "stop", "help", "copy", "settings",
             "relay-plan", "relay-setup", "relay-resume",
         ):
@@ -483,6 +483,33 @@ async def test_active_mode_button_is_highlighted(tmp_path):
         assert app.query_one("#mode-chat", tui.Button).variant == "primary"
         assert app.query_one("#mode-relay", tui.Button).variant == "default"
         assert app.query_one("#mode-agents", tui.Button).variant == "default"
+        assert app.query_one("#mode-assistant", tui.Button).variant == "default"
+        await pilot.click("#mode-assistant")
+        await pilot.pause()
+        assert app.query_one("#mode-assistant", tui.Button).variant == "primary"
+        assert app.sub_title == "mode: assistant"
+        await pilot.click("#mode-chat")
+        await pilot.pause()
+        assert app.session.mode == "chat"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_assistant_input_does_not_dispatch(tmp_path, monkeypatch):
+    dispatched = []
+    monkeypatch.setattr(tui, "dispatch", lambda *args, **kwargs: dispatched.append(args))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.click("#mode-assistant")
+        prompt = app.query_one("#prompt", tui.Input)
+        prompt.value = "do something"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert dispatched == []
+        assert any(
+            "Use the buttons above, or message the bot on Telegram." in str(line)
+            for line in app.query_one("#transcript", tui.RichLog).lines
+        )
         await pilot.click("#mode-relay")
         await pilot.pause()
         assert app.query_one("#mode-relay", tui.Button).variant == "primary"
@@ -3686,7 +3713,7 @@ async def test_settings_appears_in_chat_relay_and_agents(tmp_path, monkeypatch):
     monkeypatch.setattr(adapters, "relay_is_configured", lambda root: True)
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(120, 40)) as pilot:
-        for mode_id in ("mode-chat", "mode-relay", "mode-agents"):
+        for mode_id in ("mode-chat", "mode-relay", "mode-agents", "mode-assistant"):
             await pilot.click(f"#{mode_id}")
             await pilot.pause()
             button = app.query_one("#settings", tui.Button)

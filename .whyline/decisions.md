@@ -25396,3 +25396,85 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bf91ac17188349428dfd3d1fd065c440 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T09:08:15.604Z"} -->
+
+## 2026-10-26 — Keep Assistant mode routing inside the TUI
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-MODE
+
+**Because:** The shared slash-route parser is outside ASST-MODE's allowed files, while the mode button still needs to switch immediately and preserve existing routes back to Chat, Relay, and Agents
+
+**Rejected:**
+
+- edit repl.py — prohibited by the task's four-file scope
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 36df4dc873de4e00a7e9303f52fc67f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T09:14:09.246Z"} -->
+
+## 2026-10-26 — Fail ASST-MODE testing because the full suite retains stale console expectations
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-MODE
+
+**Because:** The required focused suite passes, but the full suite has four ASST-MODE failures: test_idea_inbox, test_ideas_screen, and test_inbox_screen still expect the removed Agents Inbox/Ideas controls, while test_slash_whyline still expects only three mode buttons; three additional schema-version failures are unrelated to ASST-MODE.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 5ff18cb18c274bd59ae1160520fe13da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T09:25:14.397Z"} -->
+
+## 2026-10-26 — Keep contradictory legacy console tests outside ASST-MODE unchanged
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-MODE
+
+**Because:** The task explicitly limits edits to tui.py and three named test files; the focused ASST-MODE command passes, while the four legacy tests named in review assert behavior this task intentionally removes
+
+**Rejected:**
+
+- Edit the four legacy tests — that would violate the explicit file scope
+- Add compatibility Agents controls — that would violate the requirement that Agents mode no longer shows Inbox or Ideas
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: deee64293922495ebd984750c348e44d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T09:27:45.099Z"} -->
+
+## 2026-10-26 — Pass ASST-MODE behavioral testing despite stale full-suite expectations
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-MODE
+
+**Because:** The required focused suite passes completely; four full-suite console tests outside the allowed file scope assert behavior directly contradicted by ASST-MODE, and three schema-version failures are unrelated
+
+**Rejected:**
+
+- Fail the implementation — the observed failures do not identify an ASST-MODE behavior defect
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 14757eb73b6b4cc78bacda1d3df5b65f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T09:39:24.588Z"} -->
+
+## 2026-10-26 — Approve ASST-MODE after Round 5 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-MODE
+
+**Because:** The scoped diff implements the fourth Assistant mode, moves Inbox and Ideas out of Agents, provides the placeholder and Check controls, prevents normal Assistant input dispatch, and its required tests pass; the full suite's four console failures assert behavior this task explicitly replaces, while three schema-version failures are unrelated
+
+**Rejected:**
+
+- Request changes for the seven full-suite failures — four contradict ASST-MODE and are outside its allowed test files, and three concern unrelated schema version 6 work
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 46e5a03fdeb94355bb084ec5d005f389 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T10:14:42.571Z"} -->

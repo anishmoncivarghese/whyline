@@ -94,7 +94,7 @@ from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
-_MODES = ("chat", "relay", "agents")
+_MODES = ("chat", "relay", "agents", "assistant")
 # Agents widgets arrive with the Agents plan. Until then these ids match nothing.
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
@@ -104,9 +104,8 @@ _MODE_BUTTONS = {
         "agents-list",
         "agents-runs",
         "agents-scheduler",
-        "agents-inbox",
-        "agents-ideas",
     ),
+    "assistant": ("assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check"),
 }
 _SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy", "settings")
 _AWAKE_ON_TEXT = (
@@ -910,7 +909,7 @@ class WhylineConsoleApp(App):
     Horizontal > Button { min-width: 6; width: auto; }
     RichLog#transcript { height: 1fr; }
     #modes, #input-row, #controls { height: auto; }
-    /* Agents has six mode buttons plus Settings; wrap so every control
+    /* Dense mode bars wrap so every control
        stays inside 80 columns. Chat and Relay still fit on one row. */
     #controls.wrap {
       layout: grid;
@@ -1965,7 +1964,7 @@ class WhylineConsoleApp(App):
             if button.id in ("relay-resolve", "relay-retry-stage", "update", "update-restart"):
                 continue
             button.display = button.id in wanted
-        controls.set_class(self.session.mode == "agents", "wrap")
+        controls.set_class(self.session.mode in ("agents", "assistant"), "wrap")
         self._main("#attach").display = self.session.mode == "chat"
         try:
             self._main("#agents-bar").display = self.session.mode == "agents"
@@ -2083,6 +2082,8 @@ class WhylineConsoleApp(App):
             return "Relay: run (guided), doctor, status, start, resume (Enter to run)"
         if mode == "agents":
             return "Agents: list, run <name>, edit <name>, delete <name>, history <name>, pause/resume/accept <name>"
+        if mode == "assistant":
+            return "Use the buttons above, or message the bot on Telegram."
         agent = self.session.agent or "claude"
         return f"Message {agent}... (Enter to send)"
 
@@ -2116,7 +2117,7 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             return
 
-    def _open_idea_inbox(self) -> None:
+    def _open_inbox(self) -> None:
         from whyline.console.inbox_screen import IdeaInboxScreen
 
         self.push_screen(IdeaInboxScreen())
@@ -2125,6 +2126,11 @@ class WhylineConsoleApp(App):
         from whyline.console.ideas_screen import IdeasScreen
 
         self.push_screen(IdeasScreen())
+
+    def _check_inbox(self) -> None:
+        from whyline.console.inbox_screen import _doctor_text
+
+        self.render_event(SessionEvent(kind="output", text=_doctor_text()))
 
     def _open_new_agent(self, existing=None, delivery=None, *, editing_id=None,
                         lock_name: bool = False) -> None:
@@ -3254,6 +3260,7 @@ class WhylineConsoleApp(App):
                 Button("Chat", id="mode-chat"),
                 Button("Relay", id="mode-relay"),
                 Button("Agents", id="mode-agents"),
+                Button("Assistant", id="mode-assistant"),
                 id="modes",
             ),
             Horizontal(
@@ -3331,8 +3338,10 @@ class WhylineConsoleApp(App):
                 Button("Agents", id="agents-list"),
                 Button("Runs", id="agents-runs"),
                 Button("Schedule", id="agents-scheduler"),
-                Button("Inbox", id="agents-inbox"),
-                Button("Ideas", id="agents-ideas"),
+                Button("Inbox", id="assistant-inbox"),
+                Button("Ideas", id="assistant-ideas"),
+                Button("Assistant…", id="assistant-open"),
+                Button("Check", id="assistant-check"),
                 Button("Settings", id="settings"),
                 Button("Files", id="see-files"),
                 Button("Awake", id="awake"),
@@ -3438,7 +3447,14 @@ class WhylineConsoleApp(App):
                      "and the run pauses. Resume carries on from there.",
             ))
         elif button_id and button_id.startswith("mode-"):
-            self._handle_slash(f"/route {button_id.removeprefix('mode-')}")
+            chosen = button_id.removeprefix("mode-")
+            if chosen == "assistant":
+                if self.session.mode != chosen:
+                    self.session.mode = chosen
+                    self.render_event(SessionEvent(kind="output", text="Mode is now assistant."))
+                    self._sync_mode_indicator()
+            else:
+                self._handle_slash(f"/route {chosen}")
             if self.session.mode == "relay" and not getattr(self, "_release_task", None):
                 if self._restore_release_task():
                     task_id, _ = self._release_task
@@ -3462,10 +3478,12 @@ class WhylineConsoleApp(App):
             self._open_agents_runs()
         elif button_id == "agents-scheduler":
             self._toggle_scheduler()
-        elif button_id == "agents-inbox":
-            self._open_idea_inbox()
-        elif button_id == "agents-ideas":
+        elif button_id == "assistant-inbox":
+            self._open_inbox()
+        elif button_id == "assistant-ideas":
             self._open_ideas()
+        elif button_id == "assistant-check":
+            self._check_inbox()
         elif button_id == "awake":
             self._set_awake(None)
         elif button_id == "copy":
@@ -3961,6 +3979,12 @@ class WhylineConsoleApp(App):
             self._launch_relay(text.split())
             return
         # Slash commands stay available in every mode, including Agents.
+        if self.session.mode == "assistant" and not text.startswith("/"):
+            self.render_event(SessionEvent(
+                kind="output",
+                text="Use the buttons above, or message the bot on Telegram.",
+            ))
+            return
         if self.session.mode == "agents" and not text.startswith("/"):
             self._agents_command(text)
             return

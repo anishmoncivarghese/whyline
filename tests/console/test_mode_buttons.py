@@ -8,6 +8,7 @@ pytestmark = [pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not inst
 @pytest.mark.parametrize("mode, visible", [
     ("chat", {"model", "brainstorm", "history", "see-files", "stop", "help", "copy", "settings"}),
     ("relay", {"relay-run", "relay-plan", "relay-setup", "relay-resume", "see-files", "stop", "help", "copy", "settings"}),
+    ("assistant", {"assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check", "see-files", "stop", "help", "copy", "settings"}),
 ])
 async def test_each_mode_shows_only_its_buttons_within_80_columns(tmp_path, mode, visible):
     app = tui.WhylineConsoleApp(root=tmp_path)
