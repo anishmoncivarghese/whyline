@@ -264,7 +264,7 @@ Rules every task keeps:
   Tests: list, add, a bad time error, and cancel through the shared function.
   Verify with `uv run pytest -q tests/console/test_assistant_screen.py`. Change nothing else.
 
-- [ ] ASST-13: Memory: `remember` and `forget`
+- [x] ASST-13: Memory: `remember` and `forget`
   Add `src/whyline/ideas/memory.py` and `tests/ideas/test_memory.py`. Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/assistant.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_assistant.py`, and `tests/console/test_assistant_screen.py` only.
   Memory is `paths.home()/memory.md` (0600), a numbered Markdown list.
   - `remember <fact>` appends a line, and `forget <n>` removes line n. Both reply with the new count.
