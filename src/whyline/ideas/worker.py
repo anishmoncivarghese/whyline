@@ -500,6 +500,8 @@ def request(request_id: int) -> int:
                 return 0
         if row["action"] == "ask_repo":
             return _run_ask_request(conn, row)
+        if row["action"] == "summarise":
+            return _run_summarise_request(conn, row)
         if row["action"] != "run_agent":
             error = f"unknown request action {row['action']}"
             assistant_requests.finish(conn, request_id, error=error)
@@ -591,6 +593,37 @@ def _run_ask_request(conn: sqlite3.Connection, row) -> int:
     else:
         docx = convert.to_docx(answer.path, answer.path.with_suffix(".docx"))
         _notify_request_document(conn, row, docx or answer.path)
+    _flush(conn)
+    return 0
+
+
+def _run_summarise_request(conn: sqlite3.Connection, row) -> int:
+    from whyline.ideas import summarise
+
+    try:
+        args = json.loads(row["args_json"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        args = {}
+    text = args.get("text") or args.get("body") or ""
+    subject = args.get("subject") or ""
+    try:
+        summary = summarise.run(conn, int(row["id"]), text, subject=subject)
+    except Exception as exc:
+        error = " ".join(str(exc).split()) or "could not summarise email"
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+    assistant_requests.finish(
+        conn, int(row["id"]), result_path=str(summary.path)
+    )
+    _notify_summarise(
+        conn,
+        row,
+        summary.reply_text,
+        subject=subject,
+        messages=summary.telegram_messages,
+    )
     _flush(conn)
     return 0
 
@@ -1017,6 +1050,8 @@ def _request_agent(row) -> str:
 def _request_label(row) -> str:
     if row["action"] == "ask_repo":
         return "ask"
+    if row["action"] == "summarise":
+        return "summarise"
     return _request_agent(row)
 
 
@@ -1025,6 +1060,10 @@ def _request_timeout(conn, row) -> int | None:
         from whyline.ideas import ask
 
         return ask.timeout_minutes(conn)
+    if row["action"] == "summarise":
+        from whyline.ideas import summarise
+
+        return summarise.timeout_minutes(conn)
     if row["action"] != "run_agent":
         return SCORE_TIMEOUT_MINUTES
     name = _request_agent(row)
@@ -1079,6 +1118,42 @@ def _notify_request_document(conn, row, path) -> None:
             )
         except Exception:
             log.exception("could not email assistant request %s", row["id"])
+
+
+def _notify_summarise(
+    conn,
+    row,
+    text: str,
+    subject: str = "",
+    *,
+    messages: list[str] | None = None,
+) -> None:
+    from whyline.agents import mail_send
+    from whyline.ideas import summarise, telegram_in
+
+    chats = telegram_in.allowed_chats(conn)
+    if chats:
+        first_chat_id = int(chats[0])
+        tg_messages = (
+            messages
+            if messages is not None
+            else summarise.split_telegram_text(text)
+        )
+        for msg in tg_messages:
+            conn.execute(
+                """
+                INSERT INTO outbox (chat_id, kind, text, attempts)
+                VALUES (?, 'message', ?, 0)
+                """,
+                (first_chat_id, msg),
+            )
+    sender = str(row["actor"] or "").strip()
+    if sender:
+        reply_subject = f"Re: {subject}" if subject else "Summary"
+        try:
+            mail_send.send([sender], reply_subject, text, [])
+        except Exception:
+            log.exception("could not email summary for request %s", row["id"])
 
 
 def _watch(conn: sqlite3.Connection, watch_fn=None) -> None:

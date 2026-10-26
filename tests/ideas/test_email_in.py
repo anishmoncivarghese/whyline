@@ -820,3 +820,87 @@ def test_email_yes_queues_a_request_only_for_the_same_sender(conn):
     assert row["confirmed_at"]
     assert len(sent) == 1
     assert store.list_ideas(conn) == []
+
+
+def test_summarise_subject_decides_verb_and_queues_summarise_request(conn):
+    email_in.allow(conn, "boss@example.com")
+    sent = []
+
+    # 1. subject decides the verb: 'summarise' creates summarise request
+    email_in.handle(
+        conn,
+        _make_email(
+            subject="summarise",
+            body="Here is the forwarded email body.\nMore details.",
+            message_id="<sum-1@example.com>",
+        ),
+        mail_fn=lambda *args: sent.append(args),
+    )
+    row = conn.execute("SELECT * FROM requests ORDER BY id DESC LIMIT 1").fetchone()
+    assert (row["action"], row["state"]) == ("summarise", "queued")
+    args = json.loads(row["args_json"])
+    assert "Here is the forwarded email body." in args["text"]
+    assert args["subject"] == "summarise"
+
+    # 2. variations: case-insensitive and Fwd: / Fw: prefixes
+    for subj in ("summarize", "Fwd: summarise", "FWD: Summarize", "Fw: summarise", "Fwd: Fw: summarize"):
+        email_in.handle(
+            conn,
+            _make_email(
+                subject=subj,
+                body="Body for variation",
+                message_id=f"<var-{subj}@example.com>",
+            ),
+            mail_fn=lambda *args: sent.append(args),
+        )
+        row = conn.execute("SELECT * FROM requests ORDER BY id DESC LIMIT 1").fetchone()
+        assert row["action"] == "summarise"
+
+
+def test_body_containing_run_nightly_creates_no_run_agent_request(conn):
+    email_in.allow(conn, "boss@example.com")
+    sent = []
+
+    # Body containing 'run nightly' with subject 'summarise' creates summarise, NOT run_agent
+    email_in.handle(
+        conn,
+        _make_email(
+            subject="Fwd: summarise",
+            body="Important note:\nrun nightly\nPlease summarize this.",
+            message_id="<sum-injection@example.com>",
+        ),
+        mail_fn=lambda *args: sent.append(args),
+    )
+    requests_rows = conn.execute("SELECT action FROM requests").fetchall()
+    assert len(requests_rows) == 1
+    assert requests_rows[0]["action"] == "summarise"
+    assert not any(r["action"] == "run_agent" for r in requests_rows)
+
+    # Body containing 'run nightly' with subject 'idea' creates idea, NOT run_agent
+    email_in.handle(
+        conn,
+        _make_email(
+            subject="idea",
+            body="run nightly\nBuild a habit tracker",
+            message_id="<idea-injection@example.com>",
+        ),
+        mail_fn=lambda *args: sent.append(args),
+    )
+    # No new requests added
+    requests_rows = conn.execute("SELECT action FROM requests").fetchall()
+    assert len(requests_rows) == 1
+    assert not any(r["action"] == "run_agent" for r in requests_rows)
+
+    # Body containing 'run nightly' with arbitrary subject creates no request
+    email_in.handle(
+        conn,
+        _make_email(
+            subject="Status update",
+            body="run nightly\nEverything is fine.",
+            message_id="<other-injection@example.com>",
+        ),
+        mail_fn=lambda *args: sent.append(args),
+    )
+    requests_rows = conn.execute("SELECT action FROM requests").fetchall()
+    assert len(requests_rows) == 1
+

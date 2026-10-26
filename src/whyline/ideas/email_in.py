@@ -34,6 +34,7 @@ _REQUEST_SUBJECT_RE = re.compile(r"^request:(\d+)$")
 _COMMENT_RE = re.compile(r"\([^)]*\)")
 _METHOD_RE = re.compile(r"(\w+)\s*=\s*(\w+)", re.IGNORECASE)
 _PROP_RE = re.compile(r"(\w+)\s*\.\s*(\w+)\s*=\s*([^\s;]+)", re.IGNORECASE)
+_FWD_PREFIX_RE = re.compile(r"^(?:fwd?:\s*)+", re.IGNORECASE)
 
 
 class AllowError(Exception):
@@ -239,6 +240,18 @@ def extract_body(msg: Message) -> str:
                     body_parts.append(payload)
         if body_parts:
             return "\n".join(body_parts).strip()
+        for part in msg.walk():
+            content_type = part.get_content_type()
+            content_disposition = str(part.get("Content-Disposition", ""))
+            if content_type == "text/html" and "attachment" not in content_disposition:
+                payload = part.get_payload(decode=True)
+                charset = part.get_content_charset() or "utf-8"
+                if isinstance(payload, bytes):
+                    body_parts.append(payload.decode(charset, errors="replace"))
+                elif isinstance(payload, str):
+                    body_parts.append(payload)
+        if body_parts:
+            return "\n".join(body_parts).strip()
     payload = msg.get_payload(decode=True)
     if isinstance(payload, bytes):
         charset = msg.get_content_charset() or "utf-8"
@@ -405,6 +418,24 @@ def handle(
             offer_request(conn, request, mail_fn=mail_fn)
         elif request is not None and request.state == "refused":
             _reply(mail_fn, sender, subject, request.error or "Run is turned off in the console.")
+        return None
+
+    clean_subject = _FWD_PREFIX_RE.sub("", subject.strip()).strip().lower()
+    if clean_subject in ("summarise", "summarize"):
+        _record_handled(conn, body)
+        request = requests.create(
+            conn,
+            channel="email",
+            actor=sender,
+            chat_id=None,
+            action="summarise",
+            args={"text": body, "body": body, "subject": subject},
+            proposed_by="keyword",
+        )
+        if request.state == "waiting_tap":
+            offer_request(conn, request, mail_fn=mail_fn)
+        elif request.state == "refused":
+            _reply(mail_fn, sender, subject, request.error or "Summarise is turned off in the console.")
         return None
 
     # 2. Check for confirmation reply: "yes <code>"

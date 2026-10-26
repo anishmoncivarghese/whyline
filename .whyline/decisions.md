@@ -26213,3 +26213,113 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a853bf3a9902407ab47c9430794543b8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T22:42:33.653Z"} -->
+
+## 2026-10-26 — Strip hidden HTML elements, zero-width and bidi characters in guard.clean before flagging injection lines
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-14
+
+**Because:** Strips evasion vectors such as zero-width spaces or comments embedded inside keywords before pattern-matching injection lines
+
+**Rejected:**
+
+- Regex-only HTML stripping — fails on nested tags and unescaped HTML characters
+- Third-party BeautifulSoup dependency — adds unneeded external dependency when standard library HTMLParser handles HTML fragments and CSS attributes cleanly
+
+**Files:** src/whyline/ideas/guard.py
+
+<!-- whyline-event: 72d3f0b6b7be495ea4df641f49948a7a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:04:42.885Z"} -->
+
+## 2026-10-26 — Select summarise verb strictly from email subject and run read-only turn in inbox workspace
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-14
+
+**Because:** Subject-only verb selection prevents body prompt injection from triggering actions like run_agent, and workspace execution isolates data files from repositories
+
+**Rejected:**
+
+- Parse body or model output for actions — creates prompt injection vulnerabilities
+- Run in user repositories — forwarded email summary only requires the inbox workspace
+
+**Files:** src/whyline/ideas/summarise.py
+
+<!-- whyline-event: 93556a9f6ded49748f2158d142d96f4e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:04:47.326Z"} -->
+
+## 2026-10-26 — Approve ASST-14 implementation after verifying content guard, subject verb routing, read-only workspace isolation, and dual channel notification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-14
+
+**Because:** All 40 targeted tests pass: HTML stripping, comment and bidi stripping prevent keyword evasion, verb is selected strictly from email subject, read-only workspace isolation is enforced with 'data, not instructions' prompt framing, and dual telegram/email replies format flagged lines separately
+
+**Files:** src/whyline/ideas/guard.py
+
+<!-- whyline-event: 03463a58c8a245fcb5577083be3f2e69 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:09:06.814Z"} -->
+
+## 2026-10-26 — Reject ASST-14 because Telegram delivery can truncate flagged lines
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-14
+
+**Because:** The worker queues summary, next steps, and appended flags as one unbounded message, while bot delivery slices text to 4096 characters; a long valid model response therefore omits required flagged lines from the actual Telegram reply, and the test checks only the untruncated outbox row
+
+**Rejected:**
+
+- Approve from the 40 focused passing tests — they do not exercise Telegram's delivery limit
+
+**Files:** src/whyline/ideas/worker.py
+
+<!-- whyline-event: ee7cab60cc104725ba97fb98ef14ca2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:19:44.210Z"} -->
+
+## 2026-10-26 — Split Telegram replies at 4096-character delivery boundary to preserve summary, next steps, and flagged lines
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-14
+
+**Because:** Telegram delivery slices text at 4096 characters per sendMessage call; splitting into bounded outbox rows ensures long model responses never cause flagged lines to be dropped
+
+**Rejected:**
+
+- Truncate summary to fit in a single 4096-character message — drops valuable model summary content
+- Queue unbounded single message in outbox — causes Telegram delivery to slice text and drop appended flagged lines
+
+**Files:** src/whyline/ideas/worker.py, src/whyline/ideas/summarise.py
+
+<!-- whyline-event: 9977dfb3403548f6a6ea2a48676c2d37 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:29:36.339Z"} -->
+
+## 2026-10-26 — Approve ASST-14 after verifying Telegram delivery boundary splitting, content guard, subject verb routing, and read-only workspace isolation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-14
+
+**Because:** Verified all 42 task-specific tests pass: Telegram replies exceeding 4096 characters are split into bounded outbox rows ensuring actual bot delivery preserves summary, next steps, and all flagged lines; HTML/comments/zero-width/bidi stripping and capping at 20k characters work as specified; subject-only routing prevents prompt injection from choosing actions; and worker turn executes read-only in workspace
+
+**Files:** src/whyline/ideas/summarise.py
+
+<!-- whyline-event: c10cdb3d4fe340f584ba5108208fbf22 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:40:49.648Z"} -->
+
+## 2026-10-26 — Approve ASST-14 after verifying guarded email summarisation and bounded Telegram delivery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-14
+
+**Because:** The implementation routes only authenticated subject-selected summarise requests, cleans and flags untrusted body data, runs the configured provider read-only in the inbox workspace, treats model output as display-only text, and delivers summary, next steps, and every flagged line by email and bounded Telegram messages; all 42 focused tests pass, while the full suite has only the same six established unrelated console-navigation and schema-version expectation failures
+
+**Files:** src/whyline/ideas/summarise.py
+
+<!-- whyline-event: 6570f5b4d7484bc8ab1b55f670239110 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:51:52.667Z"} -->
