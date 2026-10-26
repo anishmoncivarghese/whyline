@@ -128,14 +128,33 @@ class AgentsListScreen(ModalScreen):
             self.dismiss(None)
 
 
-class AgentDetailScreen(ModalScreen):
-    DEFAULT_CSS = _CSS.format(name="AgentDetailScreen")
+def _mail_rule_text(name: str, path) -> str:
+    shown = path.as_posix() if hasattr(path, "as_posix") else str(path)
+    return (
+        f"Wrote {shown}\n"
+        "In Mail → Settings → Rules → Add Rule, set the conditions "
+        "(From is the allowed sender), then Run AppleScript → "
+        f"choose whyline-{name}.applescript."
+    )
 
-    def __init__(self, row, describe: str) -> None:
+
+def _mail_trigger(defn) -> str | None:
+    kind = getattr(getattr(defn, "trigger", None), "kind", None)
+    return kind if kind in ("manual", "folder") else None
+
+
+class AgentDetailScreen(ModalScreen):
+    DEFAULT_CSS = _CSS.format(name="AgentDetailScreen") + """
+    AgentDetailScreen #ad-mail-result { height: auto; }
+    """
+
+    def __init__(self, row, describe: str, *, install=None) -> None:
         super().__init__()
-        self._row, self._describe = row, describe
+        self._row, self._describe, self._install = row, describe, install
 
     def compose(self) -> ComposeResult:
+        from whyline.agents import mail
+
         row = self._row
         status = row.status
         buttons = [Button("Run now", id="ad-run", variant="success"), Button("History", id="ad-history")]
@@ -150,15 +169,50 @@ class AgentDetailScreen(ModalScreen):
             Button("Delete", id="ad-delete", variant="error"),
             Button("Close", id="ad-close"),
         ]
+        mail_widgets: list = []
+        if _mail_trigger(row.defn):
+            mail_ok = mail.supported()
+            mail_btn = Button("Install Mail rule…", id="ad-mail-script")
+            mail_btn.disabled = not mail_ok
+            mail_widgets = [
+                mail_btn,
+                Static(
+                    mail.NEEDS_MACOS if not mail_ok else "",
+                    id="ad-mail-result",
+                    markup=False,
+                ),
+            ]
         yield Vertical(
             Label(row.defn.label),
             Static(self._describe),
             Static(f"Status: {status} · last: {row.last_outcome or '—'} {row.last_run}"),
+            *mail_widgets,
             Horizontal(*buttons),
         )
 
+    def _install_mail(self) -> None:
+        from whyline.agents import mail
+
+        if not mail.supported():
+            self._show_mail(mail.NEEDS_MACOS)
+            return
+        name = self._row.defn.name
+        fn = self._install or mail.install
+        try:
+            path = fn(name)
+        except (RuntimeError, OSError, ValueError) as error:
+            self._show_mail(str(error))
+            return
+        self._show_mail(_mail_rule_text(name, path))
+
+    def _show_mail(self, text: str) -> None:
+        self.query_one("#ad-mail-result", Static).update(text)
+
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
+        if event.button.id == "ad-mail-script":
+            self._install_mail()
+            return
         action = (event.button.id or "").removeprefix("ad-")
         self.dismiss(None if action == "close" else action)
 

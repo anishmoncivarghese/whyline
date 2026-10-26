@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from textual.css.query import NoMatches
 
@@ -186,6 +188,127 @@ async def test_agents_mode_says_where_edit_and_delete_are(tmp_path, agent_rows):
         await _until(pilot, lambda: isinstance(app.screen, AgentsListScreen), "list shown")
         text = " ".join(str(label.renderable) for label in app.screen.query(tui.Label))
         assert "edit or delete" in text
+
+
+def _plain(widget) -> str:
+    label = getattr(widget, "label", None)
+    if label is not None:
+        text = label.plain if hasattr(label, "plain") else str(label)
+        if text:
+            return text
+    value = getattr(widget, "renderable", None)
+    if value is None:
+        return ""
+    return value.plain if hasattr(value, "plain") else str(value)
+
+
+def _detail_row(tmp_path, *, name="digest", kind="manual", folder=""):
+    trigger = d.Trigger(kind=kind, folder=folder)
+    defn = d.AgentDef(
+        name=name, kind="repo", path=tmp_path / f"{name}.toml", root=tmp_path,
+        instructions="x", runner="claude", trigger=trigger,
+    )
+    return service.Row(defn, "active", "", "", "", service.when_text(trigger))
+
+
+async def _open_detail(pilot, app, row, install=None):
+    app.push_screen(AgentDetailScreen(row, "describe", install=install))
+    await _until(
+        pilot,
+        lambda: isinstance(app.screen, AgentDetailScreen) and app.screen.query("#ad-run"),
+        "detail shown",
+    )
+    return app.screen
+
+
+async def test_detail_install_mail_rule_calls_injected_install_with_the_agent_name(
+    tmp_path, monkeypatch,
+):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: True)
+    called = []
+    written = Path("/tmp/whyline-digest.applescript")
+
+    def fake_install(name):
+        called.append(name)
+        return written
+
+    row = _detail_row(tmp_path, kind="manual")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_detail(pilot, app, row, install=fake_install)
+        button = screen.query_one("#ad-mail-script", tui.Button)
+        assert str(button.label) == "Install Mail rule…"
+        assert not button.disabled
+        button.press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#ad-mail-result"))
+        assert isinstance(app.screen, AgentDetailScreen)
+    assert called == ["digest"]
+    assert written.as_posix() in text
+    assert "Mail" in text and "Settings" in text and "Rules" in text and "Add Rule" in text
+    assert "From is the allowed sender" in text
+    assert "Run AppleScript" in text
+    assert "whyline-digest.applescript" in text
+
+
+async def test_detail_install_mail_rule_is_shown_for_folder_and_hidden_for_daily(
+    tmp_path, monkeypatch,
+):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: True)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_detail(
+            pilot, app, _detail_row(tmp_path, kind="folder", folder="~/Mail"),
+        )
+        assert screen.query_one("#ad-mail-script", tui.Button)
+        screen.dismiss(None)
+        await _until(pilot, lambda: not isinstance(app.screen, AgentDetailScreen), "closed")
+        screen = await _open_detail(pilot, app, _detail_row(tmp_path, kind="daily"))
+        with pytest.raises(NoMatches):
+            screen.query_one("#ad-mail-script")
+
+
+async def test_detail_install_mail_rule_disables_on_unsupported_host(tmp_path, monkeypatch):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: False)
+
+    def refuse(name):
+        raise AssertionError("install")
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_detail(
+            pilot, app, _detail_row(tmp_path, kind="manual"), install=refuse,
+        )
+        button = screen.query_one("#ad-mail-script", tui.Button)
+        assert button.disabled
+        assert mail.NEEDS_MACOS in _plain(screen.query_one("#ad-mail-result"))
+        assert isinstance(app.screen, AgentDetailScreen)
+
+
+async def test_detail_install_mail_error_stays_on_the_screen(tmp_path, monkeypatch):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: True)
+
+    def boom(name):
+        raise RuntimeError("can't find the whyline command on PATH")
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _open_detail(
+            pilot, app, _detail_row(tmp_path, kind="manual"), install=boom,
+        )
+        screen.query_one("#ad-mail-script", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#ad-mail-result"))
+        assert text == "can't find the whyline command on PATH"
+        assert isinstance(app.screen, AgentDetailScreen)
 
 
 async def test_opening_a_broken_entry_explains_it_and_can_delete_it(tmp_path, monkeypatch):

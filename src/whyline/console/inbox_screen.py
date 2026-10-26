@@ -158,6 +158,16 @@ def _plain(text: str) -> Text:
     return Text(text)
 
 
+def _mail_rule_text(name: str, path) -> str:
+    shown = path.as_posix() if hasattr(path, "as_posix") else str(path)
+    return (
+        f"Wrote {shown}\n"
+        "In Mail → Settings → Rules → Add Rule, set the conditions "
+        "(From is the allowed sender), then Run AppleScript → "
+        f"choose whyline-{name}.applescript."
+    )
+
+
 class IdeaInboxScreen(ModalScreen):
     """Settings for the idea inbox. Cancel writes nothing.
 
@@ -196,10 +206,12 @@ class IdeaInboxScreen(ModalScreen):
     IdeaInboxScreen .ib-email-row { height: auto; }
     IdeaInboxScreen .ib-email-label { width: 1fr; padding: 1 0; }
     IdeaInboxScreen #ib-email-authserv { width: 1fr; }
+    IdeaInboxScreen #ib-mail-result { height: auto; }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, install=None) -> None:
         super().__init__()
+        self._install = install
         self._token: str | None = None
         self._private: list[tuple[int, str]] = []
         self._offered: list[str] = []
@@ -242,10 +254,13 @@ class IdeaInboxScreen(ModalScreen):
         return self.query_one(f"#{btn_id}", Button)
 
     def compose(self) -> ComposeResult:
-        from whyline.agents import telegram
+        from whyline.agents import mail, telegram
         from whyline.ideas import email_in, telegram_in
 
         saved = _read_saved()
+        mail_ok = mail.supported()
+        mail_btn = Button("Install Mail rule…", id="ib-mail-script")
+        mail_btn.disabled = not mail_ok
         self._token = telegram.token_get()
         self._private = telegram_in.private_chats(telegram.known_chats())
         self._offered = _offered()
@@ -365,6 +380,12 @@ class IdeaInboxScreen(ModalScreen):
                     Button("Add", id="ib-email-add"),
                     id="ib-email-add-row",
                 ),
+                mail_btn,
+                Static(
+                    mail.NEEDS_MACOS if not mail_ok else "",
+                    id="ib-mail-result",
+                    markup=False,
+                ),
                 Label("Email provider check"),
                 Input(
                     saved.email_authserv or "",
@@ -435,6 +456,9 @@ class IdeaInboxScreen(ModalScreen):
                 repo_name = button_id[len("ib-repo-remove-"):]
             if repo_name:
                 self._remove_repo(repo_name)
+        elif button_id == "ib-mail-script":
+            event.stop()
+            self._install_mail()
         elif button_id == "ib-email-add":
             event.stop()
             self._add_email()
@@ -450,6 +474,23 @@ class IdeaInboxScreen(ModalScreen):
                 email_addr = button_id[len("ib-email-remove-"):]
             if email_addr:
                 self._remove_email(email_addr)
+
+    def _install_mail(self) -> None:
+        from whyline.agents import mail
+
+        if not mail.supported():
+            self._show_mail(mail.NEEDS_MACOS)
+            return
+        fn = self._install or mail.install
+        try:
+            path = fn("idea")
+        except (RuntimeError, OSError, ValueError) as error:
+            self._show_mail(str(error))
+            return
+        self._show_mail(_mail_rule_text("idea", path))
+
+    def _show_mail(self, text: str) -> None:
+        self.query_one("#ib-mail-result", Static).update(_plain(text) if text else "")
 
     def _add_email(self) -> None:
         from whyline.ideas import email_in, store

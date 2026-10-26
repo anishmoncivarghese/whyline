@@ -25057,3 +25057,64 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 981529f96ecb43bd93b93aae5913a782 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:18:53.267Z"} -->
+
+## 2026-10-26 — Inject mail.install via constructor; keep Mail.app steps copy on each screen
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-3
+
+**Because:** the tests need an injected install, and a shared helper would add a file or a cycle (inbox already imports agents_screens lazily)
+
+**Rejected:**
+
+- monkeypatch only — the task asked for an injected install
+- shared helper module — outside the allowed file list
+
+**Files:** src/whyline/console/inbox_screen.py, src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 87db0f6e87c44f759cb1783b4f0bc88f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:29:26.012Z"} -->
+
+## 2026-10-26 — Mail result uses its own Static, not the inbox error line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** ASST-3
+
+**Because:** success must show the path and Mail.app steps, and #ib-message is error-colored and hidden when empty
+
+**Rejected:**
+
+- reuse #ib-message — success steps would look like a save error
+
+**Files:** src/whyline/console/inbox_screen.py
+
+<!-- whyline-event: a564a42eb2d64d2d87c455cbe3278ec3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:29:28.991Z"} -->
+
+## 2026-10-26 — ASST-3 behaves correctly: inbox and agent-detail Install Mail rule buttons call injected install, show path and Mail.app steps, disable with NEEDS_MACOS off macOS, and keep errors on screen
+
+**Actor:** grok
+**Role:** tester
+**Task:** ASST-3
+
+**Because:** Focused 7 mail-rule tests passed, tests/console/test_inbox_screen.py plus test_agents_mode.py 39 passed, and uv run pytest -q exited 0 with one skip and no failures. Both screens fall back to mail.install with idea or the agent name and the same RuntimeError/OSError/ValueError set as the CLI.
+
+**Files:** src/whyline/console/inbox_screen.py, src/whyline/console/agents_screens.py, tests/console/test_inbox_screen.py, tests/console/test_agents_mode.py
+
+<!-- whyline-event: 64051e4e8efc43719df2e561703be5b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:45:10.935Z"} -->
+
+## 2026-10-26 — Approve ASST-3 console Mail rule installation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-3
+
+**Because:** The Inbox and eligible saved-agent detail screens call the injected installer with the correct name, show the required literal success or error text without dismissal, disable with NEEDS_MACOS off macOS, and both focused and full test suites pass.
+
+**Files:** src/whyline/console/inbox_screen.py, src/whyline/console/agents_screens.py, tests/console/test_inbox_screen.py, tests/console/test_agents_mode.py
+
+<!-- whyline-event: ac32b28e4965478cb267db207a44be67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-26T06:56:18.150Z"} -->

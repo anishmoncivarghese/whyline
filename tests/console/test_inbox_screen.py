@@ -135,8 +135,8 @@ def _saved_screen_chats(monkeypatch):
     )
 
 
-async def _open(pilot, app):
-    app.push_screen(IdeaInboxScreen())
+async def _open(pilot, app, **kwargs):
+    app.push_screen(IdeaInboxScreen(**kwargs))
     await _until(pilot, lambda: isinstance(app.screen, IdeaInboxScreen), "inbox shown")
     return app.screen
 
@@ -711,3 +711,69 @@ async def test_email_provider_check_shows_the_saved_value(ideas_home):
         screen = await _open(pilot, app)
         field = screen.query_one("#ib-email-authserv", tui.Input)
         assert field.value == "icloud.com"
+
+
+def _mail_ok(monkeypatch):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: True)
+
+
+async def test_install_mail_rule_calls_injected_install_with_idea(ideas_home, monkeypatch):
+    _mail_ok(monkeypatch)
+    called = []
+    written = Path("/tmp/whyline-idea.applescript")
+
+    def fake_install(name):
+        called.append(name)
+        return written
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app, install=fake_install)
+        button = screen.query_one("#ib-mail-script", tui.Button)
+        assert str(button.label) == "Install Mail rule…"
+        assert not button.disabled
+        button.press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#ib-mail-result"))
+        assert isinstance(app.screen, IdeaInboxScreen)
+    assert called == ["idea"]
+    assert written.as_posix() in text
+    assert "Mail" in text and "Settings" in text and "Rules" in text and "Add Rule" in text
+    assert "From is the allowed sender" in text
+    assert "Run AppleScript" in text
+    assert "whyline-idea.applescript" in text
+
+
+async def test_install_mail_rule_disables_on_unsupported_host(ideas_home, monkeypatch):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: False)
+
+    def refuse(name):
+        raise AssertionError("install")
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app, install=refuse)
+        button = screen.query_one("#ib-mail-script", tui.Button)
+        assert button.disabled
+        assert mail.NEEDS_MACOS in _plain(screen.query_one("#ib-mail-result"))
+        assert isinstance(app.screen, IdeaInboxScreen)
+
+
+async def test_install_mail_error_stays_on_the_screen(ideas_home, monkeypatch):
+    _mail_ok(monkeypatch)
+
+    def boom(name):
+        raise RuntimeError("can't find the whyline command on PATH")
+
+    app = tui.WhylineConsoleApp(root=ideas_home.parent)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(pilot, app, install=boom)
+        screen.query_one("#ib-mail-script", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#ib-mail-result"))
+        assert text == "can't find the whyline command on PATH"
+        assert isinstance(app.screen, IdeaInboxScreen)
