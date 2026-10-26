@@ -236,7 +236,7 @@ Rules every task keeps:
   - a disabled provider is skipped
   Verify with `uv run pytest -q tests/ideas/test_ask.py tests/ideas/test_intent.py tests/ideas/test_bot.py`. Change nothing else.
 
-- [ ] ASST-11: Reminders: `remind` and a deterministic time parser
+- [x] ASST-11: Reminders: `remind` and a deterministic time parser
   Add `src/whyline/ideas/reminders.py` and `tests/ideas/test_reminders.py`. Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/worker.py`, `src/whyline/ideas/cli.py`, `tests/ideas/test_intent.py`, `tests/ideas/test_worker.py`, and `tests/ideas/test_cli.py` only.
   `parse_when(text, now) -> (due, rest)` uses local time and no model. It understands:
   - `in N m|min|h|hours|d|days`
