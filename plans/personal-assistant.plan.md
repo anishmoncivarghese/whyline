@@ -140,7 +140,7 @@ Rules every task keeps:
   - `claim_next` respects the lease and reclaims a dead pid
   Verify with `uv run pytest -q tests/ideas/test_store.py tests/ideas/test_requests.py`. Change nothing else.
 
-- [ ] ASST-6: Request cards and taps in Telegram, and `yes <code>` by email
+- [x] ASST-6: Request cards and taps in Telegram, and `yes <code>` by email
   Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/email_in.py`, `tests/ideas/test_intent.py`, `tests/ideas/test_bot.py`, and `tests/ideas/test_email_in.py` only.
   - A request in `waiting_tap` sends a card titled with the action's summary and its arguments in plain text, with `Confirm` and `Cancel` buttons. Callback data is `req:<action>:<request_id>:<code>`, kept under 64 bytes, where `<action>` is `ok` or `no`. `intent._callback` parses it. Confirm calls `requests.confirm` with actor = the chat id. Cancel calls `requests.cancel`.
   - A used, expired or foreign code replies `This card is out of date.` and changes nothing.
