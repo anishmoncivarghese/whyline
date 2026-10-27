@@ -10,6 +10,7 @@ model = "gpt-5.6-sol"
 
 [agents.claude]
 command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "--settings", ".whyline/relay/claude-settings.json"]
+model = "sonnet"
 
 [agents.antigravity]
 adapter = "generic"
