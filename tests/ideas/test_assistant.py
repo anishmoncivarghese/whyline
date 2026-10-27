@@ -9,7 +9,7 @@ import pytest
 from whyline import cli
 from whyline.agents import capabilities
 from whyline.ideas import analyse as scoring
-from whyline.ideas import assistant, memory, paths, store
+from whyline.ideas import actions, assistant, memory, paths, setup, store
 
 
 @pytest.fixture
@@ -598,3 +598,417 @@ def test_no_agent_prompt_includes_memory(conn):
     ask_prompt = ask._prompt("How does it work?")
     assert "Private user secret note" not in ask_prompt
     assert "User's own notes" not in ask_prompt
+
+
+def test_assistant_prompt_includes_registry_verbs(conn):
+    _set_pair(conn)
+    calls, run_fn = _runner([_block()])
+
+    assistant.propose(
+        conn,
+        "implement with grok",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+    )
+
+    prompt = calls[0]["prompt"]
+    assert "Registry verbs:" in prompt
+    for action in actions.REGISTRY.values():
+        assert action.verb in prompt
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields", "expected_action", "expected_args"),
+    [
+        ("status", {}, "status", {}),
+        (
+            "run_agent",
+            {"agent": "morning-brief"},
+            "run_agent",
+            {"agent": "morning-brief"},
+        ),
+        (
+            "ask_repo",
+            {"repo": "app", "question": "where is config?"},
+            "ask_repo",
+            {"repo": "app", "question": "where is config?"},
+        ),
+        (
+            "remind",
+            {"when": "tomorrow 9am", "text": "review code"},
+            "remind",
+            {"when": "tomorrow 9am", "text": "review code"},
+        ),
+        (
+            "remember",
+            {"fact": "use typescript for web"},
+            "remember",
+            {"fact": "use typescript for web"},
+        ),
+        (
+            "do_task",
+            {"task": "TASK-1"},
+            "do_task",
+            {"task": "TASK-1", "repo": "app"},
+        ),
+    ],
+)
+def test_each_new_action_accepted_with_valid_arguments_and_waiting_tap(
+    conn, monkeypatch, tmp_path, kind, fields, expected_action, expected_args
+):
+    _set_pair(conn)
+    repo = tmp_path / "app"
+    repo.mkdir()
+    (repo / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+    mock_agent = SimpleNamespace(defn=SimpleNamespace(name="morning-brief"))
+    monkeypatch.setattr(assistant.service, "rows", lambda _root: [mock_agent])
+
+    calls, run_fn = _runner([_block(kind=kind, fields=fields, summary=f"Execute {kind}")])
+
+    proposal = assistant.propose(
+        conn,
+        f"please {kind}",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+        chat_id=123,
+        channel="telegram",
+        actor="123",
+    )
+
+    assert proposal.card is not None
+    assert proposal.error is None
+    assert proposal.request is not None
+    assert proposal.request.action == expected_action
+    assert proposal.request.proposed_by == "assistant"
+    assert proposal.request.state == "waiting_tap"
+    assert proposal.request.approval == "tap"
+    assert json.loads(proposal.request.args_json) == expected_args
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields", "expected_error"),
+    [
+        (
+            "run_agent",
+            {"agent": "nowhere"},
+            "unknown agent nowhere",
+        ),
+        (
+            "ask_repo",
+            {"repo": "nowhere", "question": "q"},
+            "unknown repo nowhere",
+        ),
+        (
+            "do_task",
+            {"task": "NO-TASK"},
+            "unknown task NO-TASK",
+        ),
+        (
+            "remind",
+            {"when": "invalid-time", "text": "t"},
+            "unknown time invalid-time",
+        ),
+    ],
+)
+def test_unknown_agent_repo_task_or_time_is_rejected(
+    conn, monkeypatch, tmp_path, kind, fields, expected_error
+):
+    _set_pair(conn)
+    repo = tmp_path / "app"
+    repo.mkdir()
+    (repo / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+    mock_agent = SimpleNamespace(defn=SimpleNamespace(name="morning-brief"))
+    monkeypatch.setattr(assistant.service, "rows", lambda _root: [mock_agent])
+
+    calls, run_fn = _runner([_block(kind=kind, fields=fields, summary="Run bad action")])
+
+    proposal = assistant.propose(
+        conn,
+        f"please {kind}",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+    )
+
+    assert proposal.card is None
+    assert proposal.error == expected_error
+    assert proposal.request is None
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
+def test_disabled_action_is_refused(conn, monkeypatch):
+    _set_pair(conn)
+    mock_agent = SimpleNamespace(defn=SimpleNamespace(name="morning-brief"))
+    monkeypatch.setattr(assistant.service, "rows", lambda _root: [mock_agent])
+    actions.set_policy(conn, "run_agent", enabled=False)
+
+    calls, run_fn = _runner([_block(kind="run_agent", fields={"agent": "morning-brief"}, summary="Run morning brief")])
+
+    proposal = assistant.propose(
+        conn,
+        "run morning brief",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+    )
+
+    assert proposal.card is None
+    assert proposal.request is not None
+    assert proposal.request.state == "refused"
+    assert proposal.error == "run is turned off in the console"
+    assert "run is turned off in the console" in str(proposal)
+
+
+def test_existing_idea_proposals_unchanged(conn):
+    idea = store.add(conn, "Ship the inbox", source="test")
+    _set_pair(conn)
+    calls, run_fn = _runner([_block(kind="plan_setup", fields={"implementer": "grok", "timeout": 60}, summary="Setup plan")])
+
+    proposal = assistant.propose(
+        conn,
+        "implement with grok",
+        idea=idea,
+        context="Set up card",
+        run_fn=run_fn,
+    )
+
+    assert proposal.kind == "plan_setup"
+    assert proposal.card is not None
+    assert proposal.request is None
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
+def test_do_task_cross_repo_rejected(conn, monkeypatch, tmp_path):
+    _set_pair(conn)
+    repo_app = tmp_path / "app"
+    repo_app.mkdir()
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    repo_docs = tmp_path / "docs"
+    repo_docs.mkdir()
+    (repo_docs / "plan.md").write_text("- [ ] DOCS-1: Write docs\n", encoding="utf-8")
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "docs": str(repo_docs)},
+    )
+
+    calls, run_fn = _runner(
+        [_block(kind="do_task", fields={"repo": "docs", "task": "TASK-1"}, summary="Run task 1 in docs")]
+    )
+
+    proposal = assistant.propose(
+        conn,
+        "do TASK-1 in docs",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+    )
+
+    assert proposal.card is None
+    assert proposal.error == "unknown task TASK-1"
+    assert proposal.request is None
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
+def test_do_task_empty_plan_repo_rejected(conn, monkeypatch, tmp_path):
+    _set_pair(conn)
+    repo_app = tmp_path / "app"
+    repo_app.mkdir()
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    repo_empty = tmp_path / "empty_repo"
+    repo_empty.mkdir()
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "empty_repo": str(repo_empty)},
+    )
+
+    calls, run_fn = _runner(
+        [_block(kind="do_task", fields={"repo": "empty_repo", "task": "TASK-1"}, summary="Run task in empty repo")]
+    )
+
+    proposal = assistant.propose(
+        conn,
+        "do TASK-1 in empty_repo",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+    )
+
+    assert proposal.card is None
+    assert proposal.error == "unknown task TASK-1"
+    assert proposal.request is None
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
+def test_do_task_missing_repo_with_multiple_repos_rejected(conn, monkeypatch, tmp_path):
+    _set_pair(conn)
+    repo_app = tmp_path / "app"
+    repo_app.mkdir()
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    repo_docs = tmp_path / "docs"
+    repo_docs.mkdir()
+    (repo_docs / "plan.md").write_text("- [ ] DOCS-1: Write docs\n", encoding="utf-8")
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "docs": str(repo_docs)},
+    )
+
+    calls, run_fn = _runner(
+        [_block(kind="do_task", fields={"task": "TASK-1"}, summary="Run task without repo")]
+    )
+
+    proposal = assistant.propose(
+        conn,
+        "do TASK-1",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+    )
+
+    assert proposal.card is None
+    assert proposal.error == "do_task needs a repo"
+    assert proposal.request is None
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
+def test_do_task_with_multiple_repos_specifying_repo_succeeds(conn, monkeypatch, tmp_path):
+    _set_pair(conn)
+    repo_app = tmp_path / "app"
+    repo_app.mkdir()
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    repo_docs = tmp_path / "docs"
+    repo_docs.mkdir()
+    (repo_docs / "plan.md").write_text("- [ ] DOCS-1: Write docs\n", encoding="utf-8")
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "docs": str(repo_docs)},
+    )
+
+    calls, run_fn = _runner(
+        [_block(kind="do_task", fields={"repo": "app", "task": "TASK-1"}, summary="Run task 1 in app")]
+    )
+
+    proposal = assistant.propose(
+        conn,
+        "do TASK-1 in app",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+        chat_id=123,
+        channel="telegram",
+        actor="123",
+    )
+
+    assert proposal.card is not None
+    assert proposal.error is None
+    assert proposal.request is not None
+    assert proposal.request.action == "do_task"
+    assert proposal.request.proposed_by == "assistant"
+    assert proposal.request.state == "waiting_tap"
+    assert json.loads(proposal.request.args_json) == {"task": "TASK-1", "repo": "app"}
+
+
+def test_do_task_configured_active_plan_rejects_inactive_plan_tasks(conn, monkeypatch, tmp_path):
+    _set_pair(conn)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    plans_dir = repo / "plans"
+    plans_dir.mkdir()
+    (plans_dir / "active.plan.md").write_text("- [ ] ACTIVE-1: Active task\n", encoding="utf-8")
+    (plans_dir / "old.plan.md").write_text("- [ ] OLD-1: Old stale task\n", encoding="utf-8")
+
+    cfg = repo / ".whyline" / "relay" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('plan = "plans/active.plan.md"\n', encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    calls, run_fn = _runner(
+        [_block(kind="do_task", fields={"task": "ACTIVE-1"}, summary="Run active task")]
+    )
+    proposal = assistant.propose(
+        conn,
+        "do ACTIVE-1",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+        chat_id=123,
+        channel="telegram",
+        actor="123",
+    )
+    assert proposal.card is not None
+    assert proposal.error is None
+    assert proposal.request is not None
+    assert proposal.request.action == "do_task"
+    assert proposal.request.state == "waiting_tap"
+    assert json.loads(proposal.request.args_json) == {"task": "ACTIVE-1", "repo": "app"}
+
+    calls2, run_fn2 = _runner(
+        [_block(kind="do_task", fields={"task": "OLD-1"}, summary="Run old task")]
+    )
+    proposal_old = assistant.propose(
+        conn,
+        "do OLD-1",
+        idea=None,
+        context=None,
+        run_fn=run_fn2,
+        chat_id=123,
+        channel="telegram",
+        actor="123",
+    )
+    assert proposal_old.card is None
+    assert proposal_old.error == "unknown task OLD-1"
+    assert proposal_old.request is None
+
+
+def test_do_task_active_relay_state_rejects_inactive_plan_tasks(conn, monkeypatch, tmp_path):
+    from whyline_relay import state as relay_state
+
+    _set_pair(conn)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    plans_dir = repo / "plans"
+    plans_dir.mkdir()
+    (plans_dir / "active.plan.md").write_text("- [ ] ACTIVE-1: Active task\n", encoding="utf-8")
+    (plans_dir / "old.plan.md").write_text("- [ ] OLD-1: Old stale task\n", encoding="utf-8")
+
+    relay_state.save(
+        repo,
+        relay_state.RelayState(
+            plan="plans/active.plan.md",
+            branch="relay/active",
+            task_id="ACTIVE-1",
+            round=1,
+            base_commit="",
+            paused_reason="",
+            log_path="",
+        ),
+    )
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    calls, run_fn = _runner(
+        [_block(kind="do_task", fields={"task": "OLD-1"}, summary="Run old task")]
+    )
+    proposal_old = assistant.propose(
+        conn,
+        "do OLD-1",
+        idea=None,
+        context=None,
+        run_fn=run_fn,
+        chat_id=123,
+        channel="telegram",
+        actor="123",
+    )
+    assert proposal_old.card is None
+    assert proposal_old.error == "unknown task OLD-1"
+    assert proposal_old.request is None
+
+

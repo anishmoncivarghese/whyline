@@ -10,13 +10,16 @@ import pytest
 
 from whyline.agents import telegram
 from whyline.ideas import (
+    actions,
     analyse,
+    assistant,
     bot,
     brainstorm,
     documents,
     paths,
     report,
     requests,
+    setup,
     store,
     telegram_in,
 )
@@ -1552,3 +1555,303 @@ def test_idea_buttons_still_use_action_id_revision(conn, token, monkeypatch):
     assert store.get(conn, idea.id).status == "brainstorm_configuring"
     labels = _flat(_button_rows(conn)[-1])
     assert labels == ["Start", "Edit", "Cancel"]
+
+
+def _proposal_block(kind, fields=None, summary="Proposal summary"):
+    payload = {
+        "kind": kind,
+        "fields": {} if fields is None else fields,
+        "summary": summary,
+    }
+    return f"notes\n```inbox-proposal\n{json.dumps(payload)}\n```\n"
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields", "expected_action", "summary_contains"),
+    [
+        ("status", {}, "status", "Show status"),
+        (
+            "run_agent",
+            {"agent": "morning-brief"},
+            "run_agent",
+            "agent: morning-brief",
+        ),
+        (
+            "ask_repo",
+            {"repo": "app", "question": "where is config?"},
+            "ask_repo",
+            "repo: app",
+        ),
+        (
+            "remind",
+            {"when": "tomorrow 9am", "text": "review code"},
+            "remind",
+            "when: tomorrow 9am",
+        ),
+        (
+            "remember",
+            {"fact": "use typescript for web"},
+            "remember",
+            "fact: use typescript for web",
+        ),
+        (
+            "do_task",
+            {"task": "TASK-1"},
+            "do_task",
+            "task: TASK-1",
+        ),
+    ],
+)
+def test_bot_free_proposal_new_actions_wait_tap(
+    conn, token, monkeypatch, tmp_path, kind, fields, expected_action, summary_contains
+):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+    repo = tmp_path / "app"
+    repo.mkdir()
+    (repo / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+    mock_agent = SimpleNamespace(defn=SimpleNamespace(name="morning-brief"))
+    monkeypatch.setattr(bot.service, "rows", lambda _root: [mock_agent])
+
+    idea = _capture(conn)
+    block = _proposal_block(kind=kind, fields=fields, summary=f"Execute {kind}")
+    run_fn = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block)
+
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn)
+
+    req_rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+    assert len(req_rows) == 1
+    req = req_rows[0]
+    assert req["action"] == expected_action
+    assert req["proposed_by"] == "assistant"
+    assert req["state"] == "waiting_tap"
+    assert req["approval"] == "tap"
+
+    card = _button_rows(conn)[-1]
+    assert summary_contains in card["text"]
+    labels = _flat(card)
+    assert labels == ["Confirm", "Cancel"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields", "expected_error"),
+    [
+        (
+            "run_agent",
+            {"agent": "nowhere"},
+            "unknown agent nowhere",
+        ),
+        (
+            "ask_repo",
+            {"repo": "nowhere", "question": "q"},
+            "unknown repo nowhere",
+        ),
+        (
+            "do_task",
+            {"task": "NO-TASK"},
+            "unknown task NO-TASK",
+        ),
+        (
+            "remind",
+            {"when": "invalid-time", "text": "t"},
+            "unknown time invalid-time",
+        ),
+    ],
+)
+def test_bot_free_proposal_unknown_rejected(
+    conn, token, monkeypatch, tmp_path, kind, fields, expected_error
+):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+    repo = tmp_path / "app"
+    repo.mkdir()
+    (repo / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+    mock_agent = SimpleNamespace(defn=SimpleNamespace(name="morning-brief"))
+    monkeypatch.setattr(bot.service, "rows", lambda _root: [mock_agent])
+
+    idea = _capture(conn)
+    block = _proposal_block(kind=kind, fields=fields, summary=f"Execute {kind}")
+    run_fn = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block)
+
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn)
+
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+    last_msg = _outbox(conn, "message")[-1]
+    assert expected_error in last_msg["text"]
+
+
+def test_bot_free_proposal_disabled_action_refused(conn, token, monkeypatch):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+    mock_agent = SimpleNamespace(defn=SimpleNamespace(name="morning-brief"))
+    monkeypatch.setattr(bot.service, "rows", lambda _root: [mock_agent])
+    actions.set_policy(conn, "run_agent", enabled=False)
+
+    idea = _capture(conn)
+    block = _proposal_block(kind="run_agent", fields={"agent": "morning-brief"}, summary="Run morning brief")
+    run_fn = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block)
+
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn)
+
+    req_rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+    assert len(req_rows) == 1
+    assert req_rows[0]["state"] == "refused"
+    last_msg = _outbox(conn, "message")[-1]
+    assert "run is turned off in the console" in last_msg["text"]
+
+
+def test_bot_free_proposal_existing_idea_unchanged(conn, token, monkeypatch):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+
+    idea = _capture(conn)
+    block = _proposal_block(kind="plan_setup", fields={"implementer": "grok", "timeout": 60}, summary="Setup plan")
+    run_fn = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block)
+
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn)
+
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+    last_card = _button_rows(conn)[-1]
+    assert "Set up" in last_card["text"]
+    assert "Confirm" in _flat(last_card)
+
+
+def test_bot_free_legacy_mock_without_chat_id_handles_unrequested_status(
+    conn, token, monkeypatch
+):
+    idea = _capture(conn)
+
+    def fake_propose(conn, text, idea=None, context=None, run_fn=None):
+        return assistant.Proposal(
+            kind="status",
+            fields={"idea_id": idea.id if idea else None},
+            summary="Status",
+        )
+
+    monkeypatch.setattr(assistant, "propose", fake_propose)
+
+    bot.handle(conn, _message("use claude to check status", update_id=2, message_id=6))
+
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+    cards = _button_rows(conn)
+    assert len(cards) >= 1
+    labels = _flat(cards[-1])
+    assert "Refresh" in labels or "Stop" in labels
+
+
+def test_bot_free_proposal_do_task_cross_repo_rejected(
+    conn, token, monkeypatch, tmp_path
+):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+    repo_app = tmp_path / "app"
+    repo_app.mkdir()
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    repo_docs = tmp_path / "docs"
+    repo_docs.mkdir()
+    (repo_docs / "plan.md").write_text("- [ ] DOCS-1: Write docs\n", encoding="utf-8")
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "docs": str(repo_docs)},
+    )
+
+    idea = _capture(conn)
+    block = _proposal_block(
+        kind="do_task",
+        fields={"repo": "docs", "task": "TASK-1"},
+        summary="Execute do_task in docs",
+    )
+    run_fn = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block)
+
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn)
+
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+    last_msg = _outbox(conn, "message")[-1]
+    assert "unknown task TASK-1" in last_msg["text"]
+
+
+def test_bot_free_proposal_do_task_missing_repo_rejected(
+    conn, token, monkeypatch, tmp_path
+):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+    repo_app = tmp_path / "app"
+    repo_app.mkdir()
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+    repo_docs = tmp_path / "docs"
+    repo_docs.mkdir()
+    (repo_docs / "plan.md").write_text("- [ ] DOCS-1: Write docs\n", encoding="utf-8")
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "docs": str(repo_docs)},
+    )
+
+    idea = _capture(conn)
+    block = _proposal_block(
+        kind="do_task",
+        fields={"task": "TASK-1"},
+        summary="Execute do_task without repo",
+    )
+    run_fn = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block)
+
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn)
+
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+    last_msg = _outbox(conn, "message")[-1]
+    assert "do_task needs a repo" in last_msg["text"]
+
+
+def test_bot_free_proposal_do_task_configured_active_plan_rejects_inactive(
+    conn, token, monkeypatch, tmp_path
+):
+    _set_enabled(["claude", "grok"])
+    conn.execute("INSERT INTO kv (key, value) VALUES ('assistant', 'claude')")
+    monkeypatch.setattr(bot.capabilities, "can_run_unattended", lambda name: True)
+    repo = tmp_path / "app"
+    repo.mkdir()
+    plans_dir = repo / "plans"
+    plans_dir.mkdir()
+    (plans_dir / "active.plan.md").write_text("- [ ] ACTIVE-1: Active task\n", encoding="utf-8")
+    (plans_dir / "old.plan.md").write_text("- [ ] OLD-1: Old stale task\n", encoding="utf-8")
+    cfg = repo / ".whyline" / "relay" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('plan = "plans/active.plan.md"\n', encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    idea = _capture(conn)
+    block_old = _proposal_block(
+        kind="do_task",
+        fields={"task": "OLD-1"},
+        summary="Execute old task",
+    )
+    run_fn_old = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block_old)
+    bot.handle(conn, _message("use grok to implement", update_id=2, message_id=6), run_fn=run_fn_old)
+
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+    last_msg = _outbox(conn, "message")[-1]
+    assert "unknown task OLD-1" in last_msg["text"]
+
+    block_active = _proposal_block(
+        kind="do_task",
+        fields={"task": "ACTIVE-1"},
+        summary="Execute active task",
+    )
+    run_fn_active = lambda *args, **kwargs: SimpleNamespace(exit_code=0, output=block_active)
+    bot.handle(conn, _message("use grok to implement", update_id=3, message_id=7), run_fn=run_fn_active)
+
+    req_rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+    assert len(req_rows) == 1
+    assert req_rows[0]["action"] == "do_task"
+    assert req_rows[0]["state"] == "waiting_tap"
+

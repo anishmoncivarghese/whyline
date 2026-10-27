@@ -15,12 +15,13 @@ import sqlite3
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
 
-from whyline.agents import capabilities
+from whyline.agents import capabilities, service
 from whyline.ideas import analyse as scoring
-from whyline.ideas import intent, memory, paths, store
+from whyline.ideas import actions, intent, memory, paths, reminders, requests, setup, store
 
 ASSISTANT_KEY = "assistant"
 BACKUP_KEY = "assistant_backup"
@@ -33,7 +34,20 @@ KINDS = (
     "resolve",
     "capture",
     "none",
+    "run_agent",
+    "ask_repo",
+    "remind",
+    "remember",
+    "do_task",
 )
+NEW_ACTIONS = frozenset({
+    "status",
+    "run_agent",
+    "ask_repo",
+    "remind",
+    "remember",
+    "do_task",
+})
 CONFIRM_BUTTONS = ("Confirm", "Edit", "Cancel")
 TIMEOUTS = (15, 30, 45, 60, "none")
 # Button actions the assistant may name. A later card can pass a wider
@@ -56,6 +70,11 @@ ACTIONS = (
     "resume",
     "change",
     "discard",
+    "run_agent",
+    "ask_repo",
+    "remind",
+    "remember",
+    "do_task",
 )
 # Score's detection order. Antigravity is never included: it is not
 # cleared for unattended runs.
@@ -77,6 +96,11 @@ _TITLES = {
     "resolve": "Resolve",
     "capture": "Capture",
     "none": "No change",
+    "run_agent": "Run agent",
+    "ask_repo": "Ask repo",
+    "remind": "Remind",
+    "remember": "Remember",
+    "do_task": "Do task",
 }
 _TAG = "inbox-proposal"
 _TIMEOUT_SECONDS = 120
@@ -126,6 +150,7 @@ class Proposal:
     help_command: str | None = None
     error: str | None = None
     agent: str | None = None
+    request: object = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.fields, MappingProxyType):
@@ -150,6 +175,9 @@ class Allowed:
     timeouts: frozenset[object]
     actions: frozenset[str]
     idea_ids: frozenset[int]
+    saved_agents: frozenset[str] = frozenset()
+    tasks: frozenset[str] = frozenset()
+    tasks_by_repo: Mapping[str, frozenset[str]] = _EMPTY
 
 
 def save(conn: sqlite3.Connection, agent: str, backup: str | None = None) -> None:
@@ -221,12 +249,19 @@ def allowlist(conn: sqlite3.Connection) -> Allowed:
     ids = frozenset(
         int(row["id"]) for row in conn.execute("SELECT id FROM ideas").fetchall()
     )
+    tasks_by_repo = _plan_tasks_by_repo(conn)
+    all_tasks = set()
+    for s in tasks_by_repo.values():
+        all_tasks.update(s)
     return Allowed(
         agents=agents,
         repos=_repos(conn),
         timeouts=_TIMEOUT_SET,
         actions=_ACTION_SET,
         idea_ids=ids,
+        saved_agents=_saved_agents(),
+        tasks=frozenset(all_tasks),
+        tasks_by_repo=tasks_by_repo,
     )
 
 
@@ -237,6 +272,9 @@ def propose(
     idea: store.Idea | int | None = None,
     context: object,
     run_fn=None,
+    chat_id: int | None = None,
+    channel: str | None = None,
+    actor: str | None = None,
 ) -> Proposal:
     """Read ``text`` and return a card, a named rejection, or the help reply.
 
@@ -275,15 +313,30 @@ def propose(
         checked = replace(checked, agent=agent)
         if checked.card is None:
             return checked
-        return replace(
-            checked,
-            card=confirm_card(
-                checked.kind,
-                summary=checked.summary,
-                fields=checked.fields,
-                idea=current,
-            ),
+        card = confirm_card(
+            checked.kind,
+            summary=checked.summary,
+            fields=checked.fields,
+            idea=current,
         )
+        if checked.kind in NEW_ACTIONS:
+            args = _action_args(checked.kind, checked.fields, allowed=allowed)
+            try:
+                req = requests.create(
+                    conn,
+                    channel=channel,
+                    actor=actor,
+                    chat_id=chat_id,
+                    action=checked.kind,
+                    args=args,
+                    proposed_by="assistant",
+                )
+            except actions.PolicyError as exc:
+                return replace(checked, card=None, error=str(exc))
+            if req.state == "refused":
+                return replace(checked, card=None, error=req.error, request=req)
+            return replace(checked, card=card, request=req)
+        return replace(checked, card=card)
     return _unreadable()
 
 
@@ -295,7 +348,7 @@ def validate(proposal: Proposal, allowed: Allowed) -> Proposal:
     """
     if proposal.kind not in _KIND_SET:
         return replace(proposal, error=f"unknown kind {proposal.kind}", card=None)
-    error, fields = _check_fields(proposal.fields, allowed)
+    error, fields = _check_fields(proposal.fields, allowed, kind=proposal.kind)
     if error:
         return replace(proposal, fields=fields, error=error, card=None, reply=None, help_command=None)
     return replace(
@@ -306,6 +359,44 @@ def validate(proposal: Proposal, allowed: Allowed) -> Proposal:
         help_command=None,
         card=confirm_card(proposal.kind, summary=proposal.summary, fields=fields),
     )
+
+
+def _action_args(
+    kind: str, fields: Mapping[str, object], *, allowed: Allowed | None = None
+) -> dict[str, object]:
+    cleaned = dict(fields)
+    if kind == "run_agent":
+        return {"agent": cleaned.get("agent") or cleaned.get("name") or ""}
+    if kind == "ask_repo":
+        repo = cleaned.get("repo")
+        if not repo and allowed and len(allowed.repos) == 1:
+            repo = next(iter(allowed.repos))
+        return {
+            "repo": repo or "",
+            "question": cleaned.get("question") or cleaned.get("text") or "",
+        }
+    if kind == "remind":
+        return {
+            "when": cleaned.get("when") or cleaned.get("time") or "",
+            "text": cleaned.get("text") or cleaned.get("body") or "",
+        }
+    if kind == "remember":
+        return {"fact": cleaned.get("fact") or cleaned.get("text") or ""}
+    if kind == "do_task":
+        task = cleaned.get("task") or cleaned.get("task_id") or ""
+        args: dict[str, object] = {"task": task}
+        if "repo" in cleaned:
+            args["repo"] = cleaned["repo"]
+        elif allowed and len(allowed.repos) == 1:
+            args["repo"] = next(iter(allowed.repos))
+        return args
+    if kind == "status":
+        args = {}
+        for key in ("target", "idea_id", "agent", "repo"):
+            if key in cleaned:
+                args[key] = cleaned[key]
+        return args
+    return dict(fields)
 
 
 def confirm_card(
@@ -513,6 +604,7 @@ def _prompt(text: str, idea: store.Idea | None, context: object, allowed: Allowe
         "Idea:\n" + _idea_text(idea),
         "Card the user is looking at:\n" + _context_text(context),
         "Allowed values:\n" + _allowed_text(allowed),
+        _registry_verbs_text(),
     ]
     notes = memory.for_prompt()
     if notes:
@@ -521,12 +613,20 @@ def _prompt(text: str, idea: store.Idea | None, context: object, allowed: Allowe
     return "\n\n".join(blocks)
 
 
+def _registry_verbs_text() -> str:
+    verbs = ", ".join(action.verb for action in actions.REGISTRY.values())
+    lines = [f"Registry verbs: {verbs}"]
+    for action in actions.REGISTRY.values():
+        lines.append(f"- {action.verb}: {action.summary}")
+    return "\n".join(lines)
+
+
 _INSTRUCTIONS = """\
 End with one fenced inbox-proposal block. Inside it, one JSON object with:
-kind, one of brainstorm_settings, plan_setup, status, stop, resolve, capture, none;
+kind, one of brainstorm_settings, plan_setup, status, stop, resolve, capture, none, run_agent, ask_repo, remind, remember, do_task;
 fields, an object;
 summary, one line describing exactly what will change.
-fields may use models, passes, final, backup, timeout, repo, implementer, tester, reviewer, release, drafter, plan_reviewer, action, idea_id.
+fields may use models, passes, final, backup, timeout, repo, implementer, tester, reviewer, release, drafter, plan_reviewer, action, idea_id, agent, question, when, text, fact, task.
 Use only allowed values. release is human.
 timeout is minutes: 15, 30, 45, 60, or none. One hour is 60.
 A stop or resolve proposal only asks for confirmation. It does not stop or resolve anything.
@@ -562,15 +662,20 @@ def _allowed_text(allowed: Allowed) -> str:
     agents = ", ".join(sorted(allowed.agents)) or "(none)"
     repos = ", ".join(sorted(allowed.repos)) or "(none)"
     timeouts = ", ".join(str(item) for item in TIMEOUTS)
-    actions = ", ".join(sorted(allowed.actions)) or "(none)"
+    actions_str = ", ".join(sorted(allowed.actions)) or "(none)"
     ids = ", ".join(str(item) for item in sorted(allowed.idea_ids)) or "(none)"
-    return (
-        f"agents: {agents}\n"
-        f"repos: {repos}\n"
-        f"timeouts: {timeouts}\n"
-        f"actions: {actions}\n"
-        f"idea_ids: {ids}"
-    )
+    lines = [
+        f"agents: {agents}",
+        f"repos: {repos}",
+        f"timeouts: {timeouts}",
+        f"actions: {actions_str}",
+        f"idea_ids: {ids}",
+    ]
+    if allowed.saved_agents:
+        lines.append(f"saved_agents: {', '.join(sorted(allowed.saved_agents))}")
+    if allowed.tasks:
+        lines.append(f"tasks: {', '.join(sorted(allowed.tasks))}")
+    return "\n".join(lines)
 
 
 def _turn(agent: str, idea_id: int, prompt: str, run_fn) -> Proposal | None:
@@ -664,7 +769,7 @@ def _unreadable() -> Proposal:
 
 
 def _check_fields(
-    fields: Mapping[str, object], allowed: Allowed
+    fields: Mapping[str, object], allowed: Allowed, *, kind: str | None = None
 ) -> tuple[str | None, dict[str, object]]:
     if not isinstance(fields, Mapping):
         return "fields must be an object", {}
@@ -685,10 +790,67 @@ def _check_fields(
         error = _unknown_release(cleaned["release"], allowed)
         if error:
             return error, cleaned
+    if "name" in cleaned and "agent" not in cleaned and kind == "run_agent":
+        cleaned["agent"] = cleaned.pop("name")
+    if "agent" in cleaned:
+        error = _unknown_saved_agent(cleaned["agent"], allowed)
+        if error:
+            return error, cleaned
+    elif kind == "run_agent":
+        return "run_agent needs an agent", cleaned
     if "repo" in cleaned:
+        if isinstance(cleaned["repo"], str):
+            cleaned["repo"] = cleaned["repo"].strip()
         error = _unknown_repo(cleaned["repo"], allowed)
         if error:
             return error, cleaned
+    elif kind in ("ask_repo", "do_task"):
+        if len(allowed.repos) == 1:
+            cleaned["repo"] = next(iter(allowed.repos))
+        else:
+            return f"{kind} needs a repo", cleaned
+    if "task_id" in cleaned and "task" not in cleaned:
+        cleaned["task"] = cleaned.pop("task_id")
+    if "task" in cleaned and isinstance(cleaned["task"], str):
+        cleaned["task"] = cleaned["task"].strip()
+    if "task" in cleaned and cleaned["task"]:
+        repo_val = (
+            cleaned["repo"]
+            if "repo" in cleaned and isinstance(cleaned["repo"], str) and cleaned["repo"]
+            else None
+        )
+        error = _unknown_task(cleaned["task"], allowed, repo=repo_val)
+        if error:
+            return error, cleaned
+    elif kind == "do_task":
+        return "do_task needs a task", cleaned
+    if "time" in cleaned and "when" not in cleaned:
+        cleaned["when"] = cleaned.pop("time")
+    if "when" in cleaned:
+        error = _unknown_time(cleaned["when"])
+        if error:
+            return error, cleaned
+    elif kind == "remind":
+        return "remind needs a time", cleaned
+    if "text" in cleaned and "fact" not in cleaned and kind == "remember":
+        cleaned["fact"] = cleaned.pop("text")
+    if kind == "remember":
+        if "fact" not in cleaned or not str(cleaned["fact"]).strip():
+            return "remember needs a fact", cleaned
+    if "target" in cleaned and kind == "status":
+        target = str(cleaned["target"]).strip()
+        if target:
+            if target.isdigit():
+                if int(target) not in allowed.idea_ids:
+                    return f"unknown idea {target}", cleaned
+            elif target.lower() in {"agents", "relay"}:
+                pass
+            elif target in allowed.repos:
+                pass
+            elif target in allowed.saved_agents:
+                pass
+            else:
+                return f"unknown agent {target}", cleaned
     if "timeout" in cleaned:
         error, canonical = _timeout_check(cleaned["timeout"], allowed)
         if error:
@@ -705,6 +867,130 @@ def _check_fields(
         if error:
             return error, cleaned
     return None, cleaned
+
+
+def _unknown_saved_agent(value: object, allowed: Allowed) -> str | None:
+    for name in _names(value):
+        if name not in allowed.saved_agents:
+            return f"unknown agent {name}"
+    return None
+
+
+def _unknown_task(value: object, allowed: Allowed, repo: str | None = None) -> str | None:
+    for name in _names(value):
+        if repo:
+            tasks_for_repo = allowed.tasks_by_repo.get(repo, frozenset())
+            if name not in tasks_for_repo:
+                return f"unknown task {name}"
+        elif name not in allowed.tasks:
+            return f"unknown task {name}"
+    return None
+
+
+def _unknown_time(value: object) -> str | None:
+    if value is None:
+        return "unknown time None"
+    text = str(value).strip()
+    if not text:
+        return "unknown time "
+    try:
+        now = datetime.now().astimezone().replace(tzinfo=None)
+        reminders.parse_when(text, now)
+        return None
+    except Exception:
+        return f"unknown time {text}"
+
+
+def _saved_agents() -> frozenset[str]:
+    try:
+        rows = service.rows(None)
+    except Exception:
+        return frozenset()
+    names = set()
+    for item in rows:
+        defn = getattr(item, "defn", None)
+        name = getattr(defn, "name", None)
+        if name:
+            names.add(str(name).strip())
+        else:
+            path = getattr(defn, "path", None)
+            if path:
+                names.add(Path(path).stem)
+    return frozenset(names)
+
+
+def _plan_tasks_by_repo(conn: sqlite3.Connection) -> dict[str, frozenset[str]]:
+    repos = setup.list_repos(conn)
+    by_repo: dict[str, frozenset[str]] = {}
+    for repo_name, root_str in repos.items():
+        root = Path(root_str)
+        if not root.is_dir():
+            by_repo[repo_name] = frozenset()
+            continue
+        by_repo[repo_name] = frozenset(_tasks_in_repo(root))
+    return by_repo
+
+
+def _active_or_configured_plan_file(root: Path) -> Path | None:
+    plan_candidate: str | Path | None = None
+    try:
+        from whyline_relay import state as relay_state
+
+        saved = relay_state.load(root)
+        if saved is not None:
+            if not saved.plan:
+                return None
+            plan_candidate = saved.plan
+    except Exception:
+        pass
+
+    if plan_candidate is None:
+        try:
+            from whyline_relay import config as relay_config
+
+            settings = relay_config.load(root)
+            if settings and settings.plan:
+                plan_candidate = settings.plan
+        except Exception:
+            return None
+
+    if not plan_candidate:
+        return None
+
+    try:
+        p = Path(plan_candidate)
+        root_resolved = root.resolve()
+        if p.is_absolute():
+            resolved = p.resolve()
+            if resolved.is_relative_to(root_resolved) and resolved.is_file():
+                return resolved
+            return None
+
+        for target in (root / p, root / "plans" / p):
+            resolved = target.resolve()
+            if resolved.is_relative_to(root_resolved) and resolved.is_file():
+                return resolved
+    except Exception:
+        pass
+    return None
+
+
+def _tasks_in_repo(root: Path) -> set[str]:
+    tasks: set[str] = set()
+    plan_file = _active_or_configured_plan_file(root)
+    if plan_file is None:
+        return tasks
+    try:
+        from whyline_relay import plan as relay_plan
+
+        parsed = relay_plan.parse(plan_file.read_text(encoding="utf-8"))
+        for task in parsed:
+            tid = getattr(task, "task_id", None)
+            if tid:
+                tasks.add(str(tid).strip())
+    except Exception:
+        pass
+    return tasks
 
 
 def _unknown_agent(value: object, allowed: Allowed) -> str | None:
@@ -845,6 +1131,12 @@ def _show(value: object) -> str:
 
 
 def _repos(conn: sqlite3.Connection) -> frozenset[str]:
+    try:
+        found = setup.list_repos(conn)
+        if found:
+            return frozenset(found.keys())
+    except Exception:
+        pass
     raw = _kv(conn, "repos")
     if not raw:
         return frozenset()

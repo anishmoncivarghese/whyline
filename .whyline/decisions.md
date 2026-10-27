@@ -26323,3 +26323,182 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6570f5b4d7484bc8ab1b55f670239110 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-26T23:51:52.667Z"} -->
+
+## 2026-10-27 — Validate new action proposals against live allowlists and create waiting_tap requests
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-15
+
+**Because:** Assistant proposals for actions must check argument schemas against service.rows, list_repos, relay plans, and parse_when, and queue waiting_tap requests requiring user tap
+
+**Rejected:**
+
+- Immediately execute status — violates the assistant safety invariant that model-proposed actions require explicit tap approval
+- Create requests table rows for existing idea proposals — plan_setup and brainstorm_settings maintain their own confirm card flow
+
+**Files:** src/whyline/ideas/assistant.py, src/whyline/ideas/bot.py
+
+<!-- whyline-event: dfb3be0eb9d0410d810c5a082ad27bfd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T00:12:29.302Z"} -->
+
+## 2026-10-27 — Reject ASST-15 round 2 because bot._free raises TypeError on legacy assistant.propose mocks
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-15
+
+**Because:** bot._free passes chat_id, channel, and actor kwargs to assistant.propose unconditionally, causing TypeError in tests/ideas/test_watch.py::test_assistant_status_proposal_replies_with_status and dropping unrequested idea status handling when proposal.request is None
+
+**Rejected:**
+
+- Pass to reviewer — test_watch.py failure is a new regression in bot.py rather than an established unrelated failure
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 259a9a9025bc40dabda7ecd8330fd2e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T00:23:50.030Z"} -->
+
+## 2026-10-27 — Inspect assistant.propose signature and preserve unrequested status handling in bot._free
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-15
+
+**Because:** Legacy mocks in test_watch.py do not accept chat_id kwargs, and unrequested status proposals return request=None so they must fall through to existing idea status rendering
+
+**Rejected:**
+
+- Modify test_watch.py mock signature — test_watch.py is outside the allowed file edits for ASST-15
+- Require all status proposals to create request rows — unrequested status checks via legacy mocks or direct status proposals must continue replying with idea status cards
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 2da71f8e819944e9be4c64899dca1776 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T00:30:21.674Z"} -->
+
+## 2026-10-27 — Approve ASST-15 tests: new assistant actions propose requests waiting tap with schema validation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-15
+
+**Because:** All 109 tests in test_assistant.py and test_bot.py pass, new actions (status, run_agent, ask_repo, remind, remember, do_task) are accepted with valid arguments and waiting_tap, invalid arguments are rejected by name, disabled actions are refused, existing idea proposals and unrequested status proposals remain unchanged, and test_watch passes without TypeError
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 26670fb27d5b4c78a9ab111a14b935c7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T00:34:50.139Z"} -->
+
+## 2026-10-27 — Reject ASST-15 round 5 because do_task validation is not scoped to the selected repo
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-15
+
+**Because:** A task from repo A is accepted for repo B when B has an empty plan, and with multiple allowed repos a proposal can omit repo entirely; this violates the repo-plan argument schema and creates ambiguous or mismatched requests. The full uv run pytest -q command completed with six pre-existing failures outside the allowed files, while the ASST-15 tests passed within that run.
+
+**Rejected:**
+
+- Approve — the task/repo allowlist still accepts invalid combinations
+
+**Files:** src/whyline/ideas/assistant.py, tests/ideas/test_assistant.py
+
+<!-- whyline-event: a7098b87e30f4641a8400c841b17fbab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T00:46:34.699Z"} -->
+
+## 2026-10-27 — Scope do_task plan validation strictly to selected repo and require repo when multiple repos are configured
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-15
+
+**Because:** Selected repos must evaluate tasks against their own plan even if empty, and omitting repo across multiple repositories violates the argument schema
+
+**Rejected:**
+
+- Fall back to global tasks when repo task set is empty — allows cross-repo task leakage
+- Unambiguously infer repo across multiple repositories — creates ambiguous resolution when tasks overlap or plans mutate
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 703837fd16f740aba88ae02ebf8a618d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T00:55:12.209Z"} -->
+
+## 2026-10-27 — Approve ASST-15 tests: do_task scoped strictly to selected repo and all assistant actions verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-15
+
+**Because:** All 115 tests in test_assistant.py and test_bot.py pass, do_task validates tasks against the selected repo's plan (rejecting tasks in other repos or repos with empty plans, and requiring repo when multiple repos exist), new actions produce waiting_tap requests, invalid args are rejected by name, and disabled actions are refused
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: 5e51bcbc4e024c61adf3ce097dbb3554 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T01:05:35.350Z"} -->
+
+## 2026-10-27 — Reject ASST-15 round 8 because do_task accepts tasks from inactive plans
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-15
+
+**Because:** The focused 115 tests pass and the full suite has six established failures outside scope, but _tasks_in_repo unions every plans/*.plan.md file; a repo configured to plans/active.plan.md therefore accepts OLD-1 from plans/old.plan.md even though the request carries no plan and ASST-16 executes the configured plan.
+
+**Rejected:**
+
+- Approve — stale or sibling plan tasks cross the configured-plan allowlist boundary
+
+**Files:** src/whyline/ideas/assistant.py, tests/ideas/test_assistant.py
+
+<!-- whyline-event: ea17acf916404198ba26080e55d7e295 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T01:16:48.028Z"} -->
+
+## 2026-10-27 — Resolve repo plan strictly from active relay run or configured relay plan without sibling globbing
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-15
+
+**Because:** Accepting tasks from sibling or stale plans allows invalid task IDs outside the configured plan allowlist to be scheduled
+
+**Rejected:**
+
+- Union all plans in plans/ directory — causes stale and inactive plan tasks to be accepted when a specific plan is active or configured
+- Fall through from active run to configured plan — active relay runs must validate against their own run plan
+
+**Files:** src/whyline/ideas/assistant.py, tests/ideas/test_assistant.py
+
+<!-- whyline-event: bcf4f0ddbc614f9ab85cc70edf138b20 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T01:25:05.672Z"} -->
+
+## 2026-10-27 — Approve ASST-15: all 118 assistant and bot tests pass with plan resolution scoped strictly to active or configured plan
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-15
+
+**Because:** All 118 tests in test_assistant.py and test_bot.py pass, each new action (status, run_agent, ask_repo, remind, remember, do_task) is accepted with waiting_tap, unknown arguments are rejected by name, disabled actions are refused, existing idea proposals remain unchanged, and do_task plan tasks resolve strictly against the active relay state or configured plan without accepting inactive sibling plans; full suite matches baseline
+
+**Files:** src/whyline/ideas/assistant.py
+
+<!-- whyline-event: ebb93a833cf54cbb8680a931073ab0dc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T01:37:08.778Z"} -->
+
+## 2026-10-27 — Approve ASST-15 round 11: new assistant actions are live-allowlisted and tap-gated
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-15
+
+**Because:** The diff validates saved agents via service.rows, repos via list_repos, reminder times via reminders.parse_when, and task IDs only against the selected repo's active or configured plan; accepted model proposals create proposed_by=assistant requests in waiting_tap, disabled actions are refused, existing proposal flows remain unchanged, and the full uv run pytest -q result has only the same six established unrelated baseline failures
+
+**Rejected:**
+
+- Request changes — no task-scoped functional, safety, or regression defect remains
+
+**Files:** src/whyline/ideas/assistant.py, src/whyline/ideas/bot.py, tests/ideas/test_assistant.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: a18b4c5b749246ccbb15079d9ea3434e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T03:23:03.007Z"} -->

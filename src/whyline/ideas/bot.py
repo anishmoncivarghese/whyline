@@ -900,13 +900,54 @@ def _answer(conn, row, routed: intent.Intent) -> None:
 def _free(conn, row, routed: intent.Intent, run_fn) -> None:
     chat_id = int(_field(row, "chat_id"))
     idea = _latest_for_chat(conn, chat_id)
-    proposal = assistant.propose(
-        conn,
-        routed.text,
-        idea=idea,
-        context=_card_context(conn, chat_id),
-        run_fn=run_fn,
-    )
+    kwargs = {}
+    try:
+        import inspect
+
+        params = inspect.signature(assistant.propose).parameters
+        has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        if has_varkw or "chat_id" in params:
+            kwargs = {
+                "chat_id": chat_id,
+                "channel": "telegram",
+                "actor": str(chat_id),
+            }
+    except (ValueError, TypeError):
+        pass
+    try:
+        proposal = assistant.propose(
+            conn,
+            routed.text,
+            idea=idea,
+            context=_card_context(conn, chat_id),
+            run_fn=run_fn,
+            **kwargs,
+        )
+    except TypeError as exc:
+        if kwargs and ("unexpected keyword" in str(exc) or "chat_id" in str(exc)):
+            proposal = assistant.propose(
+                conn,
+                routed.text,
+                idea=idea,
+                context=_card_context(conn, chat_id),
+                run_fn=run_fn,
+            )
+        else:
+            raise
+    if proposal.request is not None:
+        req = proposal.request
+        if req.state == "waiting_tap":
+            offer_request(conn, req)
+            return
+        if req.state == "refused":
+            _say(
+                conn,
+                row,
+                req.error or str(proposal),
+                idea_id=idea.id if idea is not None else None,
+            )
+            return
+
     if proposal.kind == "status" and proposal.error is None:
         from whyline.ideas import watch
 
