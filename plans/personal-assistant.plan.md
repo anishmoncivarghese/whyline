@@ -319,7 +319,7 @@ Rules every task keeps:
   - existing idea proposals are unchanged
   Verify with `uv run pytest -q tests/ideas/test_assistant.py tests/ideas/test_bot.py`. Change nothing else.
 
-- [ ] ASST-16: `do <task>` starts a relay task only after a tap
+- [x] ASST-16: `do <task>` starts a relay task only after a tap
   Edit `src/whyline/ideas/intent.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/worker.py`, `src/whyline/ideas/run.py`, `tests/ideas/test_intent.py`, `tests/ideas/test_bot.py`, and `tests/ideas/test_run.py` only.
   - `do <repo> <TASK-ID>` (or `do <TASK-ID>` with one allowed repo) creates a `do_task` request when that id is an unchecked task of the repo's configured relay plan.
   - The card shows the repo, branch, plan, task title, and Set up roles. It always needs a tap.
