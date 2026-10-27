@@ -16,7 +16,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from whyline.ideas import analyse, documents, memory, paths, reminders, store, xlsx
+from whyline.ideas import analyse, brief, documents, memory, paths, reminders, store, xlsx
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -196,6 +196,11 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     forget_m.add_argument("n", type=int, help="Line number to forget")
     mem_sub.add_parser("clear", help="Clear all memory")
 
+    brief_p = sub.add_parser("brief", help="Morning brief files")
+    brief_sub = brief_p.add_subparsers(dest="idea_brief_command", required=True)
+    cal = brief_sub.add_parser("calendar", help="Write today's calendar to today.md")
+    cal.add_argument("--preview", action="store_true", help="Print the file, not just its path")
+
 
 def run(args: argparse.Namespace) -> int:
     command = getattr(args, "idea_command", None)
@@ -204,7 +209,7 @@ def run(args: argparse.Namespace) -> int:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
             "export|documents|agents|assistant|doctor|telegram|service|work|"
-            "request|remind|repos|email|actions|memory",
+            "request|remind|repos|email|actions|memory|brief",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1539,6 +1544,29 @@ def cmd_remind(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_brief(args: argparse.Namespace) -> int:
+    if getattr(args, "idea_brief_command", None) != "calendar":
+        print("usage: whyline idea brief calendar [--preview]", file=sys.stderr)
+        return EXIT_USAGE
+    conn = _connect()
+    if conn is None:
+        return EXIT_ERROR
+    try:
+        names = brief.selected(conn)
+    finally:
+        conn.close()
+    try:
+        result = brief.calendar(brief.default_dir(), calendars=names)
+    except brief.CalendarError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_ERROR
+    except OSError as exc:
+        print(f"could not write the brief: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(result.text.rstrip("\n") if args.preview else result.path)
+    return EXIT_OK
+
+
 def cmd_actions(args: argparse.Namespace) -> int:
     from whyline.ideas import actions
 
@@ -1636,4 +1664,5 @@ _COMMANDS = {
     "email": cmd_email,
     "actions": cmd_actions,
     "memory": cmd_memory,
+    "brief": cmd_brief,
 }

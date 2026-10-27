@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from textual.widgets import DataTable
+from textual.widgets import DataTable, SelectionList
 
 from whyline.console import tui
 from whyline.console.assistant_screen import AssistantScreen
@@ -629,3 +629,67 @@ async def test_check_button_shows_the_shared_doctor(monkeypatch, assistant_home)
         text = _plain(screen.query_one("#as-check-result", tui.Static).render())
         assert "fail   memory: mode 0644" in text
     assert len(calls) == 1
+
+
+async def test_morning_brief_button_runs_the_cli_function(assistant_home, monkeypatch):
+    from whyline.ideas import brief, cli as ideas_cli
+
+    result = brief.Brief(assistant_home / "today.md", "# Today\n\n- 09:00-10:00 Call", ("Work", "Home"))
+    calls = []
+
+    def fake(out_dir, *, calendars, run=None):
+        calls.append((out_dir, list(calendars)))
+        return result
+
+    monkeypatch.setattr(brief, "calendar", fake)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        button = screen.query_one("#as-brief-grant", tui.Button)
+        assert str(button.label) == "Grant Calendar access and preview"
+        button.press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-brief-result", tui.Static).render())
+        assert "09:00-10:00 Call" in text
+        picker = screen.query_one("#as-brief-calendars", SelectionList)
+        assert picker.option_count == 2
+    assert ideas_cli.brief.calendar is fake  # the CLI calls this same attribute
+    assert calls == [(brief.default_dir(), [])]
+
+
+async def test_morning_brief_shows_the_denial(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    def denied(*a, **k):
+        raise brief.AccessDenied()
+
+    monkeypatch.setattr(brief, "calendar", denied)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-brief-grant", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-brief-result", tui.Static).render())
+        assert "System Settings > Privacy & Security > Calendars" in text
+
+
+async def test_morning_brief_picker_saves_the_chosen_calendars(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    result = brief.Brief(assistant_home / "today.md", "# Today", ("Work", "Home"))
+    monkeypatch.setattr(brief, "calendar", lambda *a, **k: result)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-brief-grant", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#as-brief-calendars", SelectionList).select("Work")
+        await pilot.pause()
+    conn = store.connect()
+    try:
+        assert brief.selected(conn) == ["Work"]
+    finally:
+        conn.close()

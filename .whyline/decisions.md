@@ -27203,3 +27203,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9a5e7910f27743ccbb0f3bb4ea8027d4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:00:04.177Z"} -->
+
+## 2026-10-27 — Calendar export: calendar() always writes today.md and returns text; --preview only changes what the CLI prints; calendar names are filtered in the JS and again in Python
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-18
+
+**Because:** One function serves CLI and console; Python filter keeps behaviour testable with an injected run and guards an old script
+
+**Rejected:**
+
+- Preview without writing — console and CLI would then run different code paths
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 926b8f109a7d47a684733427425daa2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:02:49.924Z"} -->
+
+## 2026-10-27 — ASST-18 passes Round 2 tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-18
+
+**Because:** All required calendar, CLI, and assistant-screen tests pass; the full suite completed with only the six previously documented unrelated legacy failures in console navigation and schema-version expectations
+
+**Rejected:**
+
+- Fail ASST-18 for the six full-suite failures — they are outside the task scope and match the known stale expectations from the incoming handoff
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 4c1464bff38f41cca9d4ed35a0e09758 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:14:45.450Z"} -->
+
+## 2026-10-27 — Approve ASST-18 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-18
+
+**Because:** The calendar export, EventKit JXA access handling, Markdown ordering/free-block/clash rendering, kv selection semantics, shared CLI/console function, denial guidance, and focused tests meet the task; all 94 required tests pass, and the full suite has only the six known unrelated stale console-navigation and schema-version failures
+
+**Rejected:**
+
+- Request changes — no task-scoped defect or missing required coverage was found
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 0f615ddca0af455eabb05c27f34abff9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:27:58.314Z"} -->

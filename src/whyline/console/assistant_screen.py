@@ -8,9 +8,18 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Input,
+    Label,
+    Select,
+    SelectionList,
+    Static,
+)
 
-from whyline.ideas import actions, memory, reminders, requests, store, telegram_in
+from whyline.ideas import actions, brief, memory, reminders, requests, store, telegram_in
 
 NO_ALLOWED_CHAT = "No allowed Telegram chat to deliver reminders."
 
@@ -73,6 +82,11 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-memory-clear { min-width: 10; width: auto; margin-right: 1; }
     AssistantScreen #as-memory-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-memory-error.-empty { display: none; }
+    AssistantScreen #as-brief-calendars { height: auto; max-height: 8; margin-top: 1; }
+    AssistantScreen #as-brief-calendars.-empty { display: none; }
+    AssistantScreen #as-brief-grant { width: auto; margin-top: 1; }
+    AssistantScreen #as-brief-result { height: auto; max-height: 20; }
+    AssistantScreen #as-brief-result.-empty { display: none; }
     AssistantScreen #as-history { height: 12; min-height: 4; }
     AssistantScreen #as-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-error.-empty { display: none; }
@@ -90,6 +104,7 @@ class AssistantScreen(ModalScreen):
             self._history = requests.history(conn, limit=50)
             self._reminders = reminders.pending(conn)
             self._memory = memory.show()
+            self._brief_calendars = brief.selected(conn)
             self._editing_memory_line: int | None = None
         finally:
             conn.close()
@@ -245,6 +260,14 @@ class AssistantScreen(ModalScreen):
                     id="as-memory-controls",
                 ),
                 Static("", id="as-memory-error", markup=False, classes="-empty"),
+                Label("Morning brief", classes="as-section", id="as-brief-title"),
+                SelectionList[str](
+                    *self._calendar_options(self._brief_calendars),
+                    id="as-brief-calendars",
+                    classes="" if self._brief_calendars else "-empty",
+                ),
+                Button("Grant Calendar access and preview", id="as-brief-grant"),
+                Static("", id="as-brief-result", markup=False, classes="-empty"),
                 Label("History", classes="as-section", id="as-history-title"),
                 table,
                 id="as-body",
@@ -273,6 +296,9 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-save":
             event.stop()
             self._save()
+        elif button_id == "as-brief-grant":
+            event.stop()
+            self._brief_preview()
         elif button_id in ("as-reminder-add", "as-add-reminder"):
             event.stop()
             self._add_reminder()
@@ -354,6 +380,50 @@ class AssistantScreen(ModalScreen):
         result.update(
             "\n".join(f"{c.level:<6} {c.name}: {c.detail}" for c in checks)
         )
+        result.set_class(False, "-empty")
+
+    @staticmethod
+    def _calendar_options(
+        names: list[str], chosen: list[str] | None = None
+    ) -> list[tuple[str, str, bool]]:
+        chosen = names if chosen is None else chosen
+        return [(name, name, name in chosen) for name in names]
+
+    def on_selection_list_selected_changed(
+        self, event: SelectionList.SelectedChanged
+    ) -> None:
+        if event.selection_list.id != "as-brief-calendars":
+            return
+        event.stop()
+        names = [str(value) for value in event.selection_list.selected]
+        conn = store.connect()
+        try:
+            brief.select(conn, names)
+        finally:
+            conn.close()
+        self._brief_calendars = names
+
+    def _brief_preview(self) -> None:
+        """Run the function `whyline idea brief calendar` runs, with the user here.
+
+        Running it from the console is what lets macOS show its Calendar
+        permission prompt.
+        """
+        result = self.query_one("#as-brief-result", Static)
+        try:
+            made = brief.calendar(brief.default_dir(), calendars=self._brief_calendars)
+        except brief.CalendarError as exc:
+            result.update(str(exc))
+        except OSError as exc:
+            result.update(f"Could not write the brief: {exc}")
+        else:
+            result.update(made.text.rstrip("\n"))
+            picker = self.query_one("#as-brief-calendars", SelectionList)
+            picker.clear_options()
+            picker.add_options(
+                self._calendar_options(list(made.calendars), self._brief_calendars)
+            )
+            picker.set_class(not made.calendars, "-empty")
         result.set_class(False, "-empty")
 
     def _set_error(self, message: str) -> None:

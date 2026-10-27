@@ -1362,3 +1362,53 @@ def test_doctor_email_authserv_check_configured_and_unset(ideas_home):
     assert configured.ok
     assert configured.level != "warn"
     assert configured.detail == "mx.example.com"
+
+
+def _brief_result(tmp_path):
+    from whyline.ideas import brief
+
+    path = tmp_path / "today.md"
+    return brief.Brief(path, "# Today\n\n- 09:00-10:00 Call\n", ("Work", "Home"))
+
+
+def test_brief_calendar_prints_the_path_and_uses_chosen_calendars(ideas_home, tmp_path, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    conn = store.connect()
+    try:
+        brief.select(conn, ["Work"])
+    finally:
+        conn.close()
+    calls = []
+
+    def fake(out_dir, *, calendars, run=None):
+        calls.append((out_dir, calendars))
+        return _brief_result(tmp_path)
+
+    monkeypatch.setattr(brief, "calendar", fake)
+    code, out, err = invoke(["idea", "brief", "calendar"], capsys)
+    assert code == 0, err
+    assert out.strip() == str(tmp_path / "today.md")
+    assert calls == [(brief.default_dir(), ["Work"])]
+
+
+def test_brief_calendar_preview_prints_the_text(ideas_home, tmp_path, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    monkeypatch.setattr(brief, "calendar", lambda *a, **k: _brief_result(tmp_path))
+    code, out, _ = invoke(["idea", "brief", "calendar", "--preview"], capsys)
+    assert code == 0
+    assert out == "# Today\n\n- 09:00-10:00 Call\n"
+
+
+def test_brief_calendar_reports_denial(ideas_home, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    def denied(*a, **k):
+        raise brief.AccessDenied()
+
+    monkeypatch.setattr(brief, "calendar", denied)
+    code, out, err = invoke(["idea", "brief", "calendar"], capsys)
+    assert code == 1
+    assert out == ""
+    assert "System Settings" in err
