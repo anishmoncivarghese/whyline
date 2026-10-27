@@ -1232,3 +1232,133 @@ def test_reminder_list_and_cancel(ideas_home, capsys):
     assert code == 0, err
     assert "buy milk" not in out
     assert "lock up" in out
+
+
+def _doctor_check(name, conn=None, now=None):
+    from whyline.ideas import cli as ideas_cli
+
+    checks = ideas_cli.assistant_doctor(conn, now=now)
+    return {c.name: c for c in checks}[name]
+
+
+def test_doctor_cli_and_console_share_assistant_doctor(
+    ideas_home, capsys, monkeypatch, pdf_available
+):
+    from whyline.ideas import cli as ideas_cli
+
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    seen = []
+    real = ideas_cli.assistant_doctor
+
+    def spy(conn, **kwargs):
+        seen.append(conn)
+        return real(conn, **kwargs)
+
+    monkeypatch.setattr(ideas_cli, "assistant_doctor", spy)
+    invoke(["idea", "doctor"], capsys)
+    assert len(seen) == 1
+
+
+def test_doctor_reports_the_mail_rule_script(ideas_home, tmp_path, monkeypatch):
+    from whyline.agents import mail
+
+    monkeypatch.setattr(mail, "supported", lambda: True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    conn = store.connect()
+    assert _doctor_check("mail rule script", conn).level == "warn"
+    email_in.allow(conn, "me@example.com")
+    assert not _doctor_check("mail rule script", conn).ok
+    folder = tmp_path / "Library" / "Application Scripts" / "com.apple.mail"
+    folder.mkdir(parents=True)
+    (folder / "whyline-idea.applescript").write_text("x")
+    assert _doctor_check("mail rule script", conn).ok
+
+
+def test_doctor_reports_the_last_email_seen(ideas_home):
+    conn = store.connect()
+    assert _doctor_check("last email", conn).detail == "none seen"
+    conn.execute(
+        "INSERT INTO inbound (at, kind, text, handled) "
+        "VALUES ('2026-10-01T09:00:00', 'email', '', 1)"
+    )
+    assert _doctor_check("last email", conn).detail == "2026-10-01T09:00:00"
+
+
+def test_doctor_flags_an_overdue_reminder(ideas_home):
+    conn = store.connect()
+    now = datetime(2026, 10, 27, 12, 0)
+    assert _doctor_check("reminders", conn, now).ok
+    reminders.create(conn, 1, datetime(2026, 10, 27, 9, 0), "call", now=now)
+    check = _doctor_check("reminders", conn, now)
+    assert not check.ok
+    assert "overdue" in check.detail
+    assert _doctor_check("reminders", conn, datetime(2026, 10, 27, 8, 0)).ok
+
+
+def test_doctor_checks_memory_is_0600(ideas_home):
+    ideas_home.mkdir()
+    memory_file = ideas_home / "memory.md"
+    assert _doctor_check("memory").ok
+    memory_file.write_text("1. a\n")
+    memory_file.chmod(0o644)
+    assert not _doctor_check("memory").ok
+    memory_file.chmod(0o600)
+    assert _doctor_check("memory").ok
+
+
+def test_doctor_reports_service_agents_and_authserv(ideas_home):
+    ideas_home.mkdir()
+    ideas_home.chmod(0o700)
+    names = [c.name for c in __import__("whyline.ideas.cli", fromlist=["x"]).assistant_doctor(None)]
+    for name in ("telegram token", "webhook", "service", "agents", "email authserv"):
+        assert name in names
+    assert not _doctor_check("telegram token").ok
+
+
+def test_doctor_agents_check_passes_for_an_enabled_unattended_provider(
+    ideas_home, tmp_path, monkeypatch
+):
+    from whyline.agents import capabilities
+
+    _set_enabled(monkeypatch, tmp_path, ["claude"])
+    monkeypatch.setattr(capabilities, "can_run_unattended", lambda name: True)
+    check = _doctor_check("agents", store.connect())
+    assert check.ok
+    assert "claude can run unattended" in check.detail
+
+
+def test_doctor_agents_check_fails_for_a_disabled_provider(
+    ideas_home, tmp_path, monkeypatch
+):
+    from whyline.agents import capabilities
+
+    _set_enabled(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(capabilities, "can_run_unattended", lambda name: True)
+    check = _doctor_check("agents", store.connect())
+    assert not check.ok
+    assert HINT.format(agent="claude") in check.detail
+
+
+def test_doctor_agents_check_fails_when_no_provider_is_cleared(
+    ideas_home, tmp_path, monkeypatch
+):
+    from whyline.agents import capabilities
+
+    _set_enabled(monkeypatch, tmp_path, ["claude", "codex"])
+    monkeypatch.setattr(capabilities, "can_run_unattended", lambda name: False)
+    check = _doctor_check("agents", store.connect())
+    assert not check.ok
+    assert "no agent can run unattended" in check.detail
+
+
+def test_doctor_email_authserv_check_configured_and_unset(ideas_home):
+    conn = store.connect()
+    unset = _doctor_check("email authserv", conn)
+    assert unset.level == "warn"
+    assert unset.detail == email_in.AUTHSERV_UNSET_NOTE
+    email_in.set_authserv(conn, "mx.example.com")
+    configured = _doctor_check("email authserv", conn)
+    assert configured.ok
+    assert configured.level != "warn"
+    assert configured.detail == "mx.example.com"

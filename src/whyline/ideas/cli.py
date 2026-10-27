@@ -13,6 +13,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from whyline.ideas import analyse, documents, memory, paths, reminders, store, xlsx
@@ -713,6 +714,12 @@ class _Check:
         self.level = level or ("ok" if ok else "fail")
 
 
+Check = _Check
+
+# A reminder this far past due was not sent: the Mac was asleep.
+_OVERDUE_AFTER = timedelta(minutes=5)
+
+
 def _no_wait(_seconds: float) -> None:
     """A check reports the failure. It does not pause for the poller's retry."""
     return None
@@ -1248,20 +1255,139 @@ def _email_authserv_check() -> _Check:
     return _Check("email authserv", True, str(value).strip())
 
 
-def cmd_doctor(_args: argparse.Namespace) -> int:
-    checks = (
-        _folder_check(),
-        _schema_check(),
-        _agents_check(),
-        _workbook_check(),
-        _pdf_check(),
-        _telegram_token_check(),
-        _allowed_chats_check(),
-        _service_check(),
-        _webhook_check(),
-        _description_check(),
-        _email_authserv_check(),
+def _mail_script_check(conn) -> _Check:
+    from whyline.agents import mail
+    from whyline.ideas import email_in
+
+    path = (
+        Path.home()
+        / "Library"
+        / "Application Scripts"
+        / "com.apple.mail"
+        / "whyline-idea.applescript"
     )
+    if not mail.supported():
+        return _Check("mail rule script", True, mail.NEEDS_MACOS, level="warn")
+    if path.is_file():
+        return _Check("mail rule script", True, str(path))
+    detail = "missing; run whyline idea email mail-script"
+    # Only an inbox that takes email needs the rule.
+    in_use = False
+    if conn is not None:
+        try:
+            in_use = bool(email_in.allowed_senders(conn))
+        except sqlite3.Error:
+            in_use = False
+    if in_use:
+        return _Check("mail rule script", False, detail)
+    return _Check("mail rule script", True, detail, level="warn")
+
+
+def _last_email_check(conn) -> _Check:
+    row = None
+    if conn is not None:
+        try:
+            row = conn.execute(
+                "SELECT at FROM inbound WHERE kind = 'email' "
+                "ORDER BY at DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.Error:
+            row = None
+    if row is None:
+        return _Check("last email", True, "none seen", level="warn")
+    return _Check("last email", True, str(row[0]))
+
+
+def _overdue_reminders_check(conn, now: datetime | None = None) -> _Check:
+    if conn is None:
+        return _Check("reminders", True, "no ideas database", level="warn")
+    moment = now or datetime.now().astimezone().replace(tzinfo=None)
+    try:
+        pending = reminders.pending(conn)
+    except sqlite3.Error:
+        return _Check("reminders", True, "no ideas database", level="warn")
+    late = []
+    for item in pending:
+        try:
+            due = reminders._parse_stamp(item.due_at)
+        except ValueError:
+            continue
+        if due.tzinfo is not None:
+            due = due.astimezone().replace(tzinfo=None)
+        if moment - due > _OVERDUE_AFTER:
+            late.append(item)
+    if late:
+        return _Check(
+            "reminders",
+            False,
+            f"{len(late)} overdue (the Mac may have slept); oldest due "
+            f"{late[0].due_at}",
+        )
+    return _Check("reminders", True, f"{len(pending)} pending, none overdue")
+
+
+def _memory_check() -> _Check:
+    # configured_home only. memory.memory_path calls paths.home, which
+    # creates the folder.
+    path = paths.configured_home() / "memory.md"
+    if not path.exists():
+        return _Check("memory", True, "no memory file yet")
+    if os.name == "nt":
+        return _Check("memory", True, str(path))
+    mode = path.stat().st_mode & 0o777
+    if mode != 0o600:
+        return _Check("memory", False, f"{path} mode is {mode:04o}, expected 0600")
+    return _Check("memory", True, f"{path} mode 0600")
+
+
+def assistant_doctor(conn, *, now: datetime | None = None) -> list[Check]:
+    """The assistant checks. ``whyline idea doctor`` and the console share this.
+
+    ``conn`` may be None when no ledger exists yet; the checks that need it
+    then warn instead of creating one.
+    """
+    return [
+        _telegram_token_check(),
+        _webhook_check(),
+        _service_check(),
+        _agents_check(),
+        _email_authserv_check(),
+        _mail_script_check(conn),
+        _last_email_check(conn),
+        _overdue_reminders_check(conn, now),
+        _memory_check(),
+    ]
+
+
+def _read_only_conn():
+    database = paths.configured_home() / "ideas.sqlite3"
+    if not database.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(
+            f"{database.resolve().as_uri()}?mode=ro", uri=True, timeout=10
+        )
+    except sqlite3.Error:
+        return None
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def cmd_doctor(_args: argparse.Namespace) -> int:
+    conn = _read_only_conn()
+    try:
+        checks = [
+            _folder_check(),
+            _schema_check(),
+            _workbook_check(),
+            _pdf_check(),
+            _allowed_chats_check(),
+            _description_check(),
+            *assistant_doctor(conn),
+        ]
+    finally:
+        if conn is not None:
+            conn.close()
     for check in checks:
         print(f"{check.level:<6} {check.name}: {check.detail}")
     return EXIT_OK if all(check.ok for check in checks) else EXIT_ERROR

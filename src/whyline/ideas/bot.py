@@ -163,37 +163,44 @@ CREATE TABLE IF NOT EXISTS jobs (
 )
 """
 
-HELP_TEXT = """\
-Commands:
-/new
-/list
-/status [id]
-/run <saved-agent>
-/do [repo] <task-id>
-/ask <repo> <question>
-/remind <when> <text>
-/remember <fact>
-/forget <n>
-/excel
-/brainstorm [id]
-/plan [id]
-/stop [id]
-/drop <id>
-/help
+# One example per registry verb. A verb missing here falls back to /<verb>.
+_HELP_EXAMPLES = {
+    "capture": "/new",
+    "brainstorm": "/brainstorm 3",
+    "status": "/status 3",
+    "run_agent": "/run my-agent",
+    "ask_repo": "/ask whyline where is the worker started?",
+    "summarise": "summarise: <pasted message>",
+    "remind": "/remind tomorrow 9:00 call the bank",
+    "remember": "/remember I prefer short answers",
+    "forget": "/forget 2",
+    "do_task": "/do whyline ASST-1",
+    "stop": "/stop 3",
+}
 
-Settings:
-models: claude, codex, grok
-passes: 1
-final: claude
-backup: codex
-timeout: 30
-repo: name
-implementer: grok
-tester: codex
-reviewer: claude
-release: human
-drafter: claude
-plan_reviewer: codex"""
+# Commands that are not assistant actions, so the policy cannot turn them off.
+_HELP_FIXED = (
+    ("list", "/list"),
+    ("excel", "/excel"),
+    ("plan", "/plan 3"),
+    ("drop", "/drop 3"),
+    ("help", "/help"),
+)
+
+
+def help_text(conn: sqlite3.Connection) -> str:
+    """Every enabled verb with one example, from the registry and the policy."""
+    current = actions.policy(conn)
+    lines = ["Commands:"]
+    for name, spec in actions.REGISTRY.items():
+        if not current[name]["enabled"]:
+            continue
+        example = _HELP_EXAMPLES.get(name, f"/{spec.verb}")
+        lines.append(f"{spec.verb}: {spec.summary}. Example: {example}")
+    for verb, example in _HELP_FIXED:
+        lines.append(f"{verb}: {example}")
+    return "\n".join(lines) + "\n\n" + _SETTINGS_TEMPLATE
+
 
 _SETTINGS_TEMPLATE = """\
 Settings:
@@ -670,7 +677,7 @@ def _command(
     if name == "list":
         _list(conn, row)
     elif name == "help":
-        _say(conn, row, HELP_TEXT)
+        _say(conn, row, help_text(conn))
     elif name == "excel":
         _excel(conn, row, None, http=http)
     elif name == "drop":

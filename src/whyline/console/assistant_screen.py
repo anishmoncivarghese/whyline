@@ -76,6 +76,8 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-history { height: 12; min-height: 4; }
     AssistantScreen #as-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-error.-empty { display: none; }
+    AssistantScreen #as-check-result { height: auto; max-height: 12; }
+    AssistantScreen #as-check-result.-empty { display: none; }
     AssistantScreen #as-buttons { height: auto; margin-top: 1; }
     AssistantScreen #as-buttons Button { min-width: 8; width: auto; margin-right: 1; }
     """
@@ -248,7 +250,9 @@ class AssistantScreen(ModalScreen):
                 id="as-body",
             ),
             Static("", id="as-error", markup=False, classes="-empty"),
+            Static("", id="as-check-result", markup=False, classes="-empty"),
             Horizontal(
+                Button("Check", id="as-check"),
                 Button("Save", id="as-save", variant="success"),
                 Button("Cancel", id="as-cancel"),
                 id="as-buttons",
@@ -263,6 +267,9 @@ class AssistantScreen(ModalScreen):
         if button_id == "as-cancel":
             event.stop()
             self.action_cancel()
+        elif button_id == "as-check":
+            event.stop()
+            self._check()
         elif button_id == "as-save":
             event.stop()
             self._save()
@@ -331,6 +338,23 @@ class AssistantScreen(ModalScreen):
             event.stop()
             n = int(event.input.id.removeprefix("as-memory-edit-input-"))
             self._save_memory_edit(n)
+
+    def _check(self) -> None:
+        from whyline.ideas import cli as ideas_cli
+
+        # The same function `whyline idea doctor` runs. Read-only, so it
+        # does not create a ledger the way store.connect would.
+        conn = ideas_cli._read_only_conn()
+        try:
+            checks = ideas_cli.assistant_doctor(conn)
+        finally:
+            if conn is not None:
+                conn.close()
+        result = self.query_one("#as-check-result", Static)
+        result.update(
+            "\n".join(f"{c.level:<6} {c.name}: {c.detail}" for c in checks)
+        )
+        result.set_class(False, "-empty")
 
     def _set_error(self, message: str) -> None:
         error = self.query_one("#as-error", Static)

@@ -608,3 +608,24 @@ async def test_cli_and_console_use_same_functions(assistant_home, monkeypatch):
         app.screen.query_one("#confirm", tui.Button).press()
         await pilot.pause()
         assert "clear" in calls
+
+
+async def test_check_button_shows_the_shared_doctor(monkeypatch, assistant_home):
+    from whyline.ideas import cli as ideas_cli
+
+    calls = []
+
+    def fake(conn, **_kwargs):
+        calls.append(conn)
+        return [ideas_cli.Check("memory", False, "mode 0644")]
+
+    monkeypatch.setattr(ideas_cli, "assistant_doctor", fake)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-check", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-check-result", tui.Static).render())
+        assert "fail   memory: mode 0644" in text
+    assert len(calls) == 1

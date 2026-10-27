@@ -2334,3 +2334,18 @@ def test_do_free_text_becomes_an_idea(conn, token, tmp_path, monkeypatch):
     reply2 = f"Saved as idea {ideas[1].id}. Brainstorm or plan it from its card."
     assert reply2 in messages
 
+
+
+def test_help_lists_each_enabled_verb_with_an_example(conn, token):
+    bot.handle(conn, _message("/help", message_id=9))
+    text = _outbox(conn, "message")[0]["text"]
+    for name, spec in actions.REGISTRY.items():
+        assert f"{spec.verb}: {spec.summary}. Example: " in text
+
+
+def test_help_drops_a_verb_the_policy_disabled(conn, token):
+    actions.set_policy(conn, "remind", enabled=False)
+    bot.handle(conn, _message("/help", message_id=9))
+    text = _outbox(conn, "message")[0]["text"]
+    assert "remind:" not in text
+    assert "remember:" in text
