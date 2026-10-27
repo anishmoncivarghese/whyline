@@ -502,6 +502,8 @@ def request(request_id: int) -> int:
             return _run_ask_request(conn, row)
         if row["action"] == "summarise":
             return _run_summarise_request(conn, row)
+        if row["action"] == "do_task":
+            return _run_do_task_request(conn, row)
         if row["action"] != "run_agent":
             error = f"unknown request action {row['action']}"
             assistant_requests.finish(conn, request_id, error=error)
@@ -624,6 +626,60 @@ def _run_summarise_request(conn: sqlite3.Connection, row) -> int:
         subject=subject,
         messages=summary.telegram_messages,
     )
+    _flush(conn)
+    return 0
+
+
+def _run_do_task_request(conn: sqlite3.Connection, row) -> int:
+    from whyline.ideas import run as ideas_run
+
+    try:
+        args = json.loads(row["args_json"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        args = {}
+    repo = args.get("repo")
+    task_id = args.get("task") or args.get("task_id")
+    plan = args.get("plan")
+    branch = args.get("branch")
+    if not isinstance(repo, str) or not repo or not isinstance(task_id, str) or not task_id:
+        error = "do_task request has no repository or task"
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+
+    chat_id = row["chat_id"]
+    try:
+        res = ideas_run.start_task(
+            conn,
+            repo,
+            task_id,
+            plan=plan if isinstance(plan, str) and plan else None,
+            branch=branch if isinstance(branch, str) and branch else None,
+            request_id=int(row["id"]),
+            chat_id=int(chat_id) if chat_id is not None else None,
+        )
+    except Exception as exc:
+        error = str(exc)
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+
+    if hasattr(res, "ok") and not res.ok:
+        error = res.reason or "Refused"
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+    elif isinstance(res, tuple) and not res[0]:
+        error = res[1] or "Refused"
+        assistant_requests.finish(conn, int(row["id"]), error=error)
+        _notify_request(conn, row, error)
+        _flush(conn)
+        return 1
+
+    assistant_requests.finish(conn, int(row["id"]))
     _flush(conn)
     return 0
 

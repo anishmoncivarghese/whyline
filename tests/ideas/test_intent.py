@@ -77,6 +77,8 @@ def _route(text, callback=None, *, open_question=False):
         ("drop 5", "drop", ("5",)),
         ("/DROP 12", "drop", ("12",)),
         ("drp 5", "drop", ("5",)),
+        ("do TASK-1", "do", ("TASK-1",)),
+        ("/do TASK-1", "do", ("TASK-1",)),
     ],
 )
 def test_commands_and_near_misses(text, name, args):
@@ -457,3 +459,15 @@ def test_a_blank_message_is_free():
 
 def test_a_lone_agent_name_is_free():
     assert _route("grok") == free("grok")
+
+
+def test_do_command_routes_task_and_trailing_args():
+    assert _route("do TASK-1") == command("do", ("TASK-1",))
+    assert _route("/do TASK-1") == command("do", ("TASK-1",))
+    assert _route("do repo1 TASK-1") == command("do", ("repo1", "TASK-1"))
+    assert _route("/do repo1 TASK-1") == command("do", ("repo1", "TASK-1"))
+    assert _route("do laundry") == command("do", ("laundry",))
+    assert _route("do write a python script") == command("do", ("write", "a", "python", "script"))
+    assert _route("do\nmultiline script") == command("do", ("multiline", "script"))
+    assert _route("/do") == command("do", ())
+    assert _route("do") == command("do", ())

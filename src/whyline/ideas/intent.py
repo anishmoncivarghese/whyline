@@ -17,6 +17,7 @@ from types import MappingProxyType
 # Fuzzy order is part of the match. difflib breaks a tie by the later name,
 # so this sequence stays stable.
 COMMANDS = (
+    "do",
     "new",
     "list",
     "status",
@@ -264,7 +265,7 @@ def _command(body: str) -> Intent | None:
     # Run is deliberately strict, but all of its trailing text still reaches
     # the command handler so it can give the deterministic refusal instead of
     # sending an ad-hoc prompt through the assistant.
-    if name in {"run", "ask", "remind", "remember", "forget"}:
+    if name in {"run", "ask", "remind", "remember", "forget", "do"}:
         return command(name, tuple(args))
     # Every other command is one line. A newline means prose or settings.
     if "\n" in body or "\r" in body:

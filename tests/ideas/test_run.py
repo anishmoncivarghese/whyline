@@ -617,3 +617,160 @@ def test_start_job_completion_retains_detached_relay_pid(conn, monkeypatch, fake
     row = conn.execute("SELECT state, pid FROM jobs WHERE id = ?", (job_id,)).fetchone()
     assert row["state"] == "done"
     assert row["pid"] == relay_pid
+
+
+def test_start_task_passes_only_task_id_and_caffeinates(conn, token, fake_repo, monkeypatch):
+    _mock_agents(monkeypatch)
+    setup.add_repo(conn, "repo1", fake_repo)
+
+    spawned = []
+    caffeinated = []
+
+    def fake_spawn(root, argv):
+        spawned.append({"root": root, "argv": list(argv)})
+        return 8899
+
+    def fake_caff(pid):
+        caffeinated.append(pid)
+
+    from whyline_relay import preflight
+
+    monkeypatch.setattr(preflight, "run", lambda *args, **kwargs: [])
+
+    res = ideas_run.start_task(
+        conn,
+        "repo1",
+        "TASK-1",
+        plan="plans/active.plan.md",
+        branch="custom/paused-run",
+        spawn_fn=fake_spawn,
+        caffeinate_fn=fake_caff,
+    )
+
+    assert res.ok is True
+    assert len(spawned) == 1
+    assert spawned[0]["argv"] == [
+        "start",
+        "--plan",
+        "plans/active.plan.md",
+        "--branch",
+        "custom/paused-run",
+        "--only",
+        "TASK-1",
+    ]
+    assert str(spawned[0]["root"]) == str(fake_repo)
+    assert caffeinated == [8899]
+
+
+def test_start_task_ignores_existing_auto_checkpoint(
+    conn, token, fake_repo, monkeypatch
+):
+    _mock_agents(monkeypatch)
+    setup.add_repo(conn, "repo1", fake_repo)
+
+    checkpoint = ideas_run.auto_run.checkpoint_path(fake_repo)
+    checkpoint.write_text('{"schema": 1, "phase": "relay", "name": "OTHER-9"}\n')
+    (fake_repo / ".git" / "info" / "exclude").write_text(
+        ".whyline/relay/auto-run.json\n"
+    )
+
+    from whyline_relay import preflight
+
+    preflight_calls = []
+
+    def fake_preflight(root, plan, *, scope):
+        preflight_calls.append((root, plan, scope))
+        return []
+
+    monkeypatch.setattr(preflight, "run", fake_preflight)
+    monkeypatch.setattr(
+        ideas_run.auto_run,
+        "resume",
+        lambda *args, **kwargs: pytest.fail("start_task resumed an Auto checkpoint"),
+    )
+
+    spawned = []
+    res = ideas_run.start_task(
+        conn,
+        "repo1",
+        "TASK-1",
+        spawn_fn=lambda root, argv: spawned.append((root, list(argv))) or 9901,
+        caffeinate_fn=lambda _pid: None,
+    )
+
+    assert res.ok is True
+    assert [(root, scope) for root, _plan, scope in preflight_calls] == [
+        (fake_repo, "full")
+    ]
+    assert spawned == [(fake_repo, ["start", "--only", "TASK-1"])]
+
+
+def test_start_task_refuses_when_repo_dirty(conn, token, fake_repo, monkeypatch):
+    _mock_agents(monkeypatch)
+    setup.add_repo(conn, "repo1", fake_repo)
+
+    (fake_repo / "untracked_file.txt").write_text("changes")
+
+    spawned = []
+    res = ideas_run.start_task(
+        conn,
+        "repo1",
+        "TASK-1",
+        spawn_fn=lambda r, argv: spawned.append(argv) or 123,
+    )
+
+    assert res.ok is False
+    assert "untracked_file.txt" in res.reason
+    assert spawned == []
+
+
+def test_start_task_refuses_when_relay_live(conn, token, fake_repo, monkeypatch):
+    _mock_agents(monkeypatch)
+    setup.add_repo(conn, "repo1", fake_repo)
+
+    RelayMock = namedtuple("RelayMock", ["pid", "task", "agent"])
+    import whyline_relay.running
+    monkeypatch.setattr(
+        whyline_relay.running,
+        "live",
+        lambda root: RelayMock(4321, "TASK-1", "codex") if str(root) == str(fake_repo) else None,
+    )
+
+    spawned = []
+    res = ideas_run.start_task(
+        conn,
+        "repo1",
+        "TASK-1",
+        spawn_fn=lambda r, argv: spawned.append(argv) or 123,
+    )
+
+    assert res.ok is False
+    assert "Waiting: a relay is running in repo1" in res.reason
+    assert spawned == []
+
+
+def test_start_task_refuses_when_preflight_raises(
+    conn, token, fake_repo, monkeypatch
+):
+    _mock_agents(monkeypatch)
+    setup.add_repo(conn, "repo1", fake_repo)
+
+    from whyline_relay import preflight
+
+    monkeypatch.setattr(
+        preflight,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("check crashed")),
+    )
+    spawned = []
+
+    res = ideas_run.start_task(
+        conn,
+        "repo1",
+        "TASK-1",
+        spawn_fn=lambda r, argv: spawned.append(argv) or 123,
+    )
+
+    assert res.ok is False
+    assert res.reason == "Preflight failed: check crashed"
+    assert spawned == []

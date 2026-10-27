@@ -22,6 +22,7 @@ from whyline.ideas import (
     setup,
     store,
     telegram_in,
+    worker,
 )
 from whyline_relay.agents import AgentCancelled
 
@@ -1854,4 +1855,482 @@ def test_bot_free_proposal_do_task_configured_active_plan_rejects_inactive(
     assert len(req_rows) == 1
     assert req_rows[0]["action"] == "do_task"
     assert req_rows[0]["state"] == "waiting_tap"
+
+
+def test_do_valid_task_id_waits_for_tap(conn, token, tmp_path, monkeypatch):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=repo, check=True)
+    wl_relay = repo / ".whyline" / "relay"
+    wl_relay.mkdir(parents=True)
+    (wl_relay / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo / "plan.md").write_text("- [ ] TASK-1: Build the rocket\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=repo, check=True)
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    spawned = []
+    monkeypatch.setattr(bot.requests, "confirm", lambda *a, **kw: None)
+
+    bot.handle(conn, _message("do TASK-1"))
+
+    req_rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+    assert len(req_rows) == 1
+    req = req_rows[0]
+    assert req["action"] == "do_task"
+    assert req["state"] == "waiting_tap"
+    args = json.loads(req["args_json"])
+    assert args["repo"] == "app"
+    assert args["task"] == "TASK-1"
+
+    card = _outbox(conn, "message")[-1]
+    text = card["text"]
+    assert "repo: app" in text
+    assert "branch:" in text
+    assert "plan: plan.md" in text
+    assert "task: TASK-1" in text
+    assert "Build the rocket" in text
+    assert "Set up roles:" in text
+    assert "grok" in text
+    assert "codex" in text
+
+    buttons = json.loads(card["buttons_json"])
+    labels = [btn["text"] for btn in buttons[0]]
+    assert labels == ["Confirm", "Cancel"]
+    assert spawned == []
+
+
+def test_do_with_repo_and_task_id(conn, token, tmp_path, monkeypatch):
+    repo_app = tmp_path / "app"
+    repo_app.mkdir(parents=True)
+    (repo_app / ".whyline" / "relay").mkdir(parents=True)
+    (repo_app / ".whyline" / "relay" / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo_app / "plan.md").write_text("- [ ] TASK-1: Write tests\n", encoding="utf-8")
+
+    repo_docs = tmp_path / "docs"
+    repo_docs.mkdir(parents=True)
+    (repo_docs / ".whyline" / "relay").mkdir(parents=True)
+    (repo_docs / ".whyline" / "relay" / "config.toml").write_text('plan = "docs.plan.md"\n[roles]\nimplementer = "codex"\nreviewer = "claude"\n', encoding="utf-8")
+    (repo_docs / "docs.plan.md").write_text("- [ ] DOCS-1: Write documentation\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"app": str(repo_app), "docs": str(repo_docs)},
+    )
+
+    bot.handle(conn, _message("do docs DOCS-1"))
+
+    req_rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+    assert len(req_rows) == 1
+    assert req_rows[0]["action"] == "do_task"
+    assert req_rows[0]["state"] == "waiting_tap"
+    args = json.loads(req_rows[0]["args_json"])
+    assert args["repo"] == "docs"
+    assert args["task"] == "DOCS-1"
+
+    card = _outbox(conn, "message")[-1]
+    assert "repo: docs" in card["text"]
+    assert "DOCS-1" in card["text"]
+    assert "Write documentation" in card["text"]
+
+
+def test_do_no_relay_starts_before_confirm(conn, token, tmp_path, monkeypatch):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo / "plan.md").write_text("- [ ] TASK-1: Build rocket\n", encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    called = []
+    from whyline.ideas import run as ideas_run
+    monkeypatch.setattr(ideas_run, "start_task", lambda *a, **kw: called.append(True))
+
+    bot.handle(conn, _message("do TASK-1"))
+
+    # Waiting tap, launcher/start_task was not called
+    assert called == []
+    req_rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+    assert len(req_rows) == 1
+    assert req_rows[0]["state"] == "waiting_tap"
+
+
+def test_do_confirm_starts_task(conn, token, tmp_path, monkeypatch):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo / "plan.md").write_text("- [ ] TASK-1: Build rocket\n", encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    started_tasks = []
+    from whyline.ideas import run as ideas_run
+    monkeypatch.setattr(
+        ideas_run,
+        "start_task",
+        lambda _conn, r_name, t_id, **kw: started_tasks.append((r_name, t_id)) or ideas_run.StartResult(True, None),
+    )
+
+    bot.handle(conn, _message("do TASK-1"))
+
+    card = _outbox(conn, "message")[-1]
+    data = _button(card, "Confirm")["callback_data"]
+
+    # Tap confirm
+    bot.handle(conn, _press(data, "cb-ok"))
+
+    req = conn.execute("SELECT * FROM requests ORDER BY id").fetchone()
+    assert req["state"] == "queued"
+
+    # Worker claims and runs the request
+    worker._start_one_request(conn, datetime.now(), spawn=lambda req_id: worker.request(req_id))
+    assert started_tasks == [("app", "TASK-1")]
+
+    finished_req = conn.execute("SELECT * FROM requests WHERE id = ?", (req["id"],)).fetchone()
+    assert finished_req["state"] == "done"
+
+
+def test_do_confirm_preserves_saved_plan_and_custom_branch(
+    conn, token, tmp_path, monkeypatch
+):
+    from whyline_relay import state as relay_state
+
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "configured.plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n',
+        encoding="utf-8",
+    )
+    (repo / "configured.plan.md").write_text(
+        "- [ ] CONFIG-1: Configured task\n", encoding="utf-8"
+    )
+    (repo / "active.plan.md").write_text(
+        "- [ ] ACTIVE-1: Resume the active task\n", encoding="utf-8"
+    )
+    relay_state.save(
+        repo,
+        relay_state.RelayState(
+            plan="active.plan.md",
+            branch="custom/paused-run",
+            task_id="ACTIVE-1",
+            round=1,
+            base_commit="",
+            paused_reason="paused",
+            log_path="",
+        ),
+    )
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    started_tasks = []
+    from whyline.ideas import run as ideas_run
+
+    def fake_start(_conn, repo_name, task_id, **kwargs):
+        started_tasks.append((repo_name, task_id, kwargs["plan"], kwargs["branch"]))
+        return ideas_run.StartResult(True, None)
+
+    monkeypatch.setattr(ideas_run, "start_task", fake_start)
+
+    bot.handle(conn, _message("do ACTIVE-1"))
+
+    req = conn.execute("SELECT * FROM requests ORDER BY id").fetchone()
+    args = json.loads(req["args_json"])
+    assert args["plan"] == "active.plan.md"
+    assert args["branch"] == "custom/paused-run"
+    card = _outbox(conn, "message")[-1]
+    assert "plan: active.plan.md" in card["text"]
+    assert "branch: custom/paused-run" in card["text"]
+
+    bot.handle(conn, _press(_button(card, "Confirm")["callback_data"], "cb-active"))
+    worker._start_one_request(
+        conn, datetime.now(), spawn=lambda req_id: worker.request(req_id)
+    )
+
+    assert started_tasks == [
+        ("app", "ACTIVE-1", "active.plan.md", "custom/paused-run")
+    ]
+
+
+def test_do_dirty_repo_or_running_relay_refuses_with_reason(conn, token, tmp_path, monkeypatch):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo / "plan.md").write_text("- [ ] TASK-1: Build rocket\n", encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    from whyline.ideas import run as ideas_run
+    monkeypatch.setattr(
+        ideas_run,
+        "start_task",
+        lambda _conn, r_name, t_id, **kw: ideas_run.StartResult(False, "Waiting: a relay is running in app"),
+    )
+
+    bot.handle(conn, _message("do TASK-1"))
+    card = _outbox(conn, "message")[-1]
+    data = _button(card, "Confirm")["callback_data"]
+
+    bot.handle(conn, _press(data, "cb-ok"))
+
+    req = conn.execute("SELECT * FROM requests ORDER BY id").fetchone()
+    assert req["state"] == "queued"
+
+    worker._start_one_request(conn, datetime.now(), spawn=lambda req_id: worker.request(req_id))
+
+    finished_req = conn.execute("SELECT * FROM requests WHERE id = ?", (req["id"],)).fetchone()
+    assert finished_req["state"] == "failed"
+    assert "Waiting: a relay is running in app" in finished_req["error"]
+
+    messages = [m["text"] for m in _outbox(conn, "message")]
+    assert any("Waiting: a relay is running in app" in m for m in messages)
+
+
+@pytest.mark.parametrize("text", ["do NO-TASK", "do app NO-TASK"])
+def test_do_unknown_id_is_refused(conn, token, tmp_path, monkeypatch, text):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo / "plan.md").write_text("- [ ] TASK-1: Build rocket\n", encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    bot.handle(conn, _message(text))
+
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM ideas").fetchone()[0] == 0
+
+    last_msg = _outbox(conn, "message")[-1]["text"]
+    assert "unknown task NO-TASK" in last_msg
+
+
+def test_do_lowercase_hyphenated_free_text_becomes_an_idea(
+    conn, token, tmp_path, monkeypatch
+):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n', encoding="utf-8"
+    )
+    (repo / "plan.md").write_text(
+        "- [ ] TASK-1: Build rocket\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    bot.handle(conn, _message("do clean-up"))
+
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+    ideas = store.list_ideas(conn)
+    assert [idea.original_text for idea in ideas] == ["do clean-up"]
+    assert _outbox(conn, "message")[-1]["text"] == (
+        f"Saved as idea {ideas[0].id}. Brainstorm or plan it from its card."
+    )
+
+
+def test_do_known_repo_with_non_task_prose_becomes_an_idea(
+    conn, token, tmp_path, monkeypatch
+):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n', encoding="utf-8"
+    )
+    (repo / "plan.md").write_text(
+        "- [ ] TASK-1: Build rocket\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    bot.handle(conn, _message("do app laundry"))
+
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+    ideas = store.list_ideas(conn)
+    assert [idea.original_text for idea in ideas] == ["do app laundry"]
+    assert _outbox(conn, "message")[-1]["text"] == (
+        f"Saved as idea {ideas[0].id}. Brainstorm or plan it from its card."
+    )
+
+
+def test_task_run_stop_button_requires_confirmation(
+    conn, token, tmp_path, monkeypatch
+):
+    repo = tmp_path / "app"
+    repo.mkdir()
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    from whyline.ideas import watch
+    from whyline_relay import running
+
+    monkeypatch.setattr(running, "live", lambda root: object())
+    stopped = []
+    monkeypatch.setattr(watch, "stop_relay", lambda root: stopped.append(root))
+
+    bot.handle(conn, _press("stop:0:0", "cb-stop"))
+
+    assert stopped == []
+    confirm_card = _outbox(conn, "message")[-1]
+    assert confirm_card["text"] == "Stop the running relay?"
+    stop_now = _button(confirm_card, "Stop now")["callback_data"]
+
+    bot.handle(conn, _press(stop_now, "cb-stop-now", update_id=3))
+
+    assert stopped == [repo]
+    assert _outbox(conn, "message")[-1]["text"] == "Stopped."
+
+
+def test_task_run_stop_cancel_invalidates_stop_now(
+    conn, token, tmp_path, monkeypatch
+):
+    repo = tmp_path / "app"
+    repo.mkdir()
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    from whyline.ideas import watch
+    from whyline_relay import running
+
+    monkeypatch.setattr(running, "live", lambda root: object())
+    stopped = []
+    monkeypatch.setattr(watch, "stop_relay", lambda root: stopped.append(root))
+
+    bot.handle(conn, _press("stop:0:0", "cb-stop"))
+    confirm_card = _outbox(conn, "message")[-1]
+    stop_now = _button(confirm_card, "Stop now")["callback_data"]
+    cancel = _button(confirm_card, "Cancel")["callback_data"]
+
+    bot.handle(conn, _press(cancel, "cb-cancel", update_id=3))
+    assert _outbox(conn, "message")[-1]["text"] == "Cancelled."
+
+    bot.handle(conn, _press(stop_now, "cb-stale-stop", update_id=4))
+
+    assert stopped == []
+    assert _outbox(conn, "message")[-1]["text"] == "No relay running."
+
+
+def test_task_run_stop_command_requires_confirmation(
+    conn, token, tmp_path, monkeypatch
+):
+    repo = tmp_path / "app"
+    repo.mkdir()
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    from whyline.ideas import watch
+    from whyline_relay import running
+
+    monkeypatch.setattr(running, "live", lambda root: object())
+    stopped = []
+    monkeypatch.setattr(watch, "stop_relay", lambda root: stopped.append(root))
+
+    bot.handle(conn, _message("/stop"))
+
+    assert stopped == []
+    confirm_card = _outbox(conn, "message")[-1]
+    assert confirm_card["text"] == "Stop the running relay?"
+    stop_now = _button(confirm_card, "Stop now")["callback_data"]
+
+    bot.handle(conn, _press(stop_now, "cb-command-stop-now", update_id=3))
+
+    assert stopped == [repo]
+    assert _outbox(conn, "message")[-1]["text"] == "Stopped."
+
+
+def test_task_run_stop_command_finds_live_later_repo(
+    conn, token, tmp_path, monkeypatch
+):
+    idle_repo = tmp_path / "idle"
+    idle_repo.mkdir()
+    live_repo = tmp_path / "live"
+    live_repo.mkdir()
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {"idle": str(idle_repo), "live": str(live_repo)},
+    )
+
+    from whyline_relay import running
+
+    monkeypatch.setattr(
+        running, "live", lambda root: object() if root == live_repo else None
+    )
+
+    bot.handle(conn, _message("/stop"))
+
+    confirm_card = _outbox(conn, "message")[-1]
+    assert confirm_card["text"] == "Stop the running relay?"
+    assert _button(confirm_card, "Stop now")["callback_data"] == "stop_yes:0:0"
+
+
+def test_task_run_stop_confirmation_only_stops_selected_relay(
+    conn, token, tmp_path, monkeypatch
+):
+    selected_repo = tmp_path / "selected"
+    selected_repo.mkdir()
+    unrelated_repo = tmp_path / "unrelated"
+    unrelated_repo.mkdir()
+    monkeypatch.setattr(
+        setup,
+        "list_repos",
+        lambda _c: {
+            "selected": str(selected_repo),
+            "unrelated": str(unrelated_repo),
+        },
+    )
+
+    from whyline.ideas import watch
+    from whyline_relay import running
+
+    monkeypatch.setattr(running, "live", lambda root: object())
+    stopped = []
+    monkeypatch.setattr(watch, "stop_relay", lambda root: stopped.append(root))
+
+    bot.handle(conn, _message("/stop"))
+    confirm_card = _outbox(conn, "message")[-1]
+    stop_now = _button(confirm_card, "Stop now")["callback_data"]
+
+    bot.handle(conn, _press(stop_now, "cb-scoped-stop", update_id=3))
+
+    assert stopped == [selected_repo]
+    assert _outbox(conn, "message")[-1]["text"] == "Stopped."
+
+
+def test_do_free_text_becomes_an_idea(conn, token, tmp_path, monkeypatch):
+    repo = tmp_path / "app"
+    repo.mkdir(parents=True)
+    (repo / ".whyline" / "relay").mkdir(parents=True)
+    (repo / ".whyline" / "relay" / "config.toml").write_text('plan = "plan.md"\n[roles]\nimplementer = "grok"\nreviewer = "codex"\n', encoding="utf-8")
+    (repo / "plan.md").write_text("- [ ] TASK-1: Build rocket\n", encoding="utf-8")
+
+    monkeypatch.setattr(setup, "list_repos", lambda _c: {"app": str(repo)})
+
+    bot.handle(conn, _message("do build an automated testing pipeline"))
+
+    # No requests created
+    assert conn.execute("SELECT count(*) FROM requests").fetchone()[0] == 0
+
+    # Idea created
+    ideas = store.list_ideas(conn)
+    assert len(ideas) == 1
+    assert ideas[0].original_text == "do build an automated testing pipeline"
+
+    # Outbox messages
+    messages = [m["text"] for m in _outbox(conn, "message")]
+    reply = f"Saved as idea {ideas[0].id}. Brainstorm or plan it from its card."
+    assert reply in messages
+
+    # Single-word free text like "do laundry" also becomes an idea
+    bot.handle(conn, _message("do laundry", update_id=3, message_id=8))
+    ideas = store.list_ideas(conn)
+    assert len(ideas) == 2
+    assert ideas[1].original_text == "do laundry"
+
+    messages = [m["text"] for m in _outbox(conn, "message")]
+    reply2 = f"Saved as idea {ideas[1].id}. Brainstorm or plan it from its card."
+    assert reply2 in messages
 

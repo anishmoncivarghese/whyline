@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from collections import namedtuple
 from pathlib import Path
 from typing import Any
 
@@ -66,14 +67,7 @@ def _get_repo_root(conn: sqlite3.Connection, idea: store.Idea) -> tuple[str, Pat
     return repo_name, root
 
 
-def check_repo_ready(conn: sqlite3.Connection, idea_id: int) -> tuple[bool, str | None]:
-    idea = store.get(conn, idea_id)
-    if idea is None:
-        return False, "No such idea"
-    repo_name, root = _get_repo_root(conn, idea)
-    if root is None or not root.exists():
-        return False, f"Repository not found for idea {idea_id}"
-
+def check_repo_clean_and_idle(root: Path, repo_name: str) -> tuple[bool, str | None]:
     # Check whyline_relay.running.live(root)
     try:
         from whyline_relay import running
@@ -110,6 +104,16 @@ def check_repo_ready(conn: sqlite3.Connection, idea_id: int) -> tuple[bool, str 
         return False, dirty_paths
 
     return True, None
+
+
+def check_repo_ready(conn: sqlite3.Connection, idea_id: int) -> tuple[bool, str | None]:
+    idea = store.get(conn, idea_id)
+    if idea is None:
+        return False, "No such idea"
+    repo_name, root = _get_repo_root(conn, idea)
+    if root is None or not root.exists():
+        return False, f"Repository not found for idea {idea_id}"
+    return check_repo_clean_and_idle(root, repo_name)
 
 
 def enqueue_start(conn: sqlite3.Connection, idea_id: int) -> bool:
@@ -220,10 +224,14 @@ def make_launcher(
     job_id: int | None = None,
     spawn_fn=None,
     caffeinate_fn=None,
+    only: str | None = None,
 ):
     def _launch(argv: list[str]) -> int:
+        cmd_argv = list(argv)
+        if only and "--only" not in cmd_argv:
+            cmd_argv.extend(["--only", only])
         return launch(
-            argv,
+            cmd_argv,
             root=root,
             conn=conn,
             idea_id=idea_id,
@@ -233,6 +241,138 @@ def make_launcher(
         )
 
     return _launch
+
+
+class StartResult(namedtuple("StartResult", ["ok", "reason", "pid"], defaults=[None, None])):
+    def __bool__(self) -> bool:
+        return bool(self.ok)
+
+    def get(self, key: str, default=None):
+        if key == "ok":
+            return self.ok
+        if key in ("reason", "error"):
+            return self.reason
+        if key == "pid":
+            return self.pid
+        if key == "phase":
+            return "relay" if self.ok else "preflight"
+        if key == "pause":
+            return {"reason": self.reason} if not self.ok else None
+        return default
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return super().__getitem__(item)
+        val = self.get(item)
+        if val is None and item not in ("reason", "pause", "pid"):
+            raise KeyError(item)
+        return val
+
+
+def start_task(
+    conn: sqlite3.Connection,
+    repo_name: str,
+    task_id: str,
+    *,
+    plan: str | None = None,
+    branch: str | None = None,
+    chat_id: int | None = None,
+    request_id: int | None = None,
+    launcher=None,
+    spawn_fn=None,
+    caffeinate_fn=None,
+) -> StartResult:
+    repos = setup.list_repos(conn)
+    path_str = repos.get(repo_name)
+    if not path_str:
+        return StartResult(False, f"Repository not found: {repo_name}")
+    root = Path(path_str)
+    if not root.exists():
+        return StartResult(False, f"Repository not found: {repo_name}")
+
+    ready, wait_reason = check_repo_clean_and_idle(root, repo_name)
+    if not ready:
+        if chat_id is not None:
+            bot._enqueue(conn, chat_id, "message", wait_reason or "Refused")
+        return StartResult(False, wait_reason)
+
+    spawned_pid: list[int] = []
+
+    def _track_spawn(r, argv):
+        spawner = spawn_fn or _spawn_relay
+        pid = spawner(r, argv)
+        spawned_pid.append(pid)
+        return pid
+
+    if launcher is not None:
+        def _wrapped_launcher(argv: list[str]) -> int:
+            cmd_argv = list(argv)
+            if task_id and "--only" not in cmd_argv:
+                cmd_argv.extend(["--only", task_id])
+            pid = launcher(cmd_argv)
+            if pid is not None:
+                spawned_pid.append(pid)
+            return pid
+        launch_fn = _wrapped_launcher
+    else:
+        launch_fn = make_launcher(
+            root,
+            conn,
+            idea_id=None,
+            job_id=None,
+            spawn_fn=_track_spawn,
+            caffeinate_fn=caffeinate_fn,
+            only=task_id,
+        )
+
+    try:
+        from whyline_relay import preflight
+        from whyline.ideas import assistant
+
+        if plan:
+            plan_file = Path(plan)
+            if not plan_file.is_absolute():
+                plan_file = root / plan_file
+        else:
+            plan_file = assistant._active_or_configured_plan_file(root)
+        checks = preflight.run(root, plan_file, scope="full")
+        fails = [c for c in checks if c.status == "FAIL"]
+        if fails:
+            fail_text = "\n".join(f"{c.status}  {c.message}" for c in fails)
+            if chat_id is not None:
+                bot._enqueue(conn, chat_id, "message", fail_text)
+            return StartResult(False, fail_text)
+    except Exception as exc:
+        fail_text = f"Preflight failed: {exc}"
+        if chat_id is not None:
+            bot._enqueue(conn, chat_id, "message", fail_text)
+        return StartResult(False, fail_text)
+
+    launch_args = ["start"]
+    if plan:
+        launch_args.extend(["--plan", plan])
+    if branch:
+        launch_args.extend(["--branch", branch])
+    launch_fn(launch_args)
+
+    pid = spawned_pid[-1] if spawned_pid else None
+
+    if chat_id is not None:
+        keyboard = bot._keyboard(
+            bot.buttons_for("running"),
+            0,
+            0,
+        )
+        bot._enqueue(
+            conn,
+            chat_id,
+            "message",
+            "Started. Ask /status any time.",
+            buttons=keyboard,
+            idea_id=0,
+        )
+
+    return StartResult(True, None, pid=pid)
 
 
 def run(

@@ -13,6 +13,7 @@ second move into ``scoring``.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -168,6 +169,7 @@ Commands:
 /list
 /status [id]
 /run <saved-agent>
+/do [repo] <task-id>
 /ask <repo> <question>
 /remind <when> <text>
 /remember <fact>
@@ -354,6 +356,31 @@ def request_text(request: requests.Request) -> str:
         args = {}
     if not isinstance(args, dict) or not args:
         return title
+    if request.action == "do_task":
+        lines = [title]
+        repo = args.get("repo")
+        branch = args.get("branch")
+        plan = args.get("plan")
+        task = args.get("task")
+        task_title = args.get("task title") or args.get("title")
+        roles = args.get("Set up roles") or args.get("roles")
+        handled = {"repo", "branch", "plan", "task", "title", "task title", "roles", "Set up roles"}
+        if repo:
+            lines.append(f"repo: {repo}")
+        if branch:
+            lines.append(f"branch: {branch}")
+        if plan:
+            lines.append(f"plan: {plan}")
+        if task:
+            lines.append(f"task: {task}")
+        if task_title:
+            lines.append(f"task title: {task_title}")
+        if roles:
+            lines.append(f"Set up roles: {roles}")
+        for key, value in args.items():
+            if key not in handled:
+                lines.append(f"{key}: {_show(value)}")
+        return "\n".join(lines)
     lines = [title]
     for key, value in args.items():
         lines.append(f"{key}: {_show(value)}")
@@ -618,11 +645,20 @@ def _unbound(conn, row, routed: intent.Intent) -> None:
         _say(conn, row, OUT_OF_DATE)
         return
     if routed.name == "cancel":
+        card = _card_for(conn, _field(row, "chat_id"))
+        if card is not None and card.get("kind") == "task_stop_confirm":
+            _clear_card(conn, _field(row, "chat_id"))
         _say(conn, row, "Cancelled.")
     elif routed.name == "confirm":
         _say(conn, row, "Confirmed.")
     elif routed.name == "edit":
         _say(conn, row, "Send a key: value message.\n\n" + _SETTINGS_TEMPLATE)
+    elif routed.name in ("status", "refresh"):
+        _say(conn, row, _relay_status(conn))
+    elif routed.name == "stop":
+        _ask_task_stop(conn, row)
+    elif routed.name == "stop_yes":
+        _stop_task_relay(conn, row)
     else:
         _say(conn, row, "Not available yet.")
 
@@ -653,6 +689,8 @@ def _command(
         _command_forget(conn, row, routed)
     elif name == "stop":
         _command_stop(conn, row, routed)
+    elif name == "do":
+        _command_do(conn, row, routed)
     elif name == "new":
         _say(conn, row, "Send the idea as a message.")
     else:
@@ -819,6 +857,157 @@ def _command_ask(conn, row, routed: intent.Intent) -> None:
         offer_request(conn, created)
     elif created.state == "refused":
         _say(conn, row, created.error or "Ask is turned off in the console.")
+
+
+def _looks_like_task_id(word: str) -> bool:
+    token = word.strip()
+    return bool(re.fullmatch(r"[A-Z][A-Z0-9_]*(?:-[A-Z0-9_]+)+", token)) or bool(
+        token.isupper() and any(c.isdigit() for c in token)
+    )
+
+
+def _command_do(conn: sqlite3.Connection, row, routed: intent.Intent) -> None:
+    repos = setup.list_repos(conn)
+    args = list(routed.args)
+
+    repo_name: str | None = None
+    task_id: str | None = None
+
+    if len(args) == 2 and args[0] in repos:
+        candidate_repo = args[0]
+        candidate = args[1]
+        root = Path(repos[candidate_repo])
+        plan_tasks = assistant._tasks_in_repo(root) if root.is_dir() else set()
+        if candidate in plan_tasks or _looks_like_task_id(candidate):
+            repo_name = candidate_repo
+            task_id = candidate
+    elif len(args) == 1 and len(repos) == 1:
+        candidate = args[0]
+        single_repo = next(iter(repos))
+        root = Path(repos[single_repo])
+        plan_tasks = assistant._tasks_in_repo(root) if root.is_dir() else set()
+        if candidate in plan_tasks or _looks_like_task_id(candidate):
+            repo_name = single_repo
+            task_id = candidate
+    elif len(args) == 1 and len(repos) > 1:
+        if _looks_like_task_id(args[0]):
+            _say(conn, row, "do needs a repo.")
+            return
+
+    if repo_name is None or task_id is None:
+        _capture_free_text_as_idea(conn, row, routed)
+        return
+
+    root = Path(repos[repo_name])
+    if not root.is_dir():
+        _say(conn, row, f"unknown repo {repo_name}")
+        return
+
+    plan_file = assistant._active_or_configured_plan_file(root)
+    if plan_file is None or not plan_file.is_file():
+        _say(conn, row, f"unknown task {task_id}")
+        return
+
+    try:
+        from whyline_relay import plan as relay_plan
+
+        tasks = relay_plan.parse(plan_file.read_text(encoding="utf-8"))
+    except Exception:
+        _say(conn, row, f"unknown task {task_id}")
+        return
+
+    matched = relay_plan.find(tasks, task_id)
+    if matched is None:
+        _say(conn, row, f"unknown task {task_id}")
+        return
+
+    if matched.checked:
+        _say(conn, row, f"task {task_id} is already done")
+        return
+
+    from whyline_relay import config as relay_config, state as relay_state
+
+    saved = relay_state.load(root)
+    if saved is not None and saved.branch:
+        branch = saved.branch
+    else:
+        try:
+            settings = relay_config.load(root)
+            prefix = getattr(settings, "branch_prefix", "relay/")
+        except Exception:
+            prefix = "relay/"
+        branch = f"{prefix}{plan_file.stem}"
+
+    try:
+        plan_str = str(plan_file.relative_to(root))
+    except Exception:
+        plan_str = plan_file.name
+
+    first_line = matched.text.splitlines()[0].strip()
+    if ":" in first_line:
+        task_title = first_line.partition(":")[2].strip() or first_line
+    else:
+        task_title = first_line
+
+    try:
+        from whyline_relay import roles as relay_roles
+
+        settings = relay_config.load(root)
+        roles_dict = relay_roles.current_roles(settings)
+        roles_str = ", ".join(f"{r}: {a}" for r, a in roles_dict.items())
+    except Exception:
+        roles_str = ""
+    if not roles_str:
+        roles_str = "implementer: codex, reviewer: claude"
+
+    chat_id = int(_field(row, "chat_id"))
+    req_args = {
+        "repo": repo_name,
+        "task": task_id,
+        "branch": branch,
+        "plan": plan_str,
+        "title": task_title,
+        "task title": task_title,
+        "roles": roles_str,
+        "Set up roles": roles_str,
+    }
+    created = requests.create(
+        conn,
+        channel="telegram",
+        actor=str(chat_id),
+        chat_id=chat_id,
+        action="do_task",
+        args=req_args,
+        proposed_by="keyword",
+    )
+    if created.state == "waiting_tap":
+        offer_request(conn, created)
+    elif created.state == "refused":
+        _say(conn, row, created.error or "Do task is turned off in the console.")
+
+
+def _capture_free_text_as_idea(
+    conn: sqlite3.Connection, row, routed: intent.Intent
+) -> None:
+    text = routed.text
+    if not text:
+        text = "do " + " ".join(routed.args) if routed.args else "do"
+    chat_id = int(_field(row, "chat_id"))
+    message_id = _message_id(row)
+    source_ref = f"{chat_id}:{message_id}" if message_id is not None else None
+    idea = store.add(conn, text, source="telegram", source_ref=source_ref)
+    line = _normalised_first_line(idea.original_text)
+    keyboard = _keyboard(buttons_for("captured"), idea.id, idea.revision)
+    with store._txn(conn):
+        if not _kv(conn, f"capture_card:{idea.id}"):
+            outbox_id = _insert_outbox(
+                conn, chat_id, "message", line, keyboard, None, idea.id
+            )
+            _kv_set(conn, f"capture_card:{idea.id}", "1")
+            _remember_card_in(
+                conn, chat_id, "capture", idea.id, None, outbox_id=outbox_id
+            )
+    _say(conn, row, f"Saved as idea {idea.id}. Brainstorm or plan it from its card.")
 
 
 def _settings(conn, row, routed: intent.Intent) -> None:
@@ -1420,6 +1609,10 @@ def _command_status(conn: store.sqlite3.Connection, row, routed: intent.Intent) 
         conn, chat_id=int(chat_id) if chat_id is not None else None, idea_id=idea_id
     )
     if idea is None:
+        relay_stat = _relay_status(conn)
+        if relay_stat and relay_stat != "No relay state found.":
+            _say(conn, row, relay_stat)
+            return
         _say(conn, row, "No idea in progress.")
         return
     _send_status(conn, row, idea)
@@ -1526,9 +1719,67 @@ def _command_stop(conn: store.sqlite3.Connection, row, routed: intent.Intent) ->
         conn, chat_id=int(chat_id) if chat_id is not None else None, idea_id=idea_id
     )
     if idea is None:
-        _say(conn, row, "No idea in progress.")
+        _ask_task_stop(conn, row, empty="No idea in progress.")
         return
     _ask_stop(conn, row, idea)
+
+
+def _ask_task_stop(
+    conn: store.sqlite3.Connection, row, *, empty: str = "No relay running."
+) -> None:
+    from whyline_relay import running
+
+    selected: tuple[str, Path] | None = None
+    for repo_name, raw_root in setup.list_repos(conn).items():
+        root = Path(raw_root)
+        if root.exists() and running.live(root):
+            selected = repo_name, root
+            break
+    if selected is None:
+        _say(conn, row, empty)
+        return
+
+    repo_name, _root = selected
+    keyboard = _keyboard(
+        (("Stop now", "stop_yes"), ("Cancel", "cancel")),
+        0,
+        0,
+    )
+    chat_id = _field(row, "chat_id")
+    outbox_id = _say(conn, row, "Stop the running relay?", keyboard)
+    if chat_id is not None and outbox_id is not None:
+        _remember_card(
+            conn,
+            int(chat_id),
+            "task_stop_confirm",
+            0,
+            {"repo": repo_name},
+            outbox_id=outbox_id,
+        )
+
+
+def _stop_task_relay(conn: store.sqlite3.Connection, row) -> None:
+    from whyline.ideas import watch
+    from whyline_relay import running
+
+    chat_id = _field(row, "chat_id")
+    card = _card_for(conn, chat_id)
+    fields = card.get("fields") if card else None
+    repo_name = fields.get("repo") if isinstance(fields, dict) else None
+    repos = setup.list_repos(conn)
+    raw_root = repos.get(repo_name) if isinstance(repo_name, str) else None
+    if card is None or card.get("kind") != "task_stop_confirm" or raw_root is None:
+        _say(conn, row, "No relay running.")
+        return
+
+    root = Path(raw_root)
+    if not root.exists() or not running.live(root):
+        _say(conn, row, "No relay running.")
+        return
+
+    watch.stop_relay(root)
+    _clear_card(conn, chat_id)
+    _say(conn, row, "Stopped.")
 
 
 def _ask_stop(conn: store.sqlite3.Connection, row, idea: store.Idea) -> None:

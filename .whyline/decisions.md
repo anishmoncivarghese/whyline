@@ -26502,3 +26502,467 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a18b4c5b749246ccbb15079d9ea3434e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-27T03:23:03.007Z"} -->
+
+## 2026-10-27 — Route do with valid unchecked task to do_task request waiting tap and free text to idea capture
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Allows interactive confirmation with full repo plan branch title and roles details while preventing free text from launching unattended relays
+
+**Rejected:**
+
+- Start relay directly on do task without tap — Violates safety constraint requiring user confirmation
+- Reject all free text starting with do — Breaks capturing ideas phrased with imperative do verb
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 36f5d14dfac341618d22a5d124b1bf27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T03:51:47.349Z"} -->
+
+## 2026-10-27 — Implement start_task with preflight and launcher passing only parameter
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Allows running single relay tasks decoupled from idea objects while enforcing clean tree, idle relay, and caffeinate
+
+**Rejected:**
+
+- Require idea object for all relay runs — Task execution from do command operates on plan tasks without requiring prior brainstorm or spec
+
+**Files:** src/whyline/ideas/run.py
+
+<!-- whyline-event: 93a5283a980a42f1b5b31d575a78c9e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T03:51:53.201Z"} -->
+
+## 2026-10-27 — Pass ASST-16 behavior despite unrelated full-suite expectation failures
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** The required focused suite exits 0 and verifies tap gating, worker launch after confirmation, refusal paths, free-text idea capture, and only-task forwarding; the full suite's six failures are in unchanged console navigation and schema-version tests outside ASST-16
+
+**Rejected:**
+
+- Fail ASST-16 for the full-suite failures — the failing console and schema expectations are outside every ASST-16 changed file and do not exercise this implementation
+
+**Files:** src/whyline/ideas/run.py
+
+<!-- whyline-event: dfb8bb6f76514c1c90408821a9977981 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:12:31.497Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 3 because free-text routing and Stop confirmation are incorrect
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The explicit-repo parser treats do <known-repo> <ordinary-word> as an unknown task instead of capturing it as an idea, and the unbound task card stops a relay immediately on Stop instead of using the confirmation flow used by idea runs; the focused suite passes but does not cover either case, while the full suite has only six established unrelated failures
+
+**Rejected:**
+
+- Approve — these behaviors violate the stated do <anything else> capture rule and Status/Stop parity with idea runs
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 1310e80decc241698702b8247c9db246 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:25:49.958Z"} -->
+
+## 2026-10-27 — Classify explicit-repo do arguments by plan membership or task-ID shape
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** This preserves valid and unknown task handling while ensuring do <known-repo> <ordinary prose> follows the required idea-capture path
+
+**Rejected:**
+
+- Treat every second token after a known repo as a task ID — ordinary prose would be incorrectly refused as an unknown task
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 75b6ddc9c2a14ea09f0e5c4d6ddb1d28 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:29:00.903Z"} -->
+
+## 2026-10-27 — Require confirmation before stopping an unbound task relay
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Task-run cards use idea_id zero, so their Stop action must render a Stop now confirmation before invoking the shared relay stopper
+
+**Rejected:**
+
+- Stop immediately from the unbound Stop action — this breaks the confirmation flow used by idea runs
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 972639e3869444abab98ba2802dde844 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:29:03.613Z"} -->
+
+## 2026-10-27 — Pass ASST-16 round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** All 244 focused intent, bot, and run tests pass; the full suite reaches completion with only the six established unrelated console-navigation and schema-version expectation failures
+
+**Rejected:**
+
+- Fail ASST-16 — none of the full-suite failures exercise this task and the required focused suite is green
+
+**Files:** tests/ideas/test_bot.py
+
+<!-- whyline-event: 4eb486058799479db096b26b581001c2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:38:50.260Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 6 because task Stop and preflight still fail unsafe
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** Task relays started without an idea are stopped immediately by the command-form stop path instead of receiving the confirmation used by idea runs, and start_task catches every exception from relay preflight then launches anyway; the 244 focused tests pass but do not cover either behavior, while the full suite has only the six established unrelated failures
+
+**Rejected:**
+
+- Approve — passing tests do not make an immediate destructive Stop or fail-open preflight safe
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py
+
+<!-- whyline-event: 90a6e4ea2d8741e2b21ded94cbf40253 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:49:52.750Z"} -->
+
+## 2026-10-27 — Fail task starts closed and confirm unbound relay stops
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Task-only runs have no idea record, so both command Stop and preflight errors need explicit safe handling: Stop renders the idea-run confirmation pattern, and any fallback preflight exception refuses before launch
+
+**Rejected:**
+
+- Stop an unbound relay immediately — this bypasses the confirmation required for idea runs
+- Launch after a preflight exception — an incomplete safety check cannot authorize starting the relay
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py, tests/ideas/test_bot.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 1036b8b83263453c83697338977bcd41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T04:51:11.871Z"} -->
+
+## 2026-10-27 — Pass ASST-16 round 8 test gate
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** The 246 focused intent, bot, and run tests passed; the full suite completed with only the six established unrelated console-navigation and schema-version failures, with no ASST-16 regression
+
+**Rejected:**
+
+- Fail ASST-16 for the full-suite baseline failures — all six are outside the task's selected files and match the previously documented baseline
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/intent.py, src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_bot.py, tests/ideas/test_intent.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 143e1c80ca28405f98402a27b2540775 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:00:45.671Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 9 for unscoped task-only stop
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The focused 246 tests pass and the full suite has only the six established unrelated failures, but _command_stop returns after the first configured repo and the unbound stop confirmation stops every live relay, so a task-only relay in a later repo cannot be stopped while confirming one task can stop unrelated relays
+
+**Rejected:**
+
+- Approve based on green focused tests — the tests omit the multi-repo task-only stop paths required for Status and Stop to work as for idea runs
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: f082926c83f3487997e176401357451a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:13:26.925Z"} -->
+
+## 2026-10-27 — Scope task-only Stop confirmation to the selected live repository
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Scanning all configured repositories finds a later live relay, while storing its repo on the confirmation card prevents the tap from stopping unrelated live relays
+
+**Rejected:**
+
+- Keep an unbound stop_yes callback with no card context — it cannot identify which relay the user confirmed and would stop every live repository
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 74246c49d3324cb6b825813ae1f0c973 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:14:54.848Z"} -->
+
+## 2026-10-27 — Pass ASST-16 round 11 test gate
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** All 248 focused intent, bot, and run tests passed; the full suite reproduced only the six established unrelated console-navigation and schema-version failures, with no ASST-16 regression
+
+**Rejected:**
+
+- Fail ASST-16 for the full-suite baseline failures — all six match the documented unrelated baseline and lie outside the task behavior
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/intent.py, src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_bot.py, tests/ideas/test_intent.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 8fc173dad5da4ffa8702a86c383a6108 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:27:41.072Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 12 because stale Auto checkpoints block task starts
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** start_task calls auto_run.resume whenever .whyline/relay/auto-run.json exists, so an unrelated or old Auto request returns This check is out of date and prevents a clean idle valid do task from launching; a direct reproduction succeeds without the checkpoint and fails with it
+
+**Rejected:**
+
+- Approve based on the green focused suite — the tests do not cover repositories that retain an Auto checkpoint
+
+**Files:** src/whyline/ideas/run.py
+
+<!-- whyline-event: c41fe931b8ad43a89bc83bf24d45dfc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:44:11.697Z"} -->
+
+## 2026-10-27 — Keep task-only launches independent of Auto checkpoints
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** A confirmed do task already names an existing relay-plan task, so it should run full preflight on that plan and launch start --only without validating or resuming unrelated Auto workflow state
+
+**Rejected:**
+
+- Resume auto-run.json when present — stale or unrelated checkpoints can reject or divert the selected task
+
+**Files:** src/whyline/ideas/run.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 6b704ad48f344bc3bfef7c8423242dcf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:46:37.390Z"} -->
+
+## 2026-10-27 — Pass ASST-16 task-only relay launch behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** The required focused suite passed, including tap gating, no launch before confirmation, refusal paths, free-text idea capture, only-task forwarding, and the stale Auto checkpoint regression; the full suite's six failures are in untouched console and schema-version tests unrelated to ASST-16
+
+**Files:** src/whyline/ideas/run.py
+
+<!-- whyline-event: 2f8b82122b95493586255bae1ebd30f4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T05:59:53.341Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 15 because task launch drops the selected plan and branch
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The focused suite passes and the full suite has only the six documented unrelated failures, but do_task resolves and displays the active relay state's plan and branch while start_task launches only 'start --only TASK-ID'; when a paused run uses a non-configured plan or custom branch, preflight validates one target and the child relay starts from another, so the tap does not authorize the work actually launched
+
+**Rejected:**
+
+- Approve from the green focused suite — it has no regression where saved relay state differs from current config
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/run.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 22c3a9f901af4fda8bd37f6894c14623 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T06:13:21.722Z"} -->
+
+## 2026-10-27 — Launch the exact plan and branch authorized by the do-task card
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** The active relay state may select a plan and custom branch that differ from current config, so preflight and the child relay must use the request snapshot shown before confirmation
+
+**Rejected:**
+
+- Recompute plan and branch in the worker — relay state or config can change after the tap and launch a target the user did not authorize
+- Pass only --only — the relay CLI then falls back to configured plan and derived branch, which can differ from the displayed active target
+
+**Files:** src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_bot.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 955188eaf1804662860e091763373423 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T06:15:29.393Z"} -->
+
+## 2026-10-27 — Pass ASST-16 round 17 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** The required focused suite passed all 250 tests, including preservation of the confirmed plan and branch, and the full suite reported only the same six documented unrelated console and schema-version failures
+
+**Files:** tests/ideas/test_run.py
+
+<!-- whyline-event: 4d87e8b4834044eb87dc8f2a22619a88 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T06:26:31.776Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 18 for cancellable-stop and free-text routing defects
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The focused suite passes and the full suite has only the six known unrelated failures, but cancelling the new task relay Stop card does not clear task_stop_confirm so its old Stop now button can still terminate the relay, and the broad task-id heuristic refuses single-token hyphenated prose such as clean-up instead of saving it as an idea
+
+**Rejected:**
+
+- Approve from passing tests — the suite lacks regressions for cancelled task-stop cards and hyphenated free text
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 0f1e180de36241dfab1f281105ac0788 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T06:40:48.090Z"} -->
+
+## 2026-10-27 — Retrying stage 'draft' once more.
+
+**Actor:** relay
+**Role:** resume
+**Task:** ASST-16
+
+**Because:** Stage 'draft' had hit its visit cap. Its saved visit count was lowered by one so this resume can enter it once more. max_visits is unchanged, so the pipeline fingerprint stays the same.
+
+<!-- whyline-event: abd5ff35a3094c8996a3dd54c749b725 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T10:23:32.072Z"} -->
+
+## 2026-10-27 — Reject ASST-16 round 18 because the requested regressions remain unfixed
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The focused suite passes and the full suite has only the six known unrelated failures, but Cancel on a task-stop confirmation leaves task_stop_confirm active so its old Stop now callback can still stop the relay, and the task-id heuristic still treats lowercase hyphenated free text such as clean-up as an unknown task instead of saving an idea; neither case has a regression test
+
+**Rejected:**
+
+- Approve based on passing focused tests — those tests do not exercise either outstanding behavior
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 7de6eb4eb87f4f49975ef92dad2c2a5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T10:37:07.284Z"} -->
+
+## 2026-10-27 — Treat only uppercase hyphenated unknown tokens as task IDs and invalidate cancelled relay-stop cards
+
+**Actor:** codex
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Exact configured task IDs are recognized from the plan, while the fallback heuristic must refuse ID-shaped tokens such as NO-TASK without misclassifying lowercase hyphenated prose such as clean-up; clearing task_stop_confirm makes an old Stop now callback inert
+
+**Rejected:**
+
+- Treat every hyphenated token as a task ID — this captures ordinary lowercase prose and violates free-text idea creation
+- Leave the stop card after Cancel — its callback can still stop a live relay
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: ab976d85cdae4b5ea904fbf37e592f0a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T10:39:30.636Z"} -->
+
+## 2026-10-27 — Verified Cancel clears task_stop_confirm and lowercase hyphenated text (clean-up) is saved as an idea
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-16
+
+**Because:** Both outstanding review regressions already have code and regression tests; focused suite passes
+
+**Files:** src/whyline/ideas/bot.py
+
+<!-- whyline-event: 229e57513de4432195cfe41bf3963eb4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T15:20:38.188Z"} -->
+
+## 2026-10-27 — Retrying stage 'test' once more.
+
+**Actor:** relay
+**Role:** resume
+**Task:** ASST-16
+
+**Because:** Stage 'test' had hit its visit cap. Its saved visit count was lowered by one so this resume can enter it once more. max_visits is unchanged, so the pipeline fingerprint stays the same.
+
+<!-- whyline-event: 8f42bf4f626848a5af9cf01cc9a160cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T15:20:48.917Z"} -->
+
+## 2026-10-27 — ASST-16 passes focused behavioral testing despite unrelated full-suite baseline failures
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-16
+
+**Because:** The exact focused suite passed all 252 tests, covering tap-gated task starts, preflight refusals, unknown IDs, free-text idea capture, and only=<id>; the full suite's six failures are confined to untouched console navigation and schema-version expectations
+
+**Files:** tests/ideas/test_bot.py
+
+<!-- whyline-event: f99097b67a484839ae370247e905b45a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T15:35:02.131Z"} -->
+
+## 2026-10-27 — ASST-16 review rejections are stale: round 19 fixed all three points, so retry review instead of redrafting
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The three shown rejections are from rounds 12-18; round 19 added Cancel-clears-task_stop_confirm (test_task_run_stop_cancel_invalidates_stop_now, via real tap callbacks), uppercase-only ID detection (test_do_lowercase_hyphenated_free_text_becomes_an_idea, test_do_unknown_id_is_refused for NO-TASK), and saved plan/branch passthrough (test_do_confirm_preserves_saved_plan_and_custom_branch); focused suite passes and the full suite has only the six known console/schema failures in untouched files. The relay paused because review hit its 6-visit cap before round 19 was reviewed
+
+**Rejected:**
+
+- Ask agent / redraft — would rework code that already addresses the review
+- Stash changes — discards working fixes
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 65512738883c471683281f7385d60640 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T16:25:09.244Z"} -->
+
+## 2026-10-27 — Retrying stage 'review' once more.
+
+**Actor:** relay
+**Role:** resume
+**Task:** ASST-16
+
+**Because:** Stage 'review' had hit its visit cap. Its saved visit count was lowered by one so this resume can enter it once more. max_visits is unchanged, so the pipeline fingerprint stays the same.
+
+<!-- whyline-event: c8c1f17771a248cc8e432e319cc166fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T16:33:17.246Z"} -->
+
+## 2026-10-27 — Approve ASST-16 round 19
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-16
+
+**Because:** The diff implements tap-gated do_task requests, validates configured-plan tasks, preserves plan and branch, starts through the clean/idle preflight and caffeinated launcher with --only, and supports task status/stop; the focused suite passed and the full suite's six failures are confined to untouched console and schema-version tests.
+
+**Rejected:**
+
+- Request changes — no task-scoped defect or unsafe behavior was found, and the six repository-suite failures are unrelated to the allowed ASST-16 files.
+
+**Files:** src/whyline/ideas/bot.py, src/whyline/ideas/intent.py, src/whyline/ideas/run.py, src/whyline/ideas/worker.py, tests/ideas/test_bot.py, tests/ideas/test_intent.py, tests/ideas/test_run.py
+
+<!-- whyline-event: 0c2068bb74894c92b16cf0fea47481e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T16:43:38.898Z"} -->
