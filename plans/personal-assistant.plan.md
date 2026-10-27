@@ -303,7 +303,7 @@ Rules every task keeps:
 
 ## Phase 4: plain English and starting work
 
-- [ ] ASST-15: The inbox assistant can propose the new actions
+- [x] ASST-15: The inbox assistant can propose the new actions
   Edit `src/whyline/ideas/assistant.py`, `src/whyline/ideas/bot.py`, `tests/ideas/test_assistant.py`, and `tests/ideas/test_bot.py` only.
   Extend the assistant's allowlist with `status`, `run_agent`, `ask_repo`, `remind`, `remember`, and `do_task`, each with an argument schema:
   - an agent name from `service.rows`
