@@ -334,7 +334,7 @@ Rules every task keeps:
   - the start passes `only=<id>`
   Verify with `uv run pytest -q tests/ideas/test_intent.py tests/ideas/test_bot.py tests/ideas/test_run.py`. Change nothing else.
 
-- [ ] ASST-17: Help text and the assistant doctor
+- [x] ASST-17: Help text and the assistant doctor
   Edit `src/whyline/ideas/bot.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_bot.py`, `tests/ideas/test_cli.py`, and `tests/console/test_assistant_screen.py` only.
   - `help` lists every enabled verb with one example each, generated from `actions.REGISTRY` and the policy.
   - Add `assistant_doctor(conn) -> list[Check]`, used by both `whyline idea doctor` and a `Check` button on `AssistantScreen`. It reports:
