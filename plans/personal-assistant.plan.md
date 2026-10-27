@@ -351,7 +351,7 @@ Rules every task keeps:
 
 ## Phase 5: morning brief
 
-- [ ] ASST-18: Calendar export
+- [x] ASST-18: Calendar export
   Add `src/whyline/ideas/brief.py`, `src/whyline/ideas/calendar_today.js`, and `tests/ideas/test_brief.py`. Edit `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_cli.py`, and `tests/console/test_assistant_screen.py` only.
   - `calendar_today.js` is JXA using `ObjC.import('EventKit')`. It lists today's events from the chosen calendars (title, start, end, location, all-day, calendar name) as JSON, and reports access denied distinctly.
   - `brief.calendar(out_dir, *, calendars, run=subprocess.run)` runs it through `/usr/bin/osascript -l JavaScript` with a 30-second timeout. It writes `today.md`: time-ordered events, free blocks of 30 minutes or more between 08:00 and 19:00, and clashes.
