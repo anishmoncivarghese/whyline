@@ -20,8 +20,8 @@ adapter = "generic"
 command = ["grok", "--output-format", "json", "--permission-mode", "dontAsk", "--deny", "Bash(git push:*)", "--deny", "Bash(rm -rf:*)", "--allow", "Edit", "--allow", "Bash(git add:*)", "--allow", "Bash(git commit:*)", "--allow", "Bash(git diff:*)", "--allow", "Bash(git status:*)", "--allow", "Bash(git log:*)", "--allow", "Bash(whyline:*)", "--allow", "Bash(python3:*)", "--allow", "Bash(uv run:*)", "--allow", "Bash(uv:*)", "--allow", "Bash(mkdir:*)", "--allow", "Bash(ls:*)", "--allow", "Bash(find:*)", "--allow", "Bash(touch:*)", "--allow", "Bash(cat:*)", "--allow", "Bash(grep:*)", "--allow", "Bash(head:*)", "--allow", "Bash(tail:*)", "--allow", "Bash(wc:*)", "--allow", "Bash(diff:*)", "--allow", "Bash(pwd:*)", "--allow", "Bash(git show:*)", "--allow", "Bash(git rev-parse:*)", "--allow", "Bash(git -C /Users/anish/whyline-relay status:*)", "--allow", "Bash(git -C /Users/anish/whyline-relay diff:*)", "--allow", "Bash(git -C /Users/anish/whyline-relay log:*)", "--allow", "Bash(git -C /Users/anish/whyline-relay show:*)", "--allow", "Bash(pytest:*)", "--allow", "Bash(.venv/bin/pytest:*)", "--allow", "Bash(.venv/bin/python:*)", "--allow", "WebFetch", "--rules", "Headless run: nobody can approve a prompt, and any shell command outside your allow list ends your whole turn. Run one plain command per shell call. Never use shell control flow (if, for, while, case), subshells, $(...), backticks, background &, or bash -c. Chain only with && or |, each part an allowed command. Prefer your read, search and edit tools to shell commands.", "--model", "grok-4.6", "-p"]
 
 [roles]
-implementer = "antigravity"
-tester      = "antigravity"
+implementer = "grok"
+tester      = "grok"
 reviewer    = "codex"
 release = "human"
 
