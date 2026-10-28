@@ -1,7 +1,7 @@
 [project]
 name = "whyline"
 version = "0.3.52"
-description = "Records why your code exists, and tells the next agent."
+description = "Put the Claude, Codex, Grok and Antigravity subscriptions you already have to work together: multi-model brainstorms, reviewed multi-agent coding, scheduled agents and a Telegram inbox. No API keys."
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
