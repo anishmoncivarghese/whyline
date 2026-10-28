@@ -631,6 +631,26 @@ async def test_check_button_shows_the_shared_doctor(monkeypatch, assistant_home)
     assert len(calls) == 1
 
 
+async def test_check_button_includes_the_morning_brief_checks(monkeypatch, assistant_home):
+    from whyline.ideas import brief
+    from whyline.ideas import cli as ideas_cli
+
+    for name in dir(ideas_cli):
+        if name.endswith("_check") and name.startswith("_"):
+            monkeypatch.setattr(ideas_cli, name, lambda *a, **k: ideas_cli.Check("x", True, "fine"))
+    monkeypatch.setattr(
+        brief, "check", lambda: [ideas_cli.Check("brief next run", True, "2026-10-29 07:00")]
+    )
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-check", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-check-result", tui.Static).render())
+        assert "brief next run: 2026-10-29 07:00" in text
+
+
 async def test_morning_brief_button_runs_the_cli_function(assistant_home, monkeypatch):
     from whyline.ideas import brief, cli as ideas_cli
 

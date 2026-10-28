@@ -689,3 +689,87 @@ def _status_line(conn: sqlite3.Connection) -> str:
     if failed:
         parts.append("agents failed last run: " + ", ".join(failed))
     return "whyline: " + ("; ".join(parts) if parts else "nothing to report")
+
+
+WAKE_HINT = (
+    "If the Mac sleeps at {at}, set a scheduled wake in System Settings > "
+    "Battery (or Energy) > Schedule, or run "
+    "`sudo pmset repeat wakeorpoweron MTWRF {wake}` yourself. whyline never runs it."
+)
+
+
+def _wake_time(at: str) -> str:
+    """Five minutes before ``at`` (HH:MM), as pmset wants HH:MM:SS."""
+    try:
+        moment = datetime.strptime(at, "%H:%M") - timedelta(minutes=5)
+    except ValueError:
+        return f"{at}:00"
+    return moment.strftime("%H:%M:00")
+
+
+def check(*, run=subprocess.run, now: datetime | None = None) -> list:
+    """Doctor checks for the morning brief.
+
+    Probes Calendar, Mail and Reminders only once the agent exists, so a
+    Mac that never set the brief up is not asked for any permission.
+    """
+    from whyline.agents import schedule, service
+    from whyline.ideas.cli import Check
+
+    agent = current()
+    if agent is None:
+        return [Check("morning brief", True, "not set up; see whyline idea brief setup", level="warn")]
+    results: list = []
+
+    try:
+        _fetch([], run)
+        results.append(Check("brief calendar", True, "Calendar access allowed"))
+    except CalendarError as exc:
+        results.append(Check("brief calendar", False, str(exc)))
+
+    try:
+        answer = _osascript("Mail", "Automation > Mail", MAIL_SCRIPT, ["1", "1"], run)
+        if answer.strip() == "not-running":
+            results.append(Check("brief mail", True, "Mail is not running, so no mail is read", level="warn"))
+        else:
+            results.append(Check("brief mail", True, "Mail is running and access is allowed"))
+    except CalendarError as exc:
+        results.append(Check("brief mail", False, str(exc)))
+
+    try:
+        _osascript("Reminders", "Automation > Reminders", REMINDERS_SCRIPT, [], run)
+        results.append(Check("brief reminders", True, "Reminders access allowed"))
+    except CalendarError as exc:
+        results.append(Check("brief reminders", False, str(exc)))
+
+    row = None
+    try:
+        row = next(
+            (r for r in service.rows(None) if getattr(r.defn, "name", None) == AGENT_NAME), None
+        )
+    except Exception:  # the agents store must not break the doctor
+        row = None
+    status = row.status if row else "not accepted"
+    accepted = status == "active"
+    if accepted:
+        hint = ""
+    elif status in ("paused", "needs_review"):
+        hint = "; resume it or accept its changes in the Agents screen"
+    else:
+        hint = "; run whyline idea brief setup"
+    results.append(Check("brief agent", accepted, f"{AGENT_NAME} {status}{hint}"))
+    outcome = row.last_outcome if row else ""
+    if not outcome:
+        results.append(Check("brief last run", True, "no run yet", level="warn"))
+    else:
+        results.append(
+            Check("brief last run", outcome in _OK_OUTCOMES, f"{outcome} ({row.last_run})")
+        )
+    moment = now or datetime.now()
+    upcoming = schedule.next_due(agent.trigger, now=moment)
+    when = upcoming.strftime("%Y-%m-%d %H:%M") if upcoming else "none in the next 8 days"
+    results.append(Check("brief next run", True, f"{when} ({agent.trigger.kind} at {agent.trigger.at})"))
+    results.append(
+        Check("brief wake", True, WAKE_HINT.format(at=agent.trigger.at, wake=_wake_time(agent.trigger.at)), level="info")
+    )
+    return results

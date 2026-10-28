@@ -27669,3 +27669,203 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a8fee98720a7495c83130582a0ef78d6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:42:32.005Z"} -->
+
+## 2026-10-28 — brief.check probes Calendar/Mail/Reminders only when the morning-brief agent exists; wired into assistant_doctor in cli.py
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-23
+
+**Because:** A Mac without the brief should not be asked for macOS permissions by the doctor, and existing doctor tests would otherwise run real osascript
+
+**Rejected:**
+
+- probe always — triggers permission prompts and hangs tests
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: eb7f7b8dbb1e4903bb12c12cf367ec20 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:53:51.674Z"} -->
+
+## 2026-10-28 — Pass ASST-23 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-23
+
+**Because:** All 64 focused brief and assistant-console tests pass; git diff --check is clean; the implementation reports the requested access, Mail state, agent acceptance, last outcome, next run and non-executing wake hint through the shared CLI/console doctor, and documentation covers the requested console-first workflow and limits. The full suite's six failures reproduce alone and are established stale console-navigation and schema-version test expectations unrelated to ASST-23.
+
+**Rejected:**
+
+- Fail ASST-23 for the six full-suite failures — they reproduce independently, touch no ASST-23 behavior, and require separate test-baseline maintenance rather than an application-code change for this task
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/ideas/cli.py, tests/ideas/test_brief.py, tests/console/test_assistant_screen.py, docs/assistant.md
+
+<!-- whyline-event: 895899c277154248a8c385f95b0f0c43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T06:05:20.012Z"} -->
+
+## 2026-10-28 — Reject ASST-23 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-23
+
+**Because:** brief.check invokes MAIL_SCRIPT with an empty argv even though the script reads argv items 1 and 2 before checking whether Mail is running, so the real doctor fails instead of reporting Mail access or running state; the mocked runner does not validate arguments
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: e68ec8dd763d499fade06705a4e34144 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T06:15:46.598Z"} -->
+
+## 2026-10-28 — brief.check passes hours=1 limit=1 to MAIL_SCRIPT and the test runner asserts the osascript argv
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-23
+
+**Because:** MAIL_SCRIPT reads argv items 1 and 2 before checking whether Mail is running; an empty argv failed the real doctor, and the mocked runner hid it
+
+**Rejected:**
+
+- edit MAIL_SCRIPT to default the args — changes the shared fetch script for a probe-only need
+
+**Files:** src/whyline/ideas/brief.py, tests/ideas/test_brief.py
+
+<!-- whyline-event: 2a7a1ea0bc8f4ed29ca299ba5851a050 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T06:36:45.217Z"} -->
+
+## 2026-10-28 — Pass ASST-23 Round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-23
+
+**Because:** All 64 focused brief and assistant-console tests pass and git diff --check is clean; the full suite has exactly the six documented unrelated baseline failures in stale console navigation and schema-version expectations, while the Round 5 Mail probe now validates the required osascript arguments
+
+**Rejected:**
+
+- Fail ASST-23 for the six full-suite failures — they are the established out-of-scope baseline and do not exercise ASST-23 behavior
+
+**Files:** src/whyline/ideas/brief.py, tests/ideas/test_brief.py, tests/console/test_assistant_screen.py
+
+<!-- whyline-event: e4400b3f69bc4b18b38ba19e74cf5a0a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T06:57:52.786Z"} -->
+
+## 2026-10-28 — Reject ASST-23 Round 6 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-23
+
+**Because:** brief.check treats only status accepted as accepted, but service.rows returns active for every normally accepted agent; the test fabricates the nonexistent accepted status, so the real console and doctor falsely fail a configured morning brief
+
+**Rejected:**
+
+- Approve based on the mocked test — its fake status does not match the agents state API
+
+**Files:** src/whyline/ideas/brief.py, tests/ideas/test_brief.py
+
+<!-- whyline-event: fc855661360f41258387c8d366b322f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T07:09:45.693Z"} -->
+
+## 2026-10-28 — brief.check treats agent status active as accepted; paused/needs_review get a resume/accept hint
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-23
+
+**Because:** service.rows returns active for accepted agents; accepted is never a status value
+
+**Rejected:**
+
+- keep accepted — never matches real state
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 6d7b6c7c28a74936b97d2c979b8901b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T07:22:44.270Z"} -->
+
+## 2026-10-28 — Pass ASST-23 Round 8 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-23
+
+**Because:** All 64 focused brief and assistant-console tests pass and git diff --check is clean; the full suite completed with exactly the six documented unrelated baseline failures in stale console navigation and schema-version-5 expectations
+
+**Rejected:**
+
+- Fail ASST-23 for the six full-suite failures — they are the established out-of-scope baseline and do not exercise the Round 8 active-status correction
+
+**Files:** src/whyline/ideas/brief.py, tests/ideas/test_brief.py, tests/console/test_assistant_screen.py
+
+<!-- whyline-event: 70625f11ea1c4788bed3daf599ef5a7a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T07:34:45.464Z"} -->
+
+## 2026-10-28 — Reject ASST-23 Round 9 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-23
+
+**Because:** docs/assistant.md says it covers every verb but omits the five fixed user-visible commands that src/whyline/ideas/bot.py lists in _HELP_FIXED: list, excel, plan, drop, and help; add each with an example and distinguish their fixed, non-configurable policy from the configurable action approvals
+
+**Rejected:**
+
+- Approve because all configurable registry verbs are documented — the task requires every verb, and the product help explicitly presents the five omitted fixed commands as verbs too
+
+**Files:** docs/assistant.md
+
+<!-- whyline-event: 0b2ad5dbf6964f5d9b92e106c91471fd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T07:45:23.559Z"} -->
+
+## 2026-10-28 — docs/assistant.md documents fixed verbs list/excel/plan/drop/help in a separate table
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-23
+
+**Because:** they are in bot._HELP_FIXED, always on, not in the action registry so no On/approval setting
+
+**Rejected:**
+
+- merge into configurable table — would imply they can be disabled
+
+**Files:** docs/assistant.md
+
+<!-- whyline-event: 8b04ea4e2ee84f128a4c2caa4ef2283d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T07:46:06.687Z"} -->
+
+## 2026-10-28 — Pass ASST-23 Round 11 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-23
+
+**Because:** git diff --check is clean; all 64 focused brief and assistant-console tests pass; the full suite completed with exactly the six established unrelated baseline failures in stale console navigation and schema-version-5 expectations
+
+**Rejected:**
+
+- Fail ASST-23 for the six full-suite failures — their exact identities match the documented out-of-scope baseline and none exercise the Round 11 fixed-verb documentation change
+
+**Files:** docs/assistant.md, tests/ideas/test_brief.py, tests/console/test_assistant_screen.py
+
+<!-- whyline-event: f2c02486c8f4441ca0f4129ce35cbf09 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T08:00:04.366Z"} -->
+
+## 2026-10-28 — Approve ASST-23 Round 12 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-23
+
+**Because:** The morning-brief doctor now reaches both CLI and console, reports the requested access, Mail, agent, outcome, schedule and wake information, the documentation covers every configurable and fixed verb plus the required setup, approval and limit topics, git diff --check is clean, and all 64 focused tests pass; the six full-suite failures are the unchanged unrelated baseline in stale navigation and schema-version expectations
+
+**Rejected:**
+
+- Request changes for the six full-suite failures — their exact tests exercise pre-existing console navigation and schema-version expectations outside ASST-23, not this implementation
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/ideas/cli.py, tests/ideas/test_brief.py, tests/console/test_assistant_screen.py, docs/assistant.md, docs/idea-inbox.md
+
+<!-- whyline-event: ec48cdda729943dbabb2cd1406ec3a50 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T08:10:30.235Z"} -->

@@ -1370,6 +1370,7 @@ def assistant_doctor(conn, *, now: datetime | None = None) -> list[Check]:
         _last_email_check(conn),
         _overdue_reminders_check(conn, now),
         _memory_check(),
+        *brief.check(),
     ]
 
 

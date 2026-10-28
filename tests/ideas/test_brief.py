@@ -463,3 +463,80 @@ def test_split_actions_removes_the_block():
     text, lines = brief.split_actions(_brief_text("remind in 1h x", "run y"))
     assert text == "# Brief\n\nBody.\n"
     assert lines == ["remind in 1h x", "run y"]
+
+
+def _check_runner(*, mail="ok\x1e", calendar_denied=False):
+    cal = json.dumps(
+        {"status": "denied"}
+        if calendar_denied
+        else {"status": "ok", "date": "2026-10-28", "calendars": [], "events": []}
+    )
+
+    def run(command, **kwargs):
+        if "JavaScript" in command:
+            return SimpleNamespace(returncode=0, stdout=cal, stderr="")
+        if command[2] == brief.MAIL_SCRIPT:
+            # the script reads argv items 1 and 2 (hours, limit) before anything else
+            assert command[:2] == [brief.OSASCRIPT, "-e"]
+            assert command[3:5] == ["1", "1"]
+            answer = mail
+        else:
+            answer = "ok\x1e"
+        return SimpleNamespace(returncode=0, stdout=answer, stderr="")
+
+    return run
+
+
+def _agent():
+    from whyline.agents import definitions as d
+
+    return SimpleNamespace(name=brief.AGENT_NAME, trigger=d.Trigger(kind="weekdays", at="07:00"))
+
+
+def test_check_warns_when_the_agent_is_not_set_up(monkeypatch):
+    monkeypatch.setattr(brief, "current", lambda: None)
+
+    def boom(*a, **k):
+        raise AssertionError("probed without an agent")
+
+    results = brief.check(run=boom)
+    assert [(c.name, c.level) for c in results] == [("morning brief", "warn")]
+
+
+def test_check_reports_access_agent_last_run_next_run_and_wake_hint(monkeypatch):
+    from whyline.agents import service
+
+    agent = _agent()
+    monkeypatch.setattr(brief, "current", lambda: agent)
+    row = SimpleNamespace(
+        defn=agent, status="active", last_outcome="failed", last_run="2026-10-27 07:00"
+    )
+    monkeypatch.setattr(service, "rows", lambda root: [row])
+    results = {
+        c.name: c for c in brief.check(run=_check_runner(), now=datetime(2026, 10, 28, 12, 0))
+    }
+    assert results["brief calendar"].ok
+    assert results["brief mail"].ok
+    assert results["brief reminders"].ok
+    assert results["brief agent"].ok
+    assert not results["brief last run"].ok
+    assert "failed" in results["brief last run"].detail
+    assert "2026-10-29 07:00" in results["brief next run"].detail
+    assert "pmset repeat wakeorpoweron MTWRF 06:55:00" in results["brief wake"].detail
+    assert "never runs it" in results["brief wake"].detail
+
+
+def test_check_reports_denied_calendar_and_mail_not_running(monkeypatch):
+    from whyline.agents import service
+
+    monkeypatch.setattr(brief, "current", lambda: _agent())
+    monkeypatch.setattr(service, "rows", lambda root: [])
+    results = {
+        c.name: c
+        for c in brief.check(run=_check_runner(mail="not-running", calendar_denied=True))
+    }
+    assert not results["brief calendar"].ok
+    assert "denied" in results["brief calendar"].detail
+    assert results["brief mail"].level == "warn"
+    assert not results["brief agent"].ok
+    assert results["brief last run"].level == "warn"

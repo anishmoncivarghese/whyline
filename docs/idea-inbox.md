@@ -69,6 +69,11 @@ for other agents.
 `<id>` is the number `whyline idea telegram setup` printed next to the
 chat. It is not a phone number.
 
+## More
+
+[The assistant](assistant.md) covers verbs, approval, memory, reminders
+and the morning brief.
+
 ## Troubleshooting
 
 `whyline idea doctor` checks the bot token, the allowed chats, whether
