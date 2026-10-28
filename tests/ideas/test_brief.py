@@ -322,3 +322,85 @@ def test_tasks_denied(tmp_path, ideas_home):
     run = _mail_run("", returncode=1, stderr="Not authorized (-1743)")
     with pytest.raises(brief.AccessDenied):
         brief.reminders(tmp_path, run=run)
+
+
+@pytest.fixture
+def agent_env(tmp_path, monkeypatch, ideas_home):
+    from whyline import account
+    from whyline.agents import telegram
+    from whyline.ideas import telegram_in
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex"})
+    monkeypatch.setattr(telegram, "known_chats", lambda: {42: "Me (private)", 7: "Other"})
+    conn = store.connect()
+    try:
+        telegram_in._save_allowed(conn, [42])
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_setup_writes_the_definition(agent_env):
+    from whyline.agents import deliveries, state
+
+    defn = brief.setup(at="06:45", runner="claude", backup=["codex"], chat_id=42)
+    assert defn.name == "morning-brief" and defn.kind == "personal"
+    assert (defn.trigger.kind, defn.trigger.at) == ("weekdays", "06:45")
+    assert defn.before == "brief-collect"
+    assert (defn.runner, defn.backup) == ("claude", ("codex",))
+    assert defn.timeout_minutes == 15
+    for part in ("schedule", "top 3 priorities", "suggested reply", "Clashes",
+                 "brief-actions", "at most 5", "remind <when> <text>",
+                 "Never act", "Never invent"):
+        assert part in defn.instructions
+    sent = deliveries.get(defn.agent_id)
+    assert sent.telegram_chat == 42 and not sent.email and not sent.command
+    assert state.check_hash(state.connect(), defn) != "needs_review"
+
+
+def test_setup_again_updates_without_duplicating(agent_env):
+    from whyline.agents import definitions as d
+
+    from whyline.agents import deliveries
+    from whyline.ideas import telegram_in
+
+    conn = store.connect()
+    try:
+        telegram_in._save_allowed(conn, [42, 7])
+        conn.commit()
+    finally:
+        conn.close()
+    brief.setup(at="07:00", runner="claude", chat_id=42)
+    assert brief.current_chat() == 42
+    brief.setup(at="08:15", runner="codex", chat_id=7)
+    found = [a for a in d.discover(None) if isinstance(a, d.AgentDef)]
+    assert [a.name for a in found] == ["morning-brief"]
+    assert (found[0].trigger.at, found[0].runner) == ("08:15", "codex")
+    assert brief.current().runner == "codex"
+    assert brief.current_chat() == 7
+    assert deliveries.get(found[0].agent_id).telegram_chat == 7
+    assert len(deliveries.load_all()) == 1
+
+
+@pytest.mark.parametrize("runner,backup", [("grok", ()), ("claude", ("grok",)), ("antigravity", ())])
+def test_setup_refuses_disabled_or_uncleared_providers(agent_env, monkeypatch, runner, backup):
+    from whyline import account
+
+    # grok is disabled; antigravity is enabled but not cleared for unattended runs.
+    monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex", "antigravity"})
+    with pytest.raises(brief.SetupError, match="not enabled"):
+        brief.setup(runner=runner, backup=backup, chat_id=42)
+    assert brief.current() is None
+
+
+def test_setup_refuses_a_chat_that_is_not_allowed(agent_env):
+    with pytest.raises(brief.SetupError, match="not an allowed inbox chat"):
+        brief.setup(runner="claude", chat_id=7)
+    assert brief.current() is None
+
+
+def test_setup_refuses_a_bad_time(agent_env):
+    with pytest.raises(brief.SetupError, match="24-hour"):
+        brief.setup(at="7am", runner="claude", chat_id=42)
+    assert brief.current() is None

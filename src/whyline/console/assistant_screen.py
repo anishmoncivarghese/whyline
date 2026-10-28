@@ -92,6 +92,14 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-brief-grant-mail { width: auto; margin-top: 1; }
     AssistantScreen #as-brief-mail-result { height: auto; max-height: 20; }
     AssistantScreen #as-brief-mail-result.-empty { display: none; }
+    AssistantScreen #as-brief-setup-warning { height: auto; margin-top: 1; color: $warning; }
+    AssistantScreen #as-brief-setup-row { height: auto; margin-top: 1; }
+    AssistantScreen #as-brief-setup-row > * { margin-right: 1; }
+    AssistantScreen #as-brief-at { width: 10; }
+    AssistantScreen #as-brief-runner, AssistantScreen #as-brief-backup,
+    AssistantScreen #as-brief-chat { width: 24; }
+    AssistantScreen #as-brief-setup-result { height: auto; max-height: 4; }
+    AssistantScreen #as-brief-setup-result.-empty { display: none; }
     AssistantScreen #as-history { height: 12; min-height: 4; }
     AssistantScreen #as-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-error.-empty { display: none; }
@@ -111,9 +119,12 @@ class AssistantScreen(ModalScreen):
             self._memory = memory.show()
             self._brief_calendars = brief.selected(conn)
             self._brief_mailboxes = brief.mailboxes_selected(conn)
+            self._brief_chats = telegram_in.allowed_chats(conn)
             self._editing_memory_line: int | None = None
         finally:
             conn.close()
+        self._brief_providers = brief.eligible_providers()
+        self._brief_agent = brief.current()
 
     def _make_reminder_row(self, reminder: reminders.Reminder) -> Horizontal:
         due = reminder.due_at.replace("T", " ")[:16]
@@ -281,6 +292,8 @@ class AssistantScreen(ModalScreen):
                 ),
                 Button("Grant Mail and Reminders access and preview", id="as-brief-grant-mail"),
                 Static("", id="as-brief-mail-result", markup=False, classes="-empty"),
+                Static(brief.SEND_WARNING, id="as-brief-setup-warning", markup=False),
+                *self._brief_setup_widgets(),
                 Label("History", classes="as-section", id="as-history-title"),
                 table,
                 id="as-body",
@@ -294,6 +307,78 @@ class AssistantScreen(ModalScreen):
                 id="as-buttons",
             ),
         )
+
+    def _brief_setup_widgets(self) -> list:
+        agent = self._brief_agent
+        providers = [(name, name) for name in self._brief_providers]
+        backups = [(name, name) for name in self._brief_providers]
+        chats = [(self._chat_label(cid), cid) for cid in self._brief_chats]
+        runner = Select(
+            providers, prompt="Runner", id="as-brief-runner",
+            value=agent.runner if agent and agent.runner in self._brief_providers
+            else Select.BLANK,
+        )
+        backup_now = agent.backup[0] if agent and agent.backup else ""
+        backup = Select(
+            backups, prompt="Backup (none)", id="as-brief-backup",
+            value=backup_now if backup_now in self._brief_providers else Select.BLANK,
+        )
+        saved_chat = brief.current_chat() if agent else None
+        if saved_chat in self._brief_chats:
+            chat_now = saved_chat
+        else:
+            chat_now = self._brief_chats[0] if self._brief_chats else Select.BLANK
+        chat = Select(chats, prompt="Telegram chat", id="as-brief-chat", value=chat_now)
+        return [
+            Horizontal(
+                Input(
+                    value=agent.trigger.at if agent else "07:00",
+                    placeholder="HH:MM", id="as-brief-at",
+                ),
+                runner,
+                backup,
+                chat,
+                Button("Update" if agent else "Create morning brief", id="as-brief-setup"),
+                id="as-brief-setup-row",
+            ),
+            Static("", id="as-brief-setup-result", markup=False, classes="-empty"),
+        ]
+
+    @staticmethod
+    def _chat_label(chat_id: int) -> str:
+        from whyline.agents import telegram
+
+        try:
+            label = telegram.known_chats().get(chat_id, "")
+        except Exception:
+            label = ""
+        return f"{label} ({chat_id})" if label else str(chat_id)
+
+    def _brief_setup(self) -> None:
+        """Run the function `whyline idea brief setup` runs."""
+        result = self.query_one("#as-brief-setup-result", Static)
+        runner = self.query_one("#as-brief-runner", Select).value
+        backup = self.query_one("#as-brief-backup", Select).value
+        chat = self.query_one("#as-brief-chat", Select).value
+        at = self.query_one("#as-brief-at", Input).value.strip()
+        try:
+            if runner is Select.BLANK:
+                raise brief.SetupError("Choose a runner.")
+            if chat is Select.BLANK:
+                raise brief.SetupError("Choose an allowed Telegram chat.")
+            defn = brief.setup(
+                at=at,
+                runner=str(runner),
+                backup=() if backup is Select.BLANK else (str(backup),),
+                chat_id=int(chat),
+            )
+        except (brief.SetupError, ValueError, OSError) as exc:
+            result.update(str(exc))
+        else:
+            result.update(f"Morning brief set: weekdays at {defn.trigger.at}, {defn.runner}.")
+            self._brief_agent = defn
+            self.query_one("#as-brief-setup", Button).label = "Update"
+        result.set_class(False, "-empty")
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -312,6 +397,9 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-brief-grant":
             event.stop()
             self._brief_preview()
+        elif button_id == "as-brief-setup":
+            event.stop()
+            self._brief_setup()
         elif button_id == "as-brief-grant-mail":
             event.stop()
             self._mail_preview()

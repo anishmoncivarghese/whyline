@@ -497,6 +497,121 @@ def _failed_agents() -> list[str]:
     return names
 
 
+AGENT_NAME = "morning-brief"
+TIMEOUT_MINUTES = 15
+
+INSTRUCTIONS = """You write my morning brief.
+Today's files are in the working folder: today.md (calendar), mail.md (unread
+and flagged mail) and tasks.md (reminders, whyline reminders, memory and
+status). Use only what those files say.
+
+Write these sections, in this order:
+1. Today's schedule: every event in time order.
+2. The top 3 priorities for today.
+3. Emails that need a reply. For each, give who it is from, what it asks, and
+   a suggested reply as text I can copy.
+4. Clashes and preparation needed: overlapping events, and anything I should
+   prepare before an event.
+5. End with one fenced block tagged brief-actions that lists at most 5
+   suggested reminders, one per line, as `remind <when> <text>`.
+
+Never act: do not send, reply, accept, create or change anything.
+Never invent events, emails or people that are not in the files.
+If a file says it has nothing, say so plainly.
+"""
+
+SEND_WARNING = (
+    "Each brief sends your calendar and email excerpts to the chosen provider "
+    "and through Telegram."
+)
+
+
+class SetupError(ValueError):
+    """The morning brief agent could not be set up."""
+
+
+def eligible_providers() -> list[str]:
+    """Providers that are enabled in Settings and cleared to run unattended."""
+    from whyline import account
+    from whyline.agents import capabilities
+    from whyline.agents import definitions as d
+
+    enabled = account.enabled_agents()
+    return [c for c in d.CLIS if c in enabled and capabilities.can_run_unattended(c)]
+
+
+def current():
+    """The saved personal morning-brief agent, or None."""
+    from whyline.agents import definitions as d
+
+    for item in d.discover(None):
+        if isinstance(item, d.AgentDef) and item.kind == "personal" and item.name == AGENT_NAME:
+            return item
+    return None
+
+
+def current_chat() -> int | None:
+    """The Telegram chat the saved morning-brief agent delivers to, or None."""
+    from whyline.agents import deliveries
+
+    agent = current()
+    if agent is None:
+        return None
+    sent = deliveries.get(agent.agent_id)
+    return (sent.telegram_chat or None) if sent else None
+
+
+def setup(*, at: str = "07:00", runner: str, backup=(), chat_id: int):
+    """Create or update the personal `morning-brief` agent and accept it.
+
+    `whyline idea brief setup` and the console both call this. It rewrites the
+    same file each time, so the agent is never duplicated.
+    """
+    from dataclasses import replace
+
+    from whyline.agents import deliveries, service, telegram
+    from whyline.agents import definitions as d
+    from whyline.agents import paths as agent_paths
+    from whyline.ideas import store, telegram_in
+
+    backup = tuple(backup)
+    ok = eligible_providers()
+    for cli in (runner, *backup):
+        if cli not in ok:
+            raise SetupError(
+                f"{cli} is not enabled in Settings and cleared for unattended runs; "
+                f"choose one of: {', '.join(ok) or 'none available'}"
+            )
+    conn = store.connect()
+    try:
+        allowed = telegram_in.allowed_chats(conn)
+    finally:
+        conn.close()
+    if chat_id not in allowed:
+        raise SetupError(f"Telegram chat {chat_id} is not an allowed inbox chat")
+    path = agent_paths.home() / f"{AGENT_NAME}.toml"
+    defn = d.AgentDef(
+        name=AGENT_NAME, kind="personal", path=path, root=default_dir(),
+        instructions=INSTRUCTIONS, runner=runner, backup=backup,
+        workdir=str(default_dir()), timeout_minutes=TIMEOUT_MINUTES,
+        before="brief-collect", trigger=d.Trigger(kind="weekdays", at=at),
+    )
+    try:
+        defn = d.parse(d.render(defn), kind="personal", path=path)
+    except d.DefinitionError as exc:
+        raise SetupError(str(exc)) from exc
+    service.save_new(defn)
+    service.accept(AGENT_NAME, None)
+    delivery = replace(
+        deliveries.get(defn.agent_id) or deliveries.Delivery(),
+        telegram_chat=chat_id,
+        telegram_label=telegram.known_chats().get(chat_id, ""),
+        attach="md",
+    )
+    deliveries.save(defn.agent_id, delivery)
+    return defn
+
+
 def _status_line(conn: sqlite3.Connection) -> str:
     parts: list[str] = []
     paused = conn.execute("SELECT COUNT(*) FROM ideas WHERE status = 'paused'").fetchone()[0]

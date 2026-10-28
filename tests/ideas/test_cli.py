@@ -1392,6 +1392,37 @@ def test_brief_calendar_prints_the_path_and_uses_chosen_calendars(ideas_home, tm
     assert calls == [(brief.default_dir(), ["Work"])]
 
 
+def test_brief_setup_cli_calls_the_shared_setup(ideas_home, capsys, monkeypatch):
+    from types import SimpleNamespace
+
+    from whyline.ideas import brief
+
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(trigger=SimpleNamespace(at=kwargs["at"]), runner=kwargs["runner"])
+
+    monkeypatch.setattr(brief, "setup", fake)
+    code, out, _ = invoke(
+        ["idea", "brief", "setup", "--at", "06:30", "--runner", "claude",
+         "--backup", "codex", "--chat", "42"], capsys)
+    assert code == 0
+    assert calls == [{"at": "06:30", "runner": "claude", "backup": ["codex"], "chat_id": 42}]
+    assert "weekdays at 06:30" in out and "Telegram" in out
+
+
+def test_brief_setup_cli_reports_a_refusal(ideas_home, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    def refuse(**kwargs):
+        raise brief.SetupError("Telegram chat 9 is not an allowed inbox chat")
+
+    monkeypatch.setattr(brief, "setup", refuse)
+    code, _, err = invoke(["idea", "brief", "setup", "--runner", "claude", "--chat", "9"], capsys)
+    assert code != 0 and "not an allowed inbox chat" in err
+
+
 def test_brief_calendar_preview_prints_the_text(ideas_home, tmp_path, capsys, monkeypatch):
     from whyline.ideas import brief
 

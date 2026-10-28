@@ -658,6 +658,115 @@ async def test_morning_brief_button_runs_the_cli_function(assistant_home, monkey
     assert calls == [(brief.default_dir(), [])]
 
 
+def _allow_chat(chat_id):
+    from whyline.ideas import telegram_in
+
+    conn = store.connect()
+    try:
+        telegram_in._save_allowed(conn, [chat_id])
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def test_brief_setup_section_warns_and_calls_the_shared_setup(assistant_home, monkeypatch):
+    from types import SimpleNamespace
+
+    from textual.widgets import Input, Select
+
+    from whyline import account
+    from whyline.agents import telegram
+    from whyline.ideas import brief, cli as ideas_cli
+
+    monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex"})
+    monkeypatch.setattr(telegram, "known_chats", lambda: {42: "Me"})
+    monkeypatch.setattr(brief, "current", lambda: None)
+    _allow_chat(42)
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(trigger=SimpleNamespace(at=kwargs["at"]), runner=kwargs["runner"])
+
+    monkeypatch.setattr(brief, "setup", fake)
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        warning = _plain(screen.query_one("#as-brief-setup-warning", tui.Static).render())
+        assert "calendar and email excerpts" in warning and "Telegram" in warning
+        button = screen.query_one("#as-brief-setup", tui.Button)
+        assert str(button.label) == "Create morning brief"
+        screen.query_one("#as-brief-at", Input).value = "06:30"
+        screen.query_one("#as-brief-runner", Select).value = "claude"
+        screen.query_one("#as-brief-backup", Select).value = "codex"
+        button.press()
+        await pilot.pause()
+        assert str(button.label) == "Update"
+    assert calls == [{"at": "06:30", "runner": "claude", "backup": ("codex",), "chat_id": 42}]
+    assert ideas_cli.brief.setup is fake  # the CLI calls this same attribute
+
+
+async def test_brief_update_preselects_the_saved_chat(assistant_home, monkeypatch):
+    from types import SimpleNamespace
+
+    from textual.widgets import Select
+
+    from whyline import account
+    from whyline.agents import telegram
+    from whyline.ideas import brief, telegram_in
+
+    monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex"})
+    monkeypatch.setattr(telegram, "known_chats", lambda: {42: "Me", 7: "Other"})
+    conn = store.connect()
+    try:
+        telegram_in._save_allowed(conn, [42, 7])
+        conn.commit()
+    finally:
+        conn.close()
+    saved = SimpleNamespace(
+        trigger=SimpleNamespace(at="07:00"), runner="claude", backup=(),
+    )
+    monkeypatch.setattr(brief, "current", lambda: saved)
+    monkeypatch.setattr(brief, "current_chat", lambda: 7)
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(trigger=SimpleNamespace(at=kwargs["at"]), runner=kwargs["runner"])
+
+    monkeypatch.setattr(brief, "setup", fake)
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        assert screen.query_one("#as-brief-chat", Select).value == 7
+        screen.query_one("#as-brief-setup", tui.Button).press()
+        await pilot.pause()
+    assert calls[0]["chat_id"] == 7
+
+
+async def test_brief_setup_shows_a_refusal(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    def refuse(**kwargs):
+        raise brief.SetupError("claude is not enabled in Settings")
+
+    monkeypatch.setattr(brief, "setup", refuse)
+    monkeypatch.setattr(brief, "eligible_providers", lambda: ["claude"])
+    monkeypatch.setattr(brief, "current", lambda: None)
+    _allow_chat(42)
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-brief-runner", tui.Select).value = "claude"
+        screen.query_one("#as-brief-setup", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-brief-setup-result", tui.Static).render())
+        assert "not enabled in Settings" in text
+
+
 async def test_morning_brief_shows_the_denial(assistant_home, monkeypatch):
     from whyline.ideas import brief
 

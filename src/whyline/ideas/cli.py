@@ -204,6 +204,11 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
                        ("tasks", "Write due Reminders, whyline reminders and memory to tasks.md")):
         extra = brief_sub.add_parser(name, help=text)
         extra.add_argument("--preview", action="store_true", help="Print the file, not just its path")
+    setup_p = brief_sub.add_parser("setup", help="Create or update the morning brief agent")
+    setup_p.add_argument("--at", default="07:00", help="Weekday time, HH:MM (default 07:00)")
+    setup_p.add_argument("--runner", help="Provider that writes the brief (default: first available)")
+    setup_p.add_argument("--backup", action="append", default=[], help="Backup provider; repeatable")
+    setup_p.add_argument("--chat", type=int, help="Allowed Telegram chat id (default: the first)")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1550,8 +1555,10 @@ def cmd_remind(args: argparse.Namespace) -> int:
 
 def cmd_brief(args: argparse.Namespace) -> int:
     which = getattr(args, "idea_brief_command", None)
+    if which == "setup":
+        return _brief_setup(args)
     if which not in ("calendar", "mail", "tasks"):
-        print("usage: whyline idea brief calendar|mail|tasks [--preview]", file=sys.stderr)
+        print("usage: whyline idea brief calendar|mail|tasks [--preview] | setup", file=sys.stderr)
         return EXIT_USAGE
     names: list[str] = []
     if which != "tasks":
@@ -1576,6 +1583,33 @@ def cmd_brief(args: argparse.Namespace) -> int:
         print(f"could not write the brief: {exc}", file=sys.stderr)
         return EXIT_ERROR
     print(result.text.rstrip("\n") if args.preview else result.path)
+    return EXIT_OK
+
+
+def _brief_setup(args: argparse.Namespace) -> int:
+    from whyline.ideas import telegram_in
+
+    runner = args.runner
+    if not runner:
+        found = brief.eligible_providers()
+        runner = found[0] if found else ""
+    chat_id = args.chat
+    if chat_id is None:
+        conn = _connect()
+        if conn is None:
+            return EXIT_ERROR
+        try:
+            chats = telegram_in.allowed_chats(conn)
+        finally:
+            conn.close()
+        chat_id = chats[0] if chats else 0
+    try:
+        defn = brief.setup(at=args.at, runner=runner, backup=args.backup, chat_id=chat_id)
+    except (brief.SetupError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"morning-brief: weekdays at {defn.trigger.at}, {defn.runner}, Telegram chat {chat_id}")
+    print(brief.SEND_WARNING)
     return EXIT_OK
 
 
