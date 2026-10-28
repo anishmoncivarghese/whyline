@@ -15,6 +15,7 @@ from whyline.agents import paths
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 CLIS = ("claude", "codex", "grok", "antigravity")
 TRIGGER_KINDS = ("manual", "daily", "weekdays", "every", "folder")
+BEFORE_STEPS = ("", "brief-collect")  # built-in names, never shell commands
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -45,6 +46,7 @@ class AgentDef:
     workdir: str = ""
     report_folder: str = ""
     timeout_minutes: int = 15
+    before: str = ""
     trigger: Trigger = field(default_factory=Trigger)
 
     @property
@@ -143,11 +145,14 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
     timeout = _int(raw, "timeout_minutes", 15)
     if not 1 <= timeout <= 240:
         raise DefinitionError("timeout_minutes must be between 1 and 240")
+    before = _str(raw, "before")
+    if before not in BEFORE_STEPS:
+        raise DefinitionError('before must be "" or "brief-collect"')
     defn = AgentDef(
         name=name, kind=kind, path=path, root=root, instructions=instructions,
         runner=runner, backup=backup, model=_str(raw, "model"), sources=_strs(raw, "sources"),
         workdir=workdir, report_folder=_str(raw, "report_folder"),
-        timeout_minutes=timeout, trigger=_trigger(raw.get("trigger", {})),
+        timeout_minutes=timeout, before=before, trigger=_trigger(raw.get("trigger", {})),
     )
     resolve_sources(defn)  # validates repo containment
     return defn
@@ -185,6 +190,8 @@ def render(defn: AgentDef) -> str:
     if defn.report_folder:
         lines.append(f"report_folder = {_q(defn.report_folder)}")
     lines.append(f"timeout_minutes = {defn.timeout_minutes}")
+    if defn.before:
+        lines.append(f"before = {_q(defn.before)}")
     t = defn.trigger
     lines += ["", "[trigger]", f"kind = {_q(t.kind)}"]
     if t.at:

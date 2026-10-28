@@ -31,6 +31,21 @@ def _cli_permitted(cli: str) -> bool:
     return cli in account.enabled_agents()
 
 
+def _brief_collect(run_dir: Path) -> None:
+    """The built-in `brief-collect` step: write today.md, mail.md, tasks.md."""
+    from whyline.ideas import brief, store
+
+    conn = store.connect()
+    try:
+        calendars = brief.selected(conn)
+        mailboxes = brief.mailboxes_selected(conn)
+    finally:
+        conn.close()
+    brief.calendar(run_dir, calendars=calendars)
+    brief.mail(run_dir, mailboxes=mailboxes)
+    brief.reminders(run_dir)
+
+
 def build_prompt(defn, sources: list[Path], event_files: list[Path]) -> str:
     def shown(path: Path) -> str:
         try:
@@ -161,6 +176,14 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
     record, folder = records.new_run(defn, source=source, now=now)
     sources = [p for p in definitions.resolve_sources(defn)]
     events = sorted(payload_dir.iterdir()) if payload_dir and payload_dir.is_dir() else []
+    if defn.before == "brief-collect":
+        try:
+            _brief_collect(folder)
+            events = [*events, *(folder / name for name in ("today.md", "mail.md", "tasks.md"))]
+        except Exception as caught:
+            record.outcome, record.reason = "failed", f"before step failed: {caught}"
+            record.ended = datetime.now().isoformat()
+            return records.finish(record, folder, final_text="", defn=defn)
     prompt = build_prompt(defn, sources, events)
 
     conn = state.connect()

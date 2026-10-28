@@ -162,3 +162,14 @@ def test_load_enforces_timeout_minutes_between_1_and_240(repo):
         loaded = d.load(path, kind="repo", repo_root=repo)
         assert loaded.timeout_minutes == valid
 
+
+
+def test_before_accepts_only_built_in_names_and_round_trips(repo):
+    base = 'name = "ok"\ninstructions="x"\nrunner="claude"\n'
+    path = repo / ".whyline/agents/ok.toml"
+    with pytest.raises(d.DefinitionError, match="before"):
+        d.parse(base + 'before = "rm -rf /"', kind="repo", path=path, repo_root=repo)
+    assert d.parse(base, kind="repo", path=path, repo_root=repo).before == ""
+    a = d.parse(base + 'before = "brief-collect"', kind="repo", path=path, repo_root=repo)
+    assert a.before == "brief-collect"
+    assert d.parse(d.render(a), kind="repo", path=path, repo_root=repo) == a

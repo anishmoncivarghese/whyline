@@ -27357,3 +27357,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 489afafd6bde40b0a172447c4a168df6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:21:18.386Z"} -->
+
+## 2026-10-28 — before step is a closed enum (""/"brief-collect"); collect failure ends the run before any provider
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-20
+
+**Because:** spec: built-in name never a shell command; no provider on failure
+
+**Rejected:**
+
+- free-form command — shell injection risk
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 177e34043d7f46f98f8bbf6dac256e70 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:22:07.959Z"} -->
+
+## 2026-10-28 — Pass ASST-20 before-step behavior in testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-20
+
+**Because:** The focused definitions and runner suite passed all 50 tests, covering validation, TOML round-trip, data-labelled collected files, no provider on collection failure, and unchanged agents without before; the full suite reached completion with 2554 passed and 1 skipped, while its 6 failures were confined to unrelated stale console navigation and schema-version expectations.
+
+**Rejected:**
+
+- Fail ASST-20 for the six full-suite failures — none touches the scoped implementation or tests, and their assertions concern absent console buttons, an added Assistant mode, and schema version 5 versus current version 6.
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: d3e166df6cd24137b5c8624603bc898f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:33:05.471Z"} -->
+
+## 2026-10-28 — Reject ASST-20 because the before collector does not exist at runtime
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-20
+
+**Because:** runner.execute_once calls whyline.ideas.brief.collect, but that module has no collect attribute; the new tests mask the defect by monkeypatching a fabricated attribute with raising=False, so real brief-collect agents always fail before provider startup
+
+**Rejected:**
+
+- Approve based on focused tests — those tests pass only because they invent the missing production entry point
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 9118f8f406ca437bb196cdc52862687c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:46:00.273Z"} -->
+
+## 2026-10-28 — brief-collect lives as a private runner helper calling brief.calendar/mail/reminders with stored selections
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-20
+
+**Because:** brief.py has no collect and is outside ASST-20's file scope; reusing the three real entry points means a real run writes today.md, mail.md, tasks.md; tests patch those existing attributes without raising=False
+
+**Rejected:**
+
+- add brief.collect — brief.py is out of scope for this task
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 99b370f4304d43ff8040ac40e8e83f73 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:46:59.455Z"} -->
+
+## 2026-10-28 — Pass ASST-20 before-step behavior in round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-20
+
+**Because:** The 50 focused definitions and runner tests pass, covering allowed-value validation, TOML round-trip, real brief calendar/mail/reminder collection into data-labelled event files, no provider on collection failure, and unchanged agents without before; the full suite completed with only six unrelated stale console-navigation and schema-version expectation failures.
+
+**Rejected:**
+
+- Fail for the six full-suite failures — all six are outside the scoped files and assert missing console buttons, the added Assistant mode, or schema version 5 instead of current version 6.
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: a69e4bbd18d44dbabaf8c2224067ecff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:58:17.806Z"} -->
+
+## 2026-10-28 — Approve ASST-20 before-step behavior in round 6 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-20
+
+**Because:** The implementation validates and round-trips the built-in before value, collects the three real brief files before prompt construction, labels them as untrusted event data, persists failures without starting a provider, and leaves agents without before unchanged; all 50 focused tests pass and the six full-suite failures are unrelated stale console and schema expectations.
+
+**Rejected:**
+
+- Reject for not calling a nonexistent brief.collect symbol — the allowed file scope excludes brief.py, while the private runner helper invokes the three real brief collection entry points and is covered without fabricated monkeypatch targets.
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: bbdb8b5f93364875aa7da7dfbe923398 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T04:11:37.878Z"} -->
