@@ -47,12 +47,12 @@ async def test_wide_window_keeps_the_bar_on_one_row(tmp_path, mode):
         assert "see-files" not in {b.id for b in shown}
 
 
-async def test_narrow_window_wraps_assistant_bar_inside_80_columns(tmp_path):
+async def test_narrow_window_wraps_assistant_bar_inside_the_window(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test(size=(80, 24)) as pilot:
+    async with app.run_test(size=(60, 30)) as pilot:
         app.session.mode = "assistant"
         app._sync_mode_indicator()
         await pilot.pause()
         shown = [b for b in app.query("#controls Button") if b.display]
         assert app.query_one("#controls").has_class("wrap")
-        assert all(b.region.right <= 80 for b in shown)
+        assert all(b.region.right <= 60 for b in shown)

@@ -1703,7 +1703,8 @@ class WhylineConsoleApp(App):
             col = self._main("#console-column")
         except (NoMatches, IndexError):
             return
-        pane.display = self._files_on
+        # Modes without a Files button hide the pane; it returns with the mode.
+        pane.display = self._files_on and "see-files" not in _HIDDEN_SHARED.get(self.session.mode, set())
         self._sync_file_choice_widgets()
         stacked = self.size.width < 120
         split.set_class(stacked, "stacked")
@@ -1970,6 +1971,7 @@ class WhylineConsoleApp(App):
                 continue
             button.display = button.id in wanted
         self._fit_controls()
+        self._sync_split()
         self._main("#attach").display = self.session.mode == "chat"
         try:
             self._main("#agents-bar").display = self.session.mode == "agents"
@@ -1985,7 +1987,7 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             return
         needed = sum(
-            max(6, len(str(button.label)) + 4)
+            max(6, len(str(button.label)) + 2)  # label plus one cell each side
             for button in controls.query(Button)
             if button.display
         )

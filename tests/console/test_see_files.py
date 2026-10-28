@@ -14,15 +14,15 @@ def test_help_names_files():
 
 
 @pytest.mark.asyncio
-async def test_files_button_exists_in_all_modes_with_label_files(tmp_path):
+async def test_files_button_shows_in_chat_and_relay_only(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
-        for mode in ("chat", "relay", "agents"):
+        for mode in ("chat", "relay", "agents", "assistant"):
             await pilot.click(f"#mode-{mode}")
             await pilot.pause()
             btn = app.query_one("#see-files", tui.Button)
             assert str(btn.label) == "Files"
-            assert btn.display is True
+            assert btn.display is (mode in ("chat", "relay"))
 
 
 @pytest.mark.asyncio
@@ -498,7 +498,9 @@ async def test_choices_are_relay_only(tmp_path):
         for mode in ("chat", "agents", "relay"):
             await pilot.click(f"#mode-{mode}")
             await pilot.pause()
-            assert app.query_one("#see-files", tui.Button).display is True
+            assert app.query_one("#see-files", tui.Button).display is (mode != "agents")
+            # Agents has no checkout: the open pane hides there and comes back.
+            assert app.query_one("#file-pane").display is (mode != "agents")
             shown = mode == "relay"
             assert app.query_one("#file-working", tui.Button).display is shown
             assert app.query_one("#file-plan", tui.Button).display is shown
