@@ -31,6 +31,11 @@ def _signature() -> str:
     return f"Sent by whyline from {name}."
 
 
+def _is_brief(defn) -> bool:
+    from whyline.ideas import brief
+    return defn.name == brief.AGENT_NAME
+
+
 def _attachment(defn, record, delivery) -> tuple[Path | None, str]:
     folder = records.run_folder(record.run_id)
     report = folder / "final.md"
@@ -38,6 +43,11 @@ def _attachment(defn, record, delivery) -> tuple[Path | None, str]:
         text = report.read_text(encoding="utf-8")
     except OSError:
         return None, ""
+    if _is_brief(defn):
+        from whyline.ideas import brief
+        text = brief.split_actions(text)[0]
+        report = folder / "delivered.md"
+        report.write_text(text, encoding="utf-8")
     if not text.strip():
         return None, ""
     stem = f"{defn.name}-{record.started[:10]}"
@@ -126,6 +136,9 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
             text = records.read_final(record.run_id)
         except OSError:
             text = ""
+        if _is_brief(defn):
+            from whyline.ideas import brief
+            text = brief.split_actions(text)[0]
         report_path = str(records.run_folder(record.run_id) / "final.md")
         body = convert.summary(text) + (f"\n{note}" if note else "")
         subject = subject_line(defn, delivery, record)
@@ -151,6 +164,14 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
         }
         results.append(_command(delivery, env_values, defn.root,
                                 records.run_folder(record.run_id) / "command.log", run))
+    if succeeded and _is_brief(defn):
+        try:
+            from whyline.ideas import brief
+            made = brief.after_delivery(record, chat_id=delivery.telegram_chat or None)
+        except Exception as error:  # cards are a bonus; never change the run
+            made = _result("brief-actions", False, str(error))
+        if made:
+            results.append(made)
     record.deliveries = results
     try:
         records.save_metadata(record)

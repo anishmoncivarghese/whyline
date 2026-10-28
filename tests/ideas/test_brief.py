@@ -404,3 +404,62 @@ def test_setup_refuses_a_bad_time(agent_env):
     with pytest.raises(brief.SetupError, match="24-hour"):
         brief.setup(at="7am", runner="claude", chat_id=42)
     assert brief.current() is None
+
+
+NOW = datetime(2026, 10, 28, 7, 0)
+
+
+def _cards(monkeypatch, text):
+    from whyline.ideas import requests
+
+    monkeypatch.setattr("whyline.agents.records.read_final", lambda run_id: text)
+    result = brief.after_delivery(SimpleNamespace(run_id="r1"), chat_id=42, now=NOW)
+    conn = store.connect()
+    try:
+        rows = conn.execute("SELECT * FROM requests ORDER BY id").fetchall()
+        return result, [requests._request(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _brief_text(*lines):
+    return "# Brief\n\nBody.\n\n```brief-actions\n" + "\n".join(lines) + "\n```\n"
+
+
+def test_valid_remind_lines_become_tap_cards(ideas_home, monkeypatch):
+    result, rows = _cards(
+        monkeypatch, _brief_text("remind in 2h call the bank", "remind tomorrow 9:00 pay rent")
+    )
+    assert [r.state for r in rows] == ["waiting_tap", "waiting_tap"]
+    assert all(r.action == "remind" and r.proposed_by == "assistant" and r.chat_id == 42 for r in rows)
+    assert json.loads(rows[0].args_json) == {"when": "in 2h", "text": "call the bank"}
+    assert result["detail"] == "2 reminder cards"
+    conn = store.connect()
+    try:
+        cards = conn.execute("SELECT * FROM outbox WHERE kind = 'message' ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    assert len(cards) == 2
+    assert all(int(c["chat_id"]) == 42 and c["buttons_json"] for c in cards)
+    assert "call the bank" in cards[0]["text"] and "pay rent" in cards[1]["text"]
+
+
+def test_run_and_do_lines_are_ignored_and_counted(ideas_home, monkeypatch):
+    result, rows = _cards(
+        monkeypatch, _brief_text("run jobs", "do T-1", "remind never call", "remind in 1h stretch")
+    )
+    assert [r.action for r in rows] == ["remind"]
+    assert result["detail"] == "1 reminder card; ignored 3 other lines"
+
+
+def test_more_than_five_lines_are_cut_to_five(ideas_home, monkeypatch):
+    lines = [f"remind in {n}h task {n}" for n in range(1, 8)]
+    result, rows = _cards(monkeypatch, _brief_text(*lines))
+    assert len(rows) == 5
+    assert result["detail"] == "5 reminder cards; ignored 2 other lines"
+
+
+def test_split_actions_removes_the_block():
+    text, lines = brief.split_actions(_brief_text("remind in 1h x", "run y"))
+    assert text == "# Brief\n\nBody.\n"
+    assert lines == ["remind in 1h x", "run y"]

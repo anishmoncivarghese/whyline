@@ -27567,3 +27567,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5bb491acad324e9bbbab56c065209268 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T04:58:44.796Z"} -->
+
+## 2026-10-28 — Brief suggestions: after_delivery reads only remind lines; block stripped from body and attachment; result appended to run deliveries
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-22
+
+**Because:** Run history already shows deliveries, so ignored-line counts surface there without a new store; attachment uses a stripped delivered.md so final.md stays intact
+
+**Rejected:**
+
+- Strip final.md in place — loses the agent's raw output
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/agents/deliver.py
+
+<!-- whyline-event: 3becfdda2e7f45dda521d49caeb84372 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:00:25.647Z"} -->
+
+## 2026-10-28 — Pass ASST-22 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-22
+
+**Because:** All 47 focused brief and delivery tests pass, including reminder cards, ignored unsafe lines, five-line limiting, stripped delivery text, and other-agent isolation; the full suite has 2572 passes and only the same six unrelated stale console-navigation and schema-version failures previously reproduced at clean HEAD
+
+**Rejected:**
+
+- Fail for the full-suite exit code — all six failures are established baseline failures in untouched console and Telegram schema tests
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/agents/deliver.py, tests/ideas/test_brief.py, tests/agents/test_deliver.py
+
+<!-- whyline-event: 3616256e16124fcaa606b6f2a14acc37 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:11:05.642Z"} -->
+
+## 2026-10-28 — Reject ASST-22 Round 3: stored reminders do not enqueue tap cards
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-22
+
+**Because:** brief.after_delivery creates waiting_tap request rows but never calls the established bot.offer_request path, so no Telegram message, confirmation code, or Confirm/Cancel buttons are queued; the new test checks only request state and misses the user-visible requirement
+
+**Rejected:**
+
+- Approve because focused tests pass — the tests do not verify the outbound card queue
+
+**Files:** src/whyline/ideas/brief.py, tests/ideas/test_brief.py
+
+<!-- whyline-event: 0ce994d270fd43e7aecb55d03f8c157b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:21:07.393Z"} -->
+
+## 2026-10-28 — Brief reminder cards are queued via bot.offer_request right after requests.create
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-22
+
+**Because:** stored waiting_tap rows alone send nothing; offer_request issues the confirmation code and queues the Confirm/Cancel Telegram card
+
+**Rejected:**
+
+- Leave cards to a later poll — no existing path picks up assistant-proposed rows
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 0a146fc7693145bd8b4f2b04e2a55cd8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:21:41.673Z"} -->
+
+## 2026-10-28 — Pass ASST-22 Round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-22
+
+**Because:** All 47 focused brief and delivery tests pass, including queued Telegram Confirm/Cancel cards; the full suite completed with only the same six established unrelated console-navigation and schema-version baseline failures
+
+**Rejected:**
+
+- Fail for the full-suite exit code — all six failures are unchanged baseline expectations outside the scoped files and behavior
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/agents/deliver.py, tests/ideas/test_brief.py, tests/agents/test_deliver.py
+
+<!-- whyline-event: c9ec6e67ef70484f9be2a7bb973743d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:31:24.973Z"} -->
+
+## 2026-10-28 — Approve ASST-22 Round 6 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-22
+
+**Because:** The scoped implementation strips brief-actions from morning-brief deliveries, creates only assistant-proposed remind requests and queues Confirm/Cancel cards, caps cards at five, counts ignored lines, and leaves other agents unchanged; all 47 focused tests pass and the full suite has only six established unrelated console-navigation and schema-version baseline failures
+
+**Rejected:**
+
+- Request changes — no scoped correctness, safety, or test-coverage defect was found
+
+**Files:** src/whyline/agents/deliver.py, src/whyline/ideas/brief.py, tests/ideas/test_brief.py, tests/agents/test_deliver.py
+
+<!-- whyline-event: a8fee98720a7495c83130582a0ef78d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T05:42:32.005Z"} -->

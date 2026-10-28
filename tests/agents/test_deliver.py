@@ -190,6 +190,42 @@ def test_resend_uses_the_latest_run(agent, monkeypatch):
     assert calls == [record.run_id, record.run_id]
 
 
+BRIEF = "# Brief\n\nBody.\n\n```brief-actions\nremind in 1h call\n```\n"
+
+
+def test_morning_brief_delivery_drops_the_block_and_makes_cards(agent, monkeypatch):
+    from dataclasses import replace
+    _no_docx(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        "whyline.ideas.brief.after_delivery",
+        lambda record, **kw: calls.append((record.run_id, kw))
+        or {"to": "brief-actions", "ok": True, "detail": "1 reminder card"})
+    defn = replace(agent, name="morning-brief")
+    record = _run(defn, text=BRIEF)
+    tg = FakeTelegram()
+    results = deliver.after_run(defn, record, delivery=dl.Delivery(telegram_chat=-100), tg=tg)
+    assert calls == [(record.run_id, {"chat_id": -100})]
+    assert results[-1]["to"] == "brief-actions"
+    caption = tg.sent[0][3]
+    assert "brief-actions" not in caption and "Body." in caption
+    folder = records.run_folder(record.run_id)
+    assert "brief-actions" not in (folder / "morning-brief-2026-10-09.md").read_text()
+    assert "brief-actions" in (folder / "final.md").read_text()
+
+
+def test_other_agents_are_unaffected(agent, monkeypatch):
+    _no_docx(monkeypatch)
+    monkeypatch.setattr("whyline.ideas.brief.after_delivery",
+                        lambda *a, **k: pytest.fail("hook must not run"))
+    tg = FakeTelegram()
+    record = _run(agent, text=BRIEF)
+    results = deliver.after_run(agent, record, delivery=dl.Delivery(telegram_chat=-100), tg=tg)
+    assert [r["to"] for r in results] == ["telegram"]
+    folder = records.run_folder(record.run_id)
+    assert "brief-actions" in (folder / "jobs-2026-10-09.md").read_text()
+
+
 def test_send_test(home, monkeypatch, tmp_path):
     mails, tg = [], FakeTelegram()
     results = deliver.send_test("jobs (personal)", DELIVERY, mail=lambda *a, **k: mails.append(a),

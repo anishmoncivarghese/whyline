@@ -8,6 +8,7 @@ Calendar access the first time it runs with the user present.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import subprocess
 from dataclasses import dataclass
@@ -610,6 +611,73 @@ def setup(*, at: str = "07:00", runner: str, backup=(), chat_id: int):
     )
     deliveries.save(defn.agent_id, delivery)
     return defn
+
+
+MAX_SUGGESTIONS = 5
+_ACTIONS_BLOCK = re.compile(r"^```[ \t]*brief-actions[ \t]*\n(.*?)^```[ \t]*$\n?", re.S | re.M)
+
+
+def split_actions(text: str) -> tuple[str, list[str]]:
+    """Return ``text`` without its brief-actions blocks, and the lines they held."""
+    lines: list[str] = []
+
+    def take(match: re.Match) -> str:
+        lines.extend(line.strip() for line in match.group(1).splitlines() if line.strip())
+        return ""
+
+    return _ACTIONS_BLOCK.sub(take, text).rstrip() + "\n", lines
+
+
+def after_delivery(record, *, chat_id: int | None = None, now: datetime | None = None) -> dict | None:
+    """Turn the brief's suggested reminders into Confirm/Cancel cards.
+
+    Only `remind <when> <text>` lines count, at most 5. Any other line is
+    ignored, and no other action can come from brief output. Returns a
+    delivery-style result for the run history, or None when there is no block.
+    """
+    from whyline.agents import records
+    from whyline.ideas import actions, bot, reminders, requests, store
+
+    try:
+        text = records.read_final(record.run_id)
+    except OSError:
+        return None
+    _, lines = split_actions(text)
+    if not lines:
+        return None
+    moment = now or datetime.now().astimezone().replace(tzinfo=None)
+    chat = chat_id if chat_id is not None else current_chat()
+    made = ignored = 0
+    conn = store.connect()
+    try:
+        for line in lines:
+            head, _, rest = line.partition(" ")
+            when = body = ""
+            if head == "remind" and made < MAX_SUGGESTIONS and chat is not None:
+                try:
+                    _, body = reminders.parse_when(rest, moment)
+                    when = rest.strip()[: len(rest.strip()) - len(body)].strip() if body else ""
+                except reminders.TimeParseError:
+                    pass
+            if not when or not body:
+                ignored += 1
+                continue
+            try:
+                request = requests.create(
+                    conn, channel="telegram", actor=None, chat_id=chat, action="remind",
+                    args={"when": when, "text": body}, proposed_by="assistant",
+                )
+            except actions.PolicyError:
+                ignored += 1
+                continue
+            bot.offer_request(conn, request)
+            made += 1
+    finally:
+        conn.close()
+    detail = f"{made} reminder card{'s' if made != 1 else ''}"
+    if ignored:
+        detail += f"; ignored {ignored} other line{'s' if ignored != 1 else ''}"
+    return {"to": "brief-actions", "ok": True, "detail": detail}
 
 
 def _status_line(conn: sqlite3.Connection) -> str:
