@@ -27904,3 +27904,38 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ab25bc4c51b346e8a442f237ec336226 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T09:54:27.023Z"} -->
+
+## 2026-10-28 — Gate releases on a local Python 3.11 run and a test that flags unhashable dataclass defaults
+
+**Actor:** claude
+**Role:** release
+**Task:** REL-0.3.53
+
+**Because:** 0.3.53's 3.11 suite could not import whyline.ideas (mappingproxy dataclass default accepted only on 3.12+); the 3.13 suite and agents never saw it. CI also broke from outside: ubuntu-latest moved to 26.04 whose multi-call coreutils broke the fake caffeinate, and a Textual Select raced app shutdown on macOS 3.11
+
+**Rejected:**
+
+- Rely on CI alone to catch 3.11 — CI ran only after push and the relay's testers use 3.13
+
+**Files:** tests/test_dataclass_defaults.py, tests/console/test_awake.py
+
+<!-- whyline-event: 9a864a19a95a49c9a0e52a1130308bb4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T10:52:52.027Z"} -->
+
+## 2026-10-28 — Plan brainstorm worktrees as LSN-6..8: a console Brainstorm moves to a worktree only while a relay runs in its repo
+
+**Actor:** claude
+**Role:** planner
+**Task:** LSN-6
+
+**Because:** The user had to move a console Brainstorm off the release checkout by hand; Telegram brainstorms already run in ~/.whyline/ideas/workspace, so only the console path and worktree upkeep need work. LSN-6 (Telegram guard) shipped in 0.3.53 and was dropped
+
+**Rejected:**
+
+- Always brainstorm in a worktree — needless branches when no relay is running
+- Make Telegram Plan write into a worktree now — plans written against main while the relay changes code go stale; keep its wait until a later plan
+
+**Files:** plans/relay-recovery-lessons.plan.md
+
+<!-- whyline-event: bdbb07c07254494c8b678a5d779a144c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T10:55:06.806Z"} -->
