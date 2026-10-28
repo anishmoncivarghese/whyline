@@ -434,7 +434,7 @@ Rules every task keeps:
   - other agents are unaffected
   Verify with the named focused tests. Change nothing else.
 
-- [ ] ASST-23: Morning brief check and documentation
+- [x] ASST-23: Morning brief check and documentation
   Edit `src/whyline/ideas/brief.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_brief.py`, `tests/console/test_assistant_screen.py`, and add `docs/assistant.md`. Edit `docs/idea-inbox.md` only to link it.
   `brief.check()` is added to `assistant_doctor` and the console `Check`. It reports:
   - Calendar, Mail and Reminders access
