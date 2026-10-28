@@ -423,7 +423,7 @@ Rules every task keeps:
   - the CLI and console share `setup`
   Verify with the three named test files. Change nothing else.
 
-- [ ] ASST-22: Brief suggestions become reminder cards
+- [x] ASST-22: Brief suggestions become reminder cards
   Edit `src/whyline/agents/deliver.py`, `src/whyline/ideas/brief.py`, `tests/ideas/test_brief.py`, and `tests/agents/test_deliver.py` only.
   After the `morning-brief` agent delivers, `brief.after_delivery(record)` reads its final text, removes the `brief-actions` block from the delivered message, and parses up to 5 `remind <when> <text>` lines with `reminders.parse_when`. Each valid line becomes a `remind` request with `proposed_by="assistant"`, so the user gets a Confirm/Cancel card. Any other line in the block is ignored and counted in the history note. No other action can come from brief output. This hook runs only for the agent named `morning-brief`.
   Tests:
