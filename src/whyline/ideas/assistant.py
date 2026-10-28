@@ -14,7 +14,7 @@ import re
 import sqlite3
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -177,7 +177,8 @@ class Allowed:
     idea_ids: frozenset[int]
     saved_agents: frozenset[str] = frozenset()
     tasks: frozenset[str] = frozenset()
-    tasks_by_repo: Mapping[str, frozenset[str]] = _EMPTY
+    # A factory, not `= _EMPTY`: Python 3.11 rejects a mappingproxy default.
+    tasks_by_repo: Mapping[str, frozenset[str]] = field(default_factory=lambda: _EMPTY)
 
 
 def save(conn: sqlite3.Connection, agent: str, backup: str | None = None) -> None:
