@@ -27939,3 +27939,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bdbb07c07254494c8b678a5d779a144c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T10:55:06.806Z"} -->
+
+## 2026-10-28 — Spec Workflows' first public release and split it into three relay plans (WF-1..26)
+
+**Actor:** claude
+**Role:** planner
+**Task:** WF-1
+
+**Because:** The brainstorm synthesis covers seven phases; the user chose the first release (engine, outline editor, agent/deliver/http steps, credentials, approvals, Telegram), TOML files, approve-or-trust-per-step for tainted writes, and an optional daily agent cap off by default. Three plans keep each relay run reviewable and let plan 1 ship a usable engine without secrets
+
+**Rejected:**
+
+- One plan for everything — too many tasks for one relay run and late phases would be planned before early ones are proven
+- Include MCP and the canvas now — the synthesis gates MCP behind a security review and the canvas after the outline editor
+
+**Files:** docs/superpowers/specs/2026-10-29-workflows-design.md, plans/workflows-1-engine.plan.md
+
+<!-- whyline-event: 3907eb0b53944a298edf0788adff9327 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T20:08:03.567Z"} -->
