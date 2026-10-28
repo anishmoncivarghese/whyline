@@ -4,6 +4,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 
 import pytest
@@ -14,20 +15,29 @@ from whyline.console import awake, tui
 
 @pytest.fixture
 def fake(tmp_path, monkeypatch):
-    """A caffeinate stand-in that logs its arguments and then becomes sleep
-    through a symlink named caffeinate, so `ps -o comm=` reads it as
-    caffeinate. (macOS kills a copied system binary: its signature breaks.)"""
+    """A caffeinate stand-in that logs its arguments and then becomes a
+    long-running program through a symlink named caffeinate, so
+    `ps -o comm=` reads it as caffeinate. (macOS kills a copied system
+    binary: its signature breaks.)"""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(paths, "global_whyline_dir", lambda: home / ".whyline")
     real = tmp_path / "real"
     real.mkdir()
-    os.symlink(shutil.which("sleep"), real / "caffeinate")
+    # macOS: sleep (the framework Python relaunches itself as "Python").
+    # Linux: Python (Ubuntu 26.04's multi-call coreutils exits when its
+    # sleep is run under another name).
+    if sys.platform == "darwin":
+        os.symlink(shutil.which("sleep"), real / "caffeinate")
+        forever = "600"
+    else:
+        os.symlink(os.path.realpath(sys.executable), real / "caffeinate")
+        forever = '-c "import time; time.sleep(600)"'
     log = tmp_path / "launches.log"
     script = tmp_path / "bin" / "caffeinate"
     script.parent.mkdir()
-    script.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\nexec "{real / "caffeinate"}" 600\n')
+    script.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\nexec "{real / "caffeinate"}" {forever}\n')
     script.chmod(0o755)
     monkeypatch.setattr(awake, "CAFFEINATE", str(script))
     yield log

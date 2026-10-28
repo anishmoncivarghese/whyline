@@ -261,6 +261,11 @@ async def test_no_token_opens_telegram_setup_and_saves_nothing(
         assert not (ideas_home / "ideas.sqlite3").exists()
         screen.query_one("#ib-telegram", tui.Button).press()
         await _until(pilot, lambda: isinstance(app.screen, TelegramSetupScreen), "telegram setup")
+        # Let the chat picker finish mounting before the app shuts down; on a
+        # slow runner the shutdown otherwise races Select's own mount.
+        await _until(
+            pilot, lambda: bool(app.screen.query("#tg-chat SelectOverlay")), "chat picker ready"
+        )
         assert not (ideas_home / "ideas.sqlite3").exists()
 
 
