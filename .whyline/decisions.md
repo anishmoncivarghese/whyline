@@ -27869,3 +27869,38 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ec48cdda729943dbabb2cd1406ec3a50 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T08:10:30.235Z"} -->
+
+## 2026-10-28 — Match only the relay's ' FAIL <message>' preflight lines when a relay run finishes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-0.3.53
+
+**Because:** Any line starting with FAIL counted, so an agent's pytest summary (FAILED tests/...) turned 'Plan complete.' into a preflight failure and Auto Resolve offered Reset to base commit on a finished plan
+
+**Rejected:**
+
+- Skip Resolve only when output ends with Plan complete — leaves the same misread for paused runs with pytest output
+
+**Files:** src/whyline/console/adapters.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 034debfdada3470d8e08ac113c4a32d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T09:54:26.953Z"} -->
+
+## 2026-10-28 — Release 0.3.53 now: ship schema 6 so the installed inbox can read the live database
+
+**Actor:** claude
+**Role:** release
+**Task:** REL-0.3.53
+
+**Because:** A development build migrated ~/.whyline/ideas to schema 6 on 2026-10-26 and the installed 0.3.52 scheduler has failed every tick since, so Telegram messages get no cards; the personal-assistant plan is complete and the six stale tests were updated to Assistant mode and schema 6 rather than deleted
+
+**Rejected:**
+
+- Install the repo build locally — fixes one Mac but leaves PyPI users unable to read a schema 6 database
+- Downgrade the database to schema 5 — loses request and reminder tables
+
+**Files:** pyproject.toml, docs/releases/v0.3.53.md
+
+<!-- whyline-event: ab25bc4c51b346e8a442f237ec336226 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T09:54:27.023Z"} -->
