@@ -876,3 +876,50 @@ async def test_mail_and_reminders_button_shows_the_denial(assistant_home, monkey
         await pilot.pause()
         text = _plain(screen.query_one("#as-brief-mail-result", tui.Static).render())
         assert "System Settings" in text
+
+
+async def test_denial_offers_open_system_settings(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    def denied(*a, **k):
+        raise brief.AccessDenied()
+
+    opened = []
+    monkeypatch.setattr(brief, "calendar", denied)
+    monkeypatch.setattr(brief, "open_settings", lambda pane, **k: opened.append(pane))
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        button = screen.query_one("#as-brief-open-settings", tui.Button)
+        assert button.has_class("-hidden")
+        screen.query_one("#as-brief-grant", tui.Button).press()
+        await pilot.pause()
+        assert not button.has_class("-hidden")
+        button.press()
+        await pilot.pause()
+        assert opened == ["calendars"]
+
+
+async def test_reminders_denial_opens_automation(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    monkeypatch.setattr(brief, "mail", lambda *a, **k: brief.Brief(assistant_home / "m.md", "# Mail", ()))
+
+    def denied(*a, **k):
+        raise brief.AccessDenied("Reminders", "Automation", "automation")
+
+    opened = []
+    monkeypatch.setattr(brief, "reminders", denied)
+    monkeypatch.setattr(brief, "open_settings", lambda pane, **k: opened.append(pane))
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-brief-grant-mail", tui.Button).press()
+        await pilot.pause()
+        button = screen.query_one("#as-brief-open-settings-mail", tui.Button)
+        assert not button.has_class("-hidden")
+        button.press()
+        await pilot.pause()
+        assert opened == ["automation"]

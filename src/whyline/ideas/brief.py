@@ -8,6 +8,7 @@ Calendar access the first time it runs with the user present.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -25,11 +26,54 @@ DAY_START = time(8, 0)
 DAY_END = time(19, 0)
 MIN_FREE = timedelta(minutes=30)
 
-DENIED_HELP = (
-    "Calendar access is denied. Open System Settings > Privacy & Security > "
-    "Calendars, allow the app that runs whyline (Terminal, or your editor), "
-    "then try again."
-)
+# System Settings pages, opened with `open <url>`.
+SETTINGS_URLS = {
+    "calendars": "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+    "automation": "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+}
+
+# TERM_PROGRAM values and the app name System Settings lists.
+_HOST_APPS = {
+    "Apple_Terminal": "Terminal",
+    "iTerm.app": "iTerm",
+    "vscode": "Visual Studio Code (or Cursor)",
+    "ghostty": "Ghostty",
+    "WezTerm": "WezTerm",
+    "WarpTerminal": "Warp",
+    "Hyper": "Hyper",
+    "kitty": "kitty",
+    "Alacritty": "Alacritty",
+}
+
+
+def host_app(env=None) -> str:
+    """The app macOS asks permission for: the terminal whyline runs in."""
+    env = os.environ if env is None else env
+    term = env.get("TERM_PROGRAM", "")
+    if term in _HOST_APPS:
+        return _HOST_APPS[term]
+    if term == "tmux" or env.get("TMUX"):
+        return "the terminal app tmux runs in"
+    return "the terminal app you run whyline in"
+
+
+def denied_help(app: str, where: str, pane: str, host: str) -> str:
+    """Numbered steps for a refused macOS permission."""
+    if pane == "automation":
+        place = f"Privacy & Security > Automation, open {host}, and turn on {app}"
+    else:
+        place = f"Privacy & Security > {where}, and turn on {host}"
+    return (
+        f"{app} access is denied for {host}.\n"
+        f"1. Open System Settings > {place}. "
+        f"(Open System Settings below, or `whyline idea brief open-settings {pane}`.)\n"
+        f"2. If {host} isn't listed, quit and reopen it, then try again so macOS can ask.\n"
+        "3. Try again here. The scheduled brief runs in the background; if it later "
+        "reports the same, turn on whyline or python3 in the same list."
+    )
+
+
+DENIED_HELP = denied_help("Calendar", "Calendars", "calendars", host_app())
 
 
 class CalendarError(Exception):
@@ -37,10 +81,23 @@ class CalendarError(Exception):
 
 
 class AccessDenied(CalendarError):
-    """macOS refused Calendar access."""
+    """macOS refused access. `pane` names the System Settings page that fixes it."""
 
-    def __init__(self) -> None:
-        super().__init__(DENIED_HELP)
+    def __init__(self, app: str = "Calendar", where: str = "Calendars",
+                 pane: str = "calendars") -> None:
+        self.app = app
+        self.pane = pane
+        super().__init__(denied_help(app, where, pane, host_app()))
+
+
+def open_settings(pane: str, run=subprocess.run) -> None:
+    """Open the System Settings page for `pane` (`calendars` or `automation`)."""
+    url = SETTINGS_URLS.get(pane)
+    if url is None:
+        raise CalendarError(f"unknown settings page {pane}; use calendars or automation")
+    done = run(["/usr/bin/open", url], capture_output=True, text=True)
+    if done.returncode != 0:
+        raise CalendarError("Could not open System Settings")
 
 
 @dataclass(frozen=True)
@@ -269,9 +326,16 @@ on run argv
 	set time of endOfDay to 86399
 	set out to "ok" & rs
 	tell application "Reminders"
-		repeat with r in (reminders whose completed is false and due date is not missing value and due date <= endOfDay)
-			set when to (due date of r) as «class isot» as string
-			set out to out & (name of r) & fs & when & fs & (name of container of r) & rs
+		-- A whose clause still compares reminders with no due date and
+		-- fails (-1700), so the date is checked here instead.
+		repeat with r in (reminders whose completed is false)
+			set d to due date of r
+			if d is not missing value then
+				if d <= endOfDay then
+					set when to d as «class isot» as string
+					set out to out & (name of r) & fs & when & fs & (name of container of r) & rs
+				end if
+			end if
 		end repeat
 	end tell
 	return out
@@ -292,13 +356,8 @@ class Message:
 
 
 def _app_denied(app: str, where: str) -> AccessDenied:
-    err = AccessDenied()
-    err.args = (
-        f"{app} access is denied. Open System Settings > Privacy & Security > "
-        f"{where}, allow the app that runs whyline (Terminal, or your editor), "
-        "then try again.",
-    )
-    return err
+    # Mail and Reminders are scripted, so the switch is under Automation.
+    return AccessDenied(app, where, "automation")
 
 
 def _osascript(app: str, where: str, source: str, args: list[str], run) -> str:

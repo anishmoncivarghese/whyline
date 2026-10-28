@@ -209,6 +209,11 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     setup_p.add_argument("--runner", help="Provider that writes the brief (default: first available)")
     setup_p.add_argument("--backup", action="append", default=[], help="Backup provider; repeatable")
     setup_p.add_argument("--chat", type=int, help="Allowed Telegram chat id (default: the first)")
+    open_p = brief_sub.add_parser(
+        "open-settings", help="Open the System Settings page that grants brief access"
+    )
+    open_p.add_argument("pane", choices=sorted(brief.SETTINGS_URLS),
+                        help="calendars (Calendar) or automation (Mail and Reminders)")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1558,8 +1563,16 @@ def cmd_brief(args: argparse.Namespace) -> int:
     which = getattr(args, "idea_brief_command", None)
     if which == "setup":
         return _brief_setup(args)
+    if which == "open-settings":
+        try:
+            brief.open_settings(args.pane)
+        except brief.CalendarError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_ERROR
+        return EXIT_OK
     if which not in ("calendar", "mail", "tasks"):
-        print("usage: whyline idea brief calendar|mail|tasks [--preview] | setup", file=sys.stderr)
+        print("usage: whyline idea brief calendar|mail|tasks [--preview] | setup | open-settings",
+              file=sys.stderr)
         return EXIT_USAGE
     names: list[str] = []
     if which != "tasks":

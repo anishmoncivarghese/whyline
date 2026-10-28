@@ -92,10 +92,13 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-brief-grant-mail { width: auto; margin-top: 1; }
     AssistantScreen #as-brief-mail-result { height: auto; max-height: 20; }
     AssistantScreen #as-brief-mail-result.-empty { display: none; }
+    AssistantScreen .as-open-settings { width: auto; }
+    AssistantScreen .as-open-settings.-hidden { display: none; }
     AssistantScreen #as-brief-setup-warning { height: auto; margin-top: 1; color: $warning; }
     AssistantScreen #as-brief-setup-row { height: auto; margin-top: 1; }
     AssistantScreen #as-brief-setup-row > * { margin-right: 1; }
-    AssistantScreen #as-brief-at { width: 10; }
+    /* Border and padding take 4 cells; HH:MM and the cursor need 6. */
+    AssistantScreen #as-brief-at { width: 12; }
     AssistantScreen #as-brief-runner, AssistantScreen #as-brief-backup,
     AssistantScreen #as-brief-chat { width: 24; }
     AssistantScreen #as-brief-setup-result { height: auto; max-height: 4; }
@@ -285,6 +288,8 @@ class AssistantScreen(ModalScreen):
                 ),
                 Button("Grant Calendar access and preview", id="as-brief-grant"),
                 Static("", id="as-brief-result", markup=False, classes="-empty"),
+                Button("Open System Settings", id="as-brief-open-settings",
+                       classes="as-open-settings -hidden"),
                 SelectionList[str](
                     *self._calendar_options(self._brief_mailboxes),
                     id="as-brief-mailboxes",
@@ -292,6 +297,8 @@ class AssistantScreen(ModalScreen):
                 ),
                 Button("Grant Mail and Reminders access and preview", id="as-brief-grant-mail"),
                 Static("", id="as-brief-mail-result", markup=False, classes="-empty"),
+                Button("Open System Settings", id="as-brief-open-settings-mail",
+                       classes="as-open-settings -hidden"),
                 Static(brief.SEND_WARNING, id="as-brief-setup-warning", markup=False),
                 *self._brief_setup_widgets(),
                 Label("History", classes="as-section", id="as-history-title"),
@@ -403,6 +410,9 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-brief-grant-mail":
             event.stop()
             self._mail_preview()
+        elif button_id in ("as-brief-open-settings", "as-brief-open-settings-mail"):
+            event.stop()
+            self._open_settings(event.button)
         elif button_id in ("as-reminder-add", "as-add-reminder"):
             event.stop()
             self._add_reminder()
@@ -522,9 +532,11 @@ class AssistantScreen(ModalScreen):
             tasks = brief.reminders(brief.default_dir())
         except brief.CalendarError as exc:
             result.update(str(exc))
+            self._offer_settings("#as-brief-open-settings-mail", exc)
         except OSError as exc:
             result.update(f"Could not write the brief: {exc}")
         else:
+            self._offer_settings("#as-brief-open-settings-mail", None)
             result.update(mailed.text.rstrip("\n") + "\n\n" + tasks.text.rstrip("\n"))
             picker = self.query_one("#as-brief-mailboxes", SelectionList)
             if mailed.calendars:
@@ -534,6 +546,23 @@ class AssistantScreen(ModalScreen):
                 )
             picker.set_class(not mailed.calendars and not self._brief_mailboxes, "-empty")
         result.set_class(False, "-empty")
+
+    def _offer_settings(self, selector: str, exc: Exception | None) -> None:
+        """Show Open System Settings only after macOS refused access."""
+        button = self.query_one(selector, Button)
+        pane = getattr(exc, "pane", None) if isinstance(exc, brief.AccessDenied) else None
+        button.settings_pane = pane
+        button.set_class(pane is None, "-hidden")
+
+    def _open_settings(self, button: Button) -> None:
+        """The function `whyline idea brief open-settings` calls."""
+        pane = getattr(button, "settings_pane", None)
+        if not pane:
+            return
+        try:
+            brief.open_settings(pane)
+        except brief.CalendarError as exc:
+            self.notify(str(exc), severity="error")
 
     def _brief_preview(self) -> None:
         """Run the function `whyline idea brief calendar` runs, with the user here.
@@ -546,9 +575,11 @@ class AssistantScreen(ModalScreen):
             made = brief.calendar(brief.default_dir(), calendars=self._brief_calendars)
         except brief.CalendarError as exc:
             result.update(str(exc))
+            self._offer_settings("#as-brief-open-settings", exc)
         except OSError as exc:
             result.update(f"Could not write the brief: {exc}")
         else:
+            self._offer_settings("#as-brief-open-settings", None)
             result.update(made.text.rstrip("\n"))
             picker = self.query_one("#as-brief-calendars", SelectionList)
             picker.clear_options()

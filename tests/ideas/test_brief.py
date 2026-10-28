@@ -540,3 +540,52 @@ def test_check_reports_denied_calendar_and_mail_not_running(monkeypatch):
     assert results["brief mail"].level == "warn"
     assert not results["brief agent"].ok
     assert results["brief last run"].level == "warn"
+
+
+def test_reminders_script_checks_due_date_outside_the_whose_clause():
+    # Reminders compares undated reminders inside a whose clause and fails
+    # with -1700 ("Can't make missing value into type date").
+    script = brief.REMINDERS_SCRIPT
+    assert "due date <=" not in script.split("whose", 1)[1].split("\n", 1)[0]
+    assert "if d is not missing value then" in script
+
+
+@pytest.mark.parametrize(
+    "env, expected",
+    [
+        ({"TERM_PROGRAM": "Apple_Terminal"}, "Terminal"),
+        ({"TERM_PROGRAM": "iTerm.app"}, "iTerm"),
+        ({"TERM_PROGRAM": "ghostty"}, "Ghostty"),
+        ({"TERM_PROGRAM": "tmux"}, "the terminal app tmux runs in"),
+        ({}, "the terminal app you run whyline in"),
+    ],
+)
+def test_host_app_names_the_terminal(env, expected):
+    assert brief.host_app(env) == expected
+
+
+def test_calendar_denial_gives_steps_and_the_settings_page(monkeypatch):
+    monkeypatch.setenv("TERM_PROGRAM", "Apple_Terminal")
+    err = brief.AccessDenied()
+    text = str(err)
+    assert err.pane == "calendars"
+    assert "Calendar access is denied for Terminal." in text
+    assert "1. Open System Settings > Privacy & Security > Calendars, and turn on Terminal." in text
+    assert "whyline idea brief open-settings calendars" in text
+
+
+def test_reminders_denial_points_at_automation(tmp_path, monkeypatch):
+    monkeypatch.setenv("TERM_PROGRAM", "Apple_Terminal")
+    run = _mail_run("", returncode=1, stderr="Not authorized (-1743)")
+    with pytest.raises(brief.AccessDenied) as err:
+        brief.reminders(tmp_path, run=run)
+    assert err.value.pane == "automation"
+    assert "Automation, open Terminal, and turn on Reminders" in str(err.value)
+
+
+def test_open_settings_opens_the_page():
+    seen = []
+    brief.open_settings("automation", run=lambda cmd, **k: seen.append(cmd) or SimpleNamespace(returncode=0))
+    assert seen == [["/usr/bin/open", brief.SETTINGS_URLS["automation"]]]
+    with pytest.raises(brief.CalendarError):
+        brief.open_settings("camera", run=lambda cmd, **k: SimpleNamespace(returncode=0))

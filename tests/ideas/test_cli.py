@@ -1482,3 +1482,13 @@ def test_brief_tasks_prints_the_path_and_reports_denial(ideas_home, tmp_path, ca
     monkeypatch.setattr(brief, "reminders", denied)
     code, out, err = invoke(["idea", "brief", "tasks"], capsys)
     assert code == 1 and "System Settings" in err
+
+
+def test_brief_open_settings_calls_the_shared_function(ideas_home, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    opened = []
+    monkeypatch.setattr(brief, "open_settings", lambda pane, **k: opened.append(pane))
+    code, _, _ = invoke(["idea", "brief", "open-settings", "calendars"], capsys)
+    assert code == 0
+    assert opened == ["calendars"]
