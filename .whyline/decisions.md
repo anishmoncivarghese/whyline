@@ -27254,3 +27254,106 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0f615ddca0af455eabb05c27f34abff9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:27:58.314Z"} -->
+
+## 2026-10-27 — Mail export lists mailbox names but reads messages only for chosen mailboxes; none chosen reads nothing
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-19
+
+**Because:** privacy: unchosen bodies are never read, and the picker still needs names to offer
+
+**Rejected:**
+
+- all mailboxes when none chosen — would read mail the user never opted into
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 04aa184862c042259c24d9295c1cf2c2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:30:54.832Z"} -->
+
+## 2026-10-27 — ASST-19 passes Round 2 tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-19
+
+**Because:** All 107 required mail, reminders, CLI, and assistant-screen tests pass; the full suite completed with only the six previously documented unrelated stale console-navigation and schema-version failures
+
+**Rejected:**
+
+- Fail ASST-19 for the six full-suite failures — they are outside the task scope and exactly match the known incoming baseline
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 457d6fe865a046e98e104d43d31a893e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-27T21:42:55.391Z"} -->
+
+## 2026-10-28 — Request changes on ASST-19 Round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-19
+
+**Because:** Mail, Reminders, CLI, console, privacy filtering, and focused tests pass, but tasks.md reads failed agents from a last_failed_agents KV key that production code never writes, so it does not report agents that actually failed their last saved run; the test only asserts the generic whyline prefix and misses the required behavior
+
+**Rejected:**
+
+- Approve — the explicit failed-agent status requirement is not implemented against the real saved-agent run data
+
+**Files:** src/whyline/ideas/brief.py, tests/ideas/test_brief.py
+
+<!-- whyline-event: 32819a4705a24f989f4c4a42981943ae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T02:57:43.948Z"} -->
+
+## 2026-10-28 — tasks.md failed agents come from agents.service.rows last_outcome, not a KV key
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-19
+
+**Because:** the KV key was never written; the saved-agent run records are the real source
+
+**Rejected:**
+
+- write last_failed_agents KV from the runner — outside the task's file scope
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 41755444c6114db49bb7cd92257e82cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T02:58:47.700Z"} -->
+
+## 2026-10-28 — ASST-19 passes Round 5 tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** ASST-19
+
+**Because:** All 108 required Mail, Reminders, CLI, console, privacy, and failed-agent status tests pass; the full suite has only the same six documented unrelated stale console-navigation and schema-version failures
+
+**Rejected:**
+
+- Fail ASST-19 for the six full-suite failures — they are outside the task scope and exactly match the known incoming baseline
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 0d14171ece584f8fb110c876a09fa052 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:10:41.129Z"} -->
+
+## 2026-10-28 — Approve ASST-19 Round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-19
+
+**Because:** The scoped implementation reads only chosen mailbox bodies, guards and limits exported mail, merges due Reminders with whyline reminders, memory, paused relay status, and real saved-agent failures, and all 108 focused tests pass; the full suite has only the same six documented unrelated baseline failures
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness, safety, or coverage defect remains
+- Fail for the six full-suite failures — they are unchanged unrelated stale console-navigation and schema-version expectations
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/ideas/cli.py, src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 489afafd6bde40b0a172447c4a168df6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T03:21:18.386Z"} -->

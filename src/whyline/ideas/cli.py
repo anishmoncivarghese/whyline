@@ -200,6 +200,10 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     brief_sub = brief_p.add_subparsers(dest="idea_brief_command", required=True)
     cal = brief_sub.add_parser("calendar", help="Write today's calendar to today.md")
     cal.add_argument("--preview", action="store_true", help="Print the file, not just its path")
+    for name, text in (("mail", "Write unread and flagged mail to mail.md"),
+                       ("tasks", "Write due Reminders, whyline reminders and memory to tasks.md")):
+        extra = brief_sub.add_parser(name, help=text)
+        extra.add_argument("--preview", action="store_true", help="Print the file, not just its path")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1545,18 +1549,26 @@ def cmd_remind(args: argparse.Namespace) -> int:
 
 
 def cmd_brief(args: argparse.Namespace) -> int:
-    if getattr(args, "idea_brief_command", None) != "calendar":
-        print("usage: whyline idea brief calendar [--preview]", file=sys.stderr)
+    which = getattr(args, "idea_brief_command", None)
+    if which not in ("calendar", "mail", "tasks"):
+        print("usage: whyline idea brief calendar|mail|tasks [--preview]", file=sys.stderr)
         return EXIT_USAGE
-    conn = _connect()
-    if conn is None:
-        return EXIT_ERROR
+    names: list[str] = []
+    if which != "tasks":
+        conn = _connect()
+        if conn is None:
+            return EXIT_ERROR
+        try:
+            names = brief.selected(conn) if which == "calendar" else brief.mailboxes_selected(conn)
+        finally:
+            conn.close()
     try:
-        names = brief.selected(conn)
-    finally:
-        conn.close()
-    try:
-        result = brief.calendar(brief.default_dir(), calendars=names)
+        if which == "calendar":
+            result = brief.calendar(brief.default_dir(), calendars=names)
+        elif which == "mail":
+            result = brief.mail(brief.default_dir(), mailboxes=names)
+        else:
+            result = brief.reminders(brief.default_dir())
     except brief.CalendarError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_ERROR

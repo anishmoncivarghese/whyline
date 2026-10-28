@@ -693,3 +693,57 @@ async def test_morning_brief_picker_saves_the_chosen_calendars(assistant_home, m
         assert brief.selected(conn) == ["Work"]
     finally:
         conn.close()
+
+
+async def test_mail_and_reminders_button_previews_and_saves_mailboxes(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    calls = []
+
+    def fake_mail(out_dir, *, mailboxes, **kwargs):
+        calls.append(("mail", list(mailboxes)))
+        return brief.Brief(assistant_home / "mail.md", "# Mail\n\nNothing", ("INBOX", "Archive"))
+
+    def fake_tasks(out_dir, **kwargs):
+        calls.append(("tasks",))
+        return brief.Brief(assistant_home / "tasks.md", "# Tasks\n\n- Pay rent", ())
+
+    monkeypatch.setattr(brief, "mail", fake_mail)
+    monkeypatch.setattr(brief, "reminders", fake_tasks)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        button = screen.query_one("#as-brief-grant-mail", tui.Button)
+        assert str(button.label) == "Grant Mail and Reminders access and preview"
+        button.press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-brief-mail-result", tui.Static).render())
+        assert "Nothing" in text and "Pay rent" in text
+        picker = screen.query_one("#as-brief-mailboxes", SelectionList)
+        assert picker.option_count == 2
+        picker.select("INBOX")
+        await pilot.pause()
+    assert calls == [("mail", []), ("tasks",)]
+    conn = store.connect()
+    try:
+        assert brief.mailboxes_selected(conn) == ["INBOX"]
+    finally:
+        conn.close()
+
+
+async def test_mail_and_reminders_button_shows_the_denial(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    def denied(*a, **k):
+        raise brief.AccessDenied()
+
+    monkeypatch.setattr(brief, "mail", denied)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        screen.query_one("#as-brief-grant-mail", tui.Button).press()
+        await pilot.pause()
+        text = _plain(screen.query_one("#as-brief-mail-result", tui.Static).render())
+        assert "System Settings" in text

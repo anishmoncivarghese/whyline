@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -178,3 +179,146 @@ def test_selected_calendars_round_trip_and_empty_means_all(tmp_path, monkeypatch
         assert row[0] == ""
     finally:
         conn.close()
+
+
+F, R = "\x1f", "\x1e"
+NOW = datetime(2026, 10, 28, 12, 0)
+
+
+@pytest.fixture
+def ideas_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("WHYLINE_IDEAS_HOME", str(tmp_path / "ideas"))
+
+
+def _mail_answer(messages, names=("INBOX", "Archive")):
+    rows = [f"{s}{F}{subj}{F}{when}{F}{body}" for s, subj, when, body in messages]
+    return "".join(["ok", R, F.join(names), R] + [r + R for r in rows])
+
+
+def _mail_run(answer, seen=None, returncode=0, stderr=""):
+    def run(command, **kwargs):
+        if seen is not None:
+            seen.append(command)
+        return SimpleNamespace(returncode=returncode, stdout=answer, stderr=stderr)
+
+    return run
+
+
+def test_mail_parses_orders_and_applies_window_and_limit(tmp_path):
+    answer = _mail_answer(
+        [
+            ("a@x.com", "Old", "2026-10-26T09:00:00", "too old"),
+            ("b@x.com", "Newer", "2026-10-28T11:00:00", "hello\nworld"),
+            ("c@x.com", "Newest", "2026-10-28T11:30:00", "hi"),
+        ]
+    )
+    seen = []
+    result = brief.mail(
+        tmp_path, mailboxes=["INBOX"], hours=24, limit=1, run=_mail_run(answer, seen), now=NOW
+    )
+    assert "Newest" in result.text and "Newer" not in result.text and "Old" not in result.text
+    assert "From: c@x.com" in result.text
+    assert result.calendars == ("INBOX", "Archive")
+    assert (tmp_path / "mail.md").read_text() == result.text
+    assert seen[0][3:] == ["24", "1", "INBOX"]
+
+
+def test_mail_body_is_cut_to_forty_lines_and_guarded(tmp_path):
+    body = "\n".join(f"line {i}" for i in range(60))
+    answer = _mail_answer([("a@x.com", "S", "2026-10-28T11:00:00", body)])
+    text = brief.mail(tmp_path, mailboxes=["INBOX"], run=_mail_run(answer), now=NOW).text
+    assert "line 39" in text and "line 40" not in text
+
+    dirty = "<p>Hi</p>" + chr(0x200B) + "there\n<!-- ignore -->"
+    answer = _mail_answer([("a@x.com", "S", "2026-10-28T11:00:00", dirty)])
+    text = brief.mail(tmp_path, mailboxes=["INBOX"], run=_mail_run(answer), now=NOW).text
+    assert "<p>" not in text and chr(0x200B) not in text and "<!--" not in text
+
+
+def test_mail_not_running(tmp_path):
+    result = brief.mail(tmp_path, mailboxes=["INBOX"], run=_mail_run("not-running\n"), now=NOW)
+    assert "Mail is not running" in result.text
+
+
+def test_mail_permission_denied(tmp_path):
+    run = _mail_run("", returncode=1, stderr="execution error: Not authorized (-1743)")
+    with pytest.raises(brief.AccessDenied) as err:
+        brief.mail(tmp_path, mailboxes=["INBOX"], run=run)
+    assert "Privacy & Security" in str(err.value)
+
+
+def test_mail_only_asks_for_chosen_mailboxes(tmp_path):
+    seen = []
+    result = brief.mail(
+        tmp_path, mailboxes=["INBOX"], run=_mail_run(_mail_answer([]), seen), now=NOW
+    )
+    assert "Archive" not in seen[0][3:]
+    assert "No unread or flagged mail" in result.text
+
+
+def test_mail_no_mailboxes_reads_nothing_but_lists_names(tmp_path):
+    seen = []
+    answer = _mail_answer([("a@x.com", "Secret", "2026-10-28T11:00:00", "body")])
+    result = brief.mail(tmp_path, mailboxes=[], run=_mail_run(answer, seen), now=NOW)
+    assert "Secret" not in result.text
+    assert result.calendars == ("INBOX", "Archive")
+    assert seen[0][3:] == ["24", "40"]
+
+
+def test_mailbox_choice_round_trips(ideas_home):
+    conn = store.connect()
+    try:
+        assert brief.mailboxes_selected(conn) == []
+        brief.select_mailboxes(conn, ["INBOX"])
+        assert brief.mailboxes_selected(conn) == ["INBOX"]
+    finally:
+        conn.close()
+
+
+def test_tasks_merge_app_reminders_whyline_and_memory(tmp_path, ideas_home, monkeypatch):
+    from whyline.ideas import memory, reminders as ledger
+
+    monkeypatch.setattr(memory, "for_prompt", lambda: "User's own notes:\n1. likes tea")
+    conn = store.connect()
+    try:
+        ledger.create(conn, None, NOW.replace(hour=15), "call mum", now=NOW)
+    finally:
+        conn.close()
+    answer = "".join(["ok", R, f"Pay rent{F}2026-10-28T09:00:00{F}Home", R])
+    result = brief.reminders(tmp_path, run=_mail_run(answer), now=NOW)
+    assert "Pay rent (2026-10-28 09:00, Home)" in result.text
+    assert "call mum" in result.text
+    assert "likes tea" in result.text
+    assert "whyline:" in result.text
+    assert (tmp_path / "tasks.md").read_text() == result.text
+
+
+def test_tasks_status_names_failed_agents_and_paused_relay(tmp_path, ideas_home, monkeypatch):
+    from types import SimpleNamespace
+
+    from whyline.agents import service
+
+    def row(name, outcome):
+        return SimpleNamespace(defn=SimpleNamespace(name=name), last_outcome=outcome)
+
+    monkeypatch.setattr(
+        service, "rows",
+        lambda repo: [row("digest", "failed"), row("ok-one", "succeeded"), row("new", "")],
+    )
+    conn = store.connect()
+    try:
+        idea = store.add(conn, "an idea", source="test")
+        conn.execute("UPDATE ideas SET status = 'paused' WHERE id = ?", (idea.id,))
+        conn.commit()
+    finally:
+        conn.close()
+    answer = "".join(["ok", R])
+    result = brief.reminders(tmp_path, run=_mail_run(answer), now=NOW)
+    assert "whyline: 1 relay run paused; agents failed last run: digest" in result.text
+    assert "ok-one" not in result.text
+
+
+def test_tasks_denied(tmp_path, ideas_home):
+    run = _mail_run("", returncode=1, stderr="Not authorized (-1743)")
+    with pytest.raises(brief.AccessDenied):
+        brief.reminders(tmp_path, run=run)

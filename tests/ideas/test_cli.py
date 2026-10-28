@@ -1412,3 +1412,42 @@ def test_brief_calendar_reports_denial(ideas_home, capsys, monkeypatch):
     assert code == 1
     assert out == ""
     assert "System Settings" in err
+
+
+def test_brief_mail_uses_chosen_mailboxes(ideas_home, tmp_path, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    conn = store.connect()
+    try:
+        brief.select_mailboxes(conn, ["INBOX"])
+    finally:
+        conn.close()
+    calls = []
+
+    def fake(out_dir, *, mailboxes, **kwargs):
+        calls.append((out_dir, mailboxes))
+        return brief.Brief(tmp_path / "mail.md", "# Mail\n", ("INBOX",))
+
+    monkeypatch.setattr(brief, "mail", fake)
+    code, out, err = invoke(["idea", "brief", "mail", "--preview"], capsys)
+    assert code == 0, err
+    assert out == "# Mail\n"
+    assert calls == [(brief.default_dir(), ["INBOX"])]
+
+
+def test_brief_tasks_prints_the_path_and_reports_denial(ideas_home, tmp_path, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    monkeypatch.setattr(
+        brief, "reminders", lambda out_dir, **k: brief.Brief(tmp_path / "tasks.md", "# Tasks\n", ())
+    )
+    code, out, err = invoke(["idea", "brief", "tasks"], capsys)
+    assert code == 0, err
+    assert out.strip() == str(tmp_path / "tasks.md")
+
+    def denied(*a, **k):
+        raise brief.AccessDenied()
+
+    monkeypatch.setattr(brief, "reminders", denied)
+    code, out, err = invoke(["idea", "brief", "tasks"], capsys)
+    assert code == 1 and "System Settings" in err

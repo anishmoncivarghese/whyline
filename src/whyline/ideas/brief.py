@@ -217,3 +217,292 @@ def _clashes(timed: list[Event]) -> list[tuple[Event, Event]]:
             if second.start < first.end:
                 found.append((first, second))
     return found
+
+
+MAILBOXES_KEY = "brief_mailboxes"
+BODY_LINES = 40
+FIELD = "\x1f"
+RECORD = "\x1e"
+
+MAIL_SCRIPT = """
+on run argv
+	set hoursBack to (item 1 of argv) as integer
+	set maxCount to (item 2 of argv) as integer
+	set wanted to {}
+	if (count of argv) > 2 then set wanted to items 3 thru -1 of argv
+	if application "Mail" is not running then return "not-running"
+	set fs to character id 31
+	set rs to character id 30
+	set cutoff to (current date) - (hoursBack * hours)
+	set out to "ok" & rs
+	tell application "Mail"
+		set names to {}
+		repeat with mb in mailboxes
+			set end of names to (name of mb)
+		end repeat
+		set AppleScript's text item delimiters to fs
+		set out to out & (names as text) & rs
+		set AppleScript's text item delimiters to ""
+		set total to 0
+		repeat with mb in mailboxes
+			if wanted contains (name of mb) then
+				set found to (messages of mb whose (read status is false or flagged status is true) and date received > cutoff)
+				repeat with m in found
+					if total >= maxCount then exit repeat
+					set when to (date received of m) as «class isot» as string
+					set out to out & (sender of m) & fs & (subject of m) & fs & when & fs & (content of m) & rs
+					set total to total + 1
+				end repeat
+			end if
+		end repeat
+	end tell
+	return out
+end run
+"""
+
+REMINDERS_SCRIPT = """
+on run argv
+	set fs to character id 31
+	set rs to character id 30
+	set endOfDay to (current date)
+	set time of endOfDay to 86399
+	set out to "ok" & rs
+	tell application "Reminders"
+		repeat with r in (reminders whose completed is false and due date is not missing value and due date <= endOfDay)
+			set when to (due date of r) as «class isot» as string
+			set out to out & (name of r) & fs & when & fs & (name of container of r) & rs
+		end repeat
+	end tell
+	return out
+end run
+"""
+
+
+class Message:
+    """One mail message as read from Mail.app."""
+
+    __slots__ = ("sender", "subject", "received", "body")
+
+    def __init__(self, sender: str, subject: str, received: datetime, body: str) -> None:
+        self.sender = sender
+        self.subject = subject
+        self.received = received
+        self.body = body
+
+
+def _app_denied(app: str, where: str) -> AccessDenied:
+    err = AccessDenied()
+    err.args = (
+        f"{app} access is denied. Open System Settings > Privacy & Security > "
+        f"{where}, allow the app that runs whyline (Terminal, or your editor), "
+        "then try again.",
+    )
+    return err
+
+
+def _osascript(app: str, where: str, source: str, args: list[str], run) -> str:
+    command = [OSASCRIPT, "-e", source, *args]
+    try:
+        done = run(command, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise CalendarError(
+            f"{app} did not answer within {TIMEOUT_SECONDS} seconds. "
+            "If a permission prompt is waiting, answer it and try again."
+        ) from None
+    except OSError as exc:
+        raise CalendarError(f"Could not run osascript: {exc}") from exc
+    stderr = done.stderr or ""
+    if done.returncode != 0:
+        if "-1743" in stderr or "not authorized" in stderr.lower():
+            raise _app_denied(app, where)
+        detail = " ".join(stderr.split())[:300]
+        raise CalendarError(f"The {app} script failed: {detail or 'no output'}")
+    return (done.stdout or "").strip("\n")
+
+
+def mailboxes_selected(conn: sqlite3.Connection) -> list[str]:
+    """Chosen mailbox names. Empty means none: no mail is read."""
+    row = conn.execute("SELECT value FROM kv WHERE key = ?", (MAILBOXES_KEY,)).fetchone()
+    if row is None or not row[0]:
+        return []
+    try:
+        names = json.loads(row[0])
+    except ValueError:
+        return []
+    if not isinstance(names, list):
+        return []
+    return [name for name in names if isinstance(name, str) and name]
+
+
+def select_mailboxes(conn: sqlite3.Connection, names: list[str]) -> None:
+    value = json.dumps(names) if names else ""
+    conn.execute(
+        """
+        INSERT INTO kv (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (MAILBOXES_KEY, value),
+    )
+
+
+def mail(
+    out_dir: Path,
+    *,
+    mailboxes: list[str],
+    hours: int = 24,
+    limit: int = 40,
+    run=subprocess.run,
+    now: datetime | None = None,
+) -> Brief:
+    """Write ``mail.md`` in ``out_dir``: unread and flagged mail from ``mailboxes``.
+
+    Mailboxes not in ``mailboxes`` are never asked for their messages. When
+    Mail is not running, the file says so and Mail is not launched.
+    """
+    out_dir = Path(out_dir)
+    available: list[str] = []
+    # With no mailboxes chosen the script still lists names for the picker,
+    # but reads no messages.
+    answer = _osascript(
+        "Mail", "Automation > Mail", MAIL_SCRIPT, [str(hours), str(limit), *mailboxes], run
+    )
+    if answer.strip() == "not-running":
+        text = "# Mail\n\nMail is not running, so no mail was read.\n"
+    else:
+        available, messages = _parse_mail(answer)
+        if not mailboxes:
+            text = "# Mail\n\nNo mailboxes are chosen, so no mail was read.\n"
+        else:
+            moment = now or datetime.now()
+            cutoff = moment - timedelta(hours=hours)
+            messages = [m for m in messages if m.received >= cutoff]
+            messages.sort(key=lambda m: m.received, reverse=True)
+            text = _render_mail(messages[:limit])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "mail.md"
+    path.write_text(text, encoding="utf-8")
+    return Brief(path, text, tuple(available))
+
+
+def _parse_mail(answer: str) -> tuple[list[str], list[Message]]:
+    records = answer.split(RECORD)
+    if not records or records[0] != "ok":
+        raise CalendarError("The Mail script failed: unexpected answer")
+    available = [n for n in (records[1].split(FIELD) if len(records) > 1 else []) if n]
+    messages: list[Message] = []
+    for record in records[2:]:
+        if not record.strip():
+            continue
+        parts = record.split(FIELD, 3)
+        if len(parts) != 4:
+            continue
+        try:
+            received = datetime.fromisoformat(parts[2])
+        except ValueError:
+            continue
+        messages.append(Message(parts[0], parts[1], received, parts[3]))
+    return available, messages
+
+
+def _render_mail(messages: list[Message]) -> str:
+    from whyline.ideas import guard
+
+    if not messages:
+        return "# Mail\n\nNo unread or flagged mail.\n"
+    lines = ["# Mail", ""]
+    for m in messages:
+        body = "\n".join(m.body.splitlines()[:BODY_LINES])
+        body, _ = guard.clean(body)
+        sender, _ = guard.clean(m.sender)
+        subject, _ = guard.clean(m.subject)
+        lines.append(f"## {subject or '(no subject)'}")
+        lines.append(f"From: {sender}")
+        lines.append(f"Date: {m.received.strftime('%Y-%m-%d %H:%M')}")
+        lines.append("")
+        lines.append(body or "(no body)")
+        lines.append("")
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def reminders(out_dir: Path, *, run=subprocess.run, now: datetime | None = None) -> Brief:
+    """Write ``tasks.md`` in ``out_dir``: Reminders.app items due, whyline's, memory."""
+    from whyline.ideas import guard, memory, store
+    from whyline.ideas import reminders as ledger
+
+    answer = _osascript(
+        "Reminders", "Automation > Reminders", REMINDERS_SCRIPT, [], run
+    )
+    records = answer.split(RECORD)
+    if not records or records[0] != "ok":
+        raise CalendarError("The Reminders script failed: unexpected answer")
+    items: list[tuple[str, str, str]] = []
+    for record in records[1:]:
+        parts = record.split(FIELD)
+        if len(parts) == 3:
+            title, _ = guard.clean(parts[0])
+            items.append((title or "(no title)", parts[1], " ".join(parts[2].split())))
+    items.sort(key=lambda item: item[1])
+
+    today = (now or datetime.now()).date()
+    own: list[str] = []
+    status = "whyline: nothing to report"
+    try:
+        conn = store.connect()
+    except (sqlite3.Error, OSError):
+        conn = None
+    if conn is not None:
+        try:
+            for r in ledger.pending(conn):
+                if r.due_at[:10] <= today.isoformat():
+                    own.append(f"- {r.due_at.replace('T', ' ')[:16]} {r.text}")
+            status = _status_line(conn)
+        finally:
+            conn.close()
+
+    lines = ["# Tasks", "", "## Reminders (due today or overdue)", ""]
+    lines += [f"- {t} ({d.replace('T', ' ')[:16]}, {c})" for t, d, c in items] or ["- none"]
+    lines += ["", "## whyline reminders due today", ""]
+    lines += own or ["- none"]
+    notes = memory.for_prompt()
+    if notes:
+        lines += ["", "## Memory", "", notes]
+    lines += ["", "## Status", "", status]
+    text = "\n".join(lines) + "\n"
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "tasks.md"
+    path.write_text(text, encoding="utf-8")
+    return Brief(path, text, ())
+
+
+_OK_OUTCOMES = ("", "succeeded", "succeeded_with_denials")
+
+
+def _failed_agents() -> list[str]:
+    """Names of saved agents whose latest recorded run did not succeed."""
+    from whyline.agents import service
+
+    try:
+        found = service.rows(None)
+    except Exception:  # the agents store is optional here; never block the brief
+        return []
+    names: list[str] = []
+    for item in found:
+        if item.last_outcome in _OK_OUTCOMES:
+            continue
+        name = getattr(item.defn, "name", None) or getattr(
+            getattr(item.defn, "path", None), "stem", "unknown"
+        )
+        names.append(name)
+    return names
+
+
+def _status_line(conn: sqlite3.Connection) -> str:
+    parts: list[str] = []
+    paused = conn.execute("SELECT COUNT(*) FROM ideas WHERE status = 'paused'").fetchone()[0]
+    if paused:
+        parts.append(f"{paused} relay run{'s' if paused != 1 else ''} paused")
+    failed = _failed_agents()
+    if failed:
+        parts.append("agents failed last run: " + ", ".join(failed))
+    return "whyline: " + ("; ".join(parts) if parts else "nothing to report")

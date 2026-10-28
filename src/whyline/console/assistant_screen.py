@@ -87,6 +87,11 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-brief-grant { width: auto; margin-top: 1; }
     AssistantScreen #as-brief-result { height: auto; max-height: 20; }
     AssistantScreen #as-brief-result.-empty { display: none; }
+    AssistantScreen #as-brief-mailboxes { height: auto; max-height: 8; margin-top: 1; }
+    AssistantScreen #as-brief-mailboxes.-empty { display: none; }
+    AssistantScreen #as-brief-grant-mail { width: auto; margin-top: 1; }
+    AssistantScreen #as-brief-mail-result { height: auto; max-height: 20; }
+    AssistantScreen #as-brief-mail-result.-empty { display: none; }
     AssistantScreen #as-history { height: 12; min-height: 4; }
     AssistantScreen #as-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-error.-empty { display: none; }
@@ -105,6 +110,7 @@ class AssistantScreen(ModalScreen):
             self._reminders = reminders.pending(conn)
             self._memory = memory.show()
             self._brief_calendars = brief.selected(conn)
+            self._brief_mailboxes = brief.mailboxes_selected(conn)
             self._editing_memory_line: int | None = None
         finally:
             conn.close()
@@ -268,6 +274,13 @@ class AssistantScreen(ModalScreen):
                 ),
                 Button("Grant Calendar access and preview", id="as-brief-grant"),
                 Static("", id="as-brief-result", markup=False, classes="-empty"),
+                SelectionList[str](
+                    *self._calendar_options(self._brief_mailboxes),
+                    id="as-brief-mailboxes",
+                    classes="" if self._brief_mailboxes else "-empty",
+                ),
+                Button("Grant Mail and Reminders access and preview", id="as-brief-grant-mail"),
+                Static("", id="as-brief-mail-result", markup=False, classes="-empty"),
                 Label("History", classes="as-section", id="as-history-title"),
                 table,
                 id="as-body",
@@ -299,6 +312,9 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-brief-grant":
             event.stop()
             self._brief_preview()
+        elif button_id == "as-brief-grant-mail":
+            event.stop()
+            self._mail_preview()
         elif button_id in ("as-reminder-add", "as-add-reminder"):
             event.stop()
             self._add_reminder()
@@ -392,16 +408,44 @@ class AssistantScreen(ModalScreen):
     def on_selection_list_selected_changed(
         self, event: SelectionList.SelectedChanged
     ) -> None:
-        if event.selection_list.id != "as-brief-calendars":
+        list_id = event.selection_list.id
+        if list_id not in ("as-brief-calendars", "as-brief-mailboxes"):
             return
         event.stop()
         names = [str(value) for value in event.selection_list.selected]
         conn = store.connect()
         try:
-            brief.select(conn, names)
+            if list_id == "as-brief-calendars":
+                brief.select(conn, names)
+            else:
+                brief.select_mailboxes(conn, names)
         finally:
             conn.close()
-        self._brief_calendars = names
+        if list_id == "as-brief-calendars":
+            self._brief_calendars = names
+        else:
+            self._brief_mailboxes = names
+
+    def _mail_preview(self) -> None:
+        """Run the functions `whyline idea brief mail|tasks` run, with the user here."""
+        result = self.query_one("#as-brief-mail-result", Static)
+        try:
+            mailed = brief.mail(brief.default_dir(), mailboxes=self._brief_mailboxes)
+            tasks = brief.reminders(brief.default_dir())
+        except brief.CalendarError as exc:
+            result.update(str(exc))
+        except OSError as exc:
+            result.update(f"Could not write the brief: {exc}")
+        else:
+            result.update(mailed.text.rstrip("\n") + "\n\n" + tasks.text.rstrip("\n"))
+            picker = self.query_one("#as-brief-mailboxes", SelectionList)
+            if mailed.calendars:
+                picker.clear_options()
+                picker.add_options(
+                    self._calendar_options(list(mailed.calendars), self._brief_mailboxes)
+                )
+            picker.set_class(not mailed.calendars and not self._brief_mailboxes, "-empty")
+        result.set_class(False, "-empty")
 
     def _brief_preview(self) -> None:
         """Run the function `whyline idea brief calendar` runs, with the user here.
