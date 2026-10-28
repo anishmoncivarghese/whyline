@@ -9,7 +9,7 @@ command = ["codex", "exec", "-s", "workspace-write", "--add-dir", "/Users/anish/
 model = "gpt-5.6-sol"
 
 [agents.claude]
-command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "--settings", ".whyline/relay/claude-settings.json"]
+command = ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "--settings", ".whyline/relay/claude-settings.json", "--append-system-prompt", "Headless run: nobody can approve a prompt, and any shell command outside your allow list ends your whole turn. Run tests only with `uv run pytest` (for example `uv run pytest -q tests/ideas/test_bot.py`). Never use `python -m pytest` or `python3 -m pytest`: there is no `python` here and the system `python3` has no pytest. Run one plain command per shell call. Never use shell control flow, subshells, $(...), backticks, background &, or bash -c. Chain only with && or |, each part an allowed command. Prefer your read, search and edit tools to shell commands."]
 model = "sonnet"
 
 [agents.antigravity]
