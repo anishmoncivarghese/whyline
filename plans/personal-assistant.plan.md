@@ -369,7 +369,7 @@ Rules every task keeps:
   - the CLI and console share the function
   Verify with `uv run pytest -q tests/ideas/test_brief.py tests/ideas/test_cli.py tests/console/test_assistant_screen.py`. Change nothing else.
 
-- [ ] ASST-19: Mail and Reminders export
+- [x] ASST-19: Mail and Reminders export
   Edit `src/whyline/ideas/brief.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_brief.py`, `tests/ideas/test_cli.py`, and `tests/console/test_assistant_screen.py` only.
   `brief.mail(out_dir, *, mailboxes, hours=24, limit=40, run=…)` reads unread and flagged messages through AppleScript to Mail.app, from the chosen mailboxes (kv `brief_mailboxes`), received in the last `hours`. For each message it writes sender, subject, date, and the first 40 lines of the body, passed through `guard.clean`, to `mail.md`. Bodies of mailboxes not chosen are never read.
   `brief.reminders(out_dir, run=…)` reads incomplete Reminders.app items due today or overdue into `tasks.md`, together with:
