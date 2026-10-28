@@ -27957,3 +27957,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3907eb0b53944a298edf0788adff9327 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T20:08:03.567Z"} -->
+
+## 2026-10-28 — Release 0.3.54: brief Reminders fix, exact macOS permission steps with Open System Settings, one-row button bar
+
+**Actor:** claude
+**Role:** release
+**Task:** REL-0.3.54
+
+**Because:** The user hit a Reminders -1700 failure and an unclear Calendar denial in the Assistant screen, and buttons spread across a wide window from a fixed 6-column grid; macOS permissions cannot be granted by whyline, so it names the terminal app and opens the exact Settings page instead
+
+**Rejected:**
+
+- Reset TCC with tccutil automatically — changes security settings without the user
+- Keep the fixed grid — it only served 80-column windows
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 881925be7a93486583781484ff24aaae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-28T20:46:43.593Z"} -->
