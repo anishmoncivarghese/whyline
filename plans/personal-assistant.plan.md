@@ -386,7 +386,7 @@ Rules every task keeps:
   - tasks merge whyline reminders and memory
   Verify with the three named test files. Change nothing else.
 
-- [ ] ASST-20: A `before` step on saved agents
+- [x] ASST-20: A `before` step on saved agents
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/runner.py`, `tests/agents/test_definitions.py`, and `tests/agents/test_runner.py` only.
   - Add an optional definition field `before`, whose only allowed values are `""` and `"brief-collect"`. It is a built-in name, never a shell command. Any other value raises `DefinitionError`.
   - Before building the prompt, `runner.execute_once` calls `whyline.ideas.brief.collect(run_dir)` for `brief-collect`, which writes `today.md`, `mail.md` and `tasks.md`, and adds those files as event files.
