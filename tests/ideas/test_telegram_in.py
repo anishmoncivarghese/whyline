@@ -217,7 +217,7 @@ def test_a_network_error_stores_nothing_and_keeps_the_cursor(conn, token):
     assert _rows(conn) == []
 
 
-def test_schema_1_databases_migrate_to_5(ideas_home):
+def test_schema_1_databases_migrate_to_current(ideas_home):
     paths.home()
     path = paths.db_path()
     raw = sqlite3.connect(path)
@@ -244,7 +244,7 @@ def test_schema_1_databases_migrate_to_5(ideas_home):
         version = conn.execute(
             "SELECT value FROM kv WHERE key = 'schema_version'"
         ).fetchone()[0]
-        assert version == "5"
+        assert version == str(store.SCHEMA_VERSION)
         cols = [
             row[1]
             for row in conn.execute("PRAGMA table_info(inbound)")
@@ -481,6 +481,6 @@ def test_schema_step_drops_unsent_callback_rows(conn):
         version = again.execute(
             "SELECT value FROM kv WHERE key = 'schema_version'"
         ).fetchone()[0]
-        assert version == "5"
+        assert version == str(store.SCHEMA_VERSION)
     finally:
         again.close()

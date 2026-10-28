@@ -103,11 +103,11 @@ def test_a_stored_command_mode_is_chat(tmp_path):
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
 @pytest.mark.asyncio
-async def test_mode_buttons_are_chat_relay_and_agents_and_chat_is_the_default(tmp_path):
+async def test_mode_buttons_are_chat_relay_agents_and_assistant_and_chat_is_the_default(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)) as pilot:
         ids = {button.id for button in app.query("#modes Button")}
-        assert ids == {"mode-chat", "mode-relay", "mode-agents"}
+        assert ids == {"mode-chat", "mode-relay", "mode-agents", "mode-assistant"}
         assert app.session.mode == "chat"
         await pilot.pause()
 

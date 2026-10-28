@@ -60,18 +60,18 @@ def _bot(monkeypatch, name="@InboxBot", sleep_seen=None):
     monkeypatch.setattr(telegram, "check_token", check)
 
 
-async def test_agents_mode_opens_inbox_within_80_columns(tmp_path, ideas_home, monkeypatch):
+async def test_assistant_mode_opens_inbox_within_80_columns(tmp_path, ideas_home, monkeypatch):
     from whyline.console.inbox_screen import IdeaInboxScreen as InboxSettings
 
     monkeypatch.setattr(telegram, "token_get", lambda **_kwargs: None)
     monkeypatch.setattr(telegram, "known_chats", lambda: {})
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)) as pilot:
-        await pilot.click("#mode-agents")
+        await pilot.click("#mode-assistant")
         await pilot.pause()
-        button = app.query_one("#agents-inbox")
+        button = app.query_one("#assistant-inbox")
         assert button.display and button.region.right <= 80 and button.region.height > 0
-        await pilot.click("#agents-inbox")
+        await pilot.click("#assistant-inbox")
         await _until(pilot, lambda: isinstance(app.screen, InboxSettings), "inbox shown")
         text = "\n".join(str(widget.renderable) for widget in app.screen.query(tui.Static))
         assert "No bot yet" in text

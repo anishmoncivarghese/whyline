@@ -385,16 +385,16 @@ async def test_open_then_save_leaves_every_key_unchanged(ideas_home, monkeypatch
     assert _rows() == before
 
 
-async def test_agents_mode_inbox_button_opens_the_screen(tmp_path, ideas_home):
+async def test_assistant_mode_inbox_button_opens_the_screen(tmp_path, ideas_home):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)) as pilot:
-        await pilot.click("#mode-agents")
+        await pilot.click("#mode-assistant")
         await pilot.pause()
-        assert "agents-inbox" in tui._MODE_BUTTONS["agents"]
-        button = app.query_one("#agents-inbox")
+        assert "assistant-inbox" in tui._MODE_BUTTONS["assistant"]
+        button = app.query_one("#assistant-inbox")
         assert str(button.label) == "Inbox"
         assert button.display
-        await pilot.click("#agents-inbox")
+        await pilot.click("#assistant-inbox")
         await _until(pilot, lambda: isinstance(app.screen, IdeaInboxScreen), "inbox shown")
         assert "No bot yet" in _plain(app.screen.query_one("#ib-bot"))
         assert not (ideas_home / "ideas.sqlite3").exists()

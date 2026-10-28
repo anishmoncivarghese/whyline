@@ -317,16 +317,16 @@ async def test_action_buttons_are_on_screen_at_80x24(ideas_home):
             assert region.x >= 0, button_id
 
 
-async def test_agents_mode_ideas_button_opens_the_screen(tmp_path, ideas_home):
+async def test_assistant_mode_ideas_button_opens_the_screen(tmp_path, ideas_home):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(80, 24)) as pilot:
-        await pilot.click("#mode-agents")
+        await pilot.click("#mode-assistant")
         await pilot.pause()
-        assert "agents-ideas" in tui._MODE_BUTTONS["agents"]
+        assert "assistant-ideas" in tui._MODE_BUTTONS["assistant"]
         ids = [button.id for button in app.query("#controls Button")]
-        assert ids.index("agents-ideas") == ids.index("agents-inbox") + 1
-        button = app.query_one("#agents-ideas")
+        assert ids.index("assistant-ideas") == ids.index("assistant-inbox") + 1
+        button = app.query_one("#assistant-ideas")
         assert str(button.label) == "Ideas"
         assert button.display
-        await pilot.click("#agents-ideas")
+        await pilot.click("#assistant-ideas")
         await _until(pilot, lambda: isinstance(app.screen, IdeasScreen), "ideas shown")
