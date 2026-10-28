@@ -399,7 +399,7 @@ Rules every task keeps:
   - agents without `before` are unchanged
   Verify with the named focused tests. Change nothing else.
 
-- [ ] ASST-21: Set up the morning brief agent from the console
+- [x] ASST-21: Set up the morning brief agent from the console
   Edit `src/whyline/ideas/brief.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_brief.py`, `tests/ideas/test_cli.py`, and `tests/console/test_assistant_screen.py` only.
   `brief.setup(*, at="07:00", runner, backup, chat_id)` writes the personal agent `morning-brief` through `whyline.agents.service.save_new` and then `service.accept`. The definition has:
   - trigger `weekdays` at `at`
