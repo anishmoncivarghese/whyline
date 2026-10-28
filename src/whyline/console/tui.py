@@ -108,6 +108,9 @@ _MODE_BUTTONS = {
     "assistant": ("assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check"),
 }
 _SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy", "settings")
+# Files shows the plan and the files an agent is changing; Agents and
+# Assistant work on no checkout, so it has nothing to show there.
+_HIDDEN_SHARED = {"agents": {"see-files"}, "assistant": {"see-files"}}
 _AWAKE_ON_TEXT = (
     "The Mac stays awake until you turn this off, even after the console closes. "
     "Closing the lid still sleeps it unless it is plugged into a display."
@@ -915,6 +918,7 @@ class WhylineConsoleApp(App):
       layout: grid;
       grid-size: 6;
     }
+    /* Only a bar wider than the window wraps; see _fit_controls. */
     /* One row. A wrapped prompt would push Save onto a second line. */
     #context-bar { height: 1; text-wrap: nowrap; }
     #modes-label { width: auto; padding: 1 1 0 1; }
@@ -1956,6 +1960,7 @@ class WhylineConsoleApp(App):
         """One place decides which bottom-bar buttons are on screen.
         Enable and disable stay in _sync_relay_buttons and the stop path."""
         wanted = set(_MODE_BUTTONS.get(self.session.mode, ())) | set(_SHARED_BUTTONS)
+        wanted -= _HIDDEN_SHARED.get(self.session.mode, set())
         if not awake.available():
             wanted.discard("awake")
         self._main("#awake", Button).label = "Awake ●" if self._awake else "Awake"
@@ -1964,12 +1969,28 @@ class WhylineConsoleApp(App):
             if button.id in ("relay-resolve", "relay-retry-stage", "update", "update-restart"):
                 continue
             button.display = button.id in wanted
-        controls.set_class(self.session.mode in ("agents", "assistant"), "wrap")
+        self._fit_controls()
         self._main("#attach").display = self.session.mode == "chat"
         try:
             self._main("#agents-bar").display = self.session.mode == "agents"
         except (NoMatches, IndexError):
             return
+
+    def _fit_controls(self) -> None:
+        """One row when the bar's buttons fit the window, a grid when not.
+
+        A fixed grid spread the buttons across a wide window."""
+        try:
+            controls = self._main("#controls")
+        except (NoMatches, IndexError):
+            return
+        needed = sum(
+            max(6, len(str(button.label)) + 4)
+            for button in controls.query(Button)
+            if button.display
+        )
+        available = controls.size.width or self.size.width
+        controls.set_class(needed > available, "wrap")
 
     def _sync_relay_buttons(self) -> None:
         """Plan and Set up only make sense in Relay mode; Resume only when a
@@ -3635,6 +3656,7 @@ class WhylineConsoleApp(App):
     def on_resize(self, event) -> None:
         self._sync_split()
         self._cb_fit()
+        self._fit_controls()
 
     def query_one(self, selector: Any = None, *args: Any, **kwargs: Any) -> Any:
         if selector == "#change-agents":

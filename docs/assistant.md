@@ -4,7 +4,7 @@ The assistant answers messages from your allowed Telegram chats and email
 senders. Set up the inbox first: see [Capture ideas from Telegram](idea-inbox.md).
 Console steps come first below. The command line is for scripts and comes second.
 
-Run `whyline console`, choose Agents, then Assistant. The screen has Actions,
+Run `whyline console`, choose the Assistant mode, then press Assistant…. The screen has Actions,
 Reminders, Memory, Morning brief, History, and a Check button.
 
 ## Verbs
@@ -23,7 +23,7 @@ captured.
 | `remind` | `remind in 2h call Sam` | Sets a reminder. Also `remind 17:30 ...` and `remind tomorrow 9:00 ...`. |
 | `remember` | `remember my gym days are Tue and Thu` | Saves a fact to memory. |
 | `forget` | `forget 2` | Forgets memory line 2. |
-| `do` | `do agentdock fix the typo in README` | Starts a relay task. |
+| `do` | `do agentdock ASST-17` | Starts that unchecked task of the repo's relay plan, after a tap. Free text after `do` is saved as an idea. |
 | `stop` | `stop 12` | Stops a running job. |
 
 Five more verbs are fixed. They are always on, and `/help` lists them:
@@ -116,6 +116,23 @@ Console: Assistant, Morning brief.
 5. Press Check. It reports Calendar, Mail and Reminders access, whether Mail is
    running, whether the agent exists and is accepted, the last brief's
    outcome, and the next run.
+
+### If macOS refuses access
+
+macOS asks the app whyline runs in (Terminal, iTerm, Ghostty, your editor's
+terminal) for permission, not whyline itself. When access is refused, the
+console names that app, lists the steps, and shows **Open System Settings**,
+which opens the right page:
+
+- Calendar: Privacy & Security > Calendars. Turn on your terminal app.
+- Mail and Reminders: Privacy & Security > Automation. Open your terminal app
+  and turn on Mail and Reminders.
+
+If your terminal app is not listed, quit and reopen it, then press the Grant
+button again so macOS can ask. The scheduled brief runs in the background; if
+it reports a refusal later, turn on whyline or python3 in the same list.
+Command line: `whyline idea brief open-settings calendars` or
+`whyline idea brief open-settings automation`.
 
 Command line: `whyline idea brief calendar --preview`, `brief mail --preview`,
 `brief tasks --preview`, then
