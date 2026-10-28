@@ -387,6 +387,19 @@ def run_status(root: Path) -> SessionEvent:
 
 _PAUSE_PATTERN = re.compile(r"^(Paused:|release task for you:)", re.M)
 _COMPLETE_PATTERN = re.compile(r"^Plan complete", re.M)
+# The relay prints preflight results as "  FAIL  <message>". pytest output
+# from an agent's turn ("FAILED tests/...") must not look like one: it made
+# a finished plan open Resolve with "Reset to base commit".
+_PREFLIGHT_FAIL = re.compile(r"^FAIL {2}\S")
+
+
+def preflight_fail_lines(text: str) -> list[str]:
+    """The relay's own preflight FAIL lines in `text`, stripped."""
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if _PREFLIGHT_FAIL.match(line.strip())
+    ]
 
 
 def run_relay_oneshot(root: Path | str, argv: list[str]) -> SessionEvent:

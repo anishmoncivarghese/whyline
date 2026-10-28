@@ -6053,7 +6053,7 @@ class WhylineConsoleApp(App):
                 self._main("#resolve-actions").display = False
             except (NoMatches, IndexError):
                 pass
-        fail_lines = [l.strip() for l in text.splitlines() if l.strip().startswith("FAIL")]
+        fail_lines = adapters.preflight_fail_lines(text)
         if fail_lines:
             self._resume_fail_lines = fail_lines
         elif code == 0:

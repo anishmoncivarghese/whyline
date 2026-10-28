@@ -4228,3 +4228,56 @@ async def test_new_agent_from_agents_mode_omits_disabled_providers(tmp_path, mon
         with pytest.raises(tui.NoMatches):
             app.screen.query_one("#na-backup-codex", tui.Checkbox)
 
+
+
+def test_preflight_fail_lines_ignore_pytest_output():
+    from whyline.console import adapters
+
+    text = (
+        "Preflight\n"
+        "  FAIL  working tree has uncommitted changes\n"
+        "  ok    plan file found\n"
+        "FAILED tests/console/test_x.py::test_y - AssertionError\n"
+        "tests/a.py::test_b FAILED\n"
+        "FAIL: test_legacy (unittest)\n"
+    )
+    assert adapters.preflight_fail_lines(text) == [
+        "FAIL  working tree has uncommitted changes"
+    ]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_plan_complete_with_pytest_failed_lines_does_not_resolve(tmp_path, monkeypatch):
+    """A finished plan whose reviewer printed pytest FAILED lines is not a preflight failure."""
+    import subprocess
+    from whyline.console import recovery, relay_ops
+
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    (tmp_path / "plan.md").write_text("# Plan\n- [x] T-1: Done\n", encoding="utf-8")
+    relay_ops.save_resolve_mode(tmp_path, "auto")
+
+    diagnosed = []
+    monkeypatch.setattr(
+        recovery, "diagnose", lambda *a, **k: diagnosed.append(k) or []
+    )
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kwargs: launched.append(list(args)))
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._relay_finished(
+            0,
+            "FAILED tests/console/test_idea_inbox.py::test_agents_mode - AssertionError\n"
+            "FAILED tests/ideas/test_telegram_in.py::test_schema - AssertionError\n"
+            "==> relay: ticked T-1 in the plan\n"
+            "Plan complete.\n",
+        )
+        await pilot.pause()
+
+        assert diagnosed == []
+        assert launched == []
+        assert app._resume_fail_lines == []
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert not any("Auto stopped" in line for line in lines)
