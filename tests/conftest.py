@@ -53,3 +53,26 @@ class Repo:
 def repo(tmp_path: Path) -> Repo:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     return Repo(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_telegram(monkeypatch):
+    """Fail fast instead of calling the Telegram API from a test.
+
+    Tests that send pass their own ``http`` or stub ``urlopen``. Without this,
+    a test that reaches the real sender hangs in a no-network sandbox
+    (60-second timeout, retried), as Ask agent's read-only runs did.
+    """
+    import urllib.request
+
+    from whyline.agents import telegram
+
+    real_urlopen = urllib.request.urlopen
+
+    def _guarded(request, *args, **kwargs):
+        url = request if isinstance(request, str) else request.full_url
+        if "api.telegram.org" in url:
+            raise telegram.TelegramError("tests may not call the Telegram API")
+        return real_urlopen(request, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "urlopen", _guarded)
