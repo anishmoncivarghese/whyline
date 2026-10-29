@@ -128,7 +128,7 @@ Rules every task keeps:
   - the console Accept saves the edited text
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-6: The company list and AI suggestions
+- [x] JOB-6: The company list and AI suggestions
   Add `src/whyline/jobs/companies.py`, `src/whyline/agents/templates/job-companies/` and `tests/jobs/test_companies.py`, and edit `src/whyline/jobs/cli.py` and its test only.
   `~/.whyline/jobs/companies.toml` holds one table per company:
   - `name`
