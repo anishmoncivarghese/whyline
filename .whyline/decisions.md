@@ -28545,3 +28545,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fa231d4cf0e54acda81a05963b741c03 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T17:45:39.926Z"} -->
+
+## 2026-10-29 — Jobs guard wraps ideas.guard.clean and rewrites its [flagged] marker to [flagged by whyline]
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-10
+
+**Because:** shared rules stay in one place; only the label differs
+
+**Rejected:**
+
+- copy the rules into jobs/guard.py — would drift from ASST-14
+
+**Files:** src/whyline/jobs/guard.py
+
+<!-- whyline-event: d072c1ef89714da5bc8faab16f7234e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T17:56:47.918Z"} -->
+
+## 2026-10-29 — Pass JOB-10 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-10
+
+**Because:** The focused jobs suite, full project suite, and an independent smoke probe all passed; guard cleaning and filters plus seen-store repeat suppression, persistence, and 0600 permissions matched the acceptance criteria
+
+**Rejected:**
+
+- Fail on ambiguous hybrid semantics — the task does not define hybrid matching and all stated location/remote cases behave correctly
+
+**Files:** src/whyline/jobs/guard.py, src/whyline/jobs/seen.py
+
+<!-- whyline-event: 6c644b34dd42417f8a744b272d6caa44 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:07:24.397Z"} -->
+
+## 2026-10-29 — Approve JOB-10 guard filters and seen store
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-10
+
+**Because:** The implementation matches the requested cleaning, flagging, filtering, persistence, repeat suppression, and private database behavior; the focused jobs suite and full project suite both passed independently
+
+**Rejected:**
+
+- Request changes for hybrid semantics — the task defines no hybrid-specific matching behavior and Posting has no hybrid-valued field
+
+**Files:** src/whyline/jobs/guard.py, src/whyline/jobs/seen.py, tests/jobs/test_guard.py, tests/jobs/test_seen.py
+
+<!-- whyline-event: 8d337fceceb04ef182dde73d66f71190 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:17:40.675Z"} -->
