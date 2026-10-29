@@ -9,6 +9,9 @@ from typing import Any
 
 import pytest
 
+pytest.importorskip("textual")
+from textual.widgets import DataTable  # noqa: E402
+
 from whyline import account
 from whyline.console import tui
 from whyline.console.jobs_screens import JobsHomeScreen, PRIVACY_SENTENCE
@@ -458,6 +461,164 @@ async def test_failed_review_in_console_reports_outcome_and_writes_nothing_withi
         for widget in screen.query("*"):
             if widget.display and widget.region.width > 0:
                 assert 0 <= widget.region.x and widget.region.right <= 80, widget
+
+
+def _co(
+    name: str, status: str = "suggested", ats: str = "unknown", slug: str = "", reason: str = ""
+):
+    from whyline.jobs import companies
+
+    return companies.Company(name=name, status=status, ats=ats, slug=slug, reason=reason)
+
+
+def _table_rows(screen: JobsHomeScreen) -> list[list[str]]:
+    table = screen.query_one("#jh-companies-table", DataTable)
+    return [[_plain(cell) for cell in table.get_row_at(i)] for i in range(table.row_count)]
+
+
+async def test_company_buttons_call_the_companies_functions() -> None:
+    from whyline.jobs import companies
+
+    calls: dict[str, list[Any]] = {
+        "suggest": [],
+        "check": [],
+        "add": [],
+        "accept": [],
+        "remove": [],
+    }
+    store = [_co("Acme", reason="builds anvils"), _co("Globex", status="accepted")]
+
+    def fake_suggest(cli=None, *, progress=None):
+        calls["suggest"].append(cli)
+        progress("asking")
+        store.append(_co("Initech"))
+        return companies.SuggestResult(ok=True, outcome="succeeded", added=(store[-1],))
+
+    def fake_check(name="all", *, progress=None):
+        calls["check"].append(name)
+        return list(store)
+
+    def fake_add(name, careers_url=None):
+        calls["add"].append((name, careers_url))
+        store.append(_co(name, status="accepted"))
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            companies_list_fn=lambda: list(store),
+            companies_suggest_fn=fake_suggest,
+            companies_check_fn=fake_check,
+            companies_add_fn=fake_add,
+            companies_accept_fn=lambda name: calls["accept"].append(name),
+            companies_remove_fn=lambda name: calls["remove"].append(name),
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == ["Acme", "Globex"]
+
+        screen.query_one("#jh-co-suggest", tui.Button).press()
+        await _until(pilot, lambda: len(_table_rows(screen)) == 3, "suggest finished")
+        assert len(calls["suggest"]) == 1
+
+        screen.query_one("#jh-co-check", tui.Button).press()
+        await _until(pilot, lambda: calls["check"] == ["all"], "check called")
+        await _until(pilot, lambda: not screen._companies_busy, "check finished")
+
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.move_cursor(row=1)
+        screen.query_one("#jh-co-accept", tui.Button).press()
+        await pilot.pause()
+        assert calls["accept"] == ["Globex"]
+        table.move_cursor(row=0)
+        screen.query_one("#jh-co-remove", tui.Button).press()
+        await pilot.pause()
+        assert calls["remove"] == ["Acme"]
+
+        screen.query_one("#jh-co-add", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-company-name", tui.Input).value = "Hooli"
+        screen.query_one("#jh-company-url", tui.Input).value = "https://hooli.example/careers"
+        screen.query_one("#jh-co-add-confirm", tui.Button).press()
+        await pilot.pause()
+        assert calls["add"] == [("Hooli", "https://hooli.example/careers")]
+        assert "Hooli" in [r[0] for r in _table_rows(screen)]
+
+
+async def test_company_rows_refresh_after_a_worker_finishes() -> None:
+    finish = threading.Event()
+    started = threading.Event()
+    store = [_co("Acme")]
+
+    def slow_check(name="all", *, progress=None):
+        progress("Checking Acme…")
+        started.set()
+        finish.wait(timeout=5)
+        store[0] = _co("Acme", status="accepted", ats="greenhouse", slug="acme")
+        return list(store)
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            companies_list_fn=lambda: list(store), companies_check_fn=slow_check
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+        assert _table_rows(screen)[0][1] == "suggested"
+
+        screen.query_one("#jh-co-check", tui.Button).press()
+        await _until(pilot, started.is_set, "worker started")
+        progress = screen.query_one("#jh-companies-progress", tui.Static)
+        await _until(pilot, lambda: "Checking Acme" in _plain(progress.render()), "progress shown")
+        assert screen.query_one("#jh-co-check", tui.Button).disabled is True
+
+        finish.set()
+        await _until(pilot, lambda: not screen._companies_busy, "worker finished")
+        assert _table_rows(screen)[0][1:3] == ["accepted", "greenhouse (acme)"]
+        assert progress.has_class("-empty")
+
+
+async def test_unknown_board_company_shows_the_careers_url_hint() -> None:
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            companies_list_fn=lambda: [_co("Acme"), _co("Globex", ats="lever", slug="globex")]
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+        rows = _table_rows(screen)
+        assert rows[0][2] == "No public job board found: add its careers page URL"
+        assert rows[1][2] == "lever (globex)"
+
+
+async def test_jobs_home_screen_with_companies_fits_80x24() -> None:
+    store = [_co(f"Company {i}", reason="a fairly long reason " * 4) for i in range(12)]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(companies_list_fn=lambda: list(store))
+        app.push_screen(screen)
+        await pilot.pause()
+        for selector in ("#jh-save", "#jh-close"):
+            reg = screen.query_one(selector).region
+            assert reg.width > 0 and reg.right <= 80 and reg.bottom <= 24, selector
+
+        screen.query_one("#jh-co-add", tui.Button).press()
+        await pilot.pause()
+        for selector in (
+            "#jh-companies-table",
+            "#jh-co-suggest",
+            "#jh-co-check",
+            "#jh-co-accept",
+            "#jh-co-remove",
+            "#jh-co-add",
+            "#jh-company-name",
+        ):
+            reg = screen.query_one(selector).region
+            assert reg.width > 0 and reg.right <= 80, selector
+        for widget in screen.query("*"):
+            if widget.display and widget.region.width > 0:
+                assert 0 <= widget.region.x and widget.region.right <= 80, widget
+        for selector in ("#jh-save", "#jh-close"):
+            assert screen.query_one(selector).region.bottom <= 24, selector
 
 
 async def test_open_review_drafts_panel_fits_80x24() -> None:

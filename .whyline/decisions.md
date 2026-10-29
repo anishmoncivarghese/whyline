@@ -28442,3 +28442,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 14af0214b91943b8819686d664998926 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T12:55:52.601Z"} -->
+
+## 2026-10-29 — Companies screen calls companies.* directly via injectable fns; table is cursor-row based
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-8
+
+**Because:** Mirrors the review section's stub-injection pattern so tests assert each button calls the same function as the CLI; Suggest/Check run in a thread worker with a token guard
+
+**Rejected:**
+
+- Add DataTable export to tui.py — not needed, tests import it from textual
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 9266936ead52423faad607b3fff295bd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T13:39:46.323Z"} -->
+
+## 2026-10-29 — JOB-8 passes tester validation
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-8
+
+**Because:** Both required pytest commands completed at 100% without failures, and focused console tests exercise every company action, worker refresh and progress, unknown-board guidance, and the 80x24 layout
+
+**Files:** tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 325a5e48b08843ab94707a99f5c2c43f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T13:58:16.812Z"} -->
+
+## 2026-10-29 — JOB-8 approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-8
+
+**Because:** The Companies section invokes the same companies functions as the CLI, runs suggest and all-active board checks in workers with progress and refresh, preserves suggested-company fetch exclusion, renders the required unknown-board hint, and both focused and full pytest suites pass
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: d40e44da3a6b422181a28f99caeed7a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T14:16:39.472Z"} -->

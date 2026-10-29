@@ -1,4 +1,4 @@
-"""Jobs home screen for Agents mode: personal CV, review drafts, and preferences."""
+"""Jobs home screen for Agents mode: personal CV, review drafts, preferences, and companies."""
 
 from __future__ import annotations
 
@@ -7,13 +7,14 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, Static, TextArea
+from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.jobs import profile, review
+from whyline.jobs import companies, profile, review
 from whyline.jobs.cli import (
     format_cv_status,
     format_list_preference,
@@ -26,6 +27,9 @@ PRIVACY_SENTENCE = (
     "provider you choose each time a job-search agent runs, and never to "
     "email or Telegram."
 )
+
+UNKNOWN_BOARD_HINT = "No public job board found: add its careers page URL"
+COMPANIES_FETCH_NOTE = "Suggested companies stay out of the fetch list until accepted."
 
 _REMOTE_OPTIONS: list[tuple[str, str]] = [
     ("Any", "any"),
@@ -104,8 +108,105 @@ def _call_review_accept(
     return fn()
 
 
+def _cell(value: object) -> Text:
+    """Render untrusted company values literally rather than as Rich markup."""
+    return Text("" if value is None else str(value), no_wrap=True, end="")
+
+
+def _company_field(item: companies.Company | Mapping[str, Any], key: str) -> Any:
+    if isinstance(item, Mapping):
+        return item.get(key, "")
+    return getattr(item, key, "")
+
+
+def _coerce_company(item: companies.Company | Mapping[str, Any]) -> companies.Company:
+    if isinstance(item, companies.Company):
+        return item
+    return companies.Company(
+        name=str(_company_field(item, "name") or ""),
+        status=str(_company_field(item, "status") or "suggested"),
+        reason=str(_company_field(item, "reason") or ""),
+        ats=str(_company_field(item, "ats") or "unknown"),
+        slug=str(_company_field(item, "slug") or ""),
+        careers_url=str(_company_field(item, "careers_url") or ""),
+        added_by=str(_company_field(item, "added_by") or "user"),
+        checked_at=str(_company_field(item, "checked_at") or ""),
+    )
+
+
+def format_company_board(item: companies.Company | Mapping[str, Any]) -> str:
+    """Format the Board column cell for a company row."""
+    ats_val = str(_company_field(item, "ats") or "unknown")
+    if ats_val == "unknown":
+        return UNKNOWN_BOARD_HINT
+    slug_val = str(_company_field(item, "slug") or "")
+    return f"{ats_val} ({slug_val})" if slug_val else ats_val
+
+
+def _call_companies_check(
+    fn: Callable[..., Any],
+    progress: Callable[[str], None],
+) -> Any:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return fn("all", progress=progress)
+
+    has_var_pos = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params.values())
+    has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    positional = [
+        p
+        for p in params.values()
+        if p.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    accepts_progress = has_var_kw or "progress" in params
+    if positional or has_var_pos:
+        if accepts_progress:
+            return fn("all", progress=progress)
+        return fn("all")
+    if "name" in params:
+        if accepts_progress:
+            return fn(name="all", progress=progress)
+        return fn(name="all")
+    if accepts_progress:
+        return fn(progress=progress)
+    return fn()
+
+
+def _call_companies_add(
+    fn: Callable[..., Any],
+    name: str,
+    careers_url: str | None,
+) -> Any:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return fn(name, careers_url=careers_url)
+
+    has_var_pos = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params.values())
+    has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    positional = [
+        p
+        for p in params.values()
+        if p.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    if "careers_url" in params or has_var_kw:
+        return fn(name, careers_url=careers_url)
+    if has_var_pos or len(positional) >= 2:
+        return fn(name, careers_url)
+    return fn(name)
+
+
 class JobsHomeScreen(ModalScreen):
-    """Manage the local job-search profile (~/.whyline/jobs/)."""
+    """Manage the local job-search profile and companies (~/.whyline/jobs/)."""
 
     BINDINGS = [("escape", "close", "Close")]
 
@@ -138,6 +239,17 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen .jh-field-label { width: 15; padding: 1 1 0 0; }
     JobsHomeScreen .jh-field-input { width: 1fr; }
     JobsHomeScreen #jh-remote { width: 1fr; }
+    JobsHomeScreen #jh-companies-heading { margin-top: 1; }
+    JobsHomeScreen #jh-companies-note { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-companies-progress { width: 100%; height: auto; margin-top: 1; color: $accent; }
+    JobsHomeScreen #jh-companies-progress.-empty { display: none; }
+    JobsHomeScreen #jh-companies-empty { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-companies-empty.-empty { display: none; }
+    JobsHomeScreen #jh-companies-table { width: 100%; height: auto; min-height: 3; max-height: 7; margin-top: 1; }
+    JobsHomeScreen .jh-companies-actions { height: auto; margin-top: 1; }
+    JobsHomeScreen .jh-companies-actions Button { min-width: 8; width: auto; margin-right: 1; }
+    JobsHomeScreen #jh-company-name { width: 100%; }
+    JobsHomeScreen #jh-company-url { width: 100%; }
     JobsHomeScreen #jh-error { height: auto; max-height: 3; color: $error; }
     JobsHomeScreen #jh-error.-empty { display: none; }
     JobsHomeScreen #jh-status { height: auto; max-height: 2; color: $success; }
@@ -159,6 +271,12 @@ class JobsHomeScreen(ModalScreen):
         review_discard_fn: Callable[[], Any] | None = None,
         enabled_providers_fn: Callable[[], Sequence[str]] | None = None,
         read_drafts_fn: Callable[[], review.DraftBlocks | None] | None = None,
+        companies_list_fn: Callable[[], Sequence[companies.Company]] | None = None,
+        companies_suggest_fn: Callable[..., Any] | None = None,
+        companies_check_fn: Callable[..., Any] | None = None,
+        companies_add_fn: Callable[..., Any] | None = None,
+        companies_accept_fn: Callable[[str], Any] | None = None,
+        companies_remove_fn: Callable[[str], Any] | None = None,
     ) -> None:
         super().__init__()
         self._status_fn = status_fn
@@ -171,8 +289,17 @@ class JobsHomeScreen(ModalScreen):
         self._review_discard_fn = review_discard_fn
         self._enabled_providers_fn = enabled_providers_fn
         self._read_drafts_fn = read_drafts_fn
+        self._companies_list_fn = companies_list_fn
+        self._companies_suggest_fn = companies_suggest_fn
+        self._companies_check_fn = companies_check_fn
+        self._companies_add_fn = companies_add_fn
+        self._companies_accept_fn = companies_accept_fn
+        self._companies_remove_fn = companies_remove_fn
         self._reviewing = False
         self._review_token: object | None = None
+        self._companies_busy = False
+        self._companies_token: object | None = None
+        self._company_rows: list[companies.Company] = []
 
     def _read_statuses(self) -> Mapping[str, profile.FileStatus]:
         fn = self._status_fn if self._status_fn is not None else profile.status
@@ -393,6 +520,37 @@ class JobsHomeScreen(ModalScreen):
                         classes="jh-field-input",
                     ),
                 ),
+                Label("Companies", classes="jh-section", id="jh-companies-heading"),
+                Static(COMPANIES_FETCH_NOTE, id="jh-companies-note", markup=False),
+                Static("", id="jh-companies-progress", markup=False, classes="-empty"),
+                DataTable(id="jh-companies-table", cursor_type="row", zebra_stripes=True),
+                Static(
+                    "No companies yet. Suggest some or add one.",
+                    id="jh-companies-empty",
+                    markup=False,
+                ),
+                Horizontal(
+                    Button("Suggest companies", id="jh-co-suggest", variant="primary"),
+                    Button("Check boards", id="jh-co-check"),
+                    classes="jh-companies-actions",
+                ),
+                Horizontal(
+                    Button("Accept", id="jh-co-accept", variant="success"),
+                    Button("Remove", id="jh-co-remove"),
+                    Button("Add company…", id="jh-co-add"),
+                    classes="jh-companies-actions",
+                ),
+                Vertical(
+                    Input(placeholder="Company name", id="jh-company-name"),
+                    Input(placeholder="Careers page URL (optional)", id="jh-company-url"),
+                    Horizontal(
+                        Button("Add", id="jh-co-add-confirm", variant="primary"),
+                        Button("Cancel", id="jh-co-add-cancel"),
+                        classes="jh-panel-buttons",
+                    ),
+                    id="jh-company-panel",
+                    classes="jh-panel -hidden",
+                ),
                 id="jh-body",
             ),
             Static(
@@ -408,6 +566,12 @@ class JobsHomeScreen(ModalScreen):
                 id="jh-buttons",
             ),
         )
+
+    def on_mount(self) -> None:
+        self.query_one("#jh-companies-table", DataTable).add_columns(
+            "Name", "Status", "Board", "Reason"
+        )
+        self._refresh_companies()
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -632,6 +796,191 @@ class JobsHomeScreen(ModalScreen):
         self.query_one("#jh-review-panel", Vertical).set_class(True, "-hidden")
         self._set_status("Discarded review drafts.")
 
+    # ---- Companies ----
+
+    def _refresh_companies(self) -> None:
+        fn = self._companies_list_fn if self._companies_list_fn is not None else companies.list
+        try:
+            rows = [_coerce_company(c) for c in fn()]
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        self._company_rows = rows
+        try:
+            table = self.query_one("#jh-companies-table", DataTable)
+            empty = self.query_one("#jh-companies-empty", Static)
+        except NoMatches:
+            return
+        table.clear()
+        for item in rows:
+            table.add_row(
+                _cell(item.name),
+                _cell(item.status),
+                _cell(format_company_board(item)),
+                _cell(item.reason),
+            )
+        empty.set_class(bool(rows), "-empty")
+
+    def _selected_company(self) -> str | None:
+        try:
+            table = self.query_one("#jh-companies-table", DataTable)
+        except NoMatches:
+            return None
+        if not 0 <= table.cursor_row < len(self._company_rows):
+            return None
+        return self._company_rows[table.cursor_row].name
+
+    def _set_companies_progress(self, message: str) -> None:
+        try:
+            prog = self.query_one("#jh-companies-progress", Static)
+        except NoMatches:
+            return
+        prog.update(message)
+        prog.set_class(not message, "-empty")
+
+    def _set_companies_busy(self, busy: bool) -> None:
+        self._companies_busy = busy
+        for selector in ("#jh-co-suggest", "#jh-co-check", "#jh-co-accept", "#jh-co-remove"):
+            try:
+                self.query_one(selector, Button).disabled = busy
+            except NoMatches:
+                pass
+
+    def _start_companies_work(
+        self, label: str, run: Callable[[Callable[[str], None]], str]
+    ) -> None:
+        if self._companies_busy:
+            return
+        self._set_error("")
+        self._set_status("")
+        token = object()
+        self._companies_token = token
+        self._set_companies_busy(True)
+        self._set_companies_progress(f"{label}…")
+
+        def work() -> None:
+            def on_progress(line: str) -> None:
+                try:
+                    self.app.call_from_thread(self._on_companies_progress, label, line, token)
+                except RuntimeError:
+                    pass
+
+            try:
+                summary = run(on_progress)
+            except Exception as error:
+                try:
+                    self.app.call_from_thread(self._on_companies_done, "", str(error), token)
+                except RuntimeError:
+                    pass
+                return
+            try:
+                self.app.call_from_thread(self._on_companies_done, summary, "", token)
+            except RuntimeError:
+                pass
+
+        self.run_worker(work, thread=True, exclusive=True, group="jobs-companies")
+
+    def _on_companies_progress(self, label: str, line: str, token: object) -> None:
+        if token is not self._companies_token or not self.is_attached:
+            return
+        shown = line.strip()
+        self._set_companies_progress(f"{label} · {shown}" if shown else f"{label}…")
+
+    def _on_companies_done(self, summary: str, error: str, token: object) -> None:
+        if token is not self._companies_token or not self.is_attached:
+            return
+        self._set_companies_busy(False)
+        self._set_companies_progress("")
+        self._refresh_companies()
+        if error:
+            self._set_error(error)
+        elif summary:
+            self._set_status(summary)
+
+    def _suggest_companies(self) -> None:
+        fn = (
+            self._companies_suggest_fn
+            if self._companies_suggest_fn is not None
+            else companies.suggest
+        )
+        raw_cli = self.query_one("#jh-review-cli", Select).value
+        chosen_cli = str(raw_cli) if raw_cli is not Select.BLANK else None
+
+        def run(progress: Callable[[str], None]) -> str:
+            res = fn(chosen_cli, progress=progress)
+            if not res.ok:
+                detail = f"{res.outcome}: {res.reason}" if res.reason else res.outcome
+                raise companies.CompanyError(f"Suggest failed ({detail}).")
+            count = len(res.added)
+            return f"Suggested {count} new {'company' if count == 1 else 'companies'}."
+
+        self._start_companies_work("Suggesting companies", run)
+
+    def _check_companies(self) -> None:
+        fn = self._companies_check_fn if self._companies_check_fn is not None else companies.check
+
+        def run(progress: Callable[[str], None]) -> str:
+            count = len(_call_companies_check(fn, progress))
+            return f"Checked {count} {'company' if count == 1 else 'companies'}."
+
+        self._start_companies_work("Checking boards", run)
+
+    def _company_action(self, kind: str) -> None:
+        if self._companies_busy:
+            return
+        name = self._selected_company()
+        if name is None:
+            self._set_error("Select a company first.")
+            return
+        if kind == "accept":
+            fn = (
+                self._companies_accept_fn
+                if self._companies_accept_fn is not None
+                else companies.accept
+            )
+            done = f"Accepted {name}."
+        else:
+            fn = (
+                self._companies_remove_fn
+                if self._companies_remove_fn is not None
+                else companies.remove
+            )
+            done = f"Removed {name}."
+        try:
+            fn(name)
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        self._refresh_companies()
+        self._set_status(done)
+
+    def _toggle_company_panel(self, show: bool) -> None:
+        panel = self.query_one("#jh-company-panel", Vertical)
+        panel.set_class(not show, "-hidden")
+        if show:
+            self.query_one("#jh-company-name", Input).focus()
+            panel.scroll_visible()
+
+    def _do_add_company(self) -> None:
+        name_input = self.query_one("#jh-company-name", Input)
+        url_input = self.query_one("#jh-company-url", Input)
+        name = name_input.value.strip()
+        if not name:
+            self._set_error("Enter a company name.")
+            return
+        url = url_input.value.strip() or None
+        fn = self._companies_add_fn if self._companies_add_fn is not None else companies.add
+        try:
+            _call_companies_add(fn, name, url)
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        name_input.value = ""
+        url_input.value = ""
+        self._toggle_company_panel(False)
+        self._refresh_companies()
+        self._set_status(f"Added {name}.")
+
     def _collect_preferences(self) -> dict[str, Any]:
         raw_salary = self.query_one("#jh-salary-min", Input).value.strip() or "0"
         remote_val = self.query_one("#jh-remote", Select).value
@@ -681,6 +1030,9 @@ class JobsHomeScreen(ModalScreen):
         if event.input.id == "jh-cv-path":
             event.stop()
             self._do_import_cv()
+        elif event.input.id in ("jh-company-name", "jh-company-url"):
+            event.stop()
+            self._do_add_company()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id or ""
@@ -695,6 +1047,24 @@ class JobsHomeScreen(ModalScreen):
             self._accept_review()
         elif button_id == "jh-review-discard":
             self._discard_review()
+        elif button_id == "jh-co-suggest":
+            self._suggest_companies()
+        elif button_id == "jh-co-check":
+            self._check_companies()
+        elif button_id == "jh-co-accept":
+            self._company_action("accept")
+        elif button_id == "jh-co-remove":
+            self._company_action("remove")
+        elif button_id == "jh-co-add":
+            hidden = self.query_one("#jh-company-panel", Vertical).has_class("-hidden")
+            self._toggle_company_panel(hidden)
+        elif button_id == "jh-co-add-confirm":
+            self._do_add_company()
+        elif button_id == "jh-co-add-cancel":
+            self.query_one("#jh-company-name", Input).value = ""
+            self.query_one("#jh-company-url", Input).value = ""
+            self._toggle_company_panel(False)
+            self._set_error("")
         elif button_id == "jh-import-cv":
             if self.query_one("#jh-cv-path", Input).value.strip():
                 self._do_import_cv()
