@@ -1492,3 +1492,16 @@ def test_brief_open_settings_calls_the_shared_function(ideas_home, capsys, monke
     code, _, _ = invoke(["idea", "brief", "open-settings", "calendars"], capsys)
     assert code == 0
     assert opened == ["calendars"]
+
+
+def test_brief_access_prints_the_shared_status(ideas_home, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    monkeypatch.setattr(
+        brief, "access_status", lambda **k: {"Calendar": "granted", "Reminders": "denied"}
+    )
+    code, out, _ = invoke(["idea", "brief", "access"], capsys)
+    assert code == 0
+    assert "Calendar: granted" in out
+    assert "Reminders: denied" in out
+    assert "Mail:" in out

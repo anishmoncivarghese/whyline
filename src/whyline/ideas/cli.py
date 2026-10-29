@@ -213,7 +213,10 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         "open-settings", help="Open the System Settings page that grants brief access"
     )
     open_p.add_argument("pane", choices=sorted(brief.SETTINGS_URLS),
-                        help="calendars (Calendar) or automation (Mail and Reminders)")
+                        help="calendars (Calendar), reminders (Reminders) or automation (Mail)")
+    brief_sub.add_parser(
+        "access", help="Show whether Calendar and Reminders access is granted (never prompts)"
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1570,8 +1573,14 @@ def cmd_brief(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             return EXIT_ERROR
         return EXIT_OK
+    if which == "access":
+        for name, state in brief.access_status().items():
+            print(f"{name}: {state}")
+        print("Mail: checked when it is read; run whyline idea brief mail --preview")
+        return EXIT_OK
     if which not in ("calendar", "mail", "tasks"):
-        print("usage: whyline idea brief calendar|mail|tasks [--preview] | setup | open-settings",
+        print("usage: whyline idea brief calendar|mail|tasks [--preview] | setup | open-settings"
+              " | access",
               file=sys.stderr)
         return EXIT_USAGE
     names: list[str] = []

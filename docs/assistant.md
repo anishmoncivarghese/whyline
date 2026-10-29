@@ -125,14 +125,20 @@ console names that app, lists the steps, and shows **Open System Settings**,
 which opens the right page:
 
 - Calendar: Privacy & Security > Calendars. Turn on your terminal app.
-- Mail and Reminders: Privacy & Security > Automation. Open your terminal app
-  and turn on Mail and Reminders.
+- Reminders: Privacy & Security > Reminders. Turn on your terminal app. (The
+  Automation switch for Reminders is not enough to read them.)
+- Mail: Privacy & Security > Automation. Open your terminal app and turn on
+  Mail.
+
+The "Access" line above the Grant buttons shows whether Calendar and Reminders
+are granted, denied or not asked yet, and Mail's result once a Grant button
+has read it. Command line: `whyline idea brief access`.
 
 If your terminal app is not listed, quit and reopen it, then press the Grant
 button again so macOS can ask. The scheduled brief runs in the background; if
 it reports a refusal later, turn on whyline or python3 in the same list.
-Command line: `whyline idea brief open-settings calendars` or
-`whyline idea brief open-settings automation`.
+Command line: `whyline idea brief open-settings calendars`, `... reminders` or
+`... automation`.
 
 Command line: `whyline idea brief calendar --preview`, `brief mail --preview`,
 `brief tasks --preview`, then

@@ -84,6 +84,7 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-memory-error.-empty { display: none; }
     AssistantScreen #as-brief-calendars { height: auto; max-height: 8; margin-top: 1; }
     AssistantScreen #as-brief-calendars.-empty { display: none; }
+    AssistantScreen #as-brief-access { height: auto; margin-top: 1; }
     AssistantScreen #as-brief-grant { width: auto; margin-top: 1; }
     AssistantScreen #as-brief-result { height: auto; max-height: 20; }
     AssistantScreen #as-brief-result.-empty { display: none; }
@@ -128,6 +129,8 @@ class AssistantScreen(ModalScreen):
             conn.close()
         self._brief_providers = brief.eligible_providers()
         self._brief_agent = brief.current()
+        # macOS answers for Mail only by asking, so this is the last Grant's result.
+        self._mail_access = "not checked yet"
 
     def _make_reminder_row(self, reminder: reminders.Reminder) -> Horizontal:
         due = reminder.due_at.replace("T", " ")[:16]
@@ -281,6 +284,7 @@ class AssistantScreen(ModalScreen):
                 ),
                 Static("", id="as-memory-error", markup=False, classes="-empty"),
                 Label("Morning brief", classes="as-section", id="as-brief-title"),
+                Static("", id="as-brief-access", markup=False),
                 SelectionList[str](
                     *self._calendar_options(self._brief_calendars),
                     id="as-brief-calendars",
@@ -525,19 +529,29 @@ class AssistantScreen(ModalScreen):
             self._brief_mailboxes = names
 
     def _mail_preview(self) -> None:
-        """Run the functions `whyline idea brief mail|tasks` run, with the user here."""
+        """Run the functions `whyline idea brief mail|tasks` run, with the user here.
+
+        Mail and Reminders are tried separately, so a refusal for one still
+        shows the other's result.
+        """
         result = self.query_one("#as-brief-mail-result", Static)
+        parts: list[str] = []
+        refused: brief.AccessDenied | None = None
         try:
             mailed = brief.mail(brief.default_dir(), mailboxes=self._brief_mailboxes)
-            tasks = brief.reminders(brief.default_dir())
         except brief.CalendarError as exc:
-            result.update(str(exc))
-            self._offer_settings("#as-brief-open-settings-mail", exc)
+            parts.append(str(exc))
+            if isinstance(exc, brief.AccessDenied):
+                refused = exc
+                self._mail_access = "denied"
+            else:
+                self._mail_access = "error"
         except OSError as exc:
-            result.update(f"Could not write the brief: {exc}")
+            parts.append(f"Could not write the brief: {exc}")
         else:
-            self._offer_settings("#as-brief-open-settings-mail", None)
-            result.update(mailed.text.rstrip("\n") + "\n\n" + tasks.text.rstrip("\n"))
+            running = "Mail is not running" not in mailed.text
+            self._mail_access = "granted" if running else "not checked (Mail is not running)"
+            parts.append(mailed.text.rstrip("\n"))
             picker = self.query_one("#as-brief-mailboxes", SelectionList)
             if mailed.calendars:
                 picker.clear_options()
@@ -545,7 +559,30 @@ class AssistantScreen(ModalScreen):
                     self._calendar_options(list(mailed.calendars), self._brief_mailboxes)
                 )
             picker.set_class(not mailed.calendars and not self._brief_mailboxes, "-empty")
+        try:
+            tasks = brief.reminders(brief.default_dir())
+        except brief.CalendarError as exc:
+            parts.append(str(exc))
+            if isinstance(exc, brief.AccessDenied):
+                refused = refused or exc
+        except OSError as exc:
+            parts.append(f"Could not write the brief: {exc}")
+        else:
+            parts.append(tasks.text.rstrip("\n"))
+        self._offer_settings("#as-brief-open-settings-mail", refused)
+        result.update("\n\n".join(parts))
         result.set_class(False, "-empty")
+        self._show_access()
+
+    def on_mount(self) -> None:
+        self._show_access()
+
+    def _show_access(self) -> None:
+        """The Access line: the function `whyline idea brief access` prints."""
+        states = brief.access_status()
+        states["Mail"] = self._mail_access
+        line = "Access: " + "   ".join(f"{name} {state}" for name, state in states.items())
+        self.query_one("#as-brief-access", Static).update(line)
 
     def _offer_settings(self, selector: str, exc: Exception | None) -> None:
         """Show Open System Settings only after macOS refused access."""
@@ -588,6 +625,7 @@ class AssistantScreen(ModalScreen):
             )
             picker.set_class(not made.calendars, "-empty")
         result.set_class(False, "-empty")
+        self._show_access()
 
     def _set_error(self, message: str) -> None:
         error = self.query_one("#as-error", Static)

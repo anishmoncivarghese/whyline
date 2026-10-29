@@ -284,8 +284,14 @@ def test_tasks_merge_app_reminders_whyline_and_memory(tmp_path, ideas_home, monk
         ledger.create(conn, None, NOW.replace(hour=15), "call mum", now=NOW)
     finally:
         conn.close()
-    answer = "".join(["ok", R, f"Pay rent{F}2026-10-28T09:00:00{F}Home", R])
-    result = brief.reminders(tmp_path, run=_mail_run(answer), now=NOW)
+    answer = json.dumps(
+        {"status": "ok", "reminders": [
+            {"title": "Pay rent", "due": "2026-10-28T09:00:00", "list": "Home"}
+        ]}
+    )
+    seen = []
+    result = brief.reminders(tmp_path, run=_mail_run(answer, seen), now=NOW)
+    assert seen == [[brief.OSASCRIPT, "-l", "JavaScript", str(brief.REMINDERS_JS)]]
     assert "Pay rent (2026-10-28 09:00, Home)" in result.text
     assert "call mum" in result.text
     assert "likes tea" in result.text
@@ -312,14 +318,14 @@ def test_tasks_status_names_failed_agents_and_paused_relay(tmp_path, ideas_home,
         conn.commit()
     finally:
         conn.close()
-    answer = "".join(["ok", R])
+    answer = json.dumps({"status": "ok", "reminders": []})
     result = brief.reminders(tmp_path, run=_mail_run(answer), now=NOW)
     assert "whyline: 1 relay run paused; agents failed last run: digest" in result.text
     assert "ok-one" not in result.text
 
 
 def test_tasks_denied(tmp_path, ideas_home):
-    run = _mail_run("", returncode=1, stderr="Not authorized (-1743)")
+    run = _mail_run(json.dumps({"status": "denied"}))
     with pytest.raises(brief.AccessDenied):
         brief.reminders(tmp_path, run=run)
 
@@ -473,6 +479,8 @@ def _check_runner(*, mail="ok\x1e", calendar_denied=False):
     )
 
     def run(command, **kwargs):
+        if str(brief.REMINDERS_JS) in command:
+            return SimpleNamespace(returncode=0, stdout='{"status": "ok", "reminders": []}', stderr="")
         if "JavaScript" in command:
             return SimpleNamespace(returncode=0, stdout=cal, stderr="")
         if command[2] == brief.MAIL_SCRIPT:
@@ -542,12 +550,14 @@ def test_check_reports_denied_calendar_and_mail_not_running(monkeypatch):
     assert results["brief last run"].level == "warn"
 
 
-def test_reminders_script_checks_due_date_outside_the_whose_clause():
-    # Reminders compares undated reminders inside a whose clause and fails
-    # with -1700 ("Can't make missing value into type date").
-    script = brief.REMINDERS_SCRIPT
-    assert "due date <=" not in script.split("whose", 1)[1].split("\n", 1)[0]
-    assert "if d is not missing value then" in script
+def test_reminders_script_uses_eventkit_without_js_null():
+    # AppleScript never shows the Reminders prompt, and JS null reaches
+    # EventKit as NSNull and crashes it.
+    script = brief.REMINDERS_JS.read_text()
+    assert "EKEntityTypeReminder" in script
+    assert "requestFullAccessToRemindersWithCompletion" in script
+    call = script.split("predicateForIncompleteRemindersWithDueDateStartingEndingCalendars(")[1]
+    assert "null" not in call.split(");")[0]
 
 
 @pytest.mark.parametrize(
@@ -574,13 +584,47 @@ def test_calendar_denial_gives_steps_and_the_settings_page(monkeypatch):
     assert "whyline idea brief open-settings calendars" in text
 
 
-def test_reminders_denial_points_at_automation(tmp_path, monkeypatch):
+def test_reminders_denial_points_at_privacy_reminders(tmp_path, monkeypatch):
+    monkeypatch.setenv("TERM_PROGRAM", "Apple_Terminal")
+    run = _mail_run(json.dumps({"status": "denied"}))
+    with pytest.raises(brief.AccessDenied) as err:
+        brief.reminders(tmp_path, run=run)
+    assert err.value.pane == "reminders"
+    assert "Privacy & Security > Reminders, and turn on Terminal." in str(err.value)
+    assert "Privacy_Reminders" in brief.SETTINGS_URLS["reminders"]
+
+
+def test_mail_denial_still_points_at_automation(tmp_path, monkeypatch):
     monkeypatch.setenv("TERM_PROGRAM", "Apple_Terminal")
     run = _mail_run("", returncode=1, stderr="Not authorized (-1743)")
     with pytest.raises(brief.AccessDenied) as err:
-        brief.reminders(tmp_path, run=run)
+        brief.mail(tmp_path, mailboxes=["INBOX"], run=run)
     assert err.value.pane == "automation"
-    assert "Automation, open Terminal, and turn on Reminders" in str(err.value)
+    assert "Automation, open Terminal, and turn on Mail" in str(err.value)
+
+
+@pytest.mark.parametrize(
+    "answer, expected",
+    [
+        ('{"calendar": 3, "reminders": 2}', {"Calendar": "granted", "Reminders": "denied"}),
+        ('{"calendar": 0, "reminders": 4}',
+         {"Calendar": "not asked yet", "Reminders": "add-only (not enough to read)"}),
+    ],
+)
+def test_access_status_names_each_state(monkeypatch, answer, expected):
+    monkeypatch.setattr(brief.sys, "platform", "darwin")
+    seen = []
+    assert brief.access_status(run=_mail_run(answer, seen)) == expected
+    assert seen == [[brief.OSASCRIPT, "-l", "JavaScript", str(brief.ACCESS_JS)]]
+
+
+def test_access_status_off_macos(monkeypatch):
+    monkeypatch.setattr(brief.sys, "platform", "linux")
+
+    def boom(*a, **k):
+        raise AssertionError("ran osascript off macOS")
+
+    assert brief.access_status(run=boom) == {"Calendar": "macOS only", "Reminders": "macOS only"}
 
 
 def test_open_settings_opens_the_page():

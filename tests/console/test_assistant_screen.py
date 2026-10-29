@@ -26,6 +26,11 @@ class _Host(tui.App):
 def assistant_home(monkeypatch, tmp_path):
     home = tmp_path / "ideas"
     monkeypatch.setenv("WHYLINE_IDEAS_HOME", str(home))
+    from whyline.ideas import brief
+
+    monkeypatch.setattr(
+        brief, "access_status", lambda **k: {"Calendar": "granted", "Reminders": "denied"}
+    )
     return home
 
 
@@ -868,6 +873,9 @@ async def test_mail_and_reminders_button_shows_the_denial(assistant_home, monkey
         raise brief.AccessDenied()
 
     monkeypatch.setattr(brief, "mail", denied)
+    monkeypatch.setattr(
+        brief, "reminders", lambda *a, **k: brief.Brief(assistant_home / "t.md", "# Tasks\n\n- Pay rent", ())
+    )
     app = _Host()
     async with app.run_test(size=(80, 24)) as pilot:
         screen = await _open(app)
@@ -876,6 +884,29 @@ async def test_mail_and_reminders_button_shows_the_denial(assistant_home, monkey
         await pilot.pause()
         text = _plain(screen.query_one("#as-brief-mail-result", tui.Static).render())
         assert "System Settings" in text
+        # Reminders is still read when Mail is refused.
+        assert "Pay rent" in text
+        access = _plain(screen.query_one("#as-brief-access", tui.Static).render())
+        assert "Mail denied" in access
+
+
+async def test_access_line_shows_each_permission(assistant_home, monkeypatch):
+    from whyline.ideas import brief
+
+    monkeypatch.setattr(brief, "mail", lambda *a, **k: brief.Brief(assistant_home / "m.md", "# Mail", ()))
+    monkeypatch.setattr(brief, "reminders", lambda *a, **k: brief.Brief(assistant_home / "t.md", "# Tasks", ()))
+    app = _Host()
+    async with app.run_test(size=(120, 24)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        access = _plain(screen.query_one("#as-brief-access", tui.Static).render())
+        assert "Calendar granted" in access
+        assert "Reminders denied" in access
+        assert "Mail not checked yet" in access
+        screen.query_one("#as-brief-grant-mail", tui.Button).press()
+        await pilot.pause()
+        access = _plain(screen.query_one("#as-brief-access", tui.Static).render())
+        assert "Mail granted" in access
 
 
 async def test_denial_offers_open_system_settings(assistant_home, monkeypatch):
@@ -901,13 +932,13 @@ async def test_denial_offers_open_system_settings(assistant_home, monkeypatch):
         assert opened == ["calendars"]
 
 
-async def test_reminders_denial_opens_automation(assistant_home, monkeypatch):
+async def test_reminders_denial_opens_the_reminders_page(assistant_home, monkeypatch):
     from whyline.ideas import brief
 
     monkeypatch.setattr(brief, "mail", lambda *a, **k: brief.Brief(assistant_home / "m.md", "# Mail", ()))
 
     def denied(*a, **k):
-        raise brief.AccessDenied("Reminders", "Automation", "automation")
+        raise brief.AccessDenied("Reminders", "Reminders", "reminders")
 
     opened = []
     monkeypatch.setattr(brief, "reminders", denied)
@@ -922,4 +953,4 @@ async def test_reminders_denial_opens_automation(assistant_home, monkeypatch):
         assert not button.has_class("-hidden")
         button.press()
         await pilot.pause()
-        assert opened == ["automation"]
+        assert opened == ["reminders"]

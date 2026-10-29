@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -22,6 +23,8 @@ CALENDARS_KEY = "brief_calendars"
 TIMEOUT_SECONDS = 30
 OSASCRIPT = "/usr/bin/osascript"
 SCRIPT = Path(__file__).with_name("calendar_today.js")
+REMINDERS_JS = Path(__file__).with_name("reminders_today.js")
+ACCESS_JS = Path(__file__).with_name("access_status.js")
 DAY_START = time(8, 0)
 DAY_END = time(19, 0)
 MIN_FREE = timedelta(minutes=30)
@@ -29,7 +32,17 @@ MIN_FREE = timedelta(minutes=30)
 # System Settings pages, opened with `open <url>`.
 SETTINGS_URLS = {
     "calendars": "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+    "reminders": "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders",
     "automation": "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+}
+
+# EventKit's authorization status, as the console and CLI show it.
+_ACCESS_WORDS = {
+    0: "not asked yet",
+    1: "restricted",
+    2: "denied",
+    3: "granted",
+    4: "add-only (not enough to read)",
 }
 
 # TERM_PROGRAM values and the app name System Settings lists.
@@ -91,10 +104,10 @@ class AccessDenied(CalendarError):
 
 
 def open_settings(pane: str, run=subprocess.run) -> None:
-    """Open the System Settings page for `pane` (`calendars` or `automation`)."""
+    """Open the System Settings page for `pane` (`calendars`, `reminders` or `automation`)."""
     url = SETTINGS_URLS.get(pane)
     if url is None:
-        raise CalendarError(f"unknown settings page {pane}; use calendars or automation")
+        raise CalendarError(f"unknown settings page {pane}; use calendars, reminders or automation")
     done = run(["/usr/bin/open", url], capture_output=True, text=True)
     if done.returncode != 0:
         raise CalendarError("Could not open System Settings")
@@ -318,31 +331,6 @@ on run argv
 end run
 """
 
-REMINDERS_SCRIPT = """
-on run argv
-	set fs to character id 31
-	set rs to character id 30
-	set endOfDay to (current date)
-	set time of endOfDay to 86399
-	set out to "ok" & rs
-	tell application "Reminders"
-		-- A whose clause still compares reminders with no due date and
-		-- fails (-1700), so the date is checked here instead.
-		repeat with r in (reminders whose completed is false)
-			set d to due date of r
-			if d is not missing value then
-				if d <= endOfDay then
-					set when to d as «class isot» as string
-					set out to out & (name of r) & fs & when & fs & (name of container of r) & rs
-				end if
-			end if
-		end repeat
-	end tell
-	return out
-end run
-"""
-
-
 class Message:
     """One mail message as read from Mail.app."""
 
@@ -356,7 +344,7 @@ class Message:
 
 
 def _app_denied(app: str, where: str) -> AccessDenied:
-    # Mail and Reminders are scripted, so the switch is under Automation.
+    # Mail is scripted, so its switch is under Automation.
     return AccessDenied(app, where, "automation")
 
 
@@ -378,6 +366,66 @@ def _osascript(app: str, where: str, source: str, args: list[str], run) -> str:
         detail = " ".join(stderr.split())[:300]
         raise CalendarError(f"The {app} script failed: {detail or 'no output'}")
     return (done.stdout or "").strip("\n")
+
+
+def _run_json(app: str, script: Path, args: list[str], run) -> dict:
+    """Run a JXA script that prints one JSON object, and return it."""
+    command = [OSASCRIPT, "-l", "JavaScript", str(script), *args]
+    try:
+        done = run(command, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise CalendarError(
+            f"{app} did not answer within {TIMEOUT_SECONDS} seconds. "
+            "If a permission prompt is waiting, answer it and try again."
+        ) from None
+    except OSError as exc:
+        raise CalendarError(f"Could not run osascript: {exc}") from exc
+    output = (done.stdout or "").strip() or (done.stderr or "").strip()
+    try:
+        data = json.loads(output)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        detail = " ".join((done.stderr or output).split())[:300]
+        raise CalendarError(f"The {app} script failed: {detail or 'no output'}")
+    return data
+
+
+def _fetch_reminders(run) -> list[tuple[str, str, str]]:
+    """(title, due, list) for open reminders due today or earlier."""
+    data = _run_json("Reminders", REMINDERS_JS, [], run)
+    if data.get("status") == "denied":
+        raise AccessDenied("Reminders", "Reminders", "reminders")
+    if data.get("status") != "ok":
+        raise CalendarError(
+            f"The Reminders script failed: {data.get('error') or 'unexpected answer'}"
+        )
+    items = []
+    for item in data.get("reminders", []):
+        if isinstance(item, dict):
+            items.append(
+                (str(item.get("title", "")), str(item.get("due", "")), str(item.get("list", "")))
+            )
+    return items
+
+
+def access_status(run=subprocess.run) -> dict[str, str]:
+    """Calendar and Reminders access for this app, in words. Never prompts.
+
+    Mail has no such question: macOS only answers by asking, so it is
+    checked by the Grant Mail button or `whyline idea brief mail --preview`.
+    """
+    if sys.platform != "darwin":
+        return {"Calendar": "macOS only", "Reminders": "macOS only"}
+    try:
+        data = _run_json("EventKit", ACCESS_JS, [], run)
+    except CalendarError as exc:
+        return {"Calendar": f"unknown ({exc})", "Reminders": f"unknown ({exc})"}
+    found = {}
+    for name, key in (("Calendar", "calendar"), ("Reminders", "reminders")):
+        code = data.get(key)
+        found[name] = _ACCESS_WORDS.get(code, f"unknown ({code})") if isinstance(code, int) else "unknown"
+    return found
 
 
 def mailboxes_selected(conn: sqlite3.Connection) -> list[str]:
@@ -489,18 +537,10 @@ def reminders(out_dir: Path, *, run=subprocess.run, now: datetime | None = None)
     from whyline.ideas import guard, memory, store
     from whyline.ideas import reminders as ledger
 
-    answer = _osascript(
-        "Reminders", "Automation > Reminders", REMINDERS_SCRIPT, [], run
-    )
-    records = answer.split(RECORD)
-    if not records or records[0] != "ok":
-        raise CalendarError("The Reminders script failed: unexpected answer")
     items: list[tuple[str, str, str]] = []
-    for record in records[1:]:
-        parts = record.split(FIELD)
-        if len(parts) == 3:
-            title, _ = guard.clean(parts[0])
-            items.append((title or "(no title)", parts[1], " ".join(parts[2].split())))
+    for title, due, where in _fetch_reminders(run):
+        title, _ = guard.clean(title)
+        items.append((title or "(no title)", due, " ".join(where.split())))
     items.sort(key=lambda item: item[1])
 
     today = (now or datetime.now()).date()
@@ -796,7 +836,7 @@ def check(*, run=subprocess.run, now: datetime | None = None) -> list:
         results.append(Check("brief mail", False, str(exc)))
 
     try:
-        _osascript("Reminders", "Automation > Reminders", REMINDERS_SCRIPT, [], run)
+        _fetch_reminders(run)
         results.append(Check("brief reminders", True, "Reminders access allowed"))
     except CalendarError as exc:
         results.append(Check("brief reminders", False, str(exc)))
