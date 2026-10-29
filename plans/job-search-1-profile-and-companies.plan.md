@@ -103,7 +103,7 @@ Rules every task keeps:
   - the screen fits 80x24
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-5: Review my CV: draft the profile and rubric
+- [x] JOB-5: Review my CV: draft the profile and rubric
   Add `src/whyline/jobs/review.py`, `src/whyline/agents/templates/job-profile/` and `tests/jobs/test_review.py`, and edit `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   The `job-profile` template is a manual personal agent.
   Its instructions:
