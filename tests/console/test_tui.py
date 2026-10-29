@@ -4202,7 +4202,7 @@ def test_brainstorm_checked_agents_does_not_query_unrendered_ids():
 @pytest.mark.asyncio
 async def test_new_agent_from_agents_mode_omits_disabled_providers(tmp_path, monkeypatch):
     from whyline import account
-    from whyline.console.agents_screens import NewAgentScreen
+    from whyline.console.agents_screens import AgentTemplateScreen, NewAgentScreen
 
     def boom(*_args, **_kwargs):
         raise AssertionError("New agent launched provider detection")
@@ -4215,6 +4215,9 @@ async def test_new_agent_from_agents_mode_omits_disabled_providers(tmp_path, mon
         await pilot.click("#mode-agents")
         await pilot.pause()
         await pilot.click("#agents-new")
+        await pilot.pause()
+        assert isinstance(app.screen, AgentTemplateScreen)
+        app.screen.query_one("#nt-continue", tui.Button).press()
         await pilot.pause()
         assert isinstance(app.screen, NewAgentScreen)
         values = [

@@ -2161,56 +2161,146 @@ class WhylineConsoleApp(App):
         self.render_event(SessionEvent(kind="output", text=_doctor_text()))
 
     def _open_new_agent(self, existing=None, delivery=None, *, editing_id=None,
-                        lock_name: bool = False) -> None:
-        from whyline.console import relay_ops
-        from whyline.console.agents_screens import NewAgentScreen
+                        lock_name: bool = False, template: str | None = None,
+                        allow_back: bool = False) -> None:
+        from whyline.agents import templates
+        from whyline.console import agents_screens, relay_ops
 
-        if editing_id is None:
-            editing_id = existing.agent_id if existing is not None else None
+        if existing is None and delivery is None and editing_id is None and not allow_back:
+            self._editing_agent_id = None
+            self._template_agent_name = None
+            self._new_agent_allow_back = False
+            try:
+                items = templates.list_templates()
+            except Exception as error:
+                self.render_event(SessionEvent(kind="error", text=str(error)))
+                return
+            self.push_screen(
+                agents_screens.AgentTemplateScreen(items),
+                self._new_agent_template_chosen,
+            )
+            return
+
+        if (
+            editing_id is None
+            and template is None
+            and existing is not None
+            and existing.path.is_file()
+        ):
+            editing_id = existing.agent_id
         self._editing_agent_id = editing_id
+        self._template_agent_name = template
+        self._new_agent_allow_back = allow_back
+        kwargs: dict = {
+            "existing": existing,
+            "delivery": delivery,
+            "lock_name": lock_name,
+        }
+        if _accepts_kwarg(agents_screens.NewAgentScreen, "template"):
+            kwargs["template"] = template
+        if _accepts_kwarg(agents_screens.NewAgentScreen, "allow_back"):
+            kwargs["allow_back"] = allow_back
+        if _accepts_kwarg(agents_screens.NewAgentScreen, "is_edit"):
+            kwargs["is_edit"] = editing_id is not None
         self.push_screen(
-            NewAgentScreen(
+            agents_screens.NewAgentScreen(
                 self.session.root,
                 relay_ops.cached_agent_status(self.session.root),
-                existing=existing, delivery=delivery, lock_name=lock_name,
+                **kwargs,
             ),
             self._new_agent_done,
         )
 
-    def _new_agent_done(self, form) -> None:
-        if form is None:
+    def _new_agent_template_chosen(self, chosen: str | None) -> None:
+        if chosen is None:
             return
-        from whyline.agents import deliver, deliveries, service, telegram
+        if chosen in ("", "blank"):
+            self._open_new_agent(allow_back=True)
+            return
+        template_name = chosen.removeprefix("template:")
+        from whyline.agents import templates
+
+        try:
+            defn = templates.build(template_name)
+        except Exception as error:
+            self.render_event(SessionEvent(kind="error", text=str(error)))
+            return
+        self._open_new_agent(existing=defn, template=template_name, allow_back=True)
+
+    def _new_agent_done(self, form) -> None:
+        if form == "back":
+            self._editing_agent_id = None
+            self._template_agent_name = None
+            self._new_agent_allow_back = False
+            self._open_new_agent()
+            return
+        if form is None:
+            self._editing_agent_id = None
+            self._template_agent_name = None
+            self._new_agent_allow_back = False
+            return
+        from whyline.agents import deliver, deliveries, service, state, telegram, templates
         from whyline.console import agents_screens
 
         defn, delivery = form.defn, form.delivery
         old_id = getattr(self, "_editing_agent_id", None)
+        template_name = getattr(self, "_template_agent_name", None)
+        allow_back = bool(getattr(self, "_new_agent_allow_back", False))
 
         def decided(choice) -> None:
             if choice != "save":
                 # Back: reopen the form with everything that was typed,
                 # still editing the agent that was opened.
                 self._open_new_agent(
-                    existing=defn, delivery=delivery, editing_id=old_id, lock_name=True,
+                    existing=defn,
+                    delivery=delivery,
+                    editing_id=old_id,
+                    lock_name=True,
+                    template=template_name,
+                    allow_back=allow_back,
                 )
                 return
             try:
-                service.save_new(defn)
-                deliveries.save(defn.agent_id, delivery, known_chats=set(telegram.known_chats()))
-                if old_id and old_id != defn.agent_id:
+                if template_name:
+                    if _accepts_kwarg(templates.create, "defn"):
+                        saved = templates.create(
+                            template_name, defn.name, defn.workdir or None, defn=defn,
+                        )
+                    else:
+                        saved = templates.create(
+                            template_name, defn.name, defn.workdir or None,
+                        )
+                    defn_out = saved if saved is not None else defn
+                    if defn_out.path.is_file():
+                        conn = state.connect()
+                        try:
+                            state.accept(conn, defn_out)
+                        finally:
+                            conn.close()
+                else:
+                    service.save_new(defn)
+                    defn_out = defn
+                deliveries.save(
+                    defn_out.agent_id,
+                    delivery,
+                    known_chats=set(telegram.known_chats()),
+                )
+                if old_id and old_id != defn_out.agent_id:
                     # The new name is a new file. Retire the original so it
                     # does not stay accepted and runnable beside the new one.
-                    _retire_replaced_agent(self.session.root, old_id, defn.path)
+                    _retire_replaced_agent(self.session.root, old_id, defn_out.path)
                     deliveries.remove(old_id)
             except Exception as error:
                 self.render_event(SessionEvent(kind="error", text=str(error)))
                 return
-            shown = defn.path.as_posix().replace(str(Path.home()), "~")
+            shown = defn_out.path.as_posix().replace(Path.home().as_posix(), "~")
             self.render_event(SessionEvent(
                 kind="output",
-                text=f"Saved {defn.label} ({shown}) and accepted it on this Mac.",
+                text=f"Saved {defn_out.label} ({shown}) and accepted it on this Mac.",
             ))
             self._editing_agent_id = None
+            self._template_agent_name = None
+            self._new_agent_allow_back = False
             self._refresh_agents_status()
 
         text = service.describe(defn)

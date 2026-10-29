@@ -61,3 +61,14 @@ async def test_setup_check_and_start_fit(guided):
     make = lambda: RelaySetupScreen(Path.cwd(), guided=guided)
     assert await _visible(make, "#rs-check")
     assert await _visible(make, "#rs-start")
+
+
+async def test_new_agent_chooser_and_form_fit(tmp_path, monkeypatch):
+    from whyline.console.agents_screens import AgentTemplateScreen, NewAgentScreen
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    assert await _visible(lambda: AgentTemplateScreen(), "#nt-continue")
+    assert await _visible(lambda: NewAgentScreen(tmp_path, STATUS, allow_back=True), "#na-next")

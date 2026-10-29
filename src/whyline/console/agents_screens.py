@@ -8,13 +8,14 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalGroup, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records
+from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records, templates
 from whyline.agents.service import NO_AGENTS
 
 
@@ -849,16 +850,88 @@ _WHEN = (
 _EVERY_HELP = "Every N hours starts at midnight: 00:00, 05:00, 10:00, …"
 
 
+def _cell(value: object) -> Text:
+    return Text("" if value is None else str(value), no_wrap=True, end="")
+
+
+class AgentTemplateScreen(ModalScreen):
+    """First step of New agent: Blank agent or one row per template."""
+
+    BINDINGS = [("escape", "dismiss(None)", "Cancel")]
+
+    DEFAULT_CSS = """
+    AgentTemplateScreen { align: center middle; }
+    AgentTemplateScreen > Vertical {
+        width: 88; max-width: 100%; height: auto; max-height: 100%;
+        padding: 0 2; border: thick $accent; background: $surface;
+    }
+    AgentTemplateScreen DataTable { height: auto; max-height: 55vh; }
+    AgentTemplateScreen Horizontal { height: auto; margin-top: 1; }
+    AgentTemplateScreen Button { margin-right: 1; }
+    """
+
+    def __init__(self, items=None) -> None:
+        super().__init__()
+        self._templates = list(templates.list_templates() if items is None else items)
+
+    def compose(self) -> ComposeResult:
+        table = DataTable(id="nt-table", cursor_type="row")
+        table.add_columns("Template", "Name", "About")
+        table.add_row(
+            _cell("Blank agent"),
+            _cell(""),
+            _cell("Start from an empty form."),
+            key="blank",
+        )
+        for item in self._templates:
+            table.add_row(
+                _cell(item.title),
+                _cell(item.name),
+                _cell(item.about),
+                key=f"template:{item.name}",
+            )
+        yield Vertical(
+            Label("New agent"),
+            table,
+            Horizontal(
+                Button("Continue", id="nt-continue", variant="primary"),
+                Button("Cancel", id="nt-cancel"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#nt-table", DataTable).focus()
+
+    def _choose(self) -> None:
+        key = _row_key(self.query_one("#nt-table", DataTable))
+        if key is None or key == "blank":
+            self.dismiss("blank")
+            return
+        name = key.removeprefix("template:")
+        self.dismiss(f"template:{name}" if name == "blank" else name)
+
+    def on_data_table_row_selected(self, event) -> None:
+        event.stop()
+        self._choose()
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "nt-continue":
+            self._choose()
+        elif event.button.id == "nt-cancel":
+            self.dismiss(None)
+
+
 class NewAgentScreen(ModalScreen):
-    """Collects one agent. Dismisses with an AgentForm, or None."""
+    """Collects one agent. Dismisses with an AgentForm, "back", or None."""
 
     DEFAULT_CSS = """
     NewAgentScreen { align: center middle; }
-    NewAgentScreen > VerticalGroup {
+    NewAgentScreen > Vertical {
         width: 100; max-width: 100%; height: auto; max-height: 100%;
         padding: 0 2; border: thick $accent; background: $surface;
-        overflow-x: hidden; overflow-y: auto;
     }
+    NewAgentScreen #na-fields { height: auto; max-height: 65vh; }
     NewAgentScreen HorizontalGroup { height: auto; }
     NewAgentScreen .field-label { width: 16; padding: 1 1 0 0; }
     NewAgentScreen TextArea { height: 6; }
@@ -876,15 +949,29 @@ class NewAgentScreen(ModalScreen):
 
     def __init__(self, root, status, existing: d.AgentDef | None = None,
                  delivery: dl.Delivery | None = None, *,
-                 lock_name: bool | None = None) -> None:
+                 lock_name: bool | None = None,
+                 template: str | None = None,
+                 allow_back: bool = False,
+                 is_edit: bool | None = None) -> None:
         super().__init__()
         self._root = Path(root)
         self._status = status if isinstance(status, dict) else {}
         self._existing = existing
         self._delivery_in = delivery
+        self._template = template
+        self._allow_back = allow_back
+        if is_edit is None:
+            self._is_edit = (
+                existing is not None
+                and template is None
+                and existing.path.is_file()
+            )
+        else:
+            self._is_edit = is_edit
         # Edit passes False. Review's Back passes True so the reviewed name
-        # stays put. Callers that omit it keep the name read-only on an edit.
-        self._lock_name = existing is not None if lock_name is None else lock_name
+        # stays put. Callers that omit it keep the name read-only on an edit,
+        # and editable when prefilling a new agent from a template.
+        self._lock_name = self._is_edit if lock_name is None else lock_name
         self._sources: list[str] = list(existing.sources) if existing else []
         self._picking = False
 
@@ -911,7 +998,7 @@ class NewAgentScreen(ModalScreen):
         """Enabled usable CLIs, plus a saved disabled or unusable runner or backup."""
         names = list(self._runnable())
         existing = self._existing
-        if existing is None:
+        if existing is None or not self._is_edit:
             return names
         for cli in (existing.runner, *existing.backup):
             if cli and cli not in names:
@@ -936,7 +1023,8 @@ class NewAgentScreen(ModalScreen):
         existing = self._existing
         try:
             existing_delivery = self._delivery_in or (
-                dl.get(existing.agent_id) if existing else None) or dl.Delivery()
+                dl.get(existing.agent_id) if (existing and self._is_edit) else None
+            ) or dl.Delivery()
         except dl.DeliveryError:
             existing_delivery = dl.Delivery()
         from whyline.agents import telegram
@@ -948,11 +1036,14 @@ class NewAgentScreen(ModalScreen):
         when = existing.trigger.kind if existing else "manual"
         runnable = self._runnable()
         offered = self._choice_clis()
-        if existing:
+        if existing and (self._is_edit or existing.runner in offered):
             runner = existing.runner
         else:
             runner = runnable[0] if runnable else None
-        backups = set(existing.backup) if existing else set()
+        backups = (
+            {cli for cli in existing.backup if cli in offered}
+            if existing else set()
+        )
         boxes = []
         for cli in offered:
             box = Checkbox(
@@ -1001,8 +1092,12 @@ class NewAgentScreen(ModalScreen):
             id="na-folder-row",
         )
         folder_row.display = when == "folder"
-        title = f"Edit {existing.name}" if existing else "New agent"
-        yield VerticalGroup(
+        title = f"Edit {existing.name}" if (existing and self._is_edit) else "New agent"
+        buttons = [Button("Review", id="na-next", variant="primary")]
+        if self._allow_back:
+            buttons.append(Button("Back", id="na-back"))
+        buttons.append(Button("Cancel", id="na-cancel"))
+        fields = VerticalScroll(
             Label(title),
             HorizontalGroup(
                 Label("Where", classes="field-label"),
@@ -1100,12 +1195,12 @@ class NewAgentScreen(ModalScreen):
                 Button("Send test", id="na-send-test"),
                 Static("", id="na-test-result", markup=False),
             ),
+            id="na-fields",
+        )
+        yield Vertical(
+            fields,
             Static("", id="na-error", markup=False),
-            HorizontalGroup(
-                Button("Review", id="na-next", variant="primary"),
-                Button("Cancel", id="na-cancel"),
-                id="na-buttons",
-            ),
+            HorizontalGroup(*buttons, id="na-buttons"),
         )
 
     def on_mount(self) -> None:
@@ -1130,6 +1225,8 @@ class NewAgentScreen(ModalScreen):
         button_id = event.button.id
         if button_id == "na-cancel":
             self.dismiss(None)
+        elif button_id == "na-back":
+            self.dismiss("back")
         elif button_id == "na-next":
             self._submit()
         elif button_id == "na-send-test":
@@ -1289,6 +1386,8 @@ class NewAgentScreen(ModalScreen):
         if report:
             lines.append(f"report_folder = {_q(report)}")
         lines.append(f"timeout_minutes = {self._int_token('#na-timeout', 15)}")
+        if self._existing and self._existing.before:
+            lines.append(f"before = {_q(self._existing.before)}")
         lines += ["", "[trigger]", f"kind = {_q(when)}"]
         at = self.query_one("#na-at", Input).value.strip()
         if when in ("daily", "weekdays") or at:
@@ -1321,7 +1420,7 @@ class NewAgentScreen(ModalScreen):
                 continue
             if item.kind != defn.kind or item.name != defn.name:
                 continue
-            if self._existing is not None and item.path == self._existing.path:
+            if self._is_edit and self._existing is not None and item.path == self._existing.path:
                 continue
             return True
         return False

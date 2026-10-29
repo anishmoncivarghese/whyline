@@ -28089,3 +28089,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d40166c4836a4313a98beb83d0106a0b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T06:24:39.163Z"} -->
+
+## 2026-10-29 — Accept template-created agents in state.sqlite3 after templates.create when saving from console ReviewScreen
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-2
+
+**Because:** templates.create leaves CLI-created agents not accepted because CLI creation has no review step, whereas console creation goes through ReviewScreen before Save, tui.py reports the saved agent accepted on this Mac, and AgentDetailScreen only offers Accept changes for needs_review rather than not accepted
+
+**Rejected:**
+
+- Leave console-saved template agents in not accepted status — breaks console-first setup because AgentDetailScreen has no button to accept a not accepted agent and contradicts the saved-and-accepted message
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: ae201ea96e9543b495959514b99fb3d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T07:09:57.324Z"} -->
+
+## 2026-10-29 — Separate saved-agent edits from in-memory template prefills in NewAgentScreen and pin action buttons outside #na-fields
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-2
+
+**Because:** Saved-agent edits keep disabled or unusable configured CLIs visible for lossless cancel, while new template prefills must strictly apply enabled-provider rules, leave the agent name editable and collision-checked, and keep Review/Back/Cancel reachable within 80x24
+
+**Rejected:**
+
+- Treat any non-None existing AgentDef as a saved-agent edit — leaks disabled template default CLIs into the form, locks #na-name, and skips collision checks when an agent with the template default name already exists
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 80d8032bf14b49c98daf74e89e1878d8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T07:10:00.150Z"} -->
+
+## 2026-10-29 — Pass JOB-2 round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-2
+
+**Because:** The required console suite and full project suite both completed with exit code 0, covering the template chooser, prefill, save, blank flow, and 80x24 console behavior without regressions
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 2b4ed499606942d7913ab7d830e7b1ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T07:28:14.390Z"} -->
+
+## 2026-10-29 — Approve JOB-2 round 3 console template flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-2
+
+**Because:** The implementation matches the requested chooser, in-memory template prefill, enabled-provider filtering, templates.create save, blank flow, Back navigation, and 80x24 layout; both the console suite and full project suite passed independently
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: f415c7e56a79448ead799bbc8ac637da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T07:46:36.051Z"} -->
