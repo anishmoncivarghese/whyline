@@ -53,7 +53,7 @@ Rules every task keeps (the same rules as part 1):
   - the database is created private
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-11: Make the `before` step a registry and add "nothing new"
+- [x] JOB-11: Make the `before` step a registry and add "nothing new"
   ASST-20 in `personal-assistant.plan.md` added a `before` field that accepts only `"brief-collect"`. Extend it here. Do not add a second mechanism.
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/runner.py`, `src/whyline/agents/after.py`, `src/whyline/agents/deliver.py`, and the matching tests in `tests/agents/` only. Add `src/whyline/agents/before.py`.
   `before.py` keeps a registry of built-in steps, `{name: callable(defn, run_dir, now) -> int}`, which returns how many event files it wrote. Register `brief-collect` as a thin wrapper around ASST-20's `whyline.ideas.brief.collect`, so its behaviour and tests are unchanged.
