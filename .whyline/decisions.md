@@ -28149,3 +28149,71 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f415c7e56a79448ead799bbc8ac637da -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T07:46:36.051Z"} -->
+
+## 2026-10-29 — Keep read-only paths side-effect-free via configured_home and merge on-disk unknown TOML keys in save_preferences
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-3
+
+**Because:** status(), load_preferences(), and upcoming doctor checks must not create ~/.whyline/jobs on an unconfigured Mac, while save_preferences must preserve unknown keys like min_score or custom tables already in preferences.toml even when a caller submits only known fields
+
+**Rejected:**
+
+- Call paths.home() inside status() and load_preferences() — creates ~/.whyline/jobs as a side effect of read-only inspection
+- Serialise only the mapping passed to save_preferences — drops unknown keys already present on disk when a UI form submits only the nine standard fields
+
+**Test:** uv run pytest -q tests/jobs: 29 passed (exit 0)
+**Test:** uv run pytest -q: passed (exit 0)
+
+**Files:** src/whyline/jobs/paths.py, src/whyline/jobs/profile.py
+
+<!-- whyline-event: bb28429cfba5431187f4ea8b54c094b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T08:11:08.886Z"} -->
+
+## 2026-10-29 — Bound raw CV reads before UTF-8 decoding and skip deleted runs and DTD entities in docx XML extraction
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-3
+
+**Because:** A plain-text CV over 2 * MAX_CV_BYTES + 3 raw bytes cannot normalise within 200 KB even with CRLF line endings and a UTF-8 BOM, so rejecting before decode avoids mid-codepoint UnicodeDecodeError misreporting oversized multi-byte UTF-8 files; in word/document.xml, local-tag extraction omits <w:del> deletions and rejects <!ENTITY declarations while emitting one paragraph per line
+
+**Rejected:**
+
+- Decode bounded raw bytes before checking length — truncates multi-byte UTF-8 characters mid-sequence on oversized files and raises an encoding error instead of the 200 KB limit message
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: bee8528c93e44b3d99ee8e169c29434d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T08:11:08.951Z"} -->
+
+## 2026-10-29 — JOB-3 round-two testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-3
+
+**Because:** The required jobs suite passed 29 tests and the full project pytest suite completed with exit code 0, covering the requested formats, permissions, preference validation and preservation, and CV size behavior
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: a5a65636ae704dbfb97c0e4b7b3a8f8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T08:21:35.781Z"} -->
+
+## 2026-10-29 — Approve JOB-3 profile store in round-three review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-3
+
+**Because:** The implementation satisfies the requested private jobs paths, CV imports and 200 KB text limit, validated preference persistence with unknown-key preservation, draft storage, and status reporting; the focused 29-test suite and full project suite both passed independently
+
+**Rejected:**
+
+- Request changes — no substantive defect, unsafe behavior, missing required coverage, or scope violation was found
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: b4c58c3d3b934c2f8269a52abc1b88b1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T08:32:32.610Z"} -->
