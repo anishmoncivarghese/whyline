@@ -35,7 +35,7 @@ Rules every task keeps (the same rules as part 1):
   - one failing company does not stop the others
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-10: The posting guard, filters and the seen store
+- [x] JOB-10: The posting guard, filters and the seen store
   Add `src/whyline/jobs/guard.py` (reuse `whyline.ideas.guard.clean` from ASST-14 for the shared rules and add only HTML-hiding rules here), `src/whyline/jobs/seen.py`, `tests/jobs/test_guard.py` and `tests/jobs/test_seen.py` only.
   `guard.clean(text)` removes:
   - HTML comments
