@@ -27975,3 +27975,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 881925be7a93486583781484ff24aaae -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-28T20:46:43.593Z"} -->
+
+## 2026-10-29 — Read Reminders through EventKit, not AppleScript
+
+**Actor:** claude
+**Role:** implementer
+**Task:** brief-reminders-access
+
+**Because:** AppleScript data reads need Privacy_Reminders too and never prompt for it; Terminal had Automation on but Reminders denied (status 2), so users were sent to the wrong page
+
+**Rejected:**
+
+- keep AppleScript and mention both pages — still no prompt, and the denial cannot tell which switch is off
+- probe Mail access without reading — macOS answers Automation only by asking, so Mail status is the last Grant's result
+
+**Files:** src/whyline/ideas/brief.py, src/whyline/ideas/reminders_today.js
+
+<!-- whyline-event: 7ab103bd68c0497aac9ceea7bc078855 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T04:01:41.350Z"} -->
