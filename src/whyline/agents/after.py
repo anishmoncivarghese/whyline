@@ -82,6 +82,8 @@ def finish(conn, defn, record, *, now=None, notify=True, send=None) -> None:
         changes["backoff_until"] = _earliest_reset(record.reason, now).isoformat()
         changes["consecutive_failures"] = (act.consecutive_failures if act else 0) + 1
         messages.append(f"{outcome} — waiting until {changes['backoff_until'][11:16]}")
+    elif outcome == "nothing_new":
+        pass  # a skip-when-empty step wrote nothing: not a failure, nothing to say
     elif outcome in _FAILING:
         changes["consecutive_failures"] = (act.consecutive_failures if act else 0) + 1
         messages.append(f"{outcome} — {record.reason}" if record.reason else outcome)

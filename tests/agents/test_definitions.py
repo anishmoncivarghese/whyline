@@ -173,3 +173,11 @@ def test_before_accepts_only_built_in_names_and_round_trips(repo):
     a = d.parse(base + 'before = "brief-collect"', kind="repo", path=path, repo_root=repo)
     assert a.before == "brief-collect"
     assert d.parse(d.render(a), kind="repo", path=path, repo_root=repo) == a
+
+
+def test_unknown_before_step_is_refused_at_parse(repo):
+    base = 'name = "ok"\ninstructions="x"\nrunner="claude"\n'
+    path = repo / ".whyline/agents/ok.toml"
+    for bad in ("nope", "echo hi", "brief-collect "):
+        with pytest.raises(d.DefinitionError, match="before"):
+            d.parse(base + f'before = "{bad}"', kind="repo", path=path, repo_root=repo)

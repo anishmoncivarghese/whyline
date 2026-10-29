@@ -104,7 +104,7 @@ def test_silent_and_no_run_outcomes_send_nothing(agent, monkeypatch):
     silent = dl.Delivery(email=("a@example.com",), on_failure="silent")
     assert deliver.after_run(agent, _run(agent, "failed", "boom", ""), delivery=silent,
                              mail=lambda *a, **k: mails.append(a), tg=FakeTelegram()) == []
-    for outcome in ("skipped", "missed"):
+    for outcome in ("skipped", "missed", "nothing_new"):
         assert deliver.after_run(agent, _run(agent, outcome, "", ""), delivery=DELIVERY,
                                  mail=lambda *a, **k: mails.append(a), tg=FakeTelegram()) == []
     assert mails == []

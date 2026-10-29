@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from whyline.agents import capabilities, definitions, records, state
+from whyline.agents import before as before_steps, capabilities, definitions, records, state
 
 _CANT_RUN = ("usage_limit", "login_needed", "missing")
 _RESET = re.compile(r"resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
@@ -29,21 +29,6 @@ def _cli_permitted(cli: str) -> bool:
     if not isinstance(data, dict):
         return True
     return cli in account.enabled_agents()
-
-
-def _brief_collect(run_dir: Path) -> None:
-    """The built-in `brief-collect` step: write today.md, mail.md, tasks.md."""
-    from whyline.ideas import brief, store
-
-    conn = store.connect()
-    try:
-        calendars = brief.selected(conn)
-        mailboxes = brief.mailboxes_selected(conn)
-    finally:
-        conn.close()
-    brief.calendar(run_dir, calendars=calendars)
-    brief.mail(run_dir, mailboxes=mailboxes)
-    brief.reminders(run_dir)
 
 
 def build_prompt(defn, sources: list[Path], event_files: list[Path]) -> str:
@@ -176,12 +161,18 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
     record, folder = records.new_run(defn, source=source, now=now)
     sources = [p for p in definitions.resolve_sources(defn)]
     events = sorted(payload_dir.iterdir()) if payload_dir and payload_dir.is_dir() else []
-    if defn.before == "brief-collect":
+    step = before_steps.STEPS.get(defn.before)
+    if step is not None:
+        existing = {p.name for p in folder.iterdir()}
         try:
-            _brief_collect(folder)
-            events = [*events, *(folder / name for name in ("today.md", "mail.md", "tasks.md"))]
+            written = step.run(defn, folder, now)
+            events = [*events, *sorted(p for p in folder.iterdir() if p.name not in existing)]
         except Exception as caught:
             record.outcome, record.reason = "failed", f"before step failed: {caught}"
+            record.ended = datetime.now().isoformat()
+            return records.finish(record, folder, final_text="", defn=defn)
+        if written == 0 and step.skip_when_empty:
+            record.outcome, record.reason = "nothing_new", ""
             record.ended = datetime.now().isoformat()
             return records.finish(record, folder, final_text="", defn=defn)
     prompt = build_prompt(defn, sources, events)

@@ -28596,3 +28596,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8d337fceceb04ef182dde73d66f71190 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:17:40.675Z"} -->
+
+## 2026-10-29 — before steps are a registry in agents/before.py; brief-collect logic moved there from runner
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-11
+
+**Because:** the plan names ideas.brief.collect but it does not exist, and ideas/ is out of scope; moving ASST-20's _brief_collect keeps behaviour and tests unchanged. Event files are found by diffing the run folder
+
+**Rejected:**
+
+- add brief.collect in ideas/ — outside the allowed files
+
+**Files:** src/whyline/agents/before.py
+
+<!-- whyline-event: 25ee4ccb14914bdeb12b587f40a0bda2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:29:36.987Z"} -->
+
+## 2026-10-29 — Pass JOB-11 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-11
+
+**Because:** The focused agents and ideas suite and the full project suite both pass, and the scoped tests verify registry parsing, brief collection, nothing_new provider suppression, no delivery or notification, unchanged failure streaks, and data-labelled event files
+
+**Rejected:**
+
+- Fail the task — no behavioral defect was reproduced
+
+**Files:** src/whyline/agents/before.py
+
+<!-- whyline-event: 35173bd53fbc4b0485e5e9f17017846b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:40:59.542Z"} -->
+
+## 2026-10-29 — Approve JOB-11 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-11
+
+**Because:** The registry-backed before-step implementation satisfies parsing, provider suppression, silent nothing_new delivery, unchanged failure streaks, failure wording, and data-labelled event files; both focused and full test suites completed without failures
+
+**Rejected:**
+
+- Request changes — no correctness, coverage, safety, or scope defect was found
+
+**Files:** src/whyline/agents/before.py
+
+<!-- whyline-event: b6e6751fce1640669bcbca46725914bb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:52:26.246Z"} -->

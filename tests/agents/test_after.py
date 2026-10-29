@@ -33,6 +33,17 @@ def test_success_resets_the_streak_and_notifies_with_the_backup(repo, home, monk
     assert sent == [("whyline · a", "succeeded via codex (backup; claude: usage_limit until 15:00) — All quiet today.")]
 
 
+def test_nothing_new_is_not_a_failure_and_sends_nothing(repo, home):
+    sent = []
+    conn, defn = _setup(repo)
+    state.update(conn, defn.agent_id, consecutive_failures=2)
+    after.finish(conn, defn, _rec("nothing_new"), now=NOW,
+                 send=lambda title, body: sent.append((title, body)))
+    act = state.get(conn, defn.agent_id)
+    assert act.consecutive_failures == 2 and act.status == "active"
+    assert sent == []
+
+
 def test_login_needed_everywhere_pauses_with_the_command(repo, home):
     sent = []
     conn, defn = _setup(repo)

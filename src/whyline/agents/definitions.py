@@ -10,12 +10,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from whyline.agents import paths
+from whyline.agents import before as before_steps, paths
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 CLIS = ("claude", "codex", "grok", "antigravity")
 TRIGGER_KINDS = ("manual", "daily", "weekdays", "every", "folder")
-BEFORE_STEPS = ("", "brief-collect")  # built-in names, never shell commands
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -146,8 +145,9 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
     if not 1 <= timeout <= 240:
         raise DefinitionError("timeout_minutes must be between 1 and 240")
     before = _str(raw, "before")
-    if before not in BEFORE_STEPS:
-        raise DefinitionError('before must be "" or "brief-collect"')
+    if before not in before_steps.names():
+        allowed = ", ".join(f'"{n}"' for n in before_steps.names())
+        raise DefinitionError(f"before must be one of {allowed}")
     defn = AgentDef(
         name=name, kind=kind, path=path, root=root, instructions=instructions,
         runner=runner, backup=backup, model=_str(raw, "model"), sources=_strs(raw, "sources"),

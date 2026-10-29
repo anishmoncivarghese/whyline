@@ -11,7 +11,7 @@ from whyline.agents import convert, deliveries, mail_send, paths, records
 
 COMMAND_TIMEOUT = 120
 _SUCCEEDED = ("succeeded", "succeeded_with_denials")
-_NO_RUN = ("skipped", "missed")
+_NO_RUN = ("skipped", "missed", "nothing_new")
 _NO_WORD = "(Word conversion isn't available on this computer, so the Markdown file is attached.)"
 
 
