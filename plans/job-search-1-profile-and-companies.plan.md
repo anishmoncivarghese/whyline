@@ -153,7 +153,7 @@ Rules every task keeps:
   - CLI output
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-7: Find which public job board each company uses
+- [x] JOB-7: Find which public job board each company uses
   Add `src/whyline/jobs/ats.py`, `tests/jobs/test_ats.py` and fixtures, and edit `src/whyline/jobs/companies.py` (call detection) and `src/whyline/jobs/cli.py` only.
   `ats.detect(name, careers_url=None, http=...)` builds slug guesses: the lower-case name without spaces, the name with hyphens, and slugs taken from a `careers_url` on a known board host. It probes these public endpoints in order and stops at the first that returns a valid JSON list of jobs:
   - `https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`
