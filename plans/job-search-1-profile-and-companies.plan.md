@@ -63,7 +63,7 @@ Rules every task keeps:
   - the screen fits 80x24
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-3: The jobs folder and the profile store
+- [x] JOB-3: The jobs folder and the profile store
   Add `src/whyline/jobs/__init__.py`, `src/whyline/jobs/paths.py`, `src/whyline/jobs/profile.py`, `tests/jobs/__init__.py` and `tests/jobs/test_profile.py` only.
   `paths.home()` is `~/.whyline/jobs/` (0700).
   `profile.py` manages these files, each 0600:
