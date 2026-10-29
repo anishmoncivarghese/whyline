@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from whyline import cli
-from whyline.jobs import paths, profile, review
+from whyline.jobs import companies, paths, profile, review
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -267,3 +267,123 @@ def test_jobs_review_and_accept_cli_round_trip_and_failure_reporting(
     assert profile.rubric_path().read_text(encoding="utf-8") == "# Draft Rubric\n"
     assert not review.profile_draft_path().exists()
     assert not review.rubric_draft_path().exists()
+
+
+def test_jobs_companies_cli_list_add_suggest_accept_remove_and_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # List before any writes is side-effect-free.
+    code, out, err = _invoke(["jobs", "companies", "list"], capsys)
+    assert code == 0, err
+    assert err == ""
+    assert not paths.configured_home().exists()
+    assert "No companies" in out
+    assert "~/.whyline/jobs/companies.toml" in out
+
+    # Add companies with positional and --careers-url flags; reject non-https URL.
+    code, out, err = _invoke(
+        ["jobs", "companies", "add", "Stripe", "https://stripe.com/jobs"],
+        capsys,
+    )
+    assert code == 0, err
+    assert "Stripe" in out and "https://stripe.com/jobs" in out and "accepted" in out
+
+    code, out, err = _invoke(
+        ["jobs", "companies", "add", "Linear", "--careers-url", "https://linear.app/careers"],
+        capsys,
+    )
+    assert code == 0, err
+    assert "Linear" in out
+
+    code, out, err = _invoke(
+        ["jobs", "companies", "add", "BadHttp", "http://bad.example/jobs"],
+        capsys,
+    )
+    assert code == 1
+    assert out == ""
+    assert "https://" in err
+    assert "Traceback" not in err
+
+    # Failed / malformed suggest reports error to stderr and exits 1.
+    monkeypatch.setattr(
+        companies,
+        "suggest",
+        lambda cli=None, progress=None: companies.SuggestResult(
+            ok=False,
+            outcome="malformed_answer",
+            reason="Missing fenced 'companies' block in agent answer.",
+        ),
+    )
+    code, out, err = _invoke(["jobs", "companies", "suggest"], capsys)
+    assert code == 1
+    assert "malformed_answer" in err
+
+    # Successful suggest forwards --cli, prints progress and added suggestions.
+    seen_cli: list[str | None] = []
+
+    def fake_suggest(cli: str | None = None, progress=None) -> companies.SuggestResult:
+        seen_cli.append(cli)
+        if progress is not None:
+            progress("claude is working")
+        added_item = companies.Company(
+            name="Tailscale",
+            status="suggested",
+            reason="Mesh networking & distributed systems",
+            ats="unknown",
+            slug="",
+            careers_url="https://tailscale.com/careers",
+            added_by="ai",
+            checked_at="",
+        )
+        store = companies._load_store()
+        store[companies._company_key(added_item.name)] = added_item
+        companies._write_private_companies(store)
+        return companies.SuggestResult(
+            ok=True,
+            outcome="succeeded",
+            cli=cli or "claude",
+            added=(added_item,),
+        )
+
+    monkeypatch.setattr(companies, "suggest", fake_suggest)
+    code, out, err = _invoke(["jobs", "companies", "suggest", "--cli", "claude"], capsys)
+    assert code == 0, err
+    assert seen_cli == ["claude"]
+    assert "claude is working" in out
+    assert "Tailscale" in out and "Mesh networking" in out
+
+    # List human-readable and --json and --status filter.
+    code, list_out, err = _invoke(["jobs", "companies", "list"], capsys)
+    assert code == 0, err
+    assert "Stripe" in list_out and "accepted" in list_out
+    assert "Tailscale" in list_out and "suggested" in list_out
+
+    code, sug_only, err = _invoke(["jobs", "companies", "list", "--status", "suggested"], capsys)
+    assert code == 0, err
+    assert "Tailscale" in sug_only
+    assert "Stripe" not in sug_only
+
+    code, json_out, err = _invoke(["jobs", "companies", "list", "--json"], capsys)
+    assert code == 0, err
+    parsed = json.loads(json_out)
+    assert [row["name"] for row in parsed] == ["Stripe", "Linear", "Tailscale"]
+
+    # Accept and remove round-trip, plus unknown company errors.
+    code, out, err = _invoke(["jobs", "companies", "accept", "tailscale"], capsys)
+    assert code == 0, err
+    assert "Accepted Tailscale" in out
+
+    code, out, err = _invoke(["jobs", "companies", "remove", "Linear"], capsys)
+    assert code == 0, err
+    assert "Removed Linear" in out
+
+    by_name = {c.name: c.status for c in companies.list()}
+    assert by_name == {"Stripe": "accepted", "Linear": "removed", "Tailscale": "accepted"}
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "NoSuchCo"], capsys)
+    assert code == 1
+    assert "not found" in err.lower()
+    code, out, err = _invoke(["jobs", "companies", "remove", "NoSuchCo"], capsys)
+    assert code == 1
+    assert "not found" in err.lower()

@@ -28338,3 +28338,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 42e8bdd2de244dd286c39ec4c6602764 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T11:16:08.132Z"} -->
+
+## 2026-10-29 — Store companies as canonical-keyed 0600 TOML tables, pass companies.toml as a data source to job-companies, and sanitize non-https AI careers_hint values
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-6
+
+**Because:** Keying tables by casefolded whitespace-collapsed name prevents duplicates while preserving display casing and keeping removed entries so suggest() never re-suggests them; listing companies.toml in sources keeps prior AI/user strings marked as untrusted data in build_prompt; and falling back to empty careers_url on non-https careers_hint preserves valid AI suggestions without ever storing non-https URLs
+
+**Rejected:**
+
+- Interpolate current company names into instructions — mixes untrusted stored text into trusted agent instructions instead of runner data sources
+- Delete rows on remove() — loses tombstones needed to prevent re-suggesting removed companies
+
+**Files:** src/whyline/jobs/companies.py, src/whyline/jobs/cli.py, src/whyline/agents/templates/job-companies/agent.toml, src/whyline/agents/templates/job-companies/instructions.md
+
+<!-- whyline-event: 670c8f3e74b94348a9c26b92a4421f4d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T11:31:43.037Z"} -->
+
+## 2026-10-29 — Pass JOB-6 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-6
+
+**Because:** The required jobs suite and full project suite exited 0, and the targeted company acceptance run passed all 16 selected tests covering validation, duplicates, removed-company tombstones, user-entry precedence, malformed answers, and CLI output
+
+**Rejected:**
+
+- Fail the task — no behavioral failure was reproduced in the prescribed or targeted acceptance tests
+
+**Files:** tests/jobs/test_companies.py
+
+<!-- whyline-event: 31c849efda7b437ba8645f9862303d86 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T11:51:38.616Z"} -->
+
+## 2026-10-29 — Approve JOB-6 company list and AI suggestions
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-6
+
+**Because:** The implementation stays within scope, safely persists validated company tables, preserves removed tombstones and user precedence, treats prompt sources as data, covers every requested acceptance case, and both independently run required test suites passed
+
+**Rejected:**
+
+- Request changes — no unsafe behavior, requirement gap, or clear defect was found in the diff or tests
+
+**Files:** src/whyline/jobs/companies.py
+
+<!-- whyline-event: 0df06c4f0abe49758d46581377f7b431 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T12:01:44.262Z"} -->

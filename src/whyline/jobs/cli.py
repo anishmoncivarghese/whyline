@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from whyline.jobs import paths, profile, review
+from whyline.jobs import companies, paths, profile, review
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -175,6 +175,61 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         "accept",
         help="Accept profile.draft.md and rubric.draft.md into profile.md and rubric.md",
     )
+
+    comp = jobs_sub.add_parser(
+        "companies",
+        help="Manage tracked companies and AI company suggestions",
+    )
+    comp_sub = comp.add_subparsers(dest="jobs_companies_command", required=True)
+
+    comp_list = comp_sub.add_parser("list", help="List companies in companies.toml")
+    comp_list.add_argument(
+        "--status",
+        choices=companies.STATUSES,
+        default=None,
+        help="Filter by company status",
+    )
+    comp_list.add_argument(
+        "--json",
+        action="store_true",
+        help="Machine-readable output",
+    )
+
+    comp_sug = comp_sub.add_parser(
+        "suggest",
+        help="Suggest matching companies from your profile and preferences",
+    )
+    comp_sug.add_argument(
+        "--cli",
+        default=None,
+        help="AI provider CLI to run (default: first enabled)",
+    )
+
+    comp_add = comp_sub.add_parser("add", help="Add a company to track")
+    comp_add.add_argument("name", help="Company name")
+    comp_add.add_argument(
+        "careers_url_pos",
+        nargs="?",
+        default=None,
+        metavar="careers_url",
+        help="Optional https:// careers page URL",
+    )
+    comp_add.add_argument(
+        "--careers-url",
+        "--url",
+        dest="careers_url_opt",
+        default=None,
+        help="Optional https:// careers page URL",
+    )
+
+    comp_acc = comp_sub.add_parser("accept", help="Accept a suggested company")
+    comp_acc.add_argument("name", help="Company name")
+
+    comp_rem = comp_sub.add_parser(
+        "remove",
+        help="Remove a company so it is not tracked or re-suggested",
+    )
+    comp_rem.add_argument("name", help="Company name")
 
 
 def _read_stdin_cv() -> str:
@@ -342,9 +397,133 @@ def _cmd_review(args: argparse.Namespace) -> int:
     return EXIT_USAGE
 
 
+def _cmd_companies_list(args: argparse.Namespace) -> int:
+    status_filter = getattr(args, "status", None)
+    try:
+        rows = companies.list(status=status_filter)
+    except (companies.CompanyError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+
+    if getattr(args, "json", False):
+        print(json.dumps([row.to_dict() for row in rows], indent=2, ensure_ascii=False))
+        return EXIT_OK
+
+    shown_path = tilde_path(companies.companies_path())
+    if not rows:
+        if status_filter:
+            print(f"No companies with status '{status_filter}' ({shown_path}).")
+        else:
+            print(f"No companies ({shown_path}).")
+        return EXIT_OK
+
+    print(f"Companies ({shown_path})")
+    name_w = max(4, *(len(row.name) for row in rows))
+    for row in rows:
+        details: list[str] = []
+        if row.reason:
+            details.append(row.reason)
+        if row.careers_url:
+            details.append(row.careers_url)
+        tail = f"  {' — '.join(details)}" if details else ""
+        print(
+            f"  {row.name:<{name_w}}  {row.status:<9}  {row.ats:<15}  {row.added_by:<4}{tail}"
+        )
+    return EXIT_OK
+
+
+def _cmd_companies_suggest(args: argparse.Namespace) -> int:
+    try:
+        result = companies.suggest(
+            cli=getattr(args, "cli", None),
+            progress=lambda line: print(f"· {line}"),
+        )
+    except (companies.CompanyError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+
+    if not result.ok:
+        detail = f"{result.outcome}: {result.reason}" if result.reason else result.outcome
+        print(detail, file=sys.stderr)
+        return EXIT_ERROR
+
+    shown_path = tilde_path(companies.companies_path())
+    if not result.added:
+        print(f"Added 0 new companies ({result.outcome}).")
+        return EXIT_OK
+
+    noun = "company" if len(result.added) == 1 else "companies"
+    print(f"Added {len(result.added)} suggested {noun} to {shown_path} ({result.outcome}):")
+    for item in result.added:
+        suffix = f" — {item.reason}" if item.reason else ""
+        print(f"  - {item.name}{suffix}")
+    return EXIT_OK
+
+
+def _cmd_companies_add(args: argparse.Namespace) -> int:
+    pos_url = getattr(args, "careers_url_pos", None)
+    opt_url = getattr(args, "careers_url_opt", None)
+    if pos_url is not None and opt_url is not None and pos_url != opt_url:
+        print("Provide careers_url once (positional or --careers-url).", file=sys.stderr)
+        return EXIT_USAGE
+    careers_url = opt_url if opt_url is not None else pos_url
+    try:
+        entry = companies.add(args.name, careers_url=careers_url)
+    except (companies.CompanyError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+
+    shown_path = tilde_path(companies.companies_path())
+    url_part = f" ({entry.careers_url})" if entry.careers_url else ""
+    print(f"Added {entry.name}{url_part} [{entry.status}] to {shown_path}.")
+    return EXIT_OK
+
+
+def _cmd_companies_accept(args: argparse.Namespace) -> int:
+    try:
+        entry = companies.accept(args.name)
+    except (companies.CompanyError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Accepted {entry.name} ({tilde_path(companies.companies_path())}).")
+    return EXIT_OK
+
+
+def _cmd_companies_remove(args: argparse.Namespace) -> int:
+    try:
+        entry = companies.remove(args.name)
+    except (companies.CompanyError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Removed {entry.name} ({tilde_path(companies.companies_path())}).")
+    return EXIT_OK
+
+
+_COMPANIES_COMMANDS = {
+    "list": _cmd_companies_list,
+    "suggest": _cmd_companies_suggest,
+    "add": _cmd_companies_add,
+    "accept": _cmd_companies_accept,
+    "remove": _cmd_companies_remove,
+}
+
+
+def _cmd_companies(args: argparse.Namespace) -> int:
+    sub = getattr(args, "jobs_companies_command", None)
+    handler = _COMPANIES_COMMANDS.get(sub or "")
+    if handler is None:
+        print(
+            "usage: whyline jobs companies list|suggest|add|accept|remove",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    return handler(args)
+
+
 _COMMANDS = {
     "profile": _cmd_profile,
     "review": _cmd_review,
+    "companies": _cmd_companies,
 }
 
 
@@ -352,6 +531,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile|review", file=sys.stderr)
+        print("usage: whyline jobs profile|review|companies", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)
