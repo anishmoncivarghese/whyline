@@ -1,5 +1,5 @@
 # whyline-relay configuration. Every key is optional.
-plan = "plans/personal-assistant.plan.md"
+plan = "plans/job-search-1-profile-and-companies.plan.md"
 max_rounds = 24
 timeout_minutes = 60
 branch_prefix = "relay/"
