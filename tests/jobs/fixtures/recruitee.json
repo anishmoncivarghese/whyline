@@ -1,0 +1,18 @@
+{
+  "offers": [
+    {
+      "id": 184920,
+      "title": "Senior Rust & Python Engineer",
+      "slug": "senior-rust-python-engineer",
+      "careers_url": "https://homeday.recruitee.com/o/senior-rust-python-engineer",
+      "careers_apply_url": "https://homeday.recruitee.com/o/senior-rust-python-engineer/c/new",
+      "location": "Berlin, Germany",
+      "city": "Berlin",
+      "country": "Germany",
+      "remote": true,
+      "published_at": "2026-10-25 10:00:00 UTC",
+      "created_at": "2026-10-24 16:45:00 UTC",
+      "description": "<p>Build event-driven backend services in Rust and Python.</p>"
+    }
+  ]
+}

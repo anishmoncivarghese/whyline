@@ -1,0 +1,23 @@
+{
+  "name": "Workable Demo Co",
+  "description": "Cloud developer tools",
+  "jobs": [
+    {
+      "title": "Principal Backend Engineer",
+      "shortcode": "ENG94A2",
+      "code": "BE-01",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Engineering",
+      "url": "https://apply.workable.com/workable-demo/j/ENG94A2/",
+      "shortlink": "https://apply.workable.com/j/ENG94A2",
+      "application_url": "https://apply.workable.com/workable-demo/j/ENG94A2/apply/",
+      "published_on": "2026-10-21",
+      "created_at": "2026-10-21",
+      "country": "Germany",
+      "city": "Berlin",
+      "state": "Berlin",
+      "education": ""
+    }
+  ]
+}

@@ -28390,3 +28390,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0df06c4f0abe49758d46581377f7b431 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T12:01:44.262Z"} -->
+
+## 2026-10-29 — Enforce host allowlist and per-host rate limiting inside HttpClient (including redirects), probe all 6 board APIs per slug before switching slugs, and reject empty SmartRecruiters totalFound=0 guesses
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-7
+
+**Because:** Probing across distinct board hosts per slug avoids unnecessary 1 req/s waits on the first matching slug, wrapping injected and default transports in HttpClient guarantees off-list hosts and unsafe redirects are never requested, and ignoring SmartRecruiters totalFound=0 empty content on name guesses prevents false positives from shadowing Recruitee, careers_page, and unknown
+
+**Rejected:**
+
+- Probe all slugs against one board host before moving to the next board — hits the same host back-to-back on every multi-word company name and incurs unnecessary rate-limit delays
+- Fetch careers_url during ats.detect — violates the board-only detection probe list and would hit arbitrary AI-suggested hosts before user acceptance and robots.txt checks in JOB-18
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/jobs/cli.py
+
+<!-- whyline-event: 680ed2b127c44dad9725f144c8f61226 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T12:34:42.678Z"} -->
+
+## 2026-10-29 — Pass JOB-7 ATS detection testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-7
+
+**Because:** All 92 jobs tests and the full repository suite exited 0; behavior covers all six boards, unknown and careers-page fallbacks, URL-derived slugs, strict pre-transport host allowlisting, per-host rate limiting, required HTTP metadata, persistence, and CLI access
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was reproduced
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/jobs/cli.py, tests/jobs/test_ats.py
+
+<!-- whyline-event: 207d951b152349f79a4ca630a66b7a46 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T12:45:19.351Z"} -->
+
+## 2026-10-29 — Approve JOB-7 public ATS detection
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-7
+
+**Because:** The implementation covers all six ordered public board probes, safe slug extraction, strict pre-transport host allowlisting, required HTTP metadata, shared per-host throttling, persistence, and CLI access; the focused 92-test suite and full repository suite both exited 0
+
+**Rejected:**
+
+- Request changes — no actionable requirement gap, unsafe behavior, or regression was found
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/jobs/cli.py, tests/jobs/test_ats.py
+
+<!-- whyline-event: 14af0214b91943b8819686d664998926 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T12:55:52.601Z"} -->

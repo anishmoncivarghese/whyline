@@ -1,0 +1,25 @@
+{
+  "totalFound": 1,
+  "offset": 0,
+  "limit": 100,
+  "content": [
+    {
+      "id": "744000019283746",
+      "name": "Staff Cloud Platform Engineer",
+      "uuid": "c48e1a90-2041-4e78-9d2a-88b31029ef01",
+      "jobAdId": "9f817263-1122-4a89-b102-774829103847",
+      "company": {
+        "identifier": "boschgroup",
+        "name": "Bosch Group"
+      },
+      "releasedDate": "2026-10-23T08:00:00.000Z",
+      "location": {
+        "city": "Stuttgart",
+        "region": "BW",
+        "country": "de",
+        "remote": true
+      },
+      "ref": "https://api.smartrecruiters.com/v1/companies/boschgroup/postings/744000019283746"
+    }
+  ]
+}

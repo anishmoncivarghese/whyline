@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from whyline.agents import capabilities, definitions as d, records, runner, templates
-from whyline.jobs import paths, profile, review
+from whyline.jobs import ats, paths, profile, review
 
 COMPANIES_FILE = "companies.toml"
 TEMPLATE_NAME = "job-companies"
@@ -711,3 +711,79 @@ def list(status: str | None = None) -> builtins.list[Company]:
     if status is not None:
         return [item for item in items if item.status == status]
     return items
+
+
+class CheckedCompanies(builtins.list[Company]):
+    """List of checked `Company` entries; also exposes single-company attributes when len == 1."""
+
+    _COMPANY_ATTRS = frozenset((*COMPANY_KEYS, "to_dict", "get", "keys"))
+
+    def __getattr__(self, attr: str) -> Any:
+        if len(self) == 1 and attr in self._COMPANY_ATTRS:
+            return getattr(self[0], attr)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+
+    def __getitem__(self, index: Any) -> Any:
+        if isinstance(index, str) and len(self) == 1:
+            return self[0][index]
+        return super().__getitem__(index)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Company) and len(self) == 1:
+            return self[0] == other
+        return super().__eq__(other)
+
+
+def check(
+    name: str | None = "all",
+    http: Callable[..., Any] | None = None,
+    *,
+    clock: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
+    now: datetime.datetime | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> CheckedCompanies:
+    """Detect the public job board for one company (`name`) or `'all'` active companies."""
+    clean_name = validate_name(name) if name is not None else None
+    store = _load_store()
+
+    if clean_name is None or (
+        clean_name.casefold() == "all" and _company_key(clean_name) not in store
+    ):
+        keys_to_check = [
+            key
+            for key, entry in store.items()
+            if entry.status in ("accepted", "suggested")
+        ]
+        if not keys_to_check:
+            return CheckedCompanies()
+    else:
+        key = _company_key(clean_name)
+        if key not in store:
+            raise CompanyError(f"Company not found: {clean_name}")
+        keys_to_check = [key]
+
+    client = ats.make_http(http, clock=clock, sleep=sleep)
+    checked: builtins.list[Company] = []
+    for key in keys_to_check:
+        entry = store[key]
+        if progress is not None:
+            progress(f"Checking {entry.name}…")
+        detected = ats.detect(
+            entry.name,
+            careers_url=entry.careers_url or None,
+            http=client,
+        )
+        stamp_dt = now if now is not None else datetime.datetime.now(datetime.timezone.utc)
+        stamp = stamp_dt.isoformat(timespec="seconds")
+        updated = replace(
+            entry,
+            ats=detected.ats,
+            slug=detected.slug,
+            checked_at=stamp,
+        )
+        store[key] = updated
+        checked.append(updated)
+
+    _write_private_companies(store)
+    return CheckedCompanies(checked)

@@ -1,0 +1,19 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "a72c91d4-3b88-4c11-94ef-02b1184e7720",
+      "title": "Product Infrastructure Engineer",
+      "department": "Engineering",
+      "team": "Platform",
+      "employmentType": "FullTime",
+      "location": "Remote (Europe)",
+      "isRemote": true,
+      "publishedAt": "2026-10-22T11:00:00.000Z",
+      "jobUrl": "https://jobs.ashbyhq.com/linear/a72c91d4-3b88-4c11-94ef-02b1184e7720",
+      "applyUrl": "https://jobs.ashbyhq.com/linear/a72c91d4-3b88-4c11-94ef-02b1184e7720/application",
+      "descriptionHtml": "<p>Own sync engine performance and developer tooling.</p>",
+      "descriptionPlain": "Own sync engine performance and developer tooling."
+    }
+  ]
+}

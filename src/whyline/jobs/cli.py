@@ -231,6 +231,22 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     comp_rem.add_argument("name", help="Company name")
 
+    comp_chk = comp_sub.add_parser(
+        "check",
+        help="Check which public job board a company (or all companies) uses",
+    )
+    comp_chk.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="Company name to check, or 'all' (default: all active companies)",
+    )
+    comp_chk.add_argument(
+        "--json",
+        action="store_true",
+        help="Machine-readable output",
+    )
+
 
 def _read_stdin_cv() -> str:
     max_raw_bytes = profile.MAX_CV_BYTES * 2 + 3
@@ -499,12 +515,42 @@ def _cmd_companies_remove(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_companies_check(args: argparse.Namespace) -> int:
+    raw_name = getattr(args, "name", None)
+    target = raw_name if raw_name is not None else "all"
+    try:
+        checked = companies.check(target)
+    except (companies.CompanyError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+
+    rows = [checked] if isinstance(checked, companies.Company) else list(checked)
+
+    if getattr(args, "json", False):
+        print(json.dumps([row.to_dict() for row in rows], indent=2, ensure_ascii=False))
+        return EXIT_OK
+
+    shown_path = tilde_path(companies.companies_path())
+    if not rows:
+        print(f"No companies to check ({shown_path}).")
+        return EXIT_OK
+
+    noun = "company" if len(rows) == 1 else "companies"
+    print(f"Checked {len(rows)} {noun} ({shown_path}):")
+    name_w = max(4, *(len(row.name) for row in rows))
+    for row in rows:
+        board_desc = f"{row.ats} ({row.slug})" if row.slug else row.ats
+        print(f"  {row.name:<{name_w}}  {board_desc}")
+    return EXIT_OK
+
+
 _COMPANIES_COMMANDS = {
     "list": _cmd_companies_list,
     "suggest": _cmd_companies_suggest,
     "add": _cmd_companies_add,
     "accept": _cmd_companies_accept,
     "remove": _cmd_companies_remove,
+    "check": _cmd_companies_check,
 }
 
 
@@ -513,7 +559,7 @@ def _cmd_companies(args: argparse.Namespace) -> int:
     handler = _COMPANIES_COMMANDS.get(sub or "")
     if handler is None:
         print(
-            "usage: whyline jobs companies list|suggest|add|accept|remove",
+            "usage: whyline jobs companies list|suggest|add|accept|remove|check",
             file=sys.stderr,
         )
         return EXIT_USAGE

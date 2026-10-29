@@ -1,0 +1,31 @@
+{
+  "jobs": [
+    {
+      "id": 4910234,
+      "internal_job_id": 2104891,
+      "title": "Staff Distributed Systems Engineer",
+      "updated_at": "2026-10-20T14:30:00-04:00",
+      "requisition_id": "ENG-402",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/4910234",
+      "location": {
+        "name": "Remote - US & Europe"
+      },
+      "content": "&lt;p&gt;Build reliable payment infrastructure at global scale.&lt;/p&gt;"
+    },
+    {
+      "id": 4910889,
+      "internal_job_id": 2105002,
+      "title": "Senior Backend Engineer, Billing",
+      "updated_at": "2026-10-24T09:15:00-04:00",
+      "requisition_id": "ENG-419",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/4910889",
+      "location": {
+        "name": "Dublin, Ireland"
+      },
+      "content": "&lt;p&gt;Design low-latency billing pipelines.&lt;/p&gt;"
+    }
+  ],
+  "meta": {
+    "total": 2
+  }
+}
