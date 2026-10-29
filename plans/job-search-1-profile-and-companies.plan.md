@@ -84,7 +84,7 @@ Rules every task keeps:
   - the size limit
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-4: `whyline jobs profile` and the Jobs profile screen
+- [x] JOB-4: `whyline jobs profile` and the Jobs profile screen
   Add `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py`, `tests/jobs/test_cli.py` and `tests/console/test_jobs_screens.py`, and edit `src/whyline/cli.py` (register `jobs`) and `src/whyline/console/tui.py` (open the screen) only.
   The CLI has three commands:
   - `whyline jobs profile show`
