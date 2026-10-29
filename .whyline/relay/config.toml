@@ -14,7 +14,7 @@ model = "sonnet"
 
 [agents.antigravity]
 adapter = "generic"
-command = ["agy", "--output-format", "json", "--model", "gemini-4-argon-medium", "--mode", "accept-edits", "--add-dir", ".", "--new-project", "-p"]
+command = ["agy", "--output-format", "json", "--model", "gemini-3.8-flash-high", "--mode", "accept-edits", "--add-dir", ".", "--new-project", "-p"]
 
 [agents.grok]
 adapter = "generic"
