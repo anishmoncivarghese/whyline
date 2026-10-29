@@ -1,0 +1,5 @@
+[
+  {"id": "abc-123", "text": "Backend Engineer", "categories": {"location": "Remote - EU", "workplaceType": "remote"},
+   "hostedUrl": "https://jobs.lever.co/acme/abc-123", "createdAt": 1760000000000,
+   "description": "<div>Own the <i>API</i>.</div><div>Ship weekly.</div>"}
+]

@@ -1,0 +1,6 @@
+{"jobs": [
+  {"id": 4001, "title": "Staff Engineer", "location": {"name": "Berlin, Germany"},
+   "absolute_url": "https://boards.greenhouse.io/acme/jobs/4001", "updated_at": "2026-10-20T10:00:00-04:00",
+   "content": "&lt;p&gt;Build &lt;b&gt;great&lt;/b&gt; things.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Python&lt;/li&gt;&lt;li&gt;SQL&lt;/li&gt;&lt;/ul&gt;"},
+  {"id": 4002, "title": "Designer"}
+]}

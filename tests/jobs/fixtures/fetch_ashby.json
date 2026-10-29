@@ -1,0 +1,5 @@
+{"jobs": [
+  {"id": "ash-1", "title": "Data Engineer", "location": "London", "isRemote": false,
+   "jobUrl": "https://jobs.ashbyhq.com/acme/ash-1", "publishedAt": "2026-10-18T09:00:00.000+00:00",
+   "descriptionHtml": "<h2>Role</h2><p>Move data.<br>Fast.</p>"}
+]}

@@ -28502,3 +28502,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 71ea0c05ab324b9386e44780bc926ffd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T14:52:34.970Z"} -->
+
+## 2026-10-29 — Greenhouse content is unescaped before tag stripping; SmartRecruiters fetches one detail call per posting for text
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-9
+
+**Because:** Greenhouse returns HTML entity-escaped markup; SmartRecruiters list has no description
+
+**Rejected:**
+
+- Skip SR text — postings would have no description for scoring
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 9f95c54b275c4821a028cdd9547fdbe6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T17:24:32.991Z"} -->
+
+## 2026-10-29 — JOB-9 passes required targeted and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-9
+
+**Because:** uv run pytest -q tests/jobs and uv run pytest -q both exited 0; the board fixtures, normalization cases, failure isolation tests, and project integration suite all pass
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: d25e8bd78bb44ffb807a0d5e2bf78032 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T17:34:57.241Z"} -->
+
+## 2026-10-29 — Approve JOB-9 public board fetching and normalisation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-9
+
+**Because:** The diff implements all six requested boards, plain-text HTML conversion, Markdown output, JOB-7 HTTP safeguards, and per-company failure isolation; uv run pytest -q tests/jobs and uv run pytest -q both exited 0 during independent review
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: fa231d4cf0e54acda81a05963b741c03 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T17:45:39.926Z"} -->
