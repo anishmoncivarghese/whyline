@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import datetime
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from whyline import account
 from whyline.console import tui
 from whyline.console.jobs_screens import JobsHomeScreen, PRIVACY_SENTENCE
-from whyline.jobs import profile
+from whyline.jobs import profile, review
 
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
@@ -35,7 +37,17 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home_dir.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.setattr(account.paths, "global_whyline_dir", lambda: home_dir / ".whyline")
     return home_dir
+
+
+async def _until(pilot: Any, condition: Any, what: str) -> None:
+    for _ in range(300):
+        await pilot.pause()
+        if condition():
+            return
+        await pilot.pause(0.01)
+    raise AssertionError(f"timed out waiting for: {what}")
 
 
 def _plain(value: object) -> str:
@@ -280,6 +292,194 @@ async def test_jobs_home_screen_fits_80x24() -> None:
             assert reg.height > 0 and reg.bottom <= 24, selector
 
         # Every displayed widget stays horizontally within 80 columns
+        for widget in screen.query("*"):
+            if widget.display and widget.region.width > 0:
+                assert 0 <= widget.region.x and widget.region.right <= 80, widget
+
+
+async def test_review_cv_shows_progress_edits_accept_saves_edited_text_and_discard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    progress_reported = threading.Event()
+    finish_worker = threading.Event()
+    chosen_clis: list[str | None] = []
+
+    account.save_global(
+        {
+            "claude": {"enabled": False, "available": True},
+            "codex": {"enabled": True, "available": True},
+            "grok": {"enabled": True, "available": True},
+            "antigravity": {"enabled": True, "available": True},
+        }
+    )
+
+    def gated_run(cli: str | None = None, progress=None) -> review.ReviewResult:
+        chosen_clis.append(cli)
+        if progress is not None:
+            progress(f"{cli} is working")
+        progress_reported.set()
+        finish_worker.wait(timeout=5)
+        p_draft, r_draft = review.save_drafts(
+            "Initial drafted profile\n",
+            "Initial drafted rubric\n",
+        )
+        return review.ReviewResult(
+            ok=True,
+            outcome="succeeded",
+            cli=cli or "codex",
+            profile="Initial drafted profile\n",
+            rubric="Initial drafted rubric\n",
+            profile_draft_path=p_draft,
+            rubric_draft_path=r_draft,
+        )
+
+    monkeypatch.setattr(review, "run", gated_run)
+
+    app = _Host()
+    async with app.run_test(size=(100, 36)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        # Disabled claude and non-read-only antigravity are never offered.
+        offered = [
+            v
+            for _label, v in screen.query_one("#jh-review-cli", tui.Select)._options
+            if v is not tui.Select.BLANK
+        ]
+        assert offered == ["codex", "grok"]
+        assert screen.query_one("#jh-review-cli", tui.Select).value == "codex"
+        assert screen.query_one("#jh-review-panel").has_class("-hidden")
+
+        # Select grok and press Review my CV -> progress shows while worker runs.
+        screen.query_one("#jh-review-cli", tui.Select).value = "grok"
+        screen.query_one("#jh-review-cv", tui.Button).press()
+
+        await _until(
+            pilot,
+            lambda: progress_reported.is_set()
+            and "grok is working"
+            in _plain(screen.query_one("#jh-review-progress", tui.Static).render()),
+            "worker progress shown",
+        )
+        assert screen.query_one("#jh-review-cv", tui.Button).disabled is True
+
+        finish_worker.set()
+        await _until(
+            pilot,
+            lambda: not screen.query_one("#jh-review-panel").has_class("-hidden"),
+            "drafts panel shown",
+        )
+        assert chosen_clis == ["grok"]
+        assert screen.query_one("#jh-review-progress", tui.Static).has_class("-empty")
+        assert screen.query_one("#jh-review-cv", tui.Button).disabled is False
+
+        prof_area = screen.query_one("#jh-profile-draft", tui.TextArea)
+        rub_area = screen.query_one("#jh-rubric-draft", tui.TextArea)
+        assert prof_area.text == "Initial drafted profile\n"
+        assert rub_area.text == "Initial drafted rubric\n"
+
+        # User edits both TextAreas and presses Accept -> saves edited text to profile.md and rubric.md.
+        prof_area.load_text("# Edited Profile\nStrengths: Rust & Python\n")
+        rub_area.load_text("# Edited Rubric\nRole fit: 0-5\nVeto: crypto\n")
+        screen.query_one("#jh-review-accept", tui.Button).press()
+        await pilot.pause()
+
+        assert screen.query_one("#jh-review-panel").has_class("-hidden")
+        assert (
+            profile.profile_path().read_text(encoding="utf-8")
+            == "# Edited Profile\nStrengths: Rust & Python\n"
+        )
+        assert (
+            profile.rubric_path().read_text(encoding="utf-8")
+            == "# Edited Rubric\nRole fit: 0-5\nVeto: crypto\n"
+        )
+        assert not review.profile_draft_path().exists()
+        assert not review.rubric_draft_path().exists()
+
+        # Re-running and pressing Discard removes drafts and preserves accepted files.
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(
+            pilot,
+            lambda: not screen.query_one("#jh-review-panel").has_class("-hidden"),
+            "second drafts panel shown",
+        )
+        assert review.profile_draft_path().is_file()
+        screen.query_one("#jh-review-discard", tui.Button).press()
+        await pilot.pause()
+
+        assert screen.query_one("#jh-review-panel").has_class("-hidden")
+        assert not review.profile_draft_path().exists()
+        assert not review.rubric_draft_path().exists()
+        assert (
+            profile.profile_path().read_text(encoding="utf-8")
+            == "# Edited Profile\nStrengths: Rust & Python\n"
+        )
+
+
+async def test_failed_review_in_console_reports_outcome_and_writes_nothing_within_80x24(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        review,
+        "run",
+        lambda cli=None, progress=None: review.ReviewResult(
+            ok=False,
+            outcome="missing_block",
+            reason="Missing fenced 'rubric' block in agent answer.",
+        ),
+    )
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        reg_btn = screen.query_one("#jh-review-cv").region
+        assert reg_btn.width > 0 and reg_btn.right <= 80 and reg_btn.bottom <= 24
+
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(
+            pilot,
+            lambda: "missing_block"
+            in _plain(screen.query_one("#jh-error", tui.Static).render()),
+            "failure outcome reported",
+        )
+        assert screen.query_one("#jh-review-panel").has_class("-hidden")
+        assert not review.profile_draft_path().exists()
+        assert not review.rubric_draft_path().exists()
+        assert not profile.profile_path().exists()
+        assert not profile.rubric_path().exists()
+
+        for selector in ("#jh-save", "#jh-close"):
+            reg = screen.query_one(selector).region
+            assert reg.width > 0 and reg.right <= 80 and reg.bottom <= 24
+        for widget in screen.query("*"):
+            if widget.display and widget.region.width > 0:
+                assert 0 <= widget.region.x and widget.region.right <= 80, widget
+
+
+async def test_open_review_drafts_panel_fits_80x24() -> None:
+    review.save_drafts("Strengths: Go, Python\n", "Role fit: 0-5\n")
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        assert not screen.query_one("#jh-review-panel").has_class("-hidden")
+        for selector in ("#jh-save", "#jh-close"):
+            reg = screen.query_one(selector).region
+            assert reg.width > 0 and reg.right <= 80 and reg.bottom <= 24
+
+        actions = screen.query_one("#jh-review-actions")
+        actions.scroll_visible(animate=False)
+        await pilot.pause()
+        for selector in ("#jh-review-accept", "#jh-review-discard"):
+            reg = screen.query_one(selector).region
+            assert reg.width > 0 and reg.right <= 80 and reg.bottom <= 24, selector
+
         for widget in screen.query("*"):
             if widget.display and widget.region.width > 0:
                 assert 0 <= widget.region.x and widget.region.right <= 80, widget

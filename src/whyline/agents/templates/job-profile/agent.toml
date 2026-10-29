@@ -1,0 +1,11 @@
+name = "job-profile"
+title = "Job profile and rubric"
+about = "Read cv.md and preferences.toml to draft a candidate profile and scoring rubric."
+runner = "claude"
+backup = ["codex", "grok"]
+sources = ["cv.md", "preferences.toml"]
+timeout_minutes = 15
+
+[trigger]
+kind = "manual"
+min_gap_minutes = 10

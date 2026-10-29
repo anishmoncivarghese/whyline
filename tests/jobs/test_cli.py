@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from whyline import cli
-from whyline.jobs import paths, profile
+from whyline.jobs import paths, profile, review
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -204,3 +204,66 @@ def test_profile_import_cv_rejects_bad_file_and_oversized_stdin(
     assert code == 1
     assert "200 KB" in err
     assert profile.cv_path().read_text(encoding="utf-8") == "Keep me"
+
+
+def test_jobs_review_and_accept_cli_round_trip_and_failure_reporting(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Accept before any drafts exist fails with exit code 1.
+    code, out, err = _invoke(["jobs", "review", "accept"], capsys)
+    assert code == 1
+    assert out == ""
+    assert "No review drafts" in err
+
+    # Failed review run reports outcome and reason to stderr and writes nothing.
+    monkeypatch.setattr(
+        review,
+        "run",
+        lambda cli=None, progress=None: review.ReviewResult(
+            ok=False,
+            outcome="missing_block",
+            reason="Missing fenced 'rubric' block in agent answer.",
+        ),
+    )
+    code, out, err = _invoke(["jobs", "review"], capsys)
+    assert code == 1
+    assert "missing_block" in err and "rubric" in err
+    assert not review.profile_draft_path().exists()
+    assert not review.rubric_draft_path().exists()
+
+    # Successful review writes drafts, shows tilde paths, and forwards --cli.
+    seen_cli: list[str | None] = []
+
+    def fake_ok_run(cli: str | None = None, progress=None) -> review.ReviewResult:
+        seen_cli.append(cli)
+        if progress is not None:
+            progress("codex is working")
+        p_draft, r_draft = review.save_drafts("# Draft Profile\n", "# Draft Rubric\n")
+        return review.ReviewResult(
+            ok=True,
+            outcome="succeeded",
+            cli=cli or "codex",
+            profile="# Draft Profile\n",
+            rubric="# Draft Rubric\n",
+            profile_draft_path=p_draft,
+            rubric_draft_path=r_draft,
+        )
+
+    monkeypatch.setattr(review, "run", fake_ok_run)
+    code, out, err = _invoke(["jobs", "review", "--cli", "codex"], capsys)
+    assert code == 0, err
+    assert seen_cli == ["codex"]
+    assert "codex is working" in out
+    assert "~/.whyline/jobs/profile.draft.md" in out
+    assert "~/.whyline/jobs/rubric.draft.md" in out
+
+    # Accept moves drafts into profile.md and rubric.md.
+    code, out, err = _invoke(["jobs", "review", "accept"], capsys)
+    assert code == 0, err
+    assert "~/.whyline/jobs/profile.md" in out
+    assert "~/.whyline/jobs/rubric.md" in out
+    assert profile.profile_path().read_text(encoding="utf-8") == "# Draft Profile\n"
+    assert profile.rubric_path().read_text(encoding="utf-8") == "# Draft Rubric\n"
+    assert not review.profile_draft_path().exists()
+    assert not review.rubric_draft_path().exists()

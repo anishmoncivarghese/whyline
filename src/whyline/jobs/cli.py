@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from whyline.jobs import paths, profile
+from whyline.jobs import paths, profile, review
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -161,6 +161,21 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     set_p.add_argument("key", help="Preference key")
     set_p.add_argument("value", help="Preference value")
 
+    rev = jobs_sub.add_parser(
+        "review",
+        help="Review your CV and draft profile.draft.md and rubric.draft.md",
+    )
+    rev.add_argument(
+        "--cli",
+        default=None,
+        help="AI provider CLI to run (default: first enabled)",
+    )
+    rev_sub = rev.add_subparsers(dest="jobs_review_command", required=False)
+    rev_sub.add_parser(
+        "accept",
+        help="Accept profile.draft.md and rubric.draft.md into profile.md and rubric.md",
+    )
+
 
 def _read_stdin_cv() -> str:
     max_raw_bytes = profile.MAX_CV_BYTES * 2 + 3
@@ -264,8 +279,72 @@ def _cmd_profile(args: argparse.Namespace) -> int:
     return handler(args)
 
 
+def _cmd_review_run(args: argparse.Namespace) -> int:
+    try:
+        result = review.run(
+            cli=getattr(args, "cli", None),
+            progress=lambda line: print(f"· {line}"),
+        )
+    except (review.ReviewError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+
+    if not result.ok:
+        detail = f"{result.outcome}: {result.reason}" if result.reason else result.outcome
+        print(detail, file=sys.stderr)
+        return EXIT_ERROR
+
+    p_shown = (
+        tilde_path(result.profile_draft_path)
+        if isinstance(result.profile_draft_path, Path)
+        else "~/.whyline/jobs/profile.draft.md"
+    )
+    r_shown = (
+        tilde_path(result.rubric_draft_path)
+        if isinstance(result.rubric_draft_path, Path)
+        else "~/.whyline/jobs/rubric.draft.md"
+    )
+    print(f"Wrote {p_shown} and {r_shown} ({result.outcome}).")
+    print("Review or edit the drafts, then run `whyline jobs review accept`.")
+    return EXIT_OK
+
+
+def _cmd_review_accept(args: argparse.Namespace) -> int:
+    if getattr(args, "cli", None) is not None:
+        print("`whyline jobs review accept` does not take --cli.", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        prof_path, rub_path = review.accept()
+    except (review.ReviewError, profile.ProfileError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    p_shown = (
+        tilde_path(prof_path)
+        if isinstance(prof_path, Path)
+        else "~/.whyline/jobs/profile.md"
+    )
+    r_shown = (
+        tilde_path(rub_path)
+        if isinstance(rub_path, Path)
+        else "~/.whyline/jobs/rubric.md"
+    )
+    print(f"Accepted {p_shown} and {r_shown}.")
+    return EXIT_OK
+
+
+def _cmd_review(args: argparse.Namespace) -> int:
+    sub = getattr(args, "jobs_review_command", None)
+    if sub in (None, ""):
+        return _cmd_review_run(args)
+    if sub == "accept":
+        return _cmd_review_accept(args)
+    print("usage: whyline jobs review [accept]", file=sys.stderr)
+    return EXIT_USAGE
+
+
 _COMMANDS = {
     "profile": _cmd_profile,
+    "review": _cmd_review,
 }
 
 
@@ -273,6 +352,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile", file=sys.stderr)
+        print("usage: whyline jobs profile|review", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)

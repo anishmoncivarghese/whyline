@@ -28290,3 +28290,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fefd2b6912c047d793824f5cdd85576b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T09:43:30.036Z"} -->
+
+## 2026-10-29 — Return structured ReviewResult, pre-filter enabled providers, and unify CLI/console acceptance in review.accept
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-5
+
+**Because:** Returning ReviewResult lets both whyline jobs review and JobsHomeScreen report failed or missing_block outcomes without writing drafts; filtering AgentDef runner/backups against enabled_providers() enforces Settings enablement before execute_once even under stubs; and accepting optional edited texts in review.accept moves updated drafts atomically into profile.md and rubric.md with no leftover .draft.md files
+
+**Rejected:**
+
+- Save edited console drafts via profile.save_profile/save_rubric directly — bypasses review.accept and leaves stale .draft.md files behind
+- Regex backtracking for fenced blocks — breaks on tilde or 4-backtick fences and risks ambiguity on unclosed or duplicate blocks, whereas a linear CommonMark fence scanner handles all of them cleanly
+
+**Files:** src/whyline/jobs/review.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py, src/whyline/agents/templates/job-profile/agent.toml, src/whyline/agents/templates/job-profile/instructions.md
+
+<!-- whyline-event: d85e7c75f0f94d75b59f4526dd27e661 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T10:03:28.071Z"} -->
+
+## 2026-10-29 — Pass JOB-5 behavior testing and advance to review
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-5
+
+**Because:** The required jobs/console suite passed; CV review parsing, draft acceptance, failed-run no-write behavior, enabled-provider selection, and edited console acceptance are covered; the full suite passed on a clean rerun after one non-reproducible Textual mount race in an unrelated existing new-agent delivery test also passed in isolation.
+
+**Files:** src/whyline/jobs/review.py
+
+<!-- whyline-event: 0906fb9307574e20abefa74d9dc4c370 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T10:47:54.586Z"} -->
+
+## 2026-10-29 — Approve JOB-5 CV review profile and rubric drafting
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-5
+
+**Because:** The scoped jobs/console suite passed; the implementation satisfies the template, execution, parsing, draft acceptance, provider gating, CLI, and editable console requirements; the only first-run full-suite failure was an unrelated non-reproducible Textual mount race that passed in isolation and the clean full-suite rerun exited 0.
+
+**Rejected:**
+
+- Request changes — no behavioral, safety, scope, or coverage defect was found
+
+**Files:** src/whyline/jobs/review.py
+
+<!-- whyline-event: 42e8bdd2de244dd286c39ec4c6602764 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T11:16:08.132Z"} -->
