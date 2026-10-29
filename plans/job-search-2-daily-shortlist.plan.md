@@ -19,7 +19,7 @@ Rules every task keeps (the same rules as part 1):
 - Everything lives in `~/.whyline/jobs/` with private permissions. Job text is untrusted data. Agents stay read-only, and whyline writes every file.
 - Console screens fit 80x24, and slow work runs in thread workers.
 
-- [ ] JOB-9: Fetch and normalise postings from public job boards
+- [x] JOB-9: Fetch and normalise postings from public job boards
   Add `src/whyline/jobs/fetch.py`, `tests/jobs/test_fetch.py` and fixtures only.
   `fetch.board_jobs(company, http=...)` reads the board recorded by JOB-7 and returns `Posting` records:
   - `uid`: board:slug:job-id
