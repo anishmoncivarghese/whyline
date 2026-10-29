@@ -27993,3 +27993,99 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7ab103bd68c0497aac9ceea7bc078855 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T04:01:41.350Z"} -->
+
+## 2026-10-29 — Call service.save_new then clear the activation row in templates.create so template agents start not accepted
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-1
+
+**Because:** JOB-1 requires saving via service.save_new and leaving the returned AgentDef not accepted yet, while service.save_new accepts by contract for ReviewScreen and service.py is outside JOB-1 scope
+
+**Rejected:**
+
+- Call definitions.save directly without service.save_new — skips the service.save_new hook specified in step 4
+- Change service.save_new not to accept — breaks test_service.py, console ReviewScreen save, and JOB-1 file scope
+
+**Files:** src/whyline/agents/templates.py
+
+<!-- whyline-event: 03626ee98aa64d3fa00534586e860a98 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T05:15:00.693Z"} -->
+
+## 2026-10-29 — Pass JOB-1 testing after focused, full-suite, and wheel-content verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-1
+
+**Because:** uv run pytest -q tests/agents and uv run pytest -q both exited 0; uv build --wheel --offline succeeded; and the built wheel contains all example-digest template assets
+
+**Files:** tests/agents/test_templates.py
+
+<!-- whyline-event: cb14e20a883e4301b7adddfc80303155 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T05:33:48.258Z"} -->
+
+## 2026-10-29 — Reject JOB-1 round 3 because template file copying can escape the workdir through existing symlinks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-1
+
+**Because:** _copy_files_keep_existing validates source containment but follows target-side symlinked directories; a temporary-directory reproduction wrote seed.txt outside the selected workdir, so the copy operation is unsafe even though uv run pytest -q tests/agents and uv run pytest -q passed
+
+**Rejected:**
+
+- Approve based on passing tests — the current tests do not cover target-side symlink traversal
+
+**Files:** src/whyline/agents/templates.py
+
+<!-- whyline-event: 8b3453213a2642469911de1537221c2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T05:44:48.621Z"} -->
+
+## 2026-10-29 — Walk relative target path components in _copy_files_keep_existing and skip symlinked entries without following them
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-1
+
+**Because:** Target-side symlinks inside or at workdir_path could previously redirect mkdir and file writes outside the selected workdir; walking relative components from workdir_path with is_symlink/lexists, containment against workdir_path.resolve(), and O_CREAT|O_EXCL|O_NOFOLLOW preserves existing entries and still copies safe sibling files
+
+**Rejected:**
+
+- Raise DefinitionError when workdir contains a symlink — aborts agent creation when a user's existing folder has benign symlinks instead of keeping existing entries untouched
+- Reject symlinks anywhere in workdir_path.parents — breaks normal macOS temp and /var paths where /var is a system symlink to private/var
+
+**Files:** src/whyline/agents/templates.py, tests/agents/test_templates.py
+
+<!-- whyline-event: f89fb80507414be78ae217bdc3a3869a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T06:03:16.734Z"} -->
+
+## 2026-10-29 — Pass JOB-1 round 5 testing including target symlink containment
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-1
+
+**Because:** The agent-focused suite and full project suite exited 0; the regression test covers directory, nested, dangling, live-file, and root-workdir symlinks while preserving safe copies; and an offline wheel build contains all example-digest assets
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or packaging omission was observed
+
+**Files:** tests/agents/test_templates.py
+
+<!-- whyline-event: 065e41805ad747fb85c1c4e7c5e158c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T06:13:55.629Z"} -->
+
+## 2026-10-29 — Approve JOB-1 round 6 template creation and CLI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-1
+
+**Because:** The scoped diff implements template discovery and validated creation without overwriting existing files, refuses collisions, leaves created agents not accepted, blocks target symlink escapes, and exposes the requested CLI; both required plain pytest commands exited 0 and a fresh wheel contains every example-digest asset
+
+**Files:** src/whyline/agents/templates.py
+
+<!-- whyline-event: d40166c4836a4313a98beb83d0106a0b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T06:24:39.163Z"} -->

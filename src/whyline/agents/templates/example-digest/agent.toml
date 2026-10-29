@@ -1,0 +1,11 @@
+name = "example-digest"
+title = "Example digest"
+about = "Read-only summary of the markdown notes in its working folder."
+runner = "claude"
+backup = ["codex"]
+sources = ["notes.md"]
+timeout_minutes = 15
+
+[trigger]
+kind = "manual"
+min_gap_minutes = 10

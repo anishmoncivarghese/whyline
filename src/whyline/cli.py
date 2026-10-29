@@ -481,6 +481,11 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser("agents", help="Saved agents: list, run, history, schedule")
     sub = parser.add_subparsers(dest="agents_command", required=True)
     sub.add_parser("list", help="Every repo and personal agent")
+    sub.add_parser("templates", help="Built-in agent templates")
+    new = sub.add_parser("new", help="Create a personal agent from a template")
+    new.add_argument("--from", dest="template", required=True, metavar="TEMPLATE")
+    new.add_argument("--name", default=None, metavar="N")
+    new.add_argument("--workdir", default=None, metavar="DIR")
     sub.add_parser("tick", help="Run due agents (called by the scheduler)")
     run = sub.add_parser("run", help="Run an agent now")
     run.add_argument("name", nargs="?")
@@ -1779,6 +1784,30 @@ def cmd_agents(args: argparse.Namespace) -> int:
             for row in found:
                 label = row.defn.label if isinstance(row.defn, d.AgentDef) else f"{row.defn.path.name} (broken)"
                 print(f"{label:<32} {row.when:<28} {row.status:<14} {row.last_outcome}")
+            return EXIT_OK
+        if args.agents_command == "templates":
+            from whyline.agents import templates
+
+            found_templates = templates.list_templates()
+            if not found_templates:
+                print("No templates found.")
+                return EXIT_OK
+            for item in found_templates:
+                print(f"{item.name:<20} {item.title:<24} {item.about}".rstrip())
+            return EXIT_OK
+        if args.agents_command == "new":
+            from whyline.agents import templates
+
+            defn = templates.create(args.template, args.name, args.workdir)
+            home_s = Path.home().as_posix().rstrip("/")
+            shown = defn.path.as_posix()
+            if home_s and shown.startswith(home_s + "/"):
+                shown = "~" + shown[len(home_s):]
+            print(f"Created {defn.label} in {defn.workdir} ({shown}).")
+            print(
+                f"Not accepted yet: review with `whyline agents show {defn.name}`, "
+                f"then run `whyline agents accept {defn.name}`."
+            )
             return EXIT_OK
         if args.agents_command == "tick":
             return _cmd_agents_tick()
