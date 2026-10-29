@@ -28217,3 +28217,76 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b4c58c3d3b934c2f8269a52abc1b88b1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T08:32:32.610Z"} -->
+
+## 2026-10-29 — Share preference value parsing/formatting across CLI and JobsHomeScreen and bound UTF-8 stdin CV reads
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-4
+
+**Because:** List preferences normally read best as comma-separated values in the CLI and form inputs, yet items containing commas or edge whitespace (e.g. 'San Francisco, CA') must round-trip losslessly via bracketed TOML array syntax; for 'import-cv -', reading bounded bytes from sys.stdin.buffer before UTF-8 decode preserves multi-byte characters on Windows where text stdin defaults to cp1252 while still supporting StringIO in tests
+
+**Rejected:**
+
+- Split list inputs unconditionally on commas — splits items like 'San Francisco, CA' when preferences are loaded into JobsHomeScreen and re-saved
+- Read unbounded text from sys.stdin directly — loses UTF-8 fidelity on non-UTF-8 locale stdin and buffers arbitrarily large streams before checking MAX_CV_BYTES
+
+**Test:** uv run pytest -q tests/jobs tests/console: 1178 passed (exit 0)
+**Test:** uv run pytest -q: 2678 passed, 1 skipped (exit 0)
+
+**Files:** src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: d9aaa66ad8b84c28ad774614ef1f8cba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T09:06:19.926Z"} -->
+
+## 2026-10-29 — Pin Save/Close outside VerticalScroll on JobsHomeScreen, keep screen open on Save, and resolve profile functions at call time
+
+**Actor:** antigravity
+**Role:** implementer
+**Task:** JOB-4
+
+**Because:** JobsHomeScreen grows into a multi-section home (Review, Companies, Jobs, Alerts), so saving Profile preferences updates status in place instead of dismissing the screen before the next step; pinning #jh-buttons outside #jh-body guarantees 80x24 reachability even with Import CV or Paste CV drawers open, and looking up profile.* at call time lets monkeypatch stubs intercept every action
+
+**Rejected:**
+
+- Auto-height modal without pinned button bar — pushes Save and Close below row 24 on an 80x24 terminal when drawers or sections expand
+- Dismiss JobsHomeScreen on Save — forces the user to reopen Jobs immediately before running Review my CV or company actions
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 16f50ad9aa804b94a0032b61841bbdbb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T09:06:33.570Z"} -->
+
+## 2026-10-29 — Pass JOB-4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-4
+
+**Because:** The required jobs/console suite and full suite exited 0, and focused acceptance tests verify CLI round-trips, stubbed profile saves, exact privacy text, and expanded Import/Paste panels at 80x24
+
+**Rejected:**
+
+- Fail the task — no behavioral failure was reproduced and all prescribed checks passed
+
+**Files:** tests/console/test_jobs_screens.py, tests/jobs/test_cli.py
+
+<!-- whyline-event: 49bfbbd0e4a048ab8c07b5510eb82555 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T09:25:14.931Z"} -->
+
+## 2026-10-29 — Approve JOB-4 jobs profile CLI and console screen
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-4
+
+**Because:** The scoped diff implements all three profile commands and the Agents-mode Jobs screen through the shared profile functions; tests genuinely cover round-trips, stubbed persistence, exact privacy copy, and 80x24 layout, and both required suites exited 0
+
+**Rejected:**
+
+- Request changes — no behavioral, safety, scope, or coverage defect was found
+
+**Files:** src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py, tests/jobs/test_cli.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: fefd2b6912c047d793824f5cdd85576b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T09:43:30.036Z"} -->

@@ -104,6 +104,7 @@ _MODE_BUTTONS = {
         "agents-list",
         "agents-runs",
         "agents-scheduler",
+        "agents-jobs",
     ),
     "assistant": ("assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check"),
 }
@@ -2155,6 +2156,11 @@ class WhylineConsoleApp(App):
 
         self.push_screen(AssistantScreen())
 
+    def _open_jobs(self) -> None:
+        from whyline.console.jobs_screens import JobsHomeScreen
+
+        self.push_screen(JobsHomeScreen())
+
     def _check_inbox(self) -> None:
         from whyline.console.inbox_screen import _doctor_text
 
@@ -3456,6 +3462,7 @@ class WhylineConsoleApp(App):
                 Button("Agents", id="agents-list"),
                 Button("Runs", id="agents-runs"),
                 Button("Schedule", id="agents-scheduler"),
+                Button("Jobs", id="agents-jobs"),
                 Button("Inbox", id="assistant-inbox"),
                 Button("Ideas", id="assistant-ideas"),
                 Button("Assistant…", id="assistant-open"),
@@ -3596,6 +3603,8 @@ class WhylineConsoleApp(App):
             self._open_agents_runs()
         elif button_id == "agents-scheduler":
             self._toggle_scheduler()
+        elif button_id == "agents-jobs":
+            self._open_jobs()
         elif button_id == "assistant-inbox":
             self._open_inbox()
         elif button_id == "assistant-ideas":

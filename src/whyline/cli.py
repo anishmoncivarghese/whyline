@@ -544,6 +544,12 @@ def _add_idea(subparsers: "argparse._SubParsersAction") -> None:
     add_parser(subparsers)
 
 
+def _add_jobs(subparsers: "argparse._SubParsersAction") -> None:
+    from whyline.jobs.cli import add_parser
+
+    add_parser(subparsers)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -576,6 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_console(subparsers)
     _add_agents(subparsers)
     _add_idea(subparsers)
+    _add_jobs(subparsers)
     return parser
 
 
@@ -1765,6 +1772,12 @@ def cmd_idea(args: argparse.Namespace) -> int:
     return run(args)
 
 
+def cmd_jobs(args: argparse.Namespace) -> int:
+    from whyline.jobs.cli import run
+
+    return run(args)
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1904,6 +1917,7 @@ COMMANDS = {
     "console": cmd_console,
     "agents": cmd_agents,
     "idea": cmd_idea,
+    "jobs": cmd_jobs,
 }
 
 
