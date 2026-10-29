@@ -177,7 +177,7 @@ Rules every task keeps:
   - the rate limit, with an injected clock and no sleeping
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-8: The Companies screen
+- [x] JOB-8: The Companies screen
   Edit `src/whyline/console/jobs_screens.py`, `src/whyline/console/tui.py` (only if needed) and `tests/console/test_jobs_screens.py` only.
   Add a **Companies** section to JobsHomeScreen: a table of name, status, board and reason, with these actions:
   - `Suggest companies` runs JOB-6 in a worker and shows progress.
