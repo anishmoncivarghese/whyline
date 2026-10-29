@@ -27,7 +27,7 @@ Rules every task keeps:
 - Text from a CV, a model or a job board is data. It never chooses a command, a path or a URL host outside the allowlists below.
 - Console screens fit 80x24 and use thread workers for anything slow. Tests press widgets and wait on conditions.
 
-- [ ] JOB-1: Agent templates and `whyline agents new --from`
+- [x] JOB-1: Agent templates and `whyline agents new --from`
   Add `src/whyline/agents/templates.py`, `src/whyline/agents/templates/` (package data), `tests/agents/test_templates.py`, and edit `src/whyline/cli.py` and `tests/agents/test_cli_agents.py` only.
   A template is a folder `templates/<name>/` with:
   - `agent.toml`: a definition without `workdir`
