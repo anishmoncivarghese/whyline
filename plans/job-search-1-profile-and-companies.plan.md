@@ -51,7 +51,7 @@ Rules every task keeps:
   - a name clash is refused
   Verify with `uv run pytest -q tests/agents` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-2: Start from template in the console
+- [x] JOB-2: Start from template in the console
   Edit `src/whyline/console/agents_screens.py`, `src/whyline/console/tui.py` and their console tests only.
   The New agent flow first shows a small chooser: `Blank agent` or one row per `templates.list_templates()` entry. Choosing a template builds the AgentDef in memory (not saved yet, no files copied), prefilled from the template, with workdir defaulting to `~/.whyline/<template>`. It opens `NewAgentScreen(existing=...)` so the user can change the runner, backup, schedule and delivery. Runner and backup choices follow the enabled-provider rules.
   Save calls `templates.create` with the edited values. Back returns to the chooser.
