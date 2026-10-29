@@ -28485,3 +28485,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d40e44da3a6b422181a28f99caeed7a1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T14:16:39.472Z"} -->
+
+## 2026-10-29 — Plan SWP-1..7: one-click Continue with <agent> at limit pauses, with quota memory in the relay (RLY-8..9)
+
+**Actor:** claude
+**Role:** planner
+**Task:** swp-plan
+
+**Because:** At JOB-8 switching agents took five steps and re-picked an agent out of quota for 6 days; Set up flagged the task's own draft as a dirty-tree FAIL
+
+**Rejected:**
+
+- Auto-switch to any logged-in agent when the chain is exhausted — could start a paid agent the user never chose; Auto only uses chain agents
+
+**Files:** plans/agent-switch-at-pause.plan.md
+
+<!-- whyline-event: 71ea0c05ab324b9386e44780bc926ffd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T14:52:34.970Z"} -->
