@@ -65,7 +65,7 @@ Rules every task keeps (the same rules as parts 1 and 2):
   - a page with none found
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-19: Draft application
+- [x] JOB-19: Draft application
   Add `src/whyline/jobs/apply.py`, `src/whyline/agents/templates/job-apply/` and `tests/jobs/test_apply.py`, and edit `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   `job-apply` is a manual personal agent. Its sources are `cv.md`, `profile.md`, `preferences.toml` and one posting file. Its instructions:
   - return a tailored CV summary and bullet edits that only rephrase or reorder evidence in the CV
