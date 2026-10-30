@@ -90,7 +90,7 @@ Rules every task keeps (the same rules as part 1):
   - per-company errors are shown
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-13: The job-search template
+- [x] JOB-13: The job-search template
   Add `src/whyline/agents/templates/job-search/` and `tests/jobs/test_template_job_search.py` only.
   `agent.toml`:
   - personal agent, runner `claude` with backup `["codex", "grok"]`
