@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import builtins
 import datetime
+import difflib
 import html
 import json
 import re
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -322,6 +324,60 @@ def board_jobs(
         raise
     except Exception as error:  # one board's failure must be reportable, not fatal
         raise FetchError(f"{entry.name}: {type(error).__name__}: {error}") from error
+
+
+TITLE_MATCH_MIN = 0.85
+_COMPANY_SUFFIXES = frozenset(
+    {"inc", "incorporated", "ltd", "limited", "llc", "gmbh", "ag", "plc", "corp",
+     "corporation", "co", "company", "sa", "bv", "nv", "oy", "ab", "srl", "pty"}
+)
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def company_key(name: str) -> str:
+    """A company name folded for matching: case, punctuation and "Inc"/"Ltd"/"GmbH" ignored."""
+    words = _WORD_RE.findall(name.casefold())
+    while len(words) > 1 and words[-1] in _COMPANY_SUFFIXES:
+        words.pop()
+    return " ".join(words)
+
+
+def best_title_match(title: str, postings: builtins.list[Posting]) -> Posting | None:
+    """The posting whose normalised title is closest to `title`, if it scores >= 0.85."""
+    wanted = " ".join(_WORD_RE.findall(title.casefold()))
+    best, best_score = None, 0.0
+    for posting in postings:
+        found = " ".join(_WORD_RE.findall(posting.title.casefold()))
+        score = difflib.SequenceMatcher(None, wanted, found).ratio() if wanted and found else 0.0
+        if score > best_score:
+            best, best_score = posting, score
+    return best if best_score >= TITLE_MATCH_MIN else None
+
+
+def board_job_for_link(
+    link: str, company: str, client: Callable[..., Any]
+) -> Posting | None:
+    """Fetch the board behind `link` (only when it is on a known board host) and return that job.
+
+    Any other link, LinkedIn included, is never requested.
+    """
+    try:
+        found = ats._extract_board_matches(link)
+        path = [seg for seg in urllib.parse.urlsplit(link).path.split("/") if seg]
+    except (ValueError, ats.AtsError):
+        return None
+    bare = link.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    for board, slug in found:
+        entry = companies.Company(name=company, status="accepted", ats=board, slug=slug)
+        try:
+            jobs = board_jobs(entry, client)
+        except Exception:
+            continue
+        for job in jobs:
+            job_id = job.uid.rsplit(":", 1)[-1]
+            if (job_id and job_id in path) or (job.url and job.url.rstrip("/") == bare):
+                return job
+    return None
 
 
 def fetch_all(

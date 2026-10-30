@@ -29262,3 +29262,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6c1c3e8e2cfc45339203d840e2458126 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T12:54:01.742Z"} -->
+
+## 2026-10-30 — Alert cards match the board postings already fetched for accepted companies; only board-host links trigger an extra fetch
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-17
+
+**Because:** reusing fetch_all results avoids duplicate requests, and ats board-host extraction guarantees LinkedIn and other links are never requested
+
+**Rejected:**
+
+- Re-fetch each accepted board per alert — duplicate requests and rate-limit cost
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: c0b54197804f421cb76e7c1ddee67d58 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:05:49.881Z"} -->
+
+## 2026-10-30 — Pass JOB-17 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-17
+
+**Because:** The focused jobs suite and independent full project suite both completed at 100% with exit code 0, covering alert-to-board matching, summary fallback, board-host fetching, LinkedIn non-fetch behavior, and project regressions
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 4b849e46d8c9444980e8852253657716 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:15:52.408Z"} -->
+
+## 2026-10-30 — Approve JOB-17 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-17
+
+**Because:** The diff implements case-insensitive suffix-normalized company matching, normalized difflib title matching at 0.85, safe known-board enrichment, alert-summary fallback, and preservation of both UIDs; the focused jobs suite and full project suite independently passed at 100%
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 2f6e3b6bd2e245ea97ab37612eedb335 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:26:21.567Z"} -->

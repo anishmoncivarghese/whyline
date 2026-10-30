@@ -8,7 +8,7 @@ import pytest
 
 from whyline import cli
 from whyline.agents import before
-from whyline.jobs import companies, seen, step
+from whyline.jobs import alerts, companies, fetch, seen, step
 
 NOW = datetime(2026, 10, 30, 7, 0)
 
@@ -195,3 +195,81 @@ def test_cli_fetch_dry_run_shows_counts(monkeypatch, capsys) -> None:
     assert calls == [True]
     assert "Acme: 2 new, 0 dropped, 0 errors" in out
     assert "Broken: error: boom" in out
+
+
+# --- alert jobs get the company's own board description (JOB-17) ---------------------------
+
+
+def _card(title: str, company: str, link: str) -> fetch.Posting:
+    card = fetch.Posting(
+        uid=f"alert:a@b.c:{abs(hash(link))}", company=company, title=title, url=link,
+        text="Found in a job-alert email from a@b.c. The full description is at the link.",
+    )
+    alerts._store([card])
+    return card
+
+
+def _board_of(slug: str, *titles: str) -> bytes:
+    jobs = [
+        {"id": 100 + i, "title": t, "location": {"name": "Remote"},
+         "absolute_url": f"https://boards.greenhouse.io/{slug}/jobs/{100 + i}",
+         "content": "<p>Full board description.</p>"}
+        for i, t in enumerate(titles)
+    ]
+    return json.dumps({"jobs": jobs}).encode()
+
+
+def test_alert_match_swaps_in_the_board_posting(tmp_path, monkeypatch) -> None:
+    _use(monkeypatch, _co("Acme Inc", "acme"))
+    card = _card("Senior Backend Engineer", "ACME, Ltd.", "https://www.linkedin.com/jobs/view/1")
+    http = _http({"acme": _board_of("acme", "Senior Backend Engineer (Remote)", "Designer")})
+    out = tmp_path / "run"
+    step.jobs_fetch(None, out, NOW, http=http)
+    texts = [p.read_text() for p in out.glob("*.md")]
+    assert len(texts) == 2 and all("Full board description." in t for t in texts)
+    assert not any("Only the alert summary" in t or "linkedin" in t for t in texts)
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert sum(m["title"].startswith("Senior Backend") for m in manifest.values()) == 1
+    assert alerts.pending() == []
+    assert seen.new_only([card]) == []  # the alert uid stays in the seen store
+    board = fetch.Posting(uid="greenhouse:acme:100", company="Acme Inc", title="x")
+    assert seen.new_only([board]) == []  # and so does the board uid
+
+
+def test_alert_without_a_match_keeps_the_card_with_a_note(tmp_path, monkeypatch) -> None:
+    _use(monkeypatch, _co("Acme", "acme"))
+    _card("Quantum Chef", "Acme", "https://www.linkedin.com/jobs/view/2")
+    out = tmp_path / "run"
+    step.jobs_fetch(None, out, NOW, http=_http({"acme": _board_of("acme", "Designer")}))
+    (text,) = [p.read_text() for p in out.glob("*quantum*.md")]
+    assert "Found in a job-alert email" in text
+    assert "Only the alert summary is available for this job." in text
+
+
+def test_a_linkedin_link_is_never_requested(tmp_path, monkeypatch) -> None:
+    _use(monkeypatch)
+    _card("Anything", "Nobody", "https://www.linkedin.com/jobs/view/3")
+    requested: list[str] = []
+
+    def http(url: str) -> bytes:
+        requested.append(url)
+        raise OSError("no network")
+
+    step.jobs_fetch(None, tmp_path / "run", NOW, http=http)
+    assert requested == []
+
+
+def test_a_board_link_is_fetched(tmp_path, monkeypatch) -> None:
+    _use(monkeypatch)
+    _card("Platform Engineer", "Zed Corp", "https://boards.greenhouse.io/zed/jobs/100?gh_src=x")
+    requested: list[str] = []
+
+    def http(url: str) -> bytes:
+        requested.append(url)
+        return _board_of("zed", "Platform Engineer")
+
+    out = tmp_path / "run"
+    step.jobs_fetch(None, out, NOW, http=http)
+    assert requested and all("boards-api.greenhouse.io/v1/boards/zed/" in u for u in requested)
+    (text,) = [p.read_text() for p in out.glob("*.md")]
+    assert "Full board description." in text and "Only the alert summary" not in text

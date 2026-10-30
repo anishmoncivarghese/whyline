@@ -12,12 +12,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import alerts, companies, fetch, guard, paths, profile, seen
+from . import alerts, ats, companies, fetch, guard, paths, profile, seen
 
 MAX_POSTINGS = 40
 MANIFEST = "manifest.json"
 PREVIEW_DIR = "preview"
 
+_ALERT_NOTE = "Only the alert summary is available for this job."
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -68,6 +69,37 @@ def _fetchable(entries: list[companies.Company]) -> list[companies.Company]:
     return [e for e in entries if e.slug and e.ats in fetch.LIST_URLS]
 
 
+def _enrich(
+    waiting: list[fetch.Posting],
+    entries: list[companies.Company],
+    board_postings: tuple[fetch.Posting, ...],
+    client: Callable[..., Any],
+) -> tuple[list[fetch.Posting], dict[str, list[fetch.Posting]]]:
+    """Give alert cards their full board description where the company's own board has the job.
+
+    Returns the postings to use and, for each swapped-in board posting, the alert cards it replaced.
+    """
+    by_company: dict[str, list[fetch.Posting]] = {}
+    for entry in entries:
+        by_company[fetch.company_key(entry.name)] = [
+            p for p in board_postings if p.company == entry.name
+        ]
+    out: dict[str, fetch.Posting] = {}
+    origin: dict[str, list[fetch.Posting]] = {}
+    for card in waiting:
+        job = fetch.best_title_match(card.title, by_company.get(fetch.company_key(card.company), []))
+        if job is None:
+            job = fetch.board_job_for_link(card.url, card.company, client)
+        if job is None:
+            if _ALERT_NOTE not in card.text:
+                card = dataclasses.replace(card, text=f"{card.text}\n\n{_ALERT_NOTE}")
+            out.setdefault(card.uid, card)
+            continue
+        out.setdefault(job.uid, job)
+        origin.setdefault(job.uid, []).append(card)
+    return list(out.values()), origin
+
+
 def _fresh_uids(postings: list[fetch.Posting], db: Path | None) -> set[str]:
     """Which uids are new, without recording anything: checked against a throwaway copy."""
     source = db if db is not None else seen.db_path()
@@ -102,11 +134,15 @@ def jobs_fetch(
     # Alert-email cards were recorded as seen when they were read, so they bypass the seen
     # check below; their inbox files go only once chosen or dropped (never on a dry run).
     waiting = alerts.pending()
-    alert_uids = {p.uid for p in waiting}
+    client = ats.make_http(http, sleep=(lambda _s: None) if http else None)
+    cards, origin = _enrich(waiting, entries, result.postings, client)
+    alert_uids = {p.uid for p in cards}
     prefs = profile.load_preferences()
     kept: list[fetch.Posting] = []
     dropped: list[tuple[fetch.Posting, str]] = []
-    for posting in [*result.postings, *waiting]:
+    # A swapped-in board posting replaces the plain board copy of itself, so it is not listed twice.
+    plain = [p for p in result.postings if p.uid not in alert_uids]
+    for posting in [*plain, *cards]:
         text, _flagged = guard.clean(posting.text)
         posting = dataclasses.replace(posting, text=text)
         decision = guard.match(posting, prefs)
@@ -145,8 +181,13 @@ def jobs_fetch(
         for posting, reason in dropped:
             seen.mark_dropped(posting.uid, reason, path=seen_path)
         seen.new_only(chosen, path=seen_path)
+        # A swapped posting keeps the uid of the alert card it replaced in the seen store too.
+        taken = [p.uid for p in chosen] + [p.uid for p, _ in dropped]
+        swapped = [card for uid in taken for card in origin.get(uid, ())]
+        seen.new_only(swapped, path=seen_path)
         alerts.discard(
-            alert_uids & ({p.uid for p in chosen} | {p.uid for p, _ in dropped})
+            {uid for uid in taken if uid in alert_uids and uid not in origin}
+            | {card.uid for card in swapped}
         )
     report.written = len(manifest)
     return report.written
