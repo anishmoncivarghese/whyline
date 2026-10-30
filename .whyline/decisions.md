@@ -29305,3 +29305,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2f6e3b6bd2e245ea97ab37612eedb335 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:26:21.567Z"} -->
+
+## 2026-10-30 — Careers pages: robots.txt via urllib.robotparser through the allowlisted client; truncate bodies at 2 MB rather than erroring
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-18
+
+**Because:** Spec says cut off; the shared client still raises above 5 MB, which surfaces as a per-company error
+
+**Rejected:**
+
+- Own urlopen with a streaming cap — would bypass the host allowlist and redirect guard in ats.HttpClient
+
+**Files:** src/whyline/jobs/careers_page.py
+
+<!-- whyline-event: a96d90b5cf4346659c10296c1b5cc021 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:37:28.655Z"} -->
+
+## 2026-10-30 — JOB-18 passes required targeted and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-18
+
+**Because:** uv run pytest -q tests/jobs and uv run pytest -q both exited 0; the careers-page JSON-LD, robots, host filtering, size-cap, and no-results coverage passes within the jobs suite
+
+**Files:** src/whyline/jobs/careers_page.py
+
+<!-- whyline-event: 75b3bd8dc4214e56a02ed6a5e7b1a2c7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:47:34.376Z"} -->
+
+## 2026-10-30 — Approve JOB-18 careers-page schema.org fetching
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-18
+
+**Because:** The scoped diff checks robots.txt before the page, uses the allowlisted rate-limited client, limits discovery to 20 same-origin job-like links, parses single and @graph JobPosting JSON-LD, truncates parsed responses at 2 MB, reports the required no-jobs error, and both uv run pytest -q tests/jobs and uv run pytest -q exited 0 in independent review
+
+**Files:** src/whyline/jobs/careers_page.py
+
+<!-- whyline-event: 81a4144b512c45d69eedb264408b5f9b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:58:52.131Z"} -->

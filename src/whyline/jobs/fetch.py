@@ -314,6 +314,16 @@ def board_jobs(
 ) -> builtins.list[Posting]:
     """Return normalised postings from the board JOB-7 recorded for `company`."""
     entry = _resolve(company)
+    if entry.ats == "careers_page" and entry.careers_url.startswith("https://"):
+        from whyline.jobs import careers_page
+
+        client = ats.make_http(http, careers_url=entry.careers_url, clock=clock, sleep=sleep)
+        try:
+            return careers_page.careers_jobs(entry, client)
+        except FetchError:
+            raise
+        except Exception as error:
+            raise FetchError(f"{entry.name}: {type(error).__name__}: {error}") from error
     parser = _PARSERS.get(entry.ats)
     if parser is None or not entry.slug:
         raise FetchError(f"{entry.name}: no supported job board recorded (ats={entry.ats}).")
