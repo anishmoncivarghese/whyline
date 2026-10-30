@@ -763,6 +763,40 @@ async def test_open_link_and_open_excel_use_the_helpers() -> None:
         assert files == [Path("/tmp/jobs.xlsx")]
 
 
+async def test_draft_button_calls_apply_draft_and_open_folder_opens_it(tmp_path: Path) -> None:
+    calls: list[str] = []
+    opened: list[Path] = []
+    folder = tmp_path / "applications" / "acme_role"
+
+    def draft_fn(ref: str, progress: Any = None) -> Any:
+        calls.append(ref)
+        progress("claude is working")
+
+        class _Res:
+            ok = True
+
+        _Res.folder = folder
+        return _Res()
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            jobs_list_fn=_jobs_list,
+            draft_fn=draft_fn,
+            open_file_fn=lambda p: opened.append(p) or "",
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+        open_btn = screen.query_one("#jh-jobs-open-folder", tui.Button)
+        assert open_btn.disabled
+        screen.query_one("#jh-jobs-draft", tui.Button).press()
+        await _until(pilot, lambda: not open_btn.disabled, "draft done")
+        assert calls == ["u1"]
+        open_btn.press()
+        await pilot.pause()
+        assert opened == [folder]
+
+
 async def test_check_button_shows_the_cli_rows_and_the_screen_fits_80x24(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

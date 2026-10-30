@@ -205,6 +205,13 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     setp.add_argument("status", choices=_tracker_statuses(), help="New status")
     setp.add_argument("--note", default=None, help="Replace the job's notes with TEXT")
 
+    drf = jobs_sub.add_parser(
+        "draft",
+        help="Draft a tailored CV summary and cover letter for a tracked job",
+    )
+    drf.add_argument("ref", help="Job uid or row number from `whyline jobs list`")
+    drf.add_argument("--cli", default=None, help="AI provider CLI to run (default: first enabled)")
+
     alert = jobs_sub.add_parser(
         "alert",
         help="Read a saved job-alert email into the next fetch (runs no AI)",
@@ -670,6 +677,25 @@ def _cmd_set(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_draft(args: argparse.Namespace) -> int:
+    from whyline.jobs import apply
+
+    try:
+        result = apply.draft(
+            args.ref, getattr(args, "cli", None), progress=lambda line: print(f"· {line}")
+        )
+    except (apply.ApplyError, OSError, sqlite3.Error) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    if not result.ok:
+        print(f"{result.outcome}: {result.reason}" if result.reason else result.outcome, file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Wrote {tilde_path(result.draft_path)}.")
+    if result.docx_path is not None:
+        print(f"Wrote {tilde_path(result.docx_path)}.")
+    return EXIT_OK
+
+
 def _cmd_excel(args: argparse.Namespace) -> int:
     from whyline.jobs import tracker
 
@@ -720,6 +746,7 @@ _COMMANDS = {
     "fetch": _cmd_fetch,
     "list": _cmd_list,
     "set": _cmd_set,
+    "draft": _cmd_draft,
     "excel": _cmd_excel,
     "alert": _cmd_alert,
     "alerts": _cmd_alerts,
@@ -731,6 +758,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile|review|companies|fetch|alert|alerts|list|set|excel|doctor", file=sys.stderr)
+        print("usage: whyline jobs profile|review|companies|fetch|alert|alerts|list|set|draft|excel|doctor", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)

@@ -15,7 +15,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.jobs import alerts, companies, doctor, profile, review, tracker
+from whyline.jobs import alerts, apply, companies, doctor, profile, review, tracker
 from whyline.jobs.cli import (
     ALERTS_MAIL_SCRIPT,
     format_cv_status,
@@ -243,6 +243,8 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-remote { width: 1fr; }
     JobsHomeScreen #jh-companies-heading { margin-top: 1; }
     JobsHomeScreen #jh-companies-note { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-jobs-draft-progress { width: 100%; height: auto; color: $accent; }
+    JobsHomeScreen #jh-jobs-draft-progress.-empty { display: none; }
     JobsHomeScreen #jh-companies-progress { width: 100%; height: auto; margin-top: 1; color: $accent; }
     JobsHomeScreen #jh-companies-progress.-empty { display: none; }
     JobsHomeScreen #jh-companies-empty { width: 100%; height: auto; color: $text-muted; }
@@ -307,6 +309,7 @@ class JobsHomeScreen(ModalScreen):
         alert_set_fn: Callable[[str, bool], Any] | None = None,
         alert_last_fn: Callable[[], str] | None = None,
         alert_mail_fn: Callable[[], Path] | None = None,
+        draft_fn: Callable[..., Any] | None = None,
     ) -> None:
         super().__init__()
         self._status_fn = status_fn
@@ -336,6 +339,10 @@ class JobsHomeScreen(ModalScreen):
         self._alert_set_fn = alert_set_fn
         self._alert_last_fn = alert_last_fn
         self._alert_mail_fn = alert_mail_fn
+        self._draft_fn = draft_fn
+        self._draft_folder: Path | None = None
+        self._drafting = False
+        self._draft_token: object | None = None
         self._alert_addresses: list[str] = []
         self._job_rows: list[Mapping[str, Any]] = []
         self._job_edit_mode = ""
@@ -688,6 +695,12 @@ class JobsHomeScreen(ModalScreen):
                     Button("Check", id="jh-jobs-check-run"),
                     classes="jh-jobs-actions",
                 ),
+                Horizontal(
+                    Button("Draft application", id="jh-jobs-draft", variant="primary"),
+                    Button("Open folder", id="jh-jobs-open-folder", disabled=True),
+                    classes="jh-jobs-actions",
+                ),
+                Static("", id="jh-jobs-draft-progress", markup=False, classes="-empty"),
                 Vertical(
                     Select(
                         [(name, name) for name in tracker.STATUSES],
@@ -1272,6 +1285,96 @@ class JobsHomeScreen(ModalScreen):
             return
         self._set_status(f"Opened {tilde_path(path)}.")
 
+    def _set_draft_progress(self, message: str) -> None:
+        try:
+            prog = self.query_one("#jh-jobs-draft-progress", Static)
+        except NoMatches:
+            return
+        prog.update(message)
+        prog.set_class(not message, "-empty")
+
+    def _start_draft(self) -> None:
+        job = self._selected_job()
+        if job is None:
+            self._set_error("Select a job first.")
+            return
+        if self._drafting:
+            return
+        self._set_error("")
+        self._set_status("")
+        fn = self._draft_fn if self._draft_fn is not None else apply.draft
+        ref = str(job.get("uid") or job.get("row"))
+        label = f"Drafting {job.get('company') or 'application'}"
+        token = object()
+        self._draft_token = token
+        self._drafting = True
+        self.query_one("#jh-jobs-draft", Button).disabled = True
+        self.query_one("#jh-jobs-open-folder", Button).disabled = True
+        self._draft_folder = None
+        self._set_draft_progress(f"{label}…")
+
+        def work() -> None:
+            def on_progress(line: str) -> None:
+                try:
+                    self.app.call_from_thread(self._on_draft_progress, label, line, token)
+                except RuntimeError:
+                    pass
+
+            folder: Path | None = None
+            error = ""
+            try:
+                res = fn(ref, progress=on_progress)
+                if getattr(res, "ok", True):
+                    folder = getattr(res, "folder", None)
+                else:
+                    reason = getattr(res, "reason", "")
+                    outcome = getattr(res, "outcome", "failed")
+                    error = f"{outcome}: {reason}" if reason else str(outcome)
+            except Exception as caught:  # noqa: BLE001 - shown to the user
+                error = str(caught)
+            try:
+                self.app.call_from_thread(self._on_draft_done, folder, error, token)
+            except RuntimeError:
+                pass
+
+        self.run_worker(work, thread=True, exclusive=True, group="jobs-draft")
+
+    def _on_draft_progress(self, label: str, line: str, token: object) -> None:
+        if token is not self._draft_token or not self.is_attached:
+            return
+        shown = line.strip()
+        self._set_draft_progress(f"{label} · {shown}" if shown else f"{label}…")
+
+    def _on_draft_done(self, folder: Path | None, error: str, token: object) -> None:
+        if token is not self._draft_token or not self.is_attached:
+            return
+        self._drafting = False
+        self.query_one("#jh-jobs-draft", Button).disabled = False
+        self._set_draft_progress("")
+        self._refresh_jobs()
+        if error:
+            self._set_error(error)
+            return
+        self._draft_folder = Path(folder) if folder is not None else None
+        self.query_one("#jh-jobs-open-folder", Button).disabled = self._draft_folder is None
+        self._set_status(
+            f"Draft ready in {tilde_path(self._draft_folder)}." if self._draft_folder else "Draft ready."
+        )
+
+    def _open_draft_folder(self) -> None:
+        if self._draft_folder is None:
+            self._set_error("No draft folder to open.")
+            return
+        if self._open_file_fn is not None:
+            opener = self._open_file_fn
+        else:
+            from whyline.console.ideas_screen import _open_with_macos as opener
+        message = opener(self._draft_folder)
+        if message:
+            self._set_error(message)
+            return
+        self._set_status(f"Opened {tilde_path(self._draft_folder)}.")
+
     def _run_check(self) -> None:
         fn = self._doctor_fn if self._doctor_fn is not None else doctor.check
         try:
@@ -1361,6 +1464,10 @@ class JobsHomeScreen(ModalScreen):
             self._open_job_link()
         elif button_id == "jh-jobs-excel":
             self._open_excel()
+        elif button_id == "jh-jobs-draft":
+            self._start_draft()
+        elif button_id == "jh-jobs-open-folder":
+            self._open_draft_folder()
         elif button_id == "jh-jobs-check-run":
             self._run_check()
         elif button_id == "jh-alerts-mail":

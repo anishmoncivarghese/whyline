@@ -1,0 +1,11 @@
+name = "job-apply"
+title = "Draft a job application"
+about = "Read cv.md, profile.md, preferences.toml and one posting to draft a tailored CV summary, bullet edits and a cover letter."
+runner = "claude"
+backup = ["codex", "grok"]
+sources = ["cv.md", "profile.md", "preferences.toml"]
+timeout_minutes = 15
+
+[trigger]
+kind = "manual"
+min_gap_minutes = 1

@@ -29348,3 +29348,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 81a4144b512c45d69eedb264408b5f9b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T13:58:52.131Z"} -->
+
+## 2026-10-30 — job-apply reads the posting as a per-run extra source; posting fetched from the company board by uid, falling back to the tracker row
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-19
+
+**Because:** The tracker stores no posting text, and the template's static sources cannot name a per-job file
+
+**Rejected:**
+
+- Add the posting to agent.toml sources — the path changes per job
+- Fail when the board no longer lists the job — alert-only jobs would never be draftable
+
+**Files:** src/whyline/jobs/apply.py
+
+<!-- whyline-event: 61fd68236c8743319585bdd6c001333f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T14:20:29.062Z"} -->
+
+## 2026-10-30 — Pass JOB-19 round 2 behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-19
+
+**Because:** The mandated jobs and console suite exited 0, and the full repository suite exited 0 with one skip and no failures, covering application folder/docx/failure behavior and the console draft action without repository regressions
+
+**Files:** src/whyline/jobs/apply.py, src/whyline/console/jobs_screens.py, tests/jobs/test_apply.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 825cf47a14f7443d93acb8db6f741b3b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T14:39:01.973Z"} -->
+
+## 2026-10-30 — Approve JOB-19 round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-19
+
+**Because:** The scoped implementation fulfills the manual job-apply agent contract, writes posting/draft/DOCX artifacts, preserves failed-run behavior, updates the tracker note, and provides CLI and console workflows with genuine coverage; both required plain pytest commands completed at 100% with exit 0, the full run having one skip
+
+**Files:** src/whyline/jobs/apply.py, src/whyline/agents/templates/job-apply/agent.toml, src/whyline/agents/templates/job-apply/instructions.md, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py, tests/jobs/test_apply.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: de181993af1b4831ad071e50a62fb3c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T14:57:50.922Z"} -->
