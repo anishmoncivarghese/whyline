@@ -99,7 +99,7 @@ Rules every task keeps (the same rules as parts 1 and 2):
   - the final files are written
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-21: Interview prep
+- [x] JOB-21: Interview prep
   Add `src/whyline/agents/templates/job-interview/` and `tests/jobs/test_interview.py`, and edit `src/whyline/jobs/apply.py` (an `interview(uid)` beside `draft`), `src/whyline/jobs/cli.py` and `src/whyline/console/jobs_screens.py` only.
   For a job in `interview` status, produce `interview.md` and a .docx with:
   - likely questions with STAR answers drawn only from the CV
