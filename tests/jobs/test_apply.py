@@ -141,3 +141,70 @@ def test_cli_draft(
     assert "draft.md" in out and "draft.docx" in out
     assert cli.main(["jobs", "draft", "missing"]) == 1
     assert "No tracked job" in capsys.readouterr().err
+
+
+def _enable(*names: str) -> None:
+    account.save_global(
+        {name: {"enabled": name in names, "available": True} for name in account.AGENT_ORDER}
+    )
+
+
+def _two_turn(calls: list):
+    """claude drafts and revises, codex reviews; records (argv[0], prompt) per turn."""
+
+    def run_fn(argv, prompt, **kwargs):
+        calls.append((argv[0], prompt))
+        if argv[0] == "codex":
+            text = "1. [Tone] Too stiff."
+        elif any(c == "codex" for c, _p in calls):
+            text = ANSWER.replace("Kubernetes", "Kafka")
+        else:
+            text = ANSWER
+        payload = {"type": "result", "result": text, "permission_denials": []}
+        return _ExecResult(0, json.dumps(payload))
+
+    return run_fn
+
+
+def test_pick_reviewer_skips_drafter_and_disabled() -> None:
+    chain = ["claude", "codex", "grok"]
+
+    def yes(_c: str) -> bool:
+        return True
+
+    assert apply.pick_reviewer(chain, "claude", ["claude", "codex", "grok"], yes) == "codex"
+    assert apply.pick_reviewer(chain, "claude", ["claude", "grok"], yes) == "grok"
+    assert apply.pick_reviewer(chain, "claude", ["claude"], yes) is None
+    assert apply.pick_reviewer(chain, "claude", ["claude", "codex"], lambda c: c != "codex") is None
+
+
+def test_no_second_provider_skips_with_note(job: dict) -> None:
+    res = apply.draft("u1", run_fn=_ok(), unattended_fn=lambda _c: True)
+    assert res.ok and res.review_note == "No second provider for review"
+    folder = paths.configured_home() / "applications" / FOLDER
+    assert not (folder / "review.md").exists() and not (folder / "final.md").exists()
+
+
+def test_disabled_provider_never_reviews(job: dict) -> None:
+    _enable("claude", "grok")
+    calls: list = []
+    res = apply.draft("u1", run_fn=_two_turn(calls), unattended_fn=lambda c: c != "grok")
+    assert res.review_note == "No second provider for review"
+    assert all(cmd != "codex" for cmd, _p in calls)
+
+
+def test_review_uses_other_provider_and_writes_final_files(job: dict) -> None:
+    _enable("claude", "codex")
+    calls: list = []
+    res = apply.draft("u1", run_fn=_two_turn(calls), unattended_fn=lambda _c: True)
+    assert res.ok, res.reason
+    assert [cmd for cmd, _p in calls] == ["claude", "codex", "claude"]
+    assert res.reviewer == "codex" and res.reviewer != res.cli
+    assert "draft.md" in calls[1][1] and "cv.md" in calls[1][1]
+    assert "Too stiff" in calls[2][1]
+    folder = paths.configured_home() / "applications" / FOLDER
+    assert "Too stiff" in (folder / "review.md").read_text(encoding="utf-8")
+    assert "Kafka" in (folder / "final.md").read_text(encoding="utf-8")
+    assert "Kubernetes" in (folder / "draft.md").read_text(encoding="utf-8")
+    with zipfile.ZipFile(folder / "final.docx") as archive:
+        assert b"Kafka" in archive.read("word/document.xml")

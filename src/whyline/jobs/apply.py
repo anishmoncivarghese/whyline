@@ -22,6 +22,11 @@ APPLICATIONS_DIR = "applications"
 POSTING_FILE = "posting.md"
 DRAFT_FILE = "draft.md"
 DOCX_FILE = "draft.docx"
+REVIEW_FILE = "review.md"
+FINAL_FILE = "final.md"
+FINAL_DOCX_FILE = "final.docx"
+REVIEW_INSTRUCTIONS = "review.md"
+NO_REVIEWER_NOTE = "No second provider for review"
 DRAFT_NOTE = "draft ready"
 GAPS_HEADING = "gaps (not added)"
 RUNNABLE_CLIS = review.RUNNABLE_CLIS
@@ -42,6 +47,11 @@ class DraftResult:
     folder: Path | None = None
     draft_path: Path | None = None
     docx_path: Path | None = None
+    review_path: Path | None = None
+    final_path: Path | None = None
+    final_docx_path: Path | None = None
+    reviewer: str = ""
+    review_note: str = ""
 
 
 def applications_dir() -> Path:
@@ -117,6 +127,7 @@ def draft(
     progress: Callable[[str], None] | None = None,
     run_fn: Any = None,
     http: Callable[..., Any] | None = None,
+    unattended_fn: Callable[[str], bool] | None = None,
 ) -> DraftResult:
     """Draft the application for the tracked job `uid` (or row number)."""
     row = _find_row(uid)
@@ -192,7 +203,98 @@ def draft(
         tracker.set_status(row["uid"], row["status"], DRAFT_NOTE)
     except (ApplyError, tracker.TrackerError, OSError) as error:
         return DraftResult(ok=False, outcome="failed", reason=str(error), **base)
-    return DraftResult(
+
+    result = DraftResult(
         ok=True, outcome=outcome, reason=reason, draft_path=draft_path,
         docx_path=docx_path, **base,
+    )
+    reviewer = pick_reviewer(
+        [defn.runner, *defn.backup], base["cli"], enabled, unattended_fn
+    )
+    if reviewer is None:
+        return replace(result, review_note=NO_REVIEWER_NOTE)
+    try:
+        return _review_and_revise(
+            result, run_defn, reviewer, folder, jobs_dir, kwargs, answer
+        )
+    except (ApplyError, OSError) as error:
+        return replace(result, review_note=f"Review failed: {error}")
+
+
+def pick_reviewer(
+    chain: list[str],
+    drafter: str,
+    enabled: list[str],
+    unattended_fn: Callable[[str], bool] | None = None,
+) -> str | None:
+    """The first enabled, unattended-cleared provider in the chain that is not the drafter."""
+    unattended_fn = unattended_fn or capabilities.can_run_unattended
+    for cli in chain:
+        if cli != drafter and cli in enabled and unattended_fn(cli):
+            return cli
+    return None
+
+
+def _review_instructions() -> str:
+    path = templates._template_folder(TEMPLATE_NAME) / REVIEW_INSTRUCTIONS
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ApplyError(f"Could not read {path.name}: {error}") from error
+
+
+def _run_turn(defn: d.AgentDef, kwargs: dict[str, Any]) -> tuple[Any, str]:
+    record = runner.execute_once(defn, **kwargs)
+    if (getattr(record, "outcome", "") or "failed") not in _REPORTED_OUTCOMES:
+        reason = getattr(record, "reason", "") or getattr(record, "outcome", "") or "failed"
+        raise ApplyError(str(reason))
+    answer = review._read_run_answer(record).replace("\r\n", "\n").strip()
+    if not answer:
+        raise ApplyError("The agent returned no answer.")
+    return record, answer
+
+
+def _review_and_revise(
+    result: DraftResult,
+    run_defn: d.AgentDef,
+    reviewer: str,
+    folder: Path,
+    jobs_dir: Path,
+    kwargs: dict[str, Any],
+    draft_text: str,
+) -> DraftResult:
+    rel = lambda name: (folder / name).relative_to(jobs_dir).as_posix()  # noqa: E731
+    cv_and_posting = tuple(
+        s for s in run_defn.sources if s == "cv.md" or s == rel(POSTING_FILE)
+    )
+    review_defn = replace(
+        run_defn, instructions=_review_instructions(), runner=reviewer, backup=(),
+        sources=(*cv_and_posting, rel(DRAFT_FILE)),
+    )
+    _record, critiques = _run_turn(review_defn, kwargs)
+    review_path = folder / REVIEW_FILE
+    _write_private(review_path, critiques + "\n")
+
+    revise_defn = replace(
+        run_defn,
+        instructions=(
+            run_defn.instructions
+            + "\n\nA second reviewer critiqued your earlier draft. Revise it to address the"
+            " critiques that are right, keeping every rule above, and answer with the complete"
+            " revised four sections.\n\nCritiques:\n" + critiques
+            + "\n\nEarlier draft:\n" + draft_text
+        ),
+        runner=result.cli or run_defn.runner, backup=(),
+    )
+    _record, final = _run_turn(revise_defn, kwargs)
+    if GAPS_HEADING not in final.lower():
+        raise ApplyError("The revised draft has no 'Gaps (not added)' section.")
+    final_path = folder / FINAL_FILE
+    _write_private(final_path, final + "\n")
+    final_docx = convert.to_docx(final_path, folder / FINAL_DOCX_FILE)
+    if final_docx is not None and os.name != "nt":
+        os.chmod(final_docx, 0o600)
+    return replace(
+        result, review_path=review_path, final_path=final_path, final_docx_path=final_docx,
+        reviewer=reviewer, review_note=f"Reviewed by {reviewer}",
     )

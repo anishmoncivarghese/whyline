@@ -29392,3 +29392,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: de181993af1b4831ad071e50a62fb3c0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T14:57:50.922Z"} -->
+
+## 2026-10-30 — Reviewer is the first enabled, unattended-cleared provider in the agent chain that is not the actual drafter; a failed review leaves the draft and notes the failure
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-20
+
+**Because:** Uses the drafter that really ran (fallback may differ from the configured runner) and the same enabled-provider rules as drafting
+
+**Rejected:**
+
+- Fail the whole draft when review fails — the draft is already saved and useful
+
+**Files:** src/whyline/jobs/apply.py
+
+<!-- whyline-event: 7600c531c76144099916a8ad4d180ce9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T15:09:22.540Z"} -->
+
+## 2026-10-30 — Pass JOB-20 round 2 behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-20
+
+**Because:** The mandated jobs suite and full repository suite both exited 0; focused coverage exercises reviewer separation, disabled/no-second-provider handling, and final artifact writes, with no repository regressions and one full-suite skip
+
+**Files:** src/whyline/jobs/apply.py
+
+<!-- whyline-event: 9bcb9de42d4545ddb7ac395aa14e0fa2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T15:19:37.332Z"} -->
+
+## 2026-10-30 — Approve JOB-20 round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-20
+
+**Because:** The implementation selects a different enabled unattended-cleared provider from the configured chain, revises on the actual drafter, persists the requested review and final artifacts, and focused plus full test suites pass with genuine coverage of all required cases
+
+**Files:** src/whyline/jobs/apply.py
+
+<!-- whyline-event: c06516339098442090adb72d58f3af6b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T15:30:11.664Z"} -->
