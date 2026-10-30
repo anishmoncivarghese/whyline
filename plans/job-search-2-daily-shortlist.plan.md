@@ -112,7 +112,7 @@ Rules every task keeps (the same rules as part 1):
   - the instructions contain the `scores` contract
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-14: The job tracker
+- [x] JOB-14: The job tracker
   Add `src/whyline/jobs/tracker.py`, `tests/jobs/test_tracker.py`, and edit `src/whyline/agents/after.py` (one call into a post-run hook registry, mirroring `before.py`, never raising) and `src/whyline/jobs/cli.py` only.
   After a `job-search` run succeeds:
   1. Parse the `scores` block from the final answer.
