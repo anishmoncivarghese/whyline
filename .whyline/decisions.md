@@ -28941,3 +28941,153 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c3804eb91c5141e1aed7f1114c32cb6e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T05:31:58.987Z"} -->
+
+## 2026-10-30 — Post-run hook registry lives in after.py keyed by the agent's before step; tracker rounds score to int
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-14
+
+**Because:** Task limits edits to after.py, so the registry mirrors before.STEPS there; ideas.xlsx number cells truncate floats, so scores are stored as rounded integers; new rows start shortlisted only when verdict is shortlist and later runs never touch status or notes
+
+**Rejected:**
+
+- new module for hooks — task restricts files
+- copying xlsx writer — reuse ideas.xlsx _write/_verify instead
+
+**Files:** src/whyline/jobs/tracker.py, src/whyline/agents/after.py
+
+<!-- whyline-event: 854c6931f8024e6d84dfcbf6ecc3872d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T05:43:26.850Z"} -->
+
+## 2026-10-30 — Pass JOB-14 job tracker testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-14
+
+**Because:** The focused jobs and agents suite and the full repository suite both exited 0; the implementation records manifest-matched scores, ignores unknown or malformed input, preserves user status and notes across reruns, writes a valid XLSX view, exposes the required CLI commands, and keeps the post-run hook success-only and non-raising
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was reproduced
+
+**Files:** src/whyline/jobs/tracker.py, src/whyline/agents/after.py, src/whyline/jobs/cli.py, tests/jobs/test_tracker.py
+
+<!-- whyline-event: 6045bac3f2104f508db539e32f503dfe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T05:53:51.702Z"} -->
+
+## 2026-10-30 — Reject JOB-14 pending console tracker parity
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-14
+
+**Because:** The tracker logic and both required test suites pass, but jobs list, status and notes updates, and Excel export are only exposed through the CLI; the project requires every new CLI workflow to be reachable from whyline console through the same functions
+
+**Files:** src/whyline/jobs/cli.py
+
+<!-- whyline-event: 1b6f983f286342d6be91512f3409d1b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T06:04:34.045Z"} -->
+
+## 2026-10-30 — Console tracker parity: TrackedJobsScreen opened from a Tracked jobs button on JobsHomeScreen
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-14
+
+**Because:** Console-first rule; the screen calls tracker.list_rows, set_status and export_xlsx directly, the same functions the CLI uses
+
+**Rejected:**
+
+- extend JobsHomeScreen inline — it is already very large and crowded at 80x24
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: a8da5ac9dfe345f6ae7b871ef2dfed67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T06:17:53.625Z"} -->
+
+## 2026-10-30 — Pass JOB-14 tracker and console-parity testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-14
+
+**Because:** The focused jobs and agents suite and the full repository suite both exited 0; the full run had one skip and no failures, covering tracker behavior, post-run integration, CLI, and the added console workflow without regressions
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was reproduced
+
+**Files:** src/whyline/jobs/tracker.py, src/whyline/agents/after.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py, tests/jobs/test_tracker.py, tests/console/test_tracked_jobs_screen.py
+
+<!-- whyline-event: da2bbe1db3814a0a8ac7b226d5410b43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T06:28:05.954Z"} -->
+
+## 2026-10-30 — Reject JOB-14 because console cannot clear an existing tracked-job note
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-14
+
+**Because:** The CLI supports clearing notes with --note "", but TrackedJobsScreen strips an empty input and converts it to None, causing tracker.set_status to preserve the old note; console-first requires the CLI operation to have a console counterpart. Both uv run pytest -q tests/jobs tests/agents and uv run pytest -q passed.
+
+**Rejected:**
+
+- Approve as-is — it would leave a user-visible CLI operation unavailable in whyline console
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_tracked_jobs_screen.py
+
+<!-- whyline-event: 282855471cc04d7986b5c2c3998009ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T06:39:03.280Z"} -->
+
+## 2026-10-30 — Console clears a tracked-job note via a separate Clear note button passing an empty string
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-14
+
+**Because:** Blank input must keep the note (matches CLI omitting --note); an explicit button mirrors --note ""
+
+**Rejected:**
+
+- Treat blank input as clear — would wipe notes whenever a user only changes status
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 2a4ba1821dab4351869634e431df2190 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T06:51:41.241Z"} -->
+
+## 2026-10-30 — Pass JOB-14 after explicit note-clear regression retest
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-14
+
+**Because:** The mandated jobs and agents suite exited 0, and the full repository suite exited 0 with one skip and no failures, covering the tracker, post-run hook, CLI, and console Clear note workflow
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was reproduced
+
+**Files:** src/whyline/jobs/tracker.py, src/whyline/agents/after.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py, tests/jobs/test_tracker.py, tests/console/test_tracked_jobs_screen.py
+
+<!-- whyline-event: e6ae679534d94ed1bfe5a07c5d236528 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T07:02:02.736Z"} -->
+
+## 2026-10-30 — Approve JOB-14 job tracker after round 9 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-14
+
+**Because:** The diff correctly parses manifest-matched scores, preserves status and notes on upsert, isolates post-run failures, provides CLI and console workflows, writes a verified XLSX view, and both required test commands passed
+
+**Rejected:**
+
+- Request changes — no correctness, safety, coverage, or console-parity defect remains
+
+**Files:** src/whyline/jobs/tracker.py, src/whyline/agents/after.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py, tests/jobs/test_tracker.py, tests/console/test_tracked_jobs_screen.py
+
+<!-- whyline-event: c48657da1dcf4c5f90f9e89c805d12ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T07:13:21.574Z"} -->

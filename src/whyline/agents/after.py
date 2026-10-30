@@ -56,6 +56,28 @@ def _notify(title: str, messages: list[str], send) -> None:
             pass
 
 
+def _jobs_track(defn, record) -> None:
+    """Record the scored postings of a job-search run (lazy import: Jobs is optional)."""
+    from whyline.jobs import tracker
+
+    tracker.record_run(records.run_folder(record.run_id), records.read_final(record.run_id))
+
+
+# Post-run hooks by the agent's `before` step, mirroring before.STEPS.
+POST_RUN = {"jobs-fetch": _jobs_track}
+
+
+def _post_run(defn, record) -> None:
+    """Run the hook for a succeeded run. A hook problem never changes the run."""
+    hook = POST_RUN.get(getattr(defn, "before", ""))
+    if hook is None or not (record.outcome or "").startswith("succeeded"):
+        return
+    try:
+        hook(defn, record)
+    except Exception:
+        pass
+
+
 def finish(conn, defn, record, *, now=None, notify=True, send=None) -> None:
     now = now or datetime.now().replace(microsecond=0)
     act = state.get(conn, defn.agent_id)
@@ -93,6 +115,7 @@ def finish(conn, defn, record, *, now=None, notify=True, send=None) -> None:
             changes.update(status="needs_attention", paused_reason=f"{failures} failures in a row")
             messages.append(f"needs attention — {failures} failures in a row; paused")
         state.update(conn, defn.agent_id, **changes)
+    _post_run(defn, record)
     try:
         from whyline.agents import deliver
 

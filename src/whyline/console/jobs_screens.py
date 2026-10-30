@@ -14,7 +14,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.jobs import companies, profile, review
+from whyline.jobs import companies, profile, review, tracker
 from whyline.jobs.cli import (
     format_cv_status,
     format_list_preference,
@@ -565,6 +565,7 @@ class JobsHomeScreen(ModalScreen):
             Static("", id="jh-status", markup=False, classes="-empty"),
             Horizontal(
                 Button("Save", id="jh-save", variant="success"),
+                Button("Tracked jobs", id="jh-tracked"),
                 Button("Close", id="jh-close"),
                 id="jh-buttons",
             ),
@@ -1065,6 +1066,8 @@ class JobsHomeScreen(ModalScreen):
             self.action_close()
         elif button_id == "jh-save":
             self._save_preferences()
+        elif button_id == "jh-tracked":
+            self.app.push_screen(TrackedJobsScreen())
         elif button_id == "jh-review-cv":
             self._start_review()
         elif button_id == "jh-review-accept":
@@ -1115,3 +1118,149 @@ class JobsHomeScreen(ModalScreen):
             self.query_one("#jh-cv-text", TextArea).load_text("")
             self._toggle_paste_panel(False)
             self._set_error("")
+
+
+class TrackedJobsScreen(ModalScreen):
+    """Tracked job postings: change status and notes, export jobs.xlsx."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    DEFAULT_CSS = """
+    TrackedJobsScreen { align: center middle; }
+    TrackedJobsScreen > Vertical {
+        width: 110; max-width: 100%; height: 100%; max-height: 100%;
+        padding: 0 1; border: thick $accent; background: $surface;
+    }
+    TrackedJobsScreen #tj-title { text-style: bold; }
+    TrackedJobsScreen #tj-empty { height: auto; color: $text-muted; }
+    TrackedJobsScreen #tj-empty.-empty { display: none; }
+    TrackedJobsScreen #tj-table { width: 100%; height: 1fr; min-height: 3; }
+    TrackedJobsScreen #tj-edit { height: auto; margin-top: 1; }
+    TrackedJobsScreen #tj-status-select { width: 20; }
+    TrackedJobsScreen #tj-note { width: 1fr; }
+    TrackedJobsScreen #tj-error { height: auto; max-height: 3; color: $error; }
+    TrackedJobsScreen #tj-error.-empty { display: none; }
+    TrackedJobsScreen #tj-status { height: auto; max-height: 2; color: $success; }
+    TrackedJobsScreen #tj-status.-empty { display: none; }
+    TrackedJobsScreen #tj-buttons { height: auto; margin-top: 1; }
+    TrackedJobsScreen #tj-buttons Button { min-width: 8; width: auto; margin-right: 1; }
+    """
+
+    def __init__(
+        self,
+        *,
+        list_fn: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
+        set_fn: Callable[..., Any] | None = None,
+        export_fn: Callable[[], Path] | None = None,
+    ) -> None:
+        super().__init__()
+        self._list_fn = list_fn
+        self._set_fn = set_fn
+        self._export_fn = export_fn
+        self._rows: list[Mapping[str, Any]] = []
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Tracked jobs", id="tj-title"),
+            Static("No tracked jobs yet.", id="tj-empty", markup=False, classes="-empty"),
+            DataTable(id="tj-table", cursor_type="row"),
+            Horizontal(
+                Select(
+                    [(name, name) for name in tracker.STATUSES],
+                    allow_blank=False,
+                    value=tracker.STATUSES[0],
+                    id="tj-status-select",
+                ),
+                Input(placeholder="Note (optional)", id="tj-note"),
+                id="tj-edit",
+            ),
+            Static("", id="tj-error", markup=False, classes="-empty"),
+            Static("", id="tj-status", markup=False, classes="-empty"),
+            Horizontal(
+                Button("Set status", id="tj-set", variant="success"),
+                Button("Clear note", id="tj-clear-note"),
+                Button("Export Excel", id="tj-export"),
+                Button("Close", id="tj-close"),
+                id="tj-buttons",
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#tj-table", DataTable).add_columns(
+            "Row", "Score", "Status", "Company", "Title", "Notes"
+        )
+        self._refresh()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def _show(self, error: str = "", status: str = "") -> None:
+        for widget_id, text in (("#tj-error", error), ("#tj-status", status)):
+            widget = self.query_one(widget_id, Static)
+            widget.update(text)
+            widget.set_class(not text, "-empty")
+
+    def _refresh(self) -> None:
+        fn = self._list_fn if self._list_fn is not None else tracker.list_rows
+        try:
+            self._rows = list(fn())
+        except (tracker.TrackerError, OSError, ValueError) as error:
+            self._rows = []
+            self._show(error=str(error))
+        table = self.query_one("#tj-table", DataTable)
+        table.clear()
+        for row in self._rows:
+            table.add_row(
+                _cell(row.get("row")),
+                _cell(row.get("score")),
+                _cell(row.get("status")),
+                _cell(row.get("company")),
+                _cell(row.get("title")),
+                _cell(row.get("notes")),
+            )
+        self.query_one("#tj-empty", Static).set_class(bool(self._rows), "-empty")
+
+    def _selected(self) -> Mapping[str, Any] | None:
+        table = self.query_one("#tj-table", DataTable)
+        if not self._rows or not 0 <= table.cursor_row < len(self._rows):
+            return None
+        return self._rows[table.cursor_row]
+
+    def _set_selected(self, clear_note: bool = False) -> None:
+        row = self._selected()
+        if row is None:
+            self._show(error="Select a job first.")
+            return
+        status = self.query_one("#tj-status-select", Select).value
+        # An empty string clears the stored note; None keeps it.
+        note = "" if clear_note else (self.query_one("#tj-note", Input).value.strip() or None)
+        fn = self._set_fn if self._set_fn is not None else tracker.set_status
+        try:
+            fn(str(row.get("uid") or row.get("row")), str(status), note)
+        except (tracker.TrackerError, OSError, ValueError) as error:
+            self._show(error=str(error))
+            return
+        self.query_one("#tj-note", Input).value = ""
+        self._refresh()
+        self._show(status=f"Set {row.get('company') or 'job'} to {status}.")
+
+    def _export(self) -> None:
+        fn = self._export_fn if self._export_fn is not None else tracker.export_xlsx
+        try:
+            path = fn()
+        except Exception as error:  # noqa: BLE001 - shown to the user, never crashes the console
+            self._show(error=str(error))
+            return
+        self._show(status=f"Exported {tilde_path(Path(path))}.")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        button_id = event.button.id or ""
+        if button_id == "tj-close":
+            self.action_close()
+        elif button_id == "tj-set":
+            self._set_selected()
+        elif button_id == "tj-clear-note":
+            self._set_selected(clear_note=True)
+        elif button_id == "tj-export":
+            self._export()

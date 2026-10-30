@@ -6,6 +6,7 @@ import argparse
 import datetime
 import json
 import re
+import sqlite3
 import sys
 import tomllib
 from collections.abc import Mapping
@@ -135,6 +136,12 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _tracker_statuses() -> tuple[str, ...]:
+    from whyline.jobs import tracker
+
+    return tracker.STATUSES
+
+
 def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "jobs",
@@ -185,6 +192,17 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         action="store_true",
         help="Do not mark anything as seen",
     )
+
+    lst = jobs_sub.add_parser("list", help="List tracked jobs, best score first")
+    lst.add_argument("--status", choices=_tracker_statuses(), default=None, help="Filter by status")
+    lst.add_argument("--min-score", type=int, default=None, help="Only jobs scoring at least N")
+
+    setp = jobs_sub.add_parser("set", help="Set the status of a tracked job")
+    setp.add_argument("ref", help="Job uid or row number from `whyline jobs list`")
+    setp.add_argument("status", choices=_tracker_statuses(), help="New status")
+    setp.add_argument("--note", default=None, help="Replace the job's notes with TEXT")
+
+    jobs_sub.add_parser("excel", help="Write the tracked jobs to ~/.whyline/jobs/jobs.xlsx")
 
     comp = jobs_sub.add_parser(
         "companies",
@@ -571,6 +589,51 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_list(args: argparse.Namespace) -> int:
+    from whyline.jobs import tracker
+
+    try:
+        rows = tracker.list_rows(
+            status=getattr(args, "status", None), min_score=getattr(args, "min_score", None)
+        )
+    except (OSError, sqlite3.Error) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    if not rows:
+        print("No tracked jobs.")
+        return EXIT_OK
+    for row in rows:
+        score = "-" if row["score"] is None else str(row["score"])
+        print(
+            f"{row['row']:>4}  {score:>3}  {row['status']:<11}  {row['company']} — {row['title']}"
+        )
+    return EXIT_OK
+
+
+def _cmd_set(args: argparse.Namespace) -> int:
+    from whyline.jobs import tracker
+
+    try:
+        row = tracker.set_status(args.ref, args.status, getattr(args, "note", None))
+    except (tracker.TrackerError, OSError, sqlite3.Error) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Set row {row['row']} ({row['company']} — {row['title']}) to {row['status']}.")
+    return EXIT_OK
+
+
+def _cmd_excel(args: argparse.Namespace) -> int:
+    from whyline.jobs import tracker
+
+    try:
+        target = tracker.export_xlsx()
+    except (OSError, RuntimeError, sqlite3.Error) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Wrote {tilde_path(target)}.")
+    return EXIT_OK
+
+
 _COMPANIES_COMMANDS = {
     "list": _cmd_companies_list,
     "suggest": _cmd_companies_suggest,
@@ -598,6 +661,9 @@ _COMMANDS = {
     "review": _cmd_review,
     "companies": _cmd_companies,
     "fetch": _cmd_fetch,
+    "list": _cmd_list,
+    "set": _cmd_set,
+    "excel": _cmd_excel,
 }
 
 
@@ -605,6 +671,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile|review|companies|fetch", file=sys.stderr)
+        print("usage: whyline jobs profile|review|companies|fetch|list|set|excel", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)
