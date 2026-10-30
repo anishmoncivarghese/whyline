@@ -112,7 +112,7 @@ Rules every task keeps (the same rules as parts 1 and 2):
   - the console button calls the same function
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-22: Job search docs
+- [x] JOB-22: Job search docs
   Add `docs/job-search.md` and edit `README.md` (one line and a link) only.
   Cover:
   - setup entirely from `whyline console`
