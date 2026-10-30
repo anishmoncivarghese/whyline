@@ -29142,3 +29142,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cab95d78af424037a44b71fca4eef2e2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T08:12:17.273Z"} -->
+
+## 2026-10-30 — Released whyline 0.3.57 (job-search-2 JOB-9..15) after rerunning flaky macOS-3.11 console tests
+
+**Actor:** claude
+**Role:** releaser
+**Task:** release-0.3.57
+
+**Because:** two different console UI tests failed on separate macOS 3.11 release attempts and passed on rerun, the same commit passed them in branch CI, and nothing in this release touches those screens
+
+**Rejected:**
+
+- fix the console tests before releasing — unrelated to this release and not reproducible locally
+- ship whyline-relay too — only plan documents since its last release
+
+**Files:** docs/releases/v0.3.57.md
+
+<!-- whyline-event: 3c4effda7afd4d58806566f0a1cf4812 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T10:48:19.659Z"} -->
