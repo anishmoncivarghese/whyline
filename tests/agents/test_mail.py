@@ -76,3 +76,15 @@ def test_mail_script_command_needs_macos(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert err == mail.NEEDS_MACOS + "\n"
     assert "macOS" in err
+
+
+def test_an_optional_command_replaces_agents_trigger():
+    text = mail.script_text("job-alerts", "/opt/bin/whyline", ("jobs", "alert"))
+    assert '"/opt/bin/whyline jobs alert " & quoted form of tmp' in text
+    assert "agents trigger" not in text
+    assert "open for access" in text  # the body is still a safe file write
+
+
+def test_a_command_with_shell_characters_is_rejected():
+    with pytest.raises(ValueError, match="command must be"):
+        mail.script_text("job-alerts", "/opt/bin/whyline", ("jobs", "alert; rm"))

@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import companies, fetch, guard, paths, profile, seen
+from . import alerts, companies, fetch, guard, paths, profile, seen
 
 MAX_POSTINGS = 40
 MANIFEST = "manifest.json"
@@ -99,10 +99,14 @@ def jobs_fetch(
         report.errors.append((name, message))
         report.count(name).errors += 1
 
+    # Alert-email cards were recorded as seen when they were read, so they bypass the seen
+    # check below; their inbox files go only once chosen or dropped (never on a dry run).
+    waiting = alerts.pending()
+    alert_uids = {p.uid for p in waiting}
     prefs = profile.load_preferences()
     kept: list[fetch.Posting] = []
     dropped: list[tuple[fetch.Posting, str]] = []
-    for posting in result.postings:
+    for posting in [*result.postings, *waiting]:
         text, _flagged = guard.clean(posting.text)
         posting = dataclasses.replace(posting, text=text)
         decision = guard.match(posting, prefs)
@@ -114,8 +118,10 @@ def jobs_fetch(
             report.dropped.append((posting.company, posting.title, decision.reason))
     kept.sort(key=lambda p: p.posted_at, reverse=True)  # newest first; undated last
 
-    fresh = _fresh_uids(kept, seen_path)
-    chosen = [p for p in kept if p.uid in fresh][:MAX_POSTINGS]
+    fresh = _fresh_uids(kept, seen_path) | alert_uids
+    chosen = [p for p in kept if p.uid in fresh]
+    chosen.sort(key=lambda p: p.uid not in alert_uids)  # alert cards first, order kept
+    chosen = chosen[:MAX_POSTINGS]
     run_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict[str, str]] = {}
     for index, posting in enumerate(chosen, start=1):
@@ -139,6 +145,9 @@ def jobs_fetch(
         for posting, reason in dropped:
             seen.mark_dropped(posting.uid, reason, path=seen_path)
         seen.new_only(chosen, path=seen_path)
+        alerts.discard(
+            alert_uids & ({p.uid for p in chosen} | {p.uid for p, _ in dropped})
+        )
     report.written = len(manifest)
     return report.written
 

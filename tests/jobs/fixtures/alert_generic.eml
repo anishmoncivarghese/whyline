@@ -1,0 +1,18 @@
+From: Indeed <alert@indeed.com>
+To: me@example.com
+Subject: New jobs
+Message-ID: <alert-2@indeed.com>
+Authentication-Results: mx.google.com;
+ dkim=pass header.i=@indeed.com header.d=indeed.com;
+ dmarc=pass header.from=indeed.com
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<div><a href="https://example.org/j/1?utm=1">Staff Platform Engineer</a></div>
+<div>Hooli</div>
+<div>Remote - EU</div>
+<div><a href="https://example.org/j/2">Privacy policy</a></div>
+<div><a href="https://example.org/j/3">Product Designer</a></div>
+<div><a href="mailto:x@example.org">Engineer help</a></div>
+</body></html>

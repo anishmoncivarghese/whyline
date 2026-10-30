@@ -13,10 +13,11 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.jobs import companies, doctor, profile, review, tracker
+from whyline.jobs import alerts, companies, doctor, profile, review, tracker
 from whyline.jobs.cli import (
+    ALERTS_MAIL_SCRIPT,
     format_cv_status,
     format_list_preference,
     parse_preference_value,
@@ -251,6 +252,12 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen .jh-companies-actions Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen #jh-company-name { width: 100%; }
     JobsHomeScreen #jh-company-url { width: 100%; }
+    JobsHomeScreen #jh-alerts-heading { margin-top: 1; }
+    JobsHomeScreen #jh-alerts-last { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-alerts-mail-result { width: 100%; height: auto; color: $accent; }
+    JobsHomeScreen #jh-alerts-mail-result.-empty { display: none; }
+    JobsHomeScreen .jh-alert-switch { border: none; height: 1; padding: 0 1; margin: 0; width: auto; }
+    JobsHomeScreen .jh-alert-switch:focus { border: none; }
     JobsHomeScreen #jh-jobs-heading { margin-top: 1; }
     JobsHomeScreen #jh-jobs-filter { width: 24; }
     JobsHomeScreen #jh-jobs-empty { width: 100%; height: auto; color: $text-muted; }
@@ -296,6 +303,10 @@ class JobsHomeScreen(ModalScreen):
         open_link_fn: Callable[[str], Any] | None = None,
         open_file_fn: Callable[[Path], str] | None = None,
         doctor_fn: Callable[[], Sequence[doctor.Row]] | None = None,
+        alert_senders_fn: Callable[[], Mapping[str, bool]] | None = None,
+        alert_set_fn: Callable[[str, bool], Any] | None = None,
+        alert_last_fn: Callable[[], str] | None = None,
+        alert_mail_fn: Callable[[], Path] | None = None,
     ) -> None:
         super().__init__()
         self._status_fn = status_fn
@@ -321,6 +332,11 @@ class JobsHomeScreen(ModalScreen):
         self._open_link_fn = open_link_fn
         self._open_file_fn = open_file_fn
         self._doctor_fn = doctor_fn
+        self._alert_senders_fn = alert_senders_fn
+        self._alert_set_fn = alert_set_fn
+        self._alert_last_fn = alert_last_fn
+        self._alert_mail_fn = alert_mail_fn
+        self._alert_addresses: list[str] = []
         self._job_rows: list[Mapping[str, Any]] = []
         self._job_edit_mode = ""
         self._reviewing = False
@@ -328,6 +344,20 @@ class JobsHomeScreen(ModalScreen):
         self._companies_busy = False
         self._companies_token: object | None = None
         self._company_rows: list[companies.Company] = []
+
+    def _read_alert_senders(self) -> dict[str, bool]:
+        fn = self._alert_senders_fn if self._alert_senders_fn is not None else alerts.senders
+        try:
+            return dict(fn())
+        except (OSError, alerts.AlertError):
+            return {}
+
+    def _read_alert_last(self) -> str:
+        fn = self._alert_last_fn if self._alert_last_fn is not None else alerts.format_last_read
+        try:
+            return fn()
+        except (OSError, alerts.AlertError):
+            return "Last alert: unavailable."
 
     def _read_statuses(self) -> Mapping[str, profile.FileStatus]:
         fn = self._status_fn if self._status_fn is not None else profile.status
@@ -367,6 +397,50 @@ class JobsHomeScreen(ModalScreen):
             return fn()
         except Exception:
             return None
+
+    def _alert_switches(self) -> list[Checkbox]:
+        senders = self._read_alert_senders()
+        self._alert_addresses = list(senders)
+        return [
+            Checkbox(addr, value=on, id=f"jh-alert-{i}", classes="jh-alert-switch")
+            for i, (addr, on) in enumerate(senders.items())
+        ]
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        box_id = event.checkbox.id or ""
+        if not box_id.startswith("jh-alert-"):
+            return
+        event.stop()
+        index = int(box_id[len("jh-alert-"):])
+        if index >= len(self._alert_addresses):
+            return
+        fn = self._alert_set_fn if self._alert_set_fn is not None else alerts.set_sender
+        try:
+            fn(self._alert_addresses[index], bool(event.value))
+        except (OSError, alerts.AlertError) as error:
+            self._set_error(str(error))
+            return
+        self._set_error("")
+
+    def _mail_rule(self) -> None:
+        from whyline.agents import mail
+
+        out = self.query_one("#jh-alerts-mail-result", Static)
+        if self._alert_mail_fn is None and not mail.supported():
+            text = mail.NEEDS_MACOS
+        else:
+            fn = self._alert_mail_fn or (lambda: mail.install(*ALERTS_MAIL_SCRIPT))
+            try:
+                path = fn()
+                text = (
+                    f"Wrote {Path(path).as_posix()}\n"
+                    "In Mail → Settings → Rules → Add Rule, set From to an alert sender, "
+                    "then Run AppleScript → choose whyline-job-alerts.applescript."
+                )
+            except (RuntimeError, OSError, ValueError) as error:
+                text = str(error)
+        out.update(text)
+        out.remove_class("-empty")
 
     def compose(self) -> ComposeResult:
         try:
@@ -580,6 +654,20 @@ class JobsHomeScreen(ModalScreen):
                     id="jh-company-panel",
                     classes="jh-panel -hidden",
                 ),
+                Label("Alerts", classes="jh-section", id="jh-alerts-heading"),
+                Static(
+                    "Read job-alert emails from the senders you switch on. "
+                    "Each message must pass email authentication.",
+                    id="jh-alerts-note",
+                    markup=False,
+                ),
+                *self._alert_switches(),
+                Static(self._read_alert_last(), id="jh-alerts-last", markup=False),
+                Horizontal(
+                    Button("Mail rule…", id="jh-alerts-mail"),
+                    classes="jh-companies-actions",
+                ),
+                Static("", id="jh-alerts-mail-result", markup=False, classes="-empty"),
                 Label("Jobs", classes="jh-section", id="jh-jobs-heading"),
                 HorizontalGroup(
                     Label("Status", classes="jh-field-label"),
@@ -1275,6 +1363,8 @@ class JobsHomeScreen(ModalScreen):
             self._open_excel()
         elif button_id == "jh-jobs-check-run":
             self._run_check()
+        elif button_id == "jh-alerts-mail":
+            self._mail_rule()
         elif button_id == "jh-tracked":
             self.app.push_screen(TrackedJobsScreen())
         elif button_id == "jh-review-cv":

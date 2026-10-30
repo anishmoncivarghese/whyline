@@ -794,3 +794,54 @@ async def test_check_button_shows_the_cli_rows_and_the_screen_fits_80x24(
     monkeypatch.setattr(doctor, "check", lambda: rows)
     cli.main(["jobs", "doctor"])
     assert capsys.readouterr().out.splitlines() == shown.splitlines()
+
+
+async def test_alert_switches_save_through_the_same_function_as_the_cli() -> None:
+    from textual.widgets import Checkbox
+
+    from whyline.jobs import alerts
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        boxes = list(screen.query(".jh-alert-switch").results(Checkbox))
+        assert [str(b.label) for b in boxes] == list(alerts.DEFAULT_SENDERS)
+        assert not any(b.value for b in boxes)
+        boxes[1].value = True
+        await pilot.pause()
+        assert alerts.enabled_senders() == [alerts.DEFAULT_SENDERS[1]]
+
+    calls: list[tuple[str, bool]] = []
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = JobsHomeScreen(alert_set_fn=lambda a, on: calls.append((a, on)))
+        app.push_screen(screen)
+        await pilot.pause()
+        box = screen.query_one("#jh-alert-1", Checkbox)
+        assert box.value is True
+        box.value = False
+        await pilot.pause()
+        assert calls == [(alerts.DEFAULT_SENDERS[1], False)]
+
+
+async def test_alerts_section_shows_the_last_read_and_installs_the_mail_rule(
+    isolated_home: Path,
+) -> None:
+    written = isolated_home / "whyline-job-alerts.applescript"
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = JobsHomeScreen(
+            alert_last_fn=lambda: "Last alert read: 3 cards (2026-10-30).",
+            alert_mail_fn=lambda: written,
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+        last = _plain(screen.query_one("#jh-alerts-last", tui.Static).render())
+        assert last == "Last alert read: 3 cards (2026-10-30)."
+        screen.query_one("#jh-alerts-mail", tui.Button).press()
+        await pilot.pause()
+        result = _plain(screen.query_one("#jh-alerts-mail-result", tui.Static).render())
+        assert str(written) in result
+        assert "whyline-job-alerts.applescript" in result

@@ -19,6 +19,9 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 
+# Name and command of the Mail rule script that reads job-alert emails.
+ALERTS_MAIL_SCRIPT = ("job-alerts", ("jobs", "alert"))
+
 _LIST_KEYS = frozenset({"roles", "locations", "languages", "deal_breakers"})
 
 
@@ -201,6 +204,19 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     setp.add_argument("ref", help="Job uid or row number from `whyline jobs list`")
     setp.add_argument("status", choices=_tracker_statuses(), help="New status")
     setp.add_argument("--note", default=None, help="Replace the job's notes with TEXT")
+
+    alert = jobs_sub.add_parser(
+        "alert",
+        help="Read a saved job-alert email into the next fetch (runs no AI)",
+    )
+    alert.add_argument("file", help="Path to the saved .eml message")
+
+    alerts_p = jobs_sub.add_parser("alerts", help="Set up job-alert emails")
+    alerts_sub = alerts_p.add_subparsers(dest="jobs_alerts_command", required=True)
+    alerts_sub.add_parser(
+        "mail-script",
+        help="Install the Mail.app rule script that reads job-alert emails",
+    )
 
     jobs_sub.add_parser("doctor", help="Check the daily job shortlist is set up")
 
@@ -591,6 +607,36 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_alert(args: argparse.Namespace) -> int:
+    from whyline.jobs import alerts
+
+    try:
+        result = alerts.handle(args.file)
+    except (OSError, alerts.AlertError, sqlite3.Error) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(result.summary())
+    return EXIT_OK
+
+
+def _cmd_alerts(args: argparse.Namespace) -> int:
+    from whyline.agents import mail
+
+    if getattr(args, "jobs_alerts_command", None) != "mail-script":
+        print("usage: whyline jobs alerts mail-script", file=sys.stderr)
+        return EXIT_USAGE
+    if not mail.supported():
+        print(mail.NEEDS_MACOS, file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        path = mail.install(*ALERTS_MAIL_SCRIPT)
+    except (RuntimeError, OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(path.as_posix())
+    return EXIT_OK
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     from whyline.jobs import tracker
 
@@ -675,6 +721,8 @@ _COMMANDS = {
     "list": _cmd_list,
     "set": _cmd_set,
     "excel": _cmd_excel,
+    "alert": _cmd_alert,
+    "alerts": _cmd_alerts,
     "doctor": _cmd_doctor,
 }
 
@@ -683,6 +731,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile|review|companies|fetch|list|set|excel|doctor", file=sys.stderr)
+        print("usage: whyline jobs profile|review|companies|fetch|alert|alerts|list|set|excel|doctor", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)

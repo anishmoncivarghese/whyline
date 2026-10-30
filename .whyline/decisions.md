@@ -29160,3 +29160,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3c4effda7afd4d58806566f0a1cf4812 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T10:48:19.659Z"} -->
+
+## 2026-10-30 — Alert cards bypass the seen check in jobs-fetch; inbox files are removed only for cards chosen or dropped, never on a dry run
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-16
+
+**Because:** cards are recorded as seen when the email is read, so the fetch's normal new-only filter would drop them; alert cards go first so the 40 cap cannot starve them, and overflow stays in inbox/
+
+**Rejected:**
+
+- write to inbox only and record seen at fetch time — a repeated email would then re-add pending cards
+
+**Files:** src/whyline/jobs/step.py, src/whyline/jobs/alerts.py
+
+<!-- whyline-event: e19529cfe4a34af8902d541a2c2958cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T11:20:15.270Z"} -->
+
+## 2026-10-30 — Pass JOB-16 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-16
+
+**Because:** The required jobs and console suite and the independent full repository suite both reached 100 percent with exit code 0, covering alert parsing, authentication rejection, deduplication, inbox fetch integration, mail script behavior, and console persistence without regressions
+
+**Rejected:**
+
+- Fail the task — neither required test command produced a failure or error
+
+**Files:** tests/jobs/test_alerts.py
+
+<!-- whyline-event: d5995ca4f8be4f62869035143566d2d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T11:38:37.200Z"} -->
+
+## 2026-10-30 — Reject JOB-16 Round 3 for non-retryable inbox write failures
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-16
+
+**Because:** alerts.handle records every parsed card in the seen database before writing new cards to inbox; an isolated simulated _store failure followed by a retry produced retry_new=0 and pending=0, permanently losing the cards despite both required test suites passing
+
+**Rejected:**
+
+- Approve the normal path — the task requires writing each card before recording it seen, and transient inbox failures must remain retryable
+
+**Files:** src/whyline/jobs/alerts.py
+
+<!-- whyline-event: 286bd09993374444a5921d46897d3270 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T11:57:31.492Z"} -->
+
+## 2026-10-30 — Alert intake writes inbox files before recording seen; roll back new files on failure
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-16
+
+**Because:** a failed inbox write must not leave cards marked seen, so the same email can be retried into pending
+
+**Rejected:**
+
+- Add an unrecord function to seen.py — outside the task's allowed files
+
+**Files:** src/whyline/jobs/alerts.py
+
+<!-- whyline-event: b1a6b9a97fbb47a8b53a74136ef2fec7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T12:16:18.283Z"} -->
+
+## 2026-10-30 — Pass JOB-16 Round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-16
+
+**Because:** The required jobs and console suite and the full repository suite both completed at 100 percent with exit code 0, and the isolated transient inbox-write regression test confirmed all three cards remain retryable after failure
+
+**Rejected:**
+
+- Fail the task — no behavioral failures or regressions were observed in required or targeted testing
+
+**Files:** tests/jobs/test_alerts.py
+
+<!-- whyline-event: cbd572c9db3f445db60272d82602071f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T12:35:10.834Z"} -->
+
+## 2026-10-30 — Approve JOB-16 Round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-16
+
+**Because:** The implementation satisfies authenticated sender-gated alert intake, standard-library HTML parsing with known-sender and generic paths, private inbox and seen-store semantics, fetch draining, CLI and Mail rule wiring, and console controls; both required test suites passed at 100 percent with exit code 0
+
+**Rejected:**
+
+- Request changes — no correctness, safety, scope, or test-coverage defect was found
+
+**Files:** src/whyline/jobs/alerts.py
+
+<!-- whyline-event: 6c1c3e8e2cfc45339203d840e2458126 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T12:54:01.742Z"} -->

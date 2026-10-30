@@ -3,6 +3,7 @@ which saves the message as text and calls `whyline agents trigger`."""
 from __future__ import annotations
 
 import email
+import re
 from email import policy
 from email.message import EmailMessage, Message
 import shlex
@@ -55,7 +56,7 @@ _TEMPLATE = '''using terms from application "Mail"
         end try
         error errMsg number errNum
       end try
-      do shell script "WHYLINE_BIN --file " & quoted form of tmp & " >/dev/null 2>&1 &"
+      do shell script "WHYLINE_BIN" & quoted form of tmp & " >/dev/null 2>&1 &"
     end repeat
   end perform mail action with messages
 end using terms from
@@ -85,21 +86,28 @@ def _shell_token(value: str) -> str:
     return shlex.quote(value).replace("\\", "\\\\").replace('"', '\\"')
 
 
-def script_text(agent_name: str, whyline_path: str) -> str:
+def script_text(
+    agent_name: str, whyline_path: str, command: tuple[str, ...] | None = None
+) -> str:
     # The name becomes both a filename and an unquoted token in the shell
     # command. The definition grammar excludes separators and metacharacters.
     # The executable is whatever shutil.which returned, spaces included.
     if definitions.NAME.match(agent_name) is None:
         raise ValueError("name must be lower-case letters, digits and -, at most 40")
-    if agent_name in ("idea", "ideas", "inbox", "idea-inbox", "email"):
-        command = f"{_shell_token(whyline_path)} idea email intake"
+    if command is not None:
+        # Fixed words such as ("jobs", "alert"); the saved file is the last argument.
+        if not command or any(re.fullmatch(r"[a-z][a-z-]*", word) is None for word in command):
+            raise ValueError("command must be lower-case words")
+        run = f"{_shell_token(whyline_path)} {' '.join(command)} "
+    elif agent_name in ("idea", "ideas", "inbox", "idea-inbox", "email"):
+        run = f"{_shell_token(whyline_path)} idea email intake --file "
     else:
-        command = f"{_shell_token(whyline_path)} agents trigger {agent_name}"
-    return _TEMPLATE.replace("WHYLINE_BIN", command)
+        run = f"{_shell_token(whyline_path)} agents trigger {agent_name} --file "
+    return _TEMPLATE.replace("WHYLINE_BIN", run)
 
 
-def install(agent_name: str) -> Path:
-    text = script_text(agent_name, _whyline_path())
+def install(agent_name: str, command: tuple[str, ...] | None = None) -> Path:
+    text = script_text(agent_name, _whyline_path(), command)
     folder = Path.home() / "Library" / "Application Scripts" / "com.apple.mail"
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"whyline-{agent_name}.applescript"

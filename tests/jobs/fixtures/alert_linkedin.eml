@@ -1,0 +1,27 @@
+From: LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>
+To: me@example.com
+Subject: 3 new jobs for software engineer
+Message-ID: <alert-1@linkedin.com>
+Authentication-Results: mx.google.com;
+ dkim=pass header.i=@linkedin.com header.d=linkedin.com;
+ spf=pass smtp.mailfrom=linkedin.com;
+ dmarc=pass (p=REJECT) header.from=linkedin.com
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html><head><style>a {color: blue}</style></head><body>
+<p>Your job alert for software engineer</p>
+<table>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/3901?trackingId=abc&amp;refId=1">Senior Python Engineer</a></td></tr>
+<tr><td>Acme Corp</td></tr>
+<tr><td>Berlin, Germany</td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/3901?trackingId=abc&amp;refId=1">View job</a></td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/3902?trackingId=def">Backend Developer</a></td></tr>
+<tr><td>Globex · Remote</td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/3903?trackingId=ghi">Data Engineer</a></td></tr>
+<tr><td>Initech</td></tr>
+<tr><td>Amsterdam, Netherlands</td></tr>
+</table>
+<p><a href="https://www.linkedin.com/comm/jobs/search?keywords=x">See all jobs</a></p>
+<p><a href="https://www.linkedin.com/e/unsubscribe">Unsubscribe</a></p>
+</body></html>
