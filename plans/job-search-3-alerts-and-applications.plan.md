@@ -38,7 +38,7 @@ Rules every task keeps (the same rules as parts 1 and 2):
   - console switches save through the same function
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-17: Full descriptions for alert jobs from the company's own board
+- [x] JOB-17: Full descriptions for alert jobs from the company's own board
   Edit `src/whyline/jobs/step.py`, `src/whyline/jobs/fetch.py` and their tests only.
   For an alert posting whose company matches an accepted company with a known board (case-insensitive, ignoring "Inc", "Ltd", "GmbH" and the like), look for a board job with the same title (normalised, fuzzy match ≥ 0.85 with difflib). If one is found, replace the alert posting with the board posting and keep both uids in the seen store.
   An alert link on a known board host is fetched directly through JOB-9. LinkedIn and other non-board links are never fetched. The agent gets the alert card text, with the note `Only the alert summary is available for this job.`
