@@ -85,7 +85,7 @@ Rules every task keeps (the same rules as parts 1 and 2):
   - the console button calls `apply.draft`
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-20: Review the draft with a second provider
+- [x] JOB-20: Review the draft with a second provider
   Edit `src/whyline/jobs/apply.py`, `src/whyline/agents/templates/job-apply/` (add `review.md` instructions) and `tests/jobs/test_apply.py` only.
   After the draft:
   1. Run a review turn on a different enabled, unattended-cleared provider: the first backup that is not the drafter. If there is none, skip with the note `No second provider for review`. The review gets the posting, the CV and the draft as sources, and returns numbered critiques: claims the CV does not support, missing must-haves, tone, and length.
