@@ -310,6 +310,7 @@ class JobsHomeScreen(ModalScreen):
         alert_last_fn: Callable[[], str] | None = None,
         alert_mail_fn: Callable[[], Path] | None = None,
         draft_fn: Callable[..., Any] | None = None,
+        interview_fn: Callable[..., Any] | None = None,
     ) -> None:
         super().__init__()
         self._status_fn = status_fn
@@ -340,6 +341,7 @@ class JobsHomeScreen(ModalScreen):
         self._alert_last_fn = alert_last_fn
         self._alert_mail_fn = alert_mail_fn
         self._draft_fn = draft_fn
+        self._interview_fn = interview_fn
         self._draft_folder: Path | None = None
         self._drafting = False
         self._draft_token: object | None = None
@@ -697,6 +699,7 @@ class JobsHomeScreen(ModalScreen):
                 ),
                 Horizontal(
                     Button("Draft application", id="jh-jobs-draft", variant="primary"),
+                    Button("Interview prep", id="jh-jobs-interview"),
                     Button("Open folder", id="jh-jobs-open-folder", disabled=True),
                     classes="jh-jobs-actions",
                 ),
@@ -1293,7 +1296,7 @@ class JobsHomeScreen(ModalScreen):
         prog.update(message)
         prog.set_class(not message, "-empty")
 
-    def _start_draft(self) -> None:
+    def _start_draft(self, interview: bool = False) -> None:
         job = self._selected_job()
         if job is None:
             self._set_error("Select a job first.")
@@ -1302,13 +1305,18 @@ class JobsHomeScreen(ModalScreen):
             return
         self._set_error("")
         self._set_status("")
-        fn = self._draft_fn if self._draft_fn is not None else apply.draft
+        if interview:
+            fn = self._interview_fn if self._interview_fn is not None else apply.interview
+            label = f"Preparing {job.get('company') or 'interview'}"
+        else:
+            fn = self._draft_fn if self._draft_fn is not None else apply.draft
+            label = f"Drafting {job.get('company') or 'application'}"
         ref = str(job.get("uid") or job.get("row"))
-        label = f"Drafting {job.get('company') or 'application'}"
         token = object()
         self._draft_token = token
         self._drafting = True
         self.query_one("#jh-jobs-draft", Button).disabled = True
+        self.query_one("#jh-jobs-interview", Button).disabled = True
         self.query_one("#jh-jobs-open-folder", Button).disabled = True
         self._draft_folder = None
         self._set_draft_progress(f"{label}…")
@@ -1350,6 +1358,7 @@ class JobsHomeScreen(ModalScreen):
             return
         self._drafting = False
         self.query_one("#jh-jobs-draft", Button).disabled = False
+        self.query_one("#jh-jobs-interview", Button).disabled = False
         self._set_draft_progress("")
         self._refresh_jobs()
         if error:
@@ -1466,6 +1475,8 @@ class JobsHomeScreen(ModalScreen):
             self._open_excel()
         elif button_id == "jh-jobs-draft":
             self._start_draft()
+        elif button_id == "jh-jobs-interview":
+            self._start_draft(interview=True)
         elif button_id == "jh-jobs-open-folder":
             self._open_draft_folder()
         elif button_id == "jh-jobs-check-run":

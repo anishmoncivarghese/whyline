@@ -29,6 +29,12 @@ REVIEW_INSTRUCTIONS = "review.md"
 NO_REVIEWER_NOTE = "No second provider for review"
 DRAFT_NOTE = "draft ready"
 GAPS_HEADING = "gaps (not added)"
+INTERVIEW_TEMPLATE = "job-interview"
+INTERVIEW_AGENT = "job-interview"
+INTERVIEW_STATUS = "interview"
+INTERVIEW_FILE = "interview.md"
+INTERVIEW_DOCX_FILE = "interview.docx"
+INTERVIEW_HEADINGS = ("likely questions", "questions to ask", "gaps to prepare")
 RUNNABLE_CLIS = review.RUNNABLE_CLIS
 _REPORTED_OUTCOMES = ("succeeded", "succeeded_with_denials")
 
@@ -108,16 +114,16 @@ def _write_private(target: Path, text: str) -> None:
         raise
 
 
-def _find_or_create_agent() -> d.AgentDef:
+def _find_or_create_agent(template: str = TEMPLATE_NAME, name: str = AGENT_NAME) -> d.AgentDef:
     configured = paths.configured_home()
     default_jobs = Path.home() / ".whyline" / "jobs"
     workdir = "~/.whyline/jobs" if configured == default_jobs else str(configured)
     for item in d.discover(None):
-        if isinstance(item, d.AgentDef) and item.kind == "personal" and item.name == AGENT_NAME:
+        if isinstance(item, d.AgentDef) and item.kind == "personal" and item.name == name:
             return item
-        if isinstance(item, d.Broken) and item.kind == "personal" and item.path.stem == AGENT_NAME:
+        if isinstance(item, d.Broken) and item.kind == "personal" and item.path.stem == name:
             raise ApplyError(f"Agent definition {item.path.name} is invalid: {item.error}")
-    return templates.create(TEMPLATE_NAME, AGENT_NAME, workdir)
+    return templates.create(template, name, workdir)
 
 
 def draft(
@@ -219,6 +225,100 @@ def draft(
         )
     except (ApplyError, OSError) as error:
         return replace(result, review_note=f"Review failed: {error}")
+
+
+def interview(
+    uid: str,
+    cli: str | None = None,
+    *,
+    progress: Callable[[str], None] | None = None,
+    run_fn: Any = None,
+    http: Callable[..., Any] | None = None,
+) -> DraftResult:
+    """Prepare for the interview of the tracked job `uid` (or row number).
+
+    Writes interview.md and interview.docx beside the posting in the application folder.
+    """
+    row = _find_row(uid)
+    if row["status"] != INTERVIEW_STATUS:
+        raise ApplyError(
+            f"'{row['company']} — {row['title']}' is {row['status']}, not {INTERVIEW_STATUS}. "
+            f"Set it to {INTERVIEW_STATUS} before preparing for an interview."
+        )
+    enabled = review.enabled_providers()
+    chosen = str(cli).strip() if cli is not None else None
+    if chosen is not None:
+        if chosen not in d.CLIS or not capabilities.can_run(chosen):
+            raise ApplyError(
+                f"Unsupported provider '{chosen}'. Choose one of: {', '.join(RUNNABLE_CLIS)}."
+            )
+        if chosen not in enabled:
+            return DraftResult(
+                ok=False, outcome="all_unavailable",
+                reason=f"{chosen}: Enable {chosen} in Settings or choose another provider.",
+            )
+    elif not enabled:
+        return DraftResult(
+            ok=False, outcome="all_unavailable",
+            reason="No enabled AI provider can run agents. Enable Claude, Codex, or Grok in Settings.",
+        )
+
+    try:
+        jobs_dir = paths.home()
+        folder = folder_for(row)
+        folder.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt":
+            folder.chmod(0o700)
+        _write_private(folder / POSTING_FILE, _posting_markdown(row, http))
+        defn = _find_or_create_agent(INTERVIEW_TEMPLATE, INTERVIEW_AGENT)
+    except (ApplyError, d.DefinitionError, OSError) as error:
+        return DraftResult(ok=False, outcome="failed", reason=str(error))
+
+    sources = (*defn.sources, (folder / POSTING_FILE).relative_to(jobs_dir).as_posix())
+    if chosen is not None:
+        run_defn = replace(defn, root=jobs_dir, sources=sources, runner=chosen, backup=())
+    else:
+        preferred = [c for c in (defn.runner, *defn.backup) if c in enabled]
+        order = preferred if preferred else list(enabled)
+        run_defn = replace(
+            defn, root=jobs_dir, sources=sources, runner=order[0], backup=tuple(order[1:])
+        )
+
+    kwargs: dict[str, Any] = {"source": "manual"}
+    if progress is not None:
+        kwargs["progress"] = progress
+    if run_fn is not None:
+        kwargs["run_fn"] = run_fn
+    record = runner.execute_once(run_defn, **kwargs)
+    outcome = getattr(record, "outcome", "") or "failed"
+    reason = getattr(record, "reason", "") or ""
+    base = {
+        "cli": getattr(record, "cli", "") or "",
+        "run_id": getattr(record, "run_id", "") or "",
+        "folder": folder,
+    }
+    if outcome not in _REPORTED_OUTCOMES:
+        return DraftResult(ok=False, outcome=outcome, reason=reason, **base)
+
+    answer = review._read_run_answer(record).replace("\r\n", "\n").strip()
+    if not all(h in answer.lower() for h in INTERVIEW_HEADINGS):
+        return DraftResult(
+            ok=False, outcome="malformed_answer",
+            reason="The agent's answer is missing 'Likely questions', 'Questions to ask' or "
+            "'Gaps to prepare'.", **base,
+        )
+
+    md_path = folder / INTERVIEW_FILE
+    try:
+        _write_private(md_path, answer + "\n")
+        docx_path = convert.to_docx(md_path, folder / INTERVIEW_DOCX_FILE)
+        if docx_path is not None and os.name != "nt":
+            os.chmod(docx_path, 0o600)
+    except (ApplyError, OSError) as error:
+        return DraftResult(ok=False, outcome="failed", reason=str(error), **base)
+    return DraftResult(
+        ok=True, outcome=outcome, reason=reason, draft_path=md_path, docx_path=docx_path, **base
+    )
 
 
 def pick_reviewer(

@@ -29435,3 +29435,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c06516339098442090adb72d58f3af6b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T15:30:11.664Z"} -->
+
+## 2026-10-30 — interview() refuses non-interview jobs by raising ApplyError; console button always enabled and surfaces that message
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-21
+
+**Because:** Reuses the draft flow and its error display; one refusal path shared by CLI and console, no selection-tracking state to keep in sync
+
+**Rejected:**
+
+- Disable the button unless the selected row is in interview status — needs cursor-change handling and a disabled button gives no explanation
+
+**Files:** src/whyline/jobs/apply.py
+
+<!-- whyline-event: 37dfd7b6329e44bcb7d8ec6ed12042c6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T20:05:47.876Z"} -->
+
+## 2026-10-30 — Pass JOB-21 round 2 behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-21
+
+**Because:** The required jobs and console suite and the full repository suite both exited 0; focused coverage verifies interview markdown and DOCX writes, non-interview refusal without invoking the agent, UID and row lookup, CLI behavior, and the console path calling apply.interview
+
+**Files:** tests/jobs/test_interview.py
+
+<!-- whyline-event: 526dbe00f2d24d5d98a2073e2a63db6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T20:24:19.978Z"} -->
+
+## 2026-10-30 — Approve JOB-21 round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-21
+
+**Because:** The implementation meets the interview-prep contract across the agent template, application service, CLI, and console; focused tests genuinely cover Markdown and DOCX output, CV-only STAR instructions, status refusal, UID and row lookup, and shared console behavior; both required independent test commands completed without failures
+
+**Files:** tests/jobs/test_interview.py
+
+<!-- whyline-event: 43e503f00c8f4aada3d9ba345fed3798 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T20:43:01.004Z"} -->
