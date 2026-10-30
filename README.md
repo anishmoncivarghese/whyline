@@ -291,8 +291,8 @@ with one. Brainstorms and cross-model review get better with each plan you
 add.
 
 **Can it run while I'm away?** Yes, on a Mac that is on, logged in and awake.
-A scheduled run that falls while the Mac sleeps is recorded as missed, and
-the next one runs on time. Telegram keeps undelivered messages for about a
+After the Mac wakes or you log in, the latest scheduled run you missed runs
+once if it is within 24 hours; older missed runs are recorded as missed. Telegram keeps undelivered messages for about a
 day, so the Inbox catches up when the Mac wakes.
 
 **Does it change my code without asking?** Only Relay writes, only after you
@@ -303,6 +303,7 @@ start it, and it commits only work that passed review. Releases stay with you.
 - `whyline --help`, `whyline relay --help`, `whyline agents --help`,
   `whyline idea --help`
 - [Idea Inbox setup](docs/idea-inbox.md) ·
+  [Job search](docs/job-search.md) ·
   [Attachments](docs/attachments-capabilities.md) ·
   [Recording](docs/recording.md) ·
   [Measurements](docs/measurement.md)

@@ -29478,3 +29478,86 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 43e503f00c8f4aada3d9ba345fed3798 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T20:43:01.004Z"} -->
+
+## 2026-10-30 — Fail JOB-22 because the guide contradicts scheduler catch-up and retained agent run history
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-22
+
+**Because:** docs/job-search.md says no sleeping-time run is queued, but schedule.plan_tick and the Scheduler console run the latest occurrence within 24 hours after wake/login; it also says deleting ~/.whyline/jobs and agent definitions leaves nothing elsewhere, but agent deletion does not remove ~/.whyline/agents/runs, whose job-agent run folders retain fetched postings, outputs, and logs. The full test suite reached 100% with no failures and one skip.
+
+**Test:** uv run pytest -q: passed (100%, one skip)
+
+**Files:** docs/job-search.md
+
+<!-- whyline-event: 9f4e115aeb194eb5aea4fd8fbd2d1267 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T21:03:38.662Z"} -->
+
+## 2026-10-30 — Fail JOB-22 because README still contradicts scheduler catch-up
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-22
+
+**Because:** README.md says a run during Mac sleep is recorded as missed and only the next scheduled run executes, but schedule.plan_tick and docs/job-search.md correctly say the latest missed occurrence runs once after wake or login when it is within 24 hours. The required full suite reached 100% with no failures and one skip; git diff --check was clean.
+
+**Rejected:**
+
+- Pass based on the new guide alone — the task also edits README, whose existing sleep FAQ remains behaviorally false
+
+**Files:** README.md
+
+<!-- whyline-event: cc2961023e444483b70be511661795ef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T21:24:05.987Z"} -->
+
+## 2026-10-30 — Fail JOB-22 because the privacy and delivery disclosures do not match the job workflows
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-22
+
+**Because:** docs/job-search.md omits profile.md and preferences.toml from application and interview provider inputs, omits the CV-review and company-suggestion inputs entirely, and says drafted text can go to an email or Telegram delivery even though the console draft and interview actions call apply.draft/apply.interview directly without delivery; it also presents second-provider review as guaranteed although apply.draft skips it when no distinct enabled reviewer is available. The full suite reached 100% with no failures and one skip, and git diff --check was clean.
+
+**Rejected:**
+
+- Pass because the sleep and deletion corrections are accurate — the task explicitly requires an accurate account of what goes to AI providers, email and Telegram
+
+**Files:** docs/job-search.md
+
+<!-- whyline-event: afa010df84e04c318ebb2010440ca1bd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T21:44:55.091Z"} -->
+
+## 2026-10-30 — Pass JOB-22 Round 8 because the job-search guide matches the implemented workflows
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-22
+
+**Because:** The guide and README accurately cover console setup, storage and retained run history, per-workflow AI inputs, shortlist-only email and Telegram delivery, allowed sources and alert-email handling, robots and terms constraints, whyline-side fetching, 24-hour scheduler catch-up, and complete job-data removal; uv run pytest -q reached 100% with one skip and git diff --check was clean.
+
+**Rejected:**
+
+- Fail for incomplete provider disclosure — the revised guide now identifies the inputs for CV review, company suggestions, scoring, drafting and interview prep, and correctly makes second-provider review conditional.
+
+**Files:** docs/job-search.md, README.md
+
+<!-- whyline-event: 4285ad30718847c3830bc6a218b44ad2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T22:07:36.485Z"} -->
+
+## 2026-10-30 — Approve JOB-22 Round 9 because the job-search documentation matches shipped behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-22
+
+**Because:** The guide accurately documents console-only setup, local and retained-run storage, per-workflow AI inputs, shortlist-only email and Telegram delivery, allowlisted sources and authenticated alert emails, robots and terms constraints, whyline-side fetching, 24-hour scheduler catch-up, and complete job-data removal; the documentation-only exemption applies to adding tests, while uv run pytest -q completed at 100% with one skip and git diff --check was clean.
+
+**Rejected:**
+
+- Request changes for the timestamped job-run folder wording — each run ID includes the job agent name, so the cleanup instruction is actionable and does not misstate retained data.
+
+**Files:** docs/job-search.md, README.md
+
+<!-- whyline-event: 543ab3b382aa420185bdd79c8862e653 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T22:18:27.583Z"} -->
