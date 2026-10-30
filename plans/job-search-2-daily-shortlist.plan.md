@@ -129,7 +129,7 @@ Rules every task keeps (the same rules as part 1):
   - the xlsx opens with zipfile and has the rows
   Verify with `uv run pytest -q tests/jobs tests/agents` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-15: The Jobs tracker screen and the setup check
+- [x] JOB-15: The Jobs tracker screen and the setup check
   Edit `src/whyline/console/jobs_screens.py`, `src/whyline/console/tui.py` (only if needed), `tests/console/test_jobs_screens.py`, `src/whyline/jobs/cli.py` and `tests/jobs/test_cli.py` only. Add `src/whyline/jobs/doctor.py` and `tests/jobs/test_doctor.py`.
   The JobsHomeScreen gets a **Jobs** section:
   - the tracker table sorted by score, with a status filter
