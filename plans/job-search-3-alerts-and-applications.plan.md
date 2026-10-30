@@ -49,7 +49,7 @@ Rules every task keeps (the same rules as parts 1 and 2):
   - a board link is fetched
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-18: Careers pages through schema.org JobPosting
+- [x] JOB-18: Careers pages through schema.org JobPosting
   Add `src/whyline/jobs/careers_page.py`, `tests/jobs/test_careers_page.py` and HTML fixtures, and edit `src/whyline/jobs/fetch.py` (dispatch for `ats = "careers_page"`) only.
   For an accepted company with `careers_page` and an https careers_url:
   1. Check robots.txt with `urllib.robotparser`. If the page is disallowed, stop and report `robots.txt disallows this page`.
