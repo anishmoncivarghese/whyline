@@ -445,3 +445,54 @@ Rules every task keeps:
   - a hint when the Mac sleeps at the brief time: set a scheduled wake in System Settings → Battery/Energy → Schedule, or `sudo pmset repeat wakeorpoweron MTWRF <time>`. This is the user's choice, and whyline never runs it.
   `docs/assistant.md` covers every verb with an example, the approval rules, the email provider check and Mail rule steps, memory, reminders, the morning brief, and the limits: Mac asleep, Telegram's 24-hour retention, provider terms, personal data sent to the provider and Telegram, and no sending to other people or calendar edits. Console steps come first and the CLI comes second.
   Run `git diff --check` and `uv run pytest -q`. If a failure needs an application-code change outside this task's files, leave the task unapproved with the exact failing test and request a new task.
+
+## Phase 6: scheduled runs can see the Mac, and say so when they can't
+
+Why: on 2026-10-30 the first scheduled brief failed with Calendar denied. The console check had said access was fine, because it checked the terminal, while the scheduler runs whyline's own `python3.11` under launchd, which macOS treats as a separate app. The alert went out, but it blamed "the terminal app" and pointed at the wrong fix.
+
+- [ ] ASST-24: Check and grant access as scheduled runs see it
+  Edit `src/whyline/ideas/brief.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_brief.py`, `tests/ideas/test_cli.py`, and `tests/console/test_assistant_screen.py` only.
+  - Add `brief.background_access(*, grant=False, run=subprocess.run, launchctl=…)`. It runs a small probe as a one-off launchd job (`launchctl submit` with a unique label), using the same Python program the agents scheduler plist runs, so macOS answers for scheduled runs, not for the console's terminal.
+    - The probe reports Calendar and Reminders through `access_status.js`, and Mail as allowed, denied, or not running. With `grant=True` it requests Calendar and Reminders access and asks Mail, so macOS shows its prompt naming the scheduler's app while the user is at the Mac.
+    - It writes JSON to a 0600 file in a fresh 0700 folder under the inbox home, waits at most 60 seconds for it, and always runs `launchctl remove` on its label, even after a timeout or error. `launchctl submit` restarts a job that exits, so the probe must finish once and then idle until removed. It never runs more than once per call.
+    - It returns the app it checked (the program path and its short name, such as `python3.11`) with each status in words.
+  - `check()` and the console's Morning brief section show both rows: "When you run it here" (the existing check) and "Scheduled runs (<app>)". A row that differs says which System Settings list to open and names the app to turn on.
+  - The console adds `Grant access for scheduled runs`, which calls `background_access(grant=True)`. Add `whyline idea brief access [--scheduled] [--grant]` calling the same function.
+  - Off macOS, both rows say "macOS only" and nothing is submitted.
+  Tests (inject `launchctl` and the probe result; never call real launchctl or osascript):
+  - the submitted job uses the scheduler's program and a unique label
+  - remove runs after success, timeout and error
+  - grant passes the request flag
+  - the two rows differ when the answers differ
+  - the CLI and console share `background_access`
+  Verify with `uv run pytest -q tests/ideas/test_brief.py tests/ideas/test_cli.py tests/console/test_assistant_screen.py`. Change nothing else.
+
+- [ ] ASST-25: Denial reasons name the app that was refused
+  Edit `src/whyline/ideas/brief.py`, `src/whyline/agents/runner.py`, `tests/ideas/test_brief.py`, and `tests/agents/test_runner.py` only.
+  - `brief.collect` takes `scheduled: bool`. The runner passes `True` when the run's source is `schedule` (or any source started by `whyline agents tick`).
+  - For a scheduled run, an access denial reads: `macOS blocked <App> for whyline's scheduled runs (<short name>, <path>). Open whyline console → Assistant → Morning brief → Grant access for scheduled runs, or turn on <short name> in System Settings → Privacy & Security → <list>.` For Mail, the list is Automation → Mail.
+  - Runs started from a terminal or the console keep today's wording.
+  - This text becomes the run's reason, so the existing failure alert carries it unchanged.
+  Tests:
+  - scheduled and interactive wording for Calendar, Reminders and Mail
+  - the runner passes `scheduled` from the run source
+  - the reason reaches `record.reason`
+  Verify with the named focused tests. Change nothing else.
+
+- [ ] ASST-26: Alert when a scheduled run never starts
+  Edit `src/whyline/agents/deliver.py`, `src/whyline/agents/tick.py`, `src/whyline/agents/state.py`, `tests/agents/test_deliver.py`, and `tests/agents/test_tick.py` only.
+  Today an agent with `on_failure = "alert"` alerts on `failed`, `timed_out` and `all_unavailable`, but a run that stops before it starts sends nothing.
+  - `missed` and `skipped` outcomes also send the failure alert when `on_failure = "alert"`. The reason says what happened and the fix, for example: `missed the 09:00 run: the Mac was asleep or the scheduler was off. The next run is <time>.` `nothing_new` stays silent.
+  - When a tick fails to start a due agent (an exception while preparing or spawning it, such as a store schema error), the tick still records the occurrence and sends one alert through that agent's delivery: `<label> could not start: <one-line error>. Run whyline doctor or open the console's Check.` Send at most one such alert per agent per occurrence, recorded in `state.py`, so a tick every 2 minutes does not repeat it.
+  - Alerts go to the same email and Telegram targets as results. A failed alert is logged and never raises out of the tick.
+  Tests:
+  - missed and skipped alert when `on_failure = "alert"` and stay quiet when it is not
+  - `nothing_new` stays quiet
+  - a start error sends one alert per occurrence across repeated ticks
+  - an alert send error does not stop other due agents
+  Verify with the named focused tests. Change nothing else.
+
+- [ ] ASST-27: Scheduled access documentation and full check
+  Edit `docs/assistant.md` only.
+  Add a "Scheduled runs need their own permission" section: why the terminal and scheduled runs are different apps to macOS, the console's `Grant access for scheduled runs` first and `whyline idea brief access --scheduled --grant` second, what the failure alert looks like, and that missed runs now alert.
+  Run `git diff --check` and `uv run pytest -q`. If a failure needs an application-code change, leave the task unapproved with the exact failing test and request a new task.
