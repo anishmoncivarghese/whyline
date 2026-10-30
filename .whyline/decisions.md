@@ -29091,3 +29091,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c48657da1dcf4c5f90f9e89c805d12ce -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T07:13:21.574Z"} -->
+
+## 2026-10-30 — Doctor treats scheduler and delivery as warn, the other five checks as fail
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-15
+
+**Because:** The agent can still be run by hand without a scheduler or delivery; a missing CV, profile, board, agent or runner stops any run
+
+**Rejected:**
+
+- all rows fail — a manual-only setup would exit 1 for no reason
+
+**Files:** src/whyline/jobs/doctor.py
+
+<!-- whyline-event: c3d16e8a8bd844049f527f60526f5fe6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T07:34:32.696Z"} -->
+
+## 2026-10-30 — Pass JOB-15 round 2 behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-15
+
+**Because:** The mandated jobs and console suite exited 0, and the full repository suite exited 0 with one skip and no failures, covering the Jobs tracker screen actions, doctor rows, CLI/console parity, and 80x24 layout tests
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was reproduced
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/doctor.py, src/whyline/jobs/cli.py
+
+<!-- whyline-event: c49246cd663743f8b9231a9b90d28fc6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T07:53:11.866Z"} -->
+
+## 2026-10-30 — Approve JOB-15 round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-15
+
+**Because:** The scoped diff implements the score-sorted filtered Jobs section, tracker-backed status/note/Excel actions, shared seven-row doctor output, CLI/console parity, and 80x24 coverage; both required plain pytest commands exited 0 and no safety or correctness defect remains
+
+**Rejected:**
+
+- Request changes — no actionable defect was found in the implementation or coverage
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/doctor.py, src/whyline/jobs/cli.py
+
+<!-- whyline-event: cab95d78af424037a44b71fca4eef2e2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T08:12:17.273Z"} -->

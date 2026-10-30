@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.jobs import companies, profile, review, tracker
+from whyline.jobs import companies, doctor, profile, review, tracker
 from whyline.jobs.cli import (
     format_cv_status,
     format_list_preference,
@@ -250,6 +251,17 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen .jh-companies-actions Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen #jh-company-name { width: 100%; }
     JobsHomeScreen #jh-company-url { width: 100%; }
+    JobsHomeScreen #jh-jobs-heading { margin-top: 1; }
+    JobsHomeScreen #jh-jobs-filter { width: 24; }
+    JobsHomeScreen #jh-jobs-empty { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-jobs-empty.-empty { display: none; }
+    JobsHomeScreen #jh-jobs-table { width: 100%; height: auto; min-height: 3; max-height: 7; margin-top: 1; }
+    JobsHomeScreen .jh-jobs-actions { height: auto; margin-top: 1; }
+    JobsHomeScreen .jh-jobs-actions Button { min-width: 8; width: auto; margin-right: 1; }
+    JobsHomeScreen #jh-jobs-status-select { width: 24; }
+    JobsHomeScreen #jh-jobs-note { width: 100%; }
+    JobsHomeScreen #jh-jobs-check { width: 100%; height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-jobs-check.-empty { display: none; }
     JobsHomeScreen #jh-error { height: auto; max-height: 3; color: $error; }
     JobsHomeScreen #jh-error.-empty { display: none; }
     JobsHomeScreen #jh-status { height: auto; max-height: 2; color: $success; }
@@ -278,6 +290,12 @@ class JobsHomeScreen(ModalScreen):
         companies_accept_fn: Callable[[str], Any] | None = None,
         companies_remove_fn: Callable[[str], Any] | None = None,
         fetch_fn: Callable[..., Any] | None = None,
+        jobs_list_fn: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
+        jobs_set_fn: Callable[..., Any] | None = None,
+        jobs_export_fn: Callable[[], Path] | None = None,
+        open_link_fn: Callable[[str], Any] | None = None,
+        open_file_fn: Callable[[Path], str] | None = None,
+        doctor_fn: Callable[[], Sequence[doctor.Row]] | None = None,
     ) -> None:
         super().__init__()
         self._status_fn = status_fn
@@ -297,6 +315,14 @@ class JobsHomeScreen(ModalScreen):
         self._companies_accept_fn = companies_accept_fn
         self._companies_remove_fn = companies_remove_fn
         self._fetch_fn = fetch_fn
+        self._jobs_list_fn = jobs_list_fn
+        self._jobs_set_fn = jobs_set_fn
+        self._jobs_export_fn = jobs_export_fn
+        self._open_link_fn = open_link_fn
+        self._open_file_fn = open_file_fn
+        self._doctor_fn = doctor_fn
+        self._job_rows: list[Mapping[str, Any]] = []
+        self._job_edit_mode = ""
         self._reviewing = False
         self._review_token: object | None = None
         self._companies_busy = False
@@ -554,6 +580,43 @@ class JobsHomeScreen(ModalScreen):
                     id="jh-company-panel",
                     classes="jh-panel -hidden",
                 ),
+                Label("Jobs", classes="jh-section", id="jh-jobs-heading"),
+                HorizontalGroup(
+                    Label("Status", classes="jh-field-label"),
+                    Select(
+                        [("All", "all"), *[(name, name) for name in tracker.STATUSES]],
+                        value="all",
+                        allow_blank=False,
+                        id="jh-jobs-filter",
+                    ),
+                ),
+                DataTable(id="jh-jobs-table", cursor_type="row", zebra_stripes=True),
+                Static("No tracked jobs yet.", id="jh-jobs-empty", markup=False),
+                Horizontal(
+                    Button("Set status…", id="jh-jobs-set"),
+                    Button("Note…", id="jh-jobs-note-open"),
+                    Button("Open link", id="jh-jobs-link"),
+                    Button("Open Excel", id="jh-jobs-excel"),
+                    Button("Check", id="jh-jobs-check-run"),
+                    classes="jh-jobs-actions",
+                ),
+                Vertical(
+                    Select(
+                        [(name, name) for name in tracker.STATUSES],
+                        value=tracker.STATUSES[0],
+                        allow_blank=False,
+                        id="jh-jobs-status-select",
+                    ),
+                    Input(placeholder="Note", id="jh-jobs-note"),
+                    Horizontal(
+                        Button("Save", id="jh-jobs-edit-confirm", variant="primary"),
+                        Button("Cancel", id="jh-jobs-edit-cancel"),
+                        classes="jh-panel-buttons",
+                    ),
+                    id="jh-jobs-edit-panel",
+                    classes="jh-panel -hidden",
+                ),
+                Static("", id="jh-jobs-check", markup=False, classes="-empty"),
                 id="jh-body",
             ),
             Static(
@@ -576,6 +639,10 @@ class JobsHomeScreen(ModalScreen):
             "Name", "Status", "Board", "Reason"
         )
         self._refresh_companies()
+        self.query_one("#jh-jobs-table", DataTable).add_columns(
+            "Score", "Status", "Company", "Title"
+        )
+        self._refresh_jobs()
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -1006,6 +1073,134 @@ class JobsHomeScreen(ModalScreen):
         self._refresh_companies()
         self._set_status(f"Added {name}.")
 
+    # ---- Jobs tracker ----
+
+    def _refresh_jobs(self) -> None:
+        fn = self._jobs_list_fn if self._jobs_list_fn is not None else tracker.list_rows
+        try:
+            chosen = self.query_one("#jh-jobs-filter", Select).value
+            table = self.query_one("#jh-jobs-table", DataTable)
+            empty = self.query_one("#jh-jobs-empty", Static)
+        except NoMatches:
+            return
+        status = None if chosen in (Select.BLANK, "all") else str(chosen)
+        try:
+            rows = list(fn(status=status))
+        except (tracker.TrackerError, OSError, ValueError) as error:
+            rows = []
+            self._set_error(str(error))
+        self._job_rows = rows
+        table.clear()
+        for row in rows:
+            score = row.get("score")
+            table.add_row(
+                _cell("-" if score is None else score),
+                _cell(row.get("status")),
+                _cell(row.get("company")),
+                _cell(row.get("title")),
+            )
+        empty.set_class(bool(rows), "-empty")
+
+    def _selected_job(self) -> Mapping[str, Any] | None:
+        table = self.query_one("#jh-jobs-table", DataTable)
+        if not 0 <= table.cursor_row < len(self._job_rows):
+            return None
+        return self._job_rows[table.cursor_row]
+
+    def _open_job_edit(self, mode: str) -> None:
+        job = self._selected_job()
+        if job is None:
+            self._set_error("Select a job first.")
+            return
+        self._job_edit_mode = mode
+        select = self.query_one("#jh-jobs-status-select", Select)
+        note = self.query_one("#jh-jobs-note", Input)
+        select.display = mode == "status"
+        note.display = mode == "note"
+        if mode == "status" and job.get("status") in tracker.STATUSES:
+            select.value = job["status"]
+        note.value = str(job.get("notes") or "") if mode == "note" else ""
+        panel = self.query_one("#jh-jobs-edit-panel", Vertical)
+        panel.set_class(False, "-hidden")
+        (select if mode == "status" else note).focus()
+        panel.scroll_visible()
+
+    def _close_job_edit(self) -> None:
+        self._job_edit_mode = ""
+        self.query_one("#jh-jobs-edit-panel", Vertical).set_class(True, "-hidden")
+
+    def _save_job_edit(self) -> None:
+        job = self._selected_job()
+        if job is None or not self._job_edit_mode:
+            self._set_error("Select a job first.")
+            return
+        if self._job_edit_mode == "status":
+            status = str(self.query_one("#jh-jobs-status-select", Select).value)
+            note = None
+        else:
+            status = str(job.get("status") or tracker.STATUSES[0])
+            note = self.query_one("#jh-jobs-note", Input).value.strip()
+        fn = self._jobs_set_fn if self._jobs_set_fn is not None else tracker.set_status
+        try:
+            fn(str(job.get("uid") or job.get("row")), status, note)
+        except (tracker.TrackerError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        self._close_job_edit()
+        self._refresh_jobs()
+        self._set_status(f"Set {job.get('company') or 'job'} to {status}.")
+
+    def _open_job_link(self) -> None:
+        job = self._selected_job()
+        if job is None:
+            self._set_error("Select a job first.")
+            return
+        url = str(job.get("url") or "")
+        if not url.startswith(("https://", "http://")):
+            self._set_error("This job has no web link.")
+            return
+        fn = self._open_link_fn if self._open_link_fn is not None else webbrowser.open
+        try:
+            fn(url)
+        except Exception as error:  # noqa: BLE001 - shown to the user, never crashes the console
+            self._set_error(str(error))
+            return
+        self._set_status(f"Opened {url}")
+
+    def _open_excel(self) -> None:
+        export = self._jobs_export_fn if self._jobs_export_fn is not None else tracker.export_xlsx
+        try:
+            path = Path(export())
+        except Exception as error:  # noqa: BLE001
+            self._set_error(str(error))
+            return
+        if self._open_file_fn is not None:
+            opener = self._open_file_fn
+        else:
+            from whyline.console.ideas_screen import _open_with_macos as opener
+        message = opener(path)
+        if message:
+            self._set_error(message)
+            return
+        self._set_status(f"Opened {tilde_path(path)}.")
+
+    def _run_check(self) -> None:
+        fn = self._doctor_fn if self._doctor_fn is not None else doctor.check
+        try:
+            lines = doctor.format_rows(list(fn()))
+        except Exception as error:  # noqa: BLE001
+            self._set_error(str(error))
+            return
+        out = self.query_one("#jh-jobs-check", Static)
+        out.update("\n".join(lines))
+        out.set_class(False, "-empty")
+        out.scroll_visible()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "jh-jobs-filter":
+            event.stop()
+            self._refresh_jobs()
+
     def _collect_preferences(self) -> dict[str, Any]:
         raw_salary = self.query_one("#jh-salary-min", Input).value.strip() or "0"
         remote_val = self.query_one("#jh-remote", Select).value
@@ -1066,6 +1261,20 @@ class JobsHomeScreen(ModalScreen):
             self.action_close()
         elif button_id == "jh-save":
             self._save_preferences()
+        elif button_id == "jh-jobs-set":
+            self._open_job_edit("status")
+        elif button_id == "jh-jobs-note-open":
+            self._open_job_edit("note")
+        elif button_id == "jh-jobs-edit-confirm":
+            self._save_job_edit()
+        elif button_id == "jh-jobs-edit-cancel":
+            self._close_job_edit()
+        elif button_id == "jh-jobs-link":
+            self._open_job_link()
+        elif button_id == "jh-jobs-excel":
+            self._open_excel()
+        elif button_id == "jh-jobs-check-run":
+            self._run_check()
         elif button_id == "jh-tracked":
             self.app.push_screen(TrackedJobsScreen())
         elif button_id == "jh-review-cv":

@@ -202,6 +202,8 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     setp.add_argument("status", choices=_tracker_statuses(), help="New status")
     setp.add_argument("--note", default=None, help="Replace the job's notes with TEXT")
 
+    jobs_sub.add_parser("doctor", help="Check the daily job shortlist is set up")
+
     jobs_sub.add_parser("excel", help="Write the tracked jobs to ~/.whyline/jobs/jobs.xlsx")
 
     comp = jobs_sub.add_parser(
@@ -634,6 +636,15 @@ def _cmd_excel(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from whyline.jobs import doctor
+
+    rows = doctor.check()
+    for line in doctor.format_rows(rows):
+        print(line)
+    return EXIT_ERROR if any(row.state == doctor.FAIL for row in rows) else EXIT_OK
+
+
 _COMPANIES_COMMANDS = {
     "list": _cmd_companies_list,
     "suggest": _cmd_companies_suggest,
@@ -664,6 +675,7 @@ _COMMANDS = {
     "list": _cmd_list,
     "set": _cmd_set,
     "excel": _cmd_excel,
+    "doctor": _cmd_doctor,
 }
 
 
@@ -671,6 +683,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile|review|companies|fetch|list|set|excel", file=sys.stderr)
+        print("usage: whyline jobs profile|review|companies|fetch|list|set|excel|doctor", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)

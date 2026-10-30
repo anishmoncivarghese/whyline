@@ -683,3 +683,114 @@ async def test_fetch_now_defaults_to_step_preview(monkeypatch) -> None:
         await pilot.pause()
         screen.query_one("#jh-co-fetch", tui.Button).press()
         await _until(pilot, lambda: calls == [True], "step.preview called")
+
+
+_JOBS = [
+    {"row": 1, "uid": "u1", "score": 90, "status": "new", "company": "Acme",
+     "title": "Engineer", "notes": "", "url": "https://acme.example/1"},
+    {"row": 2, "uid": "u2", "score": 70, "status": "applied", "company": "Bolt",
+     "title": "Designer", "notes": "hi", "url": ""},
+]
+
+
+def _jobs_list(status=None, **_: Any) -> list[dict]:
+    return [j for j in _JOBS if status is None or j["status"] == status]
+
+
+async def test_jobs_table_lists_rows_and_the_status_filter_narrows_it() -> None:
+    calls: list[Any] = []
+
+    def list_fn(**kwargs: Any) -> list[dict]:
+        calls.append(kwargs.get("status"))
+        return _jobs_list(**kwargs)
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(jobs_list_fn=list_fn)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-jobs-table", DataTable)
+        assert [_plain(table.get_row_at(i)[2]) for i in range(table.row_count)] == ["Acme", "Bolt"]
+
+        screen.query_one("#jh-jobs-filter", tui.Select).value = "applied"
+        await _until(pilot, lambda: table.row_count == 1, "filtered table")
+        assert _plain(table.get_row_at(0)[2]) == "Bolt"
+        assert calls[-1] == "applied"
+
+
+async def test_set_status_and_note_go_through_the_tracker_function() -> None:
+    sets: list[tuple] = []
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            jobs_list_fn=_jobs_list, jobs_set_fn=lambda *a: sets.append(a) or {}
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+
+        screen.query_one("#jh-jobs-set", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-jobs-status-select", tui.Select).value = "interview"
+        screen.query_one("#jh-jobs-edit-confirm", tui.Button).press()
+        await pilot.pause()
+        assert sets == [("u1", "interview", None)]
+
+        screen.query_one("#jh-jobs-note-open", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-jobs-note", tui.Input).value = "call Monday"
+        screen.query_one("#jh-jobs-edit-confirm", tui.Button).press()
+        await pilot.pause()
+        assert sets[-1] == ("u1", "new", "call Monday")
+
+
+async def test_open_link_and_open_excel_use_the_helpers() -> None:
+    links: list[str] = []
+    files: list[Path] = []
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            jobs_list_fn=_jobs_list,
+            jobs_export_fn=lambda: Path("/tmp/jobs.xlsx"),
+            open_link_fn=links.append,
+            open_file_fn=lambda p: files.append(p) or "",
+        )
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#jh-jobs-link", tui.Button).press()
+        screen.query_one("#jh-jobs-excel", tui.Button).press()
+        await pilot.pause()
+        assert links == ["https://acme.example/1"]
+        assert files == [Path("/tmp/jobs.xlsx")]
+
+
+async def test_check_button_shows_the_cli_rows_and_the_screen_fits_80x24(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from whyline import cli
+    from whyline.jobs import doctor
+
+    rows = [
+        doctor.Row("CV", doctor.OK, "cv.md found"),
+        doctor.Row("Delivery", doctor.WARN, "no delivery set", "Set one in Agents."),
+    ]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(jobs_list_fn=_jobs_list, doctor_fn=lambda: rows)
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#jh-jobs-check-run", tui.Button).press()
+        await pilot.pause()
+        shown = _plain(screen.query_one("#jh-jobs-check", tui.Static).render())
+        assert shown.splitlines() == doctor.format_rows(rows)
+
+        for selector in ("#jh-save", "#jh-close"):
+            reg = screen.query_one(selector).region
+            assert reg.width > 0 and reg.right <= 80, selector
+            assert reg.height > 0 and reg.bottom <= 24, selector
+        for widget in screen.query("*"):
+            if widget.display and widget.region.width > 0:
+                assert 0 <= widget.region.x and widget.region.right <= 80, widget
+
+    monkeypatch.setattr(doctor, "check", lambda: rows)
+    cli.main(["jobs", "doctor"])
+    assert capsys.readouterr().out.splitlines() == shown.splitlines()

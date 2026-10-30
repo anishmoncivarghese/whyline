@@ -387,3 +387,23 @@ def test_jobs_companies_cli_list_add_suggest_accept_remove_and_errors(
     code, out, err = _invoke(["jobs", "companies", "remove", "NoSuchCo"], capsys)
     assert code == 1
     assert "not found" in err.lower()
+
+
+def test_jobs_doctor_prints_the_shared_rows_and_exits_1_on_a_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from whyline.jobs import doctor
+
+    rows = [
+        doctor.Row("CV", doctor.OK, "cv.md found"),
+        doctor.Row("Scheduler", doctor.WARN, "scheduler is not loaded", "Turn it on."),
+    ]
+    monkeypatch.setattr(doctor, "check", lambda: rows)
+    code, out, err = _invoke(["jobs", "doctor"], capsys)
+    assert code == 0, err
+    assert out.splitlines() == doctor.format_rows(rows)
+
+    rows.append(doctor.Row("Agent", doctor.FAIL, "no job-search agent", "Create it."))
+    code, out, err = _invoke(["jobs", "doctor"], capsys)
+    assert code == 1
+    assert out.splitlines() == doctor.format_rows(rows)
