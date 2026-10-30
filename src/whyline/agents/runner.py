@@ -166,7 +166,8 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
         existing = {p.name for p in folder.iterdir()}
         try:
             written = step.run(defn, folder, now)
-            events = [*events, *sorted(p for p in folder.iterdir() if p.name not in existing)]
+            events = [*events, *sorted(p for p in folder.iterdir()
+                                         if p.name not in existing and p.name not in step.hidden)]
         except Exception as caught:
             record.outcome, record.reason = "failed", f"before step failed: {caught}"
             record.ended = datetime.now().isoformat()

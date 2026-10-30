@@ -335,7 +335,7 @@ def _with_step(repo):
 def test_brief_collect_is_a_registered_step():
     from whyline.agents import before
 
-    assert before.names() == ("", "brief-collect")
+    assert before.names() == ("", "brief-collect", "jobs-fetch")
     assert before.STEPS["brief-collect"].skip_when_empty is False
 
 
@@ -381,3 +381,27 @@ def test_a_step_failure_keeps_the_wording_and_starts_no_provider(repo, monkeypat
     rec = runner.execute_once(_with_step(repo), source="manual", now=NOW, run_fn=run_fn)
     assert calls == [] and rec.outcome == "failed"
     assert rec.reason == "before step failed: feed is down"
+
+
+def test_jobs_fetch_postings_are_event_files_but_the_manifest_is_not(repo, monkeypatch, tmp_path):
+    from dataclasses import replace
+    from whyline.jobs import companies, step
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(step.companies, "list", lambda status=None: [
+        companies.Company(name="Acme", status="accepted", ats="greenhouse", slug="acme")])
+    board = json.dumps({"jobs": [{
+        "id": 7, "title": "Platform Engineer", "location": {"name": "Remote"},
+        "absolute_url": "https://x.example/7", "updated_at": "2026-10-01T00:00:00Z",
+        "content": "<p>Build things.</p>"}]}).encode()
+    real = step.jobs_fetch
+    monkeypatch.setattr(step, "jobs_fetch",
+                        lambda defn, run_dir, now: real(defn, run_dir, now, http=lambda url: board))
+    run_fn, calls = _script(Result(0, json.dumps({"result": "ok", "permission_denials": []})))
+    rec = runner.execute_once(replace(_agent(repo), before="jobs-fetch"), source="manual",
+                              now=NOW, run_fn=run_fn)
+    assert rec.outcome == "succeeded"
+    prompt = calls[0][1]
+    assert "01-acme-platform-engineer.md" in prompt
+    assert "manifest.json" not in prompt

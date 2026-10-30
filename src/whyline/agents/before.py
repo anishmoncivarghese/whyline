@@ -12,6 +12,7 @@ from typing import Callable
 class Step:
     run: Callable[[object, Path, datetime], int]
     skip_when_empty: bool = False
+    hidden: tuple[str, ...] = ()  # files the step writes for itself, never shown to the agent
 
 
 def brief_collect(defn, run_dir: Path, now: datetime) -> int:
@@ -30,7 +31,17 @@ def brief_collect(defn, run_dir: Path, now: datetime) -> int:
     return 3
 
 
-STEPS: dict[str, Step] = {"brief-collect": Step(brief_collect)}
+def jobs_fetch(defn, run_dir: Path, now: datetime) -> int:
+    """Write today's new job postings (lazy import: Jobs is optional)."""
+    from whyline.jobs import step
+
+    return step.jobs_fetch(defn, run_dir, now)
+
+
+STEPS: dict[str, Step] = {
+    "brief-collect": Step(brief_collect),
+    "jobs-fetch": Step(jobs_fetch, skip_when_empty=True, hidden=("manifest.json",)),
+}
 
 
 def names() -> tuple[str, ...]:

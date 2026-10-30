@@ -25,6 +25,11 @@ _CONFLICT = "another program is reading this bot's messages, or it has a webhook
 def ideas_home(tmp_path, monkeypatch):
     home = tmp_path / "ideas"
     monkeypatch.setenv("WHYLINE_IDEAS_HOME", str(home))
+    # The doctor also reads ~/.whyline/agents (the morning brief), so keep
+    # it off this Mac's real agents too.
+    user_home = tmp_path / "user-home"
+    user_home.mkdir()
+    monkeypatch.setenv("HOME", str(user_home))
     return home
 
 

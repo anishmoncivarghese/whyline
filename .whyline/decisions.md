@@ -28647,3 +28647,297 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b6e6751fce1640669bcbca46725914bb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-29T18:52:26.246Z"} -->
+
+## 2026-10-29 — jobs-fetch marks only written postings as seen; dry-run checks a temp copy of the seen DB
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-12
+
+**Because:** marking all fetched postings seen would lose those past the 40 cap; a DB copy gives dry-run exact newness with no writes
+
+**Rejected:**
+
+- new_only on everything — overflow past the cap would never be shown
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 6a40a8277dc243989835591a0f9d6e09 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T19:13:03.484Z"} -->
+
+## 2026-10-29 — Pass JOB-12 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-12
+
+**Because:** The focused jobs and console suite and the full project suite both completed at 100% with exit code 0, covering the jobs-fetch output count, 40-posting cap, dry-run seen-state safety, shared console fetch path, and per-company error reporting without broader regressions
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 90e6705432224750948053c0e32beaf5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T19:31:49.463Z"} -->
+
+## 2026-10-29 — Reject JOB-12 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-12
+
+**Because:** Although the focused jobs/console suite and full project suite pass, execute_once appends every new run-folder entry to event_files, so jobs-fetch exposes manifest.json to the agent despite the explicit requirement that only posting files become events; add integration coverage and exclude the manifest
+
+**Rejected:**
+
+- Approve — passing tests omit the real jobs-fetch runner integration and do not catch the manifest event leak
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: cb100655de0f4d10bc96aa5c96568695 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T19:50:54.388Z"} -->
+
+## 2026-10-29 — Hide manifest.json from jobs-fetch event files via Step.hidden, honored by execute_once
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-12
+
+**Because:** runner added every new run-folder file to event_files; a per-step hidden tuple keeps the manifest in the run folder but out of the prompt
+
+**Rejected:**
+
+- write manifest outside run folder — spec says it lives beside the postings
+- special-case the name in runner — couples runner to jobs
+
+**Files:** src/whyline/agents/before.py, src/whyline/agents/runner.py
+
+<!-- whyline-event: 46f142fdf118479eab7cb64c057ee359 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T20:14:08.822Z"} -->
+
+## 2026-10-29 — Pass JOB-12 Round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-12
+
+**Because:** The required jobs/console suite and full project suite both completed at 100% with exit code 0, covering the jobs-fetch behavior and the runner integration that excludes manifest.json from agent event files without broader regressions
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: adf142de3c1d40d5adb5e4eef33c9ae7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T20:32:41.066Z"} -->
+
+## 2026-10-29 — Reject JOB-12 Round 6 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-12
+
+**Because:** Both required pytest commands pass, but jobs_fetch records chosen postings as seen before creating the run directory and writing posting and manifest files; any output failure makes the step fail while permanently suppressing jobs that were never delivered. Move seen-state mutation after all output writes succeed and add a fault-injection regression test proving a failed write leaves the postings new for retry.
+
+**Rejected:**
+
+- Approve — green successful-path tests do not cover the durable state loss on an output failure
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 0e85b5978f9047efaa7666895a4ad5a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T20:51:45.114Z"} -->
+
+## 2026-10-29 — Mark chosen postings seen only after all posting and manifest writes succeed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-12
+
+**Because:** a failed output write previously suppressed never-delivered jobs permanently; seen-state is now the last step
+
+**Rejected:**
+
+- wrap writes in try/rollback of seen DB — more machinery than reordering
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: b178a55a4353412c86fc7bf62f089823 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T21:14:24.348Z"} -->
+
+## 2026-10-29 — Pass JOB-12 Round 8 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-12
+
+**Because:** The required jobs/console suite and full project suite both completed at 100% with exit code 0, covering the output-write failure regression and showing no broader regressions
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: b112b1f8522540d9aa28aa47f34b2e20 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T21:32:52.434Z"} -->
+
+## 2026-10-29 — Reject JOB-12 Round 9 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-12
+
+**Because:** Both required pytest commands reach 100% with no failures, but jobs_fetch marks chosen postings seen before persisting dropped postings and reasons; if the later seen.new_only or mark_dropped operation fails, the before step fails while jobs never delivered to the agent are permanently suppressed. Make dropped-state persistence complete before the final chosen-posting seen mutation, preserve retry repair of missing drop reasons, and add a fault-injection regression for this state-write failure.
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 9245495aaef24435b20c303ca8a6eb0a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T21:51:56.120Z"} -->
+
+## 2026-10-29 — jobs_fetch persists dropped postings and reasons before marking chosen postings seen
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-12
+
+**Because:** a failure while recording drops must leave chosen postings new for retry; mark_dropped is re-applied each run so partially recorded reasons are repaired
+
+**Rejected:**
+
+- only mark_dropped for newly inserted rows — a crash between insert and reason leaves the reason missing forever
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: a0e60a49aa194880b1aec8d30d5b13d8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-29T22:10:36.438Z"} -->
+
+## 2026-10-30 — Fail JOB-12 Round 11 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-12
+
+**Because:** The required jobs/console suite passed, but the full suite exited 1 with three reproducible idea doctor Telegram failures; all three isolated reruns also returned code 1 instead of the expected 0
+
+**Rejected:**
+
+- pass JOB-12 despite unrelated failures — the task explicitly requires a clean full-suite run and the failures reproduce in isolation
+
+**Files:** tests/ideas/test_cli.py
+
+<!-- whyline-event: 266d7d28fcb945cd9570ff463d4bcb65 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T03:41:06.243Z"} -->
+
+## 2026-10-30 — JOB-12 Round 11 test failure is a test isolation leak, not a JOB-12 defect
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** JOB-12
+
+**Because:** idea doctor tests isolate WHYLINE_IDEAS_HOME but not ~/.whyline/agents, so brief.check() finds the real morning-brief agent created 2026-10-29 and fails on its real state; the 3 tests pass with HOME set to an empty dir and fail with the real home
+
+**Rejected:**
+
+- treat as flaky and rerun — it reproduces every time on this Mac while the real agent exists
+
+**Files:** tests/ideas/test_cli.py, src/whyline/ideas/brief.py
+
+<!-- whyline-event: 5b1c1edaaa7846539b47b717778e8d29 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T03:48:06.093Z"} -->
+
+## 2026-10-30 — Assistant Phase 6 (ASST-24..27): check access as scheduled runs see it, and alert on missed or never-started runs
+
+**Actor:** claude
+**Role:** planner
+**Task:** ASST-24
+
+**Because:** the 2026-10-30 scheduled brief failed with Calendar denied while the console check passed, since launchd runs python3.11 which macOS treats as a separate app; the user asked for alerts when a run stops completely
+
+**Rejected:**
+
+- alert on partial runs (Mail not open) — user chose complete stops only
+- commit on the relay branch — relay is mid JOB-12 in that checkout
+
+**Files:** plans/personal-assistant.plan.md
+
+<!-- whyline-event: b0379e70c4b943e7b6d173ddf1a35287 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T03:48:06.189Z"} -->
+
+## 2026-10-30 — Left the three idea doctor test failures alone; they come from the machine's real morning-brief agent state, not JOB-12
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-12
+
+**Because:** brief.check reads the real agent store via service.rows(None); the morning-brief agent is needs_attention on this Mac, so 'fail brief agent' makes idea doctor exit 1. The same tests fail with the JOB-12 source changes stashed, and fixing test isolation is outside JOB-12's file list
+
+**Rejected:**
+
+- monkeypatch service.rows in tests/ideas/test_cli.py — outside the allowed files for JOB-12
+
+**Files:** tests/ideas/test_cli.py
+
+<!-- whyline-event: cff59f4c256447bdb95b4db3acd724c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T03:54:23.153Z"} -->
+
+## 2026-10-30 — Isolate HOME in tests/ideas/test_cli.py ideas_home fixture, committed separately from JOB-12
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-12
+
+**Because:** three idea doctor tests read the real ~/.whyline/agents morning-brief agent and failed JOB-12's full-suite gate; the fix is outside JOB-12's file scope, so it is its own commit on the relay branch
+
+**Rejected:**
+
+- monkeypatch whyline.agents.paths.home only — other Path.home() reads would still leak
+- leave it to the JOB-12 implementer — its task forbids editing tests/ideas
+
+**Files:** tests/ideas/test_cli.py
+
+<!-- whyline-event: 2e7907f11152487dbc1b0d843dab40d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T04:05:40.014Z"} -->
+
+## 2026-10-30 — Pass JOB-12 Round 13 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-12
+
+**Because:** The required jobs/console suite and the full project suite both completed at 100% with exit code 0, verifying the JOB-12 behavior and showing no regressions
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: db5de87544144334bf6b3484fe1a2ce2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T04:23:51.077Z"} -->
+
+## 2026-10-30 — Approve JOB-12 Round 14 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-12
+
+**Because:** The implementation satisfies jobs-fetch, preview CLI and console behavior, keeps manifest.json out of agent event files, preserves retry safety, and both required independent pytest commands completed at 100% with exit code 0
+
+**Files:** src/whyline/jobs/step.py
+
+<!-- whyline-event: 59c1e3b1e339427d999a4478dae72dcd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T04:42:31.086Z"} -->
+
+## 2026-10-30 — Pass JOB-13 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-13
+
+**Because:** The required tests/jobs suite and the full project suite both completed at 100% with exit code 0, verifying the job-search template behavior and showing no regressions
+
+**Files:** tests/jobs/test_template_job_search.py
+
+<!-- whyline-event: c2338e814c1e495d88ce6f45b40275c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T05:21:42.563Z"} -->
+
+## 2026-10-30 — Approve JOB-13 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-13
+
+**Because:** The job-search template satisfies the runner, backup, jobs-fetch, source, weekday schedule, timeout, scoring, veto, language-gate, suspicious-text, shortlist, complete scores JSON, and no-invention requirements; its focused tests genuinely cover the requested contracts, and both the jobs suite and full suite passed independently
+
+**Files:** src/whyline/agents/templates/job-search/agent.toml, src/whyline/agents/templates/job-search/instructions.md, tests/jobs/test_template_job_search.py
+
+<!-- whyline-event: c3804eb91c5141e1aed7f1114c32cb6e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-30T05:31:58.987Z"} -->

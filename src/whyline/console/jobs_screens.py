@@ -277,6 +277,7 @@ class JobsHomeScreen(ModalScreen):
         companies_add_fn: Callable[..., Any] | None = None,
         companies_accept_fn: Callable[[str], Any] | None = None,
         companies_remove_fn: Callable[[str], Any] | None = None,
+        fetch_fn: Callable[..., Any] | None = None,
     ) -> None:
         super().__init__()
         self._status_fn = status_fn
@@ -295,6 +296,7 @@ class JobsHomeScreen(ModalScreen):
         self._companies_add_fn = companies_add_fn
         self._companies_accept_fn = companies_accept_fn
         self._companies_remove_fn = companies_remove_fn
+        self._fetch_fn = fetch_fn
         self._reviewing = False
         self._review_token: object | None = None
         self._companies_busy = False
@@ -532,6 +534,7 @@ class JobsHomeScreen(ModalScreen):
                 Horizontal(
                     Button("Suggest companies", id="jh-co-suggest", variant="primary"),
                     Button("Check boards", id="jh-co-check"),
+                    Button("Fetch now", id="jh-co-fetch"),
                     classes="jh-companies-actions",
                 ),
                 Horizontal(
@@ -840,7 +843,13 @@ class JobsHomeScreen(ModalScreen):
 
     def _set_companies_busy(self, busy: bool) -> None:
         self._companies_busy = busy
-        for selector in ("#jh-co-suggest", "#jh-co-check", "#jh-co-accept", "#jh-co-remove"):
+        for selector in (
+            "#jh-co-suggest",
+            "#jh-co-check",
+            "#jh-co-fetch",
+            "#jh-co-accept",
+            "#jh-co-remove",
+        ):
             try:
                 self.query_one(selector, Button).disabled = busy
             except NoMatches:
@@ -924,6 +933,21 @@ class JobsHomeScreen(ModalScreen):
             return f"Checked {count} {'company' if count == 1 else 'companies'}."
 
         self._start_companies_work("Checking boards", run)
+
+    def _fetch_now(self) -> None:
+        """Run the jobs-fetch step into a preview folder; nothing is marked seen."""
+        if self._fetch_fn is not None:
+            fn = self._fetch_fn
+        else:
+            from whyline.jobs import step
+
+            fn = step.preview
+
+        def run(progress: Callable[[str], None]) -> str:
+            report = fn(dry_run=True)
+            return "\n".join([report.summary(), *report.lines()])
+
+        self._start_companies_work("Fetching postings", run)
 
     def _company_action(self, kind: str) -> None:
         if self._companies_busy:
@@ -1051,6 +1075,8 @@ class JobsHomeScreen(ModalScreen):
             self._suggest_companies()
         elif button_id == "jh-co-check":
             self._check_companies()
+        elif button_id == "jh-co-fetch":
+            self._fetch_now()
         elif button_id == "jh-co-accept":
             self._company_action("accept")
         elif button_id == "jh-co-remove":

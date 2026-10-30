@@ -176,6 +176,16 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         help="Accept profile.draft.md and rubric.draft.md into profile.md and rubric.md",
     )
 
+    fet = jobs_sub.add_parser(
+        "fetch",
+        help="Fetch new postings from accepted companies into a preview folder",
+    )
+    fet.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not mark anything as seen",
+    )
+
     comp = jobs_sub.add_parser(
         "companies",
         help="Manage tracked companies and AI company suggestions",
@@ -544,6 +554,23 @@ def _cmd_companies_check(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_fetch(args: argparse.Namespace) -> int:
+    from whyline.jobs import step
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    try:
+        report = step.preview(dry_run=dry_run)
+    except (OSError, profile.ProfileError, companies.CompanyError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(report.summary())
+    for line in report.lines():
+        print(f"  {line}")
+    if report.folder is not None:
+        print(f"Preview folder: {tilde_path(report.folder)}")
+    return EXIT_OK
+
+
 _COMPANIES_COMMANDS = {
     "list": _cmd_companies_list,
     "suggest": _cmd_companies_suggest,
@@ -570,6 +597,7 @@ _COMMANDS = {
     "profile": _cmd_profile,
     "review": _cmd_review,
     "companies": _cmd_companies,
+    "fetch": _cmd_fetch,
 }
 
 
@@ -577,6 +605,6 @@ def run(args: argparse.Namespace) -> int:
     command = getattr(args, "jobs_command", None)
     handler = _COMMANDS.get(command or "")
     if handler is None:
-        print("usage: whyline jobs profile|review|companies", file=sys.stderr)
+        print("usage: whyline jobs profile|review|companies|fetch", file=sys.stderr)
         return EXIT_USAGE
     return handler(args)

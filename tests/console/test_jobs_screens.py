@@ -644,3 +644,42 @@ async def test_open_review_drafts_panel_fits_80x24() -> None:
         for widget in screen.query("*"):
             if widget.display and widget.region.width > 0:
                 assert 0 <= widget.region.x and widget.region.right <= 80, widget
+
+
+async def test_fetch_now_button_runs_the_step_preview_as_a_dry_run() -> None:
+    from whyline.jobs import step
+
+    calls: list[bool] = []
+
+    def fake_fetch(*, dry_run):
+        calls.append(dry_run)
+        report = step.Report(written=1, dry_run=dry_run)
+        report.count("Acme").new = 1
+        report.errors.append(("Broken", "boom"))
+        return report
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(companies_list_fn=lambda: [], fetch_fn=fake_fetch)
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#jh-co-fetch", tui.Button).press()
+        await _until(pilot, lambda: calls == [True], "fetch called")
+        await _until(pilot, lambda: not screen._companies_busy, "fetch finished")
+        shown = _plain(screen.query_one("#jh-status", tui.Static).render())
+        assert "Acme: 1 new, 0 dropped, 0 errors" in shown
+        assert "Broken: error: boom" in shown
+
+
+async def test_fetch_now_defaults_to_step_preview(monkeypatch) -> None:
+    from whyline.jobs import step
+
+    calls: list[bool] = []
+    monkeypatch.setattr(step, "preview", lambda *, dry_run: calls.append(dry_run) or step.Report())
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(companies_list_fn=lambda: [])
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#jh-co-fetch", tui.Button).press()
+        await _until(pilot, lambda: calls == [True], "step.preview called")

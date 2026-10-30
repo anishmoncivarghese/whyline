@@ -72,7 +72,7 @@ Rules every task keeps (the same rules as part 1):
   - written files become event files labelled as data
   Verify with `uv run pytest -q tests/agents tests/ideas` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-12: The `jobs-fetch` step and Fetch now
+- [x] JOB-12: The `jobs-fetch` step and Fetch now
   Add `src/whyline/jobs/step.py` and `tests/jobs/test_step.py`, and edit `src/whyline/agents/before.py` (register `jobs-fetch` with a lazy import), `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   `step.jobs_fetch(defn, run_dir, now)` (registered with `skip_when_empty=True`) does the following:
   1. For each accepted company with a known board, fetch (JOB-9).

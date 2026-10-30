@@ -1,0 +1,13 @@
+name = "job-search"
+title = "Daily job shortlist"
+about = "Score newly fetched job postings against your rubric and return a ranked shortlist."
+runner = "claude"
+backup = ["codex", "grok"]
+before = "jobs-fetch"
+sources = ["cv.md", "profile.md", "rubric.md", "preferences.toml"]
+timeout_minutes = 20
+
+[trigger]
+kind = "weekdays"
+at = "07:30"
+min_gap_minutes = 10
