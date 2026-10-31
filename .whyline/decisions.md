@@ -29578,3 +29578,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0a90a186b83142d193330a0891f94715 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:11:21.016Z"} -->
+
+## 2026-10-31 — Workflow.raw is stored in normal form, and render writes from the structured fields
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-1
+
+**Because:** A render/parse round trip must give an equal Workflow including raw, and hashes must not depend on whether a file spelled out version or description; deriving raw from the parsed fields guarantees both
+
+**Rejected:**
+
+- Keep tomllib output verbatim in raw — render would have to guess which optional keys the author wrote
+- Render straight from raw — Builder edits to the structured fields would be lost
+
+**Files:** src/whyline/workflows/definitions.py
+
+<!-- whyline-event: da7265d25a9d4bf182a4ddaada5d3da1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:19:04.334Z"} -->
+
+## 2026-10-31 — WF-1 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-1
+
+**Because:** The mandated workflow definition suite passed all 40 tests and the full project pytest suite completed at 100 percent with exit code 0; one test was skipped and no failures occurred
+
+**Files:** src/whyline/workflows/definitions.py
+
+<!-- whyline-event: 07abd522139943ecb2ae9d8fba0925ca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:29:09.039Z"} -->
+
+## 2026-10-31 — Approve WF-1 workflow definitions and validation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-1
+
+**Because:** The requested paths, registry, frozen models, aggregate validation, TOML round-trip, canonical hashes, and discovery behavior match the task and spec; the focused 40-test suite and full project suite both pass
+
+**Rejected:**
+
+- Request changes — no material defect or missing required coverage was found
+
+**Files:** src/whyline/workflows/definitions.py
+
+<!-- whyline-event: 92b86948bd2941cc9b8b5f7d46b94c1d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:39:17.728Z"} -->
