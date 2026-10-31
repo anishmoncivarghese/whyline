@@ -146,7 +146,7 @@ Review focus, each one pinned by the test named in its task:
   - an exception inside the workflow tick still lets the agents tick finish
   Verify with `uv run pytest -q tests/workflows/test_tick.py tests/agents/test_tick.py`. Change nothing else.
 
-- [ ] WF-9: Service and CLI
+- [x] WF-9: Service and CLI
   Create `src/whyline/workflows/service.py`, `src/whyline/workflows/cli.py`, `tests/workflows/test_service.py` and `tests/workflows/test_cli.py`; edit `src/whyline/cli.py` (register `workflow`) only.
   - `service`: `rows(repo_root) -> list[Row]` (name, kind, status, trigger text, next, last), `load(name, repo_root)` (exact name; personal and repo with the same name raise `Ambiguous` naming both ids), `validate(text) -> list[str]`, `new(name, kind, repo_root) -> Path` (a manual workflow with one `set` step), `save(workflow) -> Path`, `review(name, repo_root) -> list[str]` (the capability summary, or the diff against the accepted one when re-accepting; changes nothing), `accept(name, repo_root) -> None`, `pause`, `resume`, `run_now(name, inputs, *, source, repo_root, spawn=None) -> int` (inputs checked against `[[input]]` types; unknown keys refused), `runs(name, repo_root)`, `run_detail(run_id)`, `cancel`, `decide(approval_id, nonce, choice, actor)`, `resolve(run_id, choice)`, `retry(run_id) -> int`, `dry_run(name, inputs, repo_root) -> list[str]`, `get_cap()`, `set_cap(n)`.
   - `dry_run` executes `set`, `condition`, `switch` and templates, and for `agent`, `deliver`, `wait` and `approval` reports what they would receive, without running them.
