@@ -30488,3 +30488,38 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c978c257b8554f33a16391cc1750a872 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:56:24.194Z"} -->
+
+## 2026-10-31 — CV import cleans pasted paths (quotes, backslash-escaped spaces, file:// URLs) inside profile.import_cv
+
+**Actor:** claude
+**Role:** implementer
+**Task:** cv-path-quotes
+
+**Because:** Finder's Copy as Pathname wraps paths with spaces in quotes, so the suffix read as .docx' and a valid CV was refused
+
+**Rejected:**
+
+- clean only in the console field — the CLI import-cv takes the same pasted text
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: 72412be9d0e14b9b9ab9e34436789676 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T12:15:38.500Z"} -->
+
+## 2026-10-31 — whyline sets GIT_OPTIONAL_LOCKS=0 at startup so its git status polls never take .git/index.lock
+
+**Actor:** claude
+**Role:** implementer
+**Task:** git-lock
+
+**Because:** the console's 0.4 s git status poll held index.lock when the relay ran git add at WF-13, and the relay dropped the approved task
+
+**Rejected:**
+
+- add --no-optional-locks to each of ~20 call sites — easy to miss one, and new calls would regress
+- only retry in the relay — other whyline commands would still collide; RLY-10 adds the retry as a second layer
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 9c742c6ec4864ff68d31836336249c5f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T12:15:38.577Z"} -->
