@@ -50,7 +50,7 @@ Rules every task keeps:
   - the console shows the preview after an import and saves through the same `import_cv` function
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-25: Choose the CV file with the Mac file picker
+- [x] JOB-25: Choose the CV file with the Mac file picker
   Edit `src/whyline/console/jobs_screens.py` and `tests/console/test_jobs_screens.py` only.
   Chat's **Attach** already opens the Finder picker through `whyline.console.mac_input.pick_files`. Reuse it; do not copy the AppleScript.
   1. In the Import CV panel, add **Choose file…** before **Import**, shown only when `mac_input.available()` is true.
