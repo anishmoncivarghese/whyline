@@ -282,14 +282,19 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         help="Optional https:// careers page URL",
     )
 
-    comp_acc = comp_sub.add_parser("accept", help="Accept a suggested company")
-    comp_acc.add_argument("name", help="Company name")
+    comp_acc = comp_sub.add_parser("accept", help="Accept one or more companies")
+    comp_acc.add_argument("names", nargs="*", metavar="name", help="Company name(s)")
+    comp_acc.add_argument(
+        "--all-suggested",
+        action="store_true",
+        help="Accept every suggested company (takes no names)",
+    )
 
     comp_rem = comp_sub.add_parser(
         "remove",
-        help="Remove a company so it is not tracked or re-suggested",
+        help="Remove companies so they are not tracked or re-suggested",
     )
-    comp_rem.add_argument("name", help="Company name")
+    comp_rem.add_argument("names", nargs="+", metavar="name", help="Company name(s)")
 
     comp_chk = comp_sub.add_parser(
         "check",
@@ -562,23 +567,36 @@ def _cmd_companies_add(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _print_company_changes(verb: str, changed: list[companies.Company]) -> None:
+    for entry in changed:
+        print(f"{verb} {entry.name}.")
+    noun = "company" if len(changed) == 1 else "companies"
+    print(f"{verb} {len(changed)} {noun}.")
+
+
 def _cmd_companies_accept(args: argparse.Namespace) -> int:
+    names = list(args.names)
+    if args.all_suggested == bool(names):
+        print("Give company names, or --all-suggested (not both).", file=sys.stderr)
+        return EXIT_ERROR
     try:
-        entry = companies.accept(args.name)
+        if args.all_suggested:
+            names = companies.suggested_names()
+        changed = companies.accept_many(names)
     except (companies.CompanyError, profile.ProfileError) as error:
         print(str(error), file=sys.stderr)
         return EXIT_ERROR
-    print(f"Accepted {entry.name} ({tilde_path(companies.companies_path())}).")
+    _print_company_changes("Accepted", changed)
     return EXIT_OK
 
 
 def _cmd_companies_remove(args: argparse.Namespace) -> int:
     try:
-        entry = companies.remove(args.name)
+        changed = companies.remove_many(args.names)
     except (companies.CompanyError, profile.ProfileError) as error:
         print(str(error), file=sys.stderr)
         return EXIT_ERROR
-    print(f"Removed {entry.name} ({tilde_path(companies.companies_path())}).")
+    _print_company_changes("Removed", changed)
     return EXIT_OK
 
 

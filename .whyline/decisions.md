@@ -30826,3 +30826,106 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a5cf7c0aa0ae4d33b74881ebbc940e90 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T20:10:01.345Z"} -->
+
+## 2026-10-31 — Bulk company actions share one _set_status_many; console injection fns now take a list of names
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-28
+
+**Because:** one load/validate/write path keeps accept/remove single-name behaviour identical and makes unknown names atomic
+
+**Rejected:**
+
+- looping accept() per name — N writes and partial changes on an unknown name
+
+**Files:** src/whyline/jobs/companies.py
+
+<!-- whyline-event: 957e3016ece847f4a2ad3ce81873b0f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T20:41:14.872Z"} -->
+
+## 2026-10-31 — JOB-28 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-28
+
+**Because:** The targeted jobs/console suite and full project suite both completed at 100 percent with exit code 0, exercising bulk company mutations, CLI multi-name and all-suggested flows, and console selection, confirmation, refresh, and detail behavior without regressions
+
+**Rejected:**
+
+- Fail JOB-28 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/jobs/companies.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: ca18b14dc5c2414fa602b0cb0d0fd12f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T21:10:54.567Z"} -->
+
+## 2026-10-31 — Reject JOB-28 round 3: clicking the tick cell does not toggle the row
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-28
+
+**Because:** Textual DataTable stops body-cell Click propagation before JobsHomeScreen.on_click runs; a runtime pilot click landed on the first-column cell but left all tick values unchanged, so the required mouse interaction is missing despite both required suites reaching 100 percent
+
+**Rejected:**
+
+- Approve — Space and the other bulk-company behaviors pass, but click-to-toggle is an explicit requirement
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: df715aa8d36b4fed9d5823c0874b1c27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T21:31:07.443Z"} -->
+
+## 2026-10-31 — Tick-column clicks handled by a DataTable subclass that posts TickClicked
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-28
+
+**Because:** DataTable._on_click stops the Click before the screen's on_click runs; a subclass _on_click sees it first (Textual dispatches per MRO class), and @on(...) is used because the nested-message handler name for a underscore-prefixed class did not resolve
+
+**Rejected:**
+
+- screen-level on_click — never receives the event
+- RowSelected/CellSelected — not fired on first click of a new row
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 845f2ae762a0489a8e2e5e81c9b32f30 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T21:54:29.502Z"} -->
+
+## 2026-10-31 — Pass JOB-28 round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-28
+
+**Because:** The focused jobs/console suite and full project suite both reached 100 percent with exit 0, and the isolated tick-cell mouse test passed, confirming the prior click regression is fixed
+
+**Rejected:**
+
+- Fail — no functional test failures or click regression remained
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: b193126e711a4615992cc20b1a10e82d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:24:29.193Z"} -->
+
+## 2026-10-31 — Approve JOB-28 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-28
+
+**Because:** The diff implements atomic bulk company updates, multi-name CLI actions, persistent console ticks, confirmation, status/detail UI, and genuine interaction coverage; both required test suites and git diff validation passed
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or coverage defect remains
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 94a54ea067b8497dae4a062ee4f2aa66 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:44:45.022Z"} -->

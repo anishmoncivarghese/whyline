@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from rich.text import Text
+from textual import events, on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalScroll
 from textual.css.query import NoMatches
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
@@ -220,6 +222,20 @@ def _call_companies_add(
     return fn(name)
 
 
+class _CompaniesTable(DataTable):
+    """DataTable that reports clicks on the tick column (its own click handler stops them)."""
+
+    class TickClicked(Message):
+        def __init__(self, row: int) -> None:
+            super().__init__()
+            self.row = row
+
+    async def _on_click(self, event: events.Click) -> None:
+        meta = event.style.meta
+        if meta.get("column") == 0 and isinstance(meta.get("row"), int) and meta["row"] >= 0:
+            self.post_message(self.TickClicked(meta["row"]))
+
+
 class JobsHomeScreen(ModalScreen):
     """Manage the local job-search profile and companies (~/.whyline/jobs/)."""
 
@@ -268,6 +284,11 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-companies-empty { width: 100%; height: auto; color: $text-muted; }
     JobsHomeScreen #jh-companies-empty.-empty { display: none; }
     JobsHomeScreen #jh-companies-table { width: 100%; height: auto; min-height: 3; max-height: 7; margin-top: 1; }
+    JobsHomeScreen #jh-company-detail { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-co-confirm { height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-co-confirm.-hidden { display: none; }
+    JobsHomeScreen #jh-co-confirm Static { width: auto; padding: 1 1 0 0; }
+    JobsHomeScreen #jh-co-confirm Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen .jh-companies-actions { height: auto; margin-top: 1; }
     JobsHomeScreen .jh-companies-actions Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen #jh-company-name { width: 100%; }
@@ -321,8 +342,9 @@ class JobsHomeScreen(ModalScreen):
         companies_suggest_fn: Callable[..., Any] | None = None,
         companies_check_fn: Callable[..., Any] | None = None,
         companies_add_fn: Callable[..., Any] | None = None,
-        companies_accept_fn: Callable[[str], Any] | None = None,
-        companies_remove_fn: Callable[[str], Any] | None = None,
+        companies_accept_fn: Callable[[Sequence[str]], Any] | None = None,
+        companies_remove_fn: Callable[[Sequence[str]], Any] | None = None,
+        companies_suggested_names_fn: Callable[[], Sequence[str]] | None = None,
         fetch_fn: Callable[..., Any] | None = None,
         jobs_list_fn: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
         jobs_set_fn: Callable[..., Any] | None = None,
@@ -355,6 +377,7 @@ class JobsHomeScreen(ModalScreen):
         self._companies_add_fn = companies_add_fn
         self._companies_accept_fn = companies_accept_fn
         self._companies_remove_fn = companies_remove_fn
+        self._companies_suggested_names_fn = companies_suggested_names_fn
         self._fetch_fn = fetch_fn
         self._jobs_list_fn = jobs_list_fn
         self._jobs_set_fn = jobs_set_fn
@@ -380,6 +403,7 @@ class JobsHomeScreen(ModalScreen):
         self._companies_busy = False
         self._companies_token: object | None = None
         self._company_rows: list[companies.Company] = []
+        self._company_ticks: set[str] = set()
         self._saved_prefs: dict[str, Any] | None = None
 
     def _read_alert_senders(self) -> dict[str, bool]:
@@ -674,7 +698,8 @@ class JobsHomeScreen(ModalScreen):
                 Label("Companies", classes="jh-section", id="jh-companies-heading"),
                 Static(COMPANIES_FETCH_NOTE, id="jh-companies-note", markup=False),
                 Static("", id="jh-companies-progress", markup=False, classes="-empty"),
-                DataTable(id="jh-companies-table", cursor_type="row", zebra_stripes=True),
+                _CompaniesTable(id="jh-companies-table", cursor_type="row", zebra_stripes=True),
+                Static("", id="jh-company-detail", markup=False),
                 Static(
                     "No companies yet. Suggest some or add one.",
                     id="jh-companies-empty",
@@ -689,8 +714,16 @@ class JobsHomeScreen(ModalScreen):
                 Horizontal(
                     Button("Accept", id="jh-co-accept", variant="success"),
                     Button("Remove", id="jh-co-remove"),
+                    Button("Accept all suggested", id="jh-co-accept-all"),
                     Button("Add company…", id="jh-co-add"),
                     classes="jh-companies-actions",
+                ),
+                Horizontal(
+                    Static("", id="jh-co-confirm-text", markup=False),
+                    Button("Yes", id="jh-co-confirm-yes", variant="success"),
+                    Button("Cancel", id="jh-co-confirm-cancel"),
+                    id="jh-co-confirm",
+                    classes="-hidden",
                 ),
                 Vertical(
                     Input(placeholder="Company name", id="jh-company-name"),
@@ -788,7 +821,7 @@ class JobsHomeScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#jh-companies-table", DataTable).add_columns(
-            "Name", "Status", "Board", "Reason"
+            "✓", "Name", "Status", "Board", "Reason"
         )
         self._refresh_companies()
         self.query_one("#jh-jobs-table", DataTable).add_columns(
@@ -1169,15 +1202,76 @@ class JobsHomeScreen(ModalScreen):
             empty = self.query_one("#jh-companies-empty", Static)
         except NoMatches:
             return
+        self._company_ticks &= {item.name for item in rows}
+        cursor = table.cursor_row
         table.clear()
         for item in rows:
             table.add_row(
+                "✓" if item.name in self._company_ticks else " ",
                 _cell(item.name),
                 _cell(item.status),
                 _cell(format_company_board(item)),
                 _cell(item.reason),
             )
+        if 0 <= cursor < len(rows):
+            table.move_cursor(row=cursor)
         empty.set_class(bool(rows), "-empty")
+        self._update_company_detail()
+        self._update_company_labels()
+
+    def _update_company_detail(self) -> None:
+        try:
+            detail = self.query_one("#jh-company-detail", Static)
+            table = self.query_one("#jh-companies-table", DataTable)
+        except NoMatches:
+            return
+        text = ""
+        if 0 <= table.cursor_row < len(self._company_rows):
+            item = self._company_rows[table.cursor_row]
+            text = " · ".join(part for part in (item.reason, item.careers_url) if part)
+        detail.update(text)
+
+    def _update_company_labels(self) -> None:
+        count = len(self._company_ticks)
+        suffix = f" ({count})" if count else ""
+        for selector, label in (("#jh-co-accept", "Accept"), ("#jh-co-remove", "Remove")):
+            try:
+                self.query_one(selector, Button).label = f"{label}{suffix}"
+            except NoMatches:
+                pass
+
+    def _toggle_company_tick(self, row: int) -> None:
+        if not 0 <= row < len(self._company_rows):
+            return
+        name = self._company_rows[row].name
+        self._company_ticks ^= {name}
+        try:
+            table = self.query_one("#jh-companies-table", DataTable)
+        except NoMatches:
+            return
+        table.update_cell_at(
+            (row, 0), "✓" if name in self._company_ticks else " ", update_width=False
+        )
+        self._update_company_labels()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key != "space":
+            return
+        focused = self.focused
+        if isinstance(focused, DataTable) and focused.id == "jh-companies-table":
+            event.stop()
+            event.prevent_default()
+            self._toggle_company_tick(focused.cursor_row)
+
+    @on(_CompaniesTable.TickClicked)
+    def _on_tick_clicked(self, event: _CompaniesTable.TickClicked) -> None:
+        event.stop()
+        self._toggle_company_tick(event.row)
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id == "jh-companies-table":
+            event.stop()
+            self._update_company_detail()
 
     def _selected_company(self) -> str | None:
         try:
@@ -1204,6 +1298,7 @@ class JobsHomeScreen(ModalScreen):
             "#jh-co-fetch",
             "#jh-co-accept",
             "#jh-co-remove",
+            "#jh-co-accept-all",
         ):
             try:
                 self.query_one(selector, Button).disabled = busy
@@ -1307,31 +1402,87 @@ class JobsHomeScreen(ModalScreen):
     def _company_action(self, kind: str) -> None:
         if self._companies_busy:
             return
-        name = self._selected_company()
-        if name is None:
+        ticked = [i.name for i in self._company_rows if i.name in self._company_ticks]
+        selected = self._selected_company()
+        names = ticked or ([selected] if selected is not None else [])
+        if not names:
             self._set_error("Select a company first.")
             return
         if kind == "accept":
             fn = (
                 self._companies_accept_fn
                 if self._companies_accept_fn is not None
-                else companies.accept
+                else companies.accept_many
             )
-            done = f"Accepted {name}."
+            verb = "Accepted"
         else:
             fn = (
                 self._companies_remove_fn
                 if self._companies_remove_fn is not None
-                else companies.remove
+                else companies.remove_many
             )
-            done = f"Removed {name}."
+            verb = "Removed"
         try:
-            fn(name)
+            fn(names)
         except (companies.CompanyError, OSError, ValueError) as error:
             self._set_error(str(error))
             return
+        self._finish_company_action(verb, len(names))
+
+    def _finish_company_action(self, verb: str, count: int) -> None:
+        self._company_ticks.clear()
         self._refresh_companies()
-        self._set_status(done)
+        self._set_status(f"{verb} {count} {'company' if count == 1 else 'companies'}.")
+
+    def _ask_accept_all_suggested(self) -> None:
+        if self._companies_busy:
+            return
+        try:
+            names = self._suggested_company_names()
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        if not names:
+            self._set_status("No suggested companies.")
+            return
+        self._set_error("")
+        self._set_status("")
+        count = len(names)
+        self.query_one("#jh-co-confirm-text", Static).update(
+            f"Accept {count} suggested {'company' if count == 1 else 'companies'}?"
+        )
+        self.query_one("#jh-co-confirm", Horizontal).set_class(False, "-hidden")
+
+    def _suggested_company_names(self) -> list[str]:
+        fn = (
+            self._companies_suggested_names_fn
+            if self._companies_suggested_names_fn is not None
+            else companies.suggested_names
+        )
+        return list(fn())
+
+    def _hide_company_confirm(self) -> None:
+        try:
+            self.query_one("#jh-co-confirm", Horizontal).set_class(True, "-hidden")
+        except NoMatches:
+            pass
+
+    def _accept_all_suggested(self) -> None:
+        self._hide_company_confirm()
+        if self._companies_busy:
+            return
+        fn = (
+            self._companies_accept_fn
+            if self._companies_accept_fn is not None
+            else companies.accept_many
+        )
+        try:
+            names = self._suggested_company_names()
+            fn(names)
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        self._finish_company_action("Accepted", len(names))
 
     def _toggle_company_panel(self, show: bool) -> None:
         panel = self.query_one("#jh-company-panel", Vertical)
@@ -1697,6 +1848,12 @@ class JobsHomeScreen(ModalScreen):
             self._company_action("accept")
         elif button_id == "jh-co-remove":
             self._company_action("remove")
+        elif button_id == "jh-co-accept-all":
+            self._ask_accept_all_suggested()
+        elif button_id == "jh-co-confirm-yes":
+            self._accept_all_suggested()
+        elif button_id == "jh-co-confirm-cancel":
+            self._hide_company_confirm()
         elif button_id == "jh-co-add":
             hidden = self.query_one("#jh-company-panel", Vertical).has_class("-hidden")
             self._toggle_company_panel(hidden)

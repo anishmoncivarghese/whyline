@@ -390,6 +390,47 @@ def test_jobs_companies_cli_list_add_suggest_accept_remove_and_errors(
     assert "not found" in err.lower()
 
 
+def test_companies_accept_and_remove_take_several_names_and_all_suggested(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    for name in ("Acme", "Globex", "Initech", "Hooli"):
+        companies.add(name)
+        companies.remove(name)
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "Acme", "globex"], capsys)
+    assert code == 0, err
+    assert out.splitlines() == ["Accepted Acme.", "Accepted Globex.", "Accepted 2 companies."]
+
+    code, out, err = _invoke(["jobs", "companies", "remove", "Acme", "Globex"], capsys)
+    assert code == 0, err
+    assert out.splitlines()[-1] == "Removed 2 companies."
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "Acme", "Nope"], capsys)
+    assert code == 1
+    assert "Nope" in err
+    assert {c.name: c.status for c in companies.list()}["Acme"] == "removed"
+
+    code, out, err = _invoke(["jobs", "companies", "accept"], capsys)
+    assert code == 1
+    code, out, err = _invoke(["jobs", "companies", "accept", "--all-suggested", "Acme"], capsys)
+    assert code == 1
+
+
+def test_companies_accept_all_suggested_accepts_only_suggested(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = companies._load_store()
+    for name in ("Acme", "Globex"):
+        store[companies._company_key(name)] = companies.Company(name=name, status="suggested")
+    store["hooli"] = companies.Company(name="Hooli", status="removed")
+    companies._write_private_companies(store)
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "--all-suggested"], capsys)
+    assert code == 0, err
+    assert out.splitlines() == ["Accepted Acme.", "Accepted Globex.", "Accepted 2 companies."]
+    assert {c.name: c.status for c in companies.list()}["Hooli"] == "removed"
+
+
 def test_jobs_doctor_prints_the_shared_rows_and_exits_1_on_a_failure(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

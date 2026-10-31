@@ -510,12 +510,12 @@ async def test_company_buttons_call_the_companies_functions() -> None:
             companies_suggest_fn=fake_suggest,
             companies_check_fn=fake_check,
             companies_add_fn=fake_add,
-            companies_accept_fn=lambda name: calls["accept"].append(name),
-            companies_remove_fn=lambda name: calls["remove"].append(name),
+            companies_accept_fn=lambda names: calls["accept"].append(list(names)),
+            companies_remove_fn=lambda names: calls["remove"].append(list(names)),
         )
         app.push_screen(screen)
         await pilot.pause()
-        assert [r[0] for r in _table_rows(screen)] == ["Acme", "Globex"]
+        assert [r[1] for r in _table_rows(screen)] == ["Acme", "Globex"]
 
         screen.query_one("#jh-co-suggest", tui.Button).press()
         await _until(pilot, lambda: len(_table_rows(screen)) == 3, "suggest finished")
@@ -529,11 +529,11 @@ async def test_company_buttons_call_the_companies_functions() -> None:
         table.move_cursor(row=1)
         screen.query_one("#jh-co-accept", tui.Button).press()
         await pilot.pause()
-        assert calls["accept"] == ["Globex"]
+        assert calls["accept"] == [["Globex"]]
         table.move_cursor(row=0)
         screen.query_one("#jh-co-remove", tui.Button).press()
         await pilot.pause()
-        assert calls["remove"] == ["Acme"]
+        assert calls["remove"] == [["Acme"]]
 
         screen.query_one("#jh-co-add", tui.Button).press()
         await pilot.pause()
@@ -542,7 +542,166 @@ async def test_company_buttons_call_the_companies_functions() -> None:
         screen.query_one("#jh-co-add-confirm", tui.Button).press()
         await pilot.pause()
         assert calls["add"] == [("Hooli", "https://hooli.example/careers")]
-        assert "Hooli" in [r[0] for r in _table_rows(screen)]
+        assert "Hooli" in [r[1] for r in _table_rows(screen)]
+
+
+def _bulk_screen(store: list[Any], calls: dict[str, list[Any]]) -> JobsHomeScreen:
+    return JobsHomeScreen(
+        companies_list_fn=lambda: list(store),
+        companies_accept_fn=lambda names: calls["accept"].append(list(names)),
+        companies_remove_fn=lambda names: calls["remove"].append(list(names)),
+        companies_suggested_names_fn=lambda: [c.name for c in store if c.status == "suggested"],
+    )
+
+
+async def test_space_ticks_rows_and_ticks_survive_a_refresh() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("space")
+        table.move_cursor(row=2)
+        await pilot.press("space")
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == ["✓", " ", "✓"]
+
+        await pilot.press("space")
+        assert [r[0] for r in _table_rows(screen)] == ["✓", " ", " "]
+        await pilot.press("space")
+
+        store.append(_co("Hooli"))
+        screen._refresh_companies()
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == ["✓", " ", "✓", " "]
+
+
+async def test_clicking_the_tick_cell_toggles_the_row() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(100, 70)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-companies-table", DataTable)
+        # header is row 0 on screen; body row 1 sits one line below it, column 0 at x=1
+        await pilot.click("#jh-companies-table", offset=(1, 2))
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == [" ", "✓", " "]
+        await pilot.click("#jh-companies-table", offset=(1, 2))
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == [" ", " ", " "]
+        assert table.cursor_row == 1
+
+
+async def test_accept_and_remove_labels_show_the_tick_count() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        accept = screen.query_one("#jh-co-accept", tui.Button)
+        remove = screen.query_one("#jh-co-remove", tui.Button)
+        assert (str(accept.label), str(remove.label)) == ("Accept", "Remove")
+
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.focus()
+        await pilot.pause()
+        for row in range(3):
+            table.move_cursor(row=row)
+            await pilot.press("space")
+        await pilot.pause()
+        assert (str(accept.label), str(remove.label)) == ("Accept (3)", "Remove (3)")
+
+
+async def test_accept_with_ticks_calls_accept_many_with_the_ticked_names() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("space")
+        table.move_cursor(row=2)
+        await pilot.press("space")
+        table.move_cursor(row=1)
+        await pilot.pause()
+
+        screen.query_one("#jh-co-accept", tui.Button).press()
+        await pilot.pause()
+        assert calls["accept"] == [["Acme", "Initech"]]
+        assert "Accepted 2 companies." in _plain(screen.query_one("#jh-status").render())
+        assert [r[0] for r in _table_rows(screen)] == [" ", " ", " "]
+        assert str(screen.query_one("#jh-co-accept", tui.Button).label) == "Accept"
+
+        screen.query_one("#jh-co-remove", tui.Button).press()
+        await pilot.pause()
+        assert calls["remove"] == [["Globex"]]
+
+
+async def test_accept_all_suggested_asks_first_and_cancel_changes_nothing() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex", status="accepted"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        confirm = screen.query_one("#jh-co-confirm")
+        assert confirm.has_class("-hidden")
+
+        screen.query_one("#jh-co-accept-all", tui.Button).press()
+        await pilot.pause()
+        assert not confirm.has_class("-hidden")
+        assert calls["accept"] == []
+        text = _plain(screen.query_one("#jh-co-confirm-text", tui.Static).render())
+        assert text == "Accept 2 suggested companies?"
+
+        screen.query_one("#jh-co-confirm-cancel", tui.Button).press()
+        await pilot.pause()
+        assert confirm.has_class("-hidden")
+        assert calls["accept"] == []
+
+        screen.query_one("#jh-co-accept-all", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-co-confirm-yes", tui.Button).press()
+        await pilot.pause()
+        assert calls["accept"] == [["Acme", "Initech"]]
+        assert confirm.has_class("-hidden")
+        assert "Accepted 2 companies." in _plain(screen.query_one("#jh-status").render())
+
+
+async def test_company_detail_line_follows_the_cursor() -> None:
+    from whyline.jobs import companies
+
+    store = [
+        companies.Company(name="Acme", reason="builds anvils", careers_url="https://acme.example/jobs"),
+        _co("Globex", reason="a very long reason " * 5),
+    ]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, {"accept": [], "remove": []})
+        app.push_screen(screen)
+        await pilot.pause()
+        detail = screen.query_one("#jh-company-detail", tui.Static)
+        assert "builds anvils" in _plain(detail.render())
+        assert "https://acme.example/jobs" in _plain(detail.render())
+
+        screen.query_one("#jh-companies-table", DataTable).move_cursor(row=1)
+        await pilot.pause()
+        assert _plain(detail.render()).strip() == ("a very long reason " * 5).strip()
 
 
 async def test_company_rows_refresh_after_a_worker_finishes() -> None:
@@ -564,7 +723,7 @@ async def test_company_rows_refresh_after_a_worker_finishes() -> None:
         )
         app.push_screen(screen)
         await pilot.pause()
-        assert _table_rows(screen)[0][1] == "suggested"
+        assert _table_rows(screen)[0][2] == "suggested"
 
         screen.query_one("#jh-co-check", tui.Button).press()
         await _until(pilot, started.is_set, "worker started")
@@ -574,7 +733,7 @@ async def test_company_rows_refresh_after_a_worker_finishes() -> None:
 
         finish.set()
         await _until(pilot, lambda: not screen._companies_busy, "worker finished")
-        assert _table_rows(screen)[0][1:3] == ["accepted", "greenhouse (acme)"]
+        assert _table_rows(screen)[0][2:4] == ["accepted", "greenhouse (acme)"]
         assert progress.has_class("-empty")
 
 
@@ -587,8 +746,8 @@ async def test_unknown_board_company_shows_the_careers_url_hint() -> None:
         app.push_screen(screen)
         await pilot.pause()
         rows = _table_rows(screen)
-        assert rows[0][2] == "No public job board found: add its careers page URL"
-        assert rows[1][2] == "lever (globex)"
+        assert rows[0][3] == "No public job board found: add its careers page URL"
+        assert rows[1][3] == "lever (globex)"
 
 
 async def test_jobs_home_screen_with_companies_fits_80x24() -> None:
@@ -610,6 +769,7 @@ async def test_jobs_home_screen_with_companies_fits_80x24() -> None:
             "#jh-co-check",
             "#jh-co-accept",
             "#jh-co-remove",
+            "#jh-co-accept-all",
             "#jh-co-add",
             "#jh-company-name",
         ):
