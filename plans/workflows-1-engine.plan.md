@@ -198,7 +198,7 @@ Review focus, each one pinned by the test named in its task:
   - 80x24
   Verify with `uv run pytest -q tests/console/test_workflows_builder.py`. Change nothing else.
 
-- [ ] WF-13: Builder inspector, validation and dry run
+- [x] WF-13: Builder inspector, validation and dry run
   Edit `src/whyline/console/workflows_screens.py` and `tests/console/test_workflows_builder.py` only.
   - Selecting a step shows a form generated from its `StepType.fields`: text inputs (templated fields say `templates allowed`), selects for `choices` (runners come from `whyline.account.enabled_agents()`), and for `step_ref` a select of later steps only. `condition` shows `then`/`else`; `switch` lists cases with Add/Remove case.
   - Validate shows `service.validate` messages next to the step they name. Save is refused while validation fails.
