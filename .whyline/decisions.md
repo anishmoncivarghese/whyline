@@ -29626,3 +29626,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 92b86948bd2941cc9b8b5f7d46b94c1d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:39:17.728Z"} -->
+
+## 2026-10-31 — Templates parsed by hand into literal/_Expr parts; names starting with _ or ending __ refused; default fires only for a missing path
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-2
+
+**Because:** no eval or regex backtracking, iterative scan is safe on 1 MB, and refusing underscore names blocks __class__ outright
+
+**Rejected:**
+
+- jinja2 sandbox — spec allows only {{ path | filter }} and no new dependency
+- default also replacing None — spec says a missing path only
+
+**Files:** src/whyline/workflows/expr.py
+
+<!-- whyline-event: 3e8f1d8a75674e47b1d4f22603a7d128 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:40:18.292Z"} -->
+
+## 2026-10-31 — Pass WF-2 template engine testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-2
+
+**Because:** The required 42 focused template tests pass and the complete project pytest suite exits 0, covering specified grammar, filters, errors, references, raw values, and large-input behavior without regressions
+
+**Files:** src/whyline/workflows/expr.py
+
+<!-- whyline-event: 37f1e8f5d97040d6b642d4a9b5b612e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:50:20.193Z"} -->
+
+## 2026-10-31 — Approve WF-2 template engine
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-2
+
+**Because:** The hand-written parser implements the specified safe grammar and filters, preserves whole-expression values, reports missing paths, exposes references, and both the 42 focused tests and full project suite pass
+
+**Files:** src/whyline/workflows/expr.py
+
+<!-- whyline-event: 8d2d6e070aee41a6ba04c2656a01ffaa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:00:31.707Z"} -->
