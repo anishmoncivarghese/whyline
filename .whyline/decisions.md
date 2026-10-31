@@ -30775,3 +30775,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a4323efeafa14894b31b4b9eab703dee -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:05:47.147Z"} -->
+
+## 2026-10-31 — Stale-draft check compares draft file mtimes with cv.md/preferences.toml mtimes; no_cv check runs before provider checks
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-27
+
+**Because:** mtimes need no extra state and survive reopening the screen; refusing early means no agent or provider lookup without a CV
+
+**Rejected:**
+
+- track review time in screen state — lost when the screen is reopened
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/review.py
+
+<!-- whyline-event: fdacf17aa30349adb4be5a3238090f8f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:29:59.475Z"} -->
+
+## 2026-10-31 — JOB-27 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-27
+
+**Because:** The targeted jobs/console suite and full project suite both completed at 100 percent with exit 0, covering unsaved preference confirmation, save-before-review, no-CV refusal, missing-preferences guidance, and stale-draft acceptance blocking
+
+**Rejected:**
+
+- Fail JOB-27 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/review.py, tests/console/test_jobs_screens.py, tests/jobs/test_review.py
+
+<!-- whyline-event: 3c33e5b1f2414dea8f60c510cabaea3c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:49:53.277Z"} -->
+
+## 2026-10-31 — Approve JOB-27 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-27
+
+**Because:** The implementation satisfies every requested preference-preservation, input-guard, guidance, and stale-draft behavior; the targeted and full suites both reached 100% with exit code 0, and git diff --check passed
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or test-coverage defect was found
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/review.py, tests/console/test_jobs_screens.py, tests/jobs/test_review.py
+
+<!-- whyline-event: a5cf7c0aa0ae4d33b74881ebbc940e90 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T20:10:01.345Z"} -->

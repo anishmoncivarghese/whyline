@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -1085,3 +1086,196 @@ async def test_closing_the_screen_during_a_review_sets_the_event(
         screen.action_close()
         await pilot.pause()
         assert events[0].is_set()
+
+
+# ---- JOB-27: unsaved preferences, no-input reviews, stale drafts ----
+
+
+async def _open_home(app: Any, pilot: Any, **kwargs: Any) -> JobsHomeScreen:
+    screen = JobsHomeScreen(**kwargs)
+    app.push_screen(screen)
+    await pilot.pause()
+    return screen
+
+
+def _confirm_shown(screen: JobsHomeScreen) -> bool:
+    return not screen.query_one("#jh-confirm").has_class("-hidden")
+
+
+def _edit_roles(screen: JobsHomeScreen) -> None:
+    screen.query_one("#jh-roles", tui.Input).value = "Staff Engineer"
+
+
+@pytest.mark.parametrize("how", ["button", "escape"])
+async def test_close_with_unsaved_changes_asks_first_and_without_closes_at_once(how: str) -> None:
+    async def close(screen: JobsHomeScreen, pilot: Any) -> None:
+        if how == "button":
+            screen.query_one("#jh-close", tui.Button).press()
+        else:
+            await pilot.press("escape")
+        await pilot.pause()
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        await close(screen, pilot)
+        assert app.screen is not screen
+
+        screen = await _open_home(app, pilot)
+        _edit_roles(screen)
+        await close(screen, pilot)
+        assert app.screen is screen
+        assert _confirm_shown(screen)
+
+
+async def test_confirm_save_writes_preferences_and_closes() -> None:
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        _edit_roles(screen)
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-save", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is not screen
+        assert profile.load_preferences()["roles"] == ["Staff Engineer"]
+
+
+async def test_confirm_save_failure_keeps_the_screen_open() -> None:
+    def boom(_prefs: Any) -> None:
+        raise profile.ProfileError("disk full")
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot, save_preferences_fn=boom)
+        _edit_roles(screen)
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-save", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is screen
+        assert "disk full" in _plain(screen.query_one("#jh-error").render())
+
+
+async def test_confirm_discard_closes_without_writing_and_keep_editing_stays() -> None:
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        _edit_roles(screen)
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-keep", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is screen
+        assert not _confirm_shown(screen)
+
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-discard", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is not screen
+        assert not profile.preferences_path().exists()
+
+
+async def test_review_saves_pending_preference_changes_first() -> None:
+    order: list[str] = []
+
+    def save(prefs: Any) -> None:
+        order.append("save")
+
+    def run(*_a: Any, **_k: Any) -> review.ReviewResult:
+        order.append("run")
+        return review.ReviewResult(ok=False, outcome="failed", reason="stub")
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot, save_preferences_fn=save, review_run_fn=run)
+        _edit_roles(screen)
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(pilot, lambda: "run" in order, "review run")
+        assert order == ["save", "run"]
+
+
+async def test_review_does_not_start_when_the_save_fails() -> None:
+    ran: list[int] = []
+
+    def boom(_prefs: Any) -> None:
+        raise profile.ProfileError("cannot write preferences")
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(
+            app,
+            pilot,
+            save_preferences_fn=boom,
+            review_run_fn=lambda *a, **k: ran.append(1),
+        )
+        _edit_roles(screen)
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert ran == []
+        assert "cannot write preferences" in _plain(screen.query_one("#jh-error").render())
+
+
+async def test_review_without_a_cv_shows_the_reason() -> None:
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(
+            pilot,
+            lambda: "Import your CV first." in _plain(screen.query_one("#jh-error").render()),
+            "no cv reason",
+        )
+
+
+def _drafts_stub() -> review.DraftBlocks:
+    return review.DraftBlocks(profile="p", rubric="r")
+
+
+def _write_drafts(stamp: float) -> None:
+    review.profile_draft_path().parent.mkdir(parents=True, exist_ok=True)
+    for path in (review.profile_draft_path(), review.rubric_draft_path()):
+        path.write_text("draft")
+        os.utime(path, (stamp, stamp))
+
+
+async def test_missing_preferences_note_shows_under_the_drafts() -> None:
+    note = (
+        "No preferences saved, so the rubric ignores roles, location and salary. "
+        "Fill them in, Save, and review again."
+    )
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot, read_drafts_fn=_drafts_stub)
+        widget = screen.query_one("#jh-review-noprefs")
+        assert _plain(widget.render()) == note
+        assert not widget.has_class("-empty")
+
+        profile.save_preferences({"roles": ["Dev"]})
+        screen._refresh_draft_notes()
+        assert widget.has_class("-empty")
+
+
+async def test_stale_drafts_show_the_note_and_hide_accept_but_fresh_ones_do_not() -> None:
+    profile.import_cv_text("# Ada\nEngineer\n")
+    profile.save_preferences({"roles": ["Dev"]})
+    now = datetime.datetime.now().timestamp()
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        _write_drafts(now - 1000)
+        screen = await _open_home(app, pilot, read_drafts_fn=_drafts_stub)
+        stale = screen.query_one("#jh-review-stale")
+        accept = screen.query_one("#jh-review-accept", tui.Button)
+        assert _plain(stale.render()) == (
+            "These drafts are older than your CV or preferences. Run Review my CV again."
+        )
+        assert not stale.has_class("-empty")
+        assert accept.display is False
+
+        _write_drafts(now + 1000)
+        screen._refresh_draft_notes()
+        assert stale.has_class("-empty")
+        assert accept.display is True

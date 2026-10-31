@@ -293,6 +293,27 @@ def test_failed_run_or_missing_block_reports_outcome_and_writes_nothing() -> Non
     assert not review.rubric_draft_path().exists()
 
 
+def test_run_without_a_cv_runs_no_agent() -> None:
+    calls: list[Any] = []
+
+    def run_fn(cmd, prompt, **kw):
+        calls.append(cmd)
+        return _ExecResult(0, _claude_json(GOOD_ANSWER))
+
+    missing = review.run(run_fn=run_fn)
+    assert (missing.ok, missing.outcome, missing.reason) == (
+        False,
+        "no_cv",
+        "Import your CV first.",
+    )
+
+    profile.cv_path().parent.mkdir(parents=True, exist_ok=True)
+    profile.cv_path().write_text("")
+    assert review.run(run_fn=run_fn).outcome == "no_cv"
+    assert calls == []
+    assert not review.profile_draft_path().exists()
+
+
 def test_provider_choice_follows_enabled_rules() -> None:
     profile.import_cv_text("# Barbara Liskov\nDistributed Systems\n")
 

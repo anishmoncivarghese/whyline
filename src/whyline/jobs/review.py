@@ -290,6 +290,13 @@ def run(
     cancel_event: threading.Event | None = None,
 ) -> ReviewResult:
     """Create/reuse job-profile in ~/.whyline/jobs/, run it, parse blocks, write drafts."""
+    try:
+        cv_ready = profile.cv_path().stat().st_size > 0
+    except OSError:
+        cv_ready = False
+    if not cv_ready:
+        return ReviewResult(ok=False, outcome="no_cv", reason="Import your CV first.")
+
     enabled = enabled_providers()
     chosen: str | None = None
     if cli is not None:

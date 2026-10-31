@@ -33,6 +33,14 @@ PRIVACY_SENTENCE = (
 )
 
 UNKNOWN_BOARD_HINT = "No public job board found: add its careers page URL"
+UNSAVED_PROMPT = "Save your preference changes?"
+NO_PREFERENCES_NOTE = (
+    "No preferences saved, so the rubric ignores roles, location and salary. "
+    "Fill them in, Save, and review again."
+)
+STALE_DRAFTS_NOTE = (
+    "These drafts are older than your CV or preferences. Run Review my CV again."
+)
 COMPANIES_FETCH_NOTE = "Suggested companies stay out of the fetch list until accepted."
 
 _REMOTE_OPTIONS: list[tuple[str, str]] = [
@@ -281,6 +289,12 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-jobs-note { width: 100%; }
     JobsHomeScreen #jh-jobs-check { width: 100%; height: auto; margin-top: 1; }
     JobsHomeScreen #jh-jobs-check.-empty { display: none; }
+    JobsHomeScreen #jh-review-stale, JobsHomeScreen #jh-review-noprefs { width: 100%; height: auto; color: $warning; }
+    JobsHomeScreen #jh-review-stale.-empty, JobsHomeScreen #jh-review-noprefs.-empty { display: none; }
+    JobsHomeScreen #jh-confirm { height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-confirm.-hidden { display: none; }
+    JobsHomeScreen #jh-confirm Static { width: auto; padding: 1 1 0 0; }
+    JobsHomeScreen #jh-confirm Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen #jh-error { height: auto; max-height: 3; color: $error; }
     JobsHomeScreen #jh-error.-empty { display: none; }
     JobsHomeScreen #jh-status { height: auto; max-height: 2; color: $success; }
@@ -366,6 +380,7 @@ class JobsHomeScreen(ModalScreen):
         self._companies_busy = False
         self._companies_token: object | None = None
         self._company_rows: list[companies.Company] = []
+        self._saved_prefs: dict[str, Any] | None = None
 
     def _read_alert_senders(self) -> dict[str, bool]:
         fn = self._alert_senders_fn if self._alert_senders_fn is not None else alerts.senders
@@ -560,10 +575,12 @@ class JobsHomeScreen(ModalScreen):
                     id="jh-review-progress-row",
                 ),
                 Vertical(
+                    Static("", id="jh-review-stale", markup=False, classes="-empty"),
                     Label("Profile draft", classes="jh-draft-heading", id="jh-profile-draft-label"),
                     TextArea(initial_profile_draft, id="jh-profile-draft"),
                     Label("Rubric draft", classes="jh-draft-heading", id="jh-rubric-draft-label"),
                     TextArea(initial_rubric_draft, id="jh-rubric-draft"),
+                    Static("", id="jh-review-noprefs", markup=False, classes="-empty"),
                     Horizontal(
                         Button("Accept", id="jh-review-accept", variant="success"),
                         Button("Discard", id="jh-review-discard"),
@@ -754,6 +771,14 @@ class JobsHomeScreen(ModalScreen):
             ),
             Static("", id="jh-status", markup=False, classes="-empty"),
             Horizontal(
+                Static(UNSAVED_PROMPT, markup=False),
+                Button("Save", id="jh-confirm-save", variant="success"),
+                Button("Discard", id="jh-confirm-discard"),
+                Button("Keep editing", id="jh-confirm-keep"),
+                id="jh-confirm",
+                classes="-hidden",
+            ),
+            Horizontal(
                 Button("Save", id="jh-save", variant="success"),
                 Button("Tracked jobs", id="jh-tracked"),
                 Button("Close", id="jh-close"),
@@ -770,8 +795,34 @@ class JobsHomeScreen(ModalScreen):
             "Score", "Status", "Company", "Title"
         )
         self._refresh_jobs()
+        self._saved_prefs = self._current_preferences()
+        self._refresh_draft_notes()
+
+    def _current_preferences(self) -> dict[str, Any] | None:
+        try:
+            return self._collect_preferences()
+        except (ValueError, NoMatches):
+            return None
+
+    def _has_unsaved_preferences(self) -> bool:
+        if self._saved_prefs is None:
+            return False
+        current = self._current_preferences()
+        return current is None or current != self._saved_prefs
+
+    def _show_confirm(self, show: bool) -> None:
+        try:
+            self.query_one("#jh-confirm", Horizontal).set_class(not show, "-hidden")
+        except NoMatches:
+            pass
 
     def action_close(self) -> None:
+        if self._has_unsaved_preferences():
+            self._show_confirm(True)
+            return
+        self._close()
+
+    def _close(self) -> None:
         if self._review_cancel is not None:
             self._review_cancel.set()
         self.dismiss(None)
@@ -837,6 +888,7 @@ class JobsHomeScreen(ModalScreen):
             self.query_one("#jh-cv-status", Static).update(format_cv_status(statuses))
         except (profile.ProfileError, OSError, ValueError, NoMatches):
             pass
+        self._refresh_draft_notes()
 
     def _show_cv_summary(self, source_name: str) -> None:
         try:
@@ -956,6 +1008,8 @@ class JobsHomeScreen(ModalScreen):
         self._toggle_paste_panel(False)
         self._set_error("")
         self._set_status("")
+        if self._has_unsaved_preferences() and not self._save_preferences():
+            return
 
         raw_cli = self.query_one("#jh-review-cli", Select).value
         chosen_cli = str(raw_cli) if raw_cli is not Select.BLANK else None
@@ -1013,6 +1067,9 @@ class JobsHomeScreen(ModalScreen):
         if not result.ok and result.outcome == "cancelled":
             self._set_status("Review stopped. Your previous drafts are unchanged.")
             return
+        if not result.ok and result.outcome == "no_cv":
+            self._set_error(result.reason)
+            return
         if not result.ok:
             detail = (
                 f"{result.outcome}: {result.reason}"
@@ -1032,8 +1089,39 @@ class JobsHomeScreen(ModalScreen):
         prof_area.load_text(result.profile)
         rub_area.load_text(result.rubric)
         panel.set_class(False, "-hidden")
+        self._refresh_draft_notes()
         self._set_status("Drafts ready. Edit if needed, then press Accept or Discard.")
         panel.scroll_visible()
+
+    def _refresh_draft_notes(self) -> None:
+        """Show the missing-preferences and stale-draft notes; hide Accept on stale drafts."""
+        try:
+            stale_note = self.query_one("#jh-review-stale", Static)
+            noprefs_note = self.query_one("#jh-review-noprefs", Static)
+            accept = self.query_one("#jh-review-accept", Button)
+        except NoMatches:
+            return
+        prefs_file = profile.preferences_path()
+        noprefs_note.update(NO_PREFERENCES_NOTE if not prefs_file.is_file() else "")
+        noprefs_note.set_class(prefs_file.is_file(), "-empty")
+
+        def mtime(path: Path) -> float | None:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return None
+
+        drafts = [
+            t for t in (mtime(review.profile_draft_path()), mtime(review.rubric_draft_path()))
+            if t is not None
+        ]
+        inputs = [
+            t for t in (mtime(profile.cv_path()), mtime(prefs_file)) if t is not None
+        ]
+        stale = bool(drafts and inputs and min(drafts) < max(inputs))
+        stale_note.update(STALE_DRAFTS_NOTE if stale else "")
+        stale_note.set_class(not stale, "-empty")
+        accept.display = not stale
 
     def _accept_review(self) -> None:
         prof_area = self.query_one("#jh-profile-draft", TextArea)
@@ -1526,7 +1614,7 @@ class JobsHomeScreen(ModalScreen):
             ),
         }
 
-    def _save_preferences(self) -> None:
+    def _save_preferences(self) -> bool:
         try:
             prefs = self._collect_preferences()
             fn = (
@@ -1537,9 +1625,11 @@ class JobsHomeScreen(ModalScreen):
             fn(prefs)
         except (profile.ProfileError, OSError, ValueError) as error:
             self._set_error(str(error))
-            return
+            return False
+        self._saved_prefs = prefs
         self._refresh_cv_status()
         self._set_status("Preferences saved.")
+        return True
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "jh-cv-path":
@@ -1556,6 +1646,15 @@ class JobsHomeScreen(ModalScreen):
             self.action_close()
         elif button_id == "jh-save":
             self._save_preferences()
+        elif button_id == "jh-confirm-save":
+            if self._save_preferences():
+                self._close()
+            else:
+                self._show_confirm(False)
+        elif button_id == "jh-confirm-discard":
+            self._close()
+        elif button_id == "jh-confirm-keep":
+            self._show_confirm(False)
         elif button_id == "jh-jobs-set":
             self._open_job_edit("status")
         elif button_id == "jh-jobs-note-open":
