@@ -118,7 +118,7 @@ Review focus, each one pinned by the test named in its task:
   - a disabled provider fails with the runner's Settings hint and no subprocess
   Verify with `uv run pytest -q tests/workflows/test_agent_step.py`. Change nothing else.
 
-- [ ] WF-7: Deliver step
+- [x] WF-7: Deliver step
   Create `src/whyline/workflows/steps/deliver.py` and `tests/workflows/test_deliver_step.py`; edit `src/whyline/agents/deliver.py` and `tests/agents/test_deliver.py` only.
   - In `agents/deliver.py`, extract the sending part of `after_run` into `send(delivery, subject, body, attachment=None, *, mail=None, tg=None) -> list[dict]`, and have `after_run` call it. Agents' behaviour is unchanged.
   - The step builds a `Delivery`: `telegram` with `chat` (must be in `telegram_in.allowed_chats`; the only allowed chat is the default; otherwise the step fails `chat <id> is not an allowed inbox chat`), `email` with the literal addresses, or `file` writing `<reports_dir>/<YYYY-MM-DD-HHMM>-<run_id>.md` (0600). `text` and `subject` are templates.
