@@ -81,7 +81,7 @@ Rules every task keeps:
   - closing the screen during a review sets the event
   Verify with `uv run pytest -q tests/agents tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-27: Don't lose preferences, and don't review without inputs
+- [x] JOB-27: Don't lose preferences, and don't review without inputs
   Edit `src/whyline/jobs/review.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Today **Close** and Esc drop unsaved preference fields without asking, and **Review my CV** runs without a CV or saved preferences, which gives a profile and rubric built on nothing.
   1. Unsaved changes: JobsHomeScreen keeps the preferences as last loaded or saved (normalised the same way `_collect_preferences` builds them). If the form differs when **Close** or Esc is pressed, show a confirm line `Save your preference changes?` with **Save**, **Discard** and **Keep editing**. **Save** goes through the same `_save_preferences` path, and the screen closes only if the save succeeds.
