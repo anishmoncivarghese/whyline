@@ -92,7 +92,7 @@ Review focus, each one pinned by the test named in its task:
   - an output over 1 MB fails the step; a secret-looking value is redacted on disk
   Verify with `uv run pytest -q tests/workflows/test_engine.py`. Change nothing else.
 
-- [ ] WF-5: Wait and approval steps
+- [x] WF-5: Wait and approval steps
   Create `src/whyline/workflows/steps/waiting.py` and `tests/workflows/test_waiting.py`; edit `src/whyline/workflows/engine.py` and `src/whyline/workflows/state.py` only.
   - `wait`: `minutes` or `until` sets the run `waiting` with reason `timer` and `wake_at`. `engine.resume_due(now) -> list[int]` lists waiting runs whose `wake_at` has passed; `execute` continues them at the waiting step, which then succeeds.
   - `approval`: creates an `approvals` row (nonce from `secrets.token_urlsafe(8)`, `expires_at` = now + `expires_hours`), sets the run `waiting` with reason `approval`. `state.decide(conn, approval_id, nonce, choice, actor) -> str` with choice `approve` | `deny`; a used, expired or wrong nonce returns `out_of_date` and changes nothing. Approve continues the run; deny fails the step with `denied by <actor>`. An expired pending approval fails the step with `approval expired` when `resume_due` sees it.
