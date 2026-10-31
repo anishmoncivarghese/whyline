@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +14,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Label, Select, Static
 
 from whyline.ledgerops import redact
-from whyline.workflows import service, state
+from whyline.workflows import definitions, service, state
+from whyline.workflows.steps import STEP_TYPES
 
 _COLUMNS = ("Name", "Kind", "Status", "When", "Next", "Last")
 
@@ -69,7 +71,7 @@ class LibraryScreen(ModalScreen):
                 Button("Run now", id="wl-run"),
                 Button("Pause", id="wl-toggle"),
                 Button("Review & accept", id="wl-accept"),
-                Button("Edit", id="wl-edit", disabled=True),
+                Button("Edit", id="wl-edit"),
                 Button("Runs", id="wl-runs"),
                 classes="wl-row",
             ),
@@ -125,7 +127,7 @@ class LibraryScreen(ModalScreen):
         row = self._current()
         toggle = self.query_one("#wl-toggle", Button)
         toggle.label = "Resume" if row and row.status == state.PAUSED else "Pause"
-        for button_id in ("wl-run", "wl-toggle", "wl-accept", "wl-runs"):
+        for button_id in ("wl-run", "wl-toggle", "wl-accept", "wl-edit", "wl-runs"):
             self.query_one(f"#{button_id}", Button).disabled = row is None
         detail = ""
         if row is not None and row.status == state.NEEDS_REVIEW and not row.next:
@@ -167,6 +169,8 @@ class LibraryScreen(ModalScreen):
             self._toggle()
         elif button_id == "wl-accept":
             self._review()
+        elif button_id == "wl-edit":
+            self._edit()
         elif button_id == "wl-runs":
             name = self._current_name()
             if name is not None:
@@ -183,6 +187,17 @@ class LibraryScreen(ModalScreen):
             return
         self._say(f"Started {name} (run {run_id}).")
         self._reload()
+
+    def _edit(self) -> None:
+        name = self._current_name()
+        if name is None:
+            return
+        try:
+            workflow = service.load(name, self._root)
+        except Exception as error:
+            self._say(str(error))
+            return
+        self.app.push_screen(BuilderScreen(workflow), lambda _result: self._reload())
 
     def _toggle(self) -> None:
         row = self._current()
@@ -520,3 +535,226 @@ class RunsScreen(ModalScreen):
         self._busy = False
         self._reload(run_id)
         self._say(result)
+
+
+_STEP_DEFAULTS = {
+    "set": {"values": {}},
+    "condition": {"left": "", "op": "eq", "right": ""},
+    "switch": {"value": ""},
+    "wait": {"minutes": 1},
+    "approval": {"message": ""},
+    "agent": {"runner": STEP_TYPES["agent"].field("runner").choices[0], "instructions": ""},
+    "deliver": {"to": "file", "text": ""},
+}
+
+
+def _one_line(step: definitions.Step) -> str:
+    text = ", ".join(f"{k}={json.dumps(v, ensure_ascii=False)}" for k, v in step.fields.items())
+    return text if len(text) <= 40 else text[:39] + "…"
+
+
+class BuilderScreen(ModalScreen):
+    """Outline editor: the trigger and steps on the left, the trigger form and inputs on the right."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    DEFAULT_CSS = """
+    BuilderScreen { align: center middle; }
+    BuilderScreen > Vertical {
+        width: 100%; height: 100%; padding: 0 1; border: round $accent; background: $surface;
+    }
+    BuilderScreen #wb-main { height: 1fr; }
+    BuilderScreen #wb-outline { width: 1fr; height: 100%; }
+    BuilderScreen #wb-form { width: 36; height: 100%; padding-left: 1; }
+    BuilderScreen #wb-inputs, BuilderScreen #wb-status { height: auto; }
+    BuilderScreen .wb-row { height: 3; }
+    BuilderScreen .wb-row Button { min-width: 8; margin-right: 1; }
+    """
+
+    def __init__(self, workflow: definitions.Workflow) -> None:
+        super().__init__()
+        self._workflow = workflow
+        self._steps: list[definitions.Step] = list(workflow.steps)
+        self._baseline = self._signature(self._trigger_values(workflow.trigger))
+
+    @staticmethod
+    def _trigger_values(t: definitions.TriggerSpec) -> tuple[str, str, str, str]:
+        return (t.kind, t.at, str(t.every_hours) if t.every_hours else "", t.folder)
+
+    def _signature(self, trigger: tuple[str, str, str, str]) -> tuple:
+        return (trigger, tuple(self._steps))
+
+    def compose(self) -> ComposeResult:
+        t = self._workflow.trigger
+        yield Vertical(
+            Label(f"Edit {self._workflow.label}", id="wb-title"),
+            Horizontal(
+                DataTable(id="wb-outline", cursor_type="row"),
+                VerticalScroll(
+                    Select([(k, k) for k in definitions.TRIGGER_KINDS], allow_blank=False,
+                           value=t.kind, id="wb-kind"),
+                    Input(t.at, placeholder="at, e.g. 08:00", id="wb-at"),
+                    Input(str(t.every_hours) if t.every_hours else "",
+                          placeholder="every_hours", id="wb-hours"),
+                    Input(t.folder, placeholder="folder", id="wb-folder"),
+                    Static("", id="wb-inputs"),
+                    Select([(k, k) for k in STEP_TYPES], allow_blank=False,
+                           value=next(iter(STEP_TYPES)), id="wb-type"),
+                    id="wb-form",
+                ),
+                id="wb-main",
+            ),
+            Horizontal(
+                Button("Add step", id="wb-add"),
+                Button("Move up", id="wb-up"),
+                Button("Move down", id="wb-down"),
+                Button("Delete", id="wb-delete"),
+                Button("Save", id="wb-save", variant="primary"),
+                Button("Cancel", id="wb-cancel"),
+                classes="wb-row",
+            ),
+            Static("", id="wb-status"),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#wb-outline", DataTable).add_columns("ID", "Type", "Summary")
+        lines = [f"[[input]] {i.name} ({i.type})" + ("" if i.default is None else f" = {i.default}")
+                 for i in self._workflow.inputs]
+        self.query_one("#wb-inputs", Static).update(Text("\n".join(lines or ["No inputs."])))
+        self._refresh()
+
+    # ---- state ---------------------------------------------------------
+
+    def _form(self) -> tuple[str, str, str, str]:
+        return (str(self.query_one("#wb-kind", Select).value),
+                self.query_one("#wb-at", Input).value.strip(),
+                self.query_one("#wb-hours", Input).value.strip(),
+                self.query_one("#wb-folder", Input).value.strip())
+
+    def _trigger(self, strict: bool) -> definitions.TriggerSpec:
+        kind, at, hours, folder = self._form()
+        if hours and not hours.isdigit():
+            if strict:
+                raise ValueError("every_hours is a whole number")
+            hours = ""
+        return definitions.TriggerSpec(
+            kind=kind,
+            at=at if kind in ("daily", "weekdays") else "",
+            every_hours=int(hours) if hours and kind == "every" else 0,
+            folder=folder if kind == "folder" else "",
+        )
+
+    def _dirty(self) -> bool:
+        return self._signature(self._trigger_values(self._trigger(False))) != self._baseline
+
+    def _say(self, text: str) -> None:
+        self.query_one("#wb-status", Static).update(Text(text))
+
+    def _refresh(self, row: int | None = None) -> None:
+        table = self.query_one("#wb-outline", DataTable)
+        row = table.cursor_row if row is None else row
+        table.clear()
+        when = service.when_text(self._trigger(False))
+        table.add_row(*(_cell(v) for v in ("trigger", self.query_one("#wb-kind", Select).value,
+                                           when)))
+        for step in self._steps:
+            table.add_row(*(_cell(v) for v in (step.id, step.type, _one_line(step))))
+        table.move_cursor(row=max(0, min(row, len(self._steps))))
+
+    def _selected(self) -> int | None:
+        index = self.query_one("#wb-outline", DataTable).cursor_row - 1
+        return index if 0 <= index < len(self._steps) else None
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        event.stop()
+        if event.select.id == "wb-kind":
+            self._refresh()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        event.stop()
+        self._refresh()
+
+    # ---- actions -------------------------------------------------------
+
+    def _add(self) -> None:
+        kind = str(self.query_one("#wb-type", Select).value)
+        taken = {s.id for s in self._steps}
+        n = 1
+        while f"{kind}_{n}" in taken:
+            n += 1
+        self._steps.append(definitions.Step(f"{kind}_{n}", kind, dict(_STEP_DEFAULTS.get(kind, {}))))
+        self._refresh(len(self._steps))
+        self._say(f"Added {kind}_{n}.")
+
+    def _move(self, delta: int) -> None:
+        index = self._selected()
+        if index is None:
+            self._say("Select a step first.")
+            return
+        other = index + delta
+        if not 0 <= other < len(self._steps):
+            return
+        self._steps[index], self._steps[other] = self._steps[other], self._steps[index]
+        self._refresh(other + 1)
+
+    def _routed_from(self, step_id: str) -> str | None:
+        for other in self._steps:
+            if other.id == step_id:
+                continue
+            for _where, target in definitions._targets(other.type, dict(other.fields), "", []):
+                if target == step_id:
+                    return other.id
+        return None
+
+    def _delete(self) -> None:
+        index = self._selected()
+        if index is None:
+            self._say("Select a step first.")
+            return
+        step = self._steps[index]
+        router = self._routed_from(step.id)
+        if router is not None:
+            self._say(f"Cannot delete {step.id}: step {router} routes to it.")
+            return
+        del self._steps[index]
+        self._refresh(index)
+        self._say(f"Deleted {step.id}.")
+
+    def _save(self) -> None:
+        try:
+            trigger = self._trigger(True)
+            wanted = replace(self._workflow, trigger=trigger, steps=tuple(self._steps))
+            saved = definitions.parse(definitions.render(wanted), kind=wanted.kind,
+                                      path=wanted.path, repo_root=wanted.root)
+            service.save(saved)
+        except Exception as error:
+            self._say(str(error))
+            return
+        old = self._workflow
+        self._workflow = saved
+        self._baseline = self._signature(self._trigger_values(saved.trigger))
+        if definitions.semantic_hash(old.raw) != definitions.semantic_hash(saved.raw):
+            self._say("Saved. Review & accept to run the new version.")
+        elif definitions.layout_hash(old.raw) != definitions.layout_hash(saved.raw):
+            self._say("Saved layout.")
+        else:
+            self._say("Saved.")
+
+    def action_cancel(self) -> None:
+        from whyline.console.tui import ConfirmScreen
+
+        if not self._dirty():
+            self.dismiss(None)
+            return
+
+        def decided(confirmed: bool | None) -> None:
+            if confirmed:
+                self.dismiss(None)
+
+        self.app.push_screen(ConfirmScreen("Discard unsaved changes?", "Discard"), decided)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        {"wb-add": self._add, "wb-up": lambda: self._move(-1), "wb-down": lambda: self._move(1),
+         "wb-delete": self._delete, "wb-save": self._save,
+         "wb-cancel": self.action_cancel}[event.button.id]()

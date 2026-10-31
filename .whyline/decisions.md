@@ -30335,3 +30335,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2957e53d4d40477eb4aee4666b450cb6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:43:02.342Z"} -->
+
+## 2026-10-31 — Builder save re-parses the rendered TOML before service.save; new steps get valid placeholder fields
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-12
+
+**Because:** parse validates the layout and routing the user built, so a bad move shows an error instead of writing an invalid file; required fields need defaults to pass validation
+
+**Rejected:**
+
+- write render output directly — could save a file that fails to load
+
+**Files:** src/whyline/console/workflows_screens.py
+
+<!-- whyline-event: dfe4c57d6d47455d8eae39183ff1e594 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:45:27.893Z"} -->
+
+## 2026-10-31 — Pass WF-12 builder behavior testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-12
+
+**Because:** All 7 focused builder tests pass; the full suite's sole failure is the pre-existing stale four-mode assertion in tests/console/test_slash_whyline.py, which rejects the already-approved Workflows mode and is outside WF-12 scope
+
+**Rejected:**
+
+- Fail WF-12 for the full-suite assertion — it tests the obsolete pre-WF-10 mode set and does not exercise the builder implementation
+
+**Files:** src/whyline/console/workflows_screens.py, tests/console/test_workflows_builder.py
+
+<!-- whyline-event: 302de14ca45046f19ef8a53475ab9fa3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:56:07.205Z"} -->
+
+## 2026-10-31 — Request WF-12 changes for false dirty state after saving trigger-kind changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-12
+
+**Because:** BuilderScreen stores a normalized saved-trigger baseline but compares it to the unnormalized form; changing daily to manual leaves the old at value in the form, so a successful save is immediately treated as unsaved and Cancel asks to discard changes that were already persisted
+
+**Rejected:**
+
+- Approve based on the focused suite — the current tests do not cover cancel-after-save when trigger normalization drops fields
+
+**Files:** src/whyline/console/workflows_screens.py, tests/console/test_workflows_builder.py
+
+<!-- whyline-event: 853b9f6dc012476caa9592f9326c5e12 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:07:10.401Z"} -->
+
+## 2026-10-31 — Dirty check compares the normalized trigger (same as save), not raw form fields
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-12
+
+**Because:** Save drops fields irrelevant to the kind, so raw comparison made a saved daily->manual change look unsaved and Cancel prompted
+
+**Rejected:**
+
+- clear ignored inputs on kind change — surprising to the user, loses typed values
+
+**Files:** src/whyline/console/workflows_screens.py
+
+<!-- whyline-event: 02169c1135da458a9f03d83819c0c499 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:07:53.478Z"} -->
+
+## 2026-10-31 — Pass WF-12 round-5 builder behavior testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-12
+
+**Because:** All 8 focused builder tests pass, including cancel after saving a normalized trigger-kind change; the full suite's sole failure is the documented stale four-mode assertion that rejects the approved Workflows mode and does not exercise WF-12
+
+**Rejected:**
+
+- Fail WF-12 for the full-suite assertion — it tests the obsolete pre-Workflows mode set rather than builder behavior
+
+**Files:** src/whyline/console/workflows_screens.py, tests/console/test_workflows_builder.py
+
+<!-- whyline-event: 386b532787da4788bd94e6f1066c70c8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:18:41.752Z"} -->
+
+## 2026-10-31 — Approve WF-12 round-6 builder outline
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-12
+
+**Because:** The implementation satisfies the requested builder operations, routed-delete guard, semantic save status, dirty-cancel behavior, Library Edit path, and 80x24 layout; all 8 focused tests pass, while the full suite's sole failure is the unrelated pre-existing four-mode assertion that rejects the already-present Workflows mode
+
+**Rejected:**
+
+- Request changes for the full-suite failure — the failing test does not cover WF-12 and neither its test nor the mode-button implementation is changed by this diff
+
+**Files:** src/whyline/console/workflows_screens.py, tests/console/test_workflows_builder.py
+
+<!-- whyline-event: 6d0793ea309f412b9bb69089679209de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:29:48.883Z"} -->
