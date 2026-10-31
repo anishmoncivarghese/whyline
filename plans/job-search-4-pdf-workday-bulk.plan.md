@@ -100,7 +100,7 @@ Rules every task keeps:
   - a stale draft shows the note and hides Accept, and a fresh one does neither
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-28: Accept or remove several companies at once
+- [x] JOB-28: Accept or remove several companies at once
   Edit `src/whyline/jobs/companies.py`, `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Add `companies.accept_many(names)` and `companies.remove_many(names)`. Each loads the store once, changes every named company, and writes once. If any name is unknown, raise `CompanyError` listing all unknown names and change nothing. `accept` and `remove` call them with one name, keeping their return values.
   Add `companies.suggested_names()`, which returns the names with status `suggested` in table order.
