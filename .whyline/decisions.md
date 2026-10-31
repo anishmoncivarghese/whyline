@@ -29670,3 +29670,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8d2d6e070aee41a6ba04c2656a01ffaa -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:00:31.707Z"} -->
+
+## 2026-10-31 — State claim_run always inserts as queued; older queued runs are cancelled only when one is running or waiting
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-3
+
+**Because:** next_queued is the single pickup path, and a lone trigger needs no cancelling
+
+**Rejected:**
+
+- insert as running when idle — the engine, not the store, should start runs
+
+**Files:** src/whyline/workflows/state.py
+
+<!-- whyline-event: f19768705aad4fba8f59dbdb068df096 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:02:11.699Z"} -->
+
+## 2026-10-31 — Pass WF-3 state store and acceptance testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-3
+
+**Because:** The focused workflow tests passed 10 of 10, including acceptance hashing, run queue replacement, permissions, capability summaries, and diffs; the full project suite also exited successfully
+
+**Files:** src/whyline/workflows/state.py, src/whyline/workflows/capabilities.py
+
+<!-- whyline-event: 5c29e1f05bf147a485aa4471d73e7f02 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:12:18.600Z"} -->
+
+## 2026-10-31 — Approve WF-3 state store and acceptance implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-3
+
+**Because:** The implementation matches the requested schema and semantics, its tests cover every stated acceptance case, and the plain full project suite completed successfully with exit code 0
+
+**Files:** src/whyline/workflows/state.py, src/whyline/workflows/capabilities.py, tests/workflows/test_state.py, tests/workflows/test_capabilities.py
+
+<!-- whyline-event: 3d9107be156441d2a77a583f948e6dfd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:22:29.772Z"} -->
