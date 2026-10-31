@@ -29928,3 +29928,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d9a6359ef32e4d24aa2ea28803b84338 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:14:45.804Z"} -->
+
+## 2026-10-31 — Daily cap counts agent steps by joining step_runs to runs.definition_json, excluding the current step
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-6
+
+**Because:** step_runs has no step type, and the engine marks the current step started before its handler runs
+
+**Rejected:**
+
+- add a type column to step_runs — task limits changes to three files
+
+**Files:** src/whyline/workflows/steps/agent.py
+
+<!-- whyline-event: 58f450e2709f40928e1551fb8ac7eec6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:17:11.151Z"} -->
+
+## 2026-10-31 — WF-6 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-6
+
+**Because:** All 13 task-specific agent-step tests passed, and the complete project test suite completed with exit code 0 and no regressions
+
+**Files:** tests/workflows/test_agent_step.py
+
+<!-- whyline-event: 9df61bc72e3a48bf9f999d72f40f21a9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:27:07.598Z"} -->
+
+## 2026-10-31 — Approve WF-6 agent step and daily cap
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-6
+
+**Because:** The implementation matches the runner, JSON repair, usage-limit waiting, provider persistence, settings, and daily-cap requirements; all 13 focused tests and the full project suite pass
+
+**Files:** src/whyline/workflows/steps/agent.py, src/whyline/workflows/settings.py, tests/workflows/test_agent_step.py
+
+<!-- whyline-event: 51315760e5d7486faff6e8fadb16b52e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:37:42.946Z"} -->
