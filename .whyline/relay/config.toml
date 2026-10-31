@@ -1,5 +1,5 @@
 # whyline-relay configuration. Every key is optional.
-plan = "plans/job-search-3-alerts-and-applications.plan.md"
+plan = "plans/workflows-1-engine.plan.md"
 max_rounds = 24
 timeout_minutes = 60
 branch_prefix = "relay/"
