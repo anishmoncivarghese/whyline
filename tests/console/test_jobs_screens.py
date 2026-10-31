@@ -13,7 +13,7 @@ pytest.importorskip("textual")
 from textual.widgets import DataTable  # noqa: E402
 
 from whyline import account
-from whyline.console import tui
+from whyline.console import mac_input, tui
 from whyline.console.jobs_screens import JobsHomeScreen, PRIVACY_SENTENCE
 from whyline.jobs import profile, review
 
@@ -932,3 +932,95 @@ async def test_screen_shows_cv_preview_after_import_and_not_when_reopened(
         app.push_screen(reopened)
         await pilot.pause()
         assert reopened.query_one("#jh-cv-preview").has_class("-empty")
+
+
+async def _open_import_panel(app: Any, screen: JobsHomeScreen, pilot: Any) -> None:
+    app.push_screen(screen)
+    await pilot.pause()
+    screen.query_one("#jh-import-cv", tui.Button).press()
+    await pilot.pause()
+
+
+async def _press_choose(screen: JobsHomeScreen, app: Any, pilot: Any) -> None:
+    screen.query_one("#jh-cv-choose", tui.Button).press()
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+async def test_choose_file_button_hidden_when_picker_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: False)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen()
+        await _open_import_panel(app, screen, pilot)
+        assert not screen.query("#jh-cv-choose")
+
+
+async def test_choose_file_imports_single_pick(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+    imported: list[str] = []
+
+    def fake_import(path: str | Path) -> Path:
+        imported.append(str(path))
+        return Path("/tmp/cv.md")
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            import_cv_fn=fake_import, pick_files_fn=lambda: [Path("/tmp/my cv.pdf")]
+        )
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert imported == ["/tmp/my cv.pdf"]
+        assert screen.query_one("#jh-cv-path", tui.Input).value == "/tmp/my cv.pdf"
+        assert "Imported CV" in _plain(screen.query_one("#jh-status", tui.Static).render())
+
+
+async def test_choose_file_cancel_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+    imported: list[str] = []
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            import_cv_fn=lambda p: imported.append(str(p)), pick_files_fn=lambda: []
+        )
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert imported == []
+        assert screen.query_one("#jh-cv-path", tui.Input).value == ""
+        assert _plain(screen.query_one("#jh-error", tui.Static).render()).strip() == ""
+
+
+async def test_choose_file_refuses_several(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+    imported: list[str] = []
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            import_cv_fn=lambda p: imported.append(str(p)),
+            pick_files_fn=lambda: [Path("/tmp/a.pdf"), Path("/tmp/b.pdf")],
+        )
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert imported == []
+        assert screen.query_one("#jh-cv-path", tui.Input).value == ""
+        assert "Choose one CV file." in _plain(screen.query_one("#jh-error", tui.Static).render())
+
+
+async def test_choose_file_picker_error_shows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+
+    def boom() -> list[Path]:
+        raise mac_input.PickerError("no osascript")
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(pick_files_fn=boom)
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert "The file picker failed: no osascript" in _plain(
+            screen.query_one("#jh-error", tui.Static).render()
+        )

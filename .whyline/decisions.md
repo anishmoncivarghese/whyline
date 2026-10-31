@@ -30622,3 +30622,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f60e5876b3d14c83abcf0b7e2d66c964 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:28:28.658Z"} -->
+
+## 2026-10-31 — Choose file… button is built in compose only when mac_input.available(); picker runs in a thread worker and results are applied on the UI thread
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-25
+
+**Because:** reuses mac_input.pick_files without copying AppleScript; one pick reuses _do_import_cv so errors and status match Import
+
+**Rejected:**
+
+- separate import path — would duplicate error handling
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 96e9837336cc4d3d91e68a3167dadabd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:50:40.656Z"} -->
+
+## 2026-10-31 — JOB-25 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-25
+
+**Because:** The unavailable, single-pick import, cancellation, multiple-pick refusal, and PickerError behaviors are covered; the picker runs in a thread worker and both mandated suites completed at 100 percent without failures
+
+**Rejected:**
+
+- Fail JOB-25 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 17961a0c632448c187db92880f40c84f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T16:20:31.629Z"} -->
+
+## 2026-10-31 — Reject JOB-25 until the picked CV path remains visible and is asserted
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-25
+
+**Because:** The single-pick flow sets the path, then _do_import_cv clears it after success; the required test omits the path-field assertion, so both suites pass without covering the specified behavior
+
+**Rejected:**
+
+- Approve — the implementation and tests do not satisfy the explicit path-field requirement
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 7d30e9c05507402f9b652f62bd120443 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T16:40:32.909Z"} -->
+
+## 2026-10-31 — JOB-25: single pick keeps its path in #jh-cv-path after import via keep_path flag
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-25
+
+**Because:** reviewer required the picked path stay visible; Import button still clears it
+
+**Rejected:**
+
+- always keep path — changes Import button behavior
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: a0464d2c3b084a90818a8a12c692f2ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T16:59:51.813Z"} -->
+
+## 2026-10-31 — JOB-25 passes round-5 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-25
+
+**Because:** The single-pick flow now retains the picked path after successful import, all required picker behaviors are covered, and both mandated suites completed at 100 percent with exit 0
+
+**Rejected:**
+
+- Fail JOB-25 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 6ce19005cfa14916a79e92e1b3e9ae5f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T17:19:38.709Z"} -->
+
+## 2026-10-31 — Approve JOB-25 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-25
+
+**Because:** The Choose file flow meets all requested availability, threading, cancellation, single-selection import, multi-selection refusal, and PickerError behaviors; its tests cover every requirement and both mandated suites pass
+
+**Rejected:**
+
+- Request changes — no functional, coverage, scope, or safety defect remains
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 5872c8009eab42cca433d3ff3d13ce3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T17:39:14.964Z"} -->

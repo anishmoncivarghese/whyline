@@ -15,6 +15,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
+from whyline.console import mac_input
 from whyline.jobs import alerts, apply, companies, doctor, profile, review, tracker
 from whyline.jobs.cli import (
     ALERTS_MAIL_SCRIPT,
@@ -289,6 +290,7 @@ class JobsHomeScreen(ModalScreen):
         save_preferences_fn: Callable[[Mapping[str, Any]], Any] | None = None,
         import_cv_fn: Callable[[str | Path], Any] | None = None,
         import_cv_text_fn: Callable[[str], Any] | None = None,
+        pick_files_fn: Callable[[], Sequence[Path]] | None = None,
         review_run_fn: Callable[..., review.ReviewResult] | None = None,
         review_accept_fn: Callable[..., Any] | None = None,
         review_discard_fn: Callable[[], Any] | None = None,
@@ -320,6 +322,7 @@ class JobsHomeScreen(ModalScreen):
         self._save_preferences_fn = save_preferences_fn
         self._import_cv_fn = import_cv_fn
         self._import_cv_text_fn = import_cv_text_fn
+        self._pick_files_fn = pick_files_fn
         self._review_run_fn = review_run_fn
         self._review_accept_fn = review_accept_fn
         self._review_discard_fn = review_discard_fn
@@ -510,6 +513,11 @@ class JobsHomeScreen(ModalScreen):
                         id="jh-cv-path",
                     ),
                     Horizontal(
+                        *(
+                            [Button("Choose file…", id="jh-cv-choose")]
+                            if mac_input.available()
+                            else []
+                        ),
                         Button("Import", id="jh-cv-import-confirm", variant="primary"),
                         Button("Cancel", id="jh-cv-import-cancel"),
                         classes="jh-panel-buttons",
@@ -835,7 +843,7 @@ class JobsHomeScreen(ModalScreen):
         else:
             paste.set_class(True, "-hidden")
 
-    def _do_import_cv(self) -> None:
+    def _do_import_cv(self, *, keep_path: bool = False) -> None:
         path_input = self.query_one("#jh-cv-path", Input)
         raw_path = path_input.value.strip()
         if not raw_path:
@@ -847,7 +855,8 @@ class JobsHomeScreen(ModalScreen):
         except (profile.ProfileError, OSError, ValueError) as error:
             self._set_error(str(error))
             return
-        path_input.value = ""
+        if not keep_path:
+            path_input.value = ""
         self._toggle_import_panel(False)
         self._refresh_cv_status()
         self._show_cv_summary(Path(raw_path).name)
@@ -855,6 +864,35 @@ class JobsHomeScreen(ModalScreen):
             self._set_status(f"Imported CV to {tilde_path(written)}.")
         else:
             self._set_status("Imported CV.")
+
+    def _choose_cv_file(self) -> None:
+        fn = self._pick_files_fn if self._pick_files_fn is not None else mac_input.pick_files
+
+        def work() -> None:
+            try:
+                picked = list(fn())
+                error = ""
+            except mac_input.PickerError as exc:
+                picked = []
+                error = f"The file picker failed: {exc}"
+            try:
+                self.app.call_from_thread(self._on_cv_picked, picked, error)
+            except RuntimeError:
+                pass
+
+        self.run_worker(work, thread=True, exclusive=True, group="jobs-cv-pick")
+
+    def _on_cv_picked(self, picked: list[Path], error: str) -> None:
+        if error:
+            self._set_error(error)
+            return
+        if not picked:
+            return
+        if len(picked) > 1:
+            self._set_error("Choose one CV file.")
+            return
+        self.query_one("#jh-cv-path", Input).value = str(picked[0])
+        self._do_import_cv(keep_path=True)
 
     def _do_paste_cv(self) -> None:
         area = self.query_one("#jh-cv-text", TextArea)
@@ -1537,6 +1575,8 @@ class JobsHomeScreen(ModalScreen):
             else:
                 hidden = self.query_one("#jh-import-panel", Vertical).has_class("-hidden")
                 self._toggle_import_panel(hidden)
+        elif button_id == "jh-cv-choose":
+            self._choose_cv_file()
         elif button_id == "jh-cv-import-confirm":
             self._do_import_cv()
         elif button_id == "jh-cv-import-cancel":
