@@ -27,8 +27,7 @@ class TickReport:
     skipped_busy: int = 0
 
 
-def _spawn(occurrence_id: int) -> None:
-    command = [sys.executable, "-m", "whyline", "agents", "run", "--occurrence", str(occurrence_id)]
+def detached(command: list[str]) -> None:
     options: dict = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
@@ -40,6 +39,10 @@ def _spawn(occurrence_id: int) -> None:
     else:
         options["start_new_session"] = True
     subprocess.Popen(command, **options)
+
+
+def _spawn(occurrence_id: int) -> None:
+    detached([sys.executable, "-m", "whyline", "agents", "run", "--occurrence", str(occurrence_id)])
 
 
 def _definition(act: state.Activation) -> d.AgentDef | None:
@@ -101,8 +104,19 @@ def run_tick(*, now: datetime | None = None, spawn=None) -> TickReport:
                     start=lambda occ: _start(conn, act.agent_id, occ, spawn, report, now),
                 )
         _start_waiting(conn, spawn, report, now)
+        _run_workflows(now)
         _run_inbox(now)
     return report
+
+
+def _run_workflows(now: datetime) -> None:
+    """The workflow pass. Its failure must not stop the inbox or the agents."""
+    try:
+        from whyline.workflows import tick as workflow_tick
+
+        workflow_tick.run(now)
+    except Exception:
+        logging.getLogger(__name__).exception("workflow tick failed")
 
 
 def _run_inbox(now: datetime) -> None:

@@ -30014,3 +30014,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ba2fdbc180a3406f88467f9eeaa5ce0e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:00:42.059Z"} -->
+
+## 2026-10-31 — Workflow tick marks a queued run running when it spawns it; missed schedule times are stored as runs rows with status missed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-8
+
+**Because:** mirrors the agents tick: a slow-starting process is not spawned twice, and the UNIQUE dedupe key makes missed recording idempotent
+
+**Rejected:**
+
+- leave queued until execute starts — a second tick would spawn it again
+- count missed only in the report — stale times would be recounted every tick
+
+**Files:** src/whyline/workflows/tick.py
+
+<!-- whyline-event: b9dffc75cad74defb687e7f33a928676 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:03:41.224Z"} -->
+
+## 2026-10-31 — WF-8 Round 2 testing passed
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-8
+
+**Because:** The required workflow and agent tick tests passed all 26 cases, and the full project test suite completed with exit status 0
+
+**Files:** src/whyline/workflows/tick.py, tests/workflows/test_tick.py
+
+<!-- whyline-event: 79a6f88000ab4a08acd11dc1d5b45fba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:24:40.406Z"} -->
+
+## 2026-10-31 — Reject WF-8 Round 3 because due waiting and queued runs can start together
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-8
+
+**Because:** The focused 26 tests and full suite pass, but an isolated reproduction shows _start spawning both a due waiting run and a queued run for one workflow in the same tick; the waiting row remains waiting and can also be spawned again on a later tick
+
+**Rejected:**
+
+- approve based on passing tests — the tests omit the unsafe waiting-plus-queued and repeat-tick cases
+
+**Files:** src/whyline/workflows/tick.py, tests/workflows/test_tick.py
+
+<!-- whyline-event: e8a536c6124644968687c9779ba04477 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:35:13.203Z"} -->
+
+## 2026-10-31 — Workflow tick marks a due waiting run running before spawn and starts at most one run per workflow per tick
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-8
+
+**Because:** resume_due only lists waiting runs, so without marking, a later tick respawned them and a queued run started alongside
+
+**Rejected:**
+
+- leave waiting until execute starts — repeat ticks double-spawn
+
+**Files:** src/whyline/workflows/tick.py
+
+<!-- whyline-event: dcc31c39d30d471e8f65c7c58e65de5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:35:54.527Z"} -->
+
+## 2026-10-31 — WF-8 Round 5 testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-8
+
+**Because:** The prescribed workflow and agent tick suites passed all 27 tests, including the waiting-plus-queued repeat-tick regression, and the full project suite completed with exit status 0
+
+**Files:** src/whyline/workflows/tick.py, tests/workflows/test_tick.py
+
+<!-- whyline-event: 10d239adc6d046e18a7bc562d6c6173a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:46:03.924Z"} -->
+
+## 2026-10-31 — Reject WF-8 Round 6 because a future waiting run does not block a queued sibling
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-8
+
+**Because:** The focused 27 tests and full suite pass, but an isolated reproduction shows _start spawning a queued run while the same workflow has a waiting run whose wake_at is still in the future, violating the one-run-at-a-time workflow contract
+
+**Rejected:**
+
+- approve based on the due-waiting regression — it covers only wake_at already passed and misses sleeping waiting runs
+
+**Files:** src/whyline/workflows/tick.py, tests/workflows/test_tick.py
+
+<!-- whyline-event: b1e82a56ecdb4fb5a61990d14075f710 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:56:51.470Z"} -->
+
+## 2026-10-31 — Queued workflow runs are blocked by any running or waiting run of the same workflow
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-8
+
+**Because:** a sleeping waiting run with a future wake_at still owns the workflow; due ones are resumed first and marked running
+
+**Rejected:**
+
+- block only on running — a queued sibling started beside a future-wake waiting run
+
+**Files:** src/whyline/workflows/tick.py
+
+<!-- whyline-event: a8a2efec886d46bab04752482b3783d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:57:25.190Z"} -->
+
+## 2026-10-31 — WF-8 Round 8 testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-8
+
+**Because:** The prescribed workflow and agent tick suites passed all 28 tests, including the future-waiting-run blocks queued sibling regression, and the full project suite completed with exit status 0
+
+**Files:** tests/workflows/test_tick.py, src/whyline/workflows/tick.py
+
+<!-- whyline-event: acef048cd7c142e2b273b0cc0099aa5f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:07:34.538Z"} -->
+
+## 2026-10-31 — Approve WF-8 Round 9 workflow tick
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-8
+
+**Because:** The implementation satisfies scheduled and folder trigger deduplication, broken and review state handling, due-run resumption, one-run-at-a-time queueing, detached spawning, next-due updates, and workflow failure isolation; all 28 focused tests and the plain full repository suite passed with one skip
+
+**Files:** src/whyline/workflows/tick.py, src/whyline/agents/tick.py, tests/workflows/test_tick.py
+
+<!-- whyline-event: 48d63803282545638cdb0ccc172cd587 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:17:59.169Z"} -->
