@@ -172,7 +172,7 @@ Review focus, each one pinned by the test named in its task:
   - input in Workflows mode runs nothing
   Verify with `uv run pytest -q tests/console/test_workflows_library.py tests/console/test_mode_buttons.py`. Change nothing else.
 
-- [ ] WF-11: Runs screen
+- [x] WF-11: Runs screen
   Edit `src/whyline/console/workflows_screens.py`, `src/whyline/console/tui.py` (wire `#workflows-runs`) and create `tests/console/test_workflows_runs.py` only.
   - `RunsScreen(workflow=None)`: runs newest first (workflow, source, state, started, duration). Opening one shows its steps (state, provider, duration, reason) and the selected step's redacted output, scrollable.
   - Buttons by state: Cancel (running, waiting, queued); Approve and Deny (waiting for approval, calling `service.decide` with actor `console`); Mark done, Mark failed, Retry step (unknown_outcome, through `service.resolve`); Retry run (failed, cancelled).
