@@ -30288,3 +30288,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8eae7074b065467d8082fb2ef4057468 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:19:10.304Z"} -->
+
+## 2026-10-31 — Runs screen runs actions in a thread worker and shows only the buttons that apply to the run's state
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-11
+
+**Because:** resolve(retry) executes the run synchronously and would freeze the UI; hiding inapplicable buttons keeps one row fitting at 80x24
+
+**Rejected:**
+
+- disabled buttons — eight buttons do not fit one row at 80 columns
+
+**Files:** src/whyline/console/workflows_screens.py
+
+<!-- whyline-event: d987ade34731462cb205eb88b53f8708 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:21:47.000Z"} -->
+
+## 2026-10-31 — Pass WF-11 Runs screen testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-11
+
+**Because:** All 9 focused Runs-screen tests pass; the full suite completed with only the known stale four-mode assertion in tests/console/test_slash_whyline.py, which predates and is outside WF-11
+
+**Files:** tests/console/test_workflows_runs.py
+
+<!-- whyline-event: 3ea46613d422453ab58cc7c236d60bcf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:32:14.876Z"} -->
+
+## 2026-10-31 — Approve WF-11 Runs screen
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-11
+
+**Because:** The scoped implementation satisfies run ordering, step timeline and redacted output, all required state-specific actions, Library and mode wiring, and 80x24 reachability; the full suite's sole failure is the pre-existing stale four-mode assertion in tests/console/test_slash_whyline.py
+
+**Rejected:**
+
+- Request changes for the full-suite failure — it asserts the pre-WF-10 mode set and is outside the WF-11 working-tree diff
+
+**Files:** src/whyline/console/workflows_screens.py, src/whyline/console/tui.py, tests/console/test_workflows_runs.py
+
+<!-- whyline-event: 2957e53d4d40477eb4aee4666b450cb6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:43:02.342Z"} -->

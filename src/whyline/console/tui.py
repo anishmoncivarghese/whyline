@@ -2166,6 +2166,11 @@ class WhylineConsoleApp(App):
 
         self.push_screen(LibraryScreen(self.session.root, select))
 
+    def _open_workflows_runs(self) -> None:
+        from whyline.console.workflows_screens import RunsScreen
+
+        self.push_screen(RunsScreen(None, self.session.root))
+
     def _open_workflows_new(self) -> None:
         from whyline.console.workflows_screens import NewWorkflowScreen
 
@@ -3489,7 +3494,7 @@ class WhylineConsoleApp(App):
                 Button("Check", id="assistant-check"),
                 Button("Library", id="workflows-library"),
                 Button("New", id="workflows-new"),
-                Button("Runs", id="workflows-runs", disabled=True),
+                Button("Runs", id="workflows-runs"),
                 Button("Settings", id="settings"),
                 Button("Files", id="see-files"),
                 Button("Awake", id="awake"),
@@ -3640,6 +3645,8 @@ class WhylineConsoleApp(App):
             self._open_workflows_library()
         elif button_id == "workflows-new":
             self._open_workflows_new()
+        elif button_id == "workflows-runs":
+            self._open_workflows_runs()
         elif button_id == "awake":
             self._set_awake(None)
         elif button_id == "copy":
