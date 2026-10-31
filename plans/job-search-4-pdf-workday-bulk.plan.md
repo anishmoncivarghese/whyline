@@ -1,12 +1,13 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-10-31T12:00:00+05:30 -->
-# Job search, part 4: PDF CVs, picking several companies at once, and Workday job boards
+# Job search, part 4: PDF CVs, a safer CV review, picking several companies at once, and Workday job boards
 
 Runs after `job-search-3-alerts-and-applications.plan.md` (shipped in 0.3.58). Build on the real names in `src/whyline/jobs/`: `profile.import_cv`, `profile._pasted_path`, `profile.import_cv_text`, `profile.CV_EXTENSIONS`, `companies.Company`, `companies.add`, `companies.accept`, `companies.remove`, `companies.check`, `companies.suggest`, `ats.HttpClient`, `ats.make_http`, `ats.detect`, `ats.BOARD_API_HOSTS`, `ats._extract_board_matches`, `fetch.Posting`, `fetch.board_jobs` and `fetch._PARSERS`, and on `JobsHomeScreen` in `src/whyline/console/jobs_screens.py`. Where a name has moved, follow the repository and keep the behaviour.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
 What the user gets:
-- **Import CV…** and `whyline jobs profile import-cv <file>` accept a `.pdf` as well as `.md`, `.txt` and `.docx`. A scanned PDF with no text is refused with a plain message, so a near-empty CV is never saved. After any import, whyline shows how much text it read and the first lines.
+- **Import CV…** and `whyline jobs profile import-cv <file>` accept a `.pdf` as well as `.md`, `.txt` and `.docx`. A scanned PDF with no text is refused with a plain message, so a near-empty CV is never saved. After any import, whyline shows how much text it read and the first lines. **Choose file…** opens the Mac file picker, so no path needs typing.
+- **Review my CV** can be stopped, refuses to run without a CV, saves pending preference changes first, and marks drafts that are older than the CV. Closing the Jobs screen asks before dropping unsaved preferences.
 - In the Companies table the user can tick several rows and accept or remove them in one step, or accept every suggested company at once. The full reason for the highlighted company shows under the table.
 - Companies whose jobs are on **Workday** (`*.myworkdayjobs.com`; most large banks and IT services firms) are read like the other job boards. whyline finds the Workday board from the company's careers page, or the user pastes the Workday link.
 
@@ -49,7 +50,57 @@ Rules every task keeps:
   - the console shows the preview after an import and saves through the same `import_cv` function
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-25: Accept or remove several companies at once
+- [ ] JOB-25: Choose the CV file with the Mac file picker
+  Edit `src/whyline/console/jobs_screens.py` and `tests/console/test_jobs_screens.py` only.
+  Chat's **Attach** already opens the Finder picker through `whyline.console.mac_input.pick_files`. Reuse it; do not copy the AppleScript.
+  1. In the Import CV panel, add **Choose file…** before **Import**, shown only when `mac_input.available()` is true.
+  2. It runs `pick_files` in a thread worker, so the screen never freezes while the picker is open. Cancelling the picker changes nothing.
+  3. With one file picked, put its path in `#jh-cv-path` and import it at once through the same `import_cv` call as **Import**, with the same error and status lines. With several files picked, use none of them and show `Choose one CV file.`
+  4. A picker error (`PickerError`) shows `The file picker failed: <message>` in the error line.
+  Add an injectable `pick_files_fn` to JobsHomeScreen, in the same style as `import_cv_fn`, so tests never open a real picker.
+  Tests:
+  - the button is hidden when the picker is unavailable
+  - one picked file is imported through the same function, and the path field shows it
+  - a cancelled picker changes nothing
+  - several picked files are refused with the message
+  - a picker error shows in the error line
+  Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
+
+- [ ] JOB-26: Stop a running CV review
+  Edit `src/whyline/agents/runner.py`, `src/whyline/agents/after.py`, `src/whyline/agents/deliver.py`, `src/whyline/jobs/review.py`, `src/whyline/console/jobs_screens.py` and their tests only. No whyline-relay change: `whyline_relay.agents.run` already takes `cancel_event` and raises `AgentCancelled`.
+  1. `runner.execute_once` gains an optional `cancel_event: threading.Event | None = None`. When it is given, pass it to `run_fn` as `cancel_event=`. When it is not, call `run_fn` exactly as today, so injected test `run_fn`s keep working. `AgentCancelled` ends the run with outcome `cancelled` and reason `Stopped by you.` It does not fall through to the backup provider.
+  2. A `cancelled` run does not count as a failure in `after.py` (no `consecutive_failures` change and no needs_attention). It sends no failure alert: add `cancelled` to `deliver._NO_RUN`.
+  3. `review.run` gains `cancel_event` and passes it through. A cancelled review returns `ok=False, outcome="cancelled"` and leaves the existing drafts untouched.
+  4. Console: while **Review my CV** is running, a **Stop** button shows next to the progress line. It sets the event, then reads `Stopping…`, and the screen shows `Review stopped. Your previous drafts are unchanged.` when the worker returns. Closing the Jobs screen while a review runs also stops it.
+  Tests:
+  - `execute_once` passes `cancel_event` only when given
+  - a run_fn raising `AgentCancelled` gives outcome `cancelled` with no backup attempt
+  - a cancelled run leaves `consecutive_failures` alone and sends no alert
+  - a cancelled review keeps the drafts
+  - Stop shows only while reviewing, and sets the event
+  - closing the screen during a review sets the event
+  Verify with `uv run pytest -q tests/agents tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
+
+- [ ] JOB-27: Don't lose preferences, and don't review without inputs
+  Edit `src/whyline/jobs/review.py`, `src/whyline/console/jobs_screens.py` and their tests only.
+  Today **Close** and Esc drop unsaved preference fields without asking, and **Review my CV** runs without a CV or saved preferences, which gives a profile and rubric built on nothing.
+  1. Unsaved changes: JobsHomeScreen keeps the preferences as last loaded or saved (normalised the same way `_collect_preferences` builds them). If the form differs when **Close** or Esc is pressed, show a confirm line `Save your preference changes?` with **Save**, **Discard** and **Keep editing**. **Save** goes through the same `_save_preferences` path, and the screen closes only if the save succeeds.
+  2. **Review my CV** with unsaved preference changes saves them first through `_save_preferences`. If the save fails, the review does not start, and the error says why.
+  3. `review.run` refuses to run when `profile.cv_path()` is missing or empty: `ok=False, outcome="no_cv"`, reason `Import your CV first.` No agent runs. The console shows that reason.
+  4. When `preferences.toml` is missing, the console shows, under the drafts after a review, `No preferences saved, so the rubric ignores roles, location and salary. Fill them in, Save, and review again.`
+  5. Stale drafts: when a profile or rubric draft is older than `cv.md` or `preferences.toml`, show above the drafts `These drafts are older than your CV or preferences. Run Review my CV again.` Hide **Accept** until a newer review is run, so an outdated draft can't be accepted by mistake.
+  Tests:
+  - Close and Esc with changes ask first, and with no changes close at once
+  - Save in the confirm line writes preferences.toml and closes
+  - Discard closes without writing
+  - Keep editing stays open
+  - Review saves pending changes first
+  - review.run with no cv.md runs no agent
+  - the missing-preferences note
+  - a stale draft shows the note and hides Accept, and a fresh one does neither
+  Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
+
+- [ ] JOB-28: Accept or remove several companies at once
   Edit `src/whyline/jobs/companies.py`, `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Add `companies.accept_many(names)` and `companies.remove_many(names)`. Each loads the store once, changes every named company, and writes once. If any name is unknown, raise `CompanyError` listing all unknown names and change nothing. `accept` and `remove` call them with one name, keeping their return values.
   Add `companies.suggested_names()`, which returns the names with status `suggested` in table order.
@@ -70,7 +121,7 @@ Rules every task keeps:
   - the reason line follows the cursor
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-26: Workday boards in the HTTP client and URL parser
+- [ ] JOB-29: Workday boards in the HTTP client and URL parser
   Edit `src/whyline/jobs/ats.py` and `tests/jobs/test_ats.py` only.
   A Workday board lives at `https://<tenant>.<wdN>.myworkdayjobs.com/[<locale>/]<site>`. Examples: `bnymellon.wd1.myworkdayjobs.com/en-US/BNY_Careers` and `mastercard.wd1.myworkdayjobs.com/CorporateCareers`. Its public job search is `POST https://<host>/wday/cxs/<tenant>/<site>/jobs`, and one job's detail is `GET https://<host>/wday/cxs/<tenant>/<site><externalPath>`.
   1. Add `workday` to the board names. Store its slug as `<tenant>/<wdN>/<site>`. The site part keeps its case; the tenant and `wdN` are lower-cased.
@@ -86,7 +137,7 @@ Rules every task keeps:
   - a robots.txt disallow stops the request with the plain message
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-27: Fetch Workday jobs
+- [ ] JOB-30: Fetch Workday jobs
   Edit `src/whyline/jobs/fetch.py`, `tests/jobs/test_fetch.py` and add JSON fixtures under `tests/jobs/fixtures/workday/` only.
   Add `_workday(name, slug, client)` and register it in `_PARSERS`.
   1. Page through `POST .../jobs` with `{"appliedFacets": {}, "limit": 20, "offset": N, "searchText": ""}` until a page is empty, `offset >= total`, or 200 jobs have been read.
@@ -109,14 +160,14 @@ Rules every task keeps:
   - a malformed list response gives a FetchError naming the company
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-28: Find a company's Workday board
+- [ ] JOB-31: Find a company's Workday board
   Edit `src/whyline/jobs/ats.py`, `src/whyline/jobs/companies.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   `ats.detect`:
   1. When `careers_url` is itself a Workday URL, probe its `/jobs` endpoint with `limit: 1`. A valid `jobPostings` list records `ats = "workday"` and the slug.
   2. Otherwise, after the existing board probes fail and before falling back to `careers_page`, fetch the careers page once (robots.txt respected, same rules as JOB-18). Collect myworkdayjobs.com links from its `href`s and inline scripts, follow at most one same-host redirect, and probe each distinct Workday slug found (at most 3). The first valid one wins.
   3. A careers page that is not reachable or names no Workday board falls through to the current `careers_page` or `unknown` result.
   `companies.suggest`: the prompt asks for `careers_url` to be the page where the company's jobs are listed, and to use a `myworkdayjobs.com`, Greenhouse or Lever link when the company uses one. Detection still verifies every URL, so a wrong link only ends as `unknown`.
-  Console: a company row with board `unknown` or `careers_page` shows, in the JOB-25 reason line, `No board found. If the company's job search is on myworkdayjobs.com, paste that link with Add company… and the same name.` `companies.add` already updates an existing company's URL and accepts it. Check that it resets `ats` and `slug` and that the next Check boards picks up Workday.
+  Console: a company row with board `unknown` or `careers_page` shows, in the JOB-28 reason line, `No board found. If the company's job search is on myworkdayjobs.com, paste that link with Add company… and the same name.` `companies.add` already updates an existing company's URL and accepts it. Check that it resets `ats` and `slug` and that the next Check boards picks up Workday.
   Tests:
   - a direct Workday careers_url is detected
   - a careers page linking to a Workday board is detected, and a link on a look-alike host is ignored
@@ -127,9 +178,10 @@ Rules every task keeps:
   - re-adding a company with a Workday link from the console then checking it records workday
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-29: Docs for part 4
+- [ ] JOB-32: Docs for part 4
   Edit `docs/job-search.md` only.
   - CV: list the four formats. Say that `.docx` usually gives the cleanest text, that a scanned PDF has no text to read and is refused, and that a pasted path may keep its quotes from Finder's Copy as Pathname.
+  - CV review: Choose file…, Stop, and that the review needs a CV and saved preferences to be useful.
   - Companies: ticking rows, Accept all suggested, and that suggested companies are never fetched until accepted.
   - Boards: add Workday to the list of boards read. Say how whyline finds a Workday board, how to paste a Workday link when it doesn't, and that whyline respects each Workday host's robots.txt and reads at most 40 new job descriptions per company per run.
   Verify with `uv run pytest -q`. Change nothing else.
