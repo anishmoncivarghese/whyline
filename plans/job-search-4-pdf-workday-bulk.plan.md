@@ -66,7 +66,7 @@ Rules every task keeps:
   - a picker error shows in the error line
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-26: Stop a running CV review
+- [x] JOB-26: Stop a running CV review
   Edit `src/whyline/agents/runner.py`, `src/whyline/agents/after.py`, `src/whyline/agents/deliver.py`, `src/whyline/jobs/review.py`, `src/whyline/console/jobs_screens.py` and their tests only. No whyline-relay change: `whyline_relay.agents.run` already takes `cancel_event` and raises `AgentCancelled`.
   1. `runner.execute_once` gains an optional `cancel_event: threading.Event | None = None`. When it is given, pass it to `run_fn` as `cancel_event=`. When it is not, call `run_fn` exactly as today, so injected test `run_fn`s keep working. `AgentCancelled` ends the run with outcome `cancelled` and reason `Stopped by you.` It does not fall through to the backup provider.
   2. A `cancelled` run does not count as a failure in `after.py` (no `consecutive_failures` change and no needs_attention). It sends no failure alert: add `cancelled` to `deliver._NO_RUN`.
