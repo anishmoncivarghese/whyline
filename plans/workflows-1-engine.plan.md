@@ -130,7 +130,7 @@ Review focus, each one pinned by the test named in its task:
   - existing `after_run` tests still pass
   Verify with `uv run pytest -q tests/workflows/test_deliver_step.py tests/agents/test_deliver.py`. Change nothing else.
 
-- [ ] WF-8: Triggers and the tick
+- [x] WF-8: Triggers and the tick
   Create `src/whyline/workflows/tick.py` and `tests/workflows/test_tick.py`; edit `src/whyline/agents/tick.py` and `tests/agents/test_tick.py` only.
   - `tick.run(now, *, spawn=None) -> TickReport` inside the agents tick lock, called from `agents.tick.run_tick` after `_start_waiting`, wrapped so an exception is logged as `workflow tick failed` and never stops the inbox or agents.
   - For each activation: load the file (a parse error sets status `broken` with the error and continues), `state.check` (needs_review waits), then by trigger kind. `daily` / `weekdays` / `every` use `agents.schedule.plan_tick` with an `agents.definitions.Trigger` built from the spec; stale times are recorded as missed; the due time claims dedupe key `<workflow_id>@<due iso>`. `folder` compares `agents.folders.snapshot` with the stored snapshot; new files claim `<workflow_id>@<sha of new names>` with `trigger.files`.
