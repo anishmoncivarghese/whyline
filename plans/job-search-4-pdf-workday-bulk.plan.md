@@ -121,7 +121,7 @@ Rules every task keeps:
   - the reason line follows the cursor
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-29: Workday boards in the HTTP client and URL parser
+- [x] JOB-29: Workday boards in the HTTP client and URL parser
   Edit `src/whyline/jobs/ats.py` and `tests/jobs/test_ats.py` only.
   A Workday board lives at `https://<tenant>.<wdN>.myworkdayjobs.com/[<locale>/]<site>`. Examples: `bnymellon.wd1.myworkdayjobs.com/en-US/BNY_Careers` and `mastercard.wd1.myworkdayjobs.com/CorporateCareers`. Its public job search is `POST https://<host>/wday/cxs/<tenant>/<site>/jobs`, and one job's detail is `GET https://<host>/wday/cxs/<tenant>/<site><externalPath>`.
   1. Add `workday` to the board names. Store its slug as `<tenant>/<wdN>/<site>`. The site part keeps its case; the tenant and `wdN` are lower-cased.
