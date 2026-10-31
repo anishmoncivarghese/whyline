@@ -30929,3 +30929,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 94a54ea067b8497dae4a062ee4f2aa66 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:44:45.022Z"} -->
+
+## 2026-10-31 — Workday is a board name only: not in BOARD_ENDPOINTS, so detect() never probes it; robots.txt checked once per host per client
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-29
+
+**Because:** Workday search is a POST, so the GET probe loop cannot cover it; robots check lives in HttpClient so every caller gets it
+
+**Rejected:**
+
+- add a GET template to BOARD_ENDPOINTS — Workday has no GET listing endpoint
+- allow /robots.txt in the public allowlist — GETs on Workday hosts must stay limited to /wday/cxs/
+
+**Files:** src/whyline/jobs/ats.py
+
+<!-- whyline-event: 4d3e1a8445104a99bd74393edeb50399 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:57:01.724Z"} -->
+
+## 2026-10-31 — Pass JOB-29 Workday HTTP client and URL parser testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-29
+
+**Because:** The required jobs suite and full repository suite both exited 0; Workday parsing, URL restrictions, POST transport behavior, rate limiting, size cap, and robots denial are covered by the focused tests
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or repository regression was reproduced
+
+**Files:** src/whyline/jobs/ats.py, tests/jobs/test_ats.py
+
+<!-- whyline-event: c676a4bd8e284c42b67a2e37259355f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:17:46.021Z"} -->
+
+## 2026-10-31 — Approve JOB-29 Workday board HTTP and URL support
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-29
+
+**Because:** The implementation satisfies strict Workday parsing and fetch allowlisting, POST JSON behavior, shared request safeguards, and cached robots enforcement; focused and full test suites both exited 0
+
+**Rejected:**
+
+- Request changes — no actionable requirement gap, unsafe behavior, or regression was found
+
+**Files:** src/whyline/jobs/ats.py, tests/jobs/test_ats.py
+
+<!-- whyline-event: 86c27db25f144ebaa17d57a4e886825b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:28:50.317Z"} -->

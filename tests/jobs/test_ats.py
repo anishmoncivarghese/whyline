@@ -554,3 +554,138 @@ def _invoke_cli(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[in
     code = cli.main(argv)
     captured = capsys.readouterr()
     return code, captured.out, captured.err
+
+
+# --- Workday -----------------------------------------------------------------
+
+_WD_JOBS_URL = "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/Careers_Site/jobs"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (
+            "https://bnymellon.wd1.myworkdayjobs.com/en-US/BNY_Careers",
+            [("workday", "bnymellon/wd1/BNY_Careers")],
+        ),
+        (
+            "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers",
+            [("workday", "mastercard/wd1/CorporateCareers")],
+        ),
+        (
+            "https://Acme.WD5.myworkdayjobs.com/en/Some-Site/job/NYC/x_R1?q=1",
+            [("workday", "acme/wd5/Some-Site")],
+        ),
+        ("https://acme.wd1.myworkdayjobs.com/", []),
+        ("https://acme.wd1.myworkdayjobs.com/en-US", []),
+        ("https://acme.wd1.myworkdayjobs.com/bad.site", []),
+        ("https://acme.myworkdayjobs.com/Careers", []),
+        ("https://myworkdayjobs.com.evil.com/Careers", []),
+        ("https://acme.wd1.myworkdayjobs.com.evil.com/Careers", []),
+        ("https://evil.com/myworkdayjobs.com", []),
+        ("https://evil.com/acme.wd1.myworkdayjobs.com/Careers", []),
+    ],
+)
+def test_workday_url_forms(url: str, expected: list[tuple[str, str]]) -> None:
+    assert ats._extract_board_matches(url) == expected
+    assert "workday" in ats.ATS_BOARDS
+
+
+def test_workday_fetch_url_only_under_cxs() -> None:
+    assert ats.is_allowed_url(_WD_JOBS_URL)
+    assert not ats.is_allowed_url("https://acme.wd1.myworkdayjobs.com/Careers")
+    assert not ats.is_allowed_url("https://acme.wd1.myworkdayjobs.com/robots.txt")
+    assert not ats.is_allowed_url("https://acme.wd1.myworkdayjobs.com/wday/cxs/../x")
+    assert not ats.is_allowed_url("https://myworkdayjobs.com.evil.com/wday/cxs/a/b/jobs")
+
+
+def _wd_transport(calls: list[dict[str, Any]], robots: bytes = b"User-agent: *\nAllow: /\n") -> Any:
+    def transport(
+        url: str, headers: dict[str, str], method: str = "GET", body: bytes | None = None
+    ) -> bytes:
+        calls.append({"url": url, "headers": headers, "method": method, "body": body})
+        if url.endswith("/robots.txt"):
+            return robots
+        return b'{"total": 0, "jobPostings": []}'
+
+    return transport
+
+
+def test_workday_post_json_sends_method_body_and_headers() -> None:
+    calls: list[dict[str, Any]] = []
+    clock = FakeClock()
+    client = ats.make_http(_wd_transport(calls), clock=clock, sleep=clock.sleep)
+    assert client.post_json(_WD_JOBS_URL, {"limit": 20}) == b'{"total": 0, "jobPostings": []}'
+    assert [c["method"] for c in calls] == ["GET", "POST"]
+    assert calls[0]["url"] == "https://acme.wd1.myworkdayjobs.com/robots.txt"
+    post = calls[1]
+    assert json.loads(post["body"]) == {"limit": 20}
+    assert post["headers"]["Content-Type"] == "application/json"
+    assert post["headers"]["Accept"] == "application/json"
+    # robots.txt GET and POST share the host rate limiter.
+    assert clock.sleeps == [ats.RATE_LIMIT_SECONDS]
+
+
+def test_workday_post_refused_outside_jobs_path() -> None:
+    calls: list[dict[str, Any]] = []
+    client = ats.make_http(_wd_transport(calls))
+    for url in (
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/Careers_Site/job/x",
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/jobs",
+        "https://boards-api.greenhouse.io/v1/boards/stripe/jobs",
+    ):
+        with pytest.raises(ats.HostNotAllowedError):
+            client.post_json(url, {})
+    assert calls == []
+
+
+def test_workday_get_outside_cxs_refused() -> None:
+    calls: list[dict[str, Any]] = []
+    client = ats.make_http(_wd_transport(calls))
+    with pytest.raises(ats.HostNotAllowedError):
+        client("https://acme.wd1.myworkdayjobs.com/en-US/Careers")
+    assert calls == []
+
+
+def test_workday_post_enforces_size_cap() -> None:
+    class Response(io.BytesIO):
+        status = 200
+
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    seen: list[str] = []
+
+    def opener(request: urllib.request.Request, timeout: float = 0) -> Response:
+        seen.append(request.get_method())
+        if request.full_url.endswith("/robots.txt"):
+            return Response(b"")
+        return Response(b"x" * (ats._MAX_RESPONSE_BYTES + 1))
+
+    clock = FakeClock()
+    client = ats.HttpClient(urlopen=opener, clock=clock, sleep=clock.sleep)
+    with pytest.raises(ats.AtsError, match="size limit"):
+        client.post_json(_WD_JOBS_URL, {})
+    assert seen == ["GET", "POST"]
+
+
+def test_workday_robots_disallow_stops_request_and_is_cached() -> None:
+    calls: list[dict[str, Any]] = []
+    client = ats.make_http(_wd_transport(calls, robots=b"User-agent: *\nDisallow: /wday/cxs/\n"))
+    for _ in range(2):
+        with pytest.raises(ats.AtsError) as info:
+            client.post_json(_WD_JOBS_URL, {})
+        assert str(info.value) == "acme.wd1.myworkdayjobs.com robots.txt disallows its job search"
+    assert [c["url"] for c in calls] == ["https://acme.wd1.myworkdayjobs.com/robots.txt"]
+
+
+def test_workday_robots_read_once_per_host() -> None:
+    calls: list[dict[str, Any]] = []
+    clock = FakeClock()
+    client = ats.make_http(_wd_transport(calls), clock=clock, sleep=clock.sleep)
+    client.post_json(_WD_JOBS_URL, {})
+    client.post_json(_WD_JOBS_URL, {})
+    assert [c["method"] for c in calls] == ["GET", "POST", "POST"]
