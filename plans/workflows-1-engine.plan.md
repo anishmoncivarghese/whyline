@@ -59,7 +59,7 @@ Review focus, each one pinned by the test named in its task:
   - a 1 MB string renders without recursion problems
   Verify with `uv run pytest -q tests/workflows/test_expr.py`. Change nothing else.
 
-- [ ] WF-3: State store and acceptance
+- [x] WF-3: State store and acceptance
   Create `src/whyline/workflows/state.py`, `src/whyline/workflows/capabilities.py`, `tests/workflows/test_state.py` and `tests/workflows/test_capabilities.py` only.
   - `connect()` opens `state.sqlite` (0600, WAL, `PRAGMA user_version` migrations). Tables: `activations(workflow_id PK, path, accepted_hash, accepted_at, status, reason, trusted_json, capability_text, last_run_at, next_due_at, folder_snapshot)`, `runs(id PK, workflow_id, revision, definition_json, source, dedupe_key UNIQUE, inputs_json, status, reason, wake_at, created, started, ended, pid)`, `step_runs(run_id, step_id, seq, status, reason, attempt, provider, started, ended, output_path, PRIMARY KEY(run_id, step_id))`, `approvals(id PK, run_id, step_id, revision, args_hash, nonce, status, message, expires_at, decided_by, decided_at)`.
   - Activation: `accept(conn, workflow) -> Activation` (stores the semantic hash and `capabilities.summary(workflow)`), `check(conn, workflow) -> str` (`active` | `paused` | `needs_review`; sets `needs_review` when the hash differs), `pause`, `resume`, `remove`, `get`, `all_activations`.
