@@ -185,7 +185,7 @@ Review focus, each one pinned by the test named in its task:
   - 80x24 keeps the buttons reachable
   Verify with `uv run pytest -q tests/console/test_workflows_runs.py`. Change nothing else.
 
-- [ ] WF-12: Builder outline
+- [x] WF-12: Builder outline
   Edit `src/whyline/console/workflows_screens.py` and create `tests/console/test_workflows_builder.py` only.
   - `BuilderScreen(workflow)`: left, the trigger then the steps in order (`<id>  <type>  <one-line summary>`); right, the trigger form (kind, at, every_hours, folder) and the `[[input]]` list. Buttons: Add step (choose a type from `steps.STEP_TYPES`; new id `<type>_<n>`), Move up, Move down, Delete (refused while another step routes to it, naming that step), Save, Cancel.
   - Save renders through `definitions.render` and calls `service.save`; the status line then says `Saved. Review & accept to run the new version.` when the semantic hash changed, `Saved layout.` when only layout changed. Unsaved changes ask before Cancel closes.
