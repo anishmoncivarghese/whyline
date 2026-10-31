@@ -29971,3 +29971,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 51315760e5d7486faff6e8fadb16b52e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:37:42.946Z"} -->
+
+## 2026-10-31 — Deliver step sends via new agents.deliver.send (email+telegram only); command stays in after_run
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-7
+
+**Because:** the command needs run env and log; the step has none, and agents behave unchanged
+
+**Rejected:**
+
+- moving the command into send — it needs agent run context the step lacks
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 4654899bb7fe40238d7c4f27817127b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:39:00.378Z"} -->
+
+## 2026-10-31 — Pass WF-7 Round 2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-7
+
+**Because:** The required deliver-step and existing agent-delivery tests all passed (20/20), and the full project suite exited 0 with one skip and no failures; Telegram, email, file, disallowed-chat, failure propagation, and unchanged after_run behavior are verified
+
+**Files:** src/whyline/workflows/steps/deliver.py, src/whyline/agents/deliver.py, tests/workflows/test_deliver_step.py, tests/agents/test_deliver.py
+
+<!-- whyline-event: 01d5c4f05fa44d88bf06a02bb54459a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:49:13.489Z"} -->
+
+## 2026-10-31 — Approve WF-7 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-7
+
+**Because:** The implementation matches the deliver-step contract: send extraction preserves agent behavior, Telegram is restricted to allowed inbox chats, email and file destinations render correctly, file output is mode 0600, send details propagate on failure, and focused plus full test suites pass
+
+**Files:** src/whyline/agents/deliver.py, src/whyline/workflows/steps/deliver.py, tests/workflows/test_deliver_step.py
+
+<!-- whyline-event: ba2fdbc180a3406f88467f9eeaa5ce0e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T08:00:42.059Z"} -->

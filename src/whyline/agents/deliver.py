@@ -118,6 +118,18 @@ def _command(delivery, env_values: dict, cwd: Path, log: Path | None, run) -> di
     return _result("command", False, f"command failed (exit {done.returncode}): {last}".rstrip(": "))
 
 
+def send(delivery, subject, body, attachment=None, *, mail=None, tg=None) -> list[dict]:
+    """Send to the delivery's email addresses and Telegram chat; one result each."""
+    mail = mail or mail_send.send
+    tg = tg or _telegram()
+    results = []
+    if delivery.email:
+        results.append(_email(delivery, subject, body, attachment, mail))
+    if delivery.telegram_chat:
+        results.append(_send_telegram(delivery, subject, body, attachment, tg))
+    return results
+
+
 def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess.run) -> list[dict]:
     if delivery is None:
         try:
@@ -126,8 +138,6 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
             return []
     if delivery is None or delivery.empty or record.outcome in _NO_RUN:
         return []
-    mail = mail or mail_send.send
-    tg = tg or _telegram()
     succeeded = record.outcome in _SUCCEEDED
     attachment, report_path = None, ""
     if succeeded:
@@ -147,10 +157,7 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
         subject = subject_line(defn, delivery, record, failed=True)
     results = []
     if succeeded or delivery.on_failure == "alert":
-        if delivery.email:
-            results.append(_email(delivery, subject, body, attachment, mail))
-        if delivery.telegram_chat:
-            results.append(_send_telegram(delivery, subject, body, attachment, tg))
+        results += send(delivery, subject, body, attachment, mail=mail, tg=tg)
     if delivery.command:
         env_values = {
             "WHYLINE_AGENT": defn.name,
