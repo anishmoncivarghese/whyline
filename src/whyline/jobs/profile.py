@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import shlex
 import tempfile
 import tomllib
 import zipfile
@@ -13,6 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 from xml.etree import ElementTree
 
 from whyline.jobs import paths
@@ -258,11 +260,28 @@ def _read_plain_cv(source: Path) -> str:
     return text
 
 
+def _pasted_path(raw: str) -> Path:
+    """A path as typed or pasted: Finder's Copy as Pathname and drag-and-drop
+    quote it ('…') or escape spaces (\\ ), and some apps paste a file:// URL.
+    Never runs the text through a shell."""
+    text = raw.strip()
+    plain = Path(text).expanduser()
+    if plain.exists():
+        return plain
+    if text.startswith("file://"):
+        return Path(unquote(urlparse(text).path))
+    try:
+        tokens = shlex.split(text)
+    except ValueError:  # an unbalanced quote: use the text as given
+        return plain
+    return Path(tokens[0]).expanduser() if len(tokens) == 1 else plain
+
+
 def import_cv(path: str | Path) -> Path:
     """Import a CV from a .md, .txt, or .docx file into ~/.whyline/jobs/cv.md."""
     if not isinstance(path, (str, Path)):
         raise ProfileError("CV path must be a path or string.")
-    source = Path(path).expanduser()
+    source = _pasted_path(path) if isinstance(path, str) else path.expanduser()
     suffix = source.suffix.lower()
     if suffix not in CV_EXTENSIONS:
         shown = source.suffix or "<no extension>"

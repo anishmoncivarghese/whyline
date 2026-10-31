@@ -1947,4 +1947,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def entry() -> None:
+    # Read-only git calls (the console's `git status` poll runs several times a
+    # second) must not take .git/index.lock, or a relay's `git add` collides
+    # with them. This turns off only optional locks; add and commit still lock.
+    os.environ.setdefault("GIT_OPTIONAL_LOCKS", "0")
     raise SystemExit(main())
