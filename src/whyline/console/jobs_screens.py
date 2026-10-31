@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import threading
 import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -58,6 +59,7 @@ def _call_review_run(
     fn: Callable[..., Any],
     cli: str | None,
     progress: Callable[[str], None],
+    cancel_event: threading.Event | None = None,
 ) -> Any:
     try:
         params = inspect.signature(fn).parameters
@@ -65,10 +67,12 @@ def _call_review_run(
         return fn(cli=cli, progress=progress)
 
     has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    extra = {"cancel_event": cancel_event} if cancel_event is not None and (
+        has_var_kw or "cancel_event" in params) else {}
     if has_var_kw or "progress" in params:
         if has_var_kw or "cli" in params:
-            return fn(cli=cli, progress=progress)
-        return fn(progress=progress)
+            return fn(cli=cli, progress=progress, **extra)
+        return fn(progress=progress, **extra)
     if "cli" in params or any(
         p.kind
         in (
@@ -236,7 +240,10 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-cv-path { width: 100%; }
     JobsHomeScreen #jh-cv-text { width: 100%; height: 6; }
     JobsHomeScreen #jh-review-cli { width: 1fr; }
-    JobsHomeScreen #jh-review-progress { width: 100%; height: auto; margin-top: 1; color: $accent; }
+    JobsHomeScreen #jh-review-progress-row { height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-review-progress { width: 1fr; height: auto; color: $accent; }
+    JobsHomeScreen #jh-review-stop { min-width: 8; width: auto; margin-left: 1; display: none; }
+    JobsHomeScreen #jh-review-stop.-shown { display: block; }
     JobsHomeScreen #jh-review-progress.-empty { display: none; }
     JobsHomeScreen #jh-profile-draft { width: 100%; height: 6; }
     JobsHomeScreen #jh-rubric-draft { width: 100%; height: 6; }
@@ -355,6 +362,7 @@ class JobsHomeScreen(ModalScreen):
         self._job_edit_mode = ""
         self._reviewing = False
         self._review_token: object | None = None
+        self._review_cancel: threading.Event | None = None
         self._companies_busy = False
         self._companies_token: object | None = None
         self._company_rows: list[companies.Company] = []
@@ -546,7 +554,11 @@ class JobsHomeScreen(ModalScreen):
                     ),
                     id="jh-review-provider-row",
                 ),
-                Static("", id="jh-review-progress", markup=False, classes="-empty"),
+                HorizontalGroup(
+                    Static("", id="jh-review-progress", markup=False, classes="-empty"),
+                    Button("Stop", id="jh-review-stop"),
+                    id="jh-review-progress-row",
+                ),
                 Vertical(
                     Label("Profile draft", classes="jh-draft-heading", id="jh-profile-draft-label"),
                     TextArea(initial_profile_draft, id="jh-profile-draft"),
@@ -760,7 +772,19 @@ class JobsHomeScreen(ModalScreen):
         self._refresh_jobs()
 
     def action_close(self) -> None:
+        if self._review_cancel is not None:
+            self._review_cancel.set()
         self.dismiss(None)
+
+    def _stop_review(self) -> None:
+        if not self._reviewing or self._review_cancel is None:
+            return
+        self._review_cancel.set()
+        self._set_review_progress("Stopping…")
+        try:
+            self.query_one("#jh-review-stop", Button).disabled = True
+        except NoMatches:
+            pass
 
     def _set_error(self, message: str) -> None:
         try:
@@ -800,6 +824,12 @@ class JobsHomeScreen(ModalScreen):
                 self.query_one(selector, Button).disabled = busy
             except NoMatches:
                 pass
+        try:
+            stop = self.query_one("#jh-review-stop", Button)
+        except NoMatches:
+            return
+        stop.disabled = False
+        stop.set_class(busy, "-shown")
 
     def _refresh_cv_status(self) -> None:
         try:
@@ -933,6 +963,8 @@ class JobsHomeScreen(ModalScreen):
 
         token = object()
         self._review_token = token
+        cancel = threading.Event()
+        self._review_cancel = cancel
         self._set_review_busy(True)
         self._set_review_progress("Reviewing CV…")
 
@@ -944,7 +976,7 @@ class JobsHomeScreen(ModalScreen):
                     pass
 
             try:
-                res = _call_review_run(fn, chosen_cli, on_progress)
+                res = _call_review_run(fn, chosen_cli, on_progress, cancel)
             except Exception as error:
                 try:
                     self.app.call_from_thread(self._on_review_error, str(error), token)
@@ -961,6 +993,8 @@ class JobsHomeScreen(ModalScreen):
     def _on_review_progress(self, line: str, token: object) -> None:
         if token is not self._review_token or not self.is_attached:
             return
+        if self._review_cancel is not None and self._review_cancel.is_set():
+            return
         shown = line.strip()
         self._set_review_progress(f"Reviewing CV · {shown}" if shown else "Reviewing CV…")
 
@@ -976,6 +1010,9 @@ class JobsHomeScreen(ModalScreen):
             return
         self._set_review_busy(False)
         self._set_review_progress("")
+        if not result.ok and result.outcome == "cancelled":
+            self._set_status("Review stopped. Your previous drafts are unchanged.")
+            return
         if not result.ok:
             detail = (
                 f"{result.outcome}: {result.reason}"
@@ -1545,6 +1582,8 @@ class JobsHomeScreen(ModalScreen):
             self.app.push_screen(TrackedJobsScreen())
         elif button_id == "jh-review-cv":
             self._start_review()
+        elif button_id == "jh-review-stop":
+            self._stop_review()
         elif button_id == "jh-review-accept":
             self._accept_review()
         elif button_id == "jh-review-discard":

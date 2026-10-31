@@ -30724,3 +30724,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5872c8009eab42cca433d3ff3d13ce3e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T17:39:14.964Z"} -->
+
+## 2026-10-31 — Cancelled runs are classified in runner._classify and ignored by after/deliver rather than special-cased in review
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-26
+
+**Because:** one outcome 'cancelled' flows through existing record/alert paths; user-stopped is not a failure
+
+**Rejected:**
+
+- treat cancel as failed — would bump consecutive_failures and send alerts
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: dda6c25609df4cbeb503687dc0dc23e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T18:00:08.805Z"} -->
+
+## 2026-10-31 — JOB-26 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-26
+
+**Because:** The required agents/jobs/console suite and the complete project suite both reached 100 percent with exit 0, covering cancellation propagation, failure accounting, draft preservation, Stop behavior, and screen-close cancellation
+
+**Rejected:**
+
+- Fail JOB-26 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/agents/runner.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 07c120d171294031975b97fbc71fcefe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T18:30:14.391Z"} -->
+
+## 2026-10-31 — Approve JOB-26 round 3
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** JOB-26
+
+**Because:** Cancellation propagation across runner, review, and console meets all specifications; failure accounting and delivery suppress alerts; drafts remain unchanged on cancel; tests cover all required behaviors and both test suites pass 100%
+
+**Rejected:**
+
+- Request changes — all requirements are implemented cleanly with thorough test coverage and zero regressions
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: a4323efeafa14894b31b4b9eab703dee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:05:47.147Z"} -->

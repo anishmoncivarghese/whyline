@@ -1024,3 +1024,64 @@ async def test_choose_file_picker_error_shows(monkeypatch: pytest.MonkeyPatch) -
         assert "The file picker failed: no osascript" in _plain(
             screen.query_one("#jh-error", tui.Static).render()
         )
+
+
+def _stoppable_run(started: threading.Event, events: list[threading.Event]):
+    def stoppable_run(cli=None, progress=None, cancel_event=None) -> review.ReviewResult:
+        events.append(cancel_event)
+        started.set()
+        cancel_event.wait(timeout=5)
+        return review.ReviewResult(ok=False, outcome="cancelled", reason="Stopped by you.")
+
+    return stoppable_run
+
+
+async def test_stop_shows_only_while_reviewing_and_sets_the_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    events: list[threading.Event] = []
+    monkeypatch.setattr(review, "run", _stoppable_run(started, events))
+    app = _Host()
+    async with app.run_test(size=(100, 36)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        stop = screen.query_one("#jh-review-stop", tui.Button)
+        assert stop.display is False
+
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(pilot, started.is_set, "review started")
+        await pilot.pause()
+        assert stop.display is True
+
+        stop.press()
+        await _until(
+            pilot,
+            lambda: "Review stopped."
+            in _plain(screen.query_one("#jh-status", tui.Static).render()),
+            "stopped message",
+        )
+        assert events[0].is_set()
+        assert "Your previous drafts are unchanged." in _plain(
+            screen.query_one("#jh-status", tui.Static).render()
+        )
+        assert stop.display is False
+
+
+async def test_closing_the_screen_during_a_review_sets_the_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    events: list[threading.Event] = []
+    monkeypatch.setattr(review, "run", _stoppable_run(started, events))
+    app = _Host()
+    async with app.run_test(size=(100, 36)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(pilot, started.is_set, "review started")
+        screen.action_close()
+        await pilot.pause()
+        assert events[0].is_set()

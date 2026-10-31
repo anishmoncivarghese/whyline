@@ -405,3 +405,28 @@ def test_jobs_fetch_postings_are_event_files_but_the_manifest_is_not(repo, monke
     prompt = calls[0][1]
     assert "01-acme-platform-engineer.md" in prompt
     assert "manifest.json" not in prompt
+
+
+def test_cancel_event_is_passed_to_run_fn_only_when_given(repo):
+    import threading
+
+    seen = []
+
+    def run_fn(command, prompt, **kwargs):
+        seen.append(kwargs)
+        return Result(0, "ok")
+
+    runner.execute_once(_agent(repo), source="manual", now=NOW, run_fn=run_fn)
+    event = threading.Event()
+    runner.execute_once(_agent(repo), source="manual", now=NOW, run_fn=run_fn, cancel_event=event)
+    assert "cancel_event" not in seen[0]
+    assert seen[1]["cancel_event"] is event
+
+
+def test_a_cancelled_run_ends_as_cancelled_without_trying_the_backup(repo):
+    from whyline_relay import agents
+
+    run_fn, calls = _script(agents.AgentCancelled("stopped"), Result(0, "never"))
+    rec = runner.execute_once(_agent(repo), source="manual", now=NOW, run_fn=run_fn)
+    assert rec.outcome == "cancelled" and rec.reason == "Stopped by you."
+    assert len(calls) == 1

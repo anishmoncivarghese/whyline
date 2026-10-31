@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -70,6 +71,8 @@ def parse_reset(text: str, now: datetime) -> datetime | None:
 def _classify(cli: str, code: int | None, raw: str, error: BaseException | None) -> tuple[str, str]:
     from whyline_relay import agents, brainstorm
 
+    if isinstance(error, agents.AgentCancelled):
+        return "cancelled", "Stopped by you."
     if isinstance(error, agents.AgentTimeout):
         return "timed_out", str(error)
     if isinstance(error, agents.AgentMissing):
@@ -152,7 +155,8 @@ def _answer(defn, cli: str, raw: str, answer_file: Path | None = None) -> str:
 
 
 def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattended: bool = False,
-                 now: datetime | None = None, run_fn=None, progress=None) -> records.RunRecord:
+                 now: datetime | None = None, run_fn=None, progress=None,
+                 cancel_event: threading.Event | None = None) -> records.RunRecord:
     from whyline_relay import agents
 
     now = now or datetime.now()
@@ -219,9 +223,10 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
         os.environ.pop("SSH_AUTH_SOCK", None)
         error, code, raw = None, None, ""
         try:
+            extra = {} if cancel_event is None else {"cancel_event": cancel_event}
             result = run_fn(argv, prompt, cwd=defn.root, log_path=folder / "output.log",
                             timeout_seconds=defn.timeout_minutes * 60, capture=True,
-                            echo=False, agent_name=cli)
+                            echo=False, agent_name=cli, **extra)
             code, raw = result.exit_code, result.output or ""
         except Exception as caught:  # AgentTimeout, AgentMissing, OSError
             error = caught

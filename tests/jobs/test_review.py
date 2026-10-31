@@ -351,3 +351,24 @@ def test_provider_choice_follows_enabled_rules() -> None:
         review.run(cli="antigravity")
     with pytest.raises(review.ReviewError, match="Unsupported provider"):
         review.run(cli="not-a-cli")
+
+
+def test_cancelled_review_keeps_existing_drafts_and_passes_the_event() -> None:
+    import threading
+
+    from whyline_relay import agents
+
+    profile.import_cv_text("# Ada Lovelace\nDistributed Computing\n")
+    review.save_drafts("Old profile\n", "Old rubric\n")
+    event = threading.Event()
+    seen: list[Any] = []
+
+    def cancelled_run(command: list[str], prompt: str, **kwargs: Any) -> _ExecResult:
+        seen.append(kwargs.get("cancel_event"))
+        raise agents.AgentCancelled("stopped")
+
+    result = review.run(run_fn=cancelled_run, cancel_event=event)
+    assert result.ok is False and result.outcome == "cancelled"
+    assert seen == [event]
+    assert review.profile_draft_path().read_text(encoding="utf-8") == "Old profile\n"
+    assert review.rubric_draft_path().read_text(encoding="utf-8") == "Old rubric\n"
