@@ -1,5 +1,5 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-10-31T21:00:00+05:30 -->
-# Relay status line: stage, reruns, plan progress and a per-turn timer
+# Relay status line: stage, reruns, plan progress and a per-turn timer, plus a selectable Copy view
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -9,6 +9,7 @@ What the user gets:
 - **Today:** `relay: JOB-24, claude… 5945s`. The seconds count from when the console started the relay, not from the current turn.
 - **First pass:** `relay: JOB-24 (2 of 10, 10%) · implementing · claude · round 1 of 24 · 7m 02s`
 - **After a rejection:** `relay: JOB-24 (2 of 10, 10%) · fixing after review 1 · claude · round 3 of 24 · 1m 40s`, then `… · re-review 2 · codex · round 4 of 24 · 0m 35s`.
+- **Copy** opens the transcript in a view where you can select just part of it. Copying everything stays one click.
 - The % is plan progress: tasks ticked out of all tasks. Nothing estimates how far one task has got, because agents do not report that and a guessed bar would mislead.
 
 Global constraints:
@@ -55,3 +56,26 @@ Global constraints:
   Tests:
   - the bot line includes the live summary when a relay runs
   - the bot line is unchanged when none runs, and when `live_status` raises
+
+- [ ] RST-4: Copy opens a selectable view of the transcript
+  Edit `src/whyline/console/tui.py` and `tests/console/test_tui.py` only.
+  Today **Copy** (`_copy_transcript`) puts the whole transcript on the clipboard. The transcript is a `RichLog`, which cannot select text, and a terminal drag selects whole screen rows, including the plan pane beside it.
+  1. Move the text building out of `_copy_transcript` into `_transcript_text(events) -> str` (same `_PREFIX` lines as today), and the clipboard part into `_put_on_clipboard(text) -> str`. That helper tries `_system_copy`, falls back to `copy_to_clipboard`, and returns the message that `_copy_transcript` shows today, so both paths say the same thing.
+  2. Add `CopyScreen(ModalScreen)` next to `QuitRelayScreen`. It shows the transcript text in a read-only `TextArea` (`read_only=True`, soft wrap on), with the cursor at the end so the latest lines show. Below it are four buttons:
+     - **Copy selection**: copies `text_area.selected_text`. It is disabled while nothing is selected (update on `TextArea.SelectionChanged`).
+     - **Copy all**: today's behaviour.
+     - **Copy last block**: the events after the last `input` event (the user's last message or relay command). With no `input` event, it copies the last 200 lines.
+     - **Close**
+     Cmd+C or Ctrl+C inside the view copies the selection when there is one. Esc closes the view. After a copy the view closes and the main log shows the message `_put_on_clipboard` returned, for example `Copied 12 lines to clipboard.`. Copy all keeps `Transcript copied to clipboard.`.
+  3. The **Copy** button opens `CopyScreen`. With an empty transcript it still shows `(nothing to copy yet)` and opens nothing. The view holds a snapshot taken when it opens, so a running relay adding lines does not move the selection.
+  4. If the transcript is over 5,000 lines, the view shows the last 5,000 with a first line `(earlier lines left out; Copy all copies everything)`. **Copy all** still copies the full transcript.
+  Inject the clipboard function so tests never touch the real clipboard.
+  Tests:
+  - Copy opens the view, and an empty transcript shows the old message instead
+  - selecting a range and pressing Copy selection copies exactly that text
+  - Copy selection is disabled with no selection
+  - Copy all copies the same text as before this task
+  - Copy last block copies only the lines after the last `input` event, and the last 200 lines when there is none
+  - lines added while the view is open don't change it
+  - Esc closes without copying
+  - a 6,000-line transcript shows 5,000 lines plus the note, and Copy all still copies 6,000
