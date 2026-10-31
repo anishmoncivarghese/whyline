@@ -1011,3 +1011,30 @@ def test_init_flags_skip_prompts_without_installing(repo, capsys, monkeypatch):
     assert not (repo.path / "AGENTS.md").exists()
     assert not (repo.path / ".claude" / "settings.json").exists()
     assert paths.ledger_path(repo.path).exists()
+
+
+def test_entry_turns_off_git_optional_locks(monkeypatch):
+    # The console polls `git status` several times a second. Without this,
+    # status takes .git/index.lock to refresh the index, and the relay's own
+    # `git add` fails with "index.lock: File exists".
+    import pytest as _pytest
+    from whyline import cli as cli_mod
+
+    monkeypatch.delenv("GIT_OPTIONAL_LOCKS", raising=False)
+    monkeypatch.setattr(cli_mod, "main", lambda argv=None: 0)
+    with _pytest.raises(SystemExit):
+        cli_mod.entry()
+    import os
+    assert os.environ["GIT_OPTIONAL_LOCKS"] == "0"
+
+
+def test_entry_keeps_an_explicit_git_optional_locks(monkeypatch):
+    import pytest as _pytest
+    from whyline import cli as cli_mod
+
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+    monkeypatch.setattr(cli_mod, "main", lambda argv=None: 0)
+    with _pytest.raises(SystemExit):
+        cli_mod.entry()
+    import os
+    assert os.environ["GIT_OPTIONAL_LOCKS"] == "1"
