@@ -39,7 +39,7 @@ Rules every task keeps:
   - a quoted pasted path to a PDF still imports
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-24: Show what was read after a CV import
+- [x] JOB-24: Show what was read after a CV import
   Edit `src/whyline/jobs/profile.py`, `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Add `profile.cv_summary(path=None) -> CvSummary` with `chars`, `lines` and `preview` (the first 5 non-blank lines, each cut to 100 characters), read from cv.md.
   CLI: after `import-cv` succeeds, print `Imported N characters. First lines:` followed by the preview, indented.
