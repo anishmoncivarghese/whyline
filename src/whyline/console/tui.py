@@ -94,7 +94,7 @@ from whyline.console.session import ConsoleSession, SessionEvent
 
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
-_MODES = ("chat", "relay", "agents", "assistant")
+_MODES = ("chat", "relay", "agents", "assistant", "workflows")
 # Agents widgets arrive with the Agents plan. Until then these ids match nothing.
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
@@ -107,11 +107,14 @@ _MODE_BUTTONS = {
         "agents-jobs",
     ),
     "assistant": ("assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check"),
+    "workflows": ("workflows-library", "workflows-new", "workflows-runs"),
 }
 _SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy", "settings")
 # Files shows the plan and the files an agent is changing; Agents and
 # Assistant work on no checkout, so it has nothing to show there.
-_HIDDEN_SHARED = {"agents": {"see-files"}, "assistant": {"see-files"}}
+_HIDDEN_SHARED = {
+    "agents": {"see-files"}, "assistant": {"see-files"}, "workflows": {"see-files"},
+}
 _AWAKE_ON_TEXT = (
     "The Mac stays awake until you turn this off, even after the console closes. "
     "Closing the lid still sleeps it unless it is plugged into a display."
@@ -2108,6 +2111,8 @@ class WhylineConsoleApp(App):
             return "Agents: list, run <name>, edit <name>, delete <name>, history <name>, pause/resume/accept <name>"
         if mode == "assistant":
             return "Use the buttons above, or message the bot on Telegram."
+        if mode == "workflows":
+            return "Use the buttons above."
         agent = self.session.agent or "claude"
         return f"Message {agent}... (Enter to send)"
 
@@ -2155,6 +2160,20 @@ class WhylineConsoleApp(App):
         from whyline.console.assistant_screen import AssistantScreen
 
         self.push_screen(AssistantScreen())
+
+    def _open_workflows_library(self, select: str | None = None) -> None:
+        from whyline.console.workflows_screens import LibraryScreen
+
+        self.push_screen(LibraryScreen(self.session.root, select))
+
+    def _open_workflows_new(self) -> None:
+        from whyline.console.workflows_screens import NewWorkflowScreen
+
+        def created(name: str | None) -> None:
+            if name:
+                self._open_workflows_library(name)
+
+        self.push_screen(NewWorkflowScreen(self.session.root), created)
 
     def _open_jobs(self) -> None:
         from whyline.console.jobs_screens import JobsHomeScreen
@@ -3385,6 +3404,7 @@ class WhylineConsoleApp(App):
                 Button("Relay", id="mode-relay"),
                 Button("Agents", id="mode-agents"),
                 Button("Assistant", id="mode-assistant"),
+                Button("Workflows", id="mode-workflows"),
                 id="modes",
             ),
             Horizontal(
@@ -3467,6 +3487,9 @@ class WhylineConsoleApp(App):
                 Button("Ideas", id="assistant-ideas"),
                 Button("Assistant…", id="assistant-open"),
                 Button("Check", id="assistant-check"),
+                Button("Library", id="workflows-library"),
+                Button("New", id="workflows-new"),
+                Button("Runs", id="workflows-runs", disabled=True),
                 Button("Settings", id="settings"),
                 Button("Files", id="see-files"),
                 Button("Awake", id="awake"),
@@ -3573,10 +3596,10 @@ class WhylineConsoleApp(App):
             ))
         elif button_id and button_id.startswith("mode-"):
             chosen = button_id.removeprefix("mode-")
-            if chosen == "assistant":
+            if chosen in ("assistant", "workflows"):
                 if self.session.mode != chosen:
                     self.session.mode = chosen
-                    self.render_event(SessionEvent(kind="output", text="Mode is now assistant."))
+                    self.render_event(SessionEvent(kind="output", text=f"Mode is now {chosen}."))
                     self._sync_mode_indicator()
             else:
                 self._handle_slash(f"/route {chosen}")
@@ -3613,6 +3636,10 @@ class WhylineConsoleApp(App):
             self._open_assistant()
         elif button_id == "assistant-check":
             self._check_inbox()
+        elif button_id == "workflows-library":
+            self._open_workflows_library()
+        elif button_id == "workflows-new":
+            self._open_workflows_new()
         elif button_id == "awake":
             self._set_awake(None)
         elif button_id == "copy":
@@ -4114,6 +4141,9 @@ class WhylineConsoleApp(App):
                 kind="output",
                 text="Use the buttons above, or message the bot on Telegram.",
             ))
+            return
+        if self.session.mode == "workflows" and not text.startswith("/"):
+            self.render_event(SessionEvent(kind="output", text="Use the buttons above."))
             return
         if self.session.mode == "agents" and not text.startswith("/"):
             self._agents_command(text)

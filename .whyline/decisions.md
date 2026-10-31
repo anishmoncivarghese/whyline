@@ -30237,3 +30237,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bc803275ceb54e198470b9ec3fe0730f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:55:50.339Z"} -->
+
+## 2026-10-31 — Workflows Runs button is present but disabled until its screen exists; Edit likewise until WF-12
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-10
+
+**Because:** task lists three controls but only Library/New have screens in WF-10
+
+**Rejected:**
+
+- omit Runs — task requires #workflows-runs
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 1584d07634c0470a9dc32ce0c7ae3d2c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:58:13.659Z"} -->
+
+## 2026-10-31 — Pass WF-10 testing despite one stale full-suite mode-button expectation
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-10
+
+**Because:** All 16 required WF-10 tests pass; the only full-suite failure asserts the old four-button set and directly contradicts WF-10's required fifth Workflows button
+
+**Rejected:**
+
+- Fail WF-10 — the lone failure rejects behavior explicitly required by the task
+
+**Files:** tests/console/test_slash_whyline.py
+
+<!-- whyline-event: 74a433a6ce684d1b936e1728c2283aae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:08:38.011Z"} -->
+
+## 2026-10-31 — Approve WF-10 Workflows mode and Library
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-10
+
+**Because:** The scoped implementation matches the workflow service API, covers every requested console behavior, all 16 focused tests pass, and the sole full-suite failure is a stale four-mode assertion that contradicts the required fifth Workflows mode
+
+**Rejected:**
+
+- Request changes for the full-suite failure — tests/console/test_slash_whyline.py is outside WF-10 scope and asserts behavior WF-10 explicitly replaces
+
+**Files:** src/whyline/console/workflows_screens.py, src/whyline/console/tui.py, tests/console/test_workflows_library.py, tests/console/test_mode_buttons.py
+
+<!-- whyline-event: 8eae7074b065467d8082fb2ef4057468 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T10:19:10.304Z"} -->
