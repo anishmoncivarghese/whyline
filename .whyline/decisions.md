@@ -29561,3 +29561,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 543ab3b382aa420185bdd79c8862e653 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-30T22:18:27.583Z"} -->
+
+## 2026-10-31 — Released whyline 0.3.58 (job-search-3 JOB-16..22)
+
+**Actor:** claude
+**Role:** releaser
+**Task:** release-0.3.58
+
+**Because:** plan complete, local default and 3.11 suites green, branch CI green on Linux and macOS; one flaky console test on the first release attempt passed on rerun
+
+**Rejected:**
+
+- ship whyline-relay too — only plan documents since its last release
+
+**Files:** docs/releases/v0.3.58.md
+
+<!-- whyline-event: 0a90a186b83142d193330a0891f94715 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T04:11:21.016Z"} -->
