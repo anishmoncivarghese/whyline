@@ -103,7 +103,7 @@ Review focus, each one pinned by the test named in its task:
   - expiry fails the step
   Verify with `uv run pytest -q tests/workflows/test_waiting.py tests/workflows/test_engine.py`. Change nothing else.
 
-- [ ] WF-6: Agent step and the daily cap
+- [x] WF-6: Agent step and the daily cap
   Create `src/whyline/workflows/steps/agent.py`, `src/whyline/workflows/settings.py` and `tests/workflows/test_agent_step.py` only.
   - Build `AgentDef(name=f"wf-{workflow}-{step}", kind="personal", path=<workflow file>, root=<repo root or home>, instructions=..., runner=..., backup=..., model=..., timeout_minutes=...)` and call `whyline.agents.runner.execute_once(defn, source="workflow", payload_dir=<dir>, unattended=True, run_fn=...)`. Rendered `inputs` go into `<dir>/input-<n>.md`, one file each.
   - Output `{"output": <final text or parsed JSON>, "provider": record.cli, "run_id": record.run_id}`; `step_runs.provider` is set.
