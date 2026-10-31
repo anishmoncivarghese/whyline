@@ -2,8 +2,10 @@
 file under the private workflows folder (spec section 3)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -190,6 +192,83 @@ def set_step(conn: sqlite3.Connection, run_id: int, step_id: str, **values: obje
 def steps_of(conn: sqlite3.Connection, run_id: int) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM step_runs WHERE run_id=? ORDER BY seq, step_id",
                         (run_id,)).fetchall()
+
+
+# ---- approvals ------------------------------------------------------------
+
+OUT_OF_DATE = "out_of_date"
+
+
+def _stamp(moment: datetime | None) -> str:
+    return (moment or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+
+
+def create_approval(conn: sqlite3.Connection, run_id: int, step_id: str, *, revision: str,
+                    message: str, expires_at: datetime) -> sqlite3.Row:
+    conn.execute(
+        "INSERT INTO approvals(run_id, step_id, revision, args_hash, nonce, status, message,"
+        " expires_at) VALUES(?,?,?,?,?,?,?,?)",
+        (run_id, step_id, revision, hashlib.sha256(message.encode("utf-8")).hexdigest(),
+         secrets.token_urlsafe(8), "pending", message, _stamp(expires_at)))
+    return latest_approval(conn, run_id, step_id)  # type: ignore[return-value]
+
+
+def latest_approval(conn: sqlite3.Connection, run_id: int, step_id: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM approvals WHERE run_id=? AND step_id=?"
+                        " ORDER BY id DESC LIMIT 1", (run_id, step_id)).fetchone()
+
+
+def _fail_step(conn: sqlite3.Connection, run_id: int, step_id: str, reason: str,
+               moment: datetime | None) -> None:
+    set_step(conn, run_id, step_id, status="failed", reason=reason, ended=_stamp(moment))
+    set_run(conn, run_id, status="failed", reason=f"step {step_id}: {reason}",
+            ended=_stamp(moment), wake_at=None)
+
+
+def decide(conn: sqlite3.Connection, approval_id: int, nonce: str, choice: str, actor: str,
+           *, now: datetime | None = None) -> str:
+    """Record a person's answer: ``approved``, ``denied`` or ``out_of_date``.
+
+    Out of date (already answered, expired, or the wrong nonce) changes nothing."""
+    if choice not in ("approve", "deny"):
+        raise ValueError("choice must be approve or deny")
+    moment = now or datetime.now(timezone.utc)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
+        run = conn.execute("SELECT status FROM runs WHERE id=?",
+                           (row["run_id"],)).fetchone() if row else None
+        if (row is None or row["status"] != "pending" or run is None
+                or run["status"] != "waiting"
+                or not secrets.compare_digest(str(row["nonce"]), str(nonce))
+                or datetime.fromisoformat(row["expires_at"]) <= moment):
+            conn.execute("ROLLBACK")
+            return OUT_OF_DATE
+        verdict = "approved" if choice == "approve" else "denied"
+        conn.execute("UPDATE approvals SET status=?, decided_by=?, decided_at=? WHERE id=?",
+                     (verdict, actor, _stamp(moment), approval_id))
+        if choice == "approve":  # due now: resume_due will pick the run up
+            set_run(conn, row["run_id"], wake_at=_stamp(moment))
+        else:
+            _fail_step(conn, row["run_id"], row["step_id"], f"denied by {actor}", moment)
+        conn.execute("COMMIT")
+        return verdict
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def expire_approvals(conn: sqlite3.Connection, run_id: int, now: datetime | None = None) -> bool:
+    """Fail a waiting run whose pending approval has expired. True if it did."""
+    moment = now or datetime.now(timezone.utc)
+    rows = conn.execute("SELECT * FROM approvals WHERE run_id=? AND status='pending'",
+                        (run_id,)).fetchall()
+    expired = [r for r in rows if datetime.fromisoformat(r["expires_at"]) <= moment]
+    for row in expired:
+        conn.execute("UPDATE approvals SET status='expired' WHERE id=?", (row["id"],))
+        _fail_step(conn, run_id, row["step_id"], "approval expired", moment)
+    return bool(expired)
 
 
 def runs_of(conn: sqlite3.Connection, workflow_id: str, limit: int = 20) -> list[sqlite3.Row]:

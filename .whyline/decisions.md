@@ -29885,3 +29885,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b5ab68dd244046fab31b7688d86aca81 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:52:53.154Z"} -->
+
+## 2026-10-31 — WF-5: approval deny/expiry fail the step inside state (decide/expire_approvals); approve sets run wake_at=now so resume_due lists it
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-5
+
+**Because:** decide must be atomic and engine-free; expired approvals are failed by resume_due rather than listed, since nobody can answer them
+
+**Rejected:**
+
+- decide calls engine.execute — couples state to engine and runs handlers inside a click
+
+**Files:** src/whyline/workflows/state.py
+
+<!-- whyline-event: b96adb2a85ff4a018bd636c5663e1a22 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:54:17.977Z"} -->
+
+## 2026-10-31 — Pass WF-5 round 2 wait and approval testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-5
+
+**Because:** The focused 29-case waiting and engine suite exited 0, and the complete repository pytest suite exited 0 with one skip, covering timed resume, approval decisions, expiry, and regressions
+
+**Files:** src/whyline/workflows/engine.py, src/whyline/workflows/state.py, src/whyline/workflows/steps/waiting.py, tests/workflows/test_waiting.py
+
+<!-- whyline-event: fc9381dcd1ed4a4688c2c6edb386baae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:04:22.554Z"} -->
+
+## 2026-10-31 — Approve WF-5 round 3 wait and approval review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-5
+
+**Because:** The implementation satisfies timer resumption, local until scheduling, one-time approval decisions, denial and expiry failure semantics; the focused 29-test suite and plain full repository suite both exited 0, with one expected skip in the full run
+
+**Files:** src/whyline/workflows/engine.py, src/whyline/workflows/state.py, src/whyline/workflows/steps/waiting.py, tests/workflows/test_waiting.py
+
+<!-- whyline-event: d9a6359ef32e4d24aa2ea28803b84338 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T07:14:45.804Z"} -->

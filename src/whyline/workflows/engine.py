@@ -52,6 +52,8 @@ class Context:
     outputs: dict[str, dict] = field(default_factory=dict)
     skipped: set[str] = field(default_factory=set)
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # step id -> the wake time it was waiting for, for steps this execute is resuming
+    resumed: dict[str, str | None] = field(default_factory=dict)
 
     @property
     def template(self) -> dict:
@@ -175,8 +177,9 @@ def _context(conn, run, definition: dict, steps: list[Step], now: datetime) -> C
 
 
 def _handlers(extra: Mapping[str, Handler] | None) -> dict[str, Handler]:
-    from whyline.workflows.steps import basic
+    from whyline.workflows.steps import basic, waiting
     merged = dict(basic.HANDLERS)
+    merged.update(waiting.HANDLERS)
     merged.update(extra or {})
     return merged
 
@@ -214,11 +217,14 @@ def execute(run_id: int, *, now: datetime | None = None,
                                ended=_stamp(clock))
                 return _finish(conn, run_id, UNKNOWN, reason)
 
+    resumed = {r["step_id"]: run["wake_at"] for r in state.steps_of(conn, run_id)
+               if r["status"] == WAITING}
     state.set_run(conn, run_id, status=RUNNING, pid=os.getpid(), reason="", wake_at=None,
                   started=run["started"] or _stamp(clock))
     run = _row(conn, run_id)
     started = datetime.fromisoformat(run["started"])
     ctx = _context(conn, run, definition, steps, clock)
+    ctx.resumed = resumed
 
     done = {r["step_id"] for r in state.steps_of(conn, run_id) if r["status"] in _STEP_FINAL}
     index = next((i for i, s in enumerate(steps) if s.id not in done), len(steps))
@@ -301,6 +307,23 @@ def cancel(run_id: int) -> str:
         if row["status"] in (RUNNING, WAITING, UNKNOWN):
             state.set_step(conn, run_id, row["step_id"], status=CANCELLED, ended=_stamp())
     return _finish(conn, run_id, CANCELLED, "cancelled")
+
+
+def resume_due(now: datetime | None = None) -> list[int]:
+    """Waiting runs that should continue now. A pending approval past its expiry is
+    failed here instead of listed: nobody can answer it any more."""
+    conn = state.connect()
+    moment = now or _utcnow()
+    due = []
+    rows = conn.execute("SELECT id, wake_at, reason FROM runs WHERE status=? AND wake_at IS NOT NULL"
+                        " ORDER BY id", (WAITING,)).fetchall()
+    for row in rows:
+        if datetime.fromisoformat(row["wake_at"]) > moment:
+            continue
+        if row["reason"] == "approval" and state.expire_approvals(conn, row["id"], moment):
+            continue
+        due.append(row["id"])
+    return due
 
 
 def resolve_unknown(run_id: int, choice: str, *, now: datetime | None = None,
