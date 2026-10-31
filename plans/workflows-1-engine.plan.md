@@ -25,7 +25,7 @@ Review focus, each one pinned by the test named in its task:
 - A template that reads a step on the branch not taken: the step fails naming the path; the engine does not crash. WF-4, `test_template_reading_skipped_step_fails_clearly`.
 - A hand-broken TOML file: listed as broken with the parse error; other workflows still tick. WF-8, `test_broken_file_does_not_stop_other_workflows`.
 
-- [ ] WF-1: Paths, definitions, validation and hashes
+- [x] WF-1: Paths, definitions, validation and hashes
   Create `src/whyline/workflows/__init__.py`, `paths.py`, `definitions.py`, `steps/__init__.py` (the registry), and `tests/workflows/test_definitions.py` only.
   - `paths.home()` = `global_whyline_dir() / "workflows"` (created 0700), `state_path()`, `runs_dir()` (0700), `settings_path()`, `reports_dir(name)`, `repo_dir(root)` = `root / ".whyline" / "workflows"`.
   - `steps.FieldSpec(name, kind, required, templated, choices)` with `kind` one of `str`, `int`, `bool`, `list[str]`, `table`, `step_ref`. `steps.STEP_TYPES: Mapping[str, StepType]` with `StepType(name, fields, ports, writes)` for `set`, `condition`, `switch`, `wait`, `stop`, `approval`, `agent`, `deliver` with the fields in spec 4.2. `templated=False` on every target field in spec 4.2.
