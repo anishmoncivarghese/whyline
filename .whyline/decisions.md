@@ -30152,3 +30152,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 48d63803282545638cdb0ccc172cd587 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:17:59.169Z"} -->
+
+## 2026-10-31 — workflow service: run_now/retry mark the run running before spawning, and leave it queued when the workflow has a live run
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-9
+
+**Because:** mirrors tick._start so the heartbeat never starts the same queued run twice, and one workflow never has two live runs
+
+**Rejected:**
+
+- spawn unconditionally — races the heartbeat and breaks one-live-run-per-workflow
+
+**Files:** src/whyline/workflows/service.py
+
+<!-- whyline-event: 072591ba24154352a1ef0dadadc2fa07 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:21:51.503Z"} -->
+
+## 2026-10-31 — WF-9 fails required full-suite collection
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-9
+
+**Because:** The focused workflow suite passes 31 tests, but uv run pytest -q stops during collection: tests/workflows/test_cli.py is imported as test_cli and collides with the existing tests/test_cli.py because tests/workflows is not a package.
+
+**Rejected:**
+
+- Pass from focused tests alone — the task explicitly requires the project's full suite, and the new test file makes that command fail before behavioral tests can run
+
+**Files:** tests/workflows/test_cli.py
+
+<!-- whyline-event: 8298c7b289d948fe9f492849e4c2e457 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:25:17.988Z"} -->
+
+## 2026-10-31 — tests/workflows gets an __init__.py so test_cli.py no longer collides with tests/test_cli.py
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-9
+
+**Because:** tests/agents, jobs, ideas, console are packages already; same fix, full suite now collects and passes
+
+**Rejected:**
+
+- rename test_cli.py — task names that file; importmode=importlib: global config change for one dir
+
+**Files:** tests/workflows/__init__.py
+
+<!-- whyline-event: 19eb55a73771496fb17fda27b19f0f9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:35:14.510Z"} -->
+
+## 2026-10-31 — WF-9 passes round-4 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-9
+
+**Because:** The focused workflow suite passed all 31 tests, and the full project suite completed at 100% with exit code 0; the prior test_cli module collision is resolved.
+
+**Rejected:**
+
+- Fail based on the prior collection error — tests/workflows is now a package and the full suite collects and passes.
+
+**Files:** tests/workflows/__init__.py, tests/workflows/test_service.py, tests/workflows/test_cli.py
+
+<!-- whyline-event: 12fdfefbed3c421faf41ec34fd353d5d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:45:16.110Z"} -->
+
+## 2026-10-31 — Approve WF-9 round 5 service and CLI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-9
+
+**Because:** The service and CLI implement the requested workflow operations, the tests cover every service function plus ambiguity, unknown inputs, side-effect-free branch dry-run, CLI errors and help, and both the 31-test focused suite and plain full suite passed
+
+**Rejected:**
+
+- Request changes — no material correctness, safety, or coverage defect was found
+
+**Files:** src/whyline/workflows/service.py, src/whyline/workflows/cli.py, tests/workflows/test_service.py, tests/workflows/test_cli.py
+
+<!-- whyline-event: bc803275ceb54e198470b9ec3fe0730f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T09:55:50.339Z"} -->

@@ -550,6 +550,12 @@ def _add_jobs(subparsers: "argparse._SubParsersAction") -> None:
     add_parser(subparsers)
 
 
+def _add_workflow(subparsers: "argparse._SubParsersAction") -> None:
+    from whyline.workflows.cli import add_parser
+
+    add_parser(subparsers)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -583,6 +589,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_agents(subparsers)
     _add_idea(subparsers)
     _add_jobs(subparsers)
+    _add_workflow(subparsers)
     return parser
 
 
@@ -1778,6 +1785,12 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     return run(args)
 
 
+def cmd_workflow(args: argparse.Namespace) -> int:
+    from whyline.workflows.cli import run
+
+    return run(args)
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1918,6 +1931,7 @@ COMMANDS = {
     "agents": cmd_agents,
     "idea": cmd_idea,
     "jobs": cmd_jobs,
+    "workflow": cmd_workflow,
 }
 
 
