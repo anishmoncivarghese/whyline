@@ -157,7 +157,7 @@ Review focus, each one pinned by the test named in its task:
   - the CLI prints and exits non-zero on errors; `whyline workflow --help` lists every command
   Verify with `uv run pytest -q tests/workflows/test_service.py tests/workflows/test_cli.py`. Change nothing else.
 
-- [ ] WF-10: Workflows mode and the Library
+- [x] WF-10: Workflows mode and the Library
   Create `src/whyline/console/workflows_screens.py` and `tests/console/test_workflows_library.py`; edit `src/whyline/console/tui.py` and `tests/console/test_mode_buttons.py` only.
   - Add `"workflows"` to `_MODES`, a `Workflows` button `#mode-workflows` after Assistant, and controls `#workflows-library`, `#workflows-new`, `#workflows-runs`. Typing in Workflows mode prints `Use the buttons above.` and runs no agent.
   - `LibraryScreen`: a table of `service.rows(root)`; buttons Run now, Pause/Resume, Review & accept (shows `service.review` lines in a confirm screen and calls `service.accept` only on Confirm), Edit (opens the Builder from WF-12; until then, disabled), and a Daily agent cap input saving through `service.set_cap` (0 = off, shown as `off`). Broken rows show their error.
