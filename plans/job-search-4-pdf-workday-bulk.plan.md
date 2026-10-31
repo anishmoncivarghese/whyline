@@ -17,7 +17,7 @@ Rules every task keeps:
 - Tests use recorded fixtures and stubs, never the network, a real provider or the real home folder. They never sleep and never contain "/Users/".
 - PDF files and web responses are untrusted input. Reading them never runs code and never follows a link outside the rules below. Every library or parse error becomes a plain `ProfileError` or `FetchError` naming the file or company.
 
-- [ ] JOB-23: Read PDF CVs
+- [x] JOB-23: Read PDF CVs
   Edit `pyproject.toml`, `uv.lock`, `src/whyline/jobs/profile.py`, `src/whyline/jobs/cli.py` (the `import-cv` help text), `src/whyline/console/jobs_screens.py` (the path placeholder and the empty-path message) and `tests/jobs/test_profile.py` only, and add PDF fixtures under `tests/jobs/fixtures/`.
   Add `pypdf` to `[project] dependencies` with an upper bound below its next major version, then run `uv lock`.
   Add `.pdf` to `CV_EXTENSIONS`. Every message listing the formats becomes ".md, .txt, .docx, or .pdf".
