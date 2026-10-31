@@ -379,6 +379,13 @@ def _cmd_profile_import_cv(args: argparse.Namespace) -> int:
         return EXIT_ERROR
     shown = tilde_path(target) if isinstance(target, Path) else "~/.whyline/jobs/cv.md"
     print(f"Imported CV to {shown}.")
+    try:
+        summary = profile.cv_summary()
+    except profile.ProfileError:
+        return EXIT_OK
+    print(f"Imported {summary.chars} characters. First lines:")
+    for line in summary.preview:
+        print(f"  {line}")
     return EXIT_OK
 
 

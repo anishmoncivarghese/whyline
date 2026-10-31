@@ -470,3 +470,24 @@ def test_quoted_pasted_path_to_a_pdf_imports(tmp_path: Path) -> None:
     src.write_bytes((PDF_FIXTURES / "cv_text.pdf").read_bytes())
     out = profile.import_cv(f"'{src}'")
     assert "Ada Lovelace" in out.read_text(encoding="utf-8")
+
+
+def test_cv_summary_counts_cuts_and_skips_blank_lines(isolated_home: Path) -> None:
+    long_line = "x" * 150
+    lines = ["one", "", "   ", long_line, "three", "four", "five", "six", "seven"]
+    text = "\n".join(lines) + "\n"
+    profile.import_cv_text(text)
+
+    summary = profile.cv_summary()
+
+    assert summary.chars == len(text)
+    assert summary.lines == 7
+    assert summary.preview == ("one", "x" * 100, "three", "four", "five")
+
+
+def test_cv_summary_reads_given_path_and_reports_missing(tmp_path: Path) -> None:
+    source = tmp_path / "other.md"
+    source.write_text("Ada\n\nLovelace\n", encoding="utf-8")
+    assert profile.cv_summary(source).preview == ("Ada", "Lovelace")
+    with pytest.raises(profile.ProfileError):
+        profile.cv_summary(tmp_path / "missing.md")

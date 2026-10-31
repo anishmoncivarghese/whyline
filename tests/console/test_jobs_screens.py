@@ -879,3 +879,56 @@ async def test_alerts_section_shows_the_last_read_and_installs_the_mail_rule(
         result = _plain(screen.query_one("#jh-alerts-mail-result", tui.Static).render())
         assert str(written) in result
         assert "whyline-job-alerts.applescript" in result
+
+
+async def test_screen_shows_cv_preview_after_import_and_not_when_reopened(
+    isolated_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    real_import_cv = profile.import_cv
+
+    def spy_import_cv(path: str | Path) -> Path:
+        calls.append(str(path))
+        return real_import_cv(path)
+
+    monkeypatch.setattr(profile, "import_cv", spy_import_cv)
+    source = isolated_home / "resume.md"
+    source.write_text("Ada Lovelace\n\nAnalytical Engine\n", encoding="utf-8")
+
+    app = _Host()
+    async with app.run_test(size=(100, 32)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        assert screen.query_one("#jh-cv-preview").has_class("-empty")
+
+        screen.query_one("#jh-import-cv", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-cv-path", tui.Input).value = str(source)
+        screen.query_one("#jh-cv-import-confirm", tui.Button).press()
+        await pilot.pause()
+
+        assert calls == [str(source)]
+        status = _plain(screen.query_one("#jh-cv-status", tui.Static).render())
+        assert status == "CV: 32 characters from resume.md"
+        preview_widget = screen.query_one("#jh-cv-preview", tui.Static)
+        assert not preview_widget.has_class("-empty")
+        preview = _plain(preview_widget.render())
+        assert "  Ada Lovelace\n  Analytical Engine" in preview
+        assert "Check this reads like your CV. If lines are jumbled, try the .docx version." in preview
+
+        screen.query_one("#jh-paste-cv", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-cv-text", tui.TextArea).load_text("Grace Hopper\n")
+        screen.query_one("#jh-cv-paste-confirm", tui.Button).press()
+        await pilot.pause()
+        status = _plain(screen.query_one("#jh-cv-status", tui.Static).render())
+        assert status.startswith("CV: 13 characters from ")
+
+    app = _Host()
+    async with app.run_test(size=(100, 32)) as pilot:
+        reopened = JobsHomeScreen()
+        app.push_screen(reopened)
+        await pilot.pause()
+        assert reopened.query_one("#jh-cv-preview").has_class("-empty")

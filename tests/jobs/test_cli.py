@@ -64,6 +64,7 @@ def test_profile_import_cv_file_and_stdin_round_trip(
     code, out, err = _invoke(["jobs", "profile", "import-cv", str(md_file)], capsys)
     assert code == 0, err
     assert "~/.whyline/jobs/cv.md" in out
+    assert "Imported 33 characters. First lines:\n  # Ada Lovelace\n  Analytical Engine\n" in out
     assert profile.cv_path().read_text(encoding="utf-8") == "# Ada Lovelace\nAnalytical Engine\n"
 
     docx_file = _build_docx(tmp_path / "cv.docx", ["Grace Hopper", "A-0 Compiler"])

@@ -168,6 +168,28 @@ def import_cv_text(text: str) -> Path:
     return _write_private_text(CV_FILE, normalized)
 
 
+@dataclass(frozen=True)
+class CvSummary:
+    chars: int
+    lines: int
+    preview: tuple[str, ...]
+
+
+def cv_summary(path: str | Path | None = None) -> CvSummary:
+    """Summarize cv.md: character count, non-blank line count, first 5 lines cut to 100 chars."""
+    source = Path(path) if path is not None else cv_path()
+    try:
+        text = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ProfileError(f"Could not read CV: {error}") from error
+    non_blank = [line.strip() for line in text.splitlines() if line.strip()]
+    return CvSummary(
+        chars=len(text),
+        lines=len(non_blank),
+        preview=tuple(line[:100] for line in non_blank[:5]),
+    )
+
+
 def _local_tag(tag: object) -> str:
     if not isinstance(tag, str):
         return ""

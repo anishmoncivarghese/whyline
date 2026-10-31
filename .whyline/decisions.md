@@ -30571,3 +30571,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7e6d619398bb436f82bfff097ca0ec2a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:28:16.271Z"} -->
+
+## 2026-10-31 — Console CV preview reads cv.md via profile.cv_summary after the import function succeeds; hidden when cv.md is unreadable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-24
+
+**Because:** keeps saving through import_cv/import_cv_text and the preview reflects what was actually stored; a stubbed import leaves the old status line
+
+**Rejected:**
+
+- summarize the source file directly — would not show what was stored after conversion
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 2566fa0e4ced4a32ae42859f76f32a62 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:48:18.810Z"} -->
+
+## 2026-10-31 — JOB-24 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-24
+
+**Because:** cv_summary, CLI preview output, console import/paste preview and reopen reset are covered, and both mandated test commands completed at 100% with exit 0
+
+**Rejected:**
+
+- Fail JOB-24 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/jobs/profile.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: d6214f735b5b43adaf61eaf595ace4d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:08:40.277Z"} -->
+
+## 2026-10-31 — Approve JOB-24 CV import summaries
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-24
+
+**Because:** The implementation matches the requested cv_summary, CLI preview, transient console preview, and shared import-function behavior; the targeted and full test suites both passed at 100 percent
+
+**Rejected:**
+
+- Request changes — no material correctness, safety, scope, or coverage defect was found
+
+**Files:** src/whyline/jobs/profile.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: f60e5876b3d14c83abcf0b7e2d66c964 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:28:28.658Z"} -->

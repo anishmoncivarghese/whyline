@@ -224,6 +224,8 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen .jh-draft-heading { text-style: bold; margin-top: 1; }
     JobsHomeScreen #jh-privacy { width: 100%; height: auto; color: $text-muted; }
     JobsHomeScreen #jh-cv-status { width: 100%; height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-cv-preview { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-cv-preview.-empty { display: none; }
     JobsHomeScreen #jh-cv-actions { height: auto; margin-top: 1; }
     JobsHomeScreen #jh-cv-actions Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen .jh-panel { height: auto; margin-top: 1; }
@@ -495,6 +497,7 @@ class JobsHomeScreen(ModalScreen):
                 Label("Profile", classes="jh-section", id="jh-profile-heading"),
                 Static(PRIVACY_SENTENCE, id="jh-privacy", markup=False),
                 Static(cv_status_line, id="jh-cv-status", markup=False),
+                Static("", id="jh-cv-preview", markup=False, classes="-empty"),
                 Horizontal(
                     Button("Import CV…", id="jh-import-cv"),
                     Button("Paste CV…", id="jh-paste-cv"),
@@ -797,6 +800,21 @@ class JobsHomeScreen(ModalScreen):
         except (profile.ProfileError, OSError, ValueError, NoMatches):
             pass
 
+    def _show_cv_summary(self, source_name: str) -> None:
+        try:
+            summary = profile.cv_summary()
+            self.query_one("#jh-cv-status", Static).update(
+                f"CV: {summary.chars} characters from {source_name}"
+            )
+            preview = self.query_one("#jh-cv-preview", Static)
+        except (profile.ProfileError, OSError, ValueError, NoMatches):
+            return
+        preview.update(
+            "\n".join(f"  {line}" for line in summary.preview)
+            + "\nCheck this reads like your CV. If lines are jumbled, try the .docx version."
+        )
+        preview.remove_class("-empty")
+
     def _toggle_import_panel(self, show: bool) -> None:
         imp = self.query_one("#jh-import-panel", Vertical)
         paste = self.query_one("#jh-paste-panel", Vertical)
@@ -832,6 +850,7 @@ class JobsHomeScreen(ModalScreen):
         path_input.value = ""
         self._toggle_import_panel(False)
         self._refresh_cv_status()
+        self._show_cv_summary(Path(raw_path).name)
         if isinstance(written, Path):
             self._set_status(f"Imported CV to {tilde_path(written)}.")
         else:
@@ -856,6 +875,7 @@ class JobsHomeScreen(ModalScreen):
         area.load_text("")
         self._toggle_paste_panel(False)
         self._refresh_cv_status()
+        self._show_cv_summary("pasted text")
         if isinstance(written, Path):
             self._set_status(f"Saved pasted CV to {tilde_path(written)}.")
         else:
