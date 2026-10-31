@@ -29713,3 +29713,175 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3d9107be156441d2a77a583f948e6dfd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:22:29.772Z"} -->
+
+## 2026-10-31 — Engine checks output size before redact(), and redacts string values rather than the JSON text
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-4
+
+**Because:** redact() hung on a 1.1 MB string; redacting values keeps the JSON valid
+
+**Rejected:**
+
+- redact the serialized JSON — can corrupt quotes and is slow on big outputs
+
+**Files:** src/whyline/workflows/engine.py
+
+<!-- whyline-event: d6e2b0fbb4d547ada6c80c8e4e40f7b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:28:45.039Z"} -->
+
+## 2026-10-31 — Pass WF-4 engine core testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-4
+
+**Because:** The mandated 17-case engine suite and the complete repository pytest suite both exited 0, covering routing, crash recovery, unknown-outcome resolution, output limits, and redaction without regressions
+
+**Files:** tests/workflows/test_engine.py
+
+<!-- whyline-event: 9886defbd73c436e85bd9b62783348cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:38:45.070Z"} -->
+
+## 2026-10-31 — Reject WF-4 engine core review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-4
+
+**Because:** The engine exposes only run.id so valid {{ run.started }} templates fail, and it freezes clock before the loop so handler time cannot trigger the required two-hour wall-clock limit; add focused regression tests for both while preserving the passing suites
+
+**Files:** src/whyline/workflows/engine.py
+
+<!-- whyline-event: 7abf90ff48ec4c348f8628fc4294fc42 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:49:19.569Z"} -->
+
+## 2026-10-31 — Engine clock re-read each loop via module-level _utcnow; a fixed now= still pins it
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-4
+
+**Because:** the 2-hour limit must see handler time pass; run.started is re-read after set_run so templates and the limit share one persisted value
+
+**Rejected:**
+
+- freeze clock once — handler time could never trigger the limit
+
+**Files:** src/whyline/workflows/engine.py
+
+<!-- whyline-event: 1b91ae603893480393f58f0660d4dfe2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T05:50:03.108Z"} -->
+
+## 2026-10-31 — Pass WF-4 engine core retest after clock and run context fixes
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-4
+
+**Because:** The mandated 19-case engine suite and the complete repository pytest suite both exited 0, verifying the new run.started template context and elapsed-handler wall-clock regressions without integration failures
+
+**Files:** tests/workflows/test_engine.py
+
+<!-- whyline-event: fb8b5bcc693246e2986bd56fa33ab3ca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:00:07.031Z"} -->
+
+## 2026-10-31 — Reject WF-4 final-step wall-clock enforcement
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-4
+
+**Because:** The engine checks the two-hour limit only before entering each step, so a single final handler that takes three hours is stored as succeeded; re-check elapsed wall time after handler completion and add a one-step regression while preserving the passing 19-case and full suites
+
+**Files:** src/whyline/workflows/engine.py, tests/workflows/test_engine.py
+
+<!-- whyline-event: 29bf7f251dae4e05a3f3aebb99502d97 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:10:43.550Z"} -->
+
+## 2026-10-31 — WF-4: re-check 2-hour limit after the last handler, failing the run but keeping the step succeeded
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-4
+
+**Because:** the pre-step check alone let a 3-hour final handler end the run succeeded; the step's own output is valid so only the run fails, matching the mid-run case
+
+**Rejected:**
+
+- fail the step too — differs from the existing mid-run behaviour and discards a valid result
+
+**Files:** src/whyline/workflows/engine.py
+
+<!-- whyline-event: 98a6b9e7429a473b8f387ddb6c84a5b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:11:29.607Z"} -->
+
+## 2026-10-31 — Pass WF-4 round 8 final-handler wall-clock retest
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-4
+
+**Because:** The focused 20-case engine suite and complete repository pytest suite both exited 0, confirming the post-handler two-hour limit regression without integration failures
+
+**Files:** tests/workflows/test_engine.py
+
+<!-- whyline-event: aed7d77b27c741728535fb6ae03696f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:21:26.127Z"} -->
+
+## 2026-10-31 — Reject WF-4 round 9 cancellation and empty-output persistence
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-4
+
+**Because:** execute overwrites a cancellation that occurs during a handler because it does not re-check run state after the handler, and it skips the required per-step JSON artifact when StepResult.output is empty; add deterministic regressions for both while preserving the passing focused and full suites
+
+**Files:** src/whyline/workflows/engine.py, tests/workflows/test_engine.py
+
+<!-- whyline-event: 54e335338e4f42a5b25ce5cdfc983575 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:31:52.356Z"} -->
+
+## 2026-10-31 — WF-4: re-check cancellation after each handler and always write the step JSON artifact
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-4
+
+**Because:** cancel() during a handler was overwritten by succeeded; empty output skipped the required 0600 artifact
+
+**Rejected:**
+
+- lock the run row during handlers — handlers can be hours long and cancel must not block
+
+**Files:** src/whyline/workflows/engine.py
+
+<!-- whyline-event: c20defa55cf0410bb3c27685c5a2d403 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:32:27.363Z"} -->
+
+## 2026-10-31 — Pass WF-4 round 11 cancellation and empty-output retest
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-4
+
+**Because:** The focused 22-case workflow engine suite and complete repository pytest suite both exited 0, verifying the latest cancellation re-check and required empty-output artifact behavior without regressions
+
+**Files:** src/whyline/workflows/engine.py, tests/workflows/test_engine.py
+
+<!-- whyline-event: adefb464ab234912aaa11a0abdeabc9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:42:31.247Z"} -->
+
+## 2026-10-31 — Approve WF-4 round 12 engine core review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-4
+
+**Because:** The stored-definition engine, routing, crash recovery, cancellation handling, private redacted artifacts, and limit enforcement satisfy the task; the focused 22-case suite and plain full repository suite both exited 0
+
+**Files:** src/whyline/workflows/engine.py, src/whyline/workflows/steps/basic.py, tests/workflows/test_engine.py
+
+<!-- whyline-event: b5ab68dd244046fab31b7688d86aca81 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T06:52:53.154Z"} -->
