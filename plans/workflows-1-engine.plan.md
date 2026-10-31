@@ -73,7 +73,7 @@ Review focus, each one pinned by the test named in its task:
   - summary lines for the spec 4 example without `http`, and a diff after adding a recipient
   Verify with `uv run pytest -q tests/workflows/test_state.py tests/workflows/test_capabilities.py`. Change nothing else.
 
-- [ ] WF-4: Engine core, routing and crash recovery
+- [x] WF-4: Engine core, routing and crash recovery
   Create `src/whyline/workflows/engine.py`, `src/whyline/workflows/steps/basic.py` (`set`, `condition`, `switch`, `stop`), and `tests/workflows/test_engine.py` only.
   - `StepResult(status, output: dict, reason="", port="next", wake_at=None)`. `Context` holds the run, its stored definition, inputs, trigger values and the outputs so far.
   - `execute(run_id, *, now=None, handlers=None) -> str` runs from the first step without a final state, following ports, marking unreached steps `skipped`, and returns the run's final or waiting state. It reads the definition from `runs.definition_json`, never from the file.
