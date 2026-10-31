@@ -1,5 +1,5 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-10-31T21:00:00+05:30 -->
-# Relay status line: stage, reruns, plan progress and a per-turn timer, plus a selectable Copy view
+# Relay status line: stage, reruns, plan progress, per-turn timer, issue counts, live test progress and a selectable Copy view
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -10,6 +10,8 @@ What the user gets:
 - **First pass:** `relay: JOB-24 (2 of 10, 10%) · implementing · claude · round 1 of 24 · 7m 02s`
 - **After a rejection:** `relay: JOB-24 (2 of 10, 10%) · fixing after review 1 · claude · round 3 of 24 · 1m 40s`, then `… · re-review 2 · codex · round 4 of 24 · 0m 35s`.
 - **Copy** opens the transcript in a view where you can select just part of it. Copying everything stays one click.
+- **Issues:** when a tester or reviewer sends a task back, the line shows `failed 2× (last: 2 issues)`, and an **Issues** button lists every round's outcome and issues for the current task.
+- **Live test progress:** while a test or review stage runs, the line shows what the agent last reported, for example `suite 40%, 0 failed (codex says)`. It is labelled as the agent's report because it is read from the agent's own messages.
 - The % is plan progress: tasks ticked out of all tasks. Nothing estimates how far one task has got, because agents do not report that and a guessed bar would mislead.
 
 Global constraints:
@@ -79,3 +81,46 @@ Global constraints:
   - lines added while the view is open don't change it
   - Esc closes without copying
   - a 6,000-line transcript shows 5,000 lines plus the note, and Copy all still copies 6,000
+
+- [ ] RST-5: `whyline handoff --issue`, and ask the project's tester for it
+  Edit `src/whyline/cli.py`, `src/whyline/handoff.py`, `tests/test_handoff.py`, `tests/test_cli.py` and `.whyline/relay/prompts/test.md` only.
+  1. `whyline handoff` gains a repeatable `--issue TEXT` (`dest="issues"`), kept as `issues: list[str]` in the handoff event the same way `risks` is (one line each, in order). `handoff.create` takes `issues=None`.
+  2. `format_text` prints each one as `Issue          <n>. <text>` after the summary, so `whyline sync` shows them to the next agent.
+  3. `.whyline/relay/prompts/test.md`, under its Failed outcome, adds: `--issue "<one concrete problem, with file and line when known>"`, once per problem, in priority order, as well as `--summary`.
+  Tests: `--issue` twice is stored in order; a record without `issues` still formats; `format_text` numbers the issues; the CLI help lists `--issue`.
+
+- [ ] RST-6: Issue counts in the status line, and an Issues view
+  Edit `src/whyline/console/relay_ops.py`, `src/whyline/console/tui.py`, `src/whyline/console/relay_screens.py`, `tests/console/test_relay_ops.py` and `tests/console/test_tui_relay_run.py` only.
+  1. `relay_ops.task_rounds(root, task_id) -> list[RoundOutcome]` reads the handoff events for that task from the ledger (`ledger.read_all(paths.ledger_path(root))`), oldest first. `RoundOutcome(at, from_actor, to_actor, status, summary, issues, tests, sent_back)`:
+     - `issues` is the event's `issues`. For an older event without them, use the summary's bullet items (text split on lines or on ` - ` that starts a bullet), or `()` when there are none.
+     - `sent_back` is true for status `failed` or the relay's changes status (`whyline_relay.config.load(root).status_map["changes"]`, else `changes`).
+     - Events for a different task, and events from before the task's last `approved`/terminal status, are left out, so a re-run task starts clean.
+  2. `LiveStatus` gains `sent_back: int` and `last_issues: int`. `format_live` adds ` · failed N× (last: M issues)` when N > 0. It reads `last: see summary` when the last send-back had no issues.
+  3. An **Issues** button in the Relay row, enabled while the current or paused task has any `RoundOutcome`, opens `IssuesScreen(ModalScreen)`. It shows one block per outcome (`Round k · <from> → <to> · ✗ sent back / ✓ passed · N issues`), the numbered issues, and `Test: <command>: <result>` lines, plus **Copy all**, **Copy selected issue** (the highlighted line) and **Close**. It is read-only and never changes relay state.
+  Tests:
+  - task_rounds with `issues`, with only a bulleted summary, and for another task
+  - the count resets after an approval
+  - format_live with and without send-backs
+  - the button is disabled with no outcomes
+  - the screen lists blocks in order and Copy all copies them
+
+- [ ] RST-7: Live test progress from the agent's own messages
+  Edit `src/whyline/console/relay_ops.py`, `src/whyline/console/tui.py`, `tests/console/test_relay_ops.py` and `tests/console/test_tui_relay_run.py` only.
+  Testers already narrate progress in the stream the console receives ("The repository run has crossed 32% without an error", or pytest's own `[ 32%]`).
+  1. `relay_ops.progress_from_line(line) -> ProgressNote | None` with `ProgressNote(percent: int | None, failed: int | None)`:
+     - pytest's `[ NN%]` sets percent
+     - any `NN%` (0–100) in a line that also mentions suite, pytest, tests, green, passed, failure or error sets percent
+     - `N failed` sets failed
+     - "no failures", "without an error", "no failed" or "still green" set failed to 0
+     - a pytest summary line such as `N passed[, M failed][, …] in X.XXs` sets percent 100 and failed M (or 0)
+     - anything else returns None
+  2. While `live_status` reports a stage other than implement (or the role is reviewer), `_relay_line` feeds each line to it, and the latest non-None values are kept. A line that starts a new pytest command (contains `pytest` and `-q` or `run pytest`) resets percent to None, so a focused run's 100% doesn't stick into the full run.
+  3. `format_live` adds ` · suite P%[, F failed] (<agent> says)` when a value is known. The values are cleared when the marker's `started` changes (a new turn).
+  4. Nothing is shown during implement stages, and no reading of logs or files is added: only lines already arriving.
+  Tests:
+  - each pattern, using the five narration lines in the screenshot this task came from ("green through 13%", "remains clean at 18%", "reached 20% with no failures", "crossed 32% without an error", "approaching 40%, still with no failures")
+  - a pytest bracket line and a pytest summary with failures
+  - a percent over 100 is ignored
+  - a new pytest command resets
+  - a new turn clears
+  - the implement stage shows nothing
