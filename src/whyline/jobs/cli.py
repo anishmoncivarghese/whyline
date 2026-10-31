@@ -163,7 +163,7 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
 
     imp = prof_sub.add_parser(
         "import-cv",
-        help="Import a CV (.md, .txt, .docx, or - for stdin)",
+        help="Import a CV (.md, .txt, .docx, .pdf, or - for stdin)",
     )
     imp.add_argument("file", help="Path to CV file, or - to read UTF-8 text from stdin")
 

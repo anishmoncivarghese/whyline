@@ -28,7 +28,10 @@ PROFILE_FILE = "profile.md"
 RUBRIC_FILE = "rubric.md"
 MANAGED_FILES = (CV_FILE, PREFERENCES_FILE, PROFILE_FILE, RUBRIC_FILE)
 
-CV_EXTENSIONS = (".md", ".txt", ".docx")
+CV_EXTENSIONS = (".md", ".txt", ".docx", ".pdf")
+_MAX_PDF_BYTES = 10 * 1024 * 1024
+_MAX_PDF_PAGES = 20
+_MIN_PDF_TEXT_CHARS = 200
 REMOTE_MODES = ("any", "remote", "hybrid", "onsite")
 KNOWN_PREFERENCE_KEYS = (
     "roles",
@@ -242,6 +245,38 @@ def _read_docx_text(source: Path) -> str:
     return "\n".join(paragraphs)
 
 
+def _read_pdf_text(source: Path) -> str:
+    try:
+        size = source.stat().st_size
+    except OSError as error:
+        raise ProfileError(f"Could not read PDF file: {error.strerror or error}") from error
+    if size > _MAX_PDF_BYTES:
+        raise ProfileError("PDF is over the 10 MB limit.")
+    try:
+        import pypdf
+
+        reader = pypdf.PdfReader(str(source), strict=False)
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise ProfileError(
+                "This PDF is password-protected; export it without a password and try again."
+            )
+        pages = [
+            page.extract_text() or "" for page in list(reader.pages)[:_MAX_PDF_PAGES]
+        ]
+    except ProfileError:
+        raise
+    except Exception as error:  # pypdf raises many types on malformed files
+        reason = (str(error).strip().splitlines() or [type(error).__name__])[0][:120]
+        raise ProfileError(f"Could not read PDF file: {reason}") from error
+    text = re.sub(r"\n{3,}", "\n\n", "\n\n".join(pages))
+    if len(text.strip()) < _MIN_PDF_TEXT_CHARS:
+        raise ProfileError(
+            "No text found in this PDF. It looks like a scan; export your CV from "
+            "Word or Google Docs as .docx or PDF and try again."
+        )
+    return text
+
+
 def _read_plain_cv(source: Path) -> str:
     max_raw_bytes = MAX_CV_BYTES * 2 + 3  # CRLF -> LF + optional 3-byte UTF-8 BOM
     try:
@@ -278,7 +313,7 @@ def _pasted_path(raw: str) -> Path:
 
 
 def import_cv(path: str | Path) -> Path:
-    """Import a CV from a .md, .txt, or .docx file into ~/.whyline/jobs/cv.md."""
+    """Import a CV from a .md, .txt, .docx, or .pdf file into ~/.whyline/jobs/cv.md."""
     if not isinstance(path, (str, Path)):
         raise ProfileError("CV path must be a path or string.")
     source = _pasted_path(path) if isinstance(path, str) else path.expanduser()
@@ -286,11 +321,16 @@ def import_cv(path: str | Path) -> Path:
     if suffix not in CV_EXTENSIONS:
         shown = source.suffix or "<no extension>"
         raise ProfileError(
-            f"Unsupported CV format '{shown}'; choose a .md, .txt, or .docx file."
+            f"Unsupported CV format '{shown}'; choose a .md, .txt, .docx, or .pdf file."
         )
     if not source.exists() or not source.is_file():
         raise ProfileError(f"CV file not found: {source}")
-    text = _read_docx_text(source) if suffix == ".docx" else _read_plain_cv(source)
+    if suffix == ".docx":
+        text = _read_docx_text(source)
+    elif suffix == ".pdf":
+        text = _read_pdf_text(source)
+    else:
+        text = _read_plain_cv(source)
     return import_cv_text(text)
 
 

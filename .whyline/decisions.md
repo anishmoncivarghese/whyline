@@ -30523,3 +30523,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9c742c6ec4864ff68d31836336249c5f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T12:15:38.577Z"} -->
+
+## 2026-10-31 — PDF CVs read with pypdf (strict=False), first 20 pages, 200-char minimum; fixtures generated once, committed as bytes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-23
+
+**Because:** pure-Python, no OCR; scans are refused with a clear message instead of importing an empty CV
+
+**Rejected:**
+
+- pdfminer/pymupdf — heavier or non-pure-Python dependency
+- OCR scanned PDFs — out of scope and needs system binaries
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: 2c91ce889ad34d0eb18d8ce130bd19b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T13:39:01.543Z"} -->
+
+## 2026-10-31 — JOB-23 passes behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-23
+
+**Because:** PDF CV import coverage and the full project suite both completed successfully with exit 0; the targeted suite reached 100% and the full suite reached 100% with one skip and no failures
+
+**Files:** tests/jobs/test_profile.py
+
+<!-- whyline-event: 934fcdfd07624ccd90eed7587bcb3636 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:08:21.756Z"} -->
+
+## 2026-10-31 — Approve JOB-23 PDF CV import
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-23
+
+**Because:** The implementation satisfies PDF size, encryption, page, extraction, normalization, failure-preservation, format-message, dependency, and fixture requirements; the targeted and full test suites both passed with exit 0
+
+**Rejected:**
+
+- Request changes for tests/jobs/test_cli.py scope — its small update is necessary because the pre-existing test treated .pdf as unsupported, and it correctly preserves unsupported-format coverage with .rtf
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: 7e6d619398bb436f82bfff097ca0ec2a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:28:16.271Z"} -->

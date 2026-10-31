@@ -189,11 +189,11 @@ def test_profile_import_cv_rejects_bad_file_and_oversized_stdin(
 ) -> None:
     profile.import_cv_text("Keep me")
 
-    pdf = tmp_path / "cv.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    code, _, err = _invoke(["jobs", "profile", "import-cv", str(pdf)], capsys)
+    rtf = tmp_path / "cv.rtf"
+    rtf.write_bytes(b"{\\rtf1}")
+    code, _, err = _invoke(["jobs", "profile", "import-cv", str(rtf)], capsys)
     assert code == 1
-    assert ".md, .txt, or .docx" in err
+    assert ".md, .txt, .docx, or .pdf" in err
 
     oversized = io.TextIOWrapper(
         io.BytesIO(b"x" * (profile.MAX_CV_BYTES * 2 + 10)),

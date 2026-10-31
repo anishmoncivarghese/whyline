@@ -503,7 +503,7 @@ class JobsHomeScreen(ModalScreen):
                 ),
                 Vertical(
                     Input(
-                        placeholder="~/Documents/cv.docx (.md, .txt, or .docx)",
+                        placeholder="~/Documents/cv.docx (.md, .txt, .docx, or .pdf)",
                         id="jh-cv-path",
                     ),
                     Horizontal(
@@ -821,7 +821,7 @@ class JobsHomeScreen(ModalScreen):
         path_input = self.query_one("#jh-cv-path", Input)
         raw_path = path_input.value.strip()
         if not raw_path:
-            self._set_error("Enter a path to a .md, .txt, or .docx file.")
+            self._set_error("Enter a path to a .md, .txt, .docx, or .pdf file.")
             return
         fn = self._import_cv_fn if self._import_cv_fn is not None else profile.import_cv
         try:
