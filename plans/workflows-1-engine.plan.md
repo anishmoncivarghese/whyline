@@ -44,7 +44,7 @@ Review focus, each one pinned by the test named in its task:
   - `discover` lists a broken file as `Broken` with its parse error
   Verify with `uv run pytest -q tests/workflows/test_definitions.py`. Change nothing else.
 
-- [ ] WF-2: Templates
+- [x] WF-2: Templates
   Create `src/whyline/workflows/expr.py` and `tests/workflows/test_expr.py` only.
   - `render(template: str, context: Mapping) -> str` and `value(template, context) -> object` (a template that is exactly one `{{ }}` returns the raw value, not a string).
   - Grammar per spec 4.3: dotted paths of identifiers and integer list indexes, then `| filter` with optional one string argument in double quotes. Anything else raises `TemplateError` naming the position.
