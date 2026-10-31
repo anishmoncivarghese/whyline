@@ -30437,3 +30437,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6d0793ea309f412b9bb69089679209de -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:29:48.883Z"} -->
+
+## 2026-10-31 — Builder validates on Save and via Validate; messages mapped to steps by their step "id" prefix; dry run requires a saved workflow
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WF-13
+
+**Because:** service.dry_run loads from disk, and Save must be refused while validation fails
+
+**Rejected:**
+
+- dry-run unsaved edits — service.dry_run only reads the saved file
+
+**Files:** src/whyline/console/workflows_screens.py
+
+<!-- whyline-event: 6c7ea5d4e61449adb634c935e7185115 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:33:53.216Z"} -->
+
+## 2026-10-31 — Pass WF-13 round-2 builder inspector testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** WF-13
+
+**Because:** All 13 focused builder tests pass, including the five requested inspector, routing, validation, dry-run, and enabled-runner behaviors; the full suite's sole failure is the documented stale four-mode assertion outside the WF-13 diff
+
+**Rejected:**
+
+- Fail WF-13 for the full-suite assertion — it rejects the already-approved Workflows mode and neither the failing test nor mode-button implementation is changed by WF-13
+
+**Files:** src/whyline/console/workflows_screens.py, tests/console/test_workflows_builder.py
+
+<!-- whyline-event: 813927b9d615493db5502dade972df27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:44:56.895Z"} -->
+
+## 2026-10-31 — Approve WF-13 round-3 builder inspector review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WF-13
+
+**Because:** The StepType-driven inspector, later-step routing, enabled runner choices, per-step validation, blocked invalid saves, switch case controls, and saved-workflow dry run satisfy the task; all 13 focused tests pass and the full suite has only the unrelated stale four-mode assertion
+
+**Rejected:**
+
+- Request changes for the full-suite failure — it concerns the pre-existing Workflows mode and neither the failing test nor mode-button code is in the WF-13 diff
+
+**Files:** src/whyline/console/workflows_screens.py, tests/console/test_workflows_builder.py
+
+<!-- whyline-event: c978c257b8554f33a16391cc1750a872 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T11:56:24.194Z"} -->

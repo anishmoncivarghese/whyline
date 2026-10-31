@@ -1,5 +1,7 @@
 import pytest
+from textual.widgets import Select
 
+from whyline import account
 from whyline.console import tui
 from whyline.console.workflows_screens import BuilderScreen, LibraryScreen
 from whyline.workflows import definitions, service, state
@@ -188,6 +190,129 @@ async def test_fits_80x24(tmp_path, home):
         await pilot.pause()
         for button in screen.query("Button"):
             assert button.region.right <= 80 and button.region.bottom <= 24, button.id
-        assert len({b.region.y for b in screen.query("Button")}) == 1
+        assert len({b.region.y for b in screen.query("Button")}) == 2  # two button rows
         await press(pilot, "#wb-add")
         assert len(screen._steps) == 4
+
+
+WORK = '''name = "work"
+version = 1
+
+[trigger]
+kind = "manual"
+
+[[step]]
+id = "ask"
+type = "agent"
+runner = "claude"
+instructions = "old"
+
+[[step]]
+id = "pick"
+type = "condition"
+left = "a"
+op = "eq"
+right = "a"
+then = "yes"
+else = "no"
+
+[[step]]
+id = "yes"
+type = "deliver"
+to = "file"
+text = "yes"
+
+[[step]]
+id = "no"
+type = "deliver"
+to = "file"
+text = "no"
+'''
+
+
+@pytest.fixture
+def work(home, monkeypatch):
+    (home / ".whyline" / "workflows" / "work.toml").write_text(WORK)
+    monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex"})
+    return service.load("work", None)
+
+
+def select_step(screen, step_id):
+    screen.query_one("#wb-outline").move_cursor(row=ids(screen).index(step_id) + 1)
+
+
+def offered(select):
+    return [value for _label, value in select._options if value is not Select.BLANK]
+
+
+async def test_editing_agent_instructions_and_runner_saves(tmp_path, work):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = BuilderScreen(work)
+        app.push_screen(screen)
+        await pilot.pause()
+        select_step(screen, "ask")
+        await pilot.pause(0.3)
+        screen.query_one("#wf-instructions").value = "summarise the day"
+        screen.query_one("#wf-runner").value = "codex"
+        await pilot.pause(0.3)
+        await press(pilot, "#wb-save")
+        saved = service.load("work", None).steps[0]
+        assert saved.fields["instructions"] == "summarise the day"
+        assert saved.fields["runner"] == "codex"
+
+
+async def test_routing_select_offers_only_later_steps(tmp_path, work):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = BuilderScreen(work)
+        app.push_screen(screen)
+        await pilot.pause()
+        select_step(screen, "pick")
+        await pilot.pause(0.3)
+        assert offered(screen.query_one("#wf-then")) == ["yes", "no"]
+        assert screen.query_one("#wf-else").value == "no"
+        select_step(screen, "yes")
+        await pilot.pause(0.3)
+        assert screen._later(ids(screen).index("yes")) == ["no"]
+
+
+async def test_template_in_to_shows_error_and_blocks_save(tmp_path, work):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = BuilderScreen(work)
+        app.push_screen(screen)
+        await pilot.pause()
+        select_step(screen, "yes")
+        await pilot.pause(0.3)
+        screen._set_field("to", "{{ x }}")  # `to` is a select, so set it as the form would
+        await press(pilot, "#wb-save")
+        assert "Not saved" in status(screen)
+        assert any("template" in m for m in screen._problems["yes"])
+        assert "template" in str(screen.query_one("#wb-problems").render())
+        assert service.load("work", None).steps[2].fields["to"] == "file"
+
+
+async def test_dry_run_of_a_condition_shows_the_taken_branch(tmp_path, work):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = BuilderScreen(work)
+        app.push_screen(screen)
+        await pilot.pause()
+        await press(pilot, "#wb-dryrun")
+        assert type(app.screen).__name__ == "DryRunScreen"
+        await press(pilot, "#wd-run")
+        output = str(app.screen.query_one("#wd-output").render())
+        assert "pick (condition)" in output and "goes to yes" in output
+
+
+async def test_disabled_provider_is_not_offered_as_runner(tmp_path, work, monkeypatch):
+    monkeypatch.setattr(account, "enabled_agents", lambda: {"claude"})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = BuilderScreen(work)
+        app.push_screen(screen)
+        await pilot.pause()
+        select_step(screen, "ask")
+        await pilot.pause(0.3)
+        assert offered(screen.query_one("#wf-runner")) == ["claude"]

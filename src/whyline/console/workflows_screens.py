@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import replace
 from datetime import datetime
@@ -9,12 +10,15 @@ from pathlib import Path
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.coordinate import Coordinate
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Label, Select, Static
 
+from whyline import account
 from whyline.ledgerops import redact
 from whyline.workflows import definitions, service, state
+from whyline.agents.definitions import CLIS
 from whyline.workflows.steps import STEP_TYPES
 
 _COLUMNS = ("Name", "Kind", "Status", "When", "Next", "Last")
@@ -553,6 +557,76 @@ def _one_line(step: definitions.Step) -> str:
     return text if len(text) <= 40 else text[:39] + "…"
 
 
+def _step_of(message: str) -> str | None:
+    """The step id a validation message names, if any."""
+    if message.startswith('step "'):
+        return message[6:].split('"', 1)[0]
+    return None
+
+
+class DryRunScreen(ModalScreen):
+    """Ask for the declared inputs, then show the lines of a dry run."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    DEFAULT_CSS = """
+    DryRunScreen { align: center middle; }
+    DryRunScreen > Vertical {
+        width: 100%; height: 100%; padding: 0 1; border: round $accent; background: $surface;
+    }
+    DryRunScreen #wd-scroll { height: 1fr; }
+    DryRunScreen #wd-inputs, DryRunScreen #wd-output { height: auto; }
+    DryRunScreen .wd-row { height: 3; }
+    """
+
+    def __init__(self, workflow: definitions.Workflow) -> None:
+        super().__init__()
+        self._workflow = workflow
+
+    def compose(self) -> ComposeResult:
+        fields: list = []
+        for spec in self._workflow.inputs:
+            fields.append(Label(f"{spec.name} ({spec.type})"))
+            fields.append(Input("" if spec.default is None else str(spec.default),
+                                id=f"wd-in-{spec.name}"))
+        if not fields:
+            fields.append(Label("No inputs."))
+        yield Vertical(
+            Label(f"Dry run {self._workflow.label}", id="wd-title"),
+            VerticalScroll(Vertical(*fields, id="wd-inputs"), Static("", id="wd-output"),
+                           id="wd-scroll"),
+            Horizontal(Button("Run", id="wd-run", variant="primary"),
+                       Button("Close", id="wd-close"), classes="wd-row"),
+        )
+
+    def _values(self) -> dict[str, object]:
+        found: dict[str, object] = {}
+        for spec in self._workflow.inputs:
+            text = self.query_one(f"#wd-in-{spec.name}", Input).value.strip()
+            if text:
+                found[spec.name] = text
+        return found
+
+    def _run(self) -> None:
+        w = self._workflow
+        try:
+            lines = service.dry_run(f"{w.kind}:{w.name}", self._values(),
+                                    w.root if w.kind == "repo" else None)
+        except Exception as error:
+            lines = [str(error)]
+        self.query_one("#wd-output", Static).update(Text("\n".join(lines)))
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "wd-run":
+            self._run()
+        else:
+            self.dismiss(None)
+
+
 class BuilderScreen(ModalScreen):
     """Outline editor: the trigger and steps on the left, the trigger form and inputs on the right."""
 
@@ -567,6 +641,11 @@ class BuilderScreen(ModalScreen):
     BuilderScreen #wb-outline { width: 1fr; height: 100%; }
     BuilderScreen #wb-form { width: 36; height: 100%; padding-left: 1; }
     BuilderScreen #wb-inputs, BuilderScreen #wb-status { height: auto; }
+    BuilderScreen #wb-inspector, BuilderScreen #wb-problems { height: auto; }
+    BuilderScreen #wb-problems { color: $error; }
+    BuilderScreen .wb-case { height: 3; }
+    BuilderScreen .wb-case Input { width: 1fr; }
+    BuilderScreen .wb-case Button { min-width: 6; }
     BuilderScreen .wb-row { height: 3; }
     BuilderScreen .wb-row Button { min-width: 8; margin-right: 1; }
     """
@@ -576,6 +655,10 @@ class BuilderScreen(ModalScreen):
         self._workflow = workflow
         self._steps: list[definitions.Step] = list(workflow.steps)
         self._baseline = self._signature(self._trigger_values(workflow.trigger))
+        self._problems: dict[str | None, list[str]] = {}
+        self._shown: tuple[int, str] | None = None
+        self._runners = [a for a in CLIS if a in account.enabled_agents()]
+        self._lock = asyncio.Lock()
 
     @staticmethod
     def _trigger_values(t: definitions.TriggerSpec) -> tuple[str, str, str, str]:
@@ -598,6 +681,7 @@ class BuilderScreen(ModalScreen):
                           placeholder="every_hours", id="wb-hours"),
                     Input(t.folder, placeholder="folder", id="wb-folder"),
                     Static("", id="wb-inputs"),
+                    Vertical(id="wb-inspector"),
                     Select([(k, k) for k in STEP_TYPES], allow_blank=False,
                            value=next(iter(STEP_TYPES)), id="wb-type"),
                     id="wb-form",
@@ -611,6 +695,11 @@ class BuilderScreen(ModalScreen):
                 Button("Delete", id="wb-delete"),
                 Button("Save", id="wb-save", variant="primary"),
                 Button("Cancel", id="wb-cancel"),
+                classes="wb-row",
+            ),
+            Horizontal(
+                Button("Validate", id="wb-validate"),
+                Button("Dry run", id="wb-dryrun"),
                 classes="wb-row",
             ),
             Static("", id="wb-status"),
@@ -658,8 +747,15 @@ class BuilderScreen(ModalScreen):
         table.add_row(*(_cell(v) for v in ("trigger", self.query_one("#wb-kind", Select).value,
                                            when)))
         for step in self._steps:
-            table.add_row(*(_cell(v) for v in (step.id, step.type, _one_line(step))))
+            table.add_row(*(_cell(v) for v in (step.id, step.type, self._summary(step))))
         table.move_cursor(row=max(0, min(row, len(self._steps))))
+
+    def _summary(self, step: definitions.Step) -> str:
+        return ("! " if step.id in self._problems else "") + _one_line(step)
+
+    def _touch(self, index: int) -> None:
+        self.query_one("#wb-outline", DataTable).update_cell_at(
+            Coordinate(index + 1, 2), _cell(self._summary(self._steps[index])))
 
     def _selected(self) -> int | None:
         index = self.query_one("#wb-outline", DataTable).cursor_row - 1
@@ -667,12 +763,211 @@ class BuilderScreen(ModalScreen):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         event.stop()
-        if event.select.id == "wb-kind":
+        select_id = event.select.id or ""
+        if select_id == "wb-kind":
             self._refresh()
+        elif select_id.startswith("wf-"):
+            value = event.value
+            self._set_field(select_id[3:], None if value is Select.BLANK else value)
+        elif select_id.startswith("wc-go-"):
+            self._set_case(int(select_id[6:]), "goto", str(event.value))
 
     def on_input_changed(self, event: Input.Changed) -> None:
         event.stop()
-        self._refresh()
+        input_id = event.input.id or ""
+        if input_id.startswith("wf-"):
+            self._type_field(input_id[3:], event.value)
+        elif input_id.startswith("wc-eq-"):
+            self._set_case(int(input_id[6:]), "equals", event.value)
+        else:
+            self._refresh()
+
+    async def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        event.stop()
+        await self._inspect()
+
+    # ---- inspector -----------------------------------------------------
+
+    def _later(self, index: int) -> list[str]:
+        return [s.id for s in self._steps[index + 1:]]
+
+    def _field_widgets(self, index: int, step: definitions.Step) -> list:
+        widgets: list = []
+        for spec in STEP_TYPES[step.type].fields:
+            if spec.name == "cases":
+                continue
+            value = step.fields.get(spec.name)
+            note = " (templates allowed)" if spec.templated and spec.kind != "step_ref" else ""
+            widgets.append(Label(f"{spec.name}{' *' if spec.required else ''}{note}"))
+            widget_id = f"wf-{spec.name}"
+            if spec.kind == "step_ref":
+                later = self._later(index)
+                widgets.append(Select([(i, i) for i in later], prompt="(next step)",
+                                      value=value if value in later else Select.BLANK,
+                                      id=widget_id))
+            elif spec.choices and spec.kind == "str":
+                options = self._runners if spec.name == "runner" else list(spec.choices)
+                widgets.append(Select([(o, o) for o in options], prompt="(choose)",
+                                      value=value if value in options else Select.BLANK,
+                                      id=widget_id))
+            else:
+                widgets.append(Input(self._show_value(spec.kind, value), id=widget_id))
+        if step.type == "switch":
+            widgets.append(Label("cases"))
+            later = self._later(index)
+            cases = step.fields.get("cases")
+            for n, (key, body) in enumerate(cases.items() if isinstance(cases, dict) else ()):
+                body = body if isinstance(body, dict) else {}
+                goto = body.get("goto")
+                widgets.append(Horizontal(
+                    Input(str(body.get("equals", "")), placeholder=f"{key} equals", id=f"wc-eq-{n}"),
+                    Select([(i, i) for i in later], prompt="(goto)",
+                           value=goto if goto in later else Select.BLANK, id=f"wc-go-{n}"),
+                    Button("X", id=f"wc-rm-{n}"), classes="wb-case"))
+            widgets.append(Button("Add case", id="wc-add"))
+        return widgets
+
+    @staticmethod
+    def _show_value(kind: str, value: object) -> str:
+        if value is None:
+            return ""
+        if kind == "table":
+            return json.dumps(value, ensure_ascii=False)
+        if kind == "list[str]" and isinstance(value, list):
+            return ", ".join(str(v) for v in value)
+        return str(value)
+
+    async def _inspect(self, force: bool = False) -> None:
+        async with self._lock:
+            index = self._selected()
+            key = None if index is None else (index, self._steps[index].id)
+            if key == self._shown and not force:
+                return
+            self._shown = key
+            box = self.query_one("#wb-inspector", Vertical)
+            await box.remove_children()
+            if index is None:
+                return
+            step = self._steps[index]
+            await box.mount(Static("", id="wb-problems"), Label(f"{step.id} ({step.type})"),
+                            *self._field_widgets(index, step))
+            self._show_problems()
+
+    def _show_problems(self) -> None:
+        index = self._selected()
+        found = self.query("#wb-problems")
+        if found and index is not None:
+            found.first(Static).update(Text("\n".join(self._problems.get(self._steps[index].id, []))))
+
+    def _set_field(self, name: str, value: object) -> None:
+        index = self._selected()
+        if index is None:
+            return
+        step = self._steps[index]
+        fields = dict(step.fields)
+        if value is None:
+            fields.pop(name, None)
+        else:
+            fields[name] = value
+        if fields == dict(step.fields):
+            return
+        self._steps[index] = definitions.Step(step.id, step.type, fields)
+        self._touch(index)
+
+    def _type_field(self, name: str, text: str) -> None:
+        index = self._selected()
+        spec = STEP_TYPES[self._steps[index].type].field(name) if index is not None else None
+        if spec is None:
+            return
+        text = text.strip() if spec.kind != "str" else text
+        value: object = text
+        if not text:
+            value = "" if spec.required and spec.kind == "str" else None
+        elif spec.kind == "int":
+            value = int(text) if text.isdigit() else text
+        elif spec.kind == "list[str]":
+            value = [part.strip() for part in text.split(",") if part.strip()]
+        elif spec.kind == "table":
+            try:
+                value = json.loads(text)
+            except ValueError:
+                self._say(f"{name} is not valid JSON; keeping the last good value.")
+                return
+            if not isinstance(value, dict):
+                self._say(f"{name} must be a JSON object; keeping the last good value.")
+                return
+        self._set_field(name, value)
+
+    def _cases(self, index: int) -> dict:
+        cases = self._steps[index].fields.get("cases")
+        return {k: dict(v) if isinstance(v, dict) else {} for k, v in
+                (cases.items() if isinstance(cases, dict) else ())}
+
+    def _set_case(self, n: int, part: str, value: str) -> None:
+        index = self._selected()
+        if index is None:
+            return
+        cases = self._cases(index)
+        keys = list(cases)
+        if not 0 <= n < len(keys) or cases[keys[n]].get(part) == value:
+            return
+        cases[keys[n]][part] = value
+        self._set_field("cases", cases)
+
+    async def _add_case(self) -> None:
+        index = self._selected()
+        later = self._later(index) if index is not None else []
+        if not later:
+            self._say("Add a later step first: a case needs somewhere to go.")
+            return
+        cases = self._cases(index)
+        n = len(cases) + 1
+        while f"case_{n}" in cases:
+            n += 1
+        cases[f"case_{n}"] = {"equals": "", "goto": later[0]}
+        self._set_field("cases", cases)
+        await self._inspect(force=True)
+
+    async def _remove_case(self, n: int) -> None:
+        index = self._selected()
+        if index is None:
+            return
+        cases = self._cases(index)
+        keys = list(cases)
+        if 0 <= n < len(keys):
+            del cases[keys[n]]
+            self._set_field("cases", cases or None)
+            await self._inspect(force=True)
+
+    # ---- validation and dry run ----------------------------------------
+
+    def _validate(self) -> bool:
+        found: dict[str | None, list[str]] = {}
+        try:
+            wanted = replace(self._workflow, trigger=self._trigger(True), steps=tuple(self._steps))
+            for message in service.validate(definitions.render(wanted)):
+                found.setdefault(_step_of(message), []).append(message)
+        except Exception as error:
+            found[None] = [str(error)]
+        self._problems = found
+        for index in range(len(self._steps)):
+            self._touch(index)
+        self._show_problems()
+        return not found
+
+    def _check(self) -> None:
+        if self._validate():
+            self._say("Valid.")
+            return
+        count = sum(len(v) for v in self._problems.values())
+        loose = self._problems.get(None, [])
+        self._say(f"{count} problem(s); marked steps show them. " + " ".join(loose))
+
+    def _dry_run(self) -> None:
+        if self._dirty():
+            self._say("Save first: a dry run uses the saved workflow.")
+            return
+        self.app.push_screen(DryRunScreen(self._workflow))
 
     # ---- actions -------------------------------------------------------
 
@@ -721,6 +1016,11 @@ class BuilderScreen(ModalScreen):
         self._say(f"Deleted {step.id}.")
 
     def _save(self) -> None:
+        if not self._validate():
+            count = sum(len(v) for v in self._problems.values())
+            first = next(m for v in self._problems.values() for m in v)
+            self._say(f"Not saved: {count} problem(s). {first}")
+            return
         try:
             trigger = self._trigger(True)
             wanted = replace(self._workflow, trigger=trigger, steps=tuple(self._steps))
@@ -753,8 +1053,14 @@ class BuilderScreen(ModalScreen):
 
         self.app.push_screen(ConfirmScreen("Discard unsaved changes?", "Discard"), decided)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
-        {"wb-add": self._add, "wb-up": lambda: self._move(-1), "wb-down": lambda: self._move(1),
-         "wb-delete": self._delete, "wb-save": self._save,
-         "wb-cancel": self.action_cancel}[event.button.id]()
+        button_id = event.button.id or ""
+        if button_id == "wc-add":
+            await self._add_case()
+        elif button_id.startswith("wc-rm-"):
+            await self._remove_case(int(button_id[6:]))
+        else:
+            {"wb-add": self._add, "wb-up": lambda: self._move(-1), "wb-down": lambda: self._move(1),
+             "wb-delete": self._delete, "wb-save": self._save, "wb-validate": self._check,
+             "wb-dryrun": self._dry_run, "wb-cancel": self.action_cancel}[button_id]()
