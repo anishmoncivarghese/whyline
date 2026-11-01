@@ -364,6 +364,9 @@ async def test_copy_button_pushes_transcript_to_clipboard(tmp_path, monkeypatch)
         monkeypatch.setattr(app, "copy_to_clipboard", lambda text: copied.append(("osc52", text)))
         await pilot.click("#copy")
         await pilot.pause()
+        assert isinstance(app.screen, tui.CopyScreen)
+        await pilot.click("#copy-all")
+        await pilot.pause()
         assert copied == ["earlier output"]  # the system clipboard, not the escape code
         transcript = app.query_one("#transcript", tui.RichLog)
         assert any("copied to clipboard" in str(line) for line in transcript.lines)
@@ -901,10 +904,128 @@ async def test_copy_without_a_system_clipboard_is_honest_about_it(tmp_path, monk
         monkeypatch.setattr(app, "copy_to_clipboard", lambda text: sent.append(text))
         await pilot.click("#copy")
         await pilot.pause()
+        await pilot.click("#copy-all")
+        await pilot.pause()
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
     assert sent  # the terminal escape code is still tried
     assert any("may not" in line and "OSC 52" in line for line in lines)
     assert not any("Transcript copied to clipboard." in line for line in lines)
+
+
+async def _open_copy_view(app, pilot, events, monkeypatch):
+    from whyline.console.session import SessionEvent
+
+    app.session.transcript.clear()
+    for kind, text in events:
+        app.session.record(SessionEvent(kind=kind, text=text))
+    copied = []
+    monkeypatch.setattr(tui, "_system_copy", lambda text: copied.append(text) or True)
+    await pilot.click("#copy")
+    await pilot.pause()
+    assert isinstance(app.screen, tui.CopyScreen)
+    return copied
+
+
+def _log_lines(app):
+    return [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_selection_copies_exactly_the_selected_range(tmp_path, monkeypatch):
+    from textual.widgets import TextArea
+    from textual.widgets.text_area import Selection
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        copied = await _open_copy_view(app, pilot, [("output", "alpha beta"), ("output", "gamma")], monkeypatch)
+        button = app.screen.query_one("#copy-selection")
+        assert button.disabled  # nothing selected yet
+        area = app.screen.query_one("#copy-text", TextArea)
+        area.selection = Selection((0, 6), (1, 3))
+        await pilot.pause()
+        assert not button.disabled
+        await pilot.click("#copy-selection")
+        await pilot.pause()
+        assert copied == ["beta\ngam"]
+        assert not isinstance(app.screen, tui.CopyScreen)
+        assert any("Copied 2 lines to clipboard." in line for line in _log_lines(app))
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["ctrl+c", "super+c"])
+async def test_copy_shortcut_copies_selection_and_closes(tmp_path, monkeypatch, key):
+    from textual.widgets import TextArea
+    from textual.widgets.text_area import Selection
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        copied = await _open_copy_view(app, pilot, [("output", "alpha beta"), ("output", "gamma")], monkeypatch)
+        sent = []
+        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: sent.append(text))
+        app.screen.query_one("#copy-text", TextArea).selection = Selection((0, 6), (1, 3))
+        await pilot.pause()
+        await pilot.press(key)
+        await pilot.pause()
+        assert copied == ["beta\ngam"]
+        assert sent == []
+        assert not isinstance(app.screen, tui.CopyScreen)
+        assert any("Copied 2 lines to clipboard." in line for line in _log_lines(app))
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_last_block_and_fallback(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        copied = await _open_copy_view(
+            app, pilot,
+            [("output", "old"), ("input", "ask"), ("output", "r1"), ("error", "r2")], monkeypatch,
+        )
+        await pilot.click("#copy-last")
+        await pilot.pause()
+        assert copied == ["r1\n⚠ r2"]
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        copied = await _open_copy_view(app, pilot, [("output", f"l{i}") for i in range(250)], monkeypatch)
+        await pilot.click("#copy-last")
+        await pilot.pause()
+        assert copied[0].split("\n") == [f"l{i}" for i in range(50, 250)]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_view_is_a_snapshot_and_escape_closes_without_copying(tmp_path, monkeypatch):
+    from textual.widgets import TextArea
+    from whyline.console.session import SessionEvent
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        copied = await _open_copy_view(app, pilot, [("output", "one")], monkeypatch)
+        app.session.record(SessionEvent(kind="output", text="two"))
+        await pilot.pause()
+        assert app.screen.query_one("#copy-text", TextArea).text == "one"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, tui.CopyScreen)
+        assert copied == []
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_copy_view_caps_at_5000_lines_but_copy_all_copies_everything(tmp_path, monkeypatch):
+    from textual.widgets import TextArea
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        copied = await _open_copy_view(app, pilot, [("output", f"l{i}") for i in range(6000)], monkeypatch)
+        shown = app.screen.query_one("#copy-text", TextArea).text.split("\n")
+        assert shown[0] == tui._COPY_VIEW_LEFT_OUT
+        assert len(shown) == 5001 and shown[-1] == "l5999"
+        await pilot.click("#copy-all")
+        await pilot.pause()
+        assert len(copied[0].split("\n")) == 6000
 
 
 def test_system_copy_uses_the_platform_command(monkeypatch):

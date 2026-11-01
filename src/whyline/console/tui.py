@@ -355,6 +355,114 @@ class QuitRelayScreen(ModalScreen):
         self.dismiss(choices.get(event.button.id))
 
 
+_COPY_VIEW_MAX_LINES = 5000
+_COPY_VIEW_LEFT_OUT = "(earlier lines left out; Copy all copies everything)"
+_COPY_LAST_FALLBACK_LINES = 200
+
+
+def _transcript_text(events) -> str:
+    return "\n".join(f"{_PREFIX.get(e.kind, '')}{e.text}" for e in events)
+
+
+def _last_block_text(events) -> str:
+    """The events after the last `input` event; the last 200 lines when
+    the transcript has no `input` event."""
+    events = list(events)
+    for index in range(len(events) - 1, -1, -1):
+        if events[index].kind == "input":
+            return _transcript_text(events[index + 1:])
+    return "\n".join(_transcript_text(events).split("\n")[-_COPY_LAST_FALLBACK_LINES:])
+
+
+class _CopyArea(TextArea):
+    """TextArea whose copy keys go to the CopyScreen, not its own copy action
+    (which would copy straight to the clipboard and leave the view open)."""
+
+    BINDINGS = [
+        ("ctrl+c", "screen.copy_selection", "Copy selection"),
+        ("super+c", "screen.copy_selection", "Copy selection"),
+    ]
+
+
+class CopyScreen(ModalScreen):
+    """A selectable, read-only snapshot of the transcript with copy buttons.
+    Dismisses with (text, done_message) to copy, or None."""
+
+    DEFAULT_CSS = """
+    CopyScreen { align: center middle; }
+    CopyScreen > Vertical {
+        width: 90%; height: 90%; padding: 1 2; border: thick $primary; background: $surface;
+    }
+    CopyScreen TextArea { height: 1fr; }
+    CopyScreen Horizontal { height: auto; margin-top: 1; }
+    CopyScreen Button { margin-right: 2; }
+    """
+
+    BINDINGS = [
+        ("escape", "close", "Close"),
+        ("ctrl+c", "copy_selection", "Copy selection"),
+        ("super+c", "copy_selection", "Copy selection"),
+    ]
+
+    def __init__(self, events) -> None:
+        super().__init__()
+        self._events = list(events)  # a snapshot: later lines do not move the view
+        self._full = _transcript_text(self._events)
+
+    def _shown_text(self) -> str:
+        lines = self._full.split("\n")
+        if len(lines) <= _COPY_VIEW_MAX_LINES:
+            return self._full
+        return "\n".join([_COPY_VIEW_LEFT_OUT, *lines[-_COPY_VIEW_MAX_LINES:]])
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Select text with the mouse or Shift+arrows, then Copy selection."),
+            _CopyArea(self._shown_text(), id="copy-text", read_only=True, soft_wrap=True),
+            Horizontal(
+                Button("Copy selection", id="copy-selection", variant="primary", disabled=True),
+                Button("Copy all", id="copy-all"),
+                Button("Copy last block", id="copy-last"),
+                Button("Close", id="copy-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        area = self.query_one("#copy-text", TextArea)
+        area.move_cursor(area.document.end)
+        area.focus()
+
+    def on_text_area_selection_changed(self, event) -> None:
+        self.query_one("#copy-selection", Button).disabled = not event.text_area.selected_text
+
+    def _finish(self, text: str, done: str) -> None:
+        self.dismiss((text, done))
+
+    def _copy_selected(self) -> None:
+        selected = self.query_one("#copy-text", TextArea).selected_text
+        if selected:
+            self._finish(selected, f"Copied {len(selected.splitlines())} lines to clipboard.")
+
+    def action_copy_selection(self) -> None:
+        self._copy_selected()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button = event.button.id
+        if button == "copy-selection":
+            self._copy_selected()
+        elif button == "copy-all":
+            self._finish(self._full, "Transcript copied to clipboard.")
+        elif button == "copy-last":
+            text = _last_block_text(self._events)
+            self._finish(text, f"Copied {len(text.splitlines())} lines to clipboard.")
+        else:
+            self.dismiss(None)
+
+
 class QuitAwakeScreen(ModalScreen):
     """Asked on quit while Awake is on and no relay is running."""
 
@@ -3933,19 +4041,24 @@ class WhylineConsoleApp(App):
         if not self.session.transcript:
             self.render_event(SessionEvent(kind="output", text="(nothing to copy yet)"))
             return
-        text = "\n".join(
-            f"{_PREFIX.get(e.kind, '')}{e.text}" for e in self.session.transcript
-        )
+        self.push_screen(CopyScreen(list(self.session.transcript)), self._after_copy_view)
+
+    def _after_copy_view(self, result) -> None:
+        if result:
+            text, done = result
+            self.render_event(SessionEvent(kind="output", text=self._put_on_clipboard(text, done)))
+
+    def _put_on_clipboard(self, text: str, done: str = "Transcript copied to clipboard.") -> str:
+        """Copies `text` and returns the message to show: `done` when the
+        system clipboard took it, else the honest OSC 52 caveat."""
         if _system_copy(text):
-            self.render_event(SessionEvent(kind="output", text="Transcript copied to clipboard."))
-            return
+            return done
         self.copy_to_clipboard(text)
-        self.render_event(SessionEvent(
-            kind="output",
-            text="Sent the transcript to your terminal's clipboard (OSC 52). It may not "
+        return (
+            "Sent the transcript to your terminal's clipboard (OSC 52). It may not "
             "have arrived: no system clipboard command was found, and some terminals "
-            "ignore OSC 52 unless it's enabled in their settings.",
-        ))
+            "ignore OSC 52 unless it's enabled in their settings."
+        )
 
     def _stop(self) -> None:
         """Invalidates the current dispatch token (MTU6): whatever

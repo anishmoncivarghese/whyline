@@ -31325,3 +31325,101 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 98651c8ed47349758eb800506200af88 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:29:17.999Z"} -->
+
+## 2026-11-01 — Copy opens a CopyScreen snapshot; clipboard goes through _put_on_clipboard(text, done)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-4
+
+**Because:** one path for all four buttons; partial copies need their own success message but share the OSC 52 caveat
+
+**Rejected:**
+
+- separate clipboard helpers per button — duplicates the fallback
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8700c381effa409f84640ac840c611e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:31:26.486Z"} -->
+
+## 2026-11-01 — Pass RST-4 selectable transcript copy behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-4
+
+**Because:** The focused console tests and full repository suite pass, covering modal opening, empty handling, selection state and copying, full and last-block copies, snapshot stability, escape, and the 5000-line display cap while preserving full-copy behavior
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: ea01840578ec4aba95bcbedbc2a9d082 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:43:33.890Z"} -->
+
+## 2026-11-01 — Reject RST-4 because Ctrl+C bypasses the modal copy flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-4
+
+**Because:** The focused TextArea handles Ctrl+C before CopyScreen, directly calls copy_to_clipboard, leaves the modal open, and emits no main-log result, violating the required shortcut behavior
+
+**Rejected:**
+
+- approval — button-driven tests pass but do not cover the broken Ctrl+C path
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d7d46e78d3714bec9e63d7b51ad2b35a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:51:35.025Z"} -->
+
+## 2026-11-01 — CopyScreen uses a TextArea subclass routing ctrl+c/super+c to screen.copy_selection
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-4
+
+**Because:** the focused TextArea's own copy binding wins over screen bindings and copied directly without closing or logging
+
+**Rejected:**
+
+- priority binding on the screen — ordering against the app's ctrl+c binding is less certain
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8bcfcb254336457d83ebc5f8a13678a4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:53:18.684Z"} -->
+
+## 2026-11-01 — Pass RST-4 Round 5 copy shortcut behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-4
+
+**Because:** Both focused console tests and the full repository suite pass; Ctrl+C and Super+C now copy the exact selection through the modal flow, close the view, and log the returned clipboard message without using OSC 52 when system copy succeeds
+
+**Rejected:**
+
+- Failing the task — no functional failure or regression was observed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: f292473297224ed28c345757c0c0d2c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:05:33.700Z"} -->
+
+## 2026-11-01 — Approve RST-4 Round 6 selectable transcript copy view
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-4
+
+**Because:** The implementation satisfies the modal snapshot, selection, keyboard shortcut, last-block, truncation, clipboard fallback, and empty-transcript requirements; git diff check is clean and uv run pytest -q completed successfully
+
+**Rejected:**
+
+- Request changes — no functional, safety, or test-coverage defect was found
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: a5169732e0d04b1da93b6a69313331ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:16:35.639Z"} -->
