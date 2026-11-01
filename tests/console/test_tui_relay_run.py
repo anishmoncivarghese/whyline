@@ -747,3 +747,14 @@ async def test_issues_screen_lists_blocks_in_order_and_copy_all_copies_them(tmp_
         await pilot.pause()
         assert copied == [text]
         assert not isinstance(app.screen, IssuesScreen)
+
+
+async def test_tester_narration_shows_suite_progress(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        base = _status()
+        tester = relay_ops.LiveStatus(**{**base.__dict__, "stage": "test", "role": "tester"})
+        await _running_relay(app, pilot, monkeypatch, {"value": tester})
+        app._relay_line("The repository run has crossed 32% without an error")
+        app._tick()
+        assert "suite 32%, 0 failed (codex says)" in _thinking(app)

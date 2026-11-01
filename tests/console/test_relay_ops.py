@@ -1915,3 +1915,43 @@ def test_format_live_with_and_without_send_backs():
         " · failed 1× (last: see summary)"
     )
 
+
+@pytest.mark.parametrize("line,percent,failed", [
+    ("The suite is green through 13%", 13, None),
+    ("The tests remain clean at 18%", 18, None),
+    ("The suite reached 20% with no failures", 20, 0),
+    ("The repository run has crossed 32% without an error", 32, 0),
+    ("Test suite approaching 40%, still with no failures", 40, 0),
+    ("tests/a.py ....                       [ 32%]", 32, None),
+    ("2 failed, 5 passed in 1.20s", 100, 2),
+    ("=== 7 passed in 3.40s ===", 100, 0),
+    ("the suite has 3 failed so far", None, 3),
+    ("everything is still green", None, 0),
+])
+def test_progress_from_line(line, percent, failed):
+    assert relay_ops.progress_from_line(line) == relay_ops.ProgressNote(percent, failed)
+
+
+@pytest.mark.parametrize("line", ["suite at 140%", "building the docs", "50% done"])
+def test_progress_from_line_ignores(line):
+    assert relay_ops.progress_from_line(line) is None
+
+
+def test_progress_resets_on_new_pytest_and_new_turn_and_skips_implement():
+    status = _status(stage="test", role="tester")
+    got = relay_ops.feed_progress(None, status, "suite reached 20% with no failures")
+    assert relay_ops.format_live(status, _at(0), got).endswith(
+        "suite 20%, 0 failed (claude says)")
+    got = relay_ops.feed_progress(got, status, "running uv run pytest -q tests/x.py")
+    assert got.percent is None and got.failed == 0
+    got = relay_ops.feed_progress(got, status, "tests/x.py [ 50%]")
+    assert got.percent == 50
+    later = _status(stage="test", role="tester", started=_at(60))
+    assert " says)" not in relay_ops.format_live(later, _at(70), got)
+    got = relay_ops.feed_progress(got, later, "tests are green at 10%")
+    assert got == relay_ops.LiveProgress(10, None, _at(60))
+    impl = _status()
+    assert relay_ops.feed_progress(None, impl, "suite at 20%") is None
+    shown = relay_ops.LiveProgress(20, 0, impl.started)
+    assert " says)" not in relay_ops.format_live(impl, _at(0), shown)
+

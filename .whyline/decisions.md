@@ -31517,3 +31517,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8c91f9edb61c4180a54d1482090238de -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:19:50.907Z"} -->
+
+## 2026-11-01 — Live test progress is kept in the TUI as LiveProgress keyed by marker started, fed from _relay_line
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-7
+
+**Because:** No new log reads; started key clears values on a new turn without extra state resets
+
+**Rejected:**
+
+- Add fields to LiveStatus — live_status is rebuilt every 2s and would drop the values
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 8edc6c9905c54fcf86b0b953b6447b0c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:21:33.260Z"} -->
+
+## 2026-11-01 — Pass RST-7 Round 2 live test progress behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-7
+
+**Because:** The focused relay-console tests and full repository suite both exited 0; the required narration, pytest bracket/summary, over-100 rejection, command reset, new-turn clear, and implement suppression cases are covered and passed
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 354d65c8d1d446f296e7a49714a7b5d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:33:21.532Z"} -->
+
+## 2026-11-01 — Approve RST-7 Round 3 live test progress implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-7
+
+**Because:** The diff matches parsing, reset, turn-clearing, reviewer override, implement suppression, and stream-only requirements; the tests cover every requested pattern and the independent full suite passed
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or test-coverage defect was found
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, tests/console/test_relay_ops.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 5833e000bc574cd782ded33882f7f488 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:44:19.329Z"} -->

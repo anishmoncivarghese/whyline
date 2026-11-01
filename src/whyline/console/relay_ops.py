@@ -1374,7 +1374,9 @@ def _elapsed(seconds: int) -> str:
     return f"{seconds // 3600}h {seconds % 3600 // 60:02d}m"
 
 
-def format_live(status: LiveStatus, now: datetime) -> str:
+def format_live(
+    status: LiveStatus, now: datetime, progress: LiveProgress | None = None
+) -> str:
     head = status.task
     if status.total:
         percent = status.done * 100 // status.total
@@ -1391,7 +1393,99 @@ def format_live(status: LiveStatus, now: datetime) -> str:
     if status.sent_back > 0:
         last = f"{status.last_issues} issues" if status.last_issues else "see summary"
         parts.append(f"failed {status.sent_back}× (last: {last})")
+    if (
+        progress is not None and progress.started == status.started
+        and not _in_implement(status)
+        and (progress.percent is not None or progress.failed is not None)
+    ):
+        suite = "suite"
+        if progress.percent is not None:
+            suite += f" {progress.percent}%"
+        if progress.failed is not None:
+            suite += f", {progress.failed} failed" if progress.percent is not None \
+                else f" {progress.failed} failed"
+        parts.append(f"{suite} ({status.agent} says)")
     return " · ".join(part for part in parts if part)
+
+
+@dataclass(frozen=True)
+class ProgressNote:
+    """Test progress read from one line of an agent's output."""
+
+    percent: int | None = None
+    failed: int | None = None
+
+
+@dataclass(frozen=True)
+class LiveProgress:
+    """The latest test progress for the turn that began at `started`."""
+
+    percent: int | None = None
+    failed: int | None = None
+    started: datetime | None = None
+
+
+_PYTEST_BRACKET = re.compile(r"\[\s*(\d{1,3})%\]")
+_PERCENT = re.compile(r"(?<![\d.])(\d{1,3})\s*%")
+_PERCENT_WORDS = re.compile(
+    r"suite|pytest|tests|green|passed|failure|error", re.IGNORECASE
+)
+_FAILED_COUNT = re.compile(r"\b(\d+) failed\b", re.IGNORECASE)
+_NO_FAILURES = re.compile(
+    r"no failures|without an error|no failed|still green", re.IGNORECASE
+)
+_PYTEST_SUMMARY = re.compile(r"\b\d+ (?:passed|failed)\b.*\bin \d+(?:\.\d+)?s\b")
+
+
+def progress_from_line(line: str) -> ProgressNote | None:
+    summary = _PYTEST_SUMMARY.search(line)
+    if summary:
+        found = _FAILED_COUNT.search(line)
+        return ProgressNote(100, int(found.group(1)) if found else 0)
+    percent = failed = None
+    bracket = _PYTEST_BRACKET.search(line)
+    if bracket and int(bracket.group(1)) <= 100:
+        percent = int(bracket.group(1))
+    elif _PERCENT_WORDS.search(line):
+        for match in _PERCENT.finditer(line):
+            if int(match.group(1)) <= 100:
+                percent = int(match.group(1))
+                break
+    found = _FAILED_COUNT.search(line)
+    if found:
+        failed = int(found.group(1))
+    elif _NO_FAILURES.search(line):
+        failed = 0
+    if percent is None and failed is None:
+        return None
+    return ProgressNote(percent, failed)
+
+
+def _in_implement(status: LiveStatus) -> bool:
+    if status.role == "reviewer":
+        return False
+    return (status.stage or {"implementer": "implement"}.get(status.role, "")) == "implement"
+
+
+def feed_progress(
+    current: LiveProgress | None, status: LiveStatus | None, line: str
+) -> LiveProgress | None:
+    """Fold one output line into the progress for the current turn."""
+    if status is None or _in_implement(status):
+        return current
+    if current is None or current.started != status.started:
+        current = LiveProgress(started=status.started)
+    lowered = line.lower()
+    if "pytest" in lowered and ("-q" in lowered or "run pytest" in lowered):
+        current = LiveProgress(None, current.failed, current.started)
+    note = progress_from_line(line)
+    if note is None:
+        return current
+    return LiveProgress(
+        note.percent if note.percent is not None else current.percent,
+        note.failed if note.failed is not None else current.failed,
+        current.started,
+    )
 
 
 def clear_live_run(root: Path) -> None:

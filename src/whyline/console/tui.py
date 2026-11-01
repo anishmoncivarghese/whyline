@@ -1133,6 +1133,7 @@ class WhylineConsoleApp(App):
         self._relay_label = ""
         self._relay_status: relay_ops.LiveStatus | None = None
         self._relay_status_read = float("-inf")  # monotonic time of the last read
+        self._relay_progress: relay_ops.LiveProgress | None = None
         self._clock = time.monotonic  # tests replace both clocks
         self._wall = lambda: datetime.now().astimezone()
         self._external_relay: str | None = None  # a relay another console started
@@ -4156,7 +4157,9 @@ class WhylineConsoleApp(App):
             # once more after the widgets are gone.
             return
         if self._relay_status is not None and not self._busy_text:
-            summary = relay_ops.format_live(self._relay_status, self._wall())
+            summary = relay_ops.format_live(
+                self._relay_status, self._wall(), self._relay_progress
+            )
             thinking.update(f"{_SPINNER[self._spin]} relay: {summary}")
             return
         thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s")
@@ -6348,11 +6351,15 @@ class WhylineConsoleApp(App):
         if live:
             self._relay_label = f"relay: {live}"
         self._refresh_relay_status()
+        self._relay_progress = relay_ops.feed_progress(
+            self._relay_progress, self._relay_status, line
+        )
 
     def _relay_finished(self, code: int, text: str) -> None:
         self._relay = None
         self._relay_label = ""
         self._relay_status = None
+        self._relay_progress = None
         self._relay_status_read = float("-inf")
         self._manual_exited = True
         if not self._busy_text:
