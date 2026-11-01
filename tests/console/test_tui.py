@@ -4405,3 +4405,115 @@ async def test_plan_complete_with_pytest_failed_lines_does_not_resolve(tmp_path,
         assert app._resume_fail_lines == []
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
         assert not any("Auto stopped" in line for line in lines)
+
+
+def _run_role(role, current, pending):
+    from whyline.console import relay_ops
+
+    return relay_ops.RunRole(
+        role=role, configured="claude", current=current,
+        reason="switched by you", since="", pending=pending,
+    )
+
+
+def _switch_note_setup(app, monkeypatch):
+    from whyline.console import relay_ops
+
+    state = {"roles": [_run_role("implementer", "claude", False)]}
+    reads = []
+
+    def fake_roles(root):
+        reads.append(root)
+        return state["roles"]
+
+    monkeypatch.setattr(relay_ops, "run_roles", fake_roles)
+    monkeypatch.setattr(relay_ops, "switch_live", lambda root, role, agent, *, keep: "ok")
+    monkeypatch.setattr(relay_ops, "live_status", lambda root: None)
+    from whyline_relay import running
+
+    state["marker"] = None
+    monkeypatch.setattr(running, "live", lambda root: state["marker"])
+    clock = {"mono": 100.0}
+    app._clock = lambda: clock["mono"]
+    app._relay_label = "relay: start"
+    return state, reads, clock
+
+
+def _thinking_text(app) -> str:
+    return str(app.query_one("#thinking", tui.Static).render())
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_status_line_notes_a_switch_made_in_this_console(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test():
+        state, reads, clock = _switch_note_setup(app, monkeypatch)
+        app._tick()
+        assert "from its next turn" not in _thinking_text(app)
+        app._record_live_switch("implementer", "codex", keep=False)
+        state["roles"] = [_run_role("implementer", "codex", True)]
+        clock["mono"] += 3
+        app._tick()
+        assert _thinking_text(app).endswith(" · implementer → codex from its next turn")
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_switch_note_goes_when_the_marker_shows_the_new_agent(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test():
+        state, reads, clock = _switch_note_setup(app, monkeypatch)
+        app._record_live_switch("implementer", "codex", keep=False)
+        state["roles"] = [_run_role("implementer", "codex", True)]
+        app._tick()
+        assert "from its next turn" in _thinking_text(app)
+        from types import SimpleNamespace
+
+        # The marker moves to another role: the note stays for the switched one.
+        state["roles"] = [_run_role("implementer", "codex", False)]
+        state["marker"] = SimpleNamespace(role="tester", agent="claude")
+        clock["mono"] += 3
+        app._tick()
+        assert "implementer → codex from its next turn" in _thinking_text(app)
+        assert app._live_switches == {"implementer": "codex"}
+        # The marker shows the implementer on codex: the note goes.
+        state["marker"] = SimpleNamespace(role="implementer", agent="codex")
+        clock["mono"] += 3
+        app._tick()
+        assert "from its next turn" not in _thinking_text(app)
+        assert app._live_switches == {}
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_switch_note_goes_when_the_relay_stops(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test():
+        state, reads, clock = _switch_note_setup(app, monkeypatch)
+        app._record_live_switch("implementer", "codex", keep=False)
+        state["roles"] = [_run_role("implementer", "codex", True)]
+        app._tick()
+        assert app._switch_note
+        app._relay_finished(0, "")
+        assert app._switch_note == ""
+        assert app._live_switches == {}
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed")
+@pytest.mark.asyncio
+async def test_switch_note_reads_run_roles_at_most_every_two_seconds(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test():
+        state, reads, clock = _switch_note_setup(app, monkeypatch)
+        app._record_live_switch("implementer", "codex", keep=False)
+        state["roles"] = [_run_role("implementer", "codex", True)]
+        app._tick()
+        before = len(reads)
+        clock["mono"] += 1.5
+        app._tick()
+        app._tick()
+        assert len(reads) == before
+        clock["mono"] += 1
+        app._tick()
+        assert len(reads) == before + 1

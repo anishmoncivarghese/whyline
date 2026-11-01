@@ -31730,3 +31730,84 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c2c098ef53564977a2abb2b37cac64aa -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T21:26:12.284Z"} -->
+
+## 2026-11-01 — Track console-made live switches by wrapping switch_fn passed to RunAgentsScreen, not by editing the screen
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-3
+
+**Because:** LIVE-3 may only touch tui.py; the wrapper records role->agent after relay_ops.switch_live succeeds, and run_roles().pending decides when the note drops
+
+**Rejected:**
+
+- Diffing run_roles for any override — would also note switches made by failover or another console, which the task excludes
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b6fe8860865f4a7b93818575b3992d8c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T21:50:16.754Z"} -->
+
+## 2026-11-01 — Fail LIVE-3 Round 2: pending note drops while the marker is on another role
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-3
+
+**Because:** Both required suites pass, but an in-memory reproduction shows _refresh_switch_note deletes a console-made role switch whenever RunRole.pending is false; run_roles also sets pending false when the live marker is on a different role, before that role has shown the selected agent
+
+**Rejected:**
+
+- Pass based on the existing tests — they omit the different-active-role state required by the marker-based acceptance criterion
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 456f170cba364fa9b54fc9ac582a1f23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T22:11:16.688Z"} -->
+
+## 2026-11-01 — Drop a console-made switch note only when the live marker shows that role on that agent, or the role is overridden
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-3
+
+**Because:** run_roles().pending is false whenever the marker is on another role, so it dropped the note early; the marker is read with running.live in the same 2 s read
+
+**Rejected:**
+
+- Keep using item.pending — false for inactive roles, so the note vanished before the role showed the new agent
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 84d24a176cbd4e728dda8bf41f017e17 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T22:31:56.171Z"} -->
+
+## 2026-11-01 — Pass LIVE-3 Round 4: pending switch status behavior is correct
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-3
+
+**Because:** The note appears only for switches made in this console, survives markers on other roles, clears when the marker shows the selected role and agent or the relay stops, respects the two-second read throttle, and both required pytest suites pass
+
+**Rejected:**
+
+- Fail — no behavioral defect or regression was found in inspection, targeted coverage, or either required suite
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: dc512281e0bb4058820812d041fce675 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T23:01:53.477Z"} -->
+
+## 2026-11-01 — Approve LIVE-3 Round 5 pending switch status behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIVE-3
+
+**Because:** The diff records only successful console-made switches, appends each pending role and agent to live or busy status, retains notes across unrelated active roles, clears them on the matching marker or relay stop, throttles run_roles reads to two seconds, and both required pytest suites passed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: b475655b04044646afa3c5f7a65082f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T23:22:56.887Z"} -->

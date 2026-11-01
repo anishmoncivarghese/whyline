@@ -1134,6 +1134,9 @@ class WhylineConsoleApp(App):
         self._relay_status: relay_ops.LiveStatus | None = None
         self._relay_status_read = float("-inf")  # monotonic time of the last read
         self._relay_progress: relay_ops.LiveProgress | None = None
+        self._live_switches: dict[str, str] = {}  # role -> agent, switched here
+        self._switch_note = ""
+        self._switch_note_read = float("-inf")  # monotonic time of the last read
         self._clock = time.monotonic  # tests replace both clocks
         self._wall = lambda: datetime.now().astimezone()
         self._external_relay: str | None = None  # a relay another console started
@@ -3802,7 +3805,9 @@ class WhylineConsoleApp(App):
 
                 # live_run returns "<task>, <agent>"; the title wants the task only
                 task = live.rsplit(", ", 1)[0]
-                self.push_screen(RunAgentsScreen(self.session.root, task))
+                self.push_screen(RunAgentsScreen(
+                    self.session.root, task, switch_fn=self._record_live_switch
+                ))
             else:
                 self._open_relay_setup(plan=self._setup_plan_hint)
         elif button_id in ("pause-change-agents", "change-agents"):
@@ -4167,13 +4172,53 @@ class WhylineConsoleApp(App):
             # Quitting while a reply is still pending: the timer can fire
             # once more after the widgets are gone.
             return
+        if self._relay_label:
+            self._refresh_switch_note()
+        note = self._switch_note
         if self._relay_status is not None and not self._busy_text:
             summary = relay_ops.format_live(
                 self._relay_status, self._wall(), self._relay_progress
             )
-            thinking.update(f"{_SPINNER[self._spin]} relay: {summary}")
+            thinking.update(f"{_SPINNER[self._spin]} relay: {summary}{note}")
             return
-        thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s")
+        thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s{note}")
+
+    def _record_live_switch(self, role: str, agent: str, *, keep: bool) -> str:
+        """The switch the Agents popup makes, remembered so the status line can
+        say it is pending."""
+        result = relay_ops.switch_live(self.session.root, role, agent, keep=keep)
+        self._live_switches[role] = agent
+        return result
+
+    def _refresh_switch_note(self) -> None:
+        """Rebuild the pending-switch note from run_roles, at most every 2 s
+        (the RST-2 rate). A switch is dropped once the live marker shows its
+        agent; a failed read keeps the last note."""
+        if not self._live_switches:
+            self._switch_note = ""
+            return
+        now = self._clock()
+        if now - self._switch_note_read < 2.0:
+            return
+        self._switch_note_read = now
+        try:
+            from whyline_relay import running
+
+            items = relay_ops.run_roles(self.session.root)
+            marker = running.live(self.session.root)
+        except Exception:
+            return
+        parts = []
+        for item in items:
+            agent = self._live_switches.get(item.role)
+            if agent is None:
+                continue
+            shown = marker is not None and marker.role == item.role and marker.agent == agent
+            if item.current == agent and not shown:
+                parts.append(f" · {item.role} → {agent} from its next turn")
+            else:  # shown by the marker, or overridden by another switch
+                del self._live_switches[item.role]
+        self._switch_note = "".join(parts)
 
     def _refresh_relay_status(self) -> None:
         """Re-read the live relay status, at most every 2 s; a failed read
@@ -6372,6 +6417,9 @@ class WhylineConsoleApp(App):
         self._relay_status = None
         self._relay_progress = None
         self._relay_status_read = float("-inf")
+        self._live_switches = {}
+        self._switch_note = ""
+        self._switch_note_read = float("-inf")
         self._manual_exited = True
         if not self._busy_text:
             self._main("#thinking", Static).display = False
