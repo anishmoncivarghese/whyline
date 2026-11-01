@@ -137,7 +137,7 @@ Rules every task keeps:
   - a robots.txt disallow stops the request with the plain message
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-30: Fetch Workday jobs
+- [x] JOB-30: Fetch Workday jobs
   Edit `src/whyline/jobs/fetch.py`, `tests/jobs/test_fetch.py` and add JSON fixtures under `tests/jobs/fixtures/workday/` only.
   Add `_workday(name, slug, client)` and register it in `_PARSERS`.
   1. Page through `POST .../jobs` with `{"appliedFacets": {}, "limit": 20, "offset": N, "searchText": ""}` until a page is empty, `offset >= total`, or 200 jobs have been read.
