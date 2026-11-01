@@ -31295,3 +31295,33 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3aeeb15a7caa468095c5df21a9a6b79b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:06:44.255Z"} -->
+
+## 2026-11-01 — Pass RST-3 Round 2 because relay live status behavior and regressions are covered
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-3
+
+**Because:** The focused bot suite verifies that a live summary is appended while None and Exception preserve the existing line, and the complete project suite exited successfully with one skip.
+
+**Rejected:**
+
+- Fail for missing runtime behavior — the implementation calls live_status for each saved repository, formats a returned value, and catches Exception as required.
+
+**Files:** README.md, src/whyline/ideas/bot.py, tests/ideas/test_bot.py
+
+<!-- whyline-event: 6e4062797d6948558fad6d87503a0b8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:18:18.755Z"} -->
+
+## 2026-11-01 — Approve RST-3 Round 3 because Telegram live relay status and documentation meet the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-3
+
+**Because:** The implementation appends the formatted live summary only for a non-None live status, catches Exception to preserve the existing line, tests cover live, absent, and raised states, the README explains both requested examples and RLY-11 dependency, git diff --check is clean, and uv run pytest -q exited 0 at 100% with one skip.
+
+**Files:** src/whyline/ideas/bot.py, tests/ideas/test_bot.py, README.md
+
+<!-- whyline-event: 98651c8ed47349758eb800506200af88 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:29:17.999Z"} -->

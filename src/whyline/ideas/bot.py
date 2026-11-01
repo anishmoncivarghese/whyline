@@ -1680,6 +1680,7 @@ def _agent_status(name: str, *, shown_name: str | None = None) -> str:
 
 
 def _relay_status(conn: sqlite3.Connection) -> str:
+    from whyline.console import relay_ops
     from whyline_relay import state as relay_state
 
     lines = []
@@ -1694,10 +1695,17 @@ def _relay_status(conn: sqlite3.Connection) -> str:
             )
             continue
         paused = saved.paused_reason or "not paused"
-        lines.append(
+        line = (
             f"{name} — plan: {saved.plan or '—'}; task: {saved.task_id or '—'}; "
             f"stage: {saved.stage or '—'}; paused: {paused}"
         )
+        try:
+            live = relay_ops.live_status(root)
+            if live is not None:
+                line += f" · now: {relay_ops.format_live(live, datetime.now(timezone.utc))}"
+        except Exception:
+            pass
+        lines.append(line)
     return _limited_lines(lines, empty="No relay state found.")
 
 

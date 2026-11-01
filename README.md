@@ -78,6 +78,13 @@ idea → brainstorm → spec and plan → implement → test → review → veri
 - **Files** shows the agent's current output, the live plan, and the whole
   repository in a side pane.
 
+While a run is going, the console and the Telegram status line show what it is
+doing, for example `JOB-24 (2 of 10, 10%) · implementing · claude · round 1 of 24 · 7m 02s`,
+and after a rejection `JOB-24 (2 of 10, 10%) · fixing after review 1 · claude · round 3 of 24 · 1m 40s`.
+The % counts finished tasks out of all tasks in the plan, not how far the
+current task has got. The rerun count needs whyline-relay with RLY-11; without
+it the line simply leaves that part out.
+
 ### 🔁 Keep going when a plan runs out
 
 Each role can have an **ordered backup chain**. When one agent reports a usage

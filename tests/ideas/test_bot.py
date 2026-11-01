@@ -596,6 +596,81 @@ def test_status_relay_lists_only_allowed_repos_with_state_files(
     assert _latest_request(conn)["state"] == "done"
 
 
+def _live_status_repo(tmp_path, monkeypatch):
+    from whyline_relay import state as relay_state
+
+    active = tmp_path / "active"
+    relay_state.path(active).parent.mkdir(parents=True)
+    relay_state.path(active).write_text(
+        json.dumps({
+            "plan": "plans/ship.plan.md",
+            "branch": "relay/ship",
+            "task_id": "SHIP-2",
+            "round": 1,
+            "base_commit": "abc",
+            "paused_reason": "",
+            "log_path": "relay.log",
+            "stage": "review",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bot.setup, "list_repos", lambda _c: {"active": str(active)})
+    return active
+
+
+_BASE_LINE = (
+    "active — plan: plans/ship.plan.md; task: SHIP-2; stage: review; "
+    "paused: not paused"
+)
+
+
+def test_status_relay_includes_live_summary_when_running(
+    conn, token, monkeypatch, tmp_path
+):
+    from whyline.console import relay_ops
+
+    _live_status_repo(tmp_path, monkeypatch)
+    live = relay_ops.LiveStatus(
+        task="SHIP-2", agent="claude", role="implementer", stage="draft",
+        visit=1, round=1, max_rounds=24, started=None, position=2, total=10,
+        done=1,
+    )
+    monkeypatch.setattr(relay_ops, "live_status", lambda _root: live)
+    monkeypatch.setattr(relay_ops, "format_live", lambda _s, _n: "SHIP-2 live")
+
+    bot.handle(conn, _message("status relay"))
+
+    assert _outbox(conn, "message")[-1]["text"] == _BASE_LINE + " · now: SHIP-2 live"
+
+
+def test_status_relay_unchanged_when_nothing_runs(conn, token, monkeypatch, tmp_path):
+    from whyline.console import relay_ops
+
+    _live_status_repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(relay_ops, "live_status", lambda _root: None)
+
+    bot.handle(conn, _message("status relay"))
+
+    assert _outbox(conn, "message")[-1]["text"] == _BASE_LINE
+
+
+def test_status_relay_unchanged_when_live_status_raises(
+    conn, token, monkeypatch, tmp_path
+):
+    from whyline.console import relay_ops
+
+    _live_status_repo(tmp_path, monkeypatch)
+
+    def boom(_root):
+        raise RuntimeError("bad marker")
+
+    monkeypatch.setattr(relay_ops, "live_status", boom)
+
+    bot.handle(conn, _message("status relay"))
+
+    assert _outbox(conn, "message")[-1]["text"] == _BASE_LINE
+
+
 def test_status_agents_truncates_to_one_telegram_message(conn, token, monkeypatch):
     found = [
         SimpleNamespace(
