@@ -24,7 +24,7 @@ Global constraints:
 - Reading happens at most every 2 seconds. The 0.1 s spinner tick reuses the last result.
 - Verify every task with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing outside the files a task names.
 
-- [ ] RST-1: Build the live relay summary
+- [x] RST-1: Build the live relay summary
   Edit `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
   Add a frozen dataclass `LiveStatus(task, agent, role, stage, visit, round, max_rounds, started, position, total, done)`. `started` is an aware datetime or None. `position` is the current task's 1-based index in the plan, and `total`/`done` are task and ticked counts. Any of these is 0, "" or None when unknown.
   Add `live_status(root) -> LiveStatus | None`. It returns None when `running.live(root)` is None. It reads `stage` and `visit` with `getattr(marker, ..., default)` so an older relay still works. It takes the plan path from `whyline_relay.state.load(root).plan` (relative to `root`) and parses it with `whyline_relay.plan.parse`. It takes `max_rounds` from `whyline_relay.config.load(root)`. Each of these three reads sits in its own `try` that catches `Exception` and leaves its fields unknown.
