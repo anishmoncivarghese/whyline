@@ -157,7 +157,7 @@ Rules every task keeps:
 - No new dependency beyond the raised `whyline-relay` floor. No version bump, tag, push or publication.
 - Tests use temporary repositories and stub relays. They never start a real agent, never sleep and never contain "/Users/".
 
-- [ ] LIVE-1: Read and change a running relay's agents
+- [x] LIVE-1: Read and change a running relay's agents
   Edit `pyproject.toml`, `uv.lock` (`whyline-relay` floor raised to the release with RLY-13), `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
   1. Add `RunRole(role, configured, current, reason, since, pending: bool)` and `run_roles(root) -> list[RunRole]`. They're built from the config's roles (`current_roles`) and `failover.read_overrides`. `reason` is "" when the role isn't switched, otherwise the switch's reason in words ("usage limit", "signed out", "switched by you"). `pending` is true when the live marker (`running.live`) shows this role running with an agent other than `current`, meaning the change applies at its next turn.
   2. Add `run_agent_choices(root) -> list[str]`: the agents in the running relay's `[agents]` table (`relay_agents`), which are the only ones `roles.switch` accepts.
