@@ -93,7 +93,7 @@ Global constraints:
   3. `.whyline/relay/prompts/test.md`, under its Failed outcome, adds: `--issue "<one concrete problem, with file and line when known>"`, once per problem, in priority order, as well as `--summary`.
   Tests: `--issue` twice is stored in order; a record without `issues` still formats; `format_text` numbers the issues; the CLI help lists `--issue`.
 
-- [ ] RST-6: Issue counts in the status line, and an Issues view
+- [x] RST-6: Issue counts in the status line, and an Issues view
   Edit `src/whyline/console/relay_ops.py`, `src/whyline/console/tui.py`, `src/whyline/console/relay_screens.py`, `tests/console/test_relay_ops.py` and `tests/console/test_tui_relay_run.py` only.
   1. `relay_ops.task_rounds(root, task_id) -> list[RoundOutcome]` reads the handoff events for that task from the ledger (`ledger.read_all(paths.ledger_path(root))`), oldest first. `RoundOutcome(at, from_actor, to_actor, status, summary, issues, tests, sent_back)`:
      - `issues` is the event's `issues`. For an older event without them, use the summary's bullet items (text split on lines or on ` - ` that starts a bullet), or `()` when there are none.
