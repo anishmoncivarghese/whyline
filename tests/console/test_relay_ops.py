@@ -1849,3 +1849,69 @@ def test_setup_choice_agents_without_status_does_not_call_agent_status(
     )
     assert relay_ops.setup_choice_agents(tmp_path) == ["claude"]
 
+
+def _hand(root, task, status, *, issues=None, summary="", frm="codex", to="claude", tests=None):
+    from whyline import events, ledger, paths
+
+    fields = dict(
+        task=task, from_actor=frm, to_actor=to, status=status, summary=summary,
+        tests=tests or [],
+    )
+    if issues is not None:
+        fields["issues"] = issues
+    paths.ledger_path(root).parent.mkdir(parents=True, exist_ok=True)
+    ledger.append(paths.ledger_path(root), events.new_event(events.HANDOFF, **fields))
+
+
+@pytest.fixture
+def changes_status(monkeypatch):
+    monkeypatch.setattr(relay_ops, "_changes_status", lambda root: "changes-requested")
+
+
+def test_task_rounds_reads_issues_and_tests(tmp_path, changes_status):
+    _hand(tmp_path, "T1", "changes-requested", issues=["a", "b"],
+          tests=[{"command": "uv run pytest", "result": "1 failed"}])
+    _hand(tmp_path, "T1", "ready-for-review", issues=[])
+    rounds = relay_ops.task_rounds(tmp_path, "T1")
+    assert [r.status for r in rounds] == ["changes-requested", "ready-for-review"]
+    assert rounds[0].issues == ("a", "b")
+    assert rounds[0].tests == (("uv run pytest", "1 failed"),)
+    assert [r.sent_back for r in rounds] == [True, False]
+    assert (rounds[0].from_actor, rounds[0].to_actor) == ("codex", "claude")
+
+
+def test_task_rounds_falls_back_to_summary_bullets(tmp_path):
+    _hand(tmp_path, "T1", "failed", summary="Review found: - missing test - bad name")
+    _hand(tmp_path, "T1", "failed", summary="Found:\n- one\n* two")
+    _hand(tmp_path, "T1", "failed", summary="no bullets here")
+    rounds = relay_ops.task_rounds(tmp_path, "T1")
+    assert [r.issues for r in rounds] == [
+        ("missing test", "bad name"), ("one", "two"), (),
+    ]
+    assert all(r.sent_back for r in rounds)
+
+
+def test_task_rounds_ignores_other_tasks(tmp_path):
+    _hand(tmp_path, "T1", "failed", issues=["a"])
+    _hand(tmp_path, "T2", "failed", issues=["b"])
+    assert [r.issues for r in relay_ops.task_rounds(tmp_path, "T2")] == [("b",)]
+    assert relay_ops.task_rounds(tmp_path, "T3") == []
+
+
+def test_task_rounds_restart_after_an_approval(tmp_path, changes_status):
+    _hand(tmp_path, "T1", "changes-requested", issues=["old"])
+    _hand(tmp_path, "T1", "approved")
+    assert relay_ops.task_rounds(tmp_path, "T1") == []
+    _hand(tmp_path, "T1", "changes-requested", issues=["new"])
+    assert [r.issues for r in relay_ops.task_rounds(tmp_path, "T1")] == [("new",)]
+
+
+def test_format_live_with_and_without_send_backs():
+    assert "failed" not in relay_ops.format_live(_status(), _at(0))
+    assert relay_ops.format_live(_status(sent_back=2, last_issues=3), _at(0)).endswith(
+        " · failed 2× (last: 3 issues)"
+    )
+    assert relay_ops.format_live(_status(sent_back=1, last_issues=0), _at(0)).endswith(
+        " · failed 1× (last: see summary)"
+    )
+

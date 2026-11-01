@@ -31466,3 +31466,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 57483be2aa12431599230222e80a4f5e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:39:55.661Z"} -->
+
+## 2026-11-01 — Issues view reads task_rounds from the ledger; bullets parsed from summary only when an event has no issues key
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-6
+
+**Because:** New events always store issues (possibly empty), so an empty list means none; only pre-RST-5 events fall back to summary bullets
+
+**Rejected:**
+
+- Always parse summary bullets — would invent issues for events that recorded none
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: d4cf6f5a82ab464e82cbe7c15c9db62e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:56:44.834Z"} -->
+
+## 2026-11-01 — Pass RST-6 Round 2 issue-count and Issues-view behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-6
+
+**Because:** Focused RST-6 tests and the full repository suite passed; ledger filtering, approval reset, status formatting, button enablement, ordered issue blocks, and copy-all behavior were exercised without failure
+
+**Rejected:**
+
+- Fail the task — no behavioral defect or regression was observed
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 3a16e18e723c40ddba5a07931a16e2ef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:08:37.155Z"} -->
+
+## 2026-11-01 — Approve RST-6 Round 3 issue counts and Issues view
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-6
+
+**Because:** The implementation matches the ledger reset, send-back counting, live status, read-only Issues modal, and clipboard requirements; the full uv run pytest -q suite passed with one expected skip
+
+**Rejected:**
+
+- Request changes — no functional, safety, or test-coverage defect was found
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 8c91f9edb61c4180a54d1482090238de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:19:50.907Z"} -->

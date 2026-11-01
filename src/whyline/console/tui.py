@@ -99,7 +99,7 @@ _MODES = ("chat", "relay", "agents", "assistant", "workflows")
 # Agents widgets arrive with the Agents plan. Until then these ids match nothing.
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
-    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume"),
+    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues"),
     "agents": (
         "agents-new",
         "agents-list",
@@ -2111,6 +2111,21 @@ class WhylineConsoleApp(App):
         available = controls.size.width or self.size.width
         controls.set_class(needed > available, "wrap")
 
+    def _task_outcomes(self) -> tuple[str, list]:
+        """The current or paused task and its round outcomes; empty on any failure."""
+        try:
+            task = relay_ops.current_task(self.session.root)
+            return (task, relay_ops.task_rounds(self.session.root, task)) if task else ("", [])
+        except Exception:  # no relay installed, unreadable state or ledger
+            return ("", [])
+
+    def _open_issues(self) -> None:
+        from whyline.console.relay_screens import IssuesScreen
+
+        task, rounds = self._task_outcomes()
+        if rounds:
+            self.push_screen(IssuesScreen(task, rounds), self._after_copy_view)
+
     def _sync_relay_buttons(self) -> None:
         """Plan and Set up only make sense in Relay mode; Resume only when a
         run is paused and nothing is running."""
@@ -2127,6 +2142,7 @@ class WhylineConsoleApp(App):
             stale = relay_ops.stale_pause(self.session.root) if paused else None
         except Exception:
             stale = None
+        self._main("#relay-issues", Button).disabled = not (in_relay and self._task_outcomes()[1])
         resume = self._main("#relay-resume", Button)
         if getattr(self, "_release_task", None):
             resume.label = "Release done…"
@@ -3594,6 +3610,7 @@ class WhylineConsoleApp(App):
                 Button("Plan", id="relay-plan", disabled=True),
                 Button("Set up", id="relay-setup", disabled=True),
                 Button("Resume", id="relay-resume", disabled=True),
+                Button("Issues", id="relay-issues", disabled=True),
                 Button("Retry stage", id="relay-retry-stage", disabled=True),
                 Button("Resolve", id="relay-resolve", disabled=True),
                 Button("New", id="agents-new"),
@@ -3791,6 +3808,8 @@ class WhylineConsoleApp(App):
             else:
                 self._manual_passed = False
                 self._launch_relay(["resume"])
+        elif button_id == "relay-issues":
+            self._open_issues()
         elif button_id == "relay-retry-stage":
             from whyline.console import recovery
 

@@ -702,3 +702,48 @@ async def test_finishing_clears_it_and_chat_replies_show_label_and_seconds(
         app._busy_since = app._clock()
         app._tick()
         assert "thinking… " in _thinking(app) and _thinking(app).endswith("s")
+
+
+def _outcome(issues=("fix a", "fix b"), sent_back=True):
+    return relay_ops.RoundOutcome(
+        at="t", from_actor="codex", to_actor="claude", status="failed", summary="",
+        issues=tuple(issues), tests=(("uv run pytest", "1 failed"),), sent_back=sent_back,
+    )
+
+
+async def test_issues_button_is_disabled_with_no_outcomes(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "current_task", lambda root: "T1")
+    monkeypatch.setattr(relay_ops, "task_rounds", lambda root, task: [])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._sync_relay_buttons()
+        assert app.query_one("#relay-issues", tui.Button).disabled
+
+
+async def test_issues_screen_lists_blocks_in_order_and_copy_all_copies_them(tmp_path, monkeypatch):
+    from whyline.console.relay_screens import IssuesScreen
+
+    rounds = [_outcome(), _outcome(issues=(), sent_back=False)]
+    monkeypatch.setattr(relay_ops, "current_task", lambda root: "T1")
+    monkeypatch.setattr(relay_ops, "task_rounds", lambda root, task: rounds)
+    copied = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(tui, "_system_copy", lambda text: copied.append(text) or True)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._sync_relay_buttons()
+        button = app.query_one("#relay-issues", tui.Button)
+        assert not button.disabled
+        button.press()
+        await pilot.pause()
+        assert isinstance(app.screen, IssuesScreen)
+        text = app.screen.query_one("#issues-text", tui.TextArea).text
+        first = text.index("Round 1 · codex → claude · ✗ sent back · 2 issues")
+        second = text.index("Round 2 · codex → claude · ✓ passed · 0 issues")
+        assert first < text.index("1. fix a") < text.index("2. fix b") < second
+        assert "Test: uv run pytest: 1 failed" in text
+        app.screen.query_one("#issues-copy-all", tui.Button).press()
+        await pilot.pause()
+        assert copied == [text]
+        assert not isinstance(app.screen, IssuesScreen)

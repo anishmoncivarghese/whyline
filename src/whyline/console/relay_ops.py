@@ -1202,6 +1202,98 @@ class LiveStatus:
     position: int
     total: int
     done: int
+    sent_back: int = 0
+    last_issues: int = 0
+
+
+@dataclass(frozen=True)
+class RoundOutcome:
+    """One handoff for a task, as the Issues view shows it."""
+
+    at: str
+    from_actor: str
+    to_actor: str
+    status: str
+    summary: str
+    issues: tuple[str, ...]
+    tests: tuple[tuple[str, str], ...]
+    sent_back: bool
+
+
+_BULLET = re.compile(r"^\s*(?:[-*•])\s+")
+
+
+def _summary_bullets(summary: str) -> tuple[str, ...]:
+    """Bullet items in a summary: bulleted lines, or ` - ` separated items on
+    one line (a recorded summary is a single line)."""
+    found: list[str] = []
+    for line in summary.splitlines():
+        parts = re.split(r"\s+-\s+", line)
+        if _BULLET.match(line):
+            parts[0] = _BULLET.sub("", parts[0])
+        else:
+            parts = parts[1:]
+        found.extend(part.strip() for part in parts if part.strip())
+    return tuple(found)
+
+
+def _changes_status(root: Path) -> str:
+    try:
+        from whyline_relay import config
+
+        return str(config.load(root).status_map.get("changes") or "changes")
+    except Exception:  # no relay installed or a broken config
+        return "changes"
+
+
+def task_rounds(root: Path, task_id: str) -> list[RoundOutcome]:
+    """The task's handoffs since it last finished, oldest first."""
+    from whyline import events, handoff, ledger, paths
+
+    recorded, _ = ledger.read_all(paths.ledger_path(root))
+    mine = [
+        event for event in recorded
+        if event.get("task") == task_id
+        and event.get("type") in (events.HANDOFF, events.HANDOFF_CLOSED)
+    ]
+    start = 0
+    for index, event in enumerate(mine):
+        status = str(event.get("status", "")).strip().lower()
+        if event["type"] == events.HANDOFF_CLOSED or status in handoff.TERMINAL_STATUSES:
+            start = index + 1
+    changes = _changes_status(root).strip().lower()
+    outcomes = []
+    for event in mine[start:]:
+        status = str(event.get("status", ""))
+        summary = str(event.get("summary") or "")
+        issues = event.get("issues")
+        if not isinstance(issues, list):
+            issues = _summary_bullets(summary)
+        outcomes.append(RoundOutcome(
+            at=str(event.get("ts", "")),
+            from_actor=str(event.get("from_actor", "")),
+            to_actor=str(event.get("to_actor", "")),
+            status=status,
+            summary=summary,
+            issues=tuple(str(item) for item in issues),
+            tests=tuple(
+                (str(item.get("command", "")), str(item.get("result", "")))
+                for item in event.get("tests") or [] if isinstance(item, dict)
+            ),
+            sent_back=status.strip().lower() in ("failed", changes),
+        ))
+    return outcomes
+
+
+def current_task(root: Path) -> str | None:
+    """The running task, else the paused one."""
+    from whyline_relay import running, state
+
+    marker = running.live(root)
+    if marker is not None:
+        return marker.task
+    saved = state.load(root)
+    return (saved.task_id or None) if saved is not None else None
 
 
 def _started_at(value) -> datetime | None:
@@ -1237,6 +1329,13 @@ def live_status(root: Path) -> LiveStatus | None:
         max_rounds = int(config.load(root).max_rounds)
     except Exception:  # a broken config
         max_rounds = 0
+    sent_back = last_issues = 0
+    try:
+        bounced = [item for item in task_rounds(root, task) if item.sent_back]
+        sent_back = len(bounced)
+        last_issues = len(bounced[-1].issues) if bounced else 0
+    except Exception:  # an unreadable ledger
+        sent_back = last_issues = 0
     return LiveStatus(
         task=task,
         agent=marker.agent,
@@ -1249,6 +1348,8 @@ def live_status(root: Path) -> LiveStatus | None:
         position=position,
         total=total,
         done=done,
+        sent_back=sent_back,
+        last_issues=last_issues,
     )
 
 
@@ -1287,6 +1388,9 @@ def format_live(status: LiveStatus, now: datetime) -> str:
         )
     if status.started is not None:
         parts.append(_elapsed(int((now - status.started).total_seconds())))
+    if status.sent_back > 0:
+        last = f"{status.last_issues} issues" if status.last_issues else "see summary"
+        parts.append(f"failed {status.sent_back}× (last: {last})")
     return " · ".join(part for part in parts if part)
 
 

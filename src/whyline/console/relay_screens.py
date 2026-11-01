@@ -6,6 +6,7 @@ uses for chat replies)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace as dc_replace
 from pathlib import Path
 
@@ -2448,3 +2449,77 @@ class ResolveProposalScreen(ModalScreen):
 
     def apply_step_1(self) -> None:
         self._apply(all_steps=False)
+
+
+_ISSUE_NUMBER = re.compile(r"^\s*\d+\.\s+")
+
+
+def issues_text(rounds) -> str:
+    """One block per outcome: a header, the numbered issues, then the tests."""
+    blocks = []
+    for number, item in enumerate(rounds, 1):
+        verdict = "✗ sent back" if item.sent_back else "✓ passed"
+        lines = [
+            f"Round {number} · {item.from_actor} → {item.to_actor} · {verdict}"
+            f" · {len(item.issues)} issues"
+        ]
+        lines += [f"  {n}. {issue}" for n, issue in enumerate(item.issues, 1)]
+        lines += [f"  Test: {command}: {result}" for command, result in item.tests]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+class IssuesScreen(ModalScreen):
+    """Read-only view of a task's round outcomes. Never changes relay state.
+    Dismisses with (text, done_message) to copy, or None."""
+
+    DEFAULT_CSS = """
+    IssuesScreen { align: center middle; }
+    IssuesScreen > Vertical {
+        width: 90%; height: 90%; padding: 1 2; border: thick $primary; background: $surface;
+    }
+    IssuesScreen TextArea { height: 1fr; }
+    IssuesScreen Horizontal { height: auto; margin-top: 1; }
+    IssuesScreen Button { margin-right: 2; }
+    """
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    def __init__(self, task_id: str, rounds) -> None:
+        super().__init__()
+        self._task_id = task_id
+        self._text = issues_text(list(rounds))
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(f"Issues for {self._task_id}. Move to an issue, then Copy selected issue."),
+            TextArea(self._text, id="issues-text", read_only=True, soft_wrap=True),
+            Horizontal(
+                Button("Copy all", id="issues-copy-all", variant="primary"),
+                Button("Copy selected issue", id="issues-copy-one"),
+                Button("Close", id="issues-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#issues-text", TextArea).focus()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def _highlighted_issue(self) -> str:
+        area = self.query_one("#issues-text", TextArea)
+        row = area.cursor_location[0]
+        return _ISSUE_NUMBER.sub("", area.document.get_line(row)).strip()
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button = event.button.id
+        if button == "issues-copy-all":
+            self.dismiss((self._text, "Issues copied to clipboard."))
+        elif button == "issues-copy-one":
+            line = self._highlighted_issue()
+            if line:
+                self.dismiss((line, "Copied 1 line to clipboard."))
+        else:
+            self.dismiss(None)
