@@ -86,7 +86,7 @@ Global constraints:
   - Esc closes without copying
   - a 6,000-line transcript shows 5,000 lines plus the note, and Copy all still copies 6,000
 
-- [ ] RST-5: `whyline handoff --issue`, and ask the project's tester for it
+- [x] RST-5: `whyline handoff --issue`, and ask the project's tester for it
   Edit `src/whyline/cli.py`, `src/whyline/handoff.py`, `tests/test_handoff.py`, `tests/test_cli.py` and `.whyline/relay/prompts/test.md` only.
   1. `whyline handoff` gains a repeatable `--issue TEXT` (`dest="issues"`), kept as `issues: list[str]` in the handoff event the same way `risks` is (one line each, in order). `handoff.create` takes `issues=None`.
   2. `format_text` prints each one as `Issue          <n>. <text>` after the summary, so `whyline sync` shows them to the next agent.
