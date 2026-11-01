@@ -41,7 +41,7 @@ Global constraints:
   - a missing state file, an unparsable plan and a broken config each drop only their own part
   - elapsed formatting at 0 s, 59 s, 60 s, 3599 s and 3600 s
 
-- [ ] RST-2: Show it in the console's busy line, with a timer per turn
+- [x] RST-2: Show it in the console's busy line, with a timer per turn
   Edit `src/whyline/console/tui.py` and `tests/console/test_tui_relay_run.py` only.
   1. Hold `self._relay_status: LiveStatus | None` and `self._relay_status_read: float` (monotonic). `_relay_line` and `_tick` call `relay_ops.live_status` at most every 2 s while a relay runs, catching `Exception` and keeping the last value.
   2. While `_relay_status` is set and no `_busy_text` is showing, `_tick` renders `<spinner> relay: <format_live(status, now)>`, with no `…` or seconds suffix (the elapsed time is in the summary). Otherwise it keeps today's `label… Ns`.
