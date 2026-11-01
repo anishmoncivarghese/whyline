@@ -108,7 +108,7 @@ Global constraints:
   - the button is disabled with no outcomes
   - the screen lists blocks in order and Copy all copies them
 
-- [ ] RST-7: Live test progress from the agent's own messages
+- [x] RST-7: Live test progress from the agent's own messages
   Edit `src/whyline/console/relay_ops.py`, `src/whyline/console/tui.py`, `tests/console/test_relay_ops.py` and `tests/console/test_tui_relay_run.py` only.
   Testers already narrate progress in the stream the console receives ("The repository run has crossed 32% without an error", or pytest's own `[ 32%]`).
   1. `relay_ops.progress_from_line(line) -> ProgressNote | None` with `ProgressNote(percent: int | None, failed: int | None)`:
