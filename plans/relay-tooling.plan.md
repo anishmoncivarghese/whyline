@@ -601,8 +601,29 @@ Rules for this part:
   - That Test planner belongs to Plan, not Chat Brainstorm
   Verify with `uv run pytest -q`. Change nothing else.
 
+## Part 7: Round cap in Set up
+
+Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `.whyline/relay/config.toml` had no `max_rounds`, so the relay's default of 3 applied. agentdock had 24. The only ways to change it were editing the file, `--max-rounds` for one run, or **Resolve** adding 6 after a pause.
+
+- [ ] RCAP-1: A Round cap field in Set up, with a sensible default
+  Edit `src/whyline/console/relay_screens.py`, `src/whyline/console/relay_ops.py`, `src/whyline/console/recovery.py` (only to call the new saver), `src/whyline/cli.py` and their tests only.
+  1. Add `relay_ops.save_max_rounds(root, n)`. It validates 1 to 99 and writes `max_rounds` with the same top-level setter `recovery._raise_max_rounds` uses (`relay_setup._set_unquoted_top_level`), as a `setup: max_rounds N` commit. `recovery._raise_max_rounds` calls it, so there is one saver.
+  2. In `RelaySetupScreen`, add **Round cap** next to Timeout: an `Input` restricted to digits, showing the repository's current `max_rounds`. Under it, a hint: `Rounds per task before the relay pauses. Each review or test send-back uses one.`
+  3. When the repository's config has no `max_rounds`, the field shows 24 (`DEFAULT_SETUP_ROUNDS = 24`) and marks it `(not saved yet; the relay's own default is 3)`. Set up saves it with the other settings, so a new repository never runs with 3 by accident.
+  4. **Check** shows `Round cap: 24`, and warns when it is below 6: `A cap under 6 pauses most tasks after one or two send-backs.`
+  5. While a relay runs, the field is read-only with `Takes effect on the next run or resume.`, because the relay reads the cap at start.
+  6. CLI counterpart: `whyline relay rounds [N]` prints the current cap, or saves N through `save_max_rounds`.
+  Tests:
+  - the field shows the saved value, and 24 when the config has none
+  - Set up saves it as a `setup:` commit
+  - validation of 0, 100 and text
+  - the Check line and the low-cap warning
+  - Resolve's "more rounds" goes through the same saver
+  - the CLI
+  Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
+
 ## Publish
 
-- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9 and PFB-1..5
+- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, PFB-1..5 and RCAP-1
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
