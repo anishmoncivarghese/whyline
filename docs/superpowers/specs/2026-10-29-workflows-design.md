@@ -2,7 +2,7 @@
 
 Date: 2026-10-29
 Source: `docs/brainstorm/i-want-you-do-a-brainstorming-i-was-thinking-of-adding-addit.md` (codex final synthesis, with Claude's and Antigravity's research).
-Plans: `plans/workflows-1-engine.plan.md`, `plans/workflows-2-connections.plan.md`, `plans/workflows-3-telegram.plan.md`.
+Plans: `plans/done/workflows-1-engine.plan.md`, `plans/workflows-2-to-4.plan.md` (WF-14..34).
 
 ## 1. What this is
 

@@ -1,6 +1,6 @@
 # Agent deliveries Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this project the plan is run by whyline-relay, one relay task per plan task (`plans/agent-deliveries.plan.md`). Task 9 is a release, done by a person.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this project the plan is run by whyline-relay, one relay task per plan task (`plans/done/agent-deliveries.plan.md`). Task 9 is a release, done by a person.
 
 **Goal:** After every agent run, whyline itself sends the result to the agent's chosen destinations — email through the Mail app, a Telegram chat, and an optional command — with a Word attachment and a short summary, or a short alert when the run failed.
 

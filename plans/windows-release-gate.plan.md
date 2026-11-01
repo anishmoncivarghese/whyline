@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: moved | created: 2026-10-19T00:00:00+05:30 -->
 # Windows as a release gate again
 
-Moved on 2026-10-19 from `plans/in-the-agent-i-can-select-the-agent-in-c.plan.md` after whyline 0.3.45 shipped, so that plan could close. Run it whenever Windows is worth gating on again.
+Moved on 2026-10-19 from `plans/done/in-the-agent-i-can-select-the-agent-in-c.plan.md` after whyline 0.3.45 shipped, so that plan could close. Run it whenever Windows is worth gating on again.
 
 Windows stopped being a release gate on 2026-10-15 after Windows-only test failures blocked three v0.3.42 release attempts. `ci.yml` still runs it on every push with `continue-on-error`, and `release.yml` does not run it.
 

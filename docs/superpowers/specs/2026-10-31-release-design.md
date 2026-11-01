@@ -1,6 +1,6 @@
 # Release: one button that ships a repository to the places the user picked
 
-Date: 2026-10-31. Status: approved by the user in chat. Plans: `plans/release-1-core.plan.md` (REL-1..12) and `plans/release-2-targets.plan.md` (REL-13..19).
+Date: 2026-10-31. Status: approved by the user in chat. Plan: `plans/release-button.plan.md` (REL-1..12, SEC-1..14, REL-13..19).
 
 ## Problem
 
