@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-01T12:00:00+05:30 -->
 # Job search, part 5: saved searches, a setup check, run results with tailored CVs, and an apply pack
 
-Merged on 2026-11-01 from `job-search-5-tailored-cv` (CVT-1..7, unchanged) and the user's new job search requests. Runs right after `plans/relay-tooling.plan.md`, before `personal-assistant`. JSR-1 publishes at the end.
+Merged on 2026-11-01 from `job-search-5-tailored-cv` (CVT-1..7, unchanged) and the user's new job search requests. Runs after `plans/sdlc-pipeline.plan.md`, before `personal-assistant`. JSR-1 publishes at the end.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules. Read the intro of the part a task is in before starting it.
 
