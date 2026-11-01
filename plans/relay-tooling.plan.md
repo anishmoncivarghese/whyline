@@ -199,7 +199,7 @@ Rules every task keeps:
   - no running-relay process is signalled (assert no call to `interrupt_live_run`)
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] LIVE-3: Show a pending change in the status line
+- [x] LIVE-3: Show a pending change in the status line
   Edit `src/whyline/console/tui.py` and `tests/console/test_tui.py` only.
   1. While a relay runs, after the existing busy text, add ` · <role> → <agent> from its next turn` for each `run_roles` entry whose switch the user made in this console and whose agent the marker hasn't shown yet. Track the switches this console made in memory. Read `run_roles` at most every 2 s, the same rate as the RST-2 status reads.
   2. Drop the note once the live marker shows that role on that agent, or when the relay stops.
