@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -161,3 +162,140 @@ def test_rate_limit_and_user_agent_apply() -> None:
     )
     assert sleeps == [ats.RATE_LIMIT_SECONDS]
     assert all(h["User-Agent"] == ats.user_agent() for h in seen_headers)
+
+
+# --- Workday (JOB-30) ---------------------------------------------------------
+
+_WD_SLUG = "acme/wd1/Careers"
+_WD_BASE = "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/Careers"
+
+
+def _wdfx(name: str) -> bytes:
+    return (FIXTURES / "workday" / name).read_bytes()
+
+
+def _wd_job(i: int) -> dict:
+    return {
+        "title": f"Engineer {i}",
+        "externalPath": f"/job/Remote/Engineer-{i}_R{i}",
+        "locationsText": "Remote, US",
+        "postedOn": "Posted 3 Days Ago",
+        "bulletFields": [f"R{i}"],
+    }
+
+
+class _WdStub:
+    """Workday transport: serves list pages from `jobs`, details from `detail`."""
+
+    def __init__(self, jobs: list[dict], fail_detail: bool = False) -> None:
+        self.jobs = jobs
+        self.fail_detail = fail_detail
+        self.posts: list[dict] = []
+        self.details: list[str] = []
+
+    def __call__(self, url, headers=None, method="GET", body=None):
+        if url.endswith("/robots.txt"):
+            return b"User-agent: *\nAllow: /\n"
+        if method == "POST":
+            req = json.loads(body)
+            self.posts.append(req)
+            page = self.jobs[req["offset"] : req["offset"] + req["limit"]]
+            return json.dumps({"total": len(self.jobs), "jobPostings": page}).encode()
+        self.details.append(url)
+        if self.fail_detail:
+            raise OSError("boom")
+        return _wdfx("detail.json")
+
+
+@pytest.fixture
+def _wd_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+
+def _wd_fetch(stub, slug: str = _WD_SLUG):
+    return fetch.board_jobs(_co("Acme", "workday", slug), http=stub, sleep=lambda _s: None)
+
+
+def test_workday_two_pages_then_empty_page_stops(_wd_home) -> None:
+    pages = [_wdfx("list_page1.json"), _wdfx("list_page2.json"), _wdfx("list_empty.json")]
+    posts: list[dict] = []
+
+    def stub(url, headers=None, method="GET", body=None):
+        if url.endswith("/robots.txt"):
+            return b""
+        if method == "POST":
+            posts.append(json.loads(body))
+            return pages[len(posts) - 1]
+        return _wdfx("detail.json")
+
+    jobs = _wd_fetch(stub)
+    assert [p["offset"] for p in posts] == [0, 20, 40]
+    assert posts[0] == {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""}
+    assert [j.uid for j in jobs] == [f"workday:{_WD_SLUG}:R{i}" for i in (1, 2, 3)]
+    first = jobs[0]
+    assert first.title == "Engineer 1"
+    assert first.location == "Remote, US"
+    assert first.url == "https://acme.wd1.myworkdayjobs.com/Careers/job/Remote/Engineer-1_R1"
+    assert first.posted_at == "Posted 3 Days Ago"
+
+
+def test_workday_stops_at_total(_wd_home) -> None:
+    stub = _WdStub([_wd_job(i) for i in range(1, 4)])
+    assert len(_wd_fetch(stub)) == 3
+    assert len(stub.posts) == 1
+
+
+def test_workday_caps_list_at_200(_wd_home) -> None:
+    stub = _WdStub([_wd_job(i) for i in range(1, 251)])
+    assert len(_wd_fetch(stub)) == 200
+    assert len(stub.posts) == 10
+
+
+def test_workday_detail_text_reaches_posting(_wd_home) -> None:
+    stub = _WdStub([_wd_job(1)])
+    job = _wd_fetch(stub)[0]
+    assert "Build things." in job.text
+    assert "- Python" in job.text
+    assert job.remote is True
+    assert stub.details == [f"{_WD_BASE}/job/Remote/Engineer-1_R1"]
+
+
+def test_workday_detail_cap_and_report_line(_wd_home) -> None:
+    stub = _WdStub([_wd_job(i) for i in range(1, 46)])
+    jobs = _wd_fetch(stub)
+    assert len(stub.details) == 40
+    assert [bool(j.text) for j in jobs] == [True] * 40 + [False] * 5
+    assert jobs.notes == ["Acme: 5 more Workday jobs will be read on the next run"]
+
+
+def test_workday_fetch_all_carries_report_line(_wd_home) -> None:
+    stub = _WdStub([_wd_job(i) for i in range(1, 43)])
+    result = fetch.fetch_all([_co("Acme", "workday", _WD_SLUG)], http=stub, sleep=lambda _s: None)
+    assert len(result.postings) == 42
+    assert result.notes == ("Acme: 2 more Workday jobs will be read on the next run",)
+
+
+def test_workday_failed_detail_keeps_posting_with_note(_wd_home) -> None:
+    job = _wd_fetch(_WdStub([_wd_job(1)], fail_detail=True))[0]
+    assert job.title == "Engineer 1"
+    assert job.text == "Only the job title and location are available for this job."
+
+
+def test_workday_seen_jobs_get_no_detail_request(_wd_home) -> None:
+    from whyline.jobs import seen
+
+    stub = _WdStub([_wd_job(1), _wd_job(2)])
+    seen.new_only([fetch.Posting(uid=f"workday:{_WD_SLUG}:R1", company="Acme", title="Engineer 1")])
+    jobs = _wd_fetch(stub)
+    assert len(jobs) == 2
+    assert stub.details == [f"{_WD_BASE}/job/Remote/Engineer-2_R2"]
+    assert jobs[0].text == ""
+
+
+def test_workday_malformed_list_names_company(_wd_home) -> None:
+    def stub(url, headers=None, method="GET", body=None):
+        return b"" if url.endswith("/robots.txt") else b'{"unexpected": true}'
+
+    with pytest.raises(fetch.FetchError, match="Acme"):
+        _wd_fetch(stub)

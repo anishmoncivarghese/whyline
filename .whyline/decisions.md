@@ -30981,3 +30981,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 86c27db25f144ebaa17d57a4e886825b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:28:50.317Z"} -->
+
+## 2026-10-31 — Workday seen-check is a read-only SELECT on the seen store; report lines ride on a list subclass into a new FetchResult.notes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-30
+
+**Because:** seen.new_only records every posting, so calling it before the detail fetch would mark jobs seen with no text; _PARSERS signature is fixed so notes cannot be returned separately
+
+**Rejected:**
+
+- call seen.new_only — it mutates the store before details are read
+- change _PARSERS signature — breaks every other parser and board_jobs callers
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 1559fd19672d476e8abbe4f23ce2c242 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:40:38.370Z"} -->
+
+## 2026-11-01 — JOB-30 passes required targeted and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-30
+
+**Because:** uv run pytest -q tests/jobs and uv run pytest -q both exited 0, covering the required Workday paging, caps, details, seen-store, failure-note, report-line, and malformed-response behavior
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 6a8ee9347ad64149ad142567c7f4960e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:01:16.849Z"} -->
+
+## 2026-11-01 — Approve JOB-30 Workday fetching and coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-30
+
+**Because:** The diff implements Workday paging, the 200-list and 40-detail caps, seen-store suppression, detail normalization, failure fallback, report notes, and company-named malformed-response errors; uv run pytest -q tests/jobs and uv run pytest -q both exited 0 in independent review
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 31e732e1cea04e7d8ae53091740b8233 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:12:40.786Z"} -->
