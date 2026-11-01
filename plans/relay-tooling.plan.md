@@ -63,7 +63,7 @@ Global constraints:
   - the bot line includes the live summary when a relay runs
   - the bot line is unchanged when none runs, and when `live_status` raises
 
-- [ ] RST-4: Copy opens a selectable view of the transcript
+- [x] RST-4: Copy opens a selectable view of the transcript
   Edit `src/whyline/console/tui.py` and `tests/console/test_tui.py` only.
   Today **Copy** (`_copy_transcript`) puts the whole transcript on the clipboard. The transcript is a `RichLog`, which cannot select text, and a terminal drag selects whole screen rows, including the plan pane beside it.
   1. Move the text building out of `_copy_transcript` into `_transcript_text(events) -> str` (same `_PREFIX` lines as today), and the clipboard part into `_put_on_clipboard(text) -> str`. That helper tries `_system_copy`, falls back to `copy_to_clipboard`, and returns the message that `_copy_transcript` shows today, so both paths say the same thing.
