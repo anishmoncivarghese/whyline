@@ -12,13 +12,21 @@ Open `whyline console`, choose **Agents**, then **Jobs**. Every step below is a
 button on that screen. The `whyline jobs …` commands do the same things for
 scripts, but you never need a terminal.
 
-1. **Import CV…** (a `.md`, `.txt` or `.docx` file) or **Paste CV…**.
+1. **Import CV…** (a `.md`, `.txt`, `.docx` or `.pdf` file) or **Paste CV…**.
+   A `.docx` usually gives the cleanest text. A scanned PDF is only a picture
+   of text, has no text to read, and is refused. If you paste a file path, it
+   may keep its quotes from Finder's Copy as Pathname; that is fine.
 2. Fill in your preferences (roles, seniority, locations, remote, salary,
    languages, deal-breakers) and press **Save**.
 3. **Review my CV.** An agent drafts a profile and a scoring rubric. Read
-   them, then **Accept** or **Discard**.
+   them, then **Accept** or **Discard**. The review is only useful when you
+   have a CV and saved preferences, so do steps 1 and 2 first. Use **Choose
+   file…** to pick the CV file, and **Stop** to cancel a review that is
+   running.
 4. In **Companies**, press **Suggest companies**, then **Check boards** to
-   find which public job board each one uses. **Accept** the ones you want,
+   find which public job board each one uses. Tick rows to act on several at
+   once, or press **Accept all suggested**. Suggested companies are never
+   fetched until you accept them. **Accept** the ones you want,
    **Remove** the rest, or use **Add company…**. **Fetch now** runs a fetch
    straight away.
 5. Go to **Agents → New agent → Start from template → Daily job shortlist**.
@@ -77,8 +85,13 @@ its logs, so those copies of job data live outside `~/.whyline/jobs/`.
 whyline reads only these:
 
 - **Public job-board APIs** for the companies you accept: Greenhouse, Lever,
-  Ashby, Workable, SmartRecruiters and Recruitee. These are documented,
-  public endpoints meant for this use.
+  Ashby, Workable, SmartRecruiters, Recruitee and Workday. These are
+  documented, public endpoints meant for this use.
+- **Workday boards.** **Check boards** finds a company's Workday board from a
+  direct link or from its careers page. When it cannot, paste the company's
+  Workday job-board link into the company's board field. whyline respects each
+  Workday host's `robots.txt` and reads at most 40 new job descriptions per
+  company per run.
 - **A company's careers page**, only when it publishes schema.org
   `JobPosting` data for search engines and robots.txt allows it.
 - **Job-alert emails** that you choose to receive.

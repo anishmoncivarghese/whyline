@@ -31149,3 +31149,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d61c367f230e40e28235b9fe7dacbb70 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:18:39.977Z"} -->
+
+## 2026-11-01 — Pass JOB-32 because job-search documentation accurately covers Part 4 CV, review, company, and Workday requirements
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** JOB-32
+
+**Because:** docs/job-search.md correctly lists the four CV formats (.md, .txt, .docx, .pdf) noting .docx text clarity, scanned PDF refusal, and Finder path quotes; details CV review controls (Choose file…, Stop) and preferences prerequisite; explains company batch selection, bulk accept, and deferred fetching; documents Workday board discovery, manual linking fallback, robots.txt compliance, and 40-description run limit; git diff --check is clean and uv run pytest -q passed at 100% with one skip
+
+**Files:** docs/job-search.md
+
+<!-- whyline-event: 9f7a3bf528364a41b8be94e69d29bb3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:41:06.372Z"} -->
+
+## 2026-11-01 — Approve JOB-32 because docs/job-search.md accurately covers Part 4 CV formats, review controls, company batch selection, and Workday board integration
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** JOB-32
+
+**Because:** The documentation precisely details the 4 CV formats (.md, .txt, .docx, .pdf), notes .docx text clarity, scanned PDF refusal, and Finder path quotes; explains CV review controls (Choose file…, Stop) with preferences prerequisites; describes row ticking and bulk accept for suggested companies without pre-emptive fetching; specifies Workday board discovery, manual linking fallback, robots.txt adherence, and 40-description limit per run; tests pass with 100% (1 skip) and git diff --check is clean
+
+**Files:** docs/job-search.md
+
+<!-- whyline-event: 053f87d42f71400db042e7fe2045a1cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:52:31.973Z"} -->
