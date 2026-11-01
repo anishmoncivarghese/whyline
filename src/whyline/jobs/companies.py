@@ -35,8 +35,13 @@ ATS_KINDS = (
     "workable",
     "smartrecruiters",
     "recruitee",
+    "workday",
     "careers_page",
     "unknown",
+)
+CAREERS_URL_GUIDANCE = (
+    "For `careers_hint`, give the page where the company's jobs are listed. When the company "
+    "uses a myworkdayjobs.com, Greenhouse or Lever job board, give that board's link instead."
 )
 ADDED_BY_KINDS = ("ai", "user")
 COMPANY_KEYS = (
@@ -557,6 +562,7 @@ def suggest(
     except (CompanyError, d.DefinitionError, OSError) as error:
         return SuggestResult(ok=False, outcome="failed", reason=str(error))
 
+    defn = replace(defn, instructions=f"{defn.instructions.rstrip()}\n\n{CAREERS_URL_GUIDANCE}\n")
     if chosen is not None:
         run_defn = replace(defn, root=jobs_dir, runner=chosen, backup=())
     else:

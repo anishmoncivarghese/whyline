@@ -35,7 +35,11 @@ PRIVACY_SENTENCE = (
 )
 
 UNKNOWN_BOARD_HINT = "No public job board found: add its careers page URL"
-UNSAVED_PROMPT = "Save your preference changes?"
+NO_BOARD_HELP = (
+    "No board found. If the company's job search is on myworkdayjobs.com, "
+    "paste that link with Add company… and the same name."
+)
+UNSAVED_PROMPT ="Save your preference changes?"
 NO_PREFERENCES_NOTE = (
     "No preferences saved, so the rubric ignores roles, location and salary. "
     "Fill them in, Save, and review again."
@@ -1228,7 +1232,10 @@ class JobsHomeScreen(ModalScreen):
         text = ""
         if 0 <= table.cursor_row < len(self._company_rows):
             item = self._company_rows[table.cursor_row]
-            text = " · ".join(part for part in (item.reason, item.careers_url) if part)
+            help_text = NO_BOARD_HELP if item.ats in ("unknown", "careers_page") else ""
+            text = " · ".join(
+                part for part in (item.reason, item.careers_url, help_text) if part
+            )
         detail.update(text)
 
     def _update_company_labels(self) -> None:

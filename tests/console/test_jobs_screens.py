@@ -701,7 +701,9 @@ async def test_company_detail_line_follows_the_cursor() -> None:
 
         screen.query_one("#jh-companies-table", DataTable).move_cursor(row=1)
         await pilot.pause()
-        assert _plain(detail.render()).strip() == ("a very long reason " * 5).strip()
+        shown = _plain(detail.render())
+        assert shown.startswith(("a very long reason " * 5).strip())
+        assert "No board found." in shown
 
 
 async def test_company_rows_refresh_after_a_worker_finishes() -> None:
@@ -748,6 +750,28 @@ async def test_unknown_board_company_shows_the_careers_url_hint() -> None:
         rows = _table_rows(screen)
         assert rows[0][3] == "No public job board found: add its careers page URL"
         assert rows[1][3] == "lever (globex)"
+
+
+async def test_no_board_company_detail_explains_how_to_add_a_workday_link() -> None:
+    from whyline.console.jobs_screens import NO_BOARD_HELP
+
+    assert "myworkdayjobs.com" in NO_BOARD_HELP and "Add company…" in NO_BOARD_HELP
+    store = [
+        _co("Acme"),
+        _co("Globex", ats="careers_page"),
+        _co("Initech", ats="workday", slug="initech/wd1/Site"),
+    ]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, {"accept": [], "remove": []})
+        app.push_screen(screen)
+        await pilot.pause()
+        detail = screen.query_one("#jh-company-detail", tui.Static)
+        table = screen.query_one("#jh-companies-table", DataTable)
+        for row, expected in ((0, True), (1, True), (2, False)):
+            table.move_cursor(row=row)
+            await pilot.pause()
+            assert (NO_BOARD_HELP in _plain(detail.render())) is expected
 
 
 async def test_jobs_home_screen_with_companies_fits_80x24() -> None:

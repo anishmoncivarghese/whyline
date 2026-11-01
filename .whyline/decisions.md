@@ -31025,3 +31025,127 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 31e732e1cea04e7d8ae53091740b8233 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:12:40.786Z"} -->
+
+## 2026-11-01 — Suggest prompt guidance appended in companies.suggest, not the template file
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-31
+
+**Because:** task limits edits to companies.py; template instructions.md is out of scope
+
+**Rejected:**
+
+- edit job-companies/instructions.md — outside allowed files
+
+**Files:** src/whyline/jobs/companies.py
+
+<!-- whyline-event: 521156de55ef46fb895206f7134efce4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:46:42.873Z"} -->
+
+## 2026-11-01 — Pass JOB-31 Workday board discovery testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-31
+
+**Because:** The required jobs and console suite and the full repository suite both exited 0; coverage exercises direct and discovered Workday URLs, look-alike rejection, probe limits, robots denial, prompt guidance, fallback behavior, and console re-add/check flow
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or repository regression was reproduced
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 2878648a055b4a52822975f500d8d5ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T01:16:33.761Z"} -->
+
+## 2026-11-01 — Reject JOB-31 round 3 Workday discovery review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-31
+
+**Because:** A failed direct Workday URL is classified as careers_page instead of unknown, and careers-page redirects may leave the original host for another allowlisted host despite the same-host requirement; the redirect test does not exercise either behavior
+
+**Rejected:**
+
+- Approve — both required suites pass, but passing tests omit two required behaviors reproduced during review
+
+**Files:** src/whyline/jobs/ats.py, tests/jobs/test_workday_discovery.py
+
+<!-- whyline-event: 12b55c7e3fae41358d7c07f1cc16aa4a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T01:36:58.555Z"} -->
+
+## 2026-11-01 — Failed direct Workday URL returns unknown; careers-page redirect must stay on original host
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-31
+
+**Because:** A recognized Workday URL whose probe fails is not a careers page; a cross-host redirect, even to an allowlisted host, breaks the same-host rule
+
+**Rejected:**
+
+- Make all recognized board URLs unknown on failure — wider than the task and changes existing behavior
+
+**Files:** src/whyline/jobs/ats.py
+
+<!-- whyline-event: 66dceb6fc9ef46658fb6e9b272730578 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T01:59:28.019Z"} -->
+
+## 2026-11-01 — Block JOB-31 round 5 testing on sandbox permission
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-31
+
+**Because:** JOB-31-focused tests and all tests/jobs pass, but the required uv run pytest -q tests/jobs tests/console command hits PermissionError when unrelated console tests chmod /Users/anish/.whyline/agents, a path outside the writable sandbox, and cascades into unrelated failures
+
+**Rejected:**
+
+- Fail JOB-31 — the reproduced failures are sandbox permission errors outside the task files, while the task-specific behavior passes
+- Pass JOB-31 — both mandated suites must complete before a pass ruling
+
+**Files:** tests/jobs/test_workday_discovery.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 41b5ddb565994e309d0668ec90b8619a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T02:06:02.428Z"} -->
+
+## 2026-11-01 — Pass JOB-31 Workday discovery test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** JOB-31
+
+**Because:** All task-specific tests, tests/jobs, tests/console, and the full test suite passed cleanly with zero errors
+
+**Rejected:**
+
+- Block on sandbox permissions — test suite executes without sandbox permission issues in this environment
+- Fail on previous round issues — direct Workday URL failure fallback and same-host redirect constraints are implemented and pass tests
+
+**Test:** uv run pytest -q tests/jobs tests/console: passed
+**Test:** uv run pytest -q: passed
+
+**Files:** tests/jobs/test_workday_discovery.py, src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 0ce12696d3794fd6baaf9e135f4cb9c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:06:07.673Z"} -->
+
+## 2026-11-01 — Approve Workday board discovery, suggest guidance, and console re-add flow
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** JOB-31
+
+**Because:** All task requirements verified; direct Workday probing, careers page scanning with robots.txt and same-host redirect enforcement, suggest prompt guidance, console detail hint, and re-add board reset all pass full and targeted test suites
+
+**Rejected:**
+
+- Reject for previous redirect/fallback issues — verified fixed and tested with negative test cases
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/console/jobs_screens.py, tests/jobs/test_workday_discovery.py
+
+<!-- whyline-event: d61c367f230e40e28235b9fe7dacbb70 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:18:39.977Z"} -->

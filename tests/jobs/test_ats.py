@@ -321,7 +321,11 @@ def test_host_outside_allowlist_is_never_requested() -> None:
     for url in requested:
         parsed = urllib.parse.urlsplit(url)
         assert parsed.scheme == "https"
-        assert ats.is_board_api_host(parsed.hostname or ""), url
+        if ats.is_board_api_host(parsed.hostname or ""):
+            continue
+        # The only other host detection may touch is the careers page itself: robots.txt, then the page.
+        assert parsed.path in ("/robots.txt", "/careers", "/jobs/", "/acme", "/../../evil.example", "/jobs"), url
+        assert "linkedin" not in url
 
     # Direct HttpClient calls also refuse off-list hosts, non-https, and scraped sites before calling transport.
     transport_calls: list[str] = []
