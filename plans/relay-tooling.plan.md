@@ -175,7 +175,7 @@ Rules every task keeps:
   - an agent outside the run's `[agents]` is refused
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] LIVE-2: Agents for this run screen
+- [x] LIVE-2: Agents for this run screen
   Edit `src/whyline/console/relay_screens.py`, `src/whyline/console/tui.py` (`_sync_relay_buttons` and the `relay-setup` handler) and `tests/console/test_relay_screens.py` / `tests/console/test_tui.py` only.
   1. `_sync_relay_buttons` no longer disables **Set up** while a relay runs.
   2. The `relay-setup` handler opens the new `RunAgentsScreen` when `relay_ops.live_run` is not None. Otherwise it opens `RelaySetupScreen` as today. **Change agents…** at a pause keeps opening `RelaySetupScreen`.
