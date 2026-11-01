@@ -129,7 +129,7 @@ Global constraints:
   - a new turn clears
   - the implement stage shows nothing
 
-- [ ] RTL-1: Publish whyline with RST-1..7, and install whyline-relay with RLY-1..13
+- [x] RTL-1: Publish whyline with RST-1..7, and install whyline-relay with RLY-1..13
   relay-profile: release
   Part 2 onwards raise the `whyline-relay` floor, so this pause makes sure that release exists first.
   1. In `~/whyline-relay`, RLY-1..13 (`relay-followups-plan.md`) are implemented, released to PyPI, and `uv tool upgrade whyline-relay` shows the new version. If not, stop here and do that first.
