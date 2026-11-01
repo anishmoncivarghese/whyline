@@ -432,6 +432,109 @@ def test_current_roles_does_not_swallow_read_backup_config_error(repo):
         relay_ops.current_roles(repo)
 
 
+def _mark_running(repo: Path, role: str, agent: str) -> None:
+    import json
+    import os
+
+    from whyline_relay import running
+
+    target = running.path(repo)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps({
+            "agent": agent, "task": "T-1", "round": 1,
+            "started": "2026-11-01T10:00:00+05:30", "pid": os.getpid(), "role": role,
+        }),
+        encoding="utf-8",
+    )
+
+
+def _by_role(repo: Path) -> dict:
+    return {r.role: r for r in relay_ops.run_roles(repo)}
+
+
+def test_run_roles_without_a_switch(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    implementer = _by_role(repo)["implementer"]
+    assert (implementer.configured, implementer.current) == ("grok", "grok")
+    assert (implementer.reason, implementer.since, implementer.pending) == ("", "", False)
+
+
+def test_run_roles_names_a_usage_limit_and_a_manual_switch(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    relay_ops.switch_live(repo, "tester", "grok", keep=False)
+    roles = _by_role(repo)
+    assert (roles["implementer"].current, roles["implementer"].reason) == ("claude", "usage limit")
+    assert roles["implementer"].since == "2026-10-21T10:00:00+05:30"
+    assert (roles["tester"].current, roles["tester"].reason) == ("grok", "switched by you")
+
+
+def test_run_roles_pending_only_when_the_marker_agent_differs(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    _mark_running(repo, "implementer", "grok")
+    roles = _by_role(repo)
+    assert roles["implementer"].pending is True
+    assert roles["tester"].pending is False
+    _mark_running(repo, "implementer", "claude")
+    assert _by_role(repo)["implementer"].pending is False
+
+
+def test_switch_live_back_to_the_configured_agent_clears_the_switch(repo):
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    message = relay_ops.switch_live(repo, "implementer", "grok", keep=False)
+    assert "back to grok" in message
+    assert _switched(repo) == {}
+
+
+def test_switch_live_with_keep_saves_the_role_then_writes_the_switch(repo):
+    from whyline_relay import config, failover
+
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    relay_ops.switch_live(repo, "implementer", "antigravity", keep=True)
+    assert relay_ops.current_roles(repo)["implementer"] == "antigravity"
+    assert relay_ops.current_roles(repo)["backup"] == ["claude"]
+    override = failover.read_overrides(repo)["implementer"]
+    assert (override.agent, override.reason, override.keep) == ("antigravity", "manual", True)
+    assert "antigravity" in config.config_path(repo).read_text(encoding="utf-8")
+
+
+def test_switch_live_without_keep_leaves_the_config_alone(repo):
+    from whyline_relay import config
+
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    before = config.config_path(repo).read_text(encoding="utf-8")
+    relay_ops.switch_live(repo, "implementer", "claude", keep=False)
+    assert config.config_path(repo).read_text(encoding="utf-8") == before
+    assert _switched(repo) == {"implementer": "claude"}
+
+
+def test_switch_live_with_keep_and_the_stored_agent_only_switches(repo):
+    from whyline_relay import config
+
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    _switch(repo, "implementer", "claude", "grok")
+    before = config.config_path(repo).read_text(encoding="utf-8")
+    relay_ops.switch_live(repo, "implementer", "grok", keep=True)
+    assert config.config_path(repo).read_text(encoding="utf-8") == before
+    assert _switched(repo) == {}
+
+
+def test_switch_live_refuses_an_agent_outside_the_run(repo):
+    from whyline_relay import config
+
+    relay_ops.save_roles(repo, "grok", "codex", "codex", ["claude"])
+    before = config.config_path(repo).read_text(encoding="utf-8")
+    assert "nonesuch" not in relay_ops.run_agent_choices(repo)
+    with pytest.raises(ValueError, match="nonesuch is not set up"):
+        relay_ops.switch_live(repo, "implementer", "nonesuch", keep=True)
+    assert config.config_path(repo).read_text(encoding="utf-8") == before
+    assert _switched(repo) == {}
+
+
 def test_list_plans_reads_markers_counts_and_the_legacy_plan(repo):
     plans = repo / "plans"
     plans.mkdir()

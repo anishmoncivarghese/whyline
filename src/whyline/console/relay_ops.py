@@ -637,6 +637,86 @@ def save_roles(
     )
 
 
+_SWITCH_REASONS = {
+    "rate-limit": "usage limit",
+    "auth": "signed out",
+    "manual": "switched by you",
+}
+
+
+@dataclass(frozen=True)
+class RunRole:
+    """One role of the running relay: its configured agent, the agent it uses
+    now, and why they differ ("" when not switched). `pending` means the live
+    run is on another agent for this role, so `current` starts next turn."""
+
+    role: str
+    configured: str
+    current: str
+    reason: str
+    since: str
+    pending: bool
+
+
+def run_roles(root: Path) -> list[RunRole]:
+    from whyline_relay import failover, running
+
+    overrides = failover.read_overrides(root)
+    marker = running.live(root)
+    roles = []
+    for role, configured in current_roles(root).items():
+        if role == "backup":
+            continue
+        override = overrides.get(role)
+        current = configured if override is None else override.agent
+        roles.append(
+            RunRole(
+                role=role,
+                configured=configured,
+                current=current,
+                reason=""
+                if override is None
+                else _SWITCH_REASONS.get(override.reason, override.reason),
+                since="" if override is None else override.since,
+                pending=marker is not None
+                and marker.role == role
+                and marker.agent != current,
+            )
+        )
+    return roles
+
+
+def run_agent_choices(root: Path) -> list[str]:
+    """The agents in the relay's [agents] table: the only ones roles.switch
+    accepts."""
+    return sorted(_settings(root).agents)
+
+
+def switch_live(root: Path, role: str, agent: str, *, keep: bool) -> str:
+    """Point `role` at `agent` from its next turn. With `keep`, also save it as
+    the role's configured agent."""
+    from whyline_relay import roles
+
+    settings = _settings(root)
+    if agent not in settings.agents:  # refused before anything is saved
+        raise ValueError(f"{agent} is not set up for this relay")
+    try:
+        if keep:
+            stored = current_roles(root)
+            if stored.get(role) not in (None, agent) and role != "backup":
+                # Saved first: save_roles clears the switches its save made
+                # stale, so the switch written below must come after it. The
+                # settings above were read before the save, so the switch is
+                # still a switch away from the old agent and takes effect now.
+                picked = {k: stored[k] for k in ("implementer", "tester", "reviewer")}
+                picked[role] = agent
+                save_roles(root, picked["implementer"], picked["tester"], picked["reviewer"],
+                           stored["backup"])
+        return roles.switch(root, settings, role, agent, keep=keep)
+    except roles.RoleSetError as error:
+        raise ValueError(str(error)) from None
+
+
 def save_release(root: Path, value: str) -> None:
     from whyline_relay import setup
 

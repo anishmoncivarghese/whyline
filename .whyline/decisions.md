@@ -31564,3 +31564,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5833e000bc574cd782ded33882f7f488 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T10:44:19.329Z"} -->
+
+## 2026-11-01 — switch_live reads settings before save_roles when keep, and checks the agent against [agents] first
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-1
+
+**Because:** save_roles clears stale switches, so the switch must be written after it; stale settings keep the switch away from the old agent so it applies at once; refusing before saving avoids a half-applied keep
+
+**Rejected:**
+
+- load settings after save — configured would equal the agent, so switch just clears and nothing is written
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 4829f174a5084139b07cf61d98e774e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T17:37:06.715Z"} -->
+
+## 2026-11-01 — Pass LIVE-1 running-relay agent controls
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-1
+
+**Because:** The focused console suite and full repository suite both exited 0, covering role state, pending markers, allowed choices, switch persistence/order, config preservation, and invalid-agent rejection
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: ef3338593b2d43e5b9b5d3e120edd82a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T17:58:27.184Z"} -->
+
+## 2026-11-01 — Approve LIVE-1 Round 3 running-relay role controls
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIVE-1
+
+**Because:** The implementation matches the requested run-role projection, pending detection, agent choices, keep/save ordering, validation, and error translation; focused and full suites both exited 0 with one expected full-suite skip
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or coverage defect was found
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py, pyproject.toml, uv.lock
+
+<!-- whyline-event: 31cbbadc5f3a47cbbe16c7cf2083b528 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T18:19:28.076Z"} -->

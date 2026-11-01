@@ -255,7 +255,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0,<4.0" },
     { name = "pypdf", specifier = ">=5,<7" },
     { name = "textual", specifier = ">=2.1.2,<3.0" },
-    { name = "whyline-relay", specifier = ">=0.2.39,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.40,<0.3" },
 ]
 provides-extras = ["relay", "console", "ui", "all"]
 
@@ -263,14 +263,14 @@ provides-extras = ["relay", "console", "ui", "all"]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "whyline-relay", specifier = ">=0.2.39,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.40,<0.3" },
 ]
 
 [[package]]
 name = "whyline-relay"
-version = "0.2.39"
+version = "0.2.40"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/48/af/13febac6d2302ff1bf1863434115b593aa7f313422bbed94d541d5592b35/whyline_relay-0.2.39.tar.gz", hash = "sha256:37378cc31227e748df36c812b8380a08c9c937920bde30821017c63819f460a6", size = 284655, upload-time = "2026-10-24T11:07:09.502Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/87/03475fa45a57b3693009d96f519a468fba4bb071c7c8b83b713c3f6c6b8f/whyline_relay-0.2.40.tar.gz", hash = "sha256:e0748e14275004e0e8a571a6045d8d5577378011abf4639a0ae22ff5262c3c9d", size = 314821, upload-time = "2026-11-01T17:07:58.763Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/a4/4cf9e6a12131ae92925d9a73f683e8c23dbf632f074462580747dfe16c6a/whyline_relay-0.2.39-py3-none-any.whl", hash = "sha256:c56ffb974bb167dd58e9242424331a0243da4c4833130a450815bc9e2f626536", size = 150677, upload-time = "2026-10-24T11:07:08.447Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/cb/ebee470cf5da35f52f35be1de50924a9d98d044aff1dc9ff8828ebdee814/whyline_relay-0.2.40-py3-none-any.whl", hash = "sha256:11e47d32c031e94f189ced30eac702bc42796ffb5c5c80ef5e870f3baa178b45", size = 162823, upload-time = "2026-11-01T17:07:57.415Z" },
 ]
