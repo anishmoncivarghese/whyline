@@ -31175,3 +31175,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 053f87d42f71400db042e7fe2045a1cd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:52:31.973Z"} -->
+
+## 2026-11-01 — Merge unfinished plans into relay-tooling, release-button and workflows-2-to-4; archive finished plans in plans/done/
+
+**Actor:** claude
+**Role:** planner
+**Task:** plans-cleanup
+
+**Because:** user asked for fewer plans and expired ones removed; each merged file keeps the originals as Part sections, and plans/done/ is outside the console picker's glob but keeps paths docs refer to
+
+**Rejected:**
+
+- Delete finished plans — docs and specs link to them
+
+**Files:** plans/relay-tooling.plan.md, plans/release-button.plan.md, plans/workflows-2-to-4.plan.md
+
+<!-- whyline-event: 02801e6cf593427e89908cca6748ca8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T06:06:16.988Z"} -->
+
+## 2026-11-01 — Release 0.3.60 from main after merging the job-search-4 relay branch, tested on 3.13 CI-like and 3.11
+
+**Actor:** claude
+**Role:** release
+**Task:** release-0.3.60
+
+**Because:** relay finished JOB-23..32 and the user asked for tag, push and PyPI in auto mode; main had plan-only commits so the merge was clean
+
+**Rejected:**
+
+- Tag the relay branch directly — main would lack the plan reorganisation
+
+**Files:** docs/releases/v0.3.60.md, pyproject.toml
+
+<!-- whyline-event: 5d642f198d404a4e8629b43e1163fe2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T06:06:17.074Z"} -->
