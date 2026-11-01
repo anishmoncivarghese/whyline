@@ -2134,7 +2134,7 @@ class WhylineConsoleApp(App):
         running = self._relay is not None and self._relay.running()
         self._main("#relay-run", Button).disabled = not in_relay or running
         self._main("#relay-plan", Button).disabled = not in_relay
-        self._main("#relay-setup", Button).disabled = not in_relay or running
+        self._main("#relay-setup", Button).disabled = not in_relay
         try:
             paused = in_relay and relay_ops.paused_run(self.session.root)
         except Exception:  # no relay installed, unreadable state: not resumable
@@ -3793,7 +3793,18 @@ class WhylineConsoleApp(App):
         elif button_id == "relay-plan":
             self._open_relay_plan()
         elif button_id == "relay-setup":
-            self._open_relay_setup(plan=self._setup_plan_hint)
+            try:
+                live = relay_ops.live_run(self.session.root)
+            except Exception:
+                live = None
+            if live is not None:
+                from whyline.console.relay_screens import RunAgentsScreen
+
+                # live_run returns "<task>, <agent>"; the title wants the task only
+                task = live.rsplit(", ", 1)[0]
+                self.push_screen(RunAgentsScreen(self.session.root, task))
+            else:
+                self._open_relay_setup(plan=self._setup_plan_hint)
         elif button_id in ("pause-change-agents", "change-agents"):
             self._open_relay_setup()
 

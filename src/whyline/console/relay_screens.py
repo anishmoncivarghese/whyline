@@ -2297,6 +2297,273 @@ class RelaySetupScreen(ModalScreen):
             return  # the popup's children were removed during teardown
 
 
+class RunAgentsScreen(ModalScreen):
+    """Set up while a relay runs: change which agent a role uses from its next
+    turn. The running turn is never touched; plan and settings are read-only."""
+
+    DEFAULT_CSS = """
+    RunAgentsScreen { align: center middle; }
+    RunAgentsScreen > Vertical {
+        width: 90; max-width: 100%; height: auto; max-height: 100%; padding: 0 2;
+        border: thick $accent; background: $surface;
+    }
+    RunAgentsScreen Horizontal { height: auto; }
+    RunAgentsScreen .field-label { width: 16; padding: 1 1 0 0; }
+    RunAgentsScreen Select { width: 30; }
+    RunAgentsScreen .ra-reason { padding: 0 0 0 16; color: $text-muted; height: auto; }
+    RunAgentsScreen .ra-reason.-empty { display: none; }
+    RunAgentsScreen .ra-back { margin-left: 1; }
+    RunAgentsScreen #ra-summary { color: $text-muted; padding: 1 0 0 0; height: auto; }
+    RunAgentsScreen #ra-error { color: $error; height: auto; }
+    RunAgentsScreen #ra-result { height: auto; }
+    RunAgentsScreen #ra-status { color: $warning; height: auto; }
+    """
+
+    ROLES = (
+        ("implementer", "Implementer"),
+        ("tester", "Tester"),
+        ("reviewer", "Reviewer"),
+    )
+    REFRESH_SECONDS = 2.0
+    STOPPED = "The relay has stopped. Use Set up to change everything."
+    READ_ONLY = (
+        "Plan and settings stay as they are while the relay runs. "
+        "Stop the relay to change them."
+    )
+
+    def __init__(
+        self,
+        root: Path,
+        task: str = "",
+        *,
+        run_roles_fn=None,
+        switch_fn=None,
+        choices_fn=None,
+        running_fn=None,
+        summary_fn=None,
+    ) -> None:
+        super().__init__()
+        self._root = root
+        self._run_task = task
+        self._run_roles_fn = run_roles_fn or (lambda: relay_ops.run_roles(root))
+        self._switch_fn = switch_fn or (
+            lambda role, agent, *, keep: relay_ops.switch_live(root, role, agent, keep=keep)
+        )
+        self._choices_fn = choices_fn or (lambda: relay_ops.run_agent_choices(root))
+        self._running_fn = running_fn or (lambda: relay_ops.live_run(root))
+        self._summary_fn = summary_fn or self._read_summary
+        self._rows: dict[str, object] = {}
+        self._stopped = False
+        self._busy = False
+        self._refreshing = False
+
+    def _read_summary(self) -> str:
+        root = self._root
+        lines = []
+        try:
+            plan = relay_ops.configured_plan(root)
+            lines.append(f"Plan: {plan.name if plan else 'not set'}")
+            counts = relay_ops._counts(plan.read_text(encoding="utf-8")) if plan else None
+            if counts:
+                lines.append(f"Steps: {counts[0]} of {counts[1]} done")
+        except Exception:
+            pass
+        try:
+            from whyline_relay import config
+
+            lines.append(f"Rounds: up to {config.load(root).max_rounds} per task")
+        except Exception:
+            pass
+        try:
+            lines.append(f"Timeout: {relay_ops.relay_timeout(root)} min per turn")
+            roles = relay_ops.current_roles(root)
+            models = []
+            for agent in sorted({roles[r] for r, _ in self.ROLES}):
+                model = relay_ops.read_agent_model(root, agent)
+                models.append(f"{agent} {model}" if model else agent)
+            lines.append("Models: " + ", ".join(models))
+            lines.append("Backup chain: " + (" → ".join(roles["backup"]) or "none"))
+        except Exception:
+            pass
+        return "\n".join(lines)
+
+    def compose(self) -> ComposeResult:
+        try:
+            roles = list(self._run_roles_fn())
+        except Exception:
+            roles = []
+        try:
+            choices = list(self._choices_fn())
+        except Exception:
+            choices = []
+        self._rows = {item.role: item for item in roles}
+        children: list = [Label(f"Agents for this run · {self._run_task}")]
+        for item in roles:
+            options = sorted({*choices, item.current, item.configured})
+            children.append(
+                Horizontal(
+                    Label(dict(self.ROLES).get(item.role, item.role), classes="field-label"),
+                    Select(
+                        [(name, name) for name in options],
+                        value=item.current,
+                        allow_blank=False,
+                        id=f"ra-{item.role}",
+                    ),
+                    Button(
+                        f"Back to {item.configured}",
+                        id=f"ra-back-{item.role}",
+                        classes="ra-back",
+                    ),
+                )
+            )
+            children.append(Static("", id=f"ra-reason-{item.role}", classes="ra-reason"))
+        children += [
+            Checkbox("Keep for future runs", True, id="ra-keep"),
+            Static("", id="ra-summary"),
+            Static(self.READ_ONLY),
+            Static("", id="ra-status"),
+            Static("", id="ra-result"),
+            Static("", id="ra-error"),
+            Horizontal(
+                Button("Save", id="ra-save", variant="primary"),
+                Button("Close", id="ra-close"),
+            ),
+        ]
+        yield Vertical(*children)
+
+    def on_mount(self) -> None:
+        for item in self._rows.values():
+            self._show_row(item)
+        try:
+            summary = self._summary_fn()
+        except Exception:
+            summary = ""
+        self.query_one("#ra-summary", Static).update(summary)
+        self.set_interval(self.REFRESH_SECONDS, self._refresh)
+
+    def _show_row(self, item) -> None:
+        reason = self.query_one(f"#ra-reason-{item.role}", Static)
+        if item.reason:
+            since = f", since {item.since}" if item.since else ""
+            text = f"now {item.current} ({item.reason}{since})"
+            if item.pending:
+                text += " · applies from its next turn"
+            reason.update(text)
+            reason.remove_class("-empty")
+        else:
+            reason.update("")
+            reason.add_class("-empty")
+        back = self.query_one(f"#ra-back-{item.role}", Button)
+        back.label = f"Back to {item.configured}"
+        back.display = item.current != item.configured
+
+    def _refresh(self) -> None:
+        if self._refreshing or self._stopped:
+            return
+        self._refreshing = True
+
+        def in_thread() -> None:
+            try:
+                running = self._running_fn()
+                roles = list(self._run_roles_fn()) if running else []
+            except Exception:
+                running, roles = True, None  # a failed read keeps what is shown
+            self.app.call_from_thread(self._refreshed, running, roles)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _refreshed(self, running, roles) -> None:
+        self._refreshing = False
+        if not self.is_attached:
+            return
+        try:
+            if not running:
+                self._stopped = True
+                self.query_one("#ra-status", Static).update(self.STOPPED)
+                self.query_one("#ra-save", Button).disabled = True
+                for item in self._rows.values():
+                    self.query_one(f"#ra-back-{item.role}", Button).disabled = True
+                return
+            for item in roles or []:
+                old = self._rows.get(item.role)
+                if old is None or old == item:
+                    continue
+                self._rows[item.role] = item
+                select = self.query_one(f"#ra-{item.role}", Select)
+                if old.current != item.current:
+                    try:
+                        select.value = item.current
+                    except Exception:  # not one of the options built at open
+                        pass
+                self._show_row(item)
+        except NoMatches:
+            return  # the popup's children were removed during teardown
+
+    def _set_busy(self, busy: bool) -> None:
+        self._busy = busy
+        self.query_one("#ra-save", Button).disabled = busy or self._stopped
+        for item in self._rows.values():
+            self.query_one(f"#ra-back-{item.role}", Button).disabled = busy or self._stopped
+
+    def _apply(self, calls: list[tuple[str, str]], keep: bool) -> None:
+        if self._busy or self._stopped:
+            return
+        if not calls:
+            self.query_one("#ra-result", Static).update("Nothing changed.")
+            return
+        self._set_busy(True)
+        self.query_one("#ra-error", Static).update("")
+        self.query_one("#ra-result", Static).update("")
+
+        def in_thread() -> None:
+            lines: list[str] = []
+            error = ""
+            for role, agent in calls:
+                try:
+                    lines.append(str(self._switch_fn(role, agent, keep=keep)))
+                except Exception as exc:
+                    error = str(exc) or exc.__class__.__name__
+                    break
+            self.app.call_from_thread(self._applied, lines, error)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _applied(self, lines: list[str], error: str) -> None:
+        if not self.is_attached:
+            return
+        try:
+            self._set_busy(False)
+            self.query_one("#ra-result", Static).update("\n".join(lines))
+            self.query_one("#ra-error", Static).update(error)
+        except NoMatches:
+            return
+        if lines and hasattr(self.app, "render_event"):
+            from whyline.console.session import SessionEvent
+
+            for line in lines:
+                self.app.render_event(SessionEvent(kind="output", text=line))
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id or ""
+        if button_id == "ra-close":
+            self.dismiss(None)
+        elif button_id == "ra-save":
+            calls = []
+            for role, _label in self.ROLES:
+                item = self._rows.get(role)
+                if item is None:
+                    continue
+                value = self.query_one(f"#ra-{role}", Select).value
+                if isinstance(value, str) and value != item.current:
+                    calls.append((role, value))
+            self._apply(calls, self.query_one("#ra-keep", Checkbox).value)
+        elif button_id.startswith("ra-back-"):
+            item = self._rows.get(button_id[len("ra-back-"):])
+            if item is not None:
+                self._apply([(item.role, item.configured)], True)
+
+
 class ResolveProposalScreen(ModalScreen):
     """The Resolve proposal screen showing the diagnosis and numbered steps."""
 

@@ -31611,3 +31611,122 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 31cbbadc5f3a47cbbe16c7cf2083b528 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T18:19:28.076Z"} -->
+
+## 2026-11-01 — RunAgentsScreen updates rows in place on refresh instead of recomposing
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-2
+
+**Because:** keeps the user's unsaved Select picks for roles that did not change, and avoids duplicate widget ids
+
+**Rejected:**
+
+- remount all rows every 2s — would discard unsaved picks
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 787d208954af4f27a899fd8ea9997bc7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T18:42:36.673Z"} -->
+
+## 2026-11-01 — Fail LIVE-2 Round 2 because the running-agents summary is incomplete
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-2
+
+**Because:** Both required suites pass, but RunAgentsScreen._read_summary omits the plan step count and the line from What the user gets, so the modal does not show all required read-only run context
+
+**Rejected:**
+
+- Pass — green tests do not cover or satisfy the missing summary fields
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: b383ec3d16f44d62ad993f5f81bf27d8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T19:10:59.869Z"} -->
+
+## 2026-11-01 — RunAgentsScreen default summary adds plan step count; the read-only line stays its own Static
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-2
+
+**Because:** summary_fn is injectable, so the READ_ONLY line must not depend on it; steps come from relay_ops._counts
+
+**Rejected:**
+
+- Fold READ_ONLY into _read_summary — it would vanish whenever summary_fn is stubbed
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: c621f12a5f0743b3b051a5260099661b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T19:33:58.897Z"} -->
+
+## 2026-11-01 — Fail LIVE-2 Round 4 because the real-run modal title includes the agent
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-2
+
+**Because:** Both required suites pass, but the relay-setup handler passes live_run's task-and-agent string directly to RunAgentsScreen, so production renders Agents for this run · <task>, <agent> instead of the required task-only title
+
+**Rejected:**
+
+- Pass — green tests stub live_run with a task-only value and do not exercise its production return contract
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: fe9fb619d096490db5d55a790a4b3c41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T20:04:39.791Z"} -->
+
+## 2026-11-01 — RunAgentsScreen title shows task only; tui handler strips the agent from live_run's '<task>, <agent>'
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-2
+
+**Because:** live_run returns task and agent joined by a comma; the spec title is task-only. Also renamed screen attr _task to _run_task: it shadowed Textual's MessagePump._task and rendered a Task object
+
+**Rejected:**
+
+- Change relay_ops.live_run to return task only — out of the allowed files and other callers use the agent
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py
+
+<!-- whyline-event: a9f2dc5c91e74a479da06ad93ee0a281 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T20:34:09.739Z"} -->
+
+## 2026-11-01 — Pass LIVE-2 Round 6: running-agent setup behavior is correct
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-2
+
+**Because:** The production live_run title contract is covered, the modal behavior matches all acceptance criteria, uv run pytest -q tests/console passed, and uv run pytest -q passed
+
+**Rejected:**
+
+- Fail — no behavioral defect or regression was found in inspection or either required suite
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: ad1745325f9d4c07bbe4fb5d0671264b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T21:05:18.790Z"} -->
+
+## 2026-11-01 — Approve LIVE-2 Round 7: Agents for this run meets the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIVE-2
+
+**Because:** The diff implements enabled running setup, correct modal routing and task-only title, threaded per-role switching with keep semantics and transcript results, failover refresh and stopped state; the tests cover the required behaviors, uv run pytest -q tests/console passed, and uv run pytest -q passed with one expected skip
+
+**Rejected:**
+
+- Request changes — no behavioral defect, unsafe signaling, scope violation, or missing required coverage was found
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: c2c098ef53564977a2abb2b37cac64aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T21:26:12.284Z"} -->
