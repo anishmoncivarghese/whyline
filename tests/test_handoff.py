@@ -66,3 +66,29 @@ def test_parse_test_uses_the_final_colon_as_the_result_separator():
 
 def test_load_returns_none_when_no_active_handoff_exists(repo):
     assert handoff.load(repo.path) is None
+
+
+def test_create_stores_issues_in_order(repo):
+    repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
+
+    record = handoff.create(
+        repo.path,
+        task="WL-1",
+        from_actor="codex",
+        to_actor="claude",
+        status="failed",
+        issues=["a.py:3 crashes", "b.py slow"],
+    )
+
+    assert record["issues"] == ["a.py:3 crashes", "b.py slow"]
+
+
+def test_format_text_numbers_issues_and_tolerates_records_without_them():
+    base = {"task": "WL-1", "from_actor": "a", "to_actor": "b", "status": "failed"}
+
+    text = handoff.format_text({**base, "summary": "s", "issues": ["one", "two"]})
+    assert "Issue          1. one" in text
+    assert "Issue          2. two" in text
+    assert text.index("Summary") < text.index("Issue          1.")
+
+    assert "Issue" not in handoff.format_text(base)

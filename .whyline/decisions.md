@@ -31423,3 +31423,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a5169732e0d04b1da93b6a69313331ee -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:16:35.639Z"} -->
+
+## 2026-11-01 — handoff --issue stored as issues list, shown numbered after Summary
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-5
+
+**Because:** mirrors risks storage; numbering lets testers' failures be cited in priority order
+
+**Rejected:**
+
+- reuse --risk — risks are not ordered defects and are not routed back to the implementer
+
+**Files:** src/whyline/handoff.py
+
+<!-- whyline-event: 569a497aae2b4c56a204aa211fd7ff2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:17:16.699Z"} -->
+
+## 2026-11-01 — RST-5 passes tester verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-5
+
+**Because:** Focused tests and the full project suite pass, while a direct CLI parser probe confirms repeated --issue values are forwarded in order and legacy records without issues still format through the covered test
+
+**Files:** src/whyline/cli.py, src/whyline/handoff.py, tests/test_cli.py, tests/test_handoff.py, .whyline/relay/prompts/test.md
+
+<!-- whyline-event: 6db169849295472daa473c519e925188 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:28:53.412Z"} -->
+
+## 2026-11-01 — Approve RST-5 issue handoff support
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-5
+
+**Because:** The repeatable CLI flag preserves order, create stores one-line issues, text output numbers them immediately after Summary while tolerating legacy records, the tester prompt requests prioritized concrete issues, and the full pytest suite exits 0
+
+**Files:** src/whyline/cli.py, src/whyline/handoff.py, tests/test_cli.py, tests/test_handoff.py, .whyline/relay/prompts/test.md
+
+<!-- whyline-event: 57483be2aa12431599230222e80a4f5e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T09:39:55.661Z"} -->

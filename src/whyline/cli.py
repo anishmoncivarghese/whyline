@@ -311,6 +311,7 @@ def _add_handoff(subparsers: "argparse._SubParsersAction") -> None:
     parser.add_argument("--file", action="append", default=[], dest="files")
     parser.add_argument("--test", action="append", default=[], dest="tests")
     parser.add_argument("--risk", action="append", default=[], dest="risks")
+    parser.add_argument("--issue", action="append", default=[], dest="issues", metavar="TEXT")
     parser.add_argument("--question", action="append", default=[], dest="questions")
     parser.add_argument("--base", default=None, dest="base_commit")
     parser.add_argument("--current", default=None, dest="current_commit")
@@ -1042,6 +1043,7 @@ def cmd_handoff(args: argparse.Namespace) -> int:
             files=args.files or None,
             tests=[handoff.parse_test(value) for value in args.tests],
             risks=args.risks,
+            issues=args.issues,
             questions=args.questions,
             base_commit=args.base_commit,
             current_commit=args.current_commit,

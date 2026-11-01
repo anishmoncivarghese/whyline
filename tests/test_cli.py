@@ -1038,3 +1038,9 @@ def test_entry_keeps_an_explicit_git_optional_locks(monkeypatch):
         cli_mod.entry()
     import os
     assert os.environ["GIT_OPTIONAL_LOCKS"] == "1"
+
+
+def test_handoff_help_lists_issue(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["handoff", "--help"])
+    assert "--issue" in capsys.readouterr().out

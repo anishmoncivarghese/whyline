@@ -30,7 +30,10 @@ Passed: hand off to the reviewer.
 Failed: hand back to the implementer with concrete, actionable detail.
 
     whyline handoff {task_id} --from {actor} --to {implementer} --status failed \
-      --summary "<what failed>" --test "<command>: <result>"
+      --summary "<what failed>" --test "<command>: <result>" \
+      --issue "<one concrete problem, with file and line when known>"
+
+Give `--issue` once per problem, in priority order, as well as `--summary`.
 
 Do not commit either way -- the reviewer commits once this task is fully
 approved.

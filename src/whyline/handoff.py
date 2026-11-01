@@ -39,6 +39,7 @@ def create(
     files: list[str] | None = None,
     tests: list[dict] | None = None,
     risks: list[str] | None = None,
+    issues: list[str] | None = None,
     questions: list[str] | None = None,
     base_commit: str | None = None,
     current_commit: str | None = None,
@@ -62,6 +63,7 @@ def create(
             for item in (tests or [])
         ],
         risks=[decisions.one_line(value) for value in (risks or [])],
+        issues=[decisions.one_line(value) for value in (issues or [])],
         questions=[decisions.one_line(value) for value in (questions or [])],
         base_commit=decisions.one_line(head if base_commit is None else base_commit),
         current_commit=decisions.one_line(
@@ -158,6 +160,8 @@ def format_text(record: dict) -> str:
     ]
     if record.get("summary"):
         lines.append(f"Summary        {record['summary']}")
+    for number, issue in enumerate(record.get("issues") or [], 1):
+        lines.append(f"Issue          {number}. {issue}")
     if record.get("files"):
         lines.append(f"Files          {', '.join(record['files'])}")
     for test in record.get("tests") or []:
