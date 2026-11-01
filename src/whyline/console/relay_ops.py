@@ -1186,6 +1186,110 @@ def live_run(root: Path) -> str | None:
     return None if active is None else f"{active.task}, {active.agent}"
 
 
+@dataclass(frozen=True)
+class LiveStatus:
+    """What the relay is doing now. 0, "" or None where a read failed or the
+    relay is too old to say."""
+
+    task: str
+    agent: str
+    role: str
+    stage: str
+    visit: int
+    round: int
+    max_rounds: int
+    started: datetime | None
+    position: int
+    total: int
+    done: int
+
+
+def _started_at(value) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.astimezone()
+
+
+def live_status(root: Path) -> LiveStatus | None:
+    from whyline_relay import config, plan as relay_plan, running, state
+
+    marker = running.live(root)
+    if marker is None:
+        return None
+    task = marker.task
+    position = total = done = 0
+    try:
+        path = Path(state.load(root).plan)
+        if not path.is_absolute():
+            path = root / path
+        tasks = relay_plan.parse(path.read_text(encoding="utf-8"))
+        total = len(tasks)
+        done = sum(item.checked for item in tasks)
+        position = next(
+            (n for n, item in enumerate(tasks, 1) if item.task_id == task), 0
+        )
+    except Exception:  # no saved state, no plan file, or an unparsable plan
+        position = total = done = 0
+    max_rounds = 0
+    try:
+        max_rounds = int(config.load(root).max_rounds)
+    except Exception:  # a broken config
+        max_rounds = 0
+    return LiveStatus(
+        task=task,
+        agent=marker.agent,
+        role=getattr(marker, "role", "") or "",
+        stage=getattr(marker, "stage", "") or "",
+        visit=getattr(marker, "visit", 0) or 0,
+        round=marker.round,
+        max_rounds=max_rounds,
+        started=_started_at(marker.started),
+        position=position,
+        total=total,
+        done=done,
+    )
+
+
+def stage_words(stage: str, role: str, visit: int) -> str:
+    if not stage:
+        stage = {"implementer": "implement", "reviewer": "review"}.get(role, "")
+    if stage == "implement":
+        return f"fixing after review {visit - 1}" if visit > 1 else "implementing"
+    if stage == "review":
+        return f"re-review {visit}" if visit > 1 else "reviewing"
+    if not stage:
+        return ""
+    return f"{stage} (rerun {visit - 1})" if visit > 1 else stage
+
+
+def _elapsed(seconds: int) -> str:
+    seconds = max(0, seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60:02d}s"
+    return f"{seconds // 3600}h {seconds % 3600 // 60:02d}m"
+
+
+def format_live(status: LiveStatus, now: datetime) -> str:
+    head = status.task
+    if status.total:
+        percent = status.done * 100 // status.total
+        where = f"{status.position} of {status.total}, " if status.position else ""
+        head = f"{status.task} ({where}{percent}%)"
+    parts = [head, stage_words(status.stage, status.role, status.visit), status.agent]
+    if status.round:
+        parts.append(
+            f"round {status.round} of {status.max_rounds}"
+            if status.max_rounds else f"round {status.round}"
+        )
+    if status.started is not None:
+        parts.append(_elapsed(int((now - status.started).total_seconds())))
+    return " · ".join(part for part in parts if part)
+
+
 def clear_live_run(root: Path) -> None:
     """Release an in-process planning marker owned by this console process."""
     from whyline_relay import running

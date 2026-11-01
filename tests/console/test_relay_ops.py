@@ -146,6 +146,144 @@ def test_live_run_names_the_task_and_agent(repo, monkeypatch):
     assert relay_ops.live_run(repo) is None
 
 
+@pytest.mark.parametrize("stage,role,visit,words", [
+    ("implement", "implementer", 1, "implementing"),
+    ("implement", "implementer", 3, "fixing after review 2"),
+    ("", "implementer", 0, "implementing"),
+    ("review", "reviewer", 1, "reviewing"),
+    ("review", "reviewer", 2, "re-review 2"),
+    ("", "reviewer", 3, "re-review 3"),
+    ("test", "tester", 1, "test"),
+    ("test", "tester", 2, "test (rerun 1)"),
+    ("deploy", "", 3, "deploy (rerun 2)"),
+    ("", "", 0, ""),
+    ("", "tester", 0, ""),
+])
+def test_stage_words(stage, role, visit, words):
+    assert relay_ops.stage_words(stage, role, visit) == words
+
+
+def _status(**kw):
+    base = dict(
+        task="JOB-24", agent="claude", role="implementer", stage="implement",
+        visit=1, round=1, max_rounds=24, started=datetime(2026, 11, 1, 10, 0, tzinfo=IST),
+        position=2, total=10, done=1,
+    )
+    return relay_ops.LiveStatus(**{**base, **kw})
+
+
+def _at(seconds):
+    return datetime(2026, 11, 1, 10, 0, tzinfo=IST) + timedelta(seconds=seconds)
+
+
+def test_format_live_the_three_header_lines():
+    assert relay_ops.format_live(_status(), _at(422)) == (
+        "JOB-24 (2 of 10, 10%) · implementing · claude · round 1 of 24 · 7m 02s"
+    )
+    assert relay_ops.format_live(_status(visit=2, round=3), _at(100)) == (
+        "JOB-24 (2 of 10, 10%) · fixing after review 1 · claude · round 3 of 24 · 1m 40s"
+    )
+    assert relay_ops.format_live(
+        _status(stage="review", role="reviewer", agent="codex", visit=2, round=4), _at(35)
+    ) == "JOB-24 (2 of 10, 10%) · re-review 2 · codex · round 4 of 24 · 35s"
+
+
+def test_format_live_drops_unknown_parts():
+    line = relay_ops.format_live(
+        _status(total=0, position=0, done=0, max_rounds=0, started=None, stage="", role=""),
+        _at(0),
+    )
+    assert line == "JOB-24 · claude · round 1"
+
+
+@pytest.mark.parametrize("seconds,text", [
+    (0, "0s"), (59, "59s"), (60, "1m 00s"), (3599, "59m 59s"), (3600, "1h 00m"),
+    (3780, "1h 03m"),
+])
+def test_format_live_elapsed(seconds, text):
+    line = relay_ops.format_live(_status(), _at(seconds))
+    assert line.endswith(text)
+
+
+def _live(monkeypatch, **extra):
+    from types import SimpleNamespace
+    from whyline_relay import running
+
+    marker = SimpleNamespace(
+        agent="claude", task="T-2", round=2, started="2026-11-01T10:00:00+05:30",
+        pid=1, **extra,
+    )
+    monkeypatch.setattr(running, "live", lambda root: marker)
+
+
+def _saved(repo, plan):
+    from whyline_relay import state
+
+    state.save(repo, state.RelayState(
+        plan=plan, branch="b", task_id="T-2", round=1, base_commit="x",
+        paused_reason="", log_path="",
+    ))
+
+
+def _good_plan(repo):
+    (repo / "p.md").write_text("- [x] T-1: a\n- [ ] T-2: b\n")
+    _saved(repo, "p.md")
+
+
+def test_live_status_none_when_nothing_runs(repo, monkeypatch):
+    from whyline_relay import running
+
+    monkeypatch.setattr(running, "live", lambda root: None)
+    assert relay_ops.live_status(repo) is None
+
+
+def test_live_status_reads_everything(repo, monkeypatch):
+    _live(monkeypatch, role="reviewer", stage="review", visit=2)
+    _good_plan(repo)
+    got = relay_ops.live_status(repo)
+    assert (got.task, got.agent, got.stage, got.visit, got.round) == ("T-2", "claude", "review", 2, 2)
+    assert (got.position, got.total, got.done) == (2, 2, 1)
+    assert got.max_rounds > 0
+    assert got.started == datetime(2026, 11, 1, 10, 0, tzinfo=IST)
+
+
+def test_live_status_old_marker_uses_the_role_words(repo, monkeypatch):
+    _live(monkeypatch, role="reviewer")
+    _good_plan(repo)
+    got = relay_ops.live_status(repo)
+    assert (got.stage, got.visit) == ("", 0)
+    assert " · reviewing · " in relay_ops.format_live(got, _at(5))
+
+
+def test_live_status_missing_state_drops_only_the_plan_part(repo, monkeypatch):
+    _live(monkeypatch, role="implementer")
+    got = relay_ops.live_status(repo)
+    assert (got.position, got.total, got.done) == (0, 0, 0)
+    assert got.max_rounds > 0 and got.task == "T-2"
+
+
+def test_live_status_unparsable_plan_drops_only_the_plan_part(repo, monkeypatch):
+    _live(monkeypatch, role="implementer")
+    (repo / "p.md").write_text("just words\n")
+    _saved(repo, "p.md")
+    got = relay_ops.live_status(repo)
+    assert (got.position, got.total, got.done) == (0, 0, 0)
+    assert got.max_rounds > 0
+
+
+def test_live_status_broken_config_drops_only_max_rounds(repo, monkeypatch):
+    from whyline_relay import config
+
+    _live(monkeypatch, role="implementer")
+    _good_plan(repo)
+    path = config.config_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("this is = = not toml [")
+    got = relay_ops.live_status(repo)
+    assert got.max_rounds == 0
+    assert (got.position, got.total, got.done) == (2, 2, 1)
+
+
 def test_clear_live_run_delegates_to_the_owner_safe_relay_clear(repo, monkeypatch):
     from whyline_relay import running
 

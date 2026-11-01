@@ -31209,3 +31209,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5d642f198d404a4e8629b43e1163fe2f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T06:06:17.074Z"} -->
+
+## 2026-11-01 — format_live shows TASK (X%) without 'P of T' when the task is not found in the plan
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-1
+
+**Because:** position 0 means unknown; '0 of 10' would be wrong
+
+**Rejected:**
+
+- always print P of T — shows 0 of T
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: df6158ca5b1b40f58a9e16a0261734ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T07:17:43.140Z"} -->
+
+## 2026-11-01 — Pass RST-1 live relay summary testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-1
+
+**Because:** The focused relay-ops tests and the full project pytest suite both exit cleanly, covering stage wording, legacy marker fallback, isolated state/plan/config failures, header formatting, and elapsed-time boundaries.
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: 79125d72b12a4e6b85d7540311f99700 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T07:28:59.762Z"} -->
+
+## 2026-11-01 — Approve RST-1 live relay summary
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-1
+
+**Because:** The implementation adds the frozen status model, preserves legacy marker behavior, isolates optional plan and config failures, formats stage progress and elapsed boundaries as specified, and both the focused 119-test file and the full plain pytest suite exit cleanly with one skip.
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: 108936cba76d47afa9188b27b5006cc1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T07:40:27.483Z"} -->
