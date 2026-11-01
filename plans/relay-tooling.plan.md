@@ -55,7 +55,7 @@ Global constraints:
   - a `live_status` that raises keeps the previous line
   - finishing clears it and the old `label… Ns` line returns for chat replies
 
-- [ ] RST-3: Telegram and docs
+- [x] RST-3: Telegram and docs
   Edit `src/whyline/ideas/bot.py`, `tests/ideas/test_bot.py`, `README.md` and `docs/releases/` notes only if a release note for the next version already exists.
   1. `bot._relay_status` adds ` · now: <format_live(...)>` to a repository's line when `relay_ops.live_status(root)` returns a value. It catches `Exception`, and the line stays as today otherwise.
   2. README: where Relay mode is described, add one short paragraph with the example lines from this plan's header. Explain that the % counts finished tasks in the plan, and that a rerun count needs whyline-relay with RLY-11.
