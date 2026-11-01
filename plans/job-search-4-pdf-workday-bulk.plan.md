@@ -178,7 +178,7 @@ Rules every task keeps:
   - re-adding a company with a Workday link from the console then checking it records workday
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-32: Docs for part 4
+- [x] JOB-32: Docs for part 4
   Edit `docs/job-search.md` only.
   - CV: list the four formats. Say that `.docx` usually gives the cleanest text, that a scanned PDF has no text to read and is refused, and that a pasted path may keep its quotes from Finder's Copy as Pathname.
   - CV review: Choose file…, Stop, and that the review needs a CV and saved preferences to be useful.
