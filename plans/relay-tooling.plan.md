@@ -1,13 +1,13 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-01T02:00:00+05:30 -->
 # Relay tooling: status line, switching agents, recovery lessons and Fix mode
 
-Merged on 2026-11-01 from five plans, in run order: relay-status-line (RST-1..7), relay-live-agents (LIVE-1..4), agent-switch-at-pause (SWP-1..7), relay-recovery-lessons (LSN-1..8) and resolve-fix-mode (FIX-1..9). Starts after `plans/job-search-4-pdf-workday-bulk.plan.md` is complete. RTL-1 pauses after Part 1 until whyline-relay with RLY-1..13 is released, because Parts 2 to 4 need it. RTL-2 publishes at the end.
+Merged on 2026-11-01 from five plans, in run order: relay-status-line (RST-1..7), relay-live-agents (LIVE-1..4), agent-switch-at-pause (SWP-1..7), relay-recovery-lessons (LSN-1..8) and resolve-fix-mode (FIX-1..9). Starts after `plans/done/job-search-4-pdf-workday-bulk.plan.md` is complete. RTL-1 pauses after Part 1 until whyline-relay with RLY-1..13 is released, because Parts 2 to 4 need it. RTL-2 publishes at the end.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules; read the intro of the part a task is in before starting it.
 
 ## Part 1: Relay status line: stage, reruns, plan progress, per-turn timer, issue counts, live test progress and a selectable Copy view
 
-Starts after `plans/job-search-4-pdf-workday-bulk.plan.md` is complete, since both change the console. Best after whyline-relay ships RLY-11 (`stage` and `visit` in `.whyline/relay/running.json`), but every task here also works with the current relay. Without RLY-11, rerun counts are just not shown.
+Starts after `plans/done/job-search-4-pdf-workday-bulk.plan.md` is complete, since both change the console. Best after whyline-relay ships RLY-11 (`stage` and `visit` in `.whyline/relay/running.json`), but every task here also works with the current relay. Without RLY-11, rerun counts are just not shown.
 
 What the user gets:
 - **Today:** `relay: JOB-24, claude… 5945s`. The seconds count from when the console started the relay, not from the current turn.
