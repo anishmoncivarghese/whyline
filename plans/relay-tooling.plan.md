@@ -601,7 +601,7 @@ Rules for this part:
   - That Test planner belongs to Plan, not Chat Brainstorm
   Verify with `uv run pytest -q`. Change nothing else.
 
-## Part 7: Round cap in Set up
+## Part 7: Round cap in Set up and at the pause
 
 Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `.whyline/relay/config.toml` had no `max_rounds`, so the relay's default of 3 applied. agentdock had 24. The only ways to change it were editing the file, `--max-rounds` for one run, or **Resolve** adding 6 after a pause.
 
@@ -622,8 +622,26 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   - the CLI
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
+- [ ] RCAP-2: "Add rounds" on a round-cap pause
+  Edit `src/whyline/console/tui.py`, `src/whyline/console/relay_ops.py` and their tests only. Needs RCAP-1's `save_max_rounds`.
+  Today a round-cap pause shows only **Change agents** under the transcript. Raising the cap is hidden inside **Resolve**.
+  1. When the saved pause reason is a round cap (`hit the N-round cap`, the same match `adapters` uses for `round-cap`), show two more buttons in `#pause-actions` next to **Change agents**:
+     - **Add 6 rounds and resume**: calls `save_max_rounds(root, current + 6)` and then the same resume path as **Resume**. The status line says `Round cap 3 → 9; resuming RLY-1.`
+     - **Set round cap…**: a small dialog with the current value and a number input (1 to 99). It offers **Save and resume** and **Save only**, both through `save_max_rounds`.
+     The buttons are hidden for any other kind of pause.
+  2. The pause text in the transcript adds one line: `Raise the cap with Add 6 rounds, or set it in Set up.`
+  3. If the new cap isn't higher than the round the task reached, refuse with `RLY-1 is at round 9; choose more than 9.`
+  4. Typing `rounds 12` in the relay input does the same as **Set round cap…** with **Save only**, and `rounds +6` does the same as **Add 6 rounds** without resuming.
+  Tests:
+  - the buttons show only for a round-cap pause
+  - Add 6 saves current+6 and resumes once
+  - the dialog saves, with and without resuming
+  - refusing a cap not above the reached round
+  - the typed commands
+  Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
+
 ## Publish
 
-- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, PFB-1..5 and RCAP-1
+- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, PFB-1..5 and RCAP-1..2
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
