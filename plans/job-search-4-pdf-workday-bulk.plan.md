@@ -160,7 +160,7 @@ Rules every task keeps:
   - a malformed list response gives a FetchError naming the company
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-31: Find a company's Workday board
+- [x] JOB-31: Find a company's Workday board
   Edit `src/whyline/jobs/ats.py`, `src/whyline/jobs/companies.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   `ats.detect`:
   1. When `careers_url` is itself a Workday URL, probe its `/jobs` endpoint with `limit: 1`. A valid `jobPostings` list records `ats = "workday"` and the slug.
