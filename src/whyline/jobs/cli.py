@@ -163,7 +163,7 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
 
     imp = prof_sub.add_parser(
         "import-cv",
-        help="Import a CV (.md, .txt, .docx, or - for stdin)",
+        help="Import a CV (.md, .txt, .docx, .pdf, or - for stdin)",
     )
     imp.add_argument("file", help="Path to CV file, or - to read UTF-8 text from stdin")
 
@@ -282,14 +282,19 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         help="Optional https:// careers page URL",
     )
 
-    comp_acc = comp_sub.add_parser("accept", help="Accept a suggested company")
-    comp_acc.add_argument("name", help="Company name")
+    comp_acc = comp_sub.add_parser("accept", help="Accept one or more companies")
+    comp_acc.add_argument("names", nargs="*", metavar="name", help="Company name(s)")
+    comp_acc.add_argument(
+        "--all-suggested",
+        action="store_true",
+        help="Accept every suggested company (takes no names)",
+    )
 
     comp_rem = comp_sub.add_parser(
         "remove",
-        help="Remove a company so it is not tracked or re-suggested",
+        help="Remove companies so they are not tracked or re-suggested",
     )
-    comp_rem.add_argument("name", help="Company name")
+    comp_rem.add_argument("names", nargs="+", metavar="name", help="Company name(s)")
 
     comp_chk = comp_sub.add_parser(
         "check",
@@ -379,6 +384,13 @@ def _cmd_profile_import_cv(args: argparse.Namespace) -> int:
         return EXIT_ERROR
     shown = tilde_path(target) if isinstance(target, Path) else "~/.whyline/jobs/cv.md"
     print(f"Imported CV to {shown}.")
+    try:
+        summary = profile.cv_summary()
+    except profile.ProfileError:
+        return EXIT_OK
+    print(f"Imported {summary.chars} characters. First lines:")
+    for line in summary.preview:
+        print(f"  {line}")
     return EXIT_OK
 
 
@@ -555,23 +567,36 @@ def _cmd_companies_add(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _print_company_changes(verb: str, changed: list[companies.Company]) -> None:
+    for entry in changed:
+        print(f"{verb} {entry.name}.")
+    noun = "company" if len(changed) == 1 else "companies"
+    print(f"{verb} {len(changed)} {noun}.")
+
+
 def _cmd_companies_accept(args: argparse.Namespace) -> int:
+    names = list(args.names)
+    if args.all_suggested == bool(names):
+        print("Give company names, or --all-suggested (not both).", file=sys.stderr)
+        return EXIT_ERROR
     try:
-        entry = companies.accept(args.name)
+        if args.all_suggested:
+            names = companies.suggested_names()
+        changed = companies.accept_many(names)
     except (companies.CompanyError, profile.ProfileError) as error:
         print(str(error), file=sys.stderr)
         return EXIT_ERROR
-    print(f"Accepted {entry.name} ({tilde_path(companies.companies_path())}).")
+    _print_company_changes("Accepted", changed)
     return EXIT_OK
 
 
 def _cmd_companies_remove(args: argparse.Namespace) -> int:
     try:
-        entry = companies.remove(args.name)
+        changed = companies.remove_many(args.names)
     except (companies.CompanyError, profile.ProfileError) as error:
         print(str(error), file=sys.stderr)
         return EXIT_ERROR
-    print(f"Removed {entry.name} ({tilde_path(companies.companies_path())}).")
+    _print_company_changes("Removed", changed)
     return EXIT_OK
 
 

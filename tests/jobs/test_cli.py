@@ -64,6 +64,7 @@ def test_profile_import_cv_file_and_stdin_round_trip(
     code, out, err = _invoke(["jobs", "profile", "import-cv", str(md_file)], capsys)
     assert code == 0, err
     assert "~/.whyline/jobs/cv.md" in out
+    assert "Imported 33 characters. First lines:\n  # Ada Lovelace\n  Analytical Engine\n" in out
     assert profile.cv_path().read_text(encoding="utf-8") == "# Ada Lovelace\nAnalytical Engine\n"
 
     docx_file = _build_docx(tmp_path / "cv.docx", ["Grace Hopper", "A-0 Compiler"])
@@ -189,11 +190,11 @@ def test_profile_import_cv_rejects_bad_file_and_oversized_stdin(
 ) -> None:
     profile.import_cv_text("Keep me")
 
-    pdf = tmp_path / "cv.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    code, _, err = _invoke(["jobs", "profile", "import-cv", str(pdf)], capsys)
+    rtf = tmp_path / "cv.rtf"
+    rtf.write_bytes(b"{\\rtf1}")
+    code, _, err = _invoke(["jobs", "profile", "import-cv", str(rtf)], capsys)
     assert code == 1
-    assert ".md, .txt, or .docx" in err
+    assert ".md, .txt, .docx, or .pdf" in err
 
     oversized = io.TextIOWrapper(
         io.BytesIO(b"x" * (profile.MAX_CV_BYTES * 2 + 10)),
@@ -387,6 +388,47 @@ def test_jobs_companies_cli_list_add_suggest_accept_remove_and_errors(
     code, out, err = _invoke(["jobs", "companies", "remove", "NoSuchCo"], capsys)
     assert code == 1
     assert "not found" in err.lower()
+
+
+def test_companies_accept_and_remove_take_several_names_and_all_suggested(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    for name in ("Acme", "Globex", "Initech", "Hooli"):
+        companies.add(name)
+        companies.remove(name)
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "Acme", "globex"], capsys)
+    assert code == 0, err
+    assert out.splitlines() == ["Accepted Acme.", "Accepted Globex.", "Accepted 2 companies."]
+
+    code, out, err = _invoke(["jobs", "companies", "remove", "Acme", "Globex"], capsys)
+    assert code == 0, err
+    assert out.splitlines()[-1] == "Removed 2 companies."
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "Acme", "Nope"], capsys)
+    assert code == 1
+    assert "Nope" in err
+    assert {c.name: c.status for c in companies.list()}["Acme"] == "removed"
+
+    code, out, err = _invoke(["jobs", "companies", "accept"], capsys)
+    assert code == 1
+    code, out, err = _invoke(["jobs", "companies", "accept", "--all-suggested", "Acme"], capsys)
+    assert code == 1
+
+
+def test_companies_accept_all_suggested_accepts_only_suggested(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = companies._load_store()
+    for name in ("Acme", "Globex"):
+        store[companies._company_key(name)] = companies.Company(name=name, status="suggested")
+    store["hooli"] = companies.Company(name="Hooli", status="removed")
+    companies._write_private_companies(store)
+
+    code, out, err = _invoke(["jobs", "companies", "accept", "--all-suggested"], capsys)
+    assert code == 0, err
+    assert out.splitlines() == ["Accepted Acme.", "Accepted Globex.", "Accepted 2 companies."]
+    assert {c.name: c.status for c in companies.list()}["Hooli"] == "removed"
 
 
 def test_jobs_doctor_prints_the_shared_rows_and_exits_1_on_a_failure(

@@ -293,6 +293,27 @@ def test_failed_run_or_missing_block_reports_outcome_and_writes_nothing() -> Non
     assert not review.rubric_draft_path().exists()
 
 
+def test_run_without_a_cv_runs_no_agent() -> None:
+    calls: list[Any] = []
+
+    def run_fn(cmd, prompt, **kw):
+        calls.append(cmd)
+        return _ExecResult(0, _claude_json(GOOD_ANSWER))
+
+    missing = review.run(run_fn=run_fn)
+    assert (missing.ok, missing.outcome, missing.reason) == (
+        False,
+        "no_cv",
+        "Import your CV first.",
+    )
+
+    profile.cv_path().parent.mkdir(parents=True, exist_ok=True)
+    profile.cv_path().write_text("")
+    assert review.run(run_fn=run_fn).outcome == "no_cv"
+    assert calls == []
+    assert not review.profile_draft_path().exists()
+
+
 def test_provider_choice_follows_enabled_rules() -> None:
     profile.import_cv_text("# Barbara Liskov\nDistributed Systems\n")
 
@@ -351,3 +372,24 @@ def test_provider_choice_follows_enabled_rules() -> None:
         review.run(cli="antigravity")
     with pytest.raises(review.ReviewError, match="Unsupported provider"):
         review.run(cli="not-a-cli")
+
+
+def test_cancelled_review_keeps_existing_drafts_and_passes_the_event() -> None:
+    import threading
+
+    from whyline_relay import agents
+
+    profile.import_cv_text("# Ada Lovelace\nDistributed Computing\n")
+    review.save_drafts("Old profile\n", "Old rubric\n")
+    event = threading.Event()
+    seen: list[Any] = []
+
+    def cancelled_run(command: list[str], prompt: str, **kwargs: Any) -> _ExecResult:
+        seen.append(kwargs.get("cancel_event"))
+        raise agents.AgentCancelled("stopped")
+
+    result = review.run(run_fn=cancelled_run, cancel_event=event)
+    assert result.ok is False and result.outcome == "cancelled"
+    assert seen == [event]
+    assert review.profile_draft_path().read_text(encoding="utf-8") == "Old profile\n"
+    assert review.rubric_draft_path().read_text(encoding="utf-8") == "Old rubric\n"

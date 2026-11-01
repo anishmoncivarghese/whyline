@@ -78,3 +78,14 @@ def test_a_notification_failure_changes_nothing(repo, home):
 
     after.finish(conn, defn, _rec("succeeded"), now=NOW, send=broken)
     assert state.get(conn, defn.agent_id).consecutive_failures == 0
+
+
+def test_a_cancelled_run_is_not_a_failure_and_sends_nothing(repo, home):
+    sent = []
+    conn, defn = _setup(repo)
+    state.update(conn, defn.agent_id, consecutive_failures=2)
+    after.finish(conn, defn, _rec("cancelled", "Stopped by you."), now=NOW,
+                 send=lambda title, body: sent.append((title, body)))
+    act = state.get(conn, defn.agent_id)
+    assert act.consecutive_failures == 2 and act.status == "active"
+    assert sent == []

@@ -30523,3 +30523,655 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9c742c6ec4864ff68d31836336249c5f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-10-31T12:15:38.577Z"} -->
+
+## 2026-10-31 — PDF CVs read with pypdf (strict=False), first 20 pages, 200-char minimum; fixtures generated once, committed as bytes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-23
+
+**Because:** pure-Python, no OCR; scans are refused with a clear message instead of importing an empty CV
+
+**Rejected:**
+
+- pdfminer/pymupdf — heavier or non-pure-Python dependency
+- OCR scanned PDFs — out of scope and needs system binaries
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: 2c91ce889ad34d0eb18d8ce130bd19b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T13:39:01.543Z"} -->
+
+## 2026-10-31 — JOB-23 passes behavioral verification
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-23
+
+**Because:** PDF CV import coverage and the full project suite both completed successfully with exit 0; the targeted suite reached 100% and the full suite reached 100% with one skip and no failures
+
+**Files:** tests/jobs/test_profile.py
+
+<!-- whyline-event: 934fcdfd07624ccd90eed7587bcb3636 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:08:21.756Z"} -->
+
+## 2026-10-31 — Approve JOB-23 PDF CV import
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-23
+
+**Because:** The implementation satisfies PDF size, encryption, page, extraction, normalization, failure-preservation, format-message, dependency, and fixture requirements; the targeted and full test suites both passed with exit 0
+
+**Rejected:**
+
+- Request changes for tests/jobs/test_cli.py scope — its small update is necessary because the pre-existing test treated .pdf as unsupported, and it correctly preserves unsupported-format coverage with .rtf
+
+**Files:** src/whyline/jobs/profile.py
+
+<!-- whyline-event: 7e6d619398bb436f82bfff097ca0ec2a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:28:16.271Z"} -->
+
+## 2026-10-31 — Console CV preview reads cv.md via profile.cv_summary after the import function succeeds; hidden when cv.md is unreadable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-24
+
+**Because:** keeps saving through import_cv/import_cv_text and the preview reflects what was actually stored; a stubbed import leaves the old status line
+
+**Rejected:**
+
+- summarize the source file directly — would not show what was stored after conversion
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 2566fa0e4ced4a32ae42859f76f32a62 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T14:48:18.810Z"} -->
+
+## 2026-10-31 — JOB-24 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-24
+
+**Because:** cv_summary, CLI preview output, console import/paste preview and reopen reset are covered, and both mandated test commands completed at 100% with exit 0
+
+**Rejected:**
+
+- Fail JOB-24 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/jobs/profile.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: d6214f735b5b43adaf61eaf595ace4d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:08:40.277Z"} -->
+
+## 2026-10-31 — Approve JOB-24 CV import summaries
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-24
+
+**Because:** The implementation matches the requested cv_summary, CLI preview, transient console preview, and shared import-function behavior; the targeted and full test suites both passed at 100 percent
+
+**Rejected:**
+
+- Request changes — no material correctness, safety, scope, or coverage defect was found
+
+**Files:** src/whyline/jobs/profile.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: f60e5876b3d14c83abcf0b7e2d66c964 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:28:28.658Z"} -->
+
+## 2026-10-31 — Choose file… button is built in compose only when mac_input.available(); picker runs in a thread worker and results are applied on the UI thread
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-25
+
+**Because:** reuses mac_input.pick_files without copying AppleScript; one pick reuses _do_import_cv so errors and status match Import
+
+**Rejected:**
+
+- separate import path — would duplicate error handling
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 96e9837336cc4d3d91e68a3167dadabd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T15:50:40.656Z"} -->
+
+## 2026-10-31 — JOB-25 passes behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-25
+
+**Because:** The unavailable, single-pick import, cancellation, multiple-pick refusal, and PickerError behaviors are covered; the picker runs in a thread worker and both mandated suites completed at 100 percent without failures
+
+**Rejected:**
+
+- Fail JOB-25 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 17961a0c632448c187db92880f40c84f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T16:20:31.629Z"} -->
+
+## 2026-10-31 — Reject JOB-25 until the picked CV path remains visible and is asserted
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-25
+
+**Because:** The single-pick flow sets the path, then _do_import_cv clears it after success; the required test omits the path-field assertion, so both suites pass without covering the specified behavior
+
+**Rejected:**
+
+- Approve — the implementation and tests do not satisfy the explicit path-field requirement
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 7d30e9c05507402f9b652f62bd120443 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T16:40:32.909Z"} -->
+
+## 2026-10-31 — JOB-25: single pick keeps its path in #jh-cv-path after import via keep_path flag
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-25
+
+**Because:** reviewer required the picked path stay visible; Import button still clears it
+
+**Rejected:**
+
+- always keep path — changes Import button behavior
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: a0464d2c3b084a90818a8a12c692f2ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T16:59:51.813Z"} -->
+
+## 2026-10-31 — JOB-25 passes round-5 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-25
+
+**Because:** The single-pick flow now retains the picked path after successful import, all required picker behaviors are covered, and both mandated suites completed at 100 percent with exit 0
+
+**Rejected:**
+
+- Fail JOB-25 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 6ce19005cfa14916a79e92e1b3e9ae5f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T17:19:38.709Z"} -->
+
+## 2026-10-31 — Approve JOB-25 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-25
+
+**Because:** The Choose file flow meets all requested availability, threading, cancellation, single-selection import, multi-selection refusal, and PickerError behaviors; its tests cover every requirement and both mandated suites pass
+
+**Rejected:**
+
+- Request changes — no functional, coverage, scope, or safety defect remains
+
+**Files:** src/whyline/console/jobs_screens.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 5872c8009eab42cca433d3ff3d13ce3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T17:39:14.964Z"} -->
+
+## 2026-10-31 — Cancelled runs are classified in runner._classify and ignored by after/deliver rather than special-cased in review
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-26
+
+**Because:** one outcome 'cancelled' flows through existing record/alert paths; user-stopped is not a failure
+
+**Rejected:**
+
+- treat cancel as failed — would bump consecutive_failures and send alerts
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: dda6c25609df4cbeb503687dc0dc23e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T18:00:08.805Z"} -->
+
+## 2026-10-31 — JOB-26 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-26
+
+**Because:** The required agents/jobs/console suite and the complete project suite both reached 100 percent with exit 0, covering cancellation propagation, failure accounting, draft preservation, Stop behavior, and screen-close cancellation
+
+**Rejected:**
+
+- Fail JOB-26 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/agents/runner.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 07c120d171294031975b97fbc71fcefe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T18:30:14.391Z"} -->
+
+## 2026-10-31 — Approve JOB-26 round 3
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** JOB-26
+
+**Because:** Cancellation propagation across runner, review, and console meets all specifications; failure accounting and delivery suppress alerts; drafts remain unchanged on cancel; tests cover all required behaviors and both test suites pass 100%
+
+**Rejected:**
+
+- Request changes — all requirements are implemented cleanly with thorough test coverage and zero regressions
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: a4323efeafa14894b31b4b9eab703dee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:05:47.147Z"} -->
+
+## 2026-10-31 — Stale-draft check compares draft file mtimes with cv.md/preferences.toml mtimes; no_cv check runs before provider checks
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-27
+
+**Because:** mtimes need no extra state and survive reopening the screen; refusing early means no agent or provider lookup without a CV
+
+**Rejected:**
+
+- track review time in screen state — lost when the screen is reopened
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/review.py
+
+<!-- whyline-event: fdacf17aa30349adb4be5a3238090f8f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:29:59.475Z"} -->
+
+## 2026-10-31 — JOB-27 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-27
+
+**Because:** The targeted jobs/console suite and full project suite both completed at 100 percent with exit 0, covering unsaved preference confirmation, save-before-review, no-CV refusal, missing-preferences guidance, and stale-draft acceptance blocking
+
+**Rejected:**
+
+- Fail JOB-27 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/review.py, tests/console/test_jobs_screens.py, tests/jobs/test_review.py
+
+<!-- whyline-event: 3c33e5b1f2414dea8f60c510cabaea3c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T19:49:53.277Z"} -->
+
+## 2026-10-31 — Approve JOB-27 round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-27
+
+**Because:** The implementation satisfies every requested preference-preservation, input-guard, guidance, and stale-draft behavior; the targeted and full suites both reached 100% with exit code 0, and git diff --check passed
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or test-coverage defect was found
+
+**Files:** src/whyline/console/jobs_screens.py, src/whyline/jobs/review.py, tests/console/test_jobs_screens.py, tests/jobs/test_review.py
+
+<!-- whyline-event: a5cf7c0aa0ae4d33b74881ebbc940e90 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T20:10:01.345Z"} -->
+
+## 2026-10-31 — Bulk company actions share one _set_status_many; console injection fns now take a list of names
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-28
+
+**Because:** one load/validate/write path keeps accept/remove single-name behaviour identical and makes unknown names atomic
+
+**Rejected:**
+
+- looping accept() per name — N writes and partial changes on an unknown name
+
+**Files:** src/whyline/jobs/companies.py
+
+<!-- whyline-event: 957e3016ece847f4a2ad3ce81873b0f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T20:41:14.872Z"} -->
+
+## 2026-10-31 — JOB-28 passes round-2 behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-28
+
+**Because:** The targeted jobs/console suite and full project suite both completed at 100 percent with exit code 0, exercising bulk company mutations, CLI multi-name and all-suggested flows, and console selection, confirmation, refresh, and detail behavior without regressions
+
+**Rejected:**
+
+- Fail JOB-28 — no incorrect behavior or regression was observed
+
+**Files:** src/whyline/jobs/companies.py, src/whyline/jobs/cli.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: ca18b14dc5c2414fa602b0cb0d0fd12f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T21:10:54.567Z"} -->
+
+## 2026-10-31 — Reject JOB-28 round 3: clicking the tick cell does not toggle the row
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-28
+
+**Because:** Textual DataTable stops body-cell Click propagation before JobsHomeScreen.on_click runs; a runtime pilot click landed on the first-column cell but left all tick values unchanged, so the required mouse interaction is missing despite both required suites reaching 100 percent
+
+**Rejected:**
+
+- Approve — Space and the other bulk-company behaviors pass, but click-to-toggle is an explicit requirement
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: df715aa8d36b4fed9d5823c0874b1c27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T21:31:07.443Z"} -->
+
+## 2026-10-31 — Tick-column clicks handled by a DataTable subclass that posts TickClicked
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-28
+
+**Because:** DataTable._on_click stops the Click before the screen's on_click runs; a subclass _on_click sees it first (Textual dispatches per MRO class), and @on(...) is used because the nested-message handler name for a underscore-prefixed class did not resolve
+
+**Rejected:**
+
+- screen-level on_click — never receives the event
+- RowSelected/CellSelected — not fired on first click of a new row
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 845f2ae762a0489a8e2e5e81c9b32f30 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T21:54:29.502Z"} -->
+
+## 2026-10-31 — Pass JOB-28 round 5 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-28
+
+**Because:** The focused jobs/console suite and full project suite both reached 100 percent with exit 0, and the isolated tick-cell mouse test passed, confirming the prior click regression is fixed
+
+**Rejected:**
+
+- Fail — no functional test failures or click regression remained
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: b193126e711a4615992cc20b1a10e82d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:24:29.193Z"} -->
+
+## 2026-10-31 — Approve JOB-28 round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-28
+
+**Because:** The diff implements atomic bulk company updates, multi-name CLI actions, persistent console ticks, confirmation, status/detail UI, and genuine interaction coverage; both required test suites and git diff validation passed
+
+**Rejected:**
+
+- Request changes — no functional, safety, scope, or coverage defect remains
+
+**Files:** src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 94a54ea067b8497dae4a062ee4f2aa66 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:44:45.022Z"} -->
+
+## 2026-10-31 — Workday is a board name only: not in BOARD_ENDPOINTS, so detect() never probes it; robots.txt checked once per host per client
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-29
+
+**Because:** Workday search is a POST, so the GET probe loop cannot cover it; robots check lives in HttpClient so every caller gets it
+
+**Rejected:**
+
+- add a GET template to BOARD_ENDPOINTS — Workday has no GET listing endpoint
+- allow /robots.txt in the public allowlist — GETs on Workday hosts must stay limited to /wday/cxs/
+
+**Files:** src/whyline/jobs/ats.py
+
+<!-- whyline-event: 4d3e1a8445104a99bd74393edeb50399 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T22:57:01.724Z"} -->
+
+## 2026-10-31 — Pass JOB-29 Workday HTTP client and URL parser testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-29
+
+**Because:** The required jobs suite and full repository suite both exited 0; Workday parsing, URL restrictions, POST transport behavior, rate limiting, size cap, and robots denial are covered by the focused tests
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or repository regression was reproduced
+
+**Files:** src/whyline/jobs/ats.py, tests/jobs/test_ats.py
+
+<!-- whyline-event: c676a4bd8e284c42b67a2e37259355f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:17:46.021Z"} -->
+
+## 2026-10-31 — Approve JOB-29 Workday board HTTP and URL support
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-29
+
+**Because:** The implementation satisfies strict Workday parsing and fetch allowlisting, POST JSON behavior, shared request safeguards, and cached robots enforcement; focused and full test suites both exited 0
+
+**Rejected:**
+
+- Request changes — no actionable requirement gap, unsafe behavior, or regression was found
+
+**Files:** src/whyline/jobs/ats.py, tests/jobs/test_ats.py
+
+<!-- whyline-event: 86c27db25f144ebaa17d57a4e886825b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:28:50.317Z"} -->
+
+## 2026-10-31 — Workday seen-check is a read-only SELECT on the seen store; report lines ride on a list subclass into a new FetchResult.notes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-30
+
+**Because:** seen.new_only records every posting, so calling it before the detail fetch would mark jobs seen with no text; _PARSERS signature is fixed so notes cannot be returned separately
+
+**Rejected:**
+
+- call seen.new_only — it mutates the store before details are read
+- change _PARSERS signature — breaks every other parser and board_jobs callers
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 1559fd19672d476e8abbe4f23ce2c242 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-10-31T23:40:38.370Z"} -->
+
+## 2026-11-01 — JOB-30 passes required targeted and full regression testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-30
+
+**Because:** uv run pytest -q tests/jobs and uv run pytest -q both exited 0, covering the required Workday paging, caps, details, seen-store, failure-note, report-line, and malformed-response behavior
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 6a8ee9347ad64149ad142567c7f4960e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:01:16.849Z"} -->
+
+## 2026-11-01 — Approve JOB-30 Workday fetching and coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-30
+
+**Because:** The diff implements Workday paging, the 200-list and 40-detail caps, seen-store suppression, detail normalization, failure fallback, report notes, and company-named malformed-response errors; uv run pytest -q tests/jobs and uv run pytest -q both exited 0 in independent review
+
+**Files:** src/whyline/jobs/fetch.py
+
+<!-- whyline-event: 31e732e1cea04e7d8ae53091740b8233 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:12:40.786Z"} -->
+
+## 2026-11-01 — Suggest prompt guidance appended in companies.suggest, not the template file
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-31
+
+**Because:** task limits edits to companies.py; template instructions.md is out of scope
+
+**Rejected:**
+
+- edit job-companies/instructions.md — outside allowed files
+
+**Files:** src/whyline/jobs/companies.py
+
+<!-- whyline-event: 521156de55ef46fb895206f7134efce4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T00:46:42.873Z"} -->
+
+## 2026-11-01 — Pass JOB-31 Workday board discovery testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-31
+
+**Because:** The required jobs and console suite and the full repository suite both exited 0; coverage exercises direct and discovered Workday URLs, look-alike rejection, probe limits, robots denial, prompt guidance, fallback behavior, and console re-add/check flow
+
+**Rejected:**
+
+- Fail the task — no behavioral failure or repository regression was reproduced
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 2878648a055b4a52822975f500d8d5ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T01:16:33.761Z"} -->
+
+## 2026-11-01 — Reject JOB-31 round 3 Workday discovery review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** JOB-31
+
+**Because:** A failed direct Workday URL is classified as careers_page instead of unknown, and careers-page redirects may leave the original host for another allowlisted host despite the same-host requirement; the redirect test does not exercise either behavior
+
+**Rejected:**
+
+- Approve — both required suites pass, but passing tests omit two required behaviors reproduced during review
+
+**Files:** src/whyline/jobs/ats.py, tests/jobs/test_workday_discovery.py
+
+<!-- whyline-event: 12b55c7e3fae41358d7c07f1cc16aa4a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T01:36:58.555Z"} -->
+
+## 2026-11-01 — Failed direct Workday URL returns unknown; careers-page redirect must stay on original host
+
+**Actor:** claude
+**Role:** implementer
+**Task:** JOB-31
+
+**Because:** A recognized Workday URL whose probe fails is not a careers page; a cross-host redirect, even to an allowlisted host, breaks the same-host rule
+
+**Rejected:**
+
+- Make all recognized board URLs unknown on failure — wider than the task and changes existing behavior
+
+**Files:** src/whyline/jobs/ats.py
+
+<!-- whyline-event: 66dceb6fc9ef46658fb6e9b272730578 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T01:59:28.019Z"} -->
+
+## 2026-11-01 — Block JOB-31 round 5 testing on sandbox permission
+
+**Actor:** codex
+**Role:** tester
+**Task:** JOB-31
+
+**Because:** JOB-31-focused tests and all tests/jobs pass, but the required uv run pytest -q tests/jobs tests/console command hits PermissionError when unrelated console tests chmod /Users/anish/.whyline/agents, a path outside the writable sandbox, and cascades into unrelated failures
+
+**Rejected:**
+
+- Fail JOB-31 — the reproduced failures are sandbox permission errors outside the task files, while the task-specific behavior passes
+- Pass JOB-31 — both mandated suites must complete before a pass ruling
+
+**Files:** tests/jobs/test_workday_discovery.py, tests/console/test_jobs_screens.py
+
+<!-- whyline-event: 41b5ddb565994e309d0668ec90b8619a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T02:06:02.428Z"} -->
+
+## 2026-11-01 — Pass JOB-31 Workday discovery test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** JOB-31
+
+**Because:** All task-specific tests, tests/jobs, tests/console, and the full test suite passed cleanly with zero errors
+
+**Rejected:**
+
+- Block on sandbox permissions — test suite executes without sandbox permission issues in this environment
+- Fail on previous round issues — direct Workday URL failure fallback and same-host redirect constraints are implemented and pass tests
+
+**Test:** uv run pytest -q tests/jobs tests/console: passed
+**Test:** uv run pytest -q: passed
+
+**Files:** tests/jobs/test_workday_discovery.py, src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/console/jobs_screens.py
+
+<!-- whyline-event: 0ce12696d3794fd6baaf9e135f4cb9c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:06:07.673Z"} -->
+
+## 2026-11-01 — Approve Workday board discovery, suggest guidance, and console re-add flow
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** JOB-31
+
+**Because:** All task requirements verified; direct Workday probing, careers page scanning with robots.txt and same-host redirect enforcement, suggest prompt guidance, console detail hint, and re-add board reset all pass full and targeted test suites
+
+**Rejected:**
+
+- Reject for previous redirect/fallback issues — verified fixed and tested with negative test cases
+
+**Files:** src/whyline/jobs/ats.py, src/whyline/jobs/companies.py, src/whyline/console/jobs_screens.py, tests/jobs/test_workday_discovery.py
+
+<!-- whyline-event: d61c367f230e40e28235b9fe7dacbb70 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:18:39.977Z"} -->
+
+## 2026-11-01 — Pass JOB-32 because job-search documentation accurately covers Part 4 CV, review, company, and Workday requirements
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** JOB-32
+
+**Because:** docs/job-search.md correctly lists the four CV formats (.md, .txt, .docx, .pdf) noting .docx text clarity, scanned PDF refusal, and Finder path quotes; details CV review controls (Choose file…, Stop) and preferences prerequisite; explains company batch selection, bulk accept, and deferred fetching; documents Workday board discovery, manual linking fallback, robots.txt compliance, and 40-description run limit; git diff --check is clean and uv run pytest -q passed at 100% with one skip
+
+**Files:** docs/job-search.md
+
+<!-- whyline-event: 9f7a3bf528364a41b8be94e69d29bb3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:41:06.372Z"} -->
+
+## 2026-11-01 — Approve JOB-32 because docs/job-search.md accurately covers Part 4 CV formats, review controls, company batch selection, and Workday board integration
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** JOB-32
+
+**Because:** The documentation precisely details the 4 CV formats (.md, .txt, .docx, .pdf), notes .docx text clarity, scanned PDF refusal, and Finder path quotes; explains CV review controls (Choose file…, Stop) with preferences prerequisites; describes row ticking and bulk accept for suggested companies without pre-emptive fetching; specifies Workday board discovery, manual linking fallback, robots.txt adherence, and 40-description limit per run; tests pass with 100% (1 skip) and git diff --check is clean
+
+**Files:** docs/job-search.md
+
+<!-- whyline-event: 053f87d42f71400db042e7fe2045a1cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T05:52:31.973Z"} -->

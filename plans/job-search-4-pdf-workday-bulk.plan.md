@@ -17,7 +17,7 @@ Rules every task keeps:
 - Tests use recorded fixtures and stubs, never the network, a real provider or the real home folder. They never sleep and never contain "/Users/".
 - PDF files and web responses are untrusted input. Reading them never runs code and never follows a link outside the rules below. Every library or parse error becomes a plain `ProfileError` or `FetchError` naming the file or company.
 
-- [ ] JOB-23: Read PDF CVs
+- [x] JOB-23: Read PDF CVs
   Edit `pyproject.toml`, `uv.lock`, `src/whyline/jobs/profile.py`, `src/whyline/jobs/cli.py` (the `import-cv` help text), `src/whyline/console/jobs_screens.py` (the path placeholder and the empty-path message) and `tests/jobs/test_profile.py` only, and add PDF fixtures under `tests/jobs/fixtures/`.
   Add `pypdf` to `[project] dependencies` with an upper bound below its next major version, then run `uv lock`.
   Add `.pdf` to `CV_EXTENSIONS`. Every message listing the formats becomes ".md, .txt, .docx, or .pdf".
@@ -39,7 +39,7 @@ Rules every task keeps:
   - a quoted pasted path to a PDF still imports
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-24: Show what was read after a CV import
+- [x] JOB-24: Show what was read after a CV import
   Edit `src/whyline/jobs/profile.py`, `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Add `profile.cv_summary(path=None) -> CvSummary` with `chars`, `lines` and `preview` (the first 5 non-blank lines, each cut to 100 characters), read from cv.md.
   CLI: after `import-cv` succeeds, print `Imported N characters. First lines:` followed by the preview, indented.
@@ -50,7 +50,7 @@ Rules every task keeps:
   - the console shows the preview after an import and saves through the same `import_cv` function
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-25: Choose the CV file with the Mac file picker
+- [x] JOB-25: Choose the CV file with the Mac file picker
   Edit `src/whyline/console/jobs_screens.py` and `tests/console/test_jobs_screens.py` only.
   Chat's **Attach** already opens the Finder picker through `whyline.console.mac_input.pick_files`. Reuse it; do not copy the AppleScript.
   1. In the Import CV panel, add **Choose file…** before **Import**, shown only when `mac_input.available()` is true.
@@ -66,7 +66,7 @@ Rules every task keeps:
   - a picker error shows in the error line
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-26: Stop a running CV review
+- [x] JOB-26: Stop a running CV review
   Edit `src/whyline/agents/runner.py`, `src/whyline/agents/after.py`, `src/whyline/agents/deliver.py`, `src/whyline/jobs/review.py`, `src/whyline/console/jobs_screens.py` and their tests only. No whyline-relay change: `whyline_relay.agents.run` already takes `cancel_event` and raises `AgentCancelled`.
   1. `runner.execute_once` gains an optional `cancel_event: threading.Event | None = None`. When it is given, pass it to `run_fn` as `cancel_event=`. When it is not, call `run_fn` exactly as today, so injected test `run_fn`s keep working. `AgentCancelled` ends the run with outcome `cancelled` and reason `Stopped by you.` It does not fall through to the backup provider.
   2. A `cancelled` run does not count as a failure in `after.py` (no `consecutive_failures` change and no needs_attention). It sends no failure alert: add `cancelled` to `deliver._NO_RUN`.
@@ -81,7 +81,7 @@ Rules every task keeps:
   - closing the screen during a review sets the event
   Verify with `uv run pytest -q tests/agents tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-27: Don't lose preferences, and don't review without inputs
+- [x] JOB-27: Don't lose preferences, and don't review without inputs
   Edit `src/whyline/jobs/review.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Today **Close** and Esc drop unsaved preference fields without asking, and **Review my CV** runs without a CV or saved preferences, which gives a profile and rubric built on nothing.
   1. Unsaved changes: JobsHomeScreen keeps the preferences as last loaded or saved (normalised the same way `_collect_preferences` builds them). If the form differs when **Close** or Esc is pressed, show a confirm line `Save your preference changes?` with **Save**, **Discard** and **Keep editing**. **Save** goes through the same `_save_preferences` path, and the screen closes only if the save succeeds.
@@ -100,7 +100,7 @@ Rules every task keeps:
   - a stale draft shows the note and hides Accept, and a fresh one does neither
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-28: Accept or remove several companies at once
+- [x] JOB-28: Accept or remove several companies at once
   Edit `src/whyline/jobs/companies.py`, `src/whyline/jobs/cli.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   Add `companies.accept_many(names)` and `companies.remove_many(names)`. Each loads the store once, changes every named company, and writes once. If any name is unknown, raise `CompanyError` listing all unknown names and change nothing. `accept` and `remove` call them with one name, keeping their return values.
   Add `companies.suggested_names()`, which returns the names with status `suggested` in table order.
@@ -121,7 +121,7 @@ Rules every task keeps:
   - the reason line follows the cursor
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-29: Workday boards in the HTTP client and URL parser
+- [x] JOB-29: Workday boards in the HTTP client and URL parser
   Edit `src/whyline/jobs/ats.py` and `tests/jobs/test_ats.py` only.
   A Workday board lives at `https://<tenant>.<wdN>.myworkdayjobs.com/[<locale>/]<site>`. Examples: `bnymellon.wd1.myworkdayjobs.com/en-US/BNY_Careers` and `mastercard.wd1.myworkdayjobs.com/CorporateCareers`. Its public job search is `POST https://<host>/wday/cxs/<tenant>/<site>/jobs`, and one job's detail is `GET https://<host>/wday/cxs/<tenant>/<site><externalPath>`.
   1. Add `workday` to the board names. Store its slug as `<tenant>/<wdN>/<site>`. The site part keeps its case; the tenant and `wdN` are lower-cased.
@@ -137,7 +137,7 @@ Rules every task keeps:
   - a robots.txt disallow stops the request with the plain message
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-30: Fetch Workday jobs
+- [x] JOB-30: Fetch Workday jobs
   Edit `src/whyline/jobs/fetch.py`, `tests/jobs/test_fetch.py` and add JSON fixtures under `tests/jobs/fixtures/workday/` only.
   Add `_workday(name, slug, client)` and register it in `_PARSERS`.
   1. Page through `POST .../jobs` with `{"appliedFacets": {}, "limit": 20, "offset": N, "searchText": ""}` until a page is empty, `offset >= total`, or 200 jobs have been read.
@@ -160,7 +160,7 @@ Rules every task keeps:
   - a malformed list response gives a FetchError naming the company
   Verify with `uv run pytest -q tests/jobs` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-31: Find a company's Workday board
+- [x] JOB-31: Find a company's Workday board
   Edit `src/whyline/jobs/ats.py`, `src/whyline/jobs/companies.py`, `src/whyline/console/jobs_screens.py` and their tests only.
   `ats.detect`:
   1. When `careers_url` is itself a Workday URL, probe its `/jobs` endpoint with `limit: 1`. A valid `jobPostings` list records `ats = "workday"` and the slug.
@@ -178,7 +178,7 @@ Rules every task keeps:
   - re-adding a company with a Workday link from the console then checking it records workday
   Verify with `uv run pytest -q tests/jobs tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] JOB-32: Docs for part 4
+- [x] JOB-32: Docs for part 4
   Edit `docs/job-search.md` only.
   - CV: list the four formats. Say that `.docx` usually gives the cleanest text, that a scanned PDF has no text to read and is refused, and that a pasted path may keep its quotes from Finder's Copy as Pathname.
   - CV review: Choose file…, Stop, and that the review needs a CV and saved preferences to be useful.

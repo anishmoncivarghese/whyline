@@ -299,6 +299,54 @@ def test_duplicates_in_suggestions_and_add_are_deduplicated(
     assert acme_rows[0].careers_url == "https://acme.example/jobs"
 
 
+def test_accept_many_changes_every_named_company_in_one_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("Acme", "Globex", "Initech"):
+        companies.add(name)
+        companies.remove(name)
+    writes: list[int] = []
+    real_write = companies._write_private_companies
+    monkeypatch.setattr(
+        companies, "_write_private_companies", lambda store: writes.append(1) or real_write(store)
+    )
+    changed = companies.accept_many(["acme", "Initech"])
+    assert [c.name for c in changed] == ["Acme", "Initech"]
+    assert writes == [1]
+    assert {c.name: c.status for c in companies.list()} == {
+        "Acme": "accepted",
+        "Globex": "removed",
+        "Initech": "accepted",
+    }
+    assert [c.name for c in companies.remove_many(["Acme", "Initech"])] == ["Acme", "Initech"]
+    assert writes == [1, 1]
+
+
+def test_many_with_an_unknown_name_lists_all_unknown_and_changes_nothing() -> None:
+    companies.add("Acme")
+    companies.remove("Acme")
+    with pytest.raises(companies.CompanyError) as caught:
+        companies.accept_many(["Acme", "Nope", "Missing"])
+    assert "Nope" in str(caught.value) and "Missing" in str(caught.value)
+    assert [c.status for c in companies.list()] == ["removed"]
+    with pytest.raises(companies.CompanyError):
+        companies.remove_many(["Acme", "Nope"])
+    assert [c.status for c in companies.list()] == ["removed"]
+
+
+def test_suggested_names_returns_suggested_in_table_order() -> None:
+    initial = [
+        {"name": "Zed", "reason": "r", "careers_hint": ""},
+        {"name": "Alpha", "reason": "r", "careers_hint": ""},
+        {"name": "Mid", "reason": "r", "careers_hint": ""},
+    ]
+    companies.suggest(
+        run_fn=lambda cmd, prompt, **kw: _ExecResult(0, _claude_json(_fenced_companies(initial)))
+    )
+    companies.accept("Alpha")
+    assert companies.suggested_names() == ["Zed", "Mid"]
+
+
 def test_removed_companies_are_not_resuggested() -> None:
     # 1. AI-suggested company that the user removes
     initial = [

@@ -10,7 +10,7 @@ import re
 import tempfile
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -35,8 +35,13 @@ ATS_KINDS = (
     "workable",
     "smartrecruiters",
     "recruitee",
+    "workday",
     "careers_page",
     "unknown",
+)
+CAREERS_URL_GUIDANCE = (
+    "For `careers_hint`, give the page where the company's jobs are listed. When the company "
+    "uses a myworkdayjobs.com, Greenhouse or Lever job board, give that board's link instead."
 )
 ADDED_BY_KINDS = ("ai", "user")
 COMPANY_KEYS = (
@@ -557,6 +562,7 @@ def suggest(
     except (CompanyError, d.DefinitionError, OSError) as error:
         return SuggestResult(ok=False, outcome="failed", reason=str(error))
 
+    defn = replace(defn, instructions=f"{defn.instructions.rstrip()}\n\n{CAREERS_URL_GUIDANCE}\n")
     if chosen is not None:
         run_defn = replace(defn, root=jobs_dir, runner=chosen, backup=())
     else:
@@ -672,32 +678,47 @@ def add(name: str, careers_url: str | None = None) -> Company:
     return entry
 
 
+def _set_status_many(names: Iterable[str], status: str) -> builtins.list[Company]:
+    clean_names = [validate_name(name) for name in names]
+    store = _load_store()
+    unknown = [n for n in clean_names if _company_key(n) not in store]
+    if unknown:
+        label = "Company not found" if len(unknown) == 1 else "Companies not found"
+        raise CompanyError(f"{label}: {', '.join(unknown)}")
+    updated: builtins.list[Company] = []
+    for clean_name in clean_names:
+        key = _company_key(clean_name)
+        entry = replace(store[key], status=status)
+        store[key] = entry
+        updated.append(entry)
+    if updated:
+        _write_private_companies(store)
+    return updated
+
+
+def accept_many(names: Iterable[str]) -> builtins.list[Company]:
+    """Mark every named company `accepted` in one write; unknown names change nothing."""
+    return _set_status_many(names, "accepted")
+
+
+def remove_many(names: Iterable[str]) -> builtins.list[Company]:
+    """Mark every named company `removed` in one write; unknown names change nothing."""
+    return _set_status_many(names, "removed")
+
+
 def accept(name: str) -> Company:
     """Mark an existing company in companies.toml as `accepted`."""
-    clean_name = validate_name(name)
-    store = _load_store()
-    key = _company_key(clean_name)
-    existing = store.get(key)
-    if existing is None:
-        raise CompanyError(f"Company not found: {clean_name}")
-    updated = replace(existing, status="accepted")
-    store[key] = updated
-    _write_private_companies(store)
-    return updated
+    return accept_many([name])[0]
 
 
 def remove(name: str) -> Company:
     """Mark an existing company in companies.toml as `removed` so it is not re-suggested."""
-    clean_name = validate_name(name)
-    store = _load_store()
-    key = _company_key(clean_name)
-    existing = store.get(key)
-    if existing is None:
-        raise CompanyError(f"Company not found: {clean_name}")
-    updated = replace(existing, status="removed")
-    store[key] = updated
-    _write_private_companies(store)
-    return updated
+    return remove_many([name])[0]
+
+
+def suggested_names() -> builtins.list[str]:
+    """Return the names of `suggested` companies in table order."""
+    return [item.name for item in _load_store().values() if item.status == "suggested"]
 
 
 def list(status: str | None = None) -> builtins.list[Company]:

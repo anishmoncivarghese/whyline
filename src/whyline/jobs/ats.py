@@ -12,8 +12,10 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import urllib.robotparser
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Any
 
 import whyline
@@ -33,7 +35,8 @@ BOARD_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("recruitee", "https://{slug}.recruitee.com/api/offers/"),
 )
 
-ATS_BOARDS: tuple[str, ...] = tuple(board for board, _ in BOARD_ENDPOINTS)
+# Workday has no GET probe endpoint (its search is a POST), so it is a board name only.
+ATS_BOARDS: tuple[str, ...] = (*(board for board, _ in BOARD_ENDPOINTS), "workday")
 
 BOARD_API_HOSTS: frozenset[str] = frozenset(
     {
@@ -60,6 +63,15 @@ _RESERVED_WORKABLE_SUBDOMAINS: frozenset[str] = frozenset(
 _HOST_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _PATH_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
 _ALNUM_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_WORKDAY_HOST_RE = re.compile(r"^[a-z0-9-]+\.wd[0-9]{1,3}\.myworkdayjobs\.com$")
+_WORKDAY_SITE_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+_WORKDAY_LOCALE_RE = re.compile(r"^[a-z]{2}(?:-[A-Za-z]{2})?$")
+_WORKDAY_CXS_PREFIX = "/wday/cxs/"
+_WORKDAY_JOBS_PATH_RE = re.compile(r"^/wday/cxs/[^/]+/[^/]+/jobs$")
+
+WORKDAY_MAX_PROBES: int = 3
+_CAREERS_PAGE_MAX_BYTES: int = 2 * 1024 * 1024
+_URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>\\)]+", re.IGNORECASE)
 
 _STDLIB_URLOPEN = urllib.request.urlopen
 
@@ -126,6 +138,17 @@ def is_recruitee_board_host(host: str) -> bool:
     return bool(_HOST_LABEL_RE.fullmatch(sub)) and sub not in _RESERVED_RECRUITEE_SUBDOMAINS
 
 
+def is_workday_host(host: str) -> bool:
+    """Return True if `host` is `<tenant>.<wdN>.myworkdayjobs.com`."""
+    return bool(_WORKDAY_HOST_RE.fullmatch(host.lower()))
+
+
+def _is_workday_cxs_path(path: str) -> bool:
+    if not path.startswith(_WORKDAY_CXS_PREFIX):
+        return False
+    return ".." not in urllib.parse.unquote(path).split("/")
+
+
 def is_board_api_host(host: str) -> bool:
     """Return True if `host` is one of the 6 allowed public job-board API hosts."""
     lowered = host.lower()
@@ -179,8 +202,16 @@ def _validated_careers_origin(careers_url: str) -> tuple[str, int]:
     return host, parts.port if parts.port is not None else 443
 
 
-def validate_fetch_url(url: str, *, careers_url: str | None = None) -> str:
-    """Validate that `url` uses https and targets an allowlisted board host (or `careers_url` host)."""
+def validate_fetch_url(
+    url: str,
+    *,
+    careers_url: str | None = None,
+    allow_robots_txt: bool = False,
+) -> str:
+    """Validate that `url` uses https and targets an allowlisted board host (or `careers_url` host).
+
+    Workday hosts are allowed only under `/wday/cxs/` (plus `/robots.txt` when `allow_robots_txt`).
+    """
     parts = _parse_https_url(url, label="Request URL")
     host = (parts.hostname or "").lower()
     port = parts.port if parts.port is not None else 443
@@ -188,6 +219,10 @@ def validate_fetch_url(url: str, *, careers_url: str | None = None) -> str:
     allowed = False
     if is_board_api_host(host) and port == 443:
         allowed = True
+    elif is_workday_host(host) and port == 443:
+        path = parts.path or "/"
+        if _is_workday_cxs_path(path) or (allow_robots_txt and path == "/robots.txt"):
+            allowed = True
     elif careers_url is not None and careers_url.strip():
         allowed_host, allowed_port = _validated_careers_origin(careers_url)
         if host == allowed_host and port == allowed_port:
@@ -251,10 +286,15 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         *,
         careers_url: str | None = None,
         limiter: RateLimiter | None = None,
+        max_redirections: int | None = None,
+        same_host: bool = False,
     ) -> None:
         super().__init__()
         self._careers_url = careers_url
         self._limiter = limiter
+        self._same_host = same_host
+        if max_redirections is not None:
+            self.max_redirections = max_redirections
 
     def redirect_request(
         self,
@@ -269,6 +309,8 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         clean_target = validate_fetch_url(resolved, careers_url=self._careers_url)
         prev_host = (urllib.parse.urlsplit(req.full_url).hostname or "").lower()
         next_host = (urllib.parse.urlsplit(clean_target).hostname or "").lower()
+        if self._same_host and next_host != prev_host:
+            raise HostNotAllowedError(f"Refusing redirect from {prev_host} to {next_host}.")
         if self._limiter is not None and next_host and next_host != prev_host:
             self._limiter.wait(next_host)
         redirected = super().redirect_request(req, fp, code, msg, headers, clean_target)
@@ -290,6 +332,8 @@ class HttpClient:
         limiter: RateLimiter | None = None,
         clock: Callable[[], float] | None = None,
         sleep: Callable[[float], None] | None = None,
+        max_redirections: int | None = None,
+        same_host_redirects: bool = False,
     ) -> None:
         if careers_url is not None and careers_url.strip():
             _validated_careers_origin(careers_url)
@@ -299,26 +343,82 @@ class HttpClient:
         self._transport = transport
         self._urlopen = urlopen
         self.timeout = timeout
+        self._max_redirections = max_redirections
+        self._same_host_redirects = same_host_redirects
         self.limiter = (
             limiter
             if limiter is not None
             else RateLimiter(min_interval=RATE_LIMIT_SECONDS, clock=clock, sleep=sleep)
         )
 
+        self._workday_robots: dict[str, bool] = {}
+
     def __call__(self, url: str) -> Any:
+        return self._send(url, "GET", None)
+
+    def post_json(self, url: str, body: dict[str, Any]) -> Any:
+        """POST `body` as JSON to a Workday `/wday/cxs/<tenant>/<site>/jobs` URL only."""
         clean_url = validate_fetch_url(url, careers_url=self.careers_url)
+        parts = urllib.parse.urlsplit(clean_url)
+        if not is_workday_host(parts.hostname or "") or not _WORKDAY_JOBS_PATH_RE.fullmatch(
+            parts.path
+        ):
+            raise HostNotAllowedError("Refusing POST: only Workday /wday/cxs/.../jobs is allowed.")
+        return self._send(clean_url, "POST", json.dumps(body).encode("utf-8"))
+
+    def _check_workday_robots(self, host: str) -> None:
+        allowed = self._workday_robots.get(host)
+        if allowed is None:
+            allowed = self._read_workday_robots(host)
+            self._workday_robots[host] = allowed
+        if not allowed:
+            raise AtsError(f"{host} robots.txt disallows its job search")
+
+    def _read_workday_robots(self, host: str) -> bool:
+        try:
+            raw = self._send(f"https://{host}/robots.txt", "GET", None, robots=True)
+        except urllib.error.HTTPError as error:
+            # Same convention as RobotFileParser.read(): 401/403 disallow, other errors allow.
+            return error.code not in (401, 403)
+        except (urllib.error.URLError, TimeoutError, OSError, AtsError, ValueError):
+            return True
+        if isinstance(raw, (bytes, bytearray)):
+            text = bytes(raw).decode("utf-8", errors="replace")
+        elif isinstance(raw, str):
+            text = raw
+        else:
+            return True
+        parser = urllib.robotparser.RobotFileParser()
+        parser.parse(text.splitlines())
+        return parser.can_fetch(user_agent(), f"https://{host}{_WORKDAY_CXS_PREFIX}")
+
+    def _send(
+        self,
+        url: str,
+        method: str,
+        body: bytes | None,
+        *,
+        robots: bool = False,
+    ) -> Any:
+        clean_url = validate_fetch_url(url, careers_url=self.careers_url, allow_robots_txt=robots)
         host = (urllib.parse.urlsplit(clean_url).hostname or "").lower()
+        if is_workday_host(host) and not robots:
+            self._check_workday_robots(host)
         self.limiter.wait(host)
 
         headers = {
             "User-Agent": user_agent(),
             "Accept": "application/json",
         }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
 
         if self._transport is not None:
-            return _call_injected_transport(self._transport, clean_url, headers, self.timeout)
+            return _call_injected_transport(
+                self._transport, clean_url, headers, self.timeout, method=method, body=body
+            )
 
-        request = urllib.request.Request(clean_url, headers=headers)
+        request = urllib.request.Request(clean_url, data=body, headers=headers, method=method)
         if self._urlopen is not None:
             with self._urlopen(request, timeout=self.timeout) as response:
                 return _read_bounded_response(response)
@@ -327,7 +427,12 @@ class HttpClient:
                 return _read_bounded_response(response)
 
         opener = urllib.request.build_opener(
-            _SafeRedirectHandler(careers_url=self.careers_url, limiter=self.limiter)
+            _SafeRedirectHandler(
+                careers_url=self.careers_url,
+                limiter=self.limiter,
+                max_redirections=self._max_redirections,
+                same_host=self._same_host_redirects,
+            )
         )
         with opener.open(request, timeout=self.timeout) as response:
             return _read_bounded_response(response)
@@ -338,13 +443,24 @@ def _call_injected_transport(
     url: str,
     headers: dict[str, str],
     timeout: float,
+    *,
+    method: str = "GET",
+    body: bytes | None = None,
 ) -> Any:
     try:
         sig = inspect.signature(transport)
     except (TypeError, ValueError):
+        if method != "GET":
+            raise AtsError(f"Transport cannot send {method} requests.") from None
         return transport(url)
 
     kwargs: dict[str, Any] = {}
+    if method != "GET":
+        if "method" not in sig.parameters:
+            raise AtsError(f"Transport cannot send {method} requests.")
+        kwargs["method"] = method
+        if "body" in sig.parameters:
+            kwargs["body"] = body
     if "headers" in sig.parameters:
         kwargs["headers"] = dict(headers)
     if "timeout" in sig.parameters:
@@ -492,6 +608,15 @@ def _extract_board_matches(careers_url: str | None) -> builtins.list[tuple[str, 
     elif is_recruitee_board_host(host):
         sub = host[: -len(".recruitee.com")]
         _add("recruitee", sub)
+    elif is_workday_host(host):
+        site_segments = (
+            segments[1:] if segments and _WORKDAY_LOCALE_RE.fullmatch(segments[0]) else segments
+        )
+        if site_segments and _WORKDAY_SITE_RE.fullmatch(site_segments[0]):
+            tenant, wd, _ = host.split(".", 2)
+            slug = f"{tenant}/{wd}/{site_segments[0]}"
+            if ("workday", slug) not in matches:
+                matches.append(("workday", slug))
 
     return matches
 
@@ -499,7 +624,9 @@ def _extract_board_matches(careers_url: str | None) -> builtins.list[tuple[str, 
 def extract_board_slugs(careers_url: str | None) -> builtins.list[str]:
     """Return unique safe slugs extracted from `careers_url` when on a known board host."""
     slugs: builtins.list[str] = []
-    for _, slug in _extract_board_matches(careers_url):
+    for board, slug in _extract_board_matches(careers_url):
+        if board == "workday":
+            continue
         if slug not in slugs:
             slugs.append(slug)
         if "_" in slug:
@@ -632,6 +759,9 @@ def _is_valid_jobs_payload(
                 return False
         elif isinstance(data, builtins.list):
             items = data
+    elif board == "workday":
+        if isinstance(data, dict):
+            items = data.get("jobPostings")
     elif board == "recruitee":
         if isinstance(data, dict):
             items = data.get("offers", data.get("jobs"))
@@ -639,6 +769,98 @@ def _is_valid_jobs_payload(
             items = data
 
     return _is_job_dict_list(items)
+
+
+class _WorkdayLinkScan(HTMLParser):
+    """Collect every `href` value and inline script body on a page."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: builtins.list[str] = []
+        self.scripts: builtins.list[str] = []
+        self._in_script = False
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        href = dict(attrs).get("href")
+        if href:
+            self.hrefs.append(href)
+        if tag == "script":
+            self._in_script = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._in_script = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script:
+            self.scripts.append(data)
+
+
+def _workday_slugs_in_page(page_url: str, raw: Any) -> builtins.list[str]:
+    """Distinct Workday `tenant/wdN/site` slugs linked from `raw`, in page order."""
+    body = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8")
+    text = bytes(body[:_CAREERS_PAGE_MAX_BYTES]).decode("utf-8", errors="replace")
+    scan = _WorkdayLinkScan()
+    scan.feed(text)
+    scan.close()
+    candidates = [urllib.parse.urljoin(page_url, href.strip()) for href in scan.hrefs]
+    for script in scan.scripts:
+        candidates.extend(_URL_IN_TEXT_RE.findall(script.replace("\\/", "/")))
+    slugs: builtins.list[str] = []
+    for candidate in candidates:
+        for board, slug in _extract_board_matches(candidate):
+            if board == "workday" and slug not in slugs:
+                slugs.append(slug)
+    return slugs
+
+
+def _probe_workday(client: HttpClient, slug: str) -> bool:
+    tenant, wd, site = slug.split("/")
+    url = f"https://{tenant}.{wd}.myworkdayjobs.com{_WORKDAY_CXS_PREFIX}{tenant}/{site}/jobs"
+    body = {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""}
+    try:
+        payload = client.post_json(url, body)
+    except (urllib.error.URLError, TimeoutError, OSError, AtsError, ValueError):
+        return False
+    return _is_valid_jobs_payload("workday", payload)
+
+
+def _careers_page_workday(careers_url: str, client: HttpClient) -> str | None:
+    """Read the careers page once (robots.txt first) and return the first live Workday slug."""
+    try:
+        page_client = HttpClient(
+            transport=client._transport,
+            urlopen=client._urlopen,
+            careers_url=careers_url,
+            timeout=client.timeout,
+            limiter=client.limiter,
+            max_redirections=1,
+            same_host_redirects=True,
+        )
+        parts = _parse_https_url(careers_url, label="careers_url")
+        host = (parts.hostname or "").lower()
+        port = parts.port if parts.port is not None else 443
+        netloc = host if port == 443 else f"{host}:{port}"
+        robots = urllib.robotparser.RobotFileParser()
+        try:
+            raw_robots = page_client(f"https://{netloc}/robots.txt")
+            robots_text = (
+                bytes(raw_robots).decode("utf-8", errors="replace")
+                if isinstance(raw_robots, (bytes, bytearray))
+                else str(raw_robots)
+            )
+            robots.parse(robots_text.splitlines())
+        except (AtsError, OSError, ValueError):
+            robots.parse([])  # no readable robots.txt: nothing is disallowed
+        if not robots.can_fetch(user_agent(), careers_url):
+            return None
+        slugs = _workday_slugs_in_page(careers_url, page_client(careers_url))
+    except (AtsError, OSError, ValueError):
+        return None
+    for slug in slugs[:WORKDAY_MAX_PROBES]:
+        if _probe_workday(client, slug):
+            return slug
+    return None
 
 
 def detect(
@@ -651,10 +873,13 @@ def detect(
 ) -> DetectionResult:
     """Probe public ATS endpoints in order and stop at the first returning a valid job list."""
     slugs = slug_guesses(name, careers_url)
-    sr_url_slugs = {
-        slug for board, slug in _extract_board_matches(careers_url) if board == "smartrecruiters"
-    }
+    url_matches = _extract_board_matches(careers_url)
+    sr_url_slugs = {slug for board, slug in url_matches if board == "smartrecruiters"}
     client = make_http(http, clock=clock, sleep=sleep)
+
+    for board, slug in url_matches:
+        if board == "workday" and _probe_workday(client, slug):
+            return DetectionResult(ats="workday", slug=slug)
 
     for slug in slugs:
         for board, template in BOARD_ENDPOINTS:
@@ -678,5 +903,11 @@ def detect(
                 return DetectionResult(ats=board, slug=slug)
 
     if _has_valid_careers_url(careers_url):
+        if not url_matches:
+            found = _careers_page_workday(str(careers_url).strip(), client)
+            if found is not None:
+                return DetectionResult(ats="workday", slug=found)
+        if any(board == "workday" for board, _ in url_matches):
+            return DetectionResult(ats="unknown", slug="")
         return DetectionResult(ats="careers_page", slug="")
     return DetectionResult(ats="unknown", slug="")

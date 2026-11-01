@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import inspect
+import threading
 import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from rich.text import Text
+from textual import events, on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalScroll
 from textual.css.query import NoMatches
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
 
+from whyline.console import mac_input
 from whyline.jobs import alerts, apply, companies, doctor, profile, review, tracker
 from whyline.jobs.cli import (
     ALERTS_MAIL_SCRIPT,
@@ -31,6 +35,18 @@ PRIVACY_SENTENCE = (
 )
 
 UNKNOWN_BOARD_HINT = "No public job board found: add its careers page URL"
+NO_BOARD_HELP = (
+    "No board found. If the company's job search is on myworkdayjobs.com, "
+    "paste that link with Add company… and the same name."
+)
+UNSAVED_PROMPT ="Save your preference changes?"
+NO_PREFERENCES_NOTE = (
+    "No preferences saved, so the rubric ignores roles, location and salary. "
+    "Fill them in, Save, and review again."
+)
+STALE_DRAFTS_NOTE = (
+    "These drafts are older than your CV or preferences. Run Review my CV again."
+)
 COMPANIES_FETCH_NOTE = "Suggested companies stay out of the fetch list until accepted."
 
 _REMOTE_OPTIONS: list[tuple[str, str]] = [
@@ -57,6 +73,7 @@ def _call_review_run(
     fn: Callable[..., Any],
     cli: str | None,
     progress: Callable[[str], None],
+    cancel_event: threading.Event | None = None,
 ) -> Any:
     try:
         params = inspect.signature(fn).parameters
@@ -64,10 +81,12 @@ def _call_review_run(
         return fn(cli=cli, progress=progress)
 
     has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    extra = {"cancel_event": cancel_event} if cancel_event is not None and (
+        has_var_kw or "cancel_event" in params) else {}
     if has_var_kw or "progress" in params:
         if has_var_kw or "cli" in params:
-            return fn(cli=cli, progress=progress)
-        return fn(progress=progress)
+            return fn(cli=cli, progress=progress, **extra)
+        return fn(progress=progress, **extra)
     if "cli" in params or any(
         p.kind
         in (
@@ -207,6 +226,20 @@ def _call_companies_add(
     return fn(name)
 
 
+class _CompaniesTable(DataTable):
+    """DataTable that reports clicks on the tick column (its own click handler stops them)."""
+
+    class TickClicked(Message):
+        def __init__(self, row: int) -> None:
+            super().__init__()
+            self.row = row
+
+    async def _on_click(self, event: events.Click) -> None:
+        meta = event.style.meta
+        if meta.get("column") == 0 and isinstance(meta.get("row"), int) and meta["row"] >= 0:
+            self.post_message(self.TickClicked(meta["row"]))
+
+
 class JobsHomeScreen(ModalScreen):
     """Manage the local job-search profile and companies (~/.whyline/jobs/)."""
 
@@ -224,6 +257,8 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen .jh-draft-heading { text-style: bold; margin-top: 1; }
     JobsHomeScreen #jh-privacy { width: 100%; height: auto; color: $text-muted; }
     JobsHomeScreen #jh-cv-status { width: 100%; height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-cv-preview { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-cv-preview.-empty { display: none; }
     JobsHomeScreen #jh-cv-actions { height: auto; margin-top: 1; }
     JobsHomeScreen #jh-cv-actions Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen .jh-panel { height: auto; margin-top: 1; }
@@ -233,7 +268,10 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-cv-path { width: 100%; }
     JobsHomeScreen #jh-cv-text { width: 100%; height: 6; }
     JobsHomeScreen #jh-review-cli { width: 1fr; }
-    JobsHomeScreen #jh-review-progress { width: 100%; height: auto; margin-top: 1; color: $accent; }
+    JobsHomeScreen #jh-review-progress-row { height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-review-progress { width: 1fr; height: auto; color: $accent; }
+    JobsHomeScreen #jh-review-stop { min-width: 8; width: auto; margin-left: 1; display: none; }
+    JobsHomeScreen #jh-review-stop.-shown { display: block; }
     JobsHomeScreen #jh-review-progress.-empty { display: none; }
     JobsHomeScreen #jh-profile-draft { width: 100%; height: 6; }
     JobsHomeScreen #jh-rubric-draft { width: 100%; height: 6; }
@@ -250,6 +288,11 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-companies-empty { width: 100%; height: auto; color: $text-muted; }
     JobsHomeScreen #jh-companies-empty.-empty { display: none; }
     JobsHomeScreen #jh-companies-table { width: 100%; height: auto; min-height: 3; max-height: 7; margin-top: 1; }
+    JobsHomeScreen #jh-company-detail { width: 100%; height: auto; color: $text-muted; }
+    JobsHomeScreen #jh-co-confirm { height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-co-confirm.-hidden { display: none; }
+    JobsHomeScreen #jh-co-confirm Static { width: auto; padding: 1 1 0 0; }
+    JobsHomeScreen #jh-co-confirm Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen .jh-companies-actions { height: auto; margin-top: 1; }
     JobsHomeScreen .jh-companies-actions Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen #jh-company-name { width: 100%; }
@@ -271,6 +314,12 @@ class JobsHomeScreen(ModalScreen):
     JobsHomeScreen #jh-jobs-note { width: 100%; }
     JobsHomeScreen #jh-jobs-check { width: 100%; height: auto; margin-top: 1; }
     JobsHomeScreen #jh-jobs-check.-empty { display: none; }
+    JobsHomeScreen #jh-review-stale, JobsHomeScreen #jh-review-noprefs { width: 100%; height: auto; color: $warning; }
+    JobsHomeScreen #jh-review-stale.-empty, JobsHomeScreen #jh-review-noprefs.-empty { display: none; }
+    JobsHomeScreen #jh-confirm { height: auto; margin-top: 1; }
+    JobsHomeScreen #jh-confirm.-hidden { display: none; }
+    JobsHomeScreen #jh-confirm Static { width: auto; padding: 1 1 0 0; }
+    JobsHomeScreen #jh-confirm Button { min-width: 8; width: auto; margin-right: 1; }
     JobsHomeScreen #jh-error { height: auto; max-height: 3; color: $error; }
     JobsHomeScreen #jh-error.-empty { display: none; }
     JobsHomeScreen #jh-status { height: auto; max-height: 2; color: $success; }
@@ -287,6 +336,7 @@ class JobsHomeScreen(ModalScreen):
         save_preferences_fn: Callable[[Mapping[str, Any]], Any] | None = None,
         import_cv_fn: Callable[[str | Path], Any] | None = None,
         import_cv_text_fn: Callable[[str], Any] | None = None,
+        pick_files_fn: Callable[[], Sequence[Path]] | None = None,
         review_run_fn: Callable[..., review.ReviewResult] | None = None,
         review_accept_fn: Callable[..., Any] | None = None,
         review_discard_fn: Callable[[], Any] | None = None,
@@ -296,8 +346,9 @@ class JobsHomeScreen(ModalScreen):
         companies_suggest_fn: Callable[..., Any] | None = None,
         companies_check_fn: Callable[..., Any] | None = None,
         companies_add_fn: Callable[..., Any] | None = None,
-        companies_accept_fn: Callable[[str], Any] | None = None,
-        companies_remove_fn: Callable[[str], Any] | None = None,
+        companies_accept_fn: Callable[[Sequence[str]], Any] | None = None,
+        companies_remove_fn: Callable[[Sequence[str]], Any] | None = None,
+        companies_suggested_names_fn: Callable[[], Sequence[str]] | None = None,
         fetch_fn: Callable[..., Any] | None = None,
         jobs_list_fn: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
         jobs_set_fn: Callable[..., Any] | None = None,
@@ -318,6 +369,7 @@ class JobsHomeScreen(ModalScreen):
         self._save_preferences_fn = save_preferences_fn
         self._import_cv_fn = import_cv_fn
         self._import_cv_text_fn = import_cv_text_fn
+        self._pick_files_fn = pick_files_fn
         self._review_run_fn = review_run_fn
         self._review_accept_fn = review_accept_fn
         self._review_discard_fn = review_discard_fn
@@ -329,6 +381,7 @@ class JobsHomeScreen(ModalScreen):
         self._companies_add_fn = companies_add_fn
         self._companies_accept_fn = companies_accept_fn
         self._companies_remove_fn = companies_remove_fn
+        self._companies_suggested_names_fn = companies_suggested_names_fn
         self._fetch_fn = fetch_fn
         self._jobs_list_fn = jobs_list_fn
         self._jobs_set_fn = jobs_set_fn
@@ -350,9 +403,12 @@ class JobsHomeScreen(ModalScreen):
         self._job_edit_mode = ""
         self._reviewing = False
         self._review_token: object | None = None
+        self._review_cancel: threading.Event | None = None
         self._companies_busy = False
         self._companies_token: object | None = None
         self._company_rows: list[companies.Company] = []
+        self._company_ticks: set[str] = set()
+        self._saved_prefs: dict[str, Any] | None = None
 
     def _read_alert_senders(self) -> dict[str, bool]:
         fn = self._alert_senders_fn if self._alert_senders_fn is not None else alerts.senders
@@ -495,6 +551,7 @@ class JobsHomeScreen(ModalScreen):
                 Label("Profile", classes="jh-section", id="jh-profile-heading"),
                 Static(PRIVACY_SENTENCE, id="jh-privacy", markup=False),
                 Static(cv_status_line, id="jh-cv-status", markup=False),
+                Static("", id="jh-cv-preview", markup=False, classes="-empty"),
                 Horizontal(
                     Button("Import CV…", id="jh-import-cv"),
                     Button("Paste CV…", id="jh-paste-cv"),
@@ -503,10 +560,15 @@ class JobsHomeScreen(ModalScreen):
                 ),
                 Vertical(
                     Input(
-                        placeholder="~/Documents/cv.docx (.md, .txt, or .docx)",
+                        placeholder="~/Documents/cv.docx (.md, .txt, .docx, or .pdf)",
                         id="jh-cv-path",
                     ),
                     Horizontal(
+                        *(
+                            [Button("Choose file…", id="jh-cv-choose")]
+                            if mac_input.available()
+                            else []
+                        ),
                         Button("Import", id="jh-cv-import-confirm", variant="primary"),
                         Button("Cancel", id="jh-cv-import-cancel"),
                         classes="jh-panel-buttons",
@@ -535,12 +597,18 @@ class JobsHomeScreen(ModalScreen):
                     ),
                     id="jh-review-provider-row",
                 ),
-                Static("", id="jh-review-progress", markup=False, classes="-empty"),
+                HorizontalGroup(
+                    Static("", id="jh-review-progress", markup=False, classes="-empty"),
+                    Button("Stop", id="jh-review-stop"),
+                    id="jh-review-progress-row",
+                ),
                 Vertical(
+                    Static("", id="jh-review-stale", markup=False, classes="-empty"),
                     Label("Profile draft", classes="jh-draft-heading", id="jh-profile-draft-label"),
                     TextArea(initial_profile_draft, id="jh-profile-draft"),
                     Label("Rubric draft", classes="jh-draft-heading", id="jh-rubric-draft-label"),
                     TextArea(initial_rubric_draft, id="jh-rubric-draft"),
+                    Static("", id="jh-review-noprefs", markup=False, classes="-empty"),
                     Horizontal(
                         Button("Accept", id="jh-review-accept", variant="success"),
                         Button("Discard", id="jh-review-discard"),
@@ -634,7 +702,8 @@ class JobsHomeScreen(ModalScreen):
                 Label("Companies", classes="jh-section", id="jh-companies-heading"),
                 Static(COMPANIES_FETCH_NOTE, id="jh-companies-note", markup=False),
                 Static("", id="jh-companies-progress", markup=False, classes="-empty"),
-                DataTable(id="jh-companies-table", cursor_type="row", zebra_stripes=True),
+                _CompaniesTable(id="jh-companies-table", cursor_type="row", zebra_stripes=True),
+                Static("", id="jh-company-detail", markup=False),
                 Static(
                     "No companies yet. Suggest some or add one.",
                     id="jh-companies-empty",
@@ -649,8 +718,16 @@ class JobsHomeScreen(ModalScreen):
                 Horizontal(
                     Button("Accept", id="jh-co-accept", variant="success"),
                     Button("Remove", id="jh-co-remove"),
+                    Button("Accept all suggested", id="jh-co-accept-all"),
                     Button("Add company…", id="jh-co-add"),
                     classes="jh-companies-actions",
+                ),
+                Horizontal(
+                    Static("", id="jh-co-confirm-text", markup=False),
+                    Button("Yes", id="jh-co-confirm-yes", variant="success"),
+                    Button("Cancel", id="jh-co-confirm-cancel"),
+                    id="jh-co-confirm",
+                    classes="-hidden",
                 ),
                 Vertical(
                     Input(placeholder="Company name", id="jh-company-name"),
@@ -731,6 +808,14 @@ class JobsHomeScreen(ModalScreen):
             ),
             Static("", id="jh-status", markup=False, classes="-empty"),
             Horizontal(
+                Static(UNSAVED_PROMPT, markup=False),
+                Button("Save", id="jh-confirm-save", variant="success"),
+                Button("Discard", id="jh-confirm-discard"),
+                Button("Keep editing", id="jh-confirm-keep"),
+                id="jh-confirm",
+                classes="-hidden",
+            ),
+            Horizontal(
                 Button("Save", id="jh-save", variant="success"),
                 Button("Tracked jobs", id="jh-tracked"),
                 Button("Close", id="jh-close"),
@@ -740,16 +825,54 @@ class JobsHomeScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#jh-companies-table", DataTable).add_columns(
-            "Name", "Status", "Board", "Reason"
+            "✓", "Name", "Status", "Board", "Reason"
         )
         self._refresh_companies()
         self.query_one("#jh-jobs-table", DataTable).add_columns(
             "Score", "Status", "Company", "Title"
         )
         self._refresh_jobs()
+        self._saved_prefs = self._current_preferences()
+        self._refresh_draft_notes()
+
+    def _current_preferences(self) -> dict[str, Any] | None:
+        try:
+            return self._collect_preferences()
+        except (ValueError, NoMatches):
+            return None
+
+    def _has_unsaved_preferences(self) -> bool:
+        if self._saved_prefs is None:
+            return False
+        current = self._current_preferences()
+        return current is None or current != self._saved_prefs
+
+    def _show_confirm(self, show: bool) -> None:
+        try:
+            self.query_one("#jh-confirm", Horizontal).set_class(not show, "-hidden")
+        except NoMatches:
+            pass
 
     def action_close(self) -> None:
+        if self._has_unsaved_preferences():
+            self._show_confirm(True)
+            return
+        self._close()
+
+    def _close(self) -> None:
+        if self._review_cancel is not None:
+            self._review_cancel.set()
         self.dismiss(None)
+
+    def _stop_review(self) -> None:
+        if not self._reviewing or self._review_cancel is None:
+            return
+        self._review_cancel.set()
+        self._set_review_progress("Stopping…")
+        try:
+            self.query_one("#jh-review-stop", Button).disabled = True
+        except NoMatches:
+            pass
 
     def _set_error(self, message: str) -> None:
         try:
@@ -789,6 +912,12 @@ class JobsHomeScreen(ModalScreen):
                 self.query_one(selector, Button).disabled = busy
             except NoMatches:
                 pass
+        try:
+            stop = self.query_one("#jh-review-stop", Button)
+        except NoMatches:
+            return
+        stop.disabled = False
+        stop.set_class(busy, "-shown")
 
     def _refresh_cv_status(self) -> None:
         try:
@@ -796,6 +925,22 @@ class JobsHomeScreen(ModalScreen):
             self.query_one("#jh-cv-status", Static).update(format_cv_status(statuses))
         except (profile.ProfileError, OSError, ValueError, NoMatches):
             pass
+        self._refresh_draft_notes()
+
+    def _show_cv_summary(self, source_name: str) -> None:
+        try:
+            summary = profile.cv_summary()
+            self.query_one("#jh-cv-status", Static).update(
+                f"CV: {summary.chars} characters from {source_name}"
+            )
+            preview = self.query_one("#jh-cv-preview", Static)
+        except (profile.ProfileError, OSError, ValueError, NoMatches):
+            return
+        preview.update(
+            "\n".join(f"  {line}" for line in summary.preview)
+            + "\nCheck this reads like your CV. If lines are jumbled, try the .docx version."
+        )
+        preview.remove_class("-empty")
 
     def _toggle_import_panel(self, show: bool) -> None:
         imp = self.query_one("#jh-import-panel", Vertical)
@@ -817,11 +962,11 @@ class JobsHomeScreen(ModalScreen):
         else:
             paste.set_class(True, "-hidden")
 
-    def _do_import_cv(self) -> None:
+    def _do_import_cv(self, *, keep_path: bool = False) -> None:
         path_input = self.query_one("#jh-cv-path", Input)
         raw_path = path_input.value.strip()
         if not raw_path:
-            self._set_error("Enter a path to a .md, .txt, or .docx file.")
+            self._set_error("Enter a path to a .md, .txt, .docx, or .pdf file.")
             return
         fn = self._import_cv_fn if self._import_cv_fn is not None else profile.import_cv
         try:
@@ -829,13 +974,44 @@ class JobsHomeScreen(ModalScreen):
         except (profile.ProfileError, OSError, ValueError) as error:
             self._set_error(str(error))
             return
-        path_input.value = ""
+        if not keep_path:
+            path_input.value = ""
         self._toggle_import_panel(False)
         self._refresh_cv_status()
+        self._show_cv_summary(Path(raw_path).name)
         if isinstance(written, Path):
             self._set_status(f"Imported CV to {tilde_path(written)}.")
         else:
             self._set_status("Imported CV.")
+
+    def _choose_cv_file(self) -> None:
+        fn = self._pick_files_fn if self._pick_files_fn is not None else mac_input.pick_files
+
+        def work() -> None:
+            try:
+                picked = list(fn())
+                error = ""
+            except mac_input.PickerError as exc:
+                picked = []
+                error = f"The file picker failed: {exc}"
+            try:
+                self.app.call_from_thread(self._on_cv_picked, picked, error)
+            except RuntimeError:
+                pass
+
+        self.run_worker(work, thread=True, exclusive=True, group="jobs-cv-pick")
+
+    def _on_cv_picked(self, picked: list[Path], error: str) -> None:
+        if error:
+            self._set_error(error)
+            return
+        if not picked:
+            return
+        if len(picked) > 1:
+            self._set_error("Choose one CV file.")
+            return
+        self.query_one("#jh-cv-path", Input).value = str(picked[0])
+        self._do_import_cv(keep_path=True)
 
     def _do_paste_cv(self) -> None:
         area = self.query_one("#jh-cv-text", TextArea)
@@ -856,6 +1032,7 @@ class JobsHomeScreen(ModalScreen):
         area.load_text("")
         self._toggle_paste_panel(False)
         self._refresh_cv_status()
+        self._show_cv_summary("pasted text")
         if isinstance(written, Path):
             self._set_status(f"Saved pasted CV to {tilde_path(written)}.")
         else:
@@ -868,6 +1045,8 @@ class JobsHomeScreen(ModalScreen):
         self._toggle_paste_panel(False)
         self._set_error("")
         self._set_status("")
+        if self._has_unsaved_preferences() and not self._save_preferences():
+            return
 
         raw_cli = self.query_one("#jh-review-cli", Select).value
         chosen_cli = str(raw_cli) if raw_cli is not Select.BLANK else None
@@ -875,6 +1054,8 @@ class JobsHomeScreen(ModalScreen):
 
         token = object()
         self._review_token = token
+        cancel = threading.Event()
+        self._review_cancel = cancel
         self._set_review_busy(True)
         self._set_review_progress("Reviewing CV…")
 
@@ -886,7 +1067,7 @@ class JobsHomeScreen(ModalScreen):
                     pass
 
             try:
-                res = _call_review_run(fn, chosen_cli, on_progress)
+                res = _call_review_run(fn, chosen_cli, on_progress, cancel)
             except Exception as error:
                 try:
                     self.app.call_from_thread(self._on_review_error, str(error), token)
@@ -903,6 +1084,8 @@ class JobsHomeScreen(ModalScreen):
     def _on_review_progress(self, line: str, token: object) -> None:
         if token is not self._review_token or not self.is_attached:
             return
+        if self._review_cancel is not None and self._review_cancel.is_set():
+            return
         shown = line.strip()
         self._set_review_progress(f"Reviewing CV · {shown}" if shown else "Reviewing CV…")
 
@@ -918,6 +1101,12 @@ class JobsHomeScreen(ModalScreen):
             return
         self._set_review_busy(False)
         self._set_review_progress("")
+        if not result.ok and result.outcome == "cancelled":
+            self._set_status("Review stopped. Your previous drafts are unchanged.")
+            return
+        if not result.ok and result.outcome == "no_cv":
+            self._set_error(result.reason)
+            return
         if not result.ok:
             detail = (
                 f"{result.outcome}: {result.reason}"
@@ -937,8 +1126,39 @@ class JobsHomeScreen(ModalScreen):
         prof_area.load_text(result.profile)
         rub_area.load_text(result.rubric)
         panel.set_class(False, "-hidden")
+        self._refresh_draft_notes()
         self._set_status("Drafts ready. Edit if needed, then press Accept or Discard.")
         panel.scroll_visible()
+
+    def _refresh_draft_notes(self) -> None:
+        """Show the missing-preferences and stale-draft notes; hide Accept on stale drafts."""
+        try:
+            stale_note = self.query_one("#jh-review-stale", Static)
+            noprefs_note = self.query_one("#jh-review-noprefs", Static)
+            accept = self.query_one("#jh-review-accept", Button)
+        except NoMatches:
+            return
+        prefs_file = profile.preferences_path()
+        noprefs_note.update(NO_PREFERENCES_NOTE if not prefs_file.is_file() else "")
+        noprefs_note.set_class(prefs_file.is_file(), "-empty")
+
+        def mtime(path: Path) -> float | None:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return None
+
+        drafts = [
+            t for t in (mtime(review.profile_draft_path()), mtime(review.rubric_draft_path()))
+            if t is not None
+        ]
+        inputs = [
+            t for t in (mtime(profile.cv_path()), mtime(prefs_file)) if t is not None
+        ]
+        stale = bool(drafts and inputs and min(drafts) < max(inputs))
+        stale_note.update(STALE_DRAFTS_NOTE if stale else "")
+        stale_note.set_class(not stale, "-empty")
+        accept.display = not stale
 
     def _accept_review(self) -> None:
         prof_area = self.query_one("#jh-profile-draft", TextArea)
@@ -986,15 +1206,79 @@ class JobsHomeScreen(ModalScreen):
             empty = self.query_one("#jh-companies-empty", Static)
         except NoMatches:
             return
+        self._company_ticks &= {item.name for item in rows}
+        cursor = table.cursor_row
         table.clear()
         for item in rows:
             table.add_row(
+                "✓" if item.name in self._company_ticks else " ",
                 _cell(item.name),
                 _cell(item.status),
                 _cell(format_company_board(item)),
                 _cell(item.reason),
             )
+        if 0 <= cursor < len(rows):
+            table.move_cursor(row=cursor)
         empty.set_class(bool(rows), "-empty")
+        self._update_company_detail()
+        self._update_company_labels()
+
+    def _update_company_detail(self) -> None:
+        try:
+            detail = self.query_one("#jh-company-detail", Static)
+            table = self.query_one("#jh-companies-table", DataTable)
+        except NoMatches:
+            return
+        text = ""
+        if 0 <= table.cursor_row < len(self._company_rows):
+            item = self._company_rows[table.cursor_row]
+            help_text = NO_BOARD_HELP if item.ats in ("unknown", "careers_page") else ""
+            text = " · ".join(
+                part for part in (item.reason, item.careers_url, help_text) if part
+            )
+        detail.update(text)
+
+    def _update_company_labels(self) -> None:
+        count = len(self._company_ticks)
+        suffix = f" ({count})" if count else ""
+        for selector, label in (("#jh-co-accept", "Accept"), ("#jh-co-remove", "Remove")):
+            try:
+                self.query_one(selector, Button).label = f"{label}{suffix}"
+            except NoMatches:
+                pass
+
+    def _toggle_company_tick(self, row: int) -> None:
+        if not 0 <= row < len(self._company_rows):
+            return
+        name = self._company_rows[row].name
+        self._company_ticks ^= {name}
+        try:
+            table = self.query_one("#jh-companies-table", DataTable)
+        except NoMatches:
+            return
+        table.update_cell_at(
+            (row, 0), "✓" if name in self._company_ticks else " ", update_width=False
+        )
+        self._update_company_labels()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key != "space":
+            return
+        focused = self.focused
+        if isinstance(focused, DataTable) and focused.id == "jh-companies-table":
+            event.stop()
+            event.prevent_default()
+            self._toggle_company_tick(focused.cursor_row)
+
+    @on(_CompaniesTable.TickClicked)
+    def _on_tick_clicked(self, event: _CompaniesTable.TickClicked) -> None:
+        event.stop()
+        self._toggle_company_tick(event.row)
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id == "jh-companies-table":
+            event.stop()
+            self._update_company_detail()
 
     def _selected_company(self) -> str | None:
         try:
@@ -1021,6 +1305,7 @@ class JobsHomeScreen(ModalScreen):
             "#jh-co-fetch",
             "#jh-co-accept",
             "#jh-co-remove",
+            "#jh-co-accept-all",
         ):
             try:
                 self.query_one(selector, Button).disabled = busy
@@ -1124,31 +1409,87 @@ class JobsHomeScreen(ModalScreen):
     def _company_action(self, kind: str) -> None:
         if self._companies_busy:
             return
-        name = self._selected_company()
-        if name is None:
+        ticked = [i.name for i in self._company_rows if i.name in self._company_ticks]
+        selected = self._selected_company()
+        names = ticked or ([selected] if selected is not None else [])
+        if not names:
             self._set_error("Select a company first.")
             return
         if kind == "accept":
             fn = (
                 self._companies_accept_fn
                 if self._companies_accept_fn is not None
-                else companies.accept
+                else companies.accept_many
             )
-            done = f"Accepted {name}."
+            verb = "Accepted"
         else:
             fn = (
                 self._companies_remove_fn
                 if self._companies_remove_fn is not None
-                else companies.remove
+                else companies.remove_many
             )
-            done = f"Removed {name}."
+            verb = "Removed"
         try:
-            fn(name)
+            fn(names)
         except (companies.CompanyError, OSError, ValueError) as error:
             self._set_error(str(error))
             return
+        self._finish_company_action(verb, len(names))
+
+    def _finish_company_action(self, verb: str, count: int) -> None:
+        self._company_ticks.clear()
         self._refresh_companies()
-        self._set_status(done)
+        self._set_status(f"{verb} {count} {'company' if count == 1 else 'companies'}.")
+
+    def _ask_accept_all_suggested(self) -> None:
+        if self._companies_busy:
+            return
+        try:
+            names = self._suggested_company_names()
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        if not names:
+            self._set_status("No suggested companies.")
+            return
+        self._set_error("")
+        self._set_status("")
+        count = len(names)
+        self.query_one("#jh-co-confirm-text", Static).update(
+            f"Accept {count} suggested {'company' if count == 1 else 'companies'}?"
+        )
+        self.query_one("#jh-co-confirm", Horizontal).set_class(False, "-hidden")
+
+    def _suggested_company_names(self) -> list[str]:
+        fn = (
+            self._companies_suggested_names_fn
+            if self._companies_suggested_names_fn is not None
+            else companies.suggested_names
+        )
+        return list(fn())
+
+    def _hide_company_confirm(self) -> None:
+        try:
+            self.query_one("#jh-co-confirm", Horizontal).set_class(True, "-hidden")
+        except NoMatches:
+            pass
+
+    def _accept_all_suggested(self) -> None:
+        self._hide_company_confirm()
+        if self._companies_busy:
+            return
+        fn = (
+            self._companies_accept_fn
+            if self._companies_accept_fn is not None
+            else companies.accept_many
+        )
+        try:
+            names = self._suggested_company_names()
+            fn(names)
+        except (companies.CompanyError, OSError, ValueError) as error:
+            self._set_error(str(error))
+            return
+        self._finish_company_action("Accepted", len(names))
 
     def _toggle_company_panel(self, show: bool) -> None:
         panel = self.query_one("#jh-company-panel", Vertical)
@@ -1431,7 +1772,7 @@ class JobsHomeScreen(ModalScreen):
             ),
         }
 
-    def _save_preferences(self) -> None:
+    def _save_preferences(self) -> bool:
         try:
             prefs = self._collect_preferences()
             fn = (
@@ -1442,9 +1783,11 @@ class JobsHomeScreen(ModalScreen):
             fn(prefs)
         except (profile.ProfileError, OSError, ValueError) as error:
             self._set_error(str(error))
-            return
+            return False
+        self._saved_prefs = prefs
         self._refresh_cv_status()
         self._set_status("Preferences saved.")
+        return True
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "jh-cv-path":
@@ -1461,6 +1804,15 @@ class JobsHomeScreen(ModalScreen):
             self.action_close()
         elif button_id == "jh-save":
             self._save_preferences()
+        elif button_id == "jh-confirm-save":
+            if self._save_preferences():
+                self._close()
+            else:
+                self._show_confirm(False)
+        elif button_id == "jh-confirm-discard":
+            self._close()
+        elif button_id == "jh-confirm-keep":
+            self._show_confirm(False)
         elif button_id == "jh-jobs-set":
             self._open_job_edit("status")
         elif button_id == "jh-jobs-note-open":
@@ -1487,6 +1839,8 @@ class JobsHomeScreen(ModalScreen):
             self.app.push_screen(TrackedJobsScreen())
         elif button_id == "jh-review-cv":
             self._start_review()
+        elif button_id == "jh-review-stop":
+            self._stop_review()
         elif button_id == "jh-review-accept":
             self._accept_review()
         elif button_id == "jh-review-discard":
@@ -1501,6 +1855,12 @@ class JobsHomeScreen(ModalScreen):
             self._company_action("accept")
         elif button_id == "jh-co-remove":
             self._company_action("remove")
+        elif button_id == "jh-co-accept-all":
+            self._ask_accept_all_suggested()
+        elif button_id == "jh-co-confirm-yes":
+            self._accept_all_suggested()
+        elif button_id == "jh-co-confirm-cancel":
+            self._hide_company_confirm()
         elif button_id == "jh-co-add":
             hidden = self.query_one("#jh-company-panel", Vertical).has_class("-hidden")
             self._toggle_company_panel(hidden)
@@ -1517,6 +1877,8 @@ class JobsHomeScreen(ModalScreen):
             else:
                 hidden = self.query_one("#jh-import-panel", Vertical).has_class("-hidden")
                 self._toggle_import_panel(hidden)
+        elif button_id == "jh-cv-choose":
+            self._choose_cv_file()
         elif button_id == "jh-cv-import-confirm":
             self._do_import_cv()
         elif button_id == "jh-cv-import-cancel":

@@ -70,10 +70,10 @@ def test_import_cv_rejects_bad_formats_and_corrupt_docx_keeping_existing_cv(
     profile.import_cv_text("Existing CV")
     cv_file = paths.home() / "cv.md"
 
-    pdf_src = tmp_path / "cv.pdf"
-    pdf_src.write_bytes(b"%PDF-1.4")
-    with pytest.raises(profile.ProfileError, match=r"\.md, \.txt, or \.docx"):
-        profile.import_cv(pdf_src)
+    rtf_src = tmp_path / "cv.rtf"
+    rtf_src.write_bytes(b"{\\rtf1}")
+    with pytest.raises(profile.ProfileError, match=r"\.md, \.txt, \.docx, or \.pdf"):
+        profile.import_cv(rtf_src)
 
     with pytest.raises(profile.ProfileError, match="not found"):
         profile.import_cv(tmp_path / "missing.md")
@@ -387,3 +387,107 @@ def test_import_cv_still_refuses_a_quoted_unsupported_file(tmp_path: Path) -> No
     src.write_text("x", encoding="utf-8")
     with pytest.raises(profile.ProfileError, match=r"Unsupported CV format '\.rtf'"):
         profile.import_cv(f"'{src}'")
+
+
+PDF_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_text_pdf_imports_and_lines_reach_cv() -> None:
+    out = profile.import_cv(PDF_FIXTURES / "cv_text.pdf")
+    text = out.read_text(encoding="utf-8")
+    assert "Ada Lovelace" in text
+    assert "Principal Analytical Engine Programmer" in text
+    assert "mentored a team of eight" in text
+
+
+def test_blank_pdf_is_refused_and_existing_cv_stays() -> None:
+    profile.import_cv_text("Existing CV")
+    with pytest.raises(profile.ProfileError, match="No text found in this PDF"):
+        profile.import_cv(PDF_FIXTURES / "cv_blank.pdf")
+    assert (paths.home() / "cv.md").read_text(encoding="utf-8") == "Existing CV"
+
+
+def test_encrypted_pdf_is_refused_with_password_message() -> None:
+    profile.import_cv_text("Existing CV")
+    with pytest.raises(profile.ProfileError, match="password-protected"):
+        profile.import_cv(PDF_FIXTURES / "cv_encrypted.pdf")
+    assert (paths.home() / "cv.md").read_text(encoding="utf-8") == "Existing CV"
+
+
+def test_truncated_pdf_is_refused() -> None:
+    with pytest.raises(profile.ProfileError, match="Could not read PDF file"):
+        profile.import_cv(PDF_FIXTURES / "cv_truncated.pdf")
+
+
+def test_pdf_over_10_mb_is_refused_before_pypdf_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pypdf
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("PdfReader must not be called")
+
+    monkeypatch.setattr(pypdf, "PdfReader", fail)
+    big = tmp_path / "big.pdf"
+    with big.open("wb") as handle:
+        handle.truncate(10 * 1024 * 1024 + 1)
+    with pytest.raises(profile.ProfileError, match="PDF is over the 10 MB limit."):
+        profile.import_cv(big)
+
+
+def test_pdf_reads_only_the_first_20_pages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pypdf
+
+    read: list[int] = []
+
+    class FakePage:
+        def __init__(self, number: int) -> None:
+            self.number = number
+
+        def extract_text(self) -> str:
+            read.append(self.number)
+            return f"Page {self.number} " + "x" * 50
+
+    class FakeReader:
+        is_encrypted = False
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.pages = [FakePage(n) for n in range(25)]
+
+    monkeypatch.setattr(pypdf, "PdfReader", FakeReader)
+    src = tmp_path / "long.pdf"
+    src.write_bytes(b"%PDF-1.4")
+    profile.import_cv(src)
+    assert read == list(range(20))
+
+
+def test_quoted_pasted_path_to_a_pdf_imports(tmp_path: Path) -> None:
+    folder = tmp_path / "Down loads"
+    folder.mkdir()
+    src = folder / "My CV.pdf"
+    src.write_bytes((PDF_FIXTURES / "cv_text.pdf").read_bytes())
+    out = profile.import_cv(f"'{src}'")
+    assert "Ada Lovelace" in out.read_text(encoding="utf-8")
+
+
+def test_cv_summary_counts_cuts_and_skips_blank_lines(isolated_home: Path) -> None:
+    long_line = "x" * 150
+    lines = ["one", "", "   ", long_line, "three", "four", "five", "six", "seven"]
+    text = "\n".join(lines) + "\n"
+    profile.import_cv_text(text)
+
+    summary = profile.cv_summary()
+
+    assert summary.chars == len(text)
+    assert summary.lines == 7
+    assert summary.preview == ("one", "x" * 100, "three", "four", "five")
+
+
+def test_cv_summary_reads_given_path_and_reports_missing(tmp_path: Path) -> None:
+    source = tmp_path / "other.md"
+    source.write_text("Ada\n\nLovelace\n", encoding="utf-8")
+    assert profile.cv_summary(source).preview == ("Ada", "Lovelace")
+    with pytest.raises(profile.ProfileError):
+        profile.cv_summary(tmp_path / "missing.md")

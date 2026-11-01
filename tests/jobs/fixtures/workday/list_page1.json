@@ -1,0 +1,7 @@
+{
+  "total": 999,
+  "jobPostings": [
+    {"title": "Engineer 1", "externalPath": "/job/Remote/Engineer-1_R1", "locationsText": "Remote, US", "postedOn": "Posted 3 Days Ago", "bulletFields": ["R1"]},
+    {"title": "Engineer 2", "externalPath": "/job/Remote/Engineer-2_R2", "locationsText": "Remote, US", "postedOn": "Posted 3 Days Ago", "bulletFields": ["R2"]}
+  ]
+}

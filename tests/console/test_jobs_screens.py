@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ pytest.importorskip("textual")
 from textual.widgets import DataTable  # noqa: E402
 
 from whyline import account
-from whyline.console import tui
+from whyline.console import mac_input, tui
 from whyline.console.jobs_screens import JobsHomeScreen, PRIVACY_SENTENCE
 from whyline.jobs import profile, review
 
@@ -509,12 +510,12 @@ async def test_company_buttons_call_the_companies_functions() -> None:
             companies_suggest_fn=fake_suggest,
             companies_check_fn=fake_check,
             companies_add_fn=fake_add,
-            companies_accept_fn=lambda name: calls["accept"].append(name),
-            companies_remove_fn=lambda name: calls["remove"].append(name),
+            companies_accept_fn=lambda names: calls["accept"].append(list(names)),
+            companies_remove_fn=lambda names: calls["remove"].append(list(names)),
         )
         app.push_screen(screen)
         await pilot.pause()
-        assert [r[0] for r in _table_rows(screen)] == ["Acme", "Globex"]
+        assert [r[1] for r in _table_rows(screen)] == ["Acme", "Globex"]
 
         screen.query_one("#jh-co-suggest", tui.Button).press()
         await _until(pilot, lambda: len(_table_rows(screen)) == 3, "suggest finished")
@@ -528,11 +529,11 @@ async def test_company_buttons_call_the_companies_functions() -> None:
         table.move_cursor(row=1)
         screen.query_one("#jh-co-accept", tui.Button).press()
         await pilot.pause()
-        assert calls["accept"] == ["Globex"]
+        assert calls["accept"] == [["Globex"]]
         table.move_cursor(row=0)
         screen.query_one("#jh-co-remove", tui.Button).press()
         await pilot.pause()
-        assert calls["remove"] == ["Acme"]
+        assert calls["remove"] == [["Acme"]]
 
         screen.query_one("#jh-co-add", tui.Button).press()
         await pilot.pause()
@@ -541,7 +542,168 @@ async def test_company_buttons_call_the_companies_functions() -> None:
         screen.query_one("#jh-co-add-confirm", tui.Button).press()
         await pilot.pause()
         assert calls["add"] == [("Hooli", "https://hooli.example/careers")]
-        assert "Hooli" in [r[0] for r in _table_rows(screen)]
+        assert "Hooli" in [r[1] for r in _table_rows(screen)]
+
+
+def _bulk_screen(store: list[Any], calls: dict[str, list[Any]]) -> JobsHomeScreen:
+    return JobsHomeScreen(
+        companies_list_fn=lambda: list(store),
+        companies_accept_fn=lambda names: calls["accept"].append(list(names)),
+        companies_remove_fn=lambda names: calls["remove"].append(list(names)),
+        companies_suggested_names_fn=lambda: [c.name for c in store if c.status == "suggested"],
+    )
+
+
+async def test_space_ticks_rows_and_ticks_survive_a_refresh() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("space")
+        table.move_cursor(row=2)
+        await pilot.press("space")
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == ["✓", " ", "✓"]
+
+        await pilot.press("space")
+        assert [r[0] for r in _table_rows(screen)] == ["✓", " ", " "]
+        await pilot.press("space")
+
+        store.append(_co("Hooli"))
+        screen._refresh_companies()
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == ["✓", " ", "✓", " "]
+
+
+async def test_clicking_the_tick_cell_toggles_the_row() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(100, 70)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-companies-table", DataTable)
+        # header is row 0 on screen; body row 1 sits one line below it, column 0 at x=1
+        await pilot.click("#jh-companies-table", offset=(1, 2))
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == [" ", "✓", " "]
+        await pilot.click("#jh-companies-table", offset=(1, 2))
+        await pilot.pause()
+        assert [r[0] for r in _table_rows(screen)] == [" ", " ", " "]
+        assert table.cursor_row == 1
+
+
+async def test_accept_and_remove_labels_show_the_tick_count() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        accept = screen.query_one("#jh-co-accept", tui.Button)
+        remove = screen.query_one("#jh-co-remove", tui.Button)
+        assert (str(accept.label), str(remove.label)) == ("Accept", "Remove")
+
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.focus()
+        await pilot.pause()
+        for row in range(3):
+            table.move_cursor(row=row)
+            await pilot.press("space")
+        await pilot.pause()
+        assert (str(accept.label), str(remove.label)) == ("Accept (3)", "Remove (3)")
+
+
+async def test_accept_with_ticks_calls_accept_many_with_the_ticked_names() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        table = screen.query_one("#jh-companies-table", DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("space")
+        table.move_cursor(row=2)
+        await pilot.press("space")
+        table.move_cursor(row=1)
+        await pilot.pause()
+
+        screen.query_one("#jh-co-accept", tui.Button).press()
+        await pilot.pause()
+        assert calls["accept"] == [["Acme", "Initech"]]
+        assert "Accepted 2 companies." in _plain(screen.query_one("#jh-status").render())
+        assert [r[0] for r in _table_rows(screen)] == [" ", " ", " "]
+        assert str(screen.query_one("#jh-co-accept", tui.Button).label) == "Accept"
+
+        screen.query_one("#jh-co-remove", tui.Button).press()
+        await pilot.pause()
+        assert calls["remove"] == [["Globex"]]
+
+
+async def test_accept_all_suggested_asks_first_and_cancel_changes_nothing() -> None:
+    calls: dict[str, list[Any]] = {"accept": [], "remove": []}
+    store = [_co("Acme"), _co("Globex", status="accepted"), _co("Initech")]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, calls)
+        app.push_screen(screen)
+        await pilot.pause()
+        confirm = screen.query_one("#jh-co-confirm")
+        assert confirm.has_class("-hidden")
+
+        screen.query_one("#jh-co-accept-all", tui.Button).press()
+        await pilot.pause()
+        assert not confirm.has_class("-hidden")
+        assert calls["accept"] == []
+        text = _plain(screen.query_one("#jh-co-confirm-text", tui.Static).render())
+        assert text == "Accept 2 suggested companies?"
+
+        screen.query_one("#jh-co-confirm-cancel", tui.Button).press()
+        await pilot.pause()
+        assert confirm.has_class("-hidden")
+        assert calls["accept"] == []
+
+        screen.query_one("#jh-co-accept-all", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-co-confirm-yes", tui.Button).press()
+        await pilot.pause()
+        assert calls["accept"] == [["Acme", "Initech"]]
+        assert confirm.has_class("-hidden")
+        assert "Accepted 2 companies." in _plain(screen.query_one("#jh-status").render())
+
+
+async def test_company_detail_line_follows_the_cursor() -> None:
+    from whyline.jobs import companies
+
+    store = [
+        companies.Company(name="Acme", reason="builds anvils", careers_url="https://acme.example/jobs"),
+        _co("Globex", reason="a very long reason " * 5),
+    ]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, {"accept": [], "remove": []})
+        app.push_screen(screen)
+        await pilot.pause()
+        detail = screen.query_one("#jh-company-detail", tui.Static)
+        assert "builds anvils" in _plain(detail.render())
+        assert "https://acme.example/jobs" in _plain(detail.render())
+
+        screen.query_one("#jh-companies-table", DataTable).move_cursor(row=1)
+        await pilot.pause()
+        shown = _plain(detail.render())
+        assert shown.startswith(("a very long reason " * 5).strip())
+        assert "No board found." in shown
 
 
 async def test_company_rows_refresh_after_a_worker_finishes() -> None:
@@ -563,7 +725,7 @@ async def test_company_rows_refresh_after_a_worker_finishes() -> None:
         )
         app.push_screen(screen)
         await pilot.pause()
-        assert _table_rows(screen)[0][1] == "suggested"
+        assert _table_rows(screen)[0][2] == "suggested"
 
         screen.query_one("#jh-co-check", tui.Button).press()
         await _until(pilot, started.is_set, "worker started")
@@ -573,7 +735,7 @@ async def test_company_rows_refresh_after_a_worker_finishes() -> None:
 
         finish.set()
         await _until(pilot, lambda: not screen._companies_busy, "worker finished")
-        assert _table_rows(screen)[0][1:3] == ["accepted", "greenhouse (acme)"]
+        assert _table_rows(screen)[0][2:4] == ["accepted", "greenhouse (acme)"]
         assert progress.has_class("-empty")
 
 
@@ -586,8 +748,30 @@ async def test_unknown_board_company_shows_the_careers_url_hint() -> None:
         app.push_screen(screen)
         await pilot.pause()
         rows = _table_rows(screen)
-        assert rows[0][2] == "No public job board found: add its careers page URL"
-        assert rows[1][2] == "lever (globex)"
+        assert rows[0][3] == "No public job board found: add its careers page URL"
+        assert rows[1][3] == "lever (globex)"
+
+
+async def test_no_board_company_detail_explains_how_to_add_a_workday_link() -> None:
+    from whyline.console.jobs_screens import NO_BOARD_HELP
+
+    assert "myworkdayjobs.com" in NO_BOARD_HELP and "Add company…" in NO_BOARD_HELP
+    store = [
+        _co("Acme"),
+        _co("Globex", ats="careers_page"),
+        _co("Initech", ats="workday", slug="initech/wd1/Site"),
+    ]
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = _bulk_screen(store, {"accept": [], "remove": []})
+        app.push_screen(screen)
+        await pilot.pause()
+        detail = screen.query_one("#jh-company-detail", tui.Static)
+        table = screen.query_one("#jh-companies-table", DataTable)
+        for row, expected in ((0, True), (1, True), (2, False)):
+            table.move_cursor(row=row)
+            await pilot.pause()
+            assert (NO_BOARD_HELP in _plain(detail.render())) is expected
 
 
 async def test_jobs_home_screen_with_companies_fits_80x24() -> None:
@@ -609,6 +793,7 @@ async def test_jobs_home_screen_with_companies_fits_80x24() -> None:
             "#jh-co-check",
             "#jh-co-accept",
             "#jh-co-remove",
+            "#jh-co-accept-all",
             "#jh-co-add",
             "#jh-company-name",
         ):
@@ -879,3 +1064,402 @@ async def test_alerts_section_shows_the_last_read_and_installs_the_mail_rule(
         result = _plain(screen.query_one("#jh-alerts-mail-result", tui.Static).render())
         assert str(written) in result
         assert "whyline-job-alerts.applescript" in result
+
+
+async def test_screen_shows_cv_preview_after_import_and_not_when_reopened(
+    isolated_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    real_import_cv = profile.import_cv
+
+    def spy_import_cv(path: str | Path) -> Path:
+        calls.append(str(path))
+        return real_import_cv(path)
+
+    monkeypatch.setattr(profile, "import_cv", spy_import_cv)
+    source = isolated_home / "resume.md"
+    source.write_text("Ada Lovelace\n\nAnalytical Engine\n", encoding="utf-8")
+
+    app = _Host()
+    async with app.run_test(size=(100, 32)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        assert screen.query_one("#jh-cv-preview").has_class("-empty")
+
+        screen.query_one("#jh-import-cv", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-cv-path", tui.Input).value = str(source)
+        screen.query_one("#jh-cv-import-confirm", tui.Button).press()
+        await pilot.pause()
+
+        assert calls == [str(source)]
+        status = _plain(screen.query_one("#jh-cv-status", tui.Static).render())
+        assert status == "CV: 32 characters from resume.md"
+        preview_widget = screen.query_one("#jh-cv-preview", tui.Static)
+        assert not preview_widget.has_class("-empty")
+        preview = _plain(preview_widget.render())
+        assert "  Ada Lovelace\n  Analytical Engine" in preview
+        assert "Check this reads like your CV. If lines are jumbled, try the .docx version." in preview
+
+        screen.query_one("#jh-paste-cv", tui.Button).press()
+        await pilot.pause()
+        screen.query_one("#jh-cv-text", tui.TextArea).load_text("Grace Hopper\n")
+        screen.query_one("#jh-cv-paste-confirm", tui.Button).press()
+        await pilot.pause()
+        status = _plain(screen.query_one("#jh-cv-status", tui.Static).render())
+        assert status.startswith("CV: 13 characters from ")
+
+    app = _Host()
+    async with app.run_test(size=(100, 32)) as pilot:
+        reopened = JobsHomeScreen()
+        app.push_screen(reopened)
+        await pilot.pause()
+        assert reopened.query_one("#jh-cv-preview").has_class("-empty")
+
+
+async def _open_import_panel(app: Any, screen: JobsHomeScreen, pilot: Any) -> None:
+    app.push_screen(screen)
+    await pilot.pause()
+    screen.query_one("#jh-import-cv", tui.Button).press()
+    await pilot.pause()
+
+
+async def _press_choose(screen: JobsHomeScreen, app: Any, pilot: Any) -> None:
+    screen.query_one("#jh-cv-choose", tui.Button).press()
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+async def test_choose_file_button_hidden_when_picker_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: False)
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen()
+        await _open_import_panel(app, screen, pilot)
+        assert not screen.query("#jh-cv-choose")
+
+
+async def test_choose_file_imports_single_pick(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+    imported: list[str] = []
+
+    def fake_import(path: str | Path) -> Path:
+        imported.append(str(path))
+        return Path("/tmp/cv.md")
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            import_cv_fn=fake_import, pick_files_fn=lambda: [Path("/tmp/my cv.pdf")]
+        )
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert imported == ["/tmp/my cv.pdf"]
+        assert screen.query_one("#jh-cv-path", tui.Input).value == "/tmp/my cv.pdf"
+        assert "Imported CV" in _plain(screen.query_one("#jh-status", tui.Static).render())
+
+
+async def test_choose_file_cancel_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+    imported: list[str] = []
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            import_cv_fn=lambda p: imported.append(str(p)), pick_files_fn=lambda: []
+        )
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert imported == []
+        assert screen.query_one("#jh-cv-path", tui.Input).value == ""
+        assert _plain(screen.query_one("#jh-error", tui.Static).render()).strip() == ""
+
+
+async def test_choose_file_refuses_several(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+    imported: list[str] = []
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(
+            import_cv_fn=lambda p: imported.append(str(p)),
+            pick_files_fn=lambda: [Path("/tmp/a.pdf"), Path("/tmp/b.pdf")],
+        )
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert imported == []
+        assert screen.query_one("#jh-cv-path", tui.Input).value == ""
+        assert "Choose one CV file." in _plain(screen.query_one("#jh-error", tui.Static).render())
+
+
+async def test_choose_file_picker_error_shows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mac_input, "available", lambda: True)
+
+    def boom() -> list[Path]:
+        raise mac_input.PickerError("no osascript")
+
+    app = _Host()
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = JobsHomeScreen(pick_files_fn=boom)
+        await _open_import_panel(app, screen, pilot)
+        await _press_choose(screen, app, pilot)
+        assert "The file picker failed: no osascript" in _plain(
+            screen.query_one("#jh-error", tui.Static).render()
+        )
+
+
+def _stoppable_run(started: threading.Event, events: list[threading.Event]):
+    def stoppable_run(cli=None, progress=None, cancel_event=None) -> review.ReviewResult:
+        events.append(cancel_event)
+        started.set()
+        cancel_event.wait(timeout=5)
+        return review.ReviewResult(ok=False, outcome="cancelled", reason="Stopped by you.")
+
+    return stoppable_run
+
+
+async def test_stop_shows_only_while_reviewing_and_sets_the_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    events: list[threading.Event] = []
+    monkeypatch.setattr(review, "run", _stoppable_run(started, events))
+    app = _Host()
+    async with app.run_test(size=(100, 36)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        stop = screen.query_one("#jh-review-stop", tui.Button)
+        assert stop.display is False
+
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(pilot, started.is_set, "review started")
+        await pilot.pause()
+        assert stop.display is True
+
+        stop.press()
+        await _until(
+            pilot,
+            lambda: "Review stopped."
+            in _plain(screen.query_one("#jh-status", tui.Static).render()),
+            "stopped message",
+        )
+        assert events[0].is_set()
+        assert "Your previous drafts are unchanged." in _plain(
+            screen.query_one("#jh-status", tui.Static).render()
+        )
+        assert stop.display is False
+
+
+async def test_closing_the_screen_during_a_review_sets_the_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    events: list[threading.Event] = []
+    monkeypatch.setattr(review, "run", _stoppable_run(started, events))
+    app = _Host()
+    async with app.run_test(size=(100, 36)) as pilot:
+        screen = JobsHomeScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(pilot, started.is_set, "review started")
+        screen.action_close()
+        await pilot.pause()
+        assert events[0].is_set()
+
+
+# ---- JOB-27: unsaved preferences, no-input reviews, stale drafts ----
+
+
+async def _open_home(app: Any, pilot: Any, **kwargs: Any) -> JobsHomeScreen:
+    screen = JobsHomeScreen(**kwargs)
+    app.push_screen(screen)
+    await pilot.pause()
+    return screen
+
+
+def _confirm_shown(screen: JobsHomeScreen) -> bool:
+    return not screen.query_one("#jh-confirm").has_class("-hidden")
+
+
+def _edit_roles(screen: JobsHomeScreen) -> None:
+    screen.query_one("#jh-roles", tui.Input).value = "Staff Engineer"
+
+
+@pytest.mark.parametrize("how", ["button", "escape"])
+async def test_close_with_unsaved_changes_asks_first_and_without_closes_at_once(how: str) -> None:
+    async def close(screen: JobsHomeScreen, pilot: Any) -> None:
+        if how == "button":
+            screen.query_one("#jh-close", tui.Button).press()
+        else:
+            await pilot.press("escape")
+        await pilot.pause()
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        await close(screen, pilot)
+        assert app.screen is not screen
+
+        screen = await _open_home(app, pilot)
+        _edit_roles(screen)
+        await close(screen, pilot)
+        assert app.screen is screen
+        assert _confirm_shown(screen)
+
+
+async def test_confirm_save_writes_preferences_and_closes() -> None:
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        _edit_roles(screen)
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-save", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is not screen
+        assert profile.load_preferences()["roles"] == ["Staff Engineer"]
+
+
+async def test_confirm_save_failure_keeps_the_screen_open() -> None:
+    def boom(_prefs: Any) -> None:
+        raise profile.ProfileError("disk full")
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot, save_preferences_fn=boom)
+        _edit_roles(screen)
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-save", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is screen
+        assert "disk full" in _plain(screen.query_one("#jh-error").render())
+
+
+async def test_confirm_discard_closes_without_writing_and_keep_editing_stays() -> None:
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        _edit_roles(screen)
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-keep", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is screen
+        assert not _confirm_shown(screen)
+
+        screen.action_close()
+        await pilot.pause()
+        screen.query_one("#jh-confirm-discard", tui.Button).press()
+        await pilot.pause()
+        assert app.screen is not screen
+        assert not profile.preferences_path().exists()
+
+
+async def test_review_saves_pending_preference_changes_first() -> None:
+    order: list[str] = []
+
+    def save(prefs: Any) -> None:
+        order.append("save")
+
+    def run(*_a: Any, **_k: Any) -> review.ReviewResult:
+        order.append("run")
+        return review.ReviewResult(ok=False, outcome="failed", reason="stub")
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot, save_preferences_fn=save, review_run_fn=run)
+        _edit_roles(screen)
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(pilot, lambda: "run" in order, "review run")
+        assert order == ["save", "run"]
+
+
+async def test_review_does_not_start_when_the_save_fails() -> None:
+    ran: list[int] = []
+
+    def boom(_prefs: Any) -> None:
+        raise profile.ProfileError("cannot write preferences")
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(
+            app,
+            pilot,
+            save_preferences_fn=boom,
+            review_run_fn=lambda *a, **k: ran.append(1),
+        )
+        _edit_roles(screen)
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert ran == []
+        assert "cannot write preferences" in _plain(screen.query_one("#jh-error").render())
+
+
+async def test_review_without_a_cv_shows_the_reason() -> None:
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot)
+        screen.query_one("#jh-review-cv", tui.Button).press()
+        await _until(
+            pilot,
+            lambda: "Import your CV first." in _plain(screen.query_one("#jh-error").render()),
+            "no cv reason",
+        )
+
+
+def _drafts_stub() -> review.DraftBlocks:
+    return review.DraftBlocks(profile="p", rubric="r")
+
+
+def _write_drafts(stamp: float) -> None:
+    review.profile_draft_path().parent.mkdir(parents=True, exist_ok=True)
+    for path in (review.profile_draft_path(), review.rubric_draft_path()):
+        path.write_text("draft")
+        os.utime(path, (stamp, stamp))
+
+
+async def test_missing_preferences_note_shows_under_the_drafts() -> None:
+    note = (
+        "No preferences saved, so the rubric ignores roles, location and salary. "
+        "Fill them in, Save, and review again."
+    )
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        screen = await _open_home(app, pilot, read_drafts_fn=_drafts_stub)
+        widget = screen.query_one("#jh-review-noprefs")
+        assert _plain(widget.render()) == note
+        assert not widget.has_class("-empty")
+
+        profile.save_preferences({"roles": ["Dev"]})
+        screen._refresh_draft_notes()
+        assert widget.has_class("-empty")
+
+
+async def test_stale_drafts_show_the_note_and_hide_accept_but_fresh_ones_do_not() -> None:
+    profile.import_cv_text("# Ada\nEngineer\n")
+    profile.save_preferences({"roles": ["Dev"]})
+    now = datetime.datetime.now().timestamp()
+
+    app = _Host()
+    async with app.run_test(size=(100, 40)) as pilot:
+        _write_drafts(now - 1000)
+        screen = await _open_home(app, pilot, read_drafts_fn=_drafts_stub)
+        stale = screen.query_one("#jh-review-stale")
+        accept = screen.query_one("#jh-review-accept", tui.Button)
+        assert _plain(stale.render()) == (
+            "These drafts are older than your CV or preferences. Run Review my CV again."
+        )
+        assert not stale.has_class("-empty")
+        assert accept.display is False
+
+        _write_drafts(now + 1000)
+        screen._refresh_draft_notes()
+        assert stale.has_class("-empty")
+        assert accept.display is True

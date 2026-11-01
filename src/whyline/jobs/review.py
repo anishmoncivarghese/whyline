@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -286,8 +287,16 @@ def run(
     *,
     progress: Callable[[str], None] | None = None,
     run_fn: Any = None,
+    cancel_event: threading.Event | None = None,
 ) -> ReviewResult:
     """Create/reuse job-profile in ~/.whyline/jobs/, run it, parse blocks, write drafts."""
+    try:
+        cv_ready = profile.cv_path().stat().st_size > 0
+    except OSError:
+        cv_ready = False
+    if not cv_ready:
+        return ReviewResult(ok=False, outcome="no_cv", reason="Import your CV first.")
+
     enabled = enabled_providers()
     chosen: str | None = None
     if cli is not None:
@@ -328,6 +337,8 @@ def run(
         exec_kwargs["progress"] = progress
     if run_fn is not None:
         exec_kwargs["run_fn"] = run_fn
+    if cancel_event is not None:
+        exec_kwargs["cancel_event"] = cancel_event
     record = runner.execute_once(run_defn, **exec_kwargs)
 
     outcome = getattr(record, "outcome", "") or "failed"

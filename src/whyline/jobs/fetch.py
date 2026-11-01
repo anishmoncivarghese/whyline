@@ -66,6 +66,17 @@ class Posting:
 class FetchResult:
     postings: tuple[Posting, ...] = ()
     errors: tuple[tuple[str, str], ...] = ()
+    notes: tuple[str, ...] = ()
+
+
+class _Postings(list):  # type: ignore[type-arg]
+    """A posting list that can carry report lines for `fetch_all`."""
+
+    notes: builtins.list[str]
+
+    def __init__(self, items: Any = ()) -> None:
+        super().__init__(items)
+        self.notes = []
 
 
 class _TextExtractor(HTMLParser):
@@ -285,6 +296,101 @@ def _recruitee(name: str, slug: str, client: Callable[[str], Any]) -> builtins.l
     return out
 
 
+WORKDAY_PAGE_SIZE = 20
+WORKDAY_MAX_JOBS = 200
+WORKDAY_DETAIL_CAP = 40
+WORKDAY_NO_DETAIL = "Only the job title and location are available for this job."
+
+
+def _workday_seen(uids: builtins.list[str]) -> set[str]:
+    """Which of `uids` the JOB-10 store already holds (read-only)."""
+    from whyline.jobs import seen
+
+    if not uids:
+        return set()
+    try:
+        conn = seen._connect()
+        try:
+            known = {row[0] for row in conn.execute("SELECT uid FROM postings")}
+        finally:
+            conn.close()
+    except Exception:
+        return set()
+    return known.intersection(uids)
+
+
+def _workday(name: str, slug: str, client: Callable[[str], Any]) -> builtins.list[Posting]:
+    parts = slug.split("/")
+    if len(parts) != 3:
+        raise FetchError(f"{name}: Workday slug must be tenant/wdN/site, got {slug!r}.")
+    tenant, wd, site = parts
+    host = f"{tenant}.{wd}.myworkdayjobs.com"
+    base = f"https://{host}/wday/cxs/{tenant}/{site}"
+    post = getattr(client, "post_json", None)
+    if post is None:
+        raise FetchError(f"{name}: this HTTP client cannot POST to Workday.")
+    rows: builtins.list[dict[str, Any]] = []
+    offset = 0
+    while len(rows) < WORKDAY_MAX_JOBS:
+        body = {"appliedFacets": {}, "limit": WORKDAY_PAGE_SIZE, "offset": offset, "searchText": ""}
+        data = _json(post(f"{base}/jobs", body))
+        if not isinstance(data, dict) or not isinstance(data.get("jobPostings"), builtins.list):
+            raise FetchError(f"{name}: Workday response did not contain a job list.")
+        page = [j for j in data["jobPostings"] if isinstance(j, dict)]
+        if not page:
+            break
+        rows.extend(page)
+        offset += WORKDAY_PAGE_SIZE
+        total = data.get("total")
+        if isinstance(total, int) and offset >= total:
+            break
+    rows = rows[:WORKDAY_MAX_JOBS]
+
+    entries: builtins.list[tuple[str, str, dict[str, Any]]] = []
+    for job in rows:
+        path = _s(job.get("externalPath"))
+        bullets = job.get("bulletFields")
+        first = _s(bullets[0]) if isinstance(bullets, builtins.list) and bullets else ""
+        entries.append((f"workday:{slug}:{first or path}", path, job))
+    known = _workday_seen([uid for uid, _, _ in entries])
+    budget = WORKDAY_DETAIL_CAP
+    unread = 0
+    out = _Postings()
+    for uid, path, job in entries:
+        text = ""
+        remote: bool | None = None
+        if uid not in known and path:
+            if budget > 0:
+                budget -= 1
+                try:
+                    detail = _json(client(f"{base}{path}"))
+                    info = detail.get("jobPostingInfo") if isinstance(detail, dict) else None
+                    if not isinstance(info, dict):
+                        raise ValueError("no jobPostingInfo")
+                    text = html_to_text(info.get("jobDescription"))
+                    if "remote" in _s(info.get("remoteType")).casefold():
+                        remote = True
+                except (ats.AtsError, OSError, ValueError):
+                    text = WORKDAY_NO_DETAIL
+            else:
+                unread += 1
+        out.append(
+            Posting(
+                uid=uid,
+                company=name,
+                title=_s(job.get("title")),
+                location=_s(job.get("locationsText")),
+                remote=remote,
+                url=f"https://{host}/{site}{path}",
+                posted_at=_s(job.get("postedOn")),
+                text=text,
+            )
+        )
+    if unread:
+        out.notes.append(f"{name}: {unread} more Workday jobs will be read on the next run")
+    return out
+
+
 _PARSERS: dict[str, Callable[[str, str, Callable[[str], Any]], builtins.list[Posting]]] = {
     "greenhouse": _greenhouse,
     "lever": _lever,
@@ -292,6 +398,7 @@ _PARSERS: dict[str, Callable[[str, str, Callable[[str], Any]], builtins.list[Pos
     "workable": _workable,
     "smartrecruiters": _smartrecruiters,
     "recruitee": _recruitee,
+    "workday": _workday,
 }
 
 
@@ -403,9 +510,12 @@ def fetch_all(
     client = ats.make_http(http, clock=clock, sleep=sleep)
     postings: builtins.list[Posting] = []
     errors: builtins.list[tuple[str, str]] = []
+    notes: builtins.list[str] = []
     for entry in entries:
         try:
-            postings.extend(board_jobs(entry, client))
+            found = board_jobs(entry, client)
+            postings.extend(found)
+            notes.extend(getattr(found, "notes", ()))
         except Exception as error:
             errors.append((entry.name, str(error)))
-    return FetchResult(postings=tuple(postings), errors=tuple(errors))
+    return FetchResult(postings=tuple(postings), errors=tuple(errors), notes=tuple(notes))
