@@ -594,3 +594,111 @@ async def test_ask_agent_that_edits_a_file_is_refused_and_the_edit_reported(tmp_
         # The rule-based fix is still there to press.
         assert app.query("#resolve-switch-back")
         assert app.query("#resolve-cancel")
+
+
+def _status(started=None, task="T3"):
+    return relay_ops.LiveStatus(
+        task=task, agent="codex", role="implementer", stage="implement",
+        visit=1, round=1, max_rounds=3, started=started,
+        position=3, total=10, done=2,
+    )
+
+
+def _thinking(app) -> str:
+    return str(app._main("#thinking", tui.Static).render())
+
+
+async def _running_relay(app, pilot, monkeypatch, status, reads=None):
+    from datetime import datetime
+    clock = {"mono": 100.0, "wall": datetime(2026, 11, 1, 12, 0).astimezone()}
+    app._clock = lambda: clock["mono"]
+    app._wall = lambda: clock["wall"]
+
+    def fake_status(root):
+        if reads is not None:
+            reads.append(root)
+        value = status["value"]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(relay_ops, "live_status", fake_status)
+    await _relay_mode(app, pilot)
+    app._launch_relay(["start"])
+    await pilot.pause()
+    return clock
+
+
+async def test_busy_line_shows_the_live_relay_summary(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        status = {"value": _status()}
+        await _running_relay(app, pilot, monkeypatch, status)
+        app._tick()
+        line = _thinking(app)
+        assert "relay: T3 (3 of 10, 20%) · implementing · codex · round 1 of 3" in line
+        assert "…" not in line
+
+
+async def test_elapsed_follows_the_marker_start_not_the_launch(tmp_path, monkeypatch):
+    from datetime import timedelta
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        status = {"value": None}
+        clock = await _running_relay(app, pilot, monkeypatch, status)
+        # The marker was written 7 minutes after the console launched.
+        clock["wall"] += timedelta(minutes=7)
+        clock["mono"] += 420
+        status["value"] = _status(started=clock["wall"])
+        app._tick()
+        assert _thinking(app).endswith("· 0s")
+
+
+async def test_two_ticks_within_two_seconds_read_once(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        reads = []
+        status = {"value": _status()}
+        clock = await _running_relay(app, pilot, monkeypatch, status, reads)
+        clock["mono"] += 10
+        before = len(reads)
+        app._tick()
+        clock["mono"] += 1.5
+        app._tick()
+        assert len(reads) == before + 1
+        clock["mono"] += 1
+        app._tick()
+        assert len(reads) == before + 2
+
+
+async def test_a_failing_read_keeps_the_previous_line(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        status = {"value": _status()}
+        clock = await _running_relay(app, pilot, monkeypatch, status)
+        clock["mono"] += 10
+        app._tick()
+        assert "relay: T3 (3 of 10" in _thinking(app)
+        status["value"] = OSError("gone")
+        clock["mono"] += 10
+        app._tick()
+        assert "relay: T3 (3 of 10" in _thinking(app)
+
+
+async def test_finishing_clears_it_and_chat_replies_show_label_and_seconds(
+    tmp_path, monkeypatch
+):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        status = {"value": _status()}
+        clock = await _running_relay(app, pilot, monkeypatch, status)
+        clock["mono"] += 10
+        app._tick()
+        assert app._relay_status is not None
+        await asyncio.to_thread(FakeProcess.instances[-1].finish, 0, "")
+        await pilot.pause()
+        assert app._relay_status is None
+        app._busy_text = "thinking"
+        app._busy_since = app._clock()
+        app._tick()
+        assert "thinking… " in _thinking(app) and _thinking(app).endswith("s")

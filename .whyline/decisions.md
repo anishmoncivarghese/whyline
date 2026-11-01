@@ -31252,3 +31252,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 108936cba76d47afa9188b27b5006cc1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T07:40:27.483Z"} -->
+
+## 2026-11-01 — Console busy line reads live_status at most every 2s via injectable _clock/_wall; None result falls back to label
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-2
+
+**Because:** monotonic clock throttles reads, wall clock feeds format_live so elapsed follows marker start
+
+**Rejected:**
+
+- reading in _relay_line only — ticks run between output lines so the timer would freeze
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3cd9e918e174405585ad8129ed894604 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T07:43:13.451Z"} -->
+
+## 2026-11-01 — Pass RST-2 console relay busy-line behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** RST-2
+
+**Because:** Focused acceptance tests, the requested console test pair, and the full repository suite all pass; live summaries use marker time, reads are throttled, failures retain prior status, and finish restores the legacy chat busy line
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 7b35eb012225463f8799192d476c26f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T07:55:39.481Z"} -->
+
+## 2026-11-01 — Approve RST-2 console relay busy-line implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RST-2
+
+**Because:** The scoped diff preserves existing relay labels, throttles live status reads across output and timer callbacks, retains cached status on exceptions, clears it on finish, and the plain full test suite passes
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 3aeeb15a7caa468095c5df21a9a6b79b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T08:06:44.255Z"} -->

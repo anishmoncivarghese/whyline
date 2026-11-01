@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -1022,6 +1023,10 @@ class WhylineConsoleApp(App):
         self._auto_cancel_event = None
         self._relay = None  # the RelayProcess started by Start/Resume, if any
         self._relay_label = ""
+        self._relay_status: relay_ops.LiveStatus | None = None
+        self._relay_status_read = float("-inf")  # monotonic time of the last read
+        self._clock = time.monotonic  # tests replace both clocks
+        self._wall = lambda: datetime.now().astimezone()
         self._external_relay: str | None = None  # a relay another console started
         self._antigravity_ok = False
         self._release_task: tuple[str, list[str]] | None = None
@@ -4010,13 +4015,31 @@ class WhylineConsoleApp(App):
             return  # idle, or the app is shutting down
         self._spin = (self._spin + 1) % len(_SPINNER)
         elapsed = int(time.monotonic() - self._busy_since)
+        if self._relay_label:
+            self._refresh_relay_status()
         try:
             thinking = self._main("#thinking", Static)
         except NoMatches:
             # Quitting while a reply is still pending: the timer can fire
             # once more after the widgets are gone.
             return
+        if self._relay_status is not None and not self._busy_text:
+            summary = relay_ops.format_live(self._relay_status, self._wall())
+            thinking.update(f"{_SPINNER[self._spin]} relay: {summary}")
+            return
         thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s")
+
+    def _refresh_relay_status(self) -> None:
+        """Re-read the live relay status, at most every 2 s; a failed read
+        keeps the last value."""
+        now = self._clock()
+        if now - self._relay_status_read < 2.0:
+            return
+        self._relay_status_read = now
+        try:
+            self._relay_status = relay_ops.live_status(self.session.root)
+        except Exception:
+            pass
 
     def _send(self) -> None:
         prompt = self._main("#prompt", Input)
@@ -6192,10 +6215,13 @@ class WhylineConsoleApp(App):
         live = relay_ops.live_run(self.session.root)
         if live:
             self._relay_label = f"relay: {live}"
+        self._refresh_relay_status()
 
     def _relay_finished(self, code: int, text: str) -> None:
         self._relay = None
         self._relay_label = ""
+        self._relay_status = None
+        self._relay_status_read = float("-inf")
         self._manual_exited = True
         if not self._busy_text:
             self._main("#thinking", Static).display = False
