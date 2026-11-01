@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-02T12:00:00+05:30 -->
 # Self-improvement: scheduled self-checks that find, plan, fix and report, across chosen repos
 
-Runs after `plans/sdlc-pipeline.plan.md`. Design: `docs/superpowers/specs/2026-11-02-self-improvement-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
+Runs after `plans/job-search-5.plan.md` (which runs after `plans/sdlc-pipeline.plan.md`, which this plan needs) and before `personal-assistant`. Design: `docs/superpowers/specs/2026-11-02-self-improvement-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
