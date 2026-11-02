@@ -271,7 +271,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   When Set up opens while a task is paused and every dirty path is owned (SWP-3), Check shows `ok    1 file from paused JOB-8 is kept when you resume` in place of the dirty-tree FAIL. In that case Set up's Resume saves the roles and launches `resume --allow-dirty` directly, with no Resolve step. Unrelated dirty paths keep today's FAIL and today's Resume.
   Tests: owned changes give the ok line and a direct `resume --allow-dirty`, an unrelated file keeps FAIL, and a clean tree is unchanged.
 
-- [ ] SWP-5: "Continue with <agent>" on a limit pause
+- [x] SWP-5: "Continue with <agent>" on a limit pause
   Edit `src/whyline/console/tui.py` (the `#pause-actions` row and its handler), `src/whyline/console/relay_ops.py` (one new function) and `tests/console/test_tui.py` only.
   When the pause reason is a usage limit, a lost login, or "every backup in the chain is unavailable", `#pause-actions` shows up to three buttons, `Continue with <agent>`, from `relay_ops.ready_for(root, role)`. They sit before Change agents, with a checkbox "Also use as backup next time", checked by default.
   One press calls `relay_ops.switch_role(root, role, agent, add_backup) -> list[str]`, which saves through `save_roles` with only that role changed. With `add_backup` it appends the agent to the chain when it is missing. It returns the resume arguments: `["resume", "--allow-dirty"]` when every dirty path is owned (SWP-3), else `["resume"]`. The console prints "Switched <role> to <agent>; resuming." and launches them.
