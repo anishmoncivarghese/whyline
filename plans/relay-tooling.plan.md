@@ -331,7 +331,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   Needs whyline-relay with RLY-4. Add a "Test command" input that shows `whyline_relay.config.test_command(root)`, marked "(detected)" when it isn't set. Save calls `whyline_relay.config.save_test_command`, the same function `whyline relay test-command` calls. Do not write the file directly.
   Tests: shows the detected value, saving calls `save_test_command` with the typed text, clearing it saves "", and the screen fits 80x24.
 
-- [ ] LSN-6: One place to make and list brainstorm worktrees
+- [x] LSN-6: One place to make and list brainstorm worktrees
   Edit `src/whyline/worktrees.py` (new) and `tests/test_worktrees.py` (new) only.
   `make(root, kind, name) -> Path` adds a git worktree under `~/.whyline/worktrees/<repo>/<kind>-<name>` on a new branch `<kind>/<name>` from the repo's default branch. `kind` is `brainstorm` or `plan`, and `name` is reduced to `[a-z0-9-]`, at most 40 characters. A name already in use gets `-2`, `-3` and so on.
   `list_all(root) -> list[Worktree]` returns the worktrees under that folder, with path, branch, kind, and whether the folder still exists. `remove(root, path)` runs `git worktree remove` and then `git worktree prune`. It refuses a worktree with uncommitted changes and says so.
