@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-02T14:00:00+05:30 -->
 # Relay chat: a Chat tab next to All files that answers questions about the running relay without disturbing it
 
-Runs after `plans/relay-tooling.plan.md` and before `plans/sdlc-pipeline.plan.md`. Design: `docs/superpowers/specs/2026-11-02-relay-chat-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
+Runs after `plans/relay-tooling.plan.md` and before `plans/safe-pause.plan.md`, then `plans/sdlc-pipeline.plan.md`. Design: `docs/superpowers/specs/2026-11-02-relay-chat-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

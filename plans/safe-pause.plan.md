@@ -1,0 +1,135 @@
+<!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-02T15:00:00+05:30 -->
+# Safe pause: a Pause / Pausing… / Resume button that pauses the relay between turns, so nothing is lost
+
+Runs after `plans/relay-chat.plan.md` and before `plans/sdlc-pipeline.plan.md`. Needs whyline-relay with RPZ-1..4 (`~/whyline-relay/plans/safe-pause.plan.md`, released by RPZ-5), which PZ-1 checks. Design: `docs/superpowers/specs/2026-11-02-safe-pause-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
+
+This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
+
+What the user gets:
+- While a relay runs, Relay mode shows **Pause** next to Stop. Pressing it moves through these states:
+  - **Pausing…**: the current agent finishes its turn and hands off. The status line says `⏸ Pausing — letting codex finish its turn so nothing is lost (1m 20s so far)`. **Pause now** and **Keep going** are offered.
+  - **Paused**: `⏸ Paused by you at RCH-3, round 2 — press Resume to continue`, and **Resume** replaces Pause.
+  - **Resume** continues with the next turn, and nothing is redone.
+- A turn cut off by Pause now or Stop has its changed files recorded and handed to the next agent.
+- Safeguards:
+  - a safe pause on low battery
+  - an offer to pause after the Mac wakes from sleep
+  - an Awake hint when starting on battery
+  - **Pause safely and quit** when quitting with a relay running
+- `whyline relay-safety` on the command line saves the safeguards through the same function as Settings.
+
+Rules every task keeps:
+- Console first: every console control saves through the same function the CLI calls.
+- Pause is always a request through whyline-relay's `request_pause`. The console never kills a process to pause; only Pause now and Stop do, through the existing paths.
+- No new dependency. Edit only the files a task names, plus their tests. Each task ends with `uv run pytest -q` passing.
+- Tests never run a real agent or relay, never call `pmset`, and never contain "/Users/". Use fakes for `relay_ops`, `run`, and the wall and monotonic clocks.
+
+## Part 1: Pause, Pausing… and Resume
+
+- [ ] PZ-1: whyline-relay safe pause is out, and the relay_ops wrappers
+  Edit `src/whyline/console/relay_ops.py`, `pyproject.toml`, `uv.lock` and their tests only.
+  1. Check that whyline-relay with RPZ-1..4 is published (`whyline_relay.loop.request_pause` and `whyline_relay.status.pause_state` exist in the newest release on PyPI). If not, write `@blocked: needs whyline-relay safe pause (RPZ-5)` in the handoff and stop.
+  2. Raise the `whyline-relay` lower bound to that version, and run `uv lock`.
+  3. Add these wrappers, which work for a relay this console started and for one started elsewhere:
+     - `request_pause(root)`
+     - `cancel_pause(root)`
+     - `pause_now(root)`, which calls `request_pause(now=True)` then the existing interrupt path
+     - `pause_state(root)`
+  Tests: the wrappers call whyline-relay with the right arguments; `pause_now` on a live run interrupts it.
+
+- [ ] PZ-2: The Pause / Pausing… / Resume buttons
+  Edit `src/whyline/console/tui.py` and add tests in `tests/console/test_safe_pause.py`.
+  1. Add these buttons to the relay controls:
+     - `Button("Pause", id="pause")`, shown while a relay runs
+     - `Button("Pausing…", id="pausing", disabled=True)`
+     - `Button("Pause now", id="pause-now")`
+     - `Button("Keep going", id="pause-cancel")`
+  2. A 1-second timer reads `relay_ops.pause_state` while the relay tab is visible and a relay is running or pausing. It shows:
+     - **running**: Pause and Stop
+     - **pausing**: Pausing…, Pause now and Keep going
+     - **paused_by_user** or **cut_off**: the existing Resume, in Pause's place, and Stop
+  3. Pause calls `request_pause` and switches to the Pausing buttons at once, without waiting for the timer.
+  4. Keep going calls `cancel_pause`.
+  5. Pause now opens a one-line confirm: "Cut off codex's turn now? Its changed files are kept and the next turn continues from them." On yes it calls `pause_now`.
+  6. Resume is the existing Resume flow.
+  Pilot tests, with fake `relay_ops`:
+  - each state shows the right buttons
+  - Pause shows Pausing… at once
+  - Keep going goes back to running
+  - Pause now asks first
+  - Resume after a safe pause calls the existing resume
+
+- [ ] PZ-3: The status line while pausing and paused
+  Edit `src/whyline/console/tui.py` (the relay status line from RST-1) and its tests.
+  1. While **pausing**, the status text becomes `⏸ Pausing — letting <agent> finish its turn so nothing is lost (<elapsed> so far)`. The plan % and task ticks stay.
+  2. Once **paused_by_user**, it becomes `⏸ Paused by you at <task>, round <n> — press Resume to continue`.
+  3. For **cut_off**: `⏸ Paused — <agent>'s turn was cut off; its <n> changed files are kept. Press Resume to continue.`
+  4. Other pauses keep today's text.
+  5. The transcript gets one line at each change: "Pause requested…", "Paused by you.", "Pause withdrawn."
+  Tests:
+  - each text, with a fake clock for the elapsed time
+  - % stays visible
+  - each transcript line is written once
+
+## Part 2: Safeguards
+
+- [ ] PZ-4: Safeguard settings and `whyline relay-safety`
+  Create `src/whyline/relaysafety.py` and its tests. Edit `src/whyline/cli.py`.
+  1. Add `load() -> SafetySettings(battery_percent: int | None = 15, on_wake: str = "ask", on_quit: str = "ask")` and `save(**changes)`.
+     - They are stored per Mac in `~/.whyline/relay-safety.toml`, written atomically, with an injectable base dir.
+     - `on_wake` is one of ask / pause / off. `on_quit` is one of ask / pause / leave.
+     - Bad values are refused with a plain message.
+  2. Add the command `whyline relay-safety [--battery N|off] [--on-wake ask|pause|off] [--on-quit ask|pause|leave]`.
+     - With no flags, it prints the settings.
+     - Exit codes: 0, or 2 on a bad value.
+  Tests: round trip, refusals, CLI.
+
+- [ ] PZ-5: Low battery pauses safely
+  Create `src/whyline/console/power.py` and edit `src/whyline/console/tui.py`, with tests.
+  1. `battery(run=subprocess.run) -> Battery(on_battery: bool, percent: int) | None` parses `pmset -g batt`. It returns None off macOS or on any failure.
+  2. While a relay runs, check once a minute.
+     - When on battery and at or below `battery_percent`, call `request_pause` once, and show: `Battery at 14% — pausing safely so nothing is lost. Plug in and press Resume.`
+     - It doesn't fire again until the battery has been back above the limit, or the relay has been resumed.
+  3. With `battery_percent` off, it never fires.
+  Tests: parsing real `pmset` output samples, the threshold, firing once, and the setting turned off.
+
+- [ ] PZ-6: Sleep and wake, and the Awake hint
+  Edit `src/whyline/console/power.py` and `src/whyline/console/tui.py`, with tests.
+  1. `WakeWatch(wall, mono)`: on each 1-second tick, a wall-clock gain more than 2 minutes beyond the monotonic gain means the Mac slept. It reports the sleep length.
+  2. When the Mac woke while a relay was running:
+     - with `on_wake=ask`, show `The Mac slept for 42m while codex was working; its turn may time out.` with **Pause safely** (calls `request_pause`) and **Keep going** buttons
+     - with `on_wake=pause`, call `request_pause` and show the same line without buttons
+     - with `on_wake=off`, do nothing
+  3. When a relay starts on battery with Awake off, add the line: `On battery: press Awake to keep the Mac from sleeping mid-turn.`
+  Tests: the fake clocks detect a 42-minute gap and ignore small drift; each `on_wake` value; the Awake hint shows only on battery with Awake off.
+
+- [ ] PZ-7: Pause safely and quit
+  Edit `src/whyline/console/tui.py` (`action_quit`) and its tests.
+  1. When quitting while a relay this console can see is running, ask: **Pause safely and quit** / **Leave it running** / **Cancel**.
+     - `on_quit=pause` skips the question and pauses safely.
+     - `on_quit=leave` skips it and leaves the relay running.
+  2. Pause safely and quit calls `request_pause`, shows the Pausing… status with its elapsed time, and quits once `pause_state` shows paused. Pause now stays available while it waits.
+  3. With no relay running, quitting is unchanged.
+  Pilot tests: each choice, each `on_quit` value, and quitting only after the fake state shows paused.
+
+## Part 3: Settings, Help and docs
+
+- [ ] PZ-8: Settings section, Help and docs
+  Edit `src/whyline/console/settings_screen.py`, the console Help text and `README.md`, and create `docs/safe-pause.md`, with tests.
+  1. The Settings screen gets a **Relay safety** section, saved on Save through `relaysafety.save`, and transactional like the rest of the screen. It has:
+     - the battery limit (off, 10, 15, 20, 25 or a number)
+     - when the Mac wakes: ask / pause / off
+     - when quitting: ask / pause / leave
+  2. The Help text and `docs/safe-pause.md` explain:
+     - Pause versus Pause now versus Stop
+     - why Pausing… can take a while
+     - what Resume does after each
+     - the safeguards
+     - `whyline-relay pause` and `whyline relay-safety`
+  Tests: the Settings round trip; the Help mentions Pause, Pause now and `whyline relay-safety`.
+
+## Publish
+
+- [ ] PZ-9: Publish whyline with PZ-1..8
+  relay-profile: release
+  Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
