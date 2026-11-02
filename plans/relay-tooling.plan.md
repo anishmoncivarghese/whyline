@@ -424,7 +424,7 @@ Global constraints:
   8. broken symlinks and other non-file entries in `.git/hooks/`
   A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff FIX-2 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
-- [ ] FIX-3: New catalog actions for fixes
+- [x] FIX-3: New catalog actions for fixes
   Edit `src/whyline/console/recovery.py` and `tests/console/test_recovery.py` only.
   Add these to `CATALOG_ACTIONS`, with validation and `apply_steps` support:
   - `commit-task {task}`: only when the task's last handoff in the ledger is approved, or the user confirmed. It commits the dirty files as `feat: <task title> (<task>)` (the relay's format), ticks the task in the plan with `whyline_relay.plan.tick`, then commits `chore: tick <task> in the plan`. This is the WF-13 case.
