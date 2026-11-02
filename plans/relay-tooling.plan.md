@@ -266,7 +266,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   `retry_stage_args` uses it. Its behaviour is unchanged for paths that handoffs list.
   Tests: a JOB-8-like draft with no handoff, named in the task text, is owned. A file edited before the task started is unrelated. Runtime state is ignored. `retry_stage_args` is unchanged for handoff paths.
 
-- [ ] SWP-4: Set up from a pause does not fail on the task's own changes
+- [x] SWP-4: Set up from a pause does not fail on the task's own changes
   Edit `src/whyline/console/relay_screens.py` (Check and the Resume button in `RelaySetupScreen`), `src/whyline/console/tui.py` (`_open_relay_setup` when a task is paused) and their console tests only.
   When Set up opens while a task is paused and every dirty path is owned (SWP-3), Check shows `ok    1 file from paused JOB-8 is kept when you resume` in place of the dirty-tree FAIL. In that case Set up's Resume saves the roles and launches `resume --allow-dirty` directly, with no Resolve step. Unrelated dirty paths keep today's FAIL and today's Resume.
   Tests: owned changes give the ok line and a direct `resume --allow-dirty`, an unrelated file keeps FAIL, and a clean tree is unchanged.
