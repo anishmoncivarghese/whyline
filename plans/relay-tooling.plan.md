@@ -337,7 +337,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   `list_all(root) -> list[Worktree]` returns the worktrees under that folder, with path, branch, kind, and whether the folder still exists. `remove(root, path)` runs `git worktree remove` and then `git worktree prune`. It refuses a worktree with uncommitted changes and says so.
   Tests use a temporary repo and a temporary home: make, a repeated name, list, remove, refusing a dirty one, and pruning a worktree whose folder is gone.
 
-- [ ] LSN-7: A console Brainstorm moves to a worktree while a relay runs
+- [x] LSN-7: A console Brainstorm moves to a worktree while a relay runs
   Edit `src/whyline/console/tui.py` (`_start_brainstorm`, `_brainstorm_in_thread`) and `tests/console/test_tui.py` only.
   When `whyline_relay.running.live(self.session.root)` is true, the Brainstorm uses `worktrees.make(root, "brainstorm", <topic>)` as its root instead of the console's repo. Before it starts, the transcript says "A relay is running here, so this Brainstorm runs in <path> (branch <branch>)." With no relay running, nothing changes.
   Tests: with a fake live relay, the brainstorm runner gets the worktree path and the transcript names it. With no relay, it gets the console's root.
