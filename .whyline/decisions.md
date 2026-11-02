@@ -31889,3 +31889,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: eda850efc6d947ea8d8fa0b0ca2c8cf0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:19:36.169Z"} -->
+
+## 2026-11-02 — ready_for treats any error reading run_roles as 'exclude nothing'; floor bump left undone
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-1
+
+**Because:** network commands (uv lock) need approval here, and the RLY-8/9 release number is not recorded in the repo
+
+**Rejected:**
+
+- guess a floor like 0.2.42 — an unpublished version would break uv lock
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: adeb8e58b4e54a7496e574f55f013d34 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:20:47.100Z"} -->
+
+## 2026-11-02 — Fail SWP-1 Round 2 because the required whyline-relay floor was not raised
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-1
+
+**Because:** Focused and full tests exit 0, but pyproject.toml lines 38 and 88 and uv.lock lines 258 and 266 still allow whyline-relay 0.2.40, so installations may resolve a release without RLY-8 and RLY-9
+
+**Rejected:**
+
+- Pass based on green tests — dependency compatibility is an explicit functional requirement and is not exercised by the mocked readiness tests
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: 225bbc5f3ac346aaacce3e9d639fabdf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:32:15.296Z"} -->
+
+## 2026-11-02 — Keep whyline-relay floor at 0.2.40 for SWP-1; it already ships RLY-8/9
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-1
+
+**Because:** The locked 0.2.40 wheel exposes failover.ready_agents and AgentReadiness (verified by import under uv run), and the release notes put RLY-1..13 in 0.2.40; 0.2.41 is docs-only (RDOC-1..3)
+
+**Rejected:**
+
+- Bump to 0.2.41 — needs uv lock over the network and adds no RLY-8/9 code
+
+**Files:** pyproject.toml, uv.lock
+
+<!-- whyline-event: bb54da2e75814f91bb1faf725c787d04 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:32:35.730Z"} -->
+
+## 2026-11-02 — Pass SWP-1 Round 4 readiness behavior and dependency compatibility
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-1
+
+**Because:** The focused relay_ops suite and full project suite completed without failures; installed whyline-relay 0.2.40 exposes failover.ready_agents and failover.AgentReadiness, and its release notes explicitly include RLY-8 and RLY-9, while tests verify pass-through, broken-config fallback, disabled-provider filtering, and current-role exclusion
+
+**Rejected:**
+
+- Fail for an unchanged 0.2.40 floor — direct package metadata, API introspection, and the v0.2.40 release notes show that 0.2.40 is already the required RLY-8/RLY-9 release
+
+**Files:** pyproject.toml, uv.lock, src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: 0dc999d98cd2460886032453303ed539 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:44:09.032Z"} -->
+
+## 2026-11-02 — Approve SWP-1 Round 5 readiness integration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-1
+
+**Because:** The focused 149-test relay_ops suite and the full project suite pass; agent_readiness preserves relay rows and handles broken config, ready_for filters readiness through enabled providers and excludes the role's configured/current agents, and whyline-relay 0.2.40 is verified as the RLY-8/RLY-9 release already named by the dependency floor
+
+**Rejected:**
+
+- Request a higher dependency floor — 0.2.40 release notes and installed APIs prove it is already the first required release
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py, pyproject.toml, uv.lock
+
+<!-- whyline-event: 05747998f4524b369c4985c11808a4d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:55:43.376Z"} -->

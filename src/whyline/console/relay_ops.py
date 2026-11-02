@@ -925,6 +925,36 @@ def setup_choice_agents(root: Path, status: dict | None = None, which=shutil.whi
     return [name for name in known if provider_enabled(status.get(name))]
 
 
+def agent_readiness(root: Path) -> list:
+    """The relay's AgentReadiness rows (agent, ready, why) for every agent in
+    the config; [] when the config cannot load."""
+    from whyline_relay import failover
+
+    try:
+        settings = _settings(root)
+    except Exception:  # a missing or broken config: nothing to report
+        return []
+    return failover.ready_agents(root, settings)
+
+
+def ready_for(root: Path, role: str) -> list[str]:
+    """Ready agents that are enabled providers, minus the agent `role` is
+    configured or switched to."""
+    ready = {row.agent for row in agent_readiness(root) if row.ready}
+    if not ready:
+        return []
+    try:
+        taken = {
+            agent
+            for row in run_roles(root)
+            if row.role == role
+            for agent in (row.configured, row.current)
+        }
+    except Exception:  # unreadable roles: exclude nothing
+        taken = set()
+    return [name for name in setup_choice_agents(root) if name in ready and name not in taken]
+
+
 def read_agent_model(root: Path, agent: str) -> str:
     """The default model configured for `agent` in .whyline/relay/config.toml,
     or '' if none is configured (CLI default)."""

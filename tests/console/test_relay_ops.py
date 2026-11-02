@@ -2058,3 +2058,56 @@ def test_progress_resets_on_new_pytest_and_new_turn_and_skips_implement():
     shown = relay_ops.LiveProgress(20, 0, impl.started)
     assert " says)" not in relay_ops.format_live(impl, _at(0), shown)
 
+
+
+def _readiness_rows():
+    from whyline_relay import failover
+
+    return [
+        failover.AgentReadiness("claude", True, ""),
+        failover.AgentReadiness("codex", True, ""),
+        failover.AgentReadiness("grok", False, "not logged in"),
+        failover.AgentReadiness("antigravity", True, ""),
+    ]
+
+
+def test_agent_readiness_passes_through(monkeypatch, tmp_path):
+    from whyline_relay import failover
+
+    rows = _readiness_rows()
+    seen = {}
+    monkeypatch.setattr(relay_ops, "_settings", lambda root: "settings")
+
+    def fake(root, settings):
+        seen["args"] = (root, settings)
+        return rows
+
+    monkeypatch.setattr(failover, "ready_agents", fake)
+    assert relay_ops.agent_readiness(tmp_path) == rows
+    assert seen["args"] == (tmp_path, "settings")
+
+
+def test_agent_readiness_is_empty_when_config_cannot_load(monkeypatch, tmp_path):
+    def broken(root):
+        raise ValueError("bad config")
+
+    monkeypatch.setattr(relay_ops, "_settings", broken)
+    assert relay_ops.agent_readiness(tmp_path) == []
+
+
+def test_ready_for_skips_disabled_providers_and_the_roles_agent(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay_ops, "agent_readiness", lambda root: _readiness_rows())
+    monkeypatch.setattr(
+        relay_ops, "setup_choice_agents", lambda root: ["claude", "codex", "grok"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "run_roles",
+        lambda root: [
+            relay_ops.RunRole("implementer", "claude", "codex", "usage limit", "", False),
+            relay_ops.RunRole("tester", "codex", "codex", "", "", False),
+        ],
+    )
+    # grok not ready, antigravity a disabled provider, claude and codex are the role's own
+    assert relay_ops.ready_for(tmp_path, "implementer") == []
+    assert relay_ops.ready_for(tmp_path, "tester") == ["claude"]
