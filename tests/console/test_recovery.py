@@ -4242,12 +4242,82 @@ def test_cap_evidence_falls_back_to_review_logs_without_handoffs(tmp_path: Path)
 
     cap = probs[0]
     assert [line for line in cap.evidence if line.startswith("- ")] == [
-        "- codex (failed): " + _DEADLINE_REJECTIONS[0],
-        "- codex (rejected): " + _DEADLINE_REJECTIONS[1],
-        "- codex (rejected): " + _DEADLINE_REJECTIONS[2],
+        "- round 6 codex (failed): " + _DEADLINE_REJECTIONS[0],
+        "- round 9 codex (rejected): " + _DEADLINE_REJECTIONS[1],
+        "- round 12 codex (rejected): " + _DEADLINE_REJECTIONS[2],
     ]
     assert recovery.REPEATED_DEFECT in cap.evidence
     assert cap.options[0].id == "retry-stronger-model"
+
+
+def _asst16_history(repo: Path, rejected_rounds: tuple[int, ...], later: tuple[int, ...]) -> None:
+    """The persisted shape: ledger handoffs with no round or stage, plus numbered logs."""
+    logs = repo / ".whyline" / "relay" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    for rnd, summary in zip(rejected_rounds, _DEADLINE_REJECTIONS):
+        _record_rejection(repo, "AGS-5", summary)
+        (logs / f"AGS-5-{rnd}-codex-review.log").write_text(
+            'whyline handoff AGS-5 --from codex --to claude --status rejected --summary "<what happened>"\n'
+            '/bin/zsh -lc "whyline handoff AGS-5 --from codex --to claude --status rejected \\\n'
+            f'  --summary \\"{summary}\\" --file a.py"\n',
+            encoding="utf-8",
+        )
+    for rnd in later:
+        (logs / f"AGS-5-{rnd}-claude-draft.log").write_text(
+            "whyline handoff AGS-5 --from claude --to codex --status ready \\\n"
+            '  --summary "Fixed it" --file a.py\n',
+            encoding="utf-8",
+        )
+        (logs / f"AGS-5-{rnd}-codex-test.log").write_text(
+            'whyline handoff AGS-5 --from codex --to codex --status passed --summary "<what happened>"\n'
+            "whyline handoff AGS-5 --from codex --to codex --status passed \\\n"
+            '  --summary "All tests pass"\n',
+            encoding="utf-8",
+        )
+
+
+def test_rejections_answered_by_a_later_draft_and_pass_recommend_retry_stage(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _asst16_history(repo, (12, 15, 18), (19,))
+
+    assert recovery.answered_round(repo, "AGS-5") == 19
+    cap = recovery.diagnose(repo, [], _VISIT_CAP_REASON)[0]
+
+    lines = [line for line in cap.evidence if line.startswith("- ")]
+    assert lines[0] == f"- round 12 codex (rejected) [answered by round 19]: {_DEADLINE_REJECTIONS[0]}"
+    assert all("round" in line and "answered by round 19" in line for line in lines)
+    assert cap.options[0].id == "retry-stage"
+    assert [o.id for o in cap.options if o.recommended] == ["retry-stage"]
+
+
+def test_a_rejection_newer_than_the_last_pass_keeps_the_order(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    _asst16_history(repo, (12, 15, 21), (13,))
+
+    assert recovery.answered_round(repo, "AGS-5") is None
+    cap = recovery.diagnose(repo, [], _VISIT_CAP_REASON)[0]
+
+    assert cap.options[0].id == "retry-stronger-model"
+    assert not any("answered by" in line for line in cap.evidence)
+    assert any(line.startswith("- round 21 codex (rejected)") for line in cap.evidence)
+
+
+def test_identical_rejection_text_keeps_each_rounds_number(tmp_path: Path) -> None:
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    logs = repo / ".whyline" / "relay" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    same = "Fix the deadline display."
+    for rnd in (12, 18):
+        _record_rejection(repo, "AGS-5", same)
+        (logs / f"AGS-5-{rnd}-codex-review.log").write_text(
+            f'whyline handoff AGS-5 --from codex --to claude --status rejected --summary "{same}"\n',
+            encoding="utf-8",
+        )
+
+    found = recovery.recent_rejections(repo, "AGS-5")
+
+    assert [r["round"] for r in found] == ["12", "18"]
+    assert [recovery.format_rejection(r).split(" ")[2] for r in found] == ["12", "18"]
 
 
 def test_handoff_rejections_win_over_the_logs(tmp_path: Path) -> None:

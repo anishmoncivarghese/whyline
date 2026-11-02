@@ -32615,3 +32615,156 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4ba3a45e27e24f9cac76b52ca9029d3f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T07:44:27.124Z"} -->
+
+## 2026-11-02 — Resolve marks rejections answered by a later draft plus passing test and leads with Retry stage
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-4
+
+**Because:** Ledger handoffs had no round; read optional round/stage fields, fall back to status; log rejections take round from the filename
+
+**Rejected:**
+
+- Keep stronger-model lead when answered — the defect was already fixed by a later passing round
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a7f69c50eb2845919d2c66a5a0171916 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T07:46:45.659Z"} -->
+
+## 2026-11-02 — LSN-4 round-two behavioral testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-4
+
+**Because:** The 156-test recovery suite passed, including later draft-plus-pass answering, newer-rejection ordering, and displayed rounds; the full suite reached 100% with one unrelated nondeterministic Textual mount failure in RelaySetupScreen, which also failed alone at a different missing-node point and is outside the changed code
+
+**Rejected:**
+
+- Fail LSN-4 for the RelaySetupScreen smoke failure — it is unrelated to the rejection-history implementation and exhibits a pre-existing nondeterministic mount race
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 0de70d433f284d57a1771fe8f877a49e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T08:00:12.971Z"} -->
+
+## 2026-11-02 — Reject LSN-4 round three because real relay history cannot be marked answered
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-4
+
+**Because:** Production handoff events omit round and stage, so recent_rejections prefers unnumbered ledger records over numbered logs and answered_round returns None for the actual ASST-16 round-12/15/18 rejections followed by round-19 draft and test; the synthetic tests add fields that whyline handoff never persists
+
+**Rejected:**
+
+- Approve from synthetic tests — they do not exercise the repository's real persisted handoff and log representation
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 72f131ce14d841349d8481e78c81eba2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T08:13:57.978Z"} -->
+
+## 2026-11-02 — Take rejection rounds and draft/test progress from numbered relay logs, matching ledger rejections by summary
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-4
+
+**Because:** whyline handoff ledger records carry no round or stage; only log filenames (TASK-n-actor-stage.log) do, and real commands span lines with backslashes or escaped quotes
+
+**Rejected:**
+
+- Add round/stage fields to the ledger — out of scope for LSN-4 (recovery.py only)
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 7af8c0dc725e4e8f9b0a80ca8fd8c21c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T08:19:44.618Z"} -->
+
+## 2026-11-02 — Pass LSN-4 round-five behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-4
+
+**Because:** The production-shaped round history tests pass, the recovery suite passes when the unrelated RelaySetupScreen mount smoke test is excluded, and the full suite's sole failure is that unchanged known mount race
+
+**Rejected:**
+
+- Fail LSN-4 for RelaySetupScreen NoMatches — the failure is in unchanged relay_screens.py mount behavior and is unrelated to rejection recovery
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: b772dc8498d04571bebf12d2718abae2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T08:34:01.683Z"} -->
+
+## 2026-11-02 — Reject LSN-4 round six because duplicate rejection summaries lose their individual rounds
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-4
+
+**Because:** recent_rejections builds a one-value normalized-summary map, so repeated identical rejection text from rounds 12 and 18 assigns round 18 to both ledger records; the task requires each rejection to carry and show its own round, and the new tests cover only distinct summaries
+
+**Rejected:**
+
+- Approve based on ASST-16 distinct summaries — repeated reviewer wording is valid persisted history and currently renders inaccurately
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 1bbbd7ff2e384861a9e5ec6a9b81a1ea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T08:46:22.492Z"} -->
+
+## 2026-11-02 — Match repeated rejection summaries to log rounds in occurrence order
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-4
+
+**Because:** a one-value map collapsed identical wording from rounds 12 and 18 to round 18
+
+**Rejected:**
+
+- Keep newest-round map — mislabels older rejections
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 1bbacf42699e4e5199fced5daad41ddd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T08:47:16.194Z"} -->
+
+## 2026-11-02 — Pass LSN-4 round-eight behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-4
+
+**Because:** All 157 recovery tests pass, including duplicate rejection summaries retaining rounds 12 and 18, answered histories recommending Retry stage, and newer rejections preserving the existing order; the full 3,290-test run had 3,288 pass, 1 skip, and only the documented unrelated RelaySetupScreen Textual mount race in unchanged code
+
+**Rejected:**
+
+- Fail LSN-4 for RelaySetupScreen NoMatches — the same out-of-scope mount race is documented from earlier rounds and the changed rejection-recovery behavior passes its complete module
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 070fcc1306b74662b636199914d19782 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:00:41.050Z"} -->
+
+## 2026-11-02 — Approve LSN-4 round-nine review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-4
+
+**Because:** The implementation attaches and renders rejection rounds, recognizes a later draft plus passing test as answering the newest rejection, recommends Retry stage for that visit-cap history, preserves the prior order for newer rejections, handles duplicate summaries in occurrence order, and uv run pytest -q passed
+
+**Rejected:**
+
+- Request changes — no task-scope defect was found in the diff or tests
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4d91a5469a6b48288df59cae1982a333 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:13:11.008Z"} -->

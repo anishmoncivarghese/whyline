@@ -3206,52 +3206,166 @@ def _handoff_rejections(root_path: Path, task_id: str) -> list[dict[str, str]]:
         status = str(rec.get("status") or "").strip().lower()
         summary = str(rec.get("summary") or "").strip()
         if status in _REJECTED_STATUSES and summary:
-            found.append({"actor": str(rec.get("from_actor") or ""), "status": status, "summary": summary})
+            found.append(
+                {
+                    "actor": str(rec.get("from_actor") or ""),
+                    "status": status,
+                    "summary": summary,
+                    "round": _round_text(rec.get("round")),
+                }
+            )
     return found
+
+
+def _round_text(value: object) -> str:
+    """A round number as text, or "" when the record has none."""
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return ""
+    return str(n) if n > 0 else ""
+
+
+_LOG_SUMMARY_ESC = re.compile(r"--summary[\s=]+\\\"(.*?)\\\"(?=\s|$|--|['\"])", re.S)
+_LOG_NAME = r"-(\d+)-([\w.]+?)-(draft|test|review)\.log"
+
+
+def _log_handoffs(text: str, task_id: str) -> list[tuple[str, str]]:
+    """(status, summary) of each real `whyline handoff <task>` command in a log.
+
+    Commands may span lines with trailing backslashes or sit inside a quoted
+    shell string (`\\"` quotes); the prompt's `<...>` templates are skipped."""
+    text = re.sub(r"\\\n\s*", " ", text)
+    found = []
+    for cmd in _LOG_HANDOFF.finditer(text):
+        if cmd.group(1).strip("\"'") != task_id:
+            continue
+        status = _LOG_STATUS.search(cmd.group(2))
+        summary = _LOG_SUMMARY_ESC.search(cmd.group(2)) or _LOG_SUMMARY.search(cmd.group(2))
+        if not status or not summary:
+            continue
+        body = summary.group(1).replace('\\"', '"').strip()
+        if not body or (body.startswith("<") and body.endswith(">")):
+            continue
+        found.append((status.group(1).lower(), body))
+    return found
+
+
+def _task_logs(root_path: Path, task_id: str) -> list[tuple[int, str, str, Path]]:
+    """(round, actor, stage, path) for the task's relay logs, oldest first."""
+    logs_dir = root_path / ".whyline" / "relay" / "logs"
+    if not task_id or not logs_dir.is_dir():
+        return []
+    name = re.compile(re.escape(task_id) + _LOG_NAME)
+    logs = []
+    for path in logs_dir.glob(f"{task_id}-*.log"):
+        m = name.fullmatch(path.name)
+        if m:
+            logs.append((int(m.group(1)), m.group(2), m.group(3), path))
+    return sorted(logs)
+
+
+def _handoff_progress(root_path: Path, task_id: str) -> list[tuple[int, str]]:
+    """(round, "draft" | "pass") read from the task's draft and test logs.
+
+    The ledger's handoff records name no round or stage, so the log filenames
+    and the status each log's agent handed off with decide it."""
+    found: list[tuple[int, str]] = []
+    for rnd, _actor, stage, path in _task_logs(root_path, task_id):
+        if stage == "review":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        statuses = [st for st, _ in _log_handoffs(text, task_id)]
+        if not statuses:
+            continue
+        last = statuses[-1]
+        if stage == "draft" and last in ("ready", "ready-for-review"):
+            found.append((rnd, "draft"))
+        elif stage == "test" and last in ("passed", "approved", "ready", "tested"):
+            found.append((rnd, "pass"))
+    return found
+
+
+def answered_round(root_path: Path, task_id: str) -> int | None:
+    """The round that answered the newest rejection, else None.
+
+    A rejection is answered once the history holds a later draft and a later
+    passing test; the answering round is the later of the two."""
+    if not task_id:
+        return None
+    rejections = recent_rejections(root_path, task_id, count=1000)
+    rounds = [int(r["round"]) for r in rejections if r.get("round")]
+    # An unnumbered rejection after the last numbered one may be newer than any
+    # progress, so it blocks; earlier ones are older and are ignored.
+    if not rounds or not rejections[-1].get("round"):
+        return None
+    newest = max(rounds)
+    progress = _handoff_progress(root_path, task_id)
+    drafts = [n for n, kind in progress if kind == "draft" and n > newest]
+    passes = [n for n, kind in progress if kind == "pass" and n > newest]
+    if not drafts or not passes:
+        return None
+    return max(min(drafts), min(passes))
 
 
 def _log_rejections(root_path: Path, task_id: str) -> list[dict[str, str]]:
     """Rejections read from the task's test and review logs, oldest first.
 
-    Each log's last rejecting handoff command counts; the prompt's own
-    `--summary "<what happened>"` templates are skipped."""
-    logs_dir = root_path / ".whyline" / "relay" / "logs"
-    if not task_id or not logs_dir.is_dir():
-        return []
-    name = re.compile(re.escape(task_id) + r"-(\d+)-([\w.]+?)-(test|review)\.log")
-    logs = []
-    for path in logs_dir.glob(f"{task_id}-*.log"):
-        m = name.fullmatch(path.name)
-        if m:
-            logs.append((int(m.group(1)), m.group(2), path))
+    Each log's last rejecting handoff command counts."""
     found = []
-    for _, actor, path in sorted(logs):
+    for rnd, actor, stage, path in _task_logs(root_path, task_id):
+        if stage == "draft":
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         last = None
-        for cmd in _LOG_HANDOFF.finditer(text):
-            if cmd.group(1).strip("\"'") != task_id:
-                continue
-            status = _LOG_STATUS.search(cmd.group(2))
-            summary = _LOG_SUMMARY.search(cmd.group(2))
-            if not status or not summary or status.group(1).lower() not in _REJECTED_STATUSES:
-                continue
-            text_summary = summary.group(1).replace('\\"', '"').strip()
-            if not text_summary or (text_summary.startswith("<") and text_summary.endswith(">")):
-                continue
-            last = {"actor": actor, "status": status.group(1).lower(), "summary": text_summary}
+        for status, summary in _log_handoffs(text, task_id):
+            if status in _REJECTED_STATUSES:
+                last = {"actor": actor, "status": status, "summary": summary, "round": str(rnd)}
         if last:
             found.append(last)
     return found
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
 def recent_rejections(root_path: Path, task_id: str, count: int = 3) -> list[dict[str, str]]:
-    """The last `count` rejection summaries for the task: handoff records, else the logs."""
+    """The last `count` rejection summaries for the task, each with its round.
+
+    Handoff records come first; they carry no round, so it is taken from the
+    log whose rejection has the same summary."""
     if not task_id:
         return []
-    return (_handoff_rejections(root_path, task_id) or _log_rejections(root_path, task_id))[-count:]
+    logged = _log_rejections(root_path, task_id)
+    records = _handoff_rejections(root_path, task_id)
+    if not records:
+        return logged[-count:]
+    # Repeated wording is matched to log rounds in occurrence order.
+    by_summary: dict[str, list[str]] = {}
+    for r in logged:
+        by_summary.setdefault(_norm(r["summary"]), []).append(r["round"])
+    for rec in records:
+        rounds = by_summary.get(_norm(rec["summary"]), [])
+        if rec.get("round"):
+            if rec["round"] in rounds:
+                rounds.remove(rec["round"])
+        else:
+            rec["round"] = rounds.pop(0) if rounds else ""
+    return records[-count:]
+
+
+def format_rejection(r: dict[str, str], answered_by: int | None = None) -> str:
+    """One rejection line: "- round 12 codex (rejected): ...", plus the answering round."""
+    rnd = f"round {r['round']} " if r.get("round") else ""
+    answered = f" [answered by round {answered_by}]" if answered_by is not None else ""
+    return f"- {rnd}{r['actor'] or 'reviewer'} ({r['status']}){answered}: {r['summary']}"
 
 
 def _theme_words(summary: str) -> set[str]:
@@ -4301,15 +4415,14 @@ def _rule_problems(
             cap_summary = f"Round cap reached: {reason}"
         cap_evidence = [reason] if reason else list(fails)
         rejections = recent_rejections(root_path, saved_task_id)
+        answered_by = answered_round(root_path, saved_task_id) if cap_kind == "visit-cap" else None
         repeated = False
         if rejections:
             repeated = len(rejections) >= 2 and shares_theme([r["summary"] for r in rejections])
             if repeated:
                 cap_evidence.append(REPEATED_DEFECT)
             cap_evidence.append(f"Last {len(rejections)} review rejection(s), oldest first:")
-            cap_evidence += [
-                f"- {r['actor'] or 'reviewer'} ({r['status']}): {r['summary']}" for r in rejections
-            ]
+            cap_evidence += [format_rejection(r, answered_by) for r in rejections]
 
         suggested_model_name = ""
         if first_recovery_name:
@@ -4318,6 +4431,8 @@ def _rule_problems(
                 f"Second cap on task {saved_task_id or 'the task'} reached; first recovery was {first_recovery_name}."
             )
             cap_opts = [replace(o, recommended=False) for o in cap_opts]
+        elif rejections and answered_by is not None:
+            cap_opts = [replace(o, recommended=o.id == "retry-stage") for o in cap_opts]
         elif rejections and repeated:
             implementer = _configured_implementer(root_path)
             stronger = find_stronger_model(root_path, implementer)
@@ -4927,7 +5042,7 @@ def _ask_rejection_lines(root_path: Path, task_id: str) -> list[str]:
         found = recent_rejections(root_path, task_id)
     except Exception:
         found = []
-    return [f"- {r['actor'] or '?'} ({r['status']}): {r['summary']}" for r in found] or ["None"]
+    return [format_rejection({**r, "actor": r["actor"] or "?"}) for r in found] or ["None"]
 
 
 def _ask_problem_lines(root_path: Path, fails: list[str], reason: str) -> list[str]:
