@@ -252,7 +252,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   Raise the whyline-relay floor to the release with RLY-8 and RLY-9. Add `relay_ops.agent_readiness(root) -> list[AgentReadiness]`, which calls `failover.ready_agents` with the loaded settings and returns `[]` when the config cannot load. Add `relay_ops.ready_for(root, role) -> list[str]`: the ready agents that are enabled providers (`setup_choice_agents`), excluding the agent the role is already configured or switched to.
   Tests: readiness passes through, a broken config gives `[]`, disabled providers and the role's current agent are left out.
 
-- [ ] SWP-2: Set up labels agents that cannot run
+- [x] SWP-2: Set up labels agents that cannot run
   Edit `src/whyline/console/relay_screens.py` (`RelaySetupScreen._role_options` and the backup chain picker) and `tests/console/test_relay_screens.py` only.
   Each role and backup option whose readiness row is not ready reads `<agent> — <why>`, for example "antigravity — out of quota until 2026-11-04 18:30". It can still be chosen. When one is saved for a role, Check shows `warn  <role> is <agent>, which is <why>`.
   Tests: a limited agent's label carries its reason, a ready agent's label is unchanged, and saving a limited implementer makes Check warn.
