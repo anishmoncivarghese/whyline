@@ -321,7 +321,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   Keep a normalised cause with each recorded attempt: the reason with round numbers, paths, and text after the first 120 characters removed. When a new pause on the same task has the same cause as its last attempt, the Resolve header starts with "Same cause as the last pause (round <n>)." If the cause is a refused test command, put "Set the test command in Settings, then Resume and keep changes" first.
   Tests: two pauses with the same cause show the line, different causes don't, and a refused test command gets the Settings hint.
 
-- [ ] LSN-4: Resolve marks rejections a later round already answered
+- [x] LSN-4: Resolve marks rejections a later round already answered
   Edit `src/whyline/console/recovery.py` (`recent_rejections`, `_handoff_rejections`, `_log_rejections`, and the cap options) and `tests/console/test_recovery.py` only.
   Each rejection carries its round, shown as "round <n>" before the agent name. After a review visit cap, if the handoff history has a later draft and a later passing test than the newest rejection, label the rejections "answered by round <m>" and make Retry stage the recommended option instead of Ask agent. Otherwise keep today's order.
   Tests: the ASST-16 history (rejections in rounds 12, 15 and 18, a draft and a passing test in round 19) recommends Retry stage, a rejection newer than the last pass keeps Ask agent first, and rounds show in the text.
