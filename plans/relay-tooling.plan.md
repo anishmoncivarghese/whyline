@@ -406,13 +406,23 @@ Global constraints:
     - HEAD, branch and every ref under `refs/heads` and `refs/tags` are unchanged
     - `.git/config` and `.git/hooks/` are unchanged
     - the lines of ticked plan tasks in the configured plan are unchanged
-    - no changed path lies outside the repository (resolved symlinks included)
+    - no changed path lies outside the repository, judged by the cases in the Review focus list below
     Any violation runs `undo`, after resetting HEAD with `git reset --soft <snapshot head>` only when the agent made a local commit. Every violation is reported in plain words. A moved remote-tracking ref is reported as "the agent may have pushed", and nothing is undone there.
   Tests:
   - each agent's command, with bypass flags removed
   - None for an unknown agent
   - each guard check, using a fake agent that commits, edits a ticked task, edits `.git/hooks`, or writes through a symlink outside the repository
   - a commit made by the agent is undone and reported
+  Review focus (the complete list; added 2026-11-02 after rounds 1-18 kept finding new symlink cases). The guard is a tripwire behind the CLI's own sandbox, not a proof. Approve when every item below has a passing regression test and the suite passes:
+  1. codex danger, bypass and network flags removed in both `--flag value` and `--flag=value` forms
+  2. a write through a symlinked directory that points outside the repository
+  3. the same through a symlink that git ignores
+  4. the same through a symlink inside an untracked nested git repository
+  5. an outside write through a symlink that the agent then deletes or repoints
+  6. an inspection failure (git error, symlink loop) reports a violation instead of "no changes" (fail closed)
+  7. `.git/config` replaced by a symlink, even with the same content, and a pre-existing `.git/config` symlink whose target is edited
+  8. broken symlinks and other non-file entries in `.git/hooks/`
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff FIX-2 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
 - [ ] FIX-3: New catalog actions for fixes
   Edit `src/whyline/console/recovery.py` and `tests/console/test_recovery.py` only.
@@ -558,8 +568,17 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   - no state and a missing configured plan gives zeros
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
+- [ ] MDL-1: Only real model ids in the model lists, checked before saving
+  Edit `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
+  On 2026-11-02 at FIX-2 round 18, an Auto recovery step set Claude's model to `claude-opus-5-5-high`, the first entry of `AGENT_MODELS["claude"]`. That id doesn't exist (the effort suffix is antigravity's naming), so Claude refused the turn in under a second (API 404).
+  1. In `AGENT_MODELS["claude"]`, replace `claude-opus-5-5-high` with `claude-opus-5-5`, and put the aliases `opus`, `sonnet`, `haiku` first.
+  2. Add `valid_model(agent, model) -> str | None`, which returns a plain reason when the id is refused: for claude, an id ending in `-low`, `-medium`, `-high` or `-max`, or one that is neither an alias nor matches `claude-[a-z]+-\d+(-\d+)*`.
+  3. Every function in `relay_ops` and `recovery` that saves a model calls it first and raises `ValueError` with the reason, so Change agents, Continue with, Resolve steps and Auto recovery all refuse a bad id before it reaches `config.toml`.
+  Tests: the list holds no effort suffix; `claude-opus-5-5-high` is refused with a reason; `sonnet` and `claude-opus-5-5` pass; a recovery step naming a bad model is refused and `config.toml` is unchanged.
+  Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
+
 ## Publish
 
-- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9 and RCAP-1..2
+- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, RCAP-1..2, RST-8 and MDL-1
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
