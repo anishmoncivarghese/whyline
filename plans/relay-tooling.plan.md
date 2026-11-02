@@ -211,7 +211,7 @@ Rules every task keeps:
   - there are no extra reads within 2 s
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] LIVE-4: Docs
+- [x] LIVE-4: Docs
   Edit the console docs page that covers Relay mode's Set up (find it under `docs/`; it already documents Set up and the backup chain) only.
   Explain:
   - **Set up** while a relay runs opens **Agents for this run**
