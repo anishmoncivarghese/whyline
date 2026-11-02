@@ -326,7 +326,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   Each rejection carries its round, shown as "round <n>" before the agent name. After a review visit cap, if the handoff history has a later draft and a later passing test than the newest rejection, label the rejections "answered by round <m>" and make Retry stage the recommended option instead of Ask agent. Otherwise keep today's order.
   Tests: the ASST-16 history (rejections in rounds 12, 15 and 18, a draft and a passing test in round 19) recommends Retry stage, a rejection newer than the last pass keeps Ask agent first, and rounds show in the text.
 
-- [ ] LSN-5: Test command in the console
+- [x] LSN-5: Test command in the console
   Edit `src/whyline/console/relay_screens.py` (the setup screen next to Timeout), `src/whyline/console/relay_ops.py` and `tests/console/test_relay_setup_screen.py` only.
   Needs whyline-relay with RLY-4. Add a "Test command" input that shows `whyline_relay.config.test_command(root)`, marked "(detected)" when it isn't set. Save calls `whyline_relay.config.save_test_command`, the same function `whyline relay test-command` calls. Do not write the file directly.
   Tests: shows the detected value, saving calls `save_test_command` with the typed text, clearing it saves "", and the screen fits 80x24.
