@@ -128,8 +128,15 @@ Rules every task keeps:
      - `whyline-relay pause` and `whyline relay-safety`
   Tests: the Settings round trip; the Help mentions Pause, Pause now and `whyline relay-safety`.
 
+- [ ] PZ-10: "Send back as a rejection" in Resolve
+  Edit `src/whyline/console/recovery.py`, `src/whyline/console/tui.py` and their tests only. Needs whyline-relay RPZ-7 (`resume --as-rejection`), which PZ-1's version floor covers.
+  On 2026-11-02 a review rejection mentioning "sandbox" was misread as a refused command, and Resume paused again on the same text every time.
+  1. When the pause reason starts with "<agent> could not run a required command" and the last handoff is `rejected`, Resolve offers **Send back to <implementer agent>** as the first option. It runs `whyline-relay resume --as-rejection`. Ask agent's catalog gets the same action as `send-back`, in the auto-safe set.
+  2. Its line says: "The reviewer's rejection was read as a refused command. Send it back to <agent> as a normal rejection."
+  Tests: the option shows only for that pause with a rejected handoff; it launches `resume --as-rejection`; Auto picks it once per pause.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
