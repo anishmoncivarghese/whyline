@@ -342,7 +342,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   When `whyline_relay.running.live(self.session.root)` is true, the Brainstorm uses `worktrees.make(root, "brainstorm", <topic>)` as its root instead of the console's repo. Before it starts, the transcript says "A relay is running here, so this Brainstorm runs in <path> (branch <branch>)." With no relay running, nothing changes.
   Tests: with a fake live relay, the brainstorm runner gets the worktree path and the transcript names it. With no relay, it gets the console's root.
 
-- [ ] LSN-8: Worktrees in the console and the doctor
+- [x] LSN-8: Worktrees in the console and the doctor
   Edit `src/whyline/console/assistant_screen.py`, `src/whyline/ideas/cli.py`, `tests/console/test_assistant_screen.py` and `tests/ideas/test_cli.py` only.
   Add `whyline idea worktrees [--remove PATH]` and a Worktrees list on the Assistant screen with Open and Remove for each. Both call `worktrees.list_all` and `worktrees.remove`. `assistant_doctor` warns about worktrees whose folder is gone, and about any worktree older than 14 days.
   Tests: the CLI and the console list the same entries, Remove refuses a dirty worktree and shows why, and the doctor warns about a missing folder.
