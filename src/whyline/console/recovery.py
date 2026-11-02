@@ -3016,6 +3016,55 @@ def _task_handoff_paths(root_path: Path, task_id: str) -> set[str]:
     return found
 
 
+def _started_timestamp(state: dict[str, Any]) -> float | None:
+    """The relay state's `started` as epoch seconds, or None when absent or unreadable."""
+    value = state.get("started")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if moment.tzinfo is None:
+            moment = moment.astimezone()
+        return moment.timestamp()
+    return None
+
+
+def task_owned_dirty(root: Path | str, task_id: str) -> tuple[list[str], list[str]]:
+    """The dirty paths that are the paused task's own, and the ones that are not.
+
+    A path is the task's when one of its handoffs lists it, the task's plan
+    text names it, or it was modified after the task's first round started.
+    Relay runtime state under `.whyline/relay/` is left out of both lists."""
+    from whyline_relay import gitcheck
+
+    root_path = Path(root)
+    dirty = [
+        p for p in gitcheck.dirty_paths(root_path) if not p.startswith(".whyline/relay/")
+    ]
+    if not dirty:
+        return [], []
+    touched = _task_handoff_paths(root_path, task_id)
+    state = _read_state_dict(root_path)
+    text = _saved_task_text(root_path, str(state.get("plan") or ""), task_id)
+    started = _started_timestamp(state)
+    owned: list[str] = []
+    unrelated: list[str] = []
+    for p in dirty:
+        path = p.rstrip("/")
+        mine = any(path == t or path.startswith(t + "/") for t in touched)
+        mine = mine or bool(text and path and path in text)
+        if not mine and started is not None:
+            try:
+                mine = (root_path / path).stat().st_mtime > started
+            except OSError:
+                pass
+        (owned if mine else unrelated).append(p)
+    return owned, unrelated
+
+
 def retry_stage_args(root_path: Path, task_id: str | None = None) -> tuple[list[str], list[str]]:
     """The Retry stage command and the dirty paths that keep it from keeping work.
 
@@ -3026,24 +3075,18 @@ def retry_stage_args(root_path: Path, task_id: str | None = None) -> tuple[list[
     stays plain so the relay refuses rather than sweep it into the task."""
     args = ["resume", "--retry-stage"]
     try:
-        from whyline_relay import gitcheck, state as relay_state
+        from whyline_relay import state as relay_state
 
         if task_id is None:
             record = json.loads(relay_state.path(root_path).read_text(encoding="utf-8"))
             task_id = str(record.get("task_id") or "") if isinstance(record, dict) else ""
-        dirty = [
-            p
-            for p in gitcheck.dirty_paths(root_path)
-            if not p.startswith(".whyline/relay/")
-        ]
+        if not task_id:
+            return args, []
+        owned, unrelated = task_owned_dirty(root_path, task_id)
     except Exception:
         return args, []
-    if not task_id or not dirty:
+    if not owned and not unrelated:
         return args, []
-    touched = _task_handoff_paths(root_path, task_id)
-    unrelated = [
-        p for p in dirty if not any(p == t or p.startswith(t + "/") for t in touched)
-    ]
     if unrelated:
         return args, unrelated
     return args + ["--allow-dirty"], []

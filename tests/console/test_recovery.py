@@ -3848,6 +3848,63 @@ def test_visit_cap_retry_stage_with_an_unrelated_file_leaves_the_flag_off(tmp_pa
     assert "notes.txt" in message
 
 
+def _owned_repo(tmp_path: Path, started: str | None = None) -> Path:
+    import subprocess
+
+    repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
+    (repo / "plan.md").write_text(
+        "# Plan\n\n- [ ] AGS-5: Draft the cover letter\n  Write `drafts/letter.md` for it.\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "more"], cwd=repo, check=True)
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    if started:
+        state["started"] = started
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    return repo
+
+
+def test_task_owned_dirty_counts_a_file_the_task_text_names(tmp_path: Path) -> None:
+    repo = _owned_repo(tmp_path)
+    (repo / "drafts").mkdir()
+    (repo / "drafts" / "letter.md").write_text("hi\n", encoding="utf-8")
+    (repo / "other.txt").write_text("x\n", encoding="utf-8")
+
+    owned, unrelated = recovery.task_owned_dirty(repo, "AGS-5")
+
+    assert owned == ["drafts/"] or owned == ["drafts/letter.md"]
+    assert unrelated == ["other.txt"]
+
+
+def test_task_owned_dirty_treats_a_file_edited_before_the_task_started_as_unrelated(
+    tmp_path: Path,
+) -> None:
+    import os
+    import time
+
+    repo = _owned_repo(tmp_path, started="2030-01-01T00:00:00+00:00")
+    old = repo / "old.txt"
+    old.write_text("x\n", encoding="utf-8")
+    past = time.time() - 3600
+    os.utime(old, (past, past))
+    assert recovery.task_owned_dirty(repo, "AGS-5") == ([], ["old.txt"])
+
+    state_file = repo / ".whyline" / "relay" / "state.json"
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    state["started"] = "2000-01-01T00:00:00+00:00"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    assert recovery.task_owned_dirty(repo, "AGS-5") == (["old.txt"], [])
+
+
+def test_task_owned_dirty_ignores_relay_runtime_state(tmp_path: Path) -> None:
+    repo = _owned_repo(tmp_path)
+    (repo / ".whyline" / "relay" / "runtime.json").write_text("{}\n", encoding="utf-8")
+
+    assert recovery.task_owned_dirty(repo, "AGS-5") == ([], [])
+
+
 def test_visit_cap_retry_stage_names_an_unlisted_decision_log(tmp_path: Path) -> None:
     repo = _capped_repo(tmp_path / "repo", _VISIT_CAP_REASON)
     _record_handoff(repo, "AGS-5", ["src/work.py", "src/new.py"])

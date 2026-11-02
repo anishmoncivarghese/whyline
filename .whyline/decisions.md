@@ -32025,3 +32025,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 27dbed466e6f4f5ab25f09237fd29725 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:22:25.962Z"} -->
+
+## 2026-11-02 — task_owned_dirty reads 'started' from state.json dict; the mtime rule is skipped when it is absent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-3
+
+**Because:** RelayState has no started field in the installed relay, so a missing value must not mark everything owned or unrelated
+
+**Rejected:**
+
+- treat missing started as epoch 0 — would make every dirty file owned and defeat the check
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 84b62a938c1a46f29b705b9cb6e066d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:24:21.674Z"} -->
+
+## 2026-11-02 — SWP-3 passes round-two behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-3
+
+**Because:** The focused recovery suite and complete project suite both exited 0; coverage verifies task-text ownership, pre-start unrelated files, post-start ownership, relay runtime exclusion, and unchanged handoff-path retry behavior
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 28120402797f417b849eabeb5015ec95 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:37:07.883Z"} -->
+
+## 2026-11-02 — SWP-3 approved after round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-3
+
+**Because:** The implementation classifies dirty paths by task handoffs, the matching plan task text, or post-start mtime while excluding .whyline/relay runtime state; the new ownership tests and existing retry-stage compatibility tests pass. The plain focused and full suites each hit the same unrelated Textual setup-screen flake in unchanged relay_screens.py, and that exact failing smoke test passed immediately in isolation.
+
+**Rejected:**
+
+- Request changes for the suite failure — the failure is outside the task diff and was not reproducible in isolation
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: fc2da8fbf2154525b9627b1ea8715de0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:50:41.178Z"} -->
