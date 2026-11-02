@@ -2001,7 +2001,7 @@ async def test_ask_agent_shows_it_is_working_until_the_answer_lands(tmp_path):
         thinking = app.query_one("#thinking", tui.Static)
         assert thinking.display is True
         agent = app.session.agent
-        assert f"{agent} is analysing the problem" in str(thinking.render())
+        assert f"Ask agent: {agent} · " in str(thinking.render())
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
         assert any(f"Asking {agent} to analyse the problem" in l for l in lines)
 
@@ -2011,6 +2011,94 @@ async def test_ask_agent_shows_it_is_working_until_the_answer_lands(tmp_path):
             if _clickable(app, "#resolve-retry-stage"):
                 break
         assert _clickable(app, "#resolve-retry-stage")
+        assert app._busy_text == ""
+        assert thinking.display is False  # a normal finish clears the status line
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_ask_agent_status_elapsed_advances_under_a_fake_clock(tmp_path):
+    import threading
+
+    _init_test_repo(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_runner(command, prompt, **kwargs):
+        started.set()
+        release.wait(10)
+        return "RECOMMEND: retry-stage\n"
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+    now = [100.0]
+    app._clock = lambda: now[0]
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unclassified preflight check"])
+        await pilot.pause()
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(200):
+            await pilot.pause(0.05)
+            if started.is_set():
+                break
+        await pilot.pause(0.2)
+
+        agent = app.session.agent
+        thinking = app.query_one("#thinking", tui.Static)
+        assert f"Ask agent: {agent} · 0:00" in str(thinking.render())
+        now[0] += 65
+        await pilot.pause(0.3)
+        assert f"Ask agent: {agent} · 1:05" in str(thinking.render())
+
+        release.set()
+        for _ in range(300):
+            await pilot.pause(0.05)
+            if _clickable(app, "#resolve-retry-stage"):
+                break
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_stop_ends_the_ask_agent_and_shows_the_options_again(tmp_path):
+    import threading
+
+    _init_test_repo(tmp_path)
+    started = threading.Event()
+    ended = threading.Event()
+
+    def fake_runner(command, prompt, cancel_event=None, **kwargs):
+        started.set()
+        cancel_event.wait(10)
+        ended.set()
+        raise RuntimeError("cancelled")
+
+    app = tui.WhylineConsoleApp(root=tmp_path, runner=fake_runner)
+
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._start_resolve_flow(source="resume", fail_lines=["FAIL unclassified preflight check"])
+        await pilot.pause()
+        await pilot.click("#resolve-ask-agent")
+        for _ in range(200):
+            await pilot.pause(0.05)
+            if started.is_set():
+                break
+        await pilot.pause(0.2)
+        assert app.query_one("#stop", tui.Button).disabled is False
+
+        await pilot.click("#stop")
+        for _ in range(200):
+            await pilot.pause(0.05)
+            if ended.is_set() and _clickable(app, "#resolve-ask-agent"):
+                break
+
+        assert ended.is_set()
+        assert _clickable(app, "#resolve-ask-agent")
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        assert any("Ask agent stopped." in l for l in lines)
+        assert not any("Agent inquiry failed" in l for l in lines)
+        assert app.query_one("#thinking", tui.Static).display is False
         assert app._busy_text == ""
 
 

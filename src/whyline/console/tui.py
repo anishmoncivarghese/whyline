@@ -1142,6 +1142,9 @@ class WhylineConsoleApp(App):
         self._switch_note_read = float("-inf")  # monotonic time of the last read
         self._clock = time.monotonic  # tests replace both clocks
         self._wall = lambda: datetime.now().astimezone()
+        self._ask_cancel: Any = None  # set while Ask agent runs; Stop sets it
+        self._ask_started = 0.0
+        self._ask_agent_name = ""
         self._external_relay: str | None = None  # a relay another console started
         self._antigravity_ok = False
         self._release_task: tuple[str, list[str]] | None = None
@@ -3729,6 +3732,9 @@ class WhylineConsoleApp(App):
         elif button_id == "file-later":
             self._on_file_later()
         elif button_id == "stop":
+            if self._ask_cancel is not None:
+                self._stop_ask_agent()
+                return
             self._disarm_follow()
             other = None if self._relay_running() else self._live_relay()
             if self._relay_running():
@@ -4194,6 +4200,13 @@ class WhylineConsoleApp(App):
                 self._relay_status, self._wall(), self._relay_progress
             )
             thinking.update(f"{_SPINNER[self._spin]} relay: {summary}{note}")
+            return
+        if self._ask_cancel is not None and self._busy_text:
+            secs = int(self._clock() - self._ask_started)
+            thinking.update(
+                f"{_SPINNER[self._spin]} Ask agent: {self._ask_agent_name} · "
+                f"{secs // 60}:{secs % 60:02d}"
+            )
             return
         thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s{note}")
 
@@ -5680,6 +5693,34 @@ class WhylineConsoleApp(App):
         self._sync_relay_buttons()
 
         if opt.id == "ask-agent":
+            import inspect
+            import threading
+
+            from whyline_relay import agents as relay_agents
+
+            cancel = threading.Event()
+            self._ask_cancel = cancel
+            self._ask_started = self._clock()
+            self._ask_agent_name = self.session.agent or "the agent"
+            inner = self._runner or recovery._AUTO_RUNNER or relay_agents.run
+            try:
+                params = inspect.signature(inner).parameters.values()
+                takes_cancel = any(
+                    p.name == "cancel_event" or p.kind is inspect.Parameter.VAR_KEYWORD
+                    for p in params
+                )
+            except (TypeError, ValueError):
+                takes_cancel = False
+
+            def stoppable_runner(*args: Any, **kwargs: Any) -> Any:
+                # Stop sets `cancel`; the relay's runner then ends the
+                # agent's whole process group (LSN-1).
+                if cancel.is_set():
+                    raise relay_agents.AgentCancelled("Ask agent stopped")
+                if takes_cancel:
+                    kwargs["cancel_event"] = cancel
+                return inner(*args, **kwargs)
+
             def passed_over(agent: str, why: str, following: str | None) -> None:
                 self.call_from_thread(self._ask_agent_passed_over, agent, why, following)
 
@@ -5689,7 +5730,7 @@ class WhylineConsoleApp(App):
                     ask_res = recovery.ask_agent(
                         self.session.root,
                         session=self.session,
-                        runner=self._runner,
+                        runner=stoppable_runner,
                         fail_lines=self._current_fail_lines(),
                         problem=self._resolve_problem,
                         on_fallback=passed_over,
@@ -5697,11 +5738,11 @@ class WhylineConsoleApp(App):
                 except Exception:
                     pass
                 finally:
-                    self.call_from_thread(self._ask_agent_finished, ask_res)
+                    self.call_from_thread(self._ask_agent_finished, ask_res, cancel)
 
-            # The turn can take minutes; without the thinking line the
+            # The turn can take minutes; without the status line the
             # disabled buttons look like a frozen console.
-            agent = self.session.agent or "the agent"
+            agent = self._ask_agent_name
             self.render_event(
                 SessionEvent(kind="output", text=f"Asking {agent} to analyse the problem…")
             )
@@ -5826,14 +5867,33 @@ class WhylineConsoleApp(App):
     def _ask_agent_passed_over(self, agent: str, why: str, following: str | None) -> None:
         if following:
             text = f"{agent} {why}; asking {following}…"
+            self._ask_agent_name = following
             self._set_busy(True, f"{following} is analysing the problem")
         else:
             text = f"{agent} {why}; no backup agent left to ask."
         self.render_event(SessionEvent(kind="output", text=text))
 
-    def _ask_agent_finished(self, res: Any) -> None:
+    def _stop_ask_agent(self) -> None:
+        """Stop on the Relay row while Ask agent runs: end the agent and put
+        the Resolve options back."""
+        cancel = self._ask_cancel
+        if cancel is None:
+            return
+        cancel.set()
+        self._ask_cancel = None
+        self._resolve_running = False
+        self._set_busy(False)
+        self.render_event(SessionEvent(kind="output", text="Ask agent stopped."))
+        if self._resolve_problem is not None:
+            self._mount_resolve_buttons(self._resolve_problem)
+        self._sync_relay_buttons()
+
+    def _ask_agent_finished(self, res: Any, cancel: Any = None) -> None:
         from whyline.console import recovery
 
+        if cancel is not None and cancel.is_set():
+            return  # Stop already put the options back
+        self._ask_cancel = None
         self._resolve_running = False
         self._set_busy(False)
         # With no usable answer, the rule-based fixes stay on offer.

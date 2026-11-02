@@ -32494,3 +32494,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dee5014da78d47a3a0a7907c39a66e07 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:03:04.181Z"} -->
+
+## 2026-11-02 — Ask agent Stop works by wrapping the runner in tui.py with a cancel_event, and the Stop handler remounts the options itself
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-2
+
+**Because:** ask_agent in recovery.py is out of scope for this task; relay agents.run already ends the process group on cancel_event, and acting in the Stop handler means the UI recovers even if a runner ignores the event
+
+**Rejected:**
+
+- Edit recovery.ask_agent to accept a cancel event — outside the files this task may touch
+- Wait for the thread to finish before showing the options — a runner that ignores cancel would leave the console stuck
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b018320447b040af884de55e139288f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:09:15.779Z"} -->
+
+## 2026-11-02 — Pass LSN-2 Ask agent progress and cancellation behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-2
+
+**Because:** The focused elapsed-clock, Stop/cancellation, and normal-finish tests passed; the complete TUI suite and full project suite also exited successfully with no failures
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: d5f57a43cea94f9687fd552760b4004d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:22:51.240Z"} -->
+
+## 2026-11-02 — Approve LSN-2 Ask agent progress and Stop behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-2
+
+**Because:** The diff shows the selected agent with fake-clock elapsed time, forwards Stop through the relay cancel event, restores Resolve options, and clears status on normal completion; the full TUI suite passed, while the plain full suite's sole unchanged RelaySetupScreen mount failure passed on immediate isolated rerun and is unrelated to LSN-2
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness, safety, or test-coverage defect was found
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: cd49bc5eddb5467db9581c694999bf0b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:36:49.729Z"} -->
