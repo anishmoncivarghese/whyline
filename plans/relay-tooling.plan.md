@@ -247,7 +247,7 @@ Console first: each action has a console control, and the console saves through 
 
 Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with no duration. No fixed sleep, no network, no real vendor agent (inject fake runners and a fake `ready_agents`), no real home directory, and no `/Users/` path. New console tests must pass at 80x24. `uv run pytest -q` is the suite command.
 
-- [ ] SWP-1: Read agent readiness from the relay
+- [x] SWP-1: Read agent readiness from the relay
   Edit `pyproject.toml` and `uv.lock` (the whyline-relay floor), `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
   Raise the whyline-relay floor to the release with RLY-8 and RLY-9. Add `relay_ops.agent_readiness(root) -> list[AgentReadiness]`, which calls `failover.ready_agents` with the loaded settings and returns `[]` when the config cannot load. Add `relay_ops.ready_for(root, role) -> list[str]`: the ready agents that are enabled providers (`setup_choice_agents`), excluding the agent the role is already configured or switched to.
   Tests: readiness passes through, a broken config gives `[]`, disabled providers and the role's current agent are left out.
