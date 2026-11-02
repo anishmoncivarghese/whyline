@@ -109,6 +109,8 @@ Rules every task keeps:
      - no calls named `start`, `stop`, `interrupt`, `resume`, `select_plan` or `launcher`
      - no write calls to paths containing `.whyline/relay`
      - every `"git"` argv list containing `--no-optional-locks`
+  Review focus (the complete list): the checks in 1 and 2 above. The agent's read-only mode is the real protection; these checks catch mistakes in our own code. The AST scan looks at direct calls and literal argv lists only; calls through `getattr`, variables holding function names, or argv built at runtime are out of scope.
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff RCH-5 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
 ## Part 2: Command line
 

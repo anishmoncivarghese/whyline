@@ -276,6 +276,8 @@ Rules every task keeps:
   - a changed lock file or dependency manifest (`uv.lock`, `poetry.lock`, `requirements*.txt`, `pyproject.toml` dependency lines, `package.json` dependency lines, `package-lock.json`, `pnpm-lock.yaml`), unless a taken finding has kind `security` or names a dependency. Even then, only the packages those findings name may change version. This is checked by comparing `vulns.dependencies` before and after: any other package whose version changed is refused.
   - more than `max_changed_lines` added plus removed, not counting the always-allowed paths
   Tests: each rule on a real temporary repo, with one clean diff that passes.
+  Review focus (the complete list): the five rules above, each with a test on a real temporary repo. The guard is a tripwire for honest mistakes by the fixing agent, behind the relay's own sandbox, not a proof against a hostile agent. Skips written some other way (a `conftest.py` hook, a renamed marker, a deselect in config) are out of scope.
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff IMP-16 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
 - [ ] IMP-17: Secrets in the diff and in reports
   Edit `src/whyline/improve/guard.py` and create `src/whyline/improve/report.py` with `redact` only, plus tests.
@@ -292,6 +294,8 @@ Rules every task keeps:
      - replaces the same patterns, the stored Telegram token (`telegram.token_get`), and stored credential values (`whyline.credentials.redaction_values` when that module exists) with `[redacted]`
      - never raises
   Tests: each pattern, the masked display, a token read through a fake, and redaction idempotent.
+  Review focus (the complete list): the six patterns, the masked display, the stored Telegram token and stored credentials. Secrets split across lines, encoded (base64, hex) or of other kinds are out of scope here; the release-button plan's full scanner (SEC-3) covers more.
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff IMP-17 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
 - [ ] IMP-18: One repo, start to end
   Create `src/whyline/improve/runner.py` and its tests.
@@ -379,6 +383,8 @@ Rules every task keeps:
   1. An AST scan of `src/whyline/improve/` checks that `github.push`, `github.create_pr`, `github.merge` and `github.close` are called only inside `changes.approve`, `changes.merge` and `changes.close`.
   2. A full fake run at level `fix` with one finding ends with the change waiting and zero calls to the fake push, PR and merge.
   3. Approve with the shown sha pushes once. Approve with an older sha pushes nothing.
+  Review focus (the complete list): the AST scan finds direct calls written as `github.<name>(…)` and `from …github import <name>` followed by a call to that name. Calls hidden by `getattr`, aliasing a module through a variable, or `exec` are out of scope; the fake-run checks in 2 and 3 are the behavioural guarantee.
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff IMP-23 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
 ## Part 4: Report, digest and schedule
 
