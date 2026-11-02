@@ -32391,3 +32391,106 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7023044899cd4b44973a75eea100aff5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:07:41.766Z"} -->
+
+## 2026-11-02 — Ask agent timeout: default relay timeout capped at 10 min; chain ending on a timeout returns status 'timeout' with diagnosis and resume-keep option
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-1
+
+**Because:** Failover to backups is kept for timeouts; only when the last agent timed out does Resolve get a no-recommendation result so its other options remain
+
+**Rejected:**
+
+- Stop at first timeout without trying backups — drops existing failover behaviour
+- Reuse status 'exhausted' — loses the 'did not answer within n min' diagnosis
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: d7cae1b36b8846ebbf19120a48b4f60b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:10:21.582Z"} -->
+
+## 2026-11-02 — LSN-1 round-two behavioral testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-1
+
+**Because:** The five timeout-focused tests pass and the full project suite exits successfully; they verify the relay-derived 10-minute cap, explicit timeout forwarding, process-group termination, timeout diagnosis with Resume and keep changes, and unchanged fast-agent behavior. An unrelated Textual Select smoke test fails in isolation but passes in the full suite and does not exercise LSN-1.
+
+**Rejected:**
+
+- Fail LSN-1 for the isolated Textual smoke test — it is outside the timeout behavior, passes under the required full-suite run, and the LSN-1-specific regressions all pass
+
+**Files:** tests/console/test_recovery.py
+
+<!-- whyline-event: c85b7f7a3061490186524d44666124a7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:23:42.432Z"} -->
+
+## 2026-11-02 — LSN-1 rejected: timeout result is not handled by Resolve
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-1
+
+**Because:** ask_agent introduces status 'timeout', but the existing _ask_agent_finished handler has no timeout or generic fallback branch; after a real timeout it falls through without remounting or re-enabling Resume and keep changes, so the direct-result assertion does not verify the required Resolve behavior. The full suite otherwise completed with only the previously documented unrelated Textual SelectOverlay smoke-test failure.
+
+**Rejected:**
+
+- Approve based on AskAgentResult.options — the live Resolve consumer ignores those options for timeout results
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: ffad2dacf9a74aa9b4eb0d771811a599 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:36:30.297Z"} -->
+
+## 2026-11-02 — Ask agent timeout returns status 'exhausted' (not 'timeout') with the did-not-answer diagnosis
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-1
+
+**Because:** Resolve's _ask_agent_finished handles exhausted by remounting the existing options incl. Resume and keep changes; an unknown status left buttons disabled
+
+**Rejected:**
+
+- New 'timeout' status — needs a tui.py branch outside LSN-1 scope
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 9b1be8f2210e4627bd7f346adac9d87b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:38:31.569Z"} -->
+
+## 2026-11-02 — LSN-1 round-five behavioral testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-1
+
+**Because:** All five timeout-focused regressions pass: relay timeout default and ten-minute cap, explicit timeout forwarding, whole process-group termination, timeout diagnosis with Resolve restoring Resume and keep changes, and unchanged fast-agent behavior. The full suite had one unrelated Textual RelaySetupScreen mount-race failure outside LSN-1, and that exact test passed on immediate isolated rerun.
+
+**Rejected:**
+
+- Fail LSN-1 for the transient RelaySetupScreen smoke test — it is outside the two LSN-1 files, does not exercise ask_agent timeout behavior, and passed when rerun by exact node ID
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 7a13b3486dbb4bc9b98f1209b74f133a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:50:45.804Z"} -->
+
+## 2026-11-02 — LSN-1 round-six review approved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-1
+
+**Because:** ask_agent derives its default from the relay timeout helper with a ten-minute cap, forwards the limit to the process-group-aware relay runner, returns an exhausted no-recommendation diagnosis that Resolve handles by restoring its other options, and the required plain full test suite passed
+
+**Rejected:**
+
+- Request more timeout coverage — the tests already verify default and capped limits, explicit forwarding, whole process-group termination, unchanged fast-agent behavior, and the live Resolve remount path
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: dee5014da78d47a3a0a7907c39a66e07 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:03:04.181Z"} -->

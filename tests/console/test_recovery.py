@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -2163,7 +2166,7 @@ def test_ask_agent_recommend_human_and_exhausted(tmp_path: Path) -> None:
 
     # 2. exhausted chain
     def fake_fail_runner(command, prompt, **kwargs):
-        raise relay_agents.AgentTimeout("timed out")
+        raise relay_agents.AgentMissing("codex is not installed")
 
     res_ex = recovery.ask_agent(session, runner=fake_fail_runner)
     assert res_ex.status == "exhausted"
@@ -4971,6 +4974,137 @@ def test_ask_agent_timeout_names_each_agent_tried_in_order(tmp_path: Path) -> No
     assert res.status == "exhausted"
     assert res.agents_tried == ["grok", "claude"]
     assert res.fallbacks == [("grok", "timed out"), ("claude", "hit a usage limit")]
+
+
+def _never_exits_script(tmp_path: Path) -> tuple[list[str], Path]:
+    pid_file = tmp_path / "agent.pid"
+    script = tmp_path / "hang.py"
+    script.write_text(
+        "import os, sys, time\n"
+        "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
+        "time.sleep(300)\n",
+        encoding="utf-8",
+    )
+    return [sys.executable, str(script), str(pid_file)], pid_file
+
+
+def test_ask_agent_ends_an_agent_that_never_exits_at_the_limit(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+    from whyline_relay import agents as relay_agents
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    hang, pid_file = _never_exits_script(tmp_path)
+    started = time.monotonic()
+
+    def runner(command, prompt, **kwargs):
+        assert kwargs["timeout_seconds"] == 2
+        return relay_agents.run(hang, prompt, **kwargs)
+
+    res = recovery.ask_agent(
+        ConsoleSession(root=repo, agent="claude"), runner=runner, timeout_seconds=2
+    )
+
+    assert time.monotonic() - started < 30
+    assert res.status == "exhausted"
+    assert res.diagnosis == "claude did not answer within 1 min"
+    assert res.recommendation == ""
+    assert res.option is None
+    assert "resume-keep" in [o.id for o in res.options]
+    # The agent's process group is gone, not just its parent.
+    pid = int(pid_file.read_text())
+    for _ in range(50):
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("agent process group is still running")
+
+
+def test_resolve_keeps_its_options_after_an_ask_agent_timeout() -> None:
+    from types import SimpleNamespace
+
+    from whyline.console.tui import WhylineConsoleApp
+
+    resume_keep = recovery.Option(
+        "resume-keep", "Resume and keep changes", "resume --allow-dirty",
+        recommended=True, confirm=False,
+    )
+    ask = recovery.Option("ask-agent", "Ask agent", "ask", recommended=False, confirm=False)
+    problem = recovery.Problem(
+        id="dirty", summary="dirty tree", evidence=[], options=[resume_keep, ask]
+    )
+    events: list[str] = []
+    mounted: list[recovery.Problem] = []
+    fake = SimpleNamespace(
+        _resolve_problem=problem,
+        _resolve_running=True,
+        _set_busy=lambda *a, **k: None,
+        render_event=lambda ev: events.append(ev.text),
+        _mount_resolve_buttons=mounted.append,
+        _sync_relay_buttons=lambda: None,
+    )
+    res = recovery.AskAgentResult(
+        status="exhausted",
+        recommendation="",
+        explanation="claude did not answer within 10 min",
+        agent="claude",
+        agents_tried=["claude"],
+        fallbacks=[("claude", "claude did not answer within 10 min")],
+        diagnosis="claude did not answer within 10 min",
+    )
+
+    WhylineConsoleApp._ask_agent_finished(fake, res)
+
+    assert any("claude (claude did not answer within 10 min)" in e for e in events)
+    assert mounted, "Resolve buttons were not remounted"
+    assert "resume-keep" in [o.id for o in mounted[0].options]
+    assert fake._resolve_running is False
+
+
+def test_ask_agent_timeout_defaults_to_relay_timeout_capped_at_ten_minutes(
+    tmp_path: Path,
+) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    config = repo / ".whyline" / "relay" / "config.toml"
+    seen: list[int | None] = []
+
+    def runner(command, prompt, **kwargs):
+        seen.append(kwargs["timeout_seconds"])
+        return "EXPLANATION: ok\nRECOMMEND: wait\n"
+
+    for minutes, expected in ((3, 180), (45, 600), (0, 600)):
+        config.write_text(
+            f'plan = "plan.md"\ntimeout_minutes = {minutes}\n', encoding="utf-8"
+        )
+        recovery.ask_agent(ConsoleSession(root=repo, agent="claude"), runner=runner)
+        assert seen[-1] == expected
+
+    recovery.ask_agent(
+        ConsoleSession(root=repo, agent="claude"), runner=runner, timeout_seconds=30
+    )
+    assert seen[-1] == 30
+
+
+def test_ask_agent_fast_agent_is_unchanged_by_the_limit(tmp_path: Path) -> None:
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+
+    def runner(command, prompt, **kwargs):
+        return "EXPLANATION: Just wait.\nRECOMMEND: wait\n"
+
+    res = recovery.ask_agent(
+        ConsoleSession(root=repo, agent="claude"), runner=runner, timeout_seconds=60
+    )
+
+    assert res.status == "recommended"
+    assert res.recommendation == "wait"
+    assert res.agents_tried == ["claude"]
+    assert res.fallbacks == []
 
 
 def test_ask_agent_without_read_only_mode_that_edits_a_file_is_refused(tmp_path: Path) -> None:

@@ -5857,6 +5857,9 @@ class AskAgentResult:
         return self.apply(root, launch=launch, all_steps=False)
 
 
+ASK_AGENT_MAX_SECONDS = 10 * 60
+
+
 def ask_agent(
     root: Path | str | Any,
     session: Any = None,
@@ -5872,6 +5875,7 @@ def ask_agent(
     git_status: str | None = None,
     options_catalog: dict[str, str] | None = None,
     on_fallback: Callable[[str, str, str | None], None] | None = None,
+    timeout_seconds: int | None = None,
 ) -> AskAgentResult:
     """Ask the selected agent, then the backup chain, for a Resolve option.
 
@@ -5879,6 +5883,12 @@ def ask_agent(
     left behind (by an agent without one) is refused. An agent that hits a
     limit, times out or is missing passes the turn to the next, and
     `on_fallback(agent, why, next_agent)` reports each hand-over.
+
+    Each agent gets `timeout_seconds`, by default the relay's timeout capped
+    at ASK_AGENT_MAX_SECONDS; the run ends the agent's whole process group
+    when it runs out. If the chain ends on a timeout, the result is status
+    "exhausted" (the one Resolve handles by keeping its other options) with
+    no recommendation and the "did not answer" diagnosis.
     """
     from whyline.agents import capabilities
     from whyline_relay import (
@@ -5886,6 +5896,7 @@ def ask_agent(
         failover as relay_failover,
         setup as relay_setup,
         state as relay_state,
+        agents as relay_agents,
     )
 
     session_obj = None
@@ -5985,14 +5996,23 @@ def ask_agent(
     )
 
     settings = relay_config.load(root_path)
-    if st and st.timeout_minutes is not None:
-        timeout_seconds = None if st.timeout_minutes == 0 else st.timeout_minutes * 60
-    elif hasattr(settings, "timeout_minutes") and settings.timeout_minutes is not None:
-        timeout_seconds = (
-            None if settings.timeout_minutes == 0 else settings.timeout_minutes * 60
+    if timeout_seconds is None:
+        from whyline.console import relay_ops
+
+        if st and st.timeout_minutes is not None:
+            relay_minutes = st.timeout_minutes
+        else:
+            relay_minutes = getattr(settings, "timeout_minutes", None)
+        relay_seconds = relay_ops._timeout_seconds_kwarg(relay_minutes).get(
+            "timeout_seconds"
         )
-    else:
-        timeout_seconds = 15 * 60
+        # No relay timeout, or "no limit", still leaves Ask agent a limit.
+        timeout_seconds = (
+            relay_seconds
+            if isinstance(relay_seconds, int) and not isinstance(relay_seconds, bool)
+            else ASK_AGENT_MAX_SECONDS
+        )
+    timeout_seconds = max(1, min(timeout_seconds, ASK_AGENT_MAX_SECONDS))
 
     head_before, status_before, contents_before = _snapshot_ask_state(root_path)
 
@@ -6002,6 +6022,8 @@ def ask_agent(
     turn_taken_by: str | None = None
     raw_output = ""
     response_text = ""
+    # The agent whose timeout ended the chain, if the last one passed over timed out.
+    timed_out_agent: str | None = None
 
     def pass_over(agent: str, why: str) -> None:
         fallbacks.append((agent, why))
@@ -6127,6 +6149,14 @@ def ask_agent(
                 edited = refused(current_agent)
                 if edited is not None:
                     return edited
+                timed_out_agent = (
+                    current_agent
+                    if isinstance(
+                        call_err,
+                        (relay_agents.AgentTimeout, subprocess.TimeoutExpired),
+                    )
+                    else None
+                )
                 pass_over(current_agent, _fallback_reason(call_err, ""))
                 current_agent = None
                 continue
@@ -6170,12 +6200,31 @@ def ask_agent(
             edited = refused(current_agent)
             if edited is not None:
                 return edited
+            timed_out_agent = None
             pass_over(current_agent, _fallback_reason(None, raw_output))
             current_agent = None
             continue
 
         turn_taken_by = current_agent
         break
+
+    if turn_taken_by is None and timed_out_agent is not None:
+        minutes = max(1, round(timeout_seconds / 60))
+        diagnosis = f"{timed_out_agent} did not answer within {minutes} min"
+        # Resolve prints each fallback reason next to its agent.
+        why = [
+            (a, diagnosis if a == timed_out_agent else w) for a, w in fallbacks
+        ]
+        return AskAgentResult(
+            status="exhausted",
+            recommendation="",
+            explanation=diagnosis,
+            agent=timed_out_agent,
+            options=[make_rec_4c_option("resume-keep", root=root_path, recommended=False)],
+            agents_tried=list(tried),
+            fallbacks=why,
+            diagnosis=diagnosis,
+        )
 
     if turn_taken_by is None:
         return AskAgentResult(
