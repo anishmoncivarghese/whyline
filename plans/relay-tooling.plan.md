@@ -311,7 +311,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   `ask_agent` takes `timeout_seconds`. The default is the relay timeout from `relay_ops` (`_timeout_seconds_kwarg`), capped at 10 minutes. When it runs out, end the agent's whole process group. Then return a result whose diagnosis says "<agent> did not answer within <n> min", with no recommendation, so Resolve still offers its other options.
   Tests: a fake agent that never exits is ended at the limit and its process group is gone, a fast agent is unchanged, and a timed-out result offers Resume and keep changes.
 
-- [ ] LSN-2: Ask agent shows it is working and can be stopped
+- [x] LSN-2: Ask agent shows it is working and can be stopped
   Edit `src/whyline/console/tui.py` (the Ask agent run and `_ask_agent_finished`) and `tests/console/test_tui.py` only.
   While Ask agent runs, the status line reads `Ask agent: <agent> · <elapsed>` and updates every second. The Relay row's Stop button ends the Ask agent run (reuse LSN-1's process-group end), then shows "Ask agent stopped." and the Resolve options again.
   Tests: elapsed time advances under a fake clock, Stop ends the fake agent and shows the options, and a normal finish clears the status line.
