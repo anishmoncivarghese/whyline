@@ -396,7 +396,7 @@ Global constraints:
   - the snapshot never changes HEAD, the index or the working tree
   - prune keeps the newest 20
 
-- [ ] FIX-2: Run an agent that can edit but not commit
+- [x] FIX-2: Run an agent that can edit but not commit
   Edit `src/whyline/agents/capabilities.py` and `tests/agents/test_capabilities.py`; edit `src/whyline/console/fixmode.py` and its test only.
   - `capabilities.fix_command(cli, command) -> list[str] | None`, an edit-allowed command with guards:
     - claude: `--permission-mode acceptEdits`, plus `--disallowedTools` for `Bash(git commit:*)`, `Bash(git push:*)`, `Bash(git reset:*)`, `Bash(git clean:*)`, `Bash(git rebase:*)`, `Bash(git checkout:*)`, `Bash(git switch:*)`, `Bash(git stash:*)`, `Bash(git tag:*)`, `Bash(git branch -D:*)`, `Bash(rm -rf:*)`. Any bypass flag already in the command is removed.
