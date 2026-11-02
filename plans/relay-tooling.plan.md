@@ -278,7 +278,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   With no ready agent, it shows "No other agent is ready: <agent — why, …>" and Change agents only.
   Tests: a limit pause shows a button per ready agent and none for a limited one. One press saves the role, adds it to the chain, and launches `resume --allow-dirty`. Unticking the box leaves the chain as it was. Another kind of pause shows no Continue buttons.
 
-- [ ] SWP-6: Resolve recommends a ready agent for limit pauses
+- [x] SWP-6: Resolve recommends a ready agent for limit pauses
   Edit `src/whyline/console/recovery.py` (the role-override problem around "is logged in again" and the options built for limit pauses) and `tests/console/test_recovery.py` only.
   When the configured agent has a limit (`failover.agent_limits`), the problem text says "<agent> is logged in but out of quota until …" and "Switch back to <agent> anyway" is left out. For a limit pause with a ready agent, option 1 (recommended) is "Continue with <first ready agent>", which runs `relay_ops.switch_role` and the resume it returns. Ask agent moves after it. Auto Resolve applies option 1 only when that agent is already in the backup chain. Otherwise it stops and asks, so Auto never starts an agent the user did not choose.
   Tests: a limited configured agent gets the quota text and no "Switch back" option, the ready agent is recommended, Auto applies it only from the chain, and with no ready agent the options are unchanged.
