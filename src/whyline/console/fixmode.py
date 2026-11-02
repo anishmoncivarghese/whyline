@@ -8,11 +8,15 @@ the real index and the working tree are never touched. It is kept under
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
+import stat as stat_module
 import subprocess
 import tempfile
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
@@ -257,3 +261,283 @@ def prune(root: Path, keep: int = 20, *, run: Run = subprocess.run) -> list[str]
     if doomed:
         _save(root, records, run)
     return doomed
+
+
+@dataclass(frozen=True)
+class Violation:
+    kind: str  # head | branch | ref | config | hooks | plan | outside | pushed
+    message: str
+
+
+@dataclass(frozen=True)
+class GuardState:
+    """What an agent turn must leave alone, read before the turn."""
+
+    head: str
+    branch: str
+    refs: dict[str, str]  # refs/heads and refs/tags
+    remotes: dict[str, str]  # refs/remotes (a push moves these)
+    config: str
+    hooks: dict[str, str]
+    ticked: list[str]
+    plan: str
+    outside: dict[str, str]  # symlinks that point outside the repo -> target state
+
+
+def _refs(root: Path, run: Run, *patterns: str) -> dict[str, str]:
+    out = _git(
+        root,
+        ["for-each-ref", "--format=%(refname) %(objectname)", *patterns],
+        run=run,
+    )
+    refs: dict[str, str] = {}
+    for line in out.splitlines():
+        name, _, sha = line.partition(" ")
+        if name:
+            refs[name] = sha
+    return refs
+
+
+def _digest(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _entry_state(path: Path) -> str:
+    """Identify a path without following it: a link is its target text, not its content."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return "missing"
+    kind = stat_module.S_IFMT(info.st_mode)
+    mode = info.st_mode & 0o7777
+    if kind == stat_module.S_IFLNK:
+        try:
+            text = os.readlink(path)
+        except OSError:
+            text = "?"
+        # Editing the target changes what git reads through the link.
+        return f"link:{text}:{_target_state(path)}"
+    if kind == stat_module.S_IFREG:
+        return f"file:{_digest(path)}:{mode:o}"
+    if kind == stat_module.S_IFDIR:
+        return f"dir:{mode:o}"
+    return f"other:{kind:o}:{mode:o}"
+
+
+def _hooks(git_dir: Path) -> dict[str, str]:
+    base = git_dir / "hooks"
+    found: dict[str, str] = {"": _entry_state(base)}
+    if base.is_dir() and not base.is_symlink():
+        for here, dirs, files in os.walk(base):
+            for name in dirs + files:
+                item = Path(here) / name
+                found[str(item.relative_to(base))] = _entry_state(item)
+    return found
+
+
+def _ticked(plan: Path | None) -> list[str]:
+    if plan is None:
+        return []
+    try:
+        lines = plan.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [line for line in lines if re.match(r"\s*[-*]\s*\[[xX]\]", line)]
+
+
+def _inside(root: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    except (RuntimeError, OSError):
+        # A symlink loop cannot be shown to stay inside: fail closed.
+        return False
+    return True
+
+
+def _target_state(path: Path) -> str:
+    try:
+        target = path.resolve()
+        info = target.stat()
+    except (RuntimeError, OSError):
+        return "missing"
+    if target.is_dir():
+        # A write to a child changes the child, not the directory's own metadata.
+        parts = [f"{info.st_mtime_ns}"]
+        for item in sorted(target.rglob("*")):
+            try:
+                stat = item.stat()
+            except OSError:
+                continue
+            body = _digest(item) if item.is_file() and stat.st_size < 1_000_000 else ""
+            parts.append(f"{item.relative_to(target)}:{stat.st_mtime_ns}:{stat.st_size}:{body}")
+        return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+    return f"{info.st_mtime_ns}:{info.st_size}:{_digest(target)}"
+
+
+def _link_state(path: Path) -> str:
+    # Keep the resolved target so a deleted or repointed link can still be re-checked.
+    try:
+        resolved = str(path.resolve())
+    except (RuntimeError, OSError):
+        resolved = str(path)
+    return f"{resolved}\0{_target_state(path)}"
+
+
+def _outside_links(root: Path, run: Run) -> dict[str, str]:
+    # No --exclude-standard: an ignored symlink can still write outside the repository.
+    names = _split_nul(_git(root, ["ls-files", "--cached", "--others", "-z"], run=run))
+    links: dict[str, str] = {}
+    for rel in names:
+        path = root / rel
+        if path.is_symlink():
+            if not _inside(root, path):
+                links[rel] = _link_state(path)
+        elif path.is_dir():
+            # ls-files lists a nested repository (or submodule) as one opaque entry.
+            for base, dirs, files in os.walk(path):
+                dirs[:] = [d for d in dirs if d != ".git"]
+                for name in dirs + files:
+                    item = Path(base) / name
+                    if item.is_symlink() and not _inside(root, item):
+                        links[str(item.relative_to(root))] = _link_state(item)
+    return links
+
+
+def observe(
+    root: Path, plan: Path | None = None, *, run: Run = subprocess.run
+) -> GuardState:
+    """Read the state guard() compares against. Call it before each agent turn."""
+    root = Path(root)
+    git_dir = _git_dir(root, run)
+    return GuardState(
+        head=_head(root, run),
+        branch=_branch(root, run),
+        refs=_refs(root, run, "refs/heads", "refs/tags"),
+        remotes=_refs(root, run, "refs/remotes"),
+        config=_entry_state(git_dir / "config"),
+        hooks=_hooks(git_dir),
+        ticked=_ticked(Path(plan) if plan else None),
+        plan=str(plan) if plan else "",
+        outside=_outside_links(root, run),
+    )
+
+
+def _made_local_commit(root: Path, snap: Snapshot, run: Run) -> bool:
+    if not snap.head:
+        return False
+    head = _head(root, run)
+    if not head or head == snap.head:
+        return False
+    result = run(
+        ["git", "merge-base", "--is-ancestor", snap.head, head],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def guard(
+    root: Path, snap: Snapshot, before: GuardState, *, run: Run = subprocess.run
+) -> list[Violation]:
+    """Check an agent turn stayed inside the rules; undo the damage if not."""
+    root = Path(root)
+    found: list[Violation] = []
+    try:
+        after = observe(root, Path(before.plan) if before.plan else None, run=run)
+    except FixModeError as exc:
+        # Fail closed: nothing can be compared, so treat the turn as a violation.
+        found.append(Violation("inspect", f"could not inspect the repository after the turn: {exc}"))
+        try:
+            if _made_local_commit(root, snap, run):
+                _git(root, ["reset", "--soft", snap.head], run=run)
+            undo(root, snap, run=run)
+        except FixModeError as undo_exc:
+            found.append(Violation("undo", f"could not undo: {undo_exc}"))
+        return found
+
+    if after.head != before.head:
+        found.append(Violation("head", "the agent moved HEAD (it made a commit or reset)"))
+    if after.branch != before.branch:
+        found.append(
+            Violation(
+                "branch",
+                f"the agent switched branch ({before.branch or 'detached'} -> "
+                f"{after.branch or 'detached'})",
+            )
+        )
+    for name in sorted(set(before.refs) | set(after.refs)):
+        if before.refs.get(name) != after.refs.get(name):
+            what = "created" if name not in before.refs else (
+                "deleted" if name not in after.refs else "moved"
+            )
+            found.append(Violation("ref", f"the agent {what} {name}"))
+    if after.config != before.config:
+        found.append(Violation("config", "the agent changed .git/config"))
+    if after.hooks != before.hooks:
+        found.append(Violation("hooks", "the agent changed .git/hooks"))
+    if before.ticked:
+        remaining = Counter(after.ticked)
+        missing: list[str] = []
+        for line in before.ticked:
+            if remaining[line] > 0:
+                remaining[line] -= 1
+            else:
+                missing.append(line)
+        if missing:
+            found.append(
+                Violation(
+                    "plan",
+                    "the agent changed ticked plan tasks: "
+                    + "; ".join(line.strip() for line in missing[:3]),
+                )
+            )
+    try:
+        changes = changed_since(root, snap, run=run)
+    except FixModeError as exc:
+        # Fail closed: a check that could not run is a violation, not "no changes".
+        found.append(Violation("outside", f"could not check changed files: {exc}"))
+        changes = []
+    for change in changes:
+        if not _inside(root, root / change.path):
+            found.append(
+                Violation("outside", f"{change.path} resolves outside the repository")
+            )
+    for rel, state in before.outside.items():
+        # A link the agent deleted or repointed still wrote to its original target.
+        original, _, old_state = state.partition("\0")
+        if after.outside.get(rel) == state:
+            continue
+        if rel in after.outside or _target_state(Path(original)) != old_state:
+            found.append(
+                Violation("outside", f"{rel} points outside the repository and its target changed")
+            )
+    for rel, state in after.outside.items():
+        if rel not in before.outside:
+            found.append(
+                Violation("outside", f"{rel} points outside the repository and its target changed")
+            )
+
+    undo_needed = bool(found)
+    pushed = [
+        name for name in sorted(set(before.remotes) | set(after.remotes))
+        if before.remotes.get(name) != after.remotes.get(name)
+    ]
+    for name in pushed:
+        found.append(
+            Violation("pushed", f"{name} moved, so the agent may have pushed; nothing was undone there")
+        )
+
+    if undo_needed:
+        try:
+            if _made_local_commit(root, snap, run):
+                _git(root, ["reset", "--soft", snap.head], run=run)
+            undo(root, snap, run=run)
+        except FixModeError as exc:
+            found.append(Violation("undo", f"could not undo: {exc}"))
+    return found

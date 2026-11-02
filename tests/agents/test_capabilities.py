@@ -219,3 +219,52 @@ def test_grok_keeps_deny_rules_and_other_options():
     out = c.read_only_command("grok", GROK)
     assert ("--deny", "Bash(git push:*)") in zip(out, out[1:])
     assert ("--output-format", "json") in zip(out, out[1:])
+
+
+def test_fix_command_claude_allows_edits_and_guards_git():
+    cmd = c.fix_command("claude", ["claude", "-p", "--dangerously-skip-permissions",
+                                   "--permission-mode", "bypassPermissions", "go"])
+    assert "--dangerously-skip-permissions" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+    assert "bypassPermissions" not in cmd
+    deny = next(t for t in cmd if t.startswith("--disallowedTools="))
+    for rule in ("Bash(git commit:*)", "Bash(git push:*)", "Bash(git branch -D:*)", "Bash(rm -rf:*)"):
+        assert rule in deny
+    assert cmd[-1] == "go"
+
+
+def test_fix_command_claude_adds_mode_when_missing():
+    cmd = c.fix_command("claude", ["claude", "-p"])
+    assert cmd[1:3] == ["--permission-mode", "acceptEdits"]
+
+
+def test_fix_command_codex_workspace_write_without_bypass():
+    cmd = c.fix_command("codex", ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox",
+                                  "-s", "danger-full-access", "--add-dir", "/tmp", "go"])
+    assert cmd == ["codex", "exec", "--sandbox", "workspace-write", "go"]
+
+
+def test_fix_command_codex_strips_bypass_and_network_overrides():
+    cmd = c.fix_command("codex", [
+        "codex", "exec", "--dangerously-bypass-hook-trust",
+        "--config=sandbox_workspace_write.network_access=true",
+        "-c", "sandbox_workspace_write.network_access=true",
+        "--config", "sandbox_mode=danger-full-access", "-c", "model=x", "go"])
+    assert cmd == ["codex", "exec", "--sandbox", "workspace-write", "-c", "model=x", "go"]
+
+
+def test_fix_command_codex_strips_attached_short_config_form():
+    cmd = c.fix_command("codex", [
+        "codex", "exec", "-c=sandbox_workspace_write.network_access=true",
+        "-csandbox_mode=danger-full-access", "-c=model=x", "go"])
+    assert cmd == ["codex", "exec", "--sandbox", "workspace-write", "-c=model=x", "go"]
+
+
+def test_fix_command_codex_adds_sandbox_when_missing():
+    assert c.fix_command("codex", ["codex", "exec", "go"]) == [
+        "codex", "exec", "--sandbox", "workspace-write", "go"]
+
+
+def test_fix_command_unknown_agent_is_none():
+    assert c.fix_command("grok", GROK) is None
+    assert c.fix_command("nope", ["nope"]) is None

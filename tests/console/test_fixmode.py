@@ -157,3 +157,236 @@ def test_prune_keeps_newest_20(repo: Path) -> None:
     assert set(refs) == newest
     assert fixmode.load_snapshot(repo, snaps[0].id) is None
     assert fixmode.load_snapshot(repo, snaps[-1].id) is not None
+
+
+PLAN = "plans/p.plan.md"
+
+
+def _guarded(repo: Path):
+    (repo / "plans").mkdir()
+    (repo / PLAN).write_text("- [x] FIX-1 done\n- [ ] FIX-2 todo\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "plan")
+    snap = fixmode.snapshot(repo)
+    before = fixmode.observe(repo, repo / PLAN)
+    return snap, before
+
+
+def _kinds(violations) -> set[str]:
+    return {v.kind for v in violations}
+
+
+def test_guard_clean_turn_has_no_violations(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / "a.txt").write_text("edited\n")
+    assert fixmode.guard(repo, snap, before, run=subprocess.run) == []
+    assert (repo / "a.txt").read_text() == "edited\n"
+
+
+def test_guard_commit_is_undone_and_reported(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / "a.txt").write_text("edited\n")
+    git(repo, "commit", "-qam", "agent commit")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "head" in _kinds(found)
+    assert git(repo, "rev-parse", "HEAD").strip() == snap.head
+    assert (repo / "a.txt").read_text() == "a\n"
+    assert all(v.message for v in found)
+
+
+def test_guard_new_tag_and_branch_reported(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    git(repo, "tag", "v1")
+    git(repo, "branch", "other")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    messages = " ".join(v.message for v in found)
+    assert "refs/tags/v1" in messages and "refs/heads/other" in messages
+
+
+def test_guard_ticked_plan_task_edit_is_undone(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / PLAN).write_text("- [x] FIX-1 changed\n- [ ] FIX-2 todo\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "plan" in _kinds(found)
+    assert "FIX-1 done" in (repo / PLAN).read_text()
+
+
+def test_guard_ticking_a_new_task_is_allowed(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / PLAN).write_text("- [x] FIX-1 done\n- [x] FIX-2 todo\n")
+    assert fixmode.guard(repo, snap, before, run=subprocess.run) == []
+
+
+def test_guard_hooks_and_config_changes(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 0\n")
+    with (repo / ".git" / "config").open("a") as f:
+        f.write("[alias]\n\tx = status\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert {"hooks", "config"} <= _kinds(found)
+
+
+def test_guard_symlink_pointing_outside_repo(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    snap, before = _guarded(repo)
+    (repo / "link.txt").symlink_to(outside / "x.txt")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+    assert not (repo / "link.txt").is_symlink()
+
+
+def test_guard_write_through_existing_outside_symlink(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    target = outside / "x.txt"
+    target.write_text("old\n")
+    (repo / "link.txt").symlink_to(target)
+    snap, before = _guarded(repo)
+    target.write_text("new, written by the agent\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_write_then_delete_outside_symlink(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    target = outside / "x.txt"
+    target.write_text("old\n")
+    (repo / "link.txt").symlink_to(target)
+    snap, before = _guarded(repo)
+    target.write_text("new, written by the agent\n")
+    (repo / "link.txt").unlink()
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_write_then_repoint_outside_symlink(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    target = outside / "x.txt"
+    target.write_text("old\n")
+    (repo / "link.txt").symlink_to(target)
+    snap, before = _guarded(repo)
+    target.write_text("new, written by the agent\n")
+    (repo / "link.txt").unlink()
+    (repo / "link.txt").symlink_to(outside / "other.txt")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_write_through_ignored_outside_symlink(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    target = outside / "x.txt"
+    target.write_text("old\n")
+    (repo / "link.log").symlink_to(target)
+    assert "link.log" in git(repo, "status", "--ignored", "--porcelain")
+    snap, before = _guarded(repo)
+    target.write_text("new, written by the agent\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_write_through_symlink_in_nested_repo(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    target = outside / "x.txt"
+    target.write_text("old\n")
+    nested = repo / "vendor" / "inner"
+    nested.mkdir(parents=True)
+    git(nested, "init", "-q")
+    (nested / "a.txt").write_text("a\n")
+    git(nested, "add", "-A")
+    git(nested, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x")
+    (nested / "link.txt").symlink_to(target)
+    snap, before = _guarded(repo)
+    target.write_text("new, written by the agent\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_fails_closed_when_change_check_errors(repo: Path, monkeypatch) -> None:
+    snap, before = _guarded(repo)
+
+    def boom(*args, **kwargs):
+        raise fixmode.FixModeError("git add failed")
+
+    monkeypatch.setattr(fixmode, "changed_since", boom)
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_fails_closed_when_observe_errors(repo: Path, monkeypatch) -> None:
+    snap, before = _guarded(repo)
+
+    def boom(*args, **kwargs):
+        raise fixmode.FixModeError("git for-each-ref failed")
+
+    monkeypatch.setattr(fixmode, "observe", boom)
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "inspect" in _kinds(found)
+
+
+def test_guard_write_into_outside_directory_symlink(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    (outside / "sub").mkdir()
+    child = outside / "sub" / "x.txt"
+    child.write_text("old\n")
+    (repo / "dirlink").symlink_to(outside, target_is_directory=True)
+    snap, before = _guarded(repo)
+    child.write_text("new, written by the agent\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)
+
+
+def test_guard_moved_remote_ref_says_may_have_pushed(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (repo / "a.txt").write_text("edited\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert _kinds(found) == {"pushed"}
+    assert "may have pushed" in found[0].message
+    assert (repo / "a.txt").read_text() == "edited\n"  # nothing undone
+
+
+def test_guard_config_replaced_by_same_content_symlink(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    snap, before = _guarded(repo)
+    config = repo / ".git" / "config"
+    copy = outside / "config"
+    copy.write_bytes(config.read_bytes())
+    config.unlink()
+    config.symlink_to(copy)
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "config" in _kinds(found)
+
+
+def test_guard_preexisting_config_symlink_target_edited(repo: Path, tmp_path_factory) -> None:
+    outside = tmp_path_factory.mktemp("outside")
+    config = repo / ".git" / "config"
+    copy = outside / "config"
+    copy.write_bytes(config.read_bytes())
+    config.unlink()
+    config.symlink_to(copy)
+    snap, before = _guarded(repo)
+    with copy.open("a") as f:
+        f.write("[alias]\n\tx = !true\n")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "config" in _kinds(found)
+
+
+def test_guard_broken_symlink_in_hooks(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / ".git" / "hooks" / "pre-push").symlink_to(repo / "nowhere")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "hooks" in _kinds(found)
+
+
+def test_guard_new_directory_in_hooks(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / ".git" / "hooks" / "extra").mkdir()
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "hooks" in _kinds(found)
+
+
+def test_guard_self_referential_symlink_fails_closed(repo: Path) -> None:
+    snap, before = _guarded(repo)
+    (repo / "loop").symlink_to("loop")
+    found = fixmode.guard(repo, snap, before, run=subprocess.run)
+    assert "outside" in _kinds(found)

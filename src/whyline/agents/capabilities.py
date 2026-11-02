@@ -168,6 +168,116 @@ def read_only_command(cli: str, command: list[str]) -> list[str] | None:
     return make(command) if make else None
 
 
+# Fix mode lets the agent edit files but not rewrite history, publish or
+# delete wholesale. Claude gets deny rules; codex gets a sandbox with no network.
+_CLAUDE_FIX_DENY = (
+    "Bash(git commit:*)",
+    "Bash(git push:*)",
+    "Bash(git reset:*)",
+    "Bash(git clean:*)",
+    "Bash(git rebase:*)",
+    "Bash(git checkout:*)",
+    "Bash(git switch:*)",
+    "Bash(git stash:*)",
+    "Bash(git tag:*)",
+    "Bash(git branch -D:*)",
+    "Bash(rm -rf:*)",
+)
+_CLAUDE_BYPASS = (_CLAUDE_SKIP_PERMISSIONS, "--allow-dangerously-skip-permissions")
+_CLAUDE_DENY_FLAGS = ("--disallowedTools", "--disallowed-tools")
+
+
+def _claude_fix(command: list[str]) -> list[str] | None:
+    out: list[str] = []
+    deny = list(_CLAUDE_FIX_DENY)
+    index = 0
+    while index < len(command):
+        token = command[index]
+        name = token.split("=", 1)[0]
+        if any(name == flag for flag in _CLAUDE_BYPASS):
+            index += 1
+            continue
+        if name in _CLAUDE_DENY_FLAGS:
+            # Keep the caller's own denials, but fold them into our one flag.
+            if "=" in token:
+                extra = token.split("=", 1)[1]
+                index += 1
+            elif _has_value(command, index):
+                extra = command[index + 1]
+                index += 2
+            else:
+                index += 1
+                continue
+            deny += [item for item in extra.split(",") if item and item not in deny]
+            continue
+        if name == "--permission-mode":
+            if "=" in token:
+                index += 1
+            else:
+                index += 2 if _has_value(command, index) else 1
+            continue
+        out.append(token)
+        index += 1
+    # "=" form: --disallowedTools is variadic and would swallow the prompt.
+    out[1:1] = [
+        "--permission-mode", "acceptEdits",
+        "--disallowedTools=" + ",".join(deny),
+    ]
+    return out
+
+
+def _codex_fix(command: list[str]) -> list[str] | None:
+    out: list[str] = []
+    index = 0
+    while index < len(command):
+        token = command[index]
+        name = token.split("=", 1)[0]
+        if (
+            any(_is_flag(token, flag) for flag in _CODEX_UNSANDBOXED)
+            or (name.startswith("--") and ("dangerously" in name or "bypass" in name))
+        ):
+            index += 1
+            continue
+        if name in ("-s", "--sandbox"):
+            index += 1 if "=" in token or not _has_value(command, index) else 2
+            continue
+        if name == "--add-dir":
+            index += 1 if "=" in token or not _has_value(command, index) else 2
+            continue
+        attached = token.startswith("-c") and not token.startswith("--") and len(token) > 2
+        if name in ("-c", "--config") or attached:
+            if attached:
+                # -c=KEY=VALUE or -cKEY=VALUE
+                value, width = token[2:], 1
+            elif "=" in token:
+                value, width = token.split("=", 1)[1], 1
+            elif _has_value(command, index):
+                value, width = command[index + 1], 2
+            else:
+                value, width = "", 1
+            if "network_access" in value or "sandbox" in value:
+                index += width
+                continue
+        out.append(token)
+        index += 1
+    at = out.index("exec") + 1 if "exec" in out else 1
+    out[at:at] = ["--sandbox", "workspace-write"]
+    return out
+
+
+FIX: dict[str, Callable[[list[str]], list[str] | None]] = {
+    "claude": _claude_fix,
+    "codex": _codex_fix,
+}
+
+
+def fix_command(cli: str, command: list[str]) -> list[str] | None:
+    """The command with edits allowed and history/publishing guarded, or None
+    when this agent has no guard and so isn't offered Fix mode."""
+    make = FIX.get(cli)
+    return make(command) if make else None
+
+
 def denied(cli: str, raw: str) -> bool:
     check = DENIALS.get(cli)
     return bool(check and check(raw))
