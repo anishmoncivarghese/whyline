@@ -31811,3 +31811,81 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b475655b04044646afa3c5f7a65082f9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-01T23:22:56.887Z"} -->
+
+## 2026-11-01 — LIVE-4 docs went in README.md, not a docs/ page
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-4
+
+**Because:** no file under docs/ documents Relay Set up or the backup chain; README.md does
+
+**Rejected:**
+
+- new docs/ page — task said edit the existing page only
+
+**Files:** README.md
+
+<!-- whyline-event: 2b4ca39eb9bd461397dba93df6181494 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T23:34:18.300Z"} -->
+
+## 2026-11-01 — Fail LIVE-4 Round 2 because the documentation was added outside the required docs page
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-4
+
+**Because:** README.md lines 95-115 contain the requested behavior, but the task explicitly requires editing only the existing console documentation page under docs; uv run pytest -q exited 0 at 100% with one skip
+
+**Rejected:**
+
+- Pass based on complete content — correct content in README.md does not satisfy the mandated destination and only-file scope
+
+**Files:** README.md
+
+<!-- whyline-event: e2e81a5d76b346ae9b9b6d5afeddbbaa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T23:45:31.929Z"} -->
+
+## 2026-11-01 — LIVE-4 docs placed in docs/recording.md, README addition reverted
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIVE-4
+
+**Because:** no docs page documents Relay Set up or the backup chain; recording.md is the only docs page covering relay runs and the console, so the new section sits beside its relay paragraph
+
+**Rejected:**
+
+- README.md — reviewer required a docs/ page
+- new docs page — task said edit an existing page only
+
+**Files:** docs/recording.md
+
+<!-- whyline-event: 85f33c259f054c2ca206a9c4eea2500c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-01T23:56:45.679Z"} -->
+
+## 2026-11-02 — Pass LIVE-4 Round 4 documentation testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** LIVE-4
+
+**Because:** docs/recording.md covers Agents for this run, reset and alternate-agent switching, next-turn timing, Keep for future runs, plan-completion expiry, immutable mid-run settings, and the verified roles switch/reset CLI forms; uv run pytest -q exited 0 at 100% with one skip
+
+**Files:** docs/recording.md
+
+<!-- whyline-event: 5627f823cdda406b882cdee1c186b7a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:08:14.766Z"} -->
+
+## 2026-11-02 — Approve LIVE-4 Round 5 documentation review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIVE-4
+
+**Because:** docs/recording.md alone contains the requested live relay agent-switch guidance, its UI labels and script commands match the implementation, and uv run pytest -q completed at 100% with exit 0 and one skip
+
+**Files:** docs/recording.md
+
+<!-- whyline-event: eda850efc6d947ea8d8fa0b0ca2c8cf0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:19:36.169Z"} -->

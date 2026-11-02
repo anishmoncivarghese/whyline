@@ -36,3 +36,14 @@ For Codex, `account detect` reads `~/.codex/auth.json` and decodes the plan name
 You choose the role and the next agent. `claim` warns on overlap and does not lock a file. `run` hands the terminal over and does not capture or parse the vendor's output.
 
 [whyline-relay](https://github.com/anishmoncivarghese/whyline-relay) is the optional program that does run a plan: it assigns the steps you wrote down and stops when the handoff record says a person is needed. `whyline init` asks before setting that up. The default answer is no.
+
+### Changing agents while a relay runs
+
+**Set up** in `whyline console` stays available during a run. While a relay is running it opens **Agents for this run** instead of the full setup. Each role shows its configured agent, the agent it is on now, and why.
+
+- After a usage limit resets, a role that moved to a backup gets **Back to <agent>**. Every role also has a dropdown to switch to any other agent the run can use.
+- The change applies from that role's next turn. The turn already running finishes undisturbed, and the relay status shows the pending switch until it takes effect.
+- **Keep for future runs** (ticked by default) also saves the choice to the normal setup. Untick it for a this-run-only switch, which ends when the plan completes.
+- The plan and the other settings (steps, round limits, models, backup chain) are shown but can't change mid-run. Stop the relay to change them.
+
+For scripts, `whyline relay roles switch <role> <agent>` makes the same switch (add `--keep` to keep it after the plan completes), and `whyline relay roles reset [role]` clears a switch.
