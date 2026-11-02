@@ -7050,3 +7050,132 @@ def test_record_attempt_cause_uses_inherited_pause_reason(tmp_path: Path) -> Non
     assert entry["cause"] == recovery.normalise_cause("hit the 9-round cap on x.py")
     problem = _cause_problem(tmp_path, "hit the 4-round cap on other.py")
     assert problem.summary.startswith("Same cause as the last pause (round 2).")
+
+
+def _fix_plan_repo(tmp_path: Path) -> Path:
+    import subprocess
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    (repo / "plan.md").write_text(
+        "- [ ] FIX-9: Add the widget\n"
+        "  Verify with `uv run pytest -q tests/widget`.\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "plan"], cwd=repo, check=True)
+    (repo / "widget.py").write_text("x = 1\n", encoding="utf-8")
+    return repo
+
+
+def _record_status_handoff(repo: Path, task: str, status: str) -> None:
+    from whyline import ledger, paths
+
+    ledger.append(
+        paths.ledger_path(repo),
+        dict(type="handoff", id=f"h-{status}", task=task, status=status, ts="2026-11-03T00:00:00Z"),
+    )
+
+
+def test_commit_task_refused_until_handoff_is_approved(tmp_path: Path) -> None:
+    repo = _fix_plan_repo(tmp_path)
+    before = _commit_count(repo)
+    _record_status_handoff(repo, "FIX-9", "ready-for-review")
+    with pytest.raises(ValueError, match="not approved"):
+        recovery.apply_step(repo, dict(action="commit-task", task="FIX-9"))
+    assert _commit_count(repo) == before
+    assert "[ ] FIX-9" in (repo / "plan.md").read_text(encoding="utf-8")
+
+
+def test_commit_task_makes_both_commits_after_approval(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _fix_plan_repo(tmp_path)
+    before = _commit_count(repo)
+    _record_status_handoff(repo, "FIX-9", "approved")
+    recovery.apply_step(repo, dict(action="commit-task", task="FIX-9"))
+    assert _commit_count(repo) == before + 2
+    assert "[x] FIX-9" in (repo / "plan.md").read_text(encoding="utf-8")
+    msgs = subprocess.run(
+        ["git", "log", "-2", "--format=%s"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    assert msgs == ["chore: tick FIX-9 in the plan", "feat: Add the widget (FIX-9)"]
+
+
+def test_commit_task_allowed_when_user_confirmed(tmp_path: Path) -> None:
+    repo = _fix_plan_repo(tmp_path)
+    before = _commit_count(repo)
+    recovery.apply_step(repo, dict(action="commit-task", task="FIX-9", confirmed=True))
+    assert _commit_count(repo) == before + 2
+
+
+def test_run_check_refuses_unlisted_command(tmp_path: Path) -> None:
+    repo = _fix_plan_repo(tmp_path)
+    step = dict(action="run-check", task="FIX-9", command="rm -rf .")
+    with pytest.raises(ValueError, match="not a command"):
+        recovery.apply_step(repo, step)
+    _, notes = recovery.validate_steps(repo, [step])
+    assert notes
+
+
+def test_run_check_runs_listed_command_and_returns_exit_and_tail(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _fix_plan_repo(tmp_path)
+    seen: list[list[str]] = []
+
+    class Done:
+        returncode = 3
+        stdout = "\n".join(f"line {i}" for i in range(100))
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        seen.append(argv)
+        return Done()
+
+    monkeypatch.setattr(recovery.subprocess, "run", fake_run)
+    out = recovery.apply_step(
+        repo, dict(action="run-check", task="FIX-9", command="uv run pytest -q tests/widget")
+    )
+    assert seen == [["uv", "run", "pytest", "-q", "tests/widget"]]
+    assert "exit 3" in out
+    assert "line 99" in out and "line 59" not in out and "line 60" in out
+
+
+def test_report_bug_writes_one_idea_with_tag_and_versions(tmp_path: Path, monkeypatch) -> None:
+    from whyline.ideas import store
+
+    monkeypatch.setenv("WHYLINE_IDEAS_HOME", str(tmp_path / "ideas"))
+    repo = _init_scratch_repo(tmp_path / "repo")
+    step = dict(
+        action="report-bug",
+        component="whyline-relay",
+        title="Resume loses the draft",
+        body="It dropped files.",
+        pause_id="FIX-9:r1",
+    )
+    recovery.apply_step(repo, step)
+    recovery.apply_step(repo, step)
+    conn = store.connect()
+    ideas = store.list_ideas(conn)
+    assert len(ideas) == 1
+    assert ideas[0].source == "resolve" and ideas[0].source_ref == "FIX-9:r1"
+    text = ideas[0].original_text
+    assert "bug:whyline-relay" in text
+    assert "whyline-relay: " in text and "whyline: " in text
+    assert "It dropped files." in text
+    with pytest.raises(ValueError):
+        recovery.apply_step(repo, dict(step, component="other"))
+
+
+def test_undo_fix_restores_snapshot(tmp_path: Path) -> None:
+    from whyline.console import fixmode
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    snap = fixmode.snapshot(repo)
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    (repo / "new.txt").write_text("new\n", encoding="utf-8")
+    recovery.apply_step(repo, dict(action="undo-fix", snapshot=snap.id))
+    assert (repo / "README.md").read_text(encoding="utf-8") == "hello\n"
+    assert not (repo / "new.txt").exists()
+    with pytest.raises(ValueError):
+        recovery.apply_step(repo, dict(action="undo-fix", snapshot="nope"))

@@ -33615,3 +33615,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b762b0f767dd4d54ac47966e095a8343 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T21:10:41.551Z"} -->
+
+## 2026-11-02 — Fix actions run directly in _execute_single_step; report-bug tag goes in idea text because the ideas store has no tag column
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-3
+
+**Because:** ideas.add takes only text/source/source_ref, and the task limits edits to recovery.py and its tests
+
+**Rejected:**
+
+- add a tags column to ideas.store — outside the files this task may edit
+- run-check through a shell — shlex split with no shell keeps the allowlist exact
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: bf78367fd65e47419183d824c58b4499 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T21:16:58.505Z"} -->
+
+## 2026-11-02 — Pass FIX-3 round-two behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-3
+
+**Because:** All 7 new FIX-3 tests pass, config commit coverage passes, both unrelated Textual failures from the full suite pass in isolation, and no task-scope behavioral defect was found
+
+**Rejected:**
+
+- Fail FIX-3 for the two full-suite Textual failures — both are in unchanged setup-screen code and each passed immediately when rerun alone
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 61cb15b60bb649258f8e6df57b9c54e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T21:31:14.095Z"} -->
+
+## 2026-11-02 — Approve FIX-3 catalog actions
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-3
+
+**Because:** All five actions are catalogued, validated and executable; commit-task enforces approval or confirmation and produces the two required commits, command execution is allowlisted, bug reports and undo behave as specified, focused coverage is substantive, and the plain full suite passed
+
+**Rejected:**
+
+- Request changes — no task-scope correctness or safety defect was found
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 8dd4dcd135ad46cab475087efb7b56ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T21:44:08.595Z"} -->

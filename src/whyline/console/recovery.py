@@ -5503,6 +5503,11 @@ CATALOG_ACTIONS = frozenset({
     "choose-agents",
     "use-configured",
     "switch-back",
+    "commit-task",
+    "run-check",
+    "config-commit",
+    "report-bug",
+    "undo-fix",
 })
 
 
@@ -5667,6 +5672,14 @@ def format_step_label(step: dict[str, Any]) -> str:
         return f"wait-until {step.get('time', '')}".strip()
     if action == "human":
         return f"human {step.get('text', '')}".strip()
+    if action in ("commit-task",):
+        return f"commit-task {step.get('task', '')}".strip()
+    if action == "run-check":
+        return f"run-check {step.get('command', '')}".strip()
+    if action == "undo-fix":
+        return f"undo-fix {step.get('snapshot', '')}".strip()
+    if action == "report-bug":
+        return f"report-bug {step.get('component', '')}: {step.get('title', '')}".strip()
     return str(action)
 
 
@@ -5759,6 +5772,30 @@ def validate_steps(
                 notes.append(f"Dropped {action}: agent '{ag}' is not usable.")
                 continue
 
+        # 7. fix actions
+        elif action == "commit-task":
+            if not _step_task(root_path, step):
+                notes.append("Dropped commit-task: it names no task.")
+                continue
+        elif action == "run-check":
+            command = " ".join(str(step.get("command") or "").split())
+            if command not in _allowed_checks(root_path, _step_task(root_path, step)):
+                notes.append(f"Dropped run-check: '{command}' is not named by the plan or config.")
+                continue
+            step["command"] = command
+        elif action == "report-bug":
+            if (
+                step.get("component") not in _BUG_COMPONENTS
+                or not str(step.get("title") or "").strip()
+                or not str(step.get("body") or "").strip()
+            ):
+                notes.append("Dropped report-bug: it needs a title, a body and component whyline or whyline-relay.")
+                continue
+        elif action == "undo-fix":
+            if not str(step.get("snapshot") or "").strip():
+                notes.append("Dropped undo-fix: it names no snapshot.")
+                continue
+
         # 6. raise-rounds bounds
         elif action == "raise-rounds":
             try:
@@ -5770,6 +5807,202 @@ def validate_steps(
         validated.append(step)
 
     return validated, notes
+
+
+_BUG_COMPONENTS = ("whyline", "whyline-relay")
+_CHECK_TAIL_LINES = 40
+_CHECK_TIMEOUT = 900
+_DOCTOR_COMMANDS = ("whyline relay doctor", "whyline-relay doctor")
+
+
+def _step_task(root_path: Path, step: dict[str, Any]) -> str:
+    task = str(step.get("task") or step.get("task_id") or "").strip()
+    return task or str(_read_state_dict(root_path).get("task_id") or "").strip()
+
+
+def _plan_file(root_path: Path) -> Path:
+    return root_path / (str(_read_state_dict(root_path).get("plan") or "") or "plan.md")
+
+
+def _last_handoff_status(root_path: Path, task_id: str) -> str:
+    """The status of the task's newest handoff in the ledger, lowercased, or ''."""
+    from whyline import events, handoff, ledger, paths
+
+    records: list[dict] = []
+    try:
+        records, _ = ledger.read_all(
+            paths.ledger_path(root_path), skip_types=(events.INSTRUCTION, events.FILE_TOUCHED)
+        )
+    except Exception:
+        pass
+    status = ""
+    for rec in records:
+        rec_type = str(rec.get("type") or "").strip().lower()
+        if rec_type == "handoff" and rec.get("task") == task_id:
+            status = str(rec.get("status") or "").strip().lower()
+    try:
+        active = handoff.load(root_path)
+    except Exception:
+        active = None
+    if (
+        active
+        and active.get("task") == task_id
+        and all(active.get("id") != rec.get("id") for rec in records)
+    ):
+        status = str(active.get("status") or "").strip().lower()
+    return status
+
+
+def _task_title(task_text: str, task_id: str) -> str:
+    head = task_text.splitlines()[0] if task_text else ""
+    _, sep, rest = head.strip().partition(":")
+    return (rest if sep else head).strip().strip("*").strip() or task_id
+
+
+def _allowed_checks(root_path: Path, task_id: str) -> list[str]:
+    """Commands a fix may run: the task's `Verify with` commands, the relay
+    config's test command, and relay doctor."""
+    allowed: list[str] = []
+    text = _saved_task_text(root_path, str(_read_state_dict(root_path).get("plan") or ""), task_id)
+    for line in text.splitlines():
+        _, sep, tail = line.partition("Verify with")
+        if sep:
+            allowed.extend(re.findall(r"`([^`]+)`", tail))
+    try:
+        from whyline_relay import config as relay_config
+
+        allowed.append(relay_config.test_command(root_path))
+    except Exception:
+        pass
+    allowed.extend(_DOCTOR_COMMANDS)
+    return [" ".join(c.split()) for c in allowed if c and c.strip()]
+
+
+def _fix_run_check(root_path: Path, step: dict[str, Any]) -> str:
+    import shlex
+
+    command = " ".join(str(step.get("command") or "").split())
+    if not command or command not in _allowed_checks(root_path, _step_task(root_path, step)):
+        raise ValueError(f"run-check refused: {command!r} is not a command the plan or config names")
+    if command in _DOCTOR_COMMANDS:
+        from whyline.console import relay_process
+
+        argv = relay_process.relay_argv(["doctor"], root_path)
+    else:
+        argv = shlex.split(command)
+    try:
+        res = subprocess.run(
+            argv, cwd=root_path, capture_output=True, text=True, timeout=_CHECK_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"run-check: {command} timed out after {_CHECK_TIMEOUT}s")
+    except OSError as exc:
+        raise ValueError(f"run-check: {command} could not run: {exc}")
+    lines = ((res.stdout or "") + (res.stderr or "")).splitlines()[-_CHECK_TAIL_LINES:]
+    return f"run-check {command}: exit {res.returncode}\n" + "\n".join(lines)
+
+
+def _fix_commit_task(root_path: Path, step: dict[str, Any]) -> str:
+    from whyline_relay import gitcheck, plan as plan_mod
+
+    task_id = _step_task(root_path, step)
+    if not task_id:
+        raise ValueError("commit-task needs a task")
+    status = _last_handoff_status(root_path, task_id)
+    if status != "approved" and not step.get("confirmed"):
+        raise ValueError(
+            f"commit-task refused: the last handoff for {task_id} is "
+            f"{status or 'missing'}, not approved, and the user has not confirmed"
+        )
+    plan_file = _plan_file(root_path)
+    content = plan_file.read_text(encoding="utf-8") if plan_file.is_file() else ""
+    found = plan_mod.find(plan_mod.parse(content), task_id) if content else None
+    if found is None:
+        raise ValueError(f"no task {task_id!r} in {plan_file.name}")
+    plan_rel = plan_file.relative_to(root_path).as_posix()
+    dirty = [p for p in gitcheck.dirty_paths(root_path) if p != plan_rel]
+    done: list[str] = []
+    message = f"feat: {_task_title(found.text, task_id)} ({task_id})"
+    if dirty and gitcheck.commit_paths(root_path, [root_path / p for p in dirty], message):
+        done.append(message)
+    if not found.checked:
+        plan_file.write_text(plan_mod.tick(content, task_id), encoding="utf-8")
+    tick_message = f"chore: tick {task_id} in the plan"
+    if gitcheck.commit_paths(root_path, [plan_file], tick_message):
+        done.append(tick_message)
+    return "Committed: " + "; ".join(done) if done else f"Nothing to commit for {task_id}"
+
+
+def _fix_config_commit(root_path: Path) -> str:
+    from whyline_relay import config as relay_config, gitcheck
+
+    done = gitcheck.commit_paths(
+        root_path, [relay_config.config_path(root_path)], "setup: apply recovery steps"
+    )
+    return "Committed relay config" if done else "Relay config has no changes to commit"
+
+
+def _tool_version(argv: list[str], fallback: str) -> str:
+    try:
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        out = (res.stdout or "").strip()
+        if res.returncode == 0 and out:
+            return out
+    except Exception:
+        pass
+    return fallback
+
+
+def _fix_report_bug(root_path: Path, step: dict[str, Any]) -> str:
+    from whyline.ideas import store
+
+    component = str(step.get("component") or "").strip()
+    title = str(step.get("title") or "").strip()
+    body = str(step.get("body") or "").strip()
+    if component not in _BUG_COMPONENTS:
+        raise ValueError(f"report-bug needs component whyline or whyline-relay, got {component!r}")
+    if not title or not body:
+        raise ValueError("report-bug needs a title and a body")
+    state = _read_state_dict(root_path)
+    reason = str(state.get("paused_reason") or "").strip()
+    task_id = str(state.get("task_id") or "").strip()
+    pause_id = str(
+        step.get("pause_id") or f"{task_id}:r{state.get('round', '')}:{normalise_cause(reason)}"
+    )
+    try:
+        import whyline_relay
+
+        relay_version = whyline_relay.__version__
+    except Exception:
+        relay_version = "unknown"
+    diagnosis = str(step.get("diagnosis") or body).strip()
+    text = "\n".join([
+        f"[bug:{component}] {title}",
+        "",
+        body,
+        "",
+        f"Pause reason: {reason or 'none recorded'}",
+        f"whyline: {_tool_version(['whyline', '--version'], 'unknown')}",
+        f"whyline-relay: {relay_version}",
+        f"Agent diagnosis: {diagnosis}",
+    ])
+    conn = store.connect()
+    try:
+        idea = store.add(conn, text, source="resolve", source_ref=pause_id)
+    finally:
+        conn.close()
+    return f"Added idea {idea.id} tagged bug:{component}"
+
+
+def _fix_undo(root_path: Path, step: dict[str, Any]) -> str:
+    from whyline.console import fixmode
+
+    snap_id = str(step.get("snapshot") or "").strip()
+    snap = fixmode.load_snapshot(root_path, snap_id) if snap_id else None
+    if snap is None:
+        raise ValueError(f"undo-fix: no snapshot {snap_id!r}")
+    restored = fixmode.undo(root_path, snap)
+    return f"Undid fix {snap_id}: {len(restored)} path(s) restored"
 
 
 class StepApplyResult(NamedTuple):
@@ -5874,6 +6107,17 @@ def _execute_single_step(
         text_val = str(step.get("text") or step.get("reason") or "")
         return f"Human intervention: {text_val}"
 
+    if action == "commit-task":
+        return _fix_commit_task(root_path, step)
+    if action == "run-check":
+        return _fix_run_check(root_path, step)
+    if action == "config-commit":
+        return _fix_config_commit(root_path)
+    if action == "report-bug":
+        return _fix_report_bug(root_path, step)
+    if action == "undo-fix":
+        return _fix_undo(root_path, step)
+
     catalog = get_rec_4c_options(root_path)
     if (
         action in (
@@ -5963,6 +6207,7 @@ def apply_steps(
                 "reset-keep",
                 "move-aside",
                 "more-rounds",
+                "commit-task",
             )
             or action.startswith("use-")
         ):
