@@ -5300,7 +5300,9 @@ class WhylineConsoleApp(App):
                 self.render_event(SessionEvent(kind="output", text=line))
             self._manual_passed = False
             args = ["resume"]
-            if self._resume_should_allow_dirty():
+            if isinstance(choice, tuple) and len(choice) > 2 and choice[2] == "allow-dirty":
+                args.append("--allow-dirty")
+            elif self._resume_should_allow_dirty():
                 args.append("--allow-dirty")
             self._launch_relay(args)
         elif choice == "plan":

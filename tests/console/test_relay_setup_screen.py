@@ -2355,3 +2355,68 @@ async def test_construct_on_mount_and_automatic_do_not_probe_providers(
         assert screen.query("#rs-implementer")
 
 
+
+
+def _paused_setup(monkeypatch, tmp_path, owned, unrelated, checks):
+    from whyline.console import recovery
+    from whyline_relay import state as relay_state
+
+    monkeypatch.setattr(relay_ops, "run_checks", checks)
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(relay_ops, "stale_pause", lambda root: None)
+    monkeypatch.setattr(relay_state, "load", lambda root: SimpleNamespace(task_id="JOB-8"))
+    monkeypatch.setattr(recovery, "task_owned_dirty", lambda root, task: (owned, unrelated))
+    launched = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(app, "_launch_relay", launched.append)
+    return app, launched
+
+
+def _dirty_fail(root, plan=None):
+    return [
+        relay_ops.CheckLine("FAIL", "working tree has uncommitted changes: a.py", "commit"),
+    ]
+
+
+async def _check_paused(app, pilot):
+    app.session.mode = "relay"
+    app._sync_mode_indicator()
+    await pilot.pause()
+    await pilot.click("#relay-setup")
+    await pilot.pause()
+    screen = app.screen
+    await pilot.click("#rs-check")
+    await _wait_for(pilot, lambda: "problem" in _checks_text(screen) or "passed" in _checks_text(screen), "checks")
+    return screen
+
+
+async def test_paused_owned_changes_show_ok_and_resume_allows_dirty(tmp_path, monkeypatch, ops):
+    app, launched = _paused_setup(monkeypatch, tmp_path, ["a.py"], [], _dirty_fail)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _check_paused(app, pilot)
+        text = _checks_text(screen)
+        assert "ok    1 file from paused JOB-8 is kept when you resume" in text
+        assert "FAIL" not in text
+        assert not screen.query_one("#rs-start", tui.Button).disabled
+        await pilot.click("#rs-start")
+        await _wait_for(pilot, lambda: launched, "the resume launch")
+    assert launched == [["resume", "--allow-dirty"]]
+
+
+async def test_paused_unrelated_changes_keep_the_fail(tmp_path, monkeypatch, ops):
+    app, launched = _paused_setup(monkeypatch, tmp_path, ["a.py"], ["b.py"], _dirty_fail)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _check_paused(app, pilot)
+        assert "FAIL  working tree has uncommitted changes" in _checks_text(screen)
+        assert screen.query_one("#rs-start", tui.Button).disabled
+        assert not screen.query_one("#rs-resolve", tui.Button).disabled
+
+
+async def test_paused_clean_tree_is_unchanged(tmp_path, monkeypatch, ops):
+    app, launched = _paused_setup(monkeypatch, tmp_path, [], [], _checks("ok"))
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen = await _check_paused(app, pilot)
+        assert "kept when you resume" not in _checks_text(screen)
+        await pilot.click("#rs-start")
+        await _wait_for(pilot, lambda: launched, "the resume launch")
+    assert launched[0] == ["resume"]

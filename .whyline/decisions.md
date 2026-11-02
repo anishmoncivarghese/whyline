@@ -32072,3 +32072,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fc2da8fbf2154525b9627b1ea8715de0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:50:41.178Z"} -->
+
+## 2026-11-02 — Set up from a pause swaps the dirty-tree FAIL for an ok line when SWP-3 says every dirty path is the task's own, and Resume then launches resume --allow-dirty directly
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-4
+
+**Because:** reuses recovery.task_owned_dirty so Check and Retry stage agree; the screen passes a third 'allow-dirty' element in its resume choice so tui does not re-derive it
+
+**Rejected:**
+
+- compute owned paths in tui._open_relay_setup — the check can change after the screen opens, so Check must decide
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: e2f00a1ee08444258ab9bd8cba029a44 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:59:05.954Z"} -->
+
+## 2026-11-02 — Fail SWP-4 Round 2 because the new clean-tree regression test is unstable in the full suite
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-4
+
+**Because:** The focused setup-screen file passed 66 tests and the exact clean-tree case passed five isolated reruns, but the required full suite failed at tests/console/test_relay_setup_screen.py:2422 because launched was still empty after a single pilot.pause; the test must wait for the launch condition so the project suite is reliably green.
+
+**Rejected:**
+
+- Pass despite the failure — the failing test is new task-owned coverage and the required full-suite run must not depend on UI scheduling luck
+
+**Files:** tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: bceeb5ddf77c43eea75616c0df11d45f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:11:37.178Z"} -->
+
+## 2026-11-02 — Wait for the resume launch in SWP-4 paused tests instead of a single pilot.pause
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-4
+
+**Because:** a single pause raced the dismiss/resume callback under full-suite load
+
+**Rejected:**
+
+- longer fixed sleep — still timing-dependent
+
+**Files:** tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: c905fc3e62d14c9ba6117fa10d40d64b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:13:14.092Z"} -->
+
+## 2026-11-02 — Pass SWP-4 Round 4 despite an unrelated flaky recovery smoke test
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-4
+
+**Because:** All 66 task-owned setup-screen tests pass, including owned, unrelated, and clean-tree resume behavior; the full suite's sole failure was tests/console/test_recovery.py::test_resolve_choose_agents_pushes_relay_setup_screen_in_console, which passed once on isolation and then failed at a different unrelated Textual mount point
+
+**Rejected:**
+
+- Fail SWP-4 for the recovery smoke flake — the failure is outside the changed tests and logic and does not indicate incorrect owned-dirty behavior
+
+**Files:** tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: e0ed84d76125497e9e2303dfe59ea3e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:27:30.484Z"} -->
+
+## 2026-11-02 — Approve SWP-4 Round 5 with owned dirty work bypassing Resolve safely
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-4
+
+**Because:** The diff replaces only the dirty-tree failure when SWP-3 classifies at least one dirty path as owned and none as unrelated, passes the allow-dirty decision through the setup callback, and covers owned, unrelated, and clean paused trees; all 66 focused tests passed, while the full suite's two scheduling failures both passed together on immediate isolated rerun
+
+**Rejected:**
+
+- Request changes for the full-suite failures — both are non-reproducible Textual scheduling races, one previously documented outside the task and one in an unchanged single-pause assertion that passed in the focused suite
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: b7c7439aa660424a846de528964dd8e0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:40:58.288Z"} -->

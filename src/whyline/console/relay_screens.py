@@ -1452,10 +1452,13 @@ class RelaySetupScreen(ModalScreen):
         paused: bool | None = None,
         focus_agent: str | None = None,
         out_until: dict[str, str] | None = None,
+        owned_dirty_fn=None,
     ) -> None:
         super().__init__()
         self._root = root
         self._guided = guided
+        self._owned_dirty_fn = owned_dirty_fn
+        self._resume_owned = False
         self._focus_agent = focus_agent
         if out_until is not None:
             self._out_until = dict(out_until)
@@ -2153,7 +2156,10 @@ class RelaySetupScreen(ModalScreen):
                 for role, old_backup in (cleared or {}).items():
                     now_agent = picked.get(role, "")
                     cleared_lines.append(f"{role} was on backup {old_backup}; it now uses {now_agent}")
-                self.dismiss(("resume", cleared_lines))
+                if self._resume_owned:
+                    self.dismiss(("resume", cleared_lines, "allow-dirty"))
+                else:
+                    self.dismiss(("resume", cleared_lines))
             else:
                 self.dismiss("start")
         elif event.button.id == "rs-resolve":
@@ -2270,12 +2276,51 @@ class RelaySetupScreen(ModalScreen):
                             )
                         )
                 running = relay_ops.live_run(root)
+                checks, owned = self._keep_owned_changes(root, checks)
             except Exception as error:
                 self.app.call_from_thread(self._check_failed, error, token)
                 return
-            self.app.call_from_thread(self._show_checks, checks, running, cleared, token)
+            self.app.call_from_thread(self._show_checks, checks, running, cleared, token, owned)
 
         self.run_worker(in_thread, thread=True)
+
+    def _keep_owned_changes(self, root: Path, checks: list) -> tuple[list, bool]:
+        """On a paused task, swap the dirty-tree FAIL for an ok line when every
+        dirty path is the task's own. Returns the checks and whether it applied."""
+        if not self._paused:
+            return checks, False
+        marker = "working tree has uncommitted changes"
+        index = next(
+            (i for i, c in enumerate(checks) if c.status == "FAIL" and c.message.startswith(marker)),
+            None,
+        )
+        if index is None:
+            return checks, False
+        try:
+            from whyline_relay import state as relay_state
+
+            saved = relay_state.load(root)
+            task_id = saved.task_id if saved and saved.task_id else ""
+            if not task_id:
+                return checks, False
+            find = self._owned_dirty_fn
+            if find is None:
+                from whyline.console import recovery
+
+                find = recovery.task_owned_dirty
+            owned, unrelated = find(root, task_id)
+        except Exception:
+            return checks, False
+        if not owned or unrelated:
+            return checks, False
+        count = len(owned)
+        noun = "1 file" if count == 1 else f"{count} files"
+        verb = "is" if count == 1 else "are"
+        checks = list(checks)
+        checks[index] = relay_ops.CheckLine(
+            "ok", f"{noun} from paused {task_id} {verb} kept when you resume"
+        )
+        return checks, True
 
     def _check_failed(self, error: Exception, token: object) -> None:
         if token is not self._token or not self.is_attached:
@@ -2289,10 +2334,16 @@ class RelaySetupScreen(ModalScreen):
             return  # the popup's children were removed during teardown
 
     def _show_checks(
-        self, checks: list, running: str | None, cleared: dict[str, str], token: object
+        self,
+        checks: list,
+        running: str | None,
+        cleared: dict[str, str],
+        token: object,
+        owned: bool = False,
     ) -> None:
         if token is not self._token or not self.is_attached:
             return  # cancelled, re-checked, or the popup has closed
+        self._resume_owned = owned
         self._cleared_info = cleared or {}
         try:
             from whyline_relay import failover
