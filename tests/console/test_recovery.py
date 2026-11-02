@@ -2591,6 +2591,87 @@ def test_sticky_switch_from_antigravity_is_not_offered_reset_role(
     )
 
 
+def _limited_sticky_repo(tmp_path: Path, monkeypatch, ready: list[str], backup: str = ""):
+    from whyline import account
+    from whyline.console import relay_ops
+    from whyline_relay import failover
+
+    repo = _init_scratch_repo(tmp_path / "repo_limited")
+    backup_toml = f'[backup]\nchain = ["{backup}"]\n' if backup else ""
+    (repo / ".whyline" / "relay" / "config.toml").write_text(
+        'plan = "plan.md"\n[roles]\nimplementer = "claude"\nreviewer = "codex"\n' + backup_toml,
+        encoding="utf-8",
+    )
+    failover.write_override(
+        repo,
+        "implementer",
+        failover.ActiveOverride(
+            "codex", "claude", "rate-limit", "2026-10-14", [], resets_at="2099-10-23T00:00:00+00:00"
+        ),
+    )
+    failover.record_limit(repo, "claude", "rate-limit", "You hit your usage limit. Try again later.")
+    monkeypatch.setattr(
+        account, "agent_status", lambda root: {"claude": {"available": True, "label": "ok", "hint": None}}
+    )
+    monkeypatch.setattr(relay_ops, "ready_for", lambda root, role: list(ready))
+    return repo
+
+
+def test_limited_configured_agent_recommends_ready_agent(tmp_path: Path, monkeypatch) -> None:
+    repo = _limited_sticky_repo(tmp_path, monkeypatch, ["gemini"])
+    prob = recovery.diagnose(repo, [], "")[0]
+    assert prob.id == "sticky-switch"
+    assert any("claude is logged in but out of quota until" in line for line in prob.evidence)
+    assert "claude is logged in but out of quota until" in prob.summary
+    assert "logged in again" not in prob.summary
+    assert all(opt.id != "switch-back" for opt in prob.options)
+    ids = [opt.id for opt in prob.options]
+    assert ids[0] == "continue-with-gemini"
+    assert ids.index("ask-agent") > 0
+    assert prob.options[0].label == "Continue with gemini"
+    assert prob.options[0].recommended is True
+
+
+def test_limited_configured_agent_continue_switches_role_and_resumes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from whyline.console import relay_ops
+
+    repo = _limited_sticky_repo(tmp_path, monkeypatch, ["gemini"])
+    prob = recovery.diagnose(repo, [], "")[0]
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        relay_ops,
+        "switch_role",
+        lambda root, role, agent, add_backup: calls.append((role, agent, add_backup)) or ["resume"],
+    )
+    launched: list[list[str]] = []
+    recovery.apply(repo, prob, "continue-with-gemini", launch=launched.append)
+    assert calls == [("implementer", "gemini", False)]
+    assert launched == [["resume"]]
+
+
+def test_auto_applies_continue_only_when_agent_in_backup_chain(tmp_path: Path, monkeypatch) -> None:
+    repo = _limited_sticky_repo(tmp_path, monkeypatch, ["codex"], backup="codex")
+    prob = recovery.diagnose(repo, [], "")[0]
+    assert prob.options[0].id == "continue-with-codex"
+    assert recovery.auto_option(prob, repo) == prob.options[0]
+
+    other = tmp_path / "other"
+    other.mkdir()
+    repo2 = _limited_sticky_repo(other, monkeypatch, ["gemini"], backup="codex")
+    prob2 = recovery.diagnose(repo2, [], "")[0]
+    assert prob2.options[0].id == "continue-with-gemini"
+    assert recovery.auto_option(prob2, repo2) is None
+
+
+def test_limited_configured_agent_without_ready_agent_keeps_options(tmp_path: Path, monkeypatch) -> None:
+    repo = _limited_sticky_repo(tmp_path, monkeypatch, [])
+    prob = recovery.diagnose(repo, [], "")[0]
+    assert all(not opt.id.startswith("continue-with-") for opt in prob.options)
+    assert not any("out of quota until" in line for line in prob.evidence)
+
+
 def test_sticky_switch_from_claude_whose_reset_has_passed_offers_reset_role(
     tmp_path: Path, monkeypatch
 ) -> None:

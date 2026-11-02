@@ -32255,3 +32255,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b6957280a6f24c409381dfdc3a990272 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T03:46:22.302Z"} -->
+
+## 2026-11-02 — Limit pause with a ready agent recommends Continue with <agent>; Auto applies only if agent is in backup chain
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-6
+
+**Because:** Auto must never start an agent the user did not choose; non-chain stops for the user
+
+**Rejected:**
+
+- Let Auto fall through to Ask agent when not in chain — the spec says stop and ask
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: e2340a7824bb4d04b17f6b6fb74055c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T03:48:45.058Z"} -->
+
+## 2026-11-02 — SWP-6 passes round-two behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-6
+
+**Because:** The four focused limit-pause regressions pass, verifying quota text and option ordering, switch_role plus returned resume execution, Auto backup-chain gating, and unchanged no-ready behavior; the full suite's sole failure is the pre-existing Textual RelaySetupScreen mount defect in unchanged relay_screens.py
+
+**Rejected:**
+
+- Fail SWP-6 for the setup-screen smoke failure — it reproduces in isolation at unchanged relay_screens.py:1834 and is unrelated to the task implementation
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 745c166304194bc491fb02ea367c0f54 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:02:01.318Z"} -->
+
+## 2026-11-02 — SWP-6 round-three review rejects the unchanged logged-in-again diagnosis
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-6
+
+**Because:** When failover.agent_limits reports the configured agent is limited, recovery.py only appends quota evidence while the Problem summary still says the configured agent is logged in again; the Resolve UI therefore continues to lead with the misleading text SWP-6 is meant to replace, and the new test checks evidence instead of the summary
+
+**Rejected:**
+
+- Approve based on passing focused behavior — the visible Resolve summary still violates the task
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: ab0ed204e4f84078869cc4bac65a7a6e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:14:48.044Z"} -->
+
+## 2026-11-02 — SWP-6 round-five behavioral testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-6
+
+**Because:** The focused recovery suite and full project suite both exit successfully; regressions verify the limited configured agent summary says logged in but out of quota, omits Switch back, recommends and executes Continue with the first ready agent, gates Auto to the backup chain, and preserves the no-ready fallback
+
+**Rejected:**
+
+- Fail for the initially apparent missing Ask agent option — diagnose post-processing inserts Ask agent after the rule-based recommendation and the focused regression passes
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 5f615f8bed45428ab9ba87f3eabfa0a9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:29:07.663Z"} -->
+
+## 2026-11-02 — SWP-6 round-six review approves the quota-aware ready-agent recovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-6
+
+**Because:** The diff gives an active configured-agent limit a quota-aware sticky-switch summary, removes Switch back when a ready replacement exists, recommends and executes the first ready agent, gates Auto on backup-chain membership, and preserves the no-ready fallback; the plain full suite exercised the SWP-6 tests successfully and its sole failure reproduced in unchanged Relay Setup code outside this task
+
+**Rejected:**
+
+- Request changes for the Relay Setup failure — it reproduces in unchanged tests/console/test_relay_setup_screen.py and is unrelated to the recovery-only diff
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 25dd4794db3c4e6f91b6ab36e9a34dc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:41:49.711Z"} -->

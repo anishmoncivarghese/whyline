@@ -1655,6 +1655,17 @@ def _pause_identity(root_path: Path, task_id: str, problem: Problem, reason: str
     return (str(root_path.resolve()), task_id, round_num, clean_reason)
 
 
+def _in_backup_chain(root_path: Path | None, agent: str) -> bool:
+    if root_path is None:
+        return False
+    try:
+        from whyline_relay import setup as relay_setup
+
+        return agent in relay_setup.read_backup(root_path)
+    except Exception:
+        return False
+
+
 def auto_option(
     problem: Problem,
     root: Path | str | None = None,
@@ -1737,6 +1748,10 @@ def auto_option(
             else:
                 for opt in problem.options:
                     if opt.recommended and not opt.confirm:
+                        if opt.id.startswith("continue-with-"):
+                            # Auto never starts an agent the user did not choose.
+                            if not _in_backup_chain(eff_root, opt.id[len("continue-with-") :]):
+                                return None
                         if (
                             opt.id in ("use-another-model", "use-other-model")
                             or (opt.id.startswith("use-another-") and opt.id.endswith("-model"))
@@ -3549,6 +3564,7 @@ def _rule_problems(
                     evidence_lines = [
                         f"Role {role} overridden to {override.agent}; configured agent {configured} is logged in again"
                     ]
+                    quota_text = ""
                     if is_stale:
                         opts = [
                             Option(
@@ -3562,12 +3578,47 @@ def _rule_problems(
                             Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
                         ]
                     else:
+                        limit = None
+                        ready_now: list[str] = []
+                        try:
+                            from whyline.console import relay_ops
+
+                            limit = failover.agent_limits(root_path).get(configured)
+                            if limit is not None:
+                                ready_now = relay_ops.ready_for(root_path, role)
+                        except Exception:
+                            limit, ready_now = None, []
                         generic = configured in _GENERIC_AGENTS
                         reset_status, reset_label = _override_reset_status(override)
                         model, reset_time = read_failing_turn_quota(
                             root_path, configured, override=override
                         )
-                        if model and reset_time:
+                        if limit is not None and ready_now:
+                            expires = limit.expires_at()
+                            until = limit.resets_at or (expires.isoformat() if expires else "")
+                            until_text = _format_iso_reset(until) if until else "it resets"
+                            quota_text = f"{configured} is logged in but out of quota until {until_text}"
+                            evidence_lines.append(quota_text)
+                            first = ready_now[0]
+                            opts = [
+                                Option(
+                                    f"continue-with-{first}",
+                                    f"Continue with {first}",
+                                    f"switch {role} to {first} and resume",
+                                    recommended=True,
+                                    confirm=False,
+                                ),
+                                Option(
+                                    "choose-agents",
+                                    "Choose agents…",
+                                    "open RelaySetupScreen",
+                                    recommended=False,
+                                    confirm=False,
+                                ),
+                                Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                                Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                            ]
+                        elif model and reset_time:
                             out_line = f"{configured} · {model} out until {reset_time}"
                             evidence_lines.append(out_line)
                             model_opt = Option(
@@ -3630,10 +3681,13 @@ def _rule_problems(
                                 Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
                                 Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
                             ]
+                    configured_state = (
+                        quota_text if quota_text else f"configured agent '{configured}' is logged in again"
+                    )
                     problems.append(
                         Problem(
                             id="sticky-switch",
-                            summary=f"Role '{role}' is on backup '{override.agent}', but configured agent '{configured}' is logged in again",
+                            summary=f"Role '{role}' is on backup '{override.agent}', but {configured_state}",
                             evidence=evidence_lines,
                             options=opts,
                         )
@@ -4468,6 +4522,15 @@ def apply(
         if option_id in ("use-configured", "use-setup") or (problem.id == "sticky-switch" and option_id.startswith("use-")):
             return f"Reset role {role} to use configured agent." if role else "Reset role to configured agent."
         return f"Reset role {role} to its configured agent." if role else "Reset role to its configured agent."
+
+    if option_id.startswith("continue-with-"):
+        from whyline.console import relay_ops
+
+        agent = option_id[len("continue-with-") :]
+        m = re.search(r"switch (\S+) to", matched_opt.detail)
+        role = m.group(1) if m else "implementer"
+        launch(relay_ops.switch_role(root_path, role, agent, False))
+        return f"Switched {role} to {agent} and resumed relay."
 
     if option_id == "resume-longer":
         from whyline.console import relay_ops
