@@ -4740,3 +4740,57 @@ async def test_continue_press_saves_the_role_and_resumes(tmp_path, monkeypatch, 
     chain = ["gemini", "codex"] if ticked else ["gemini"]
     assert saved == [("codex", "codex", "codex", chain)]
     assert launched == [["resume", "--allow-dirty"]]
+
+
+async def _brainstorm_root(tmp_path, monkeypatch, live):
+    from whyline import worktrees
+    from whyline.console import adapters
+    from whyline.console.session import SessionEvent
+    import whyline_relay.running as running
+
+    seen = []
+    made = []
+    wt = tmp_path / "wt" / "brainstorm-retry-policy"
+    monkeypatch.setattr(running, "live", lambda root: object() if live else None)
+    monkeypatch.setattr(
+        worktrees, "make",
+        lambda root, kind, name: made.append((root, kind, name)) or wt,
+    )
+    monkeypatch.setattr(
+        adapters, "run_brainstorm",
+        lambda root, *, progress, cancel_event=None, **choice: seen.append(root)
+        or SessionEvent(kind="output", text="done"),
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app._run_brainstorm_choice(dict(
+            topic="retry policy", agents=["claude"], passes=1,
+            final_agent="claude", timeout_minutes=15,
+            timeout_unlimited=False, attachments=[],
+        ))
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        root = app.session.root
+        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+    return seen, made, lines, root, wt
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_brainstorm_runs_in_a_worktree_while_a_relay_is_live(tmp_path, monkeypatch):
+    seen, made, lines, root, wt = await _brainstorm_root(tmp_path, monkeypatch, True)
+    assert seen == [wt]
+    assert made == [(root, "brainstorm", "retry policy")]
+    text = " ".join(lines)
+    assert "A relay is running here, so this Brainstorm runs in" in text
+    assert "brainstorm-retry-policy" in text
+    assert "branch brainstorm/retry-policy" in text
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_brainstorm_uses_the_console_root_without_a_relay(tmp_path, monkeypatch):
+    seen, made, lines, root, wt = await _brainstorm_root(tmp_path, monkeypatch, False)
+    assert seen == [root]
+    assert made == []
+    assert not any("A relay is running" in line for line in lines)

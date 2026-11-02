@@ -32921,3 +32921,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 04ba3276bf954302bcc52aa20d005bd7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:53:14.278Z"} -->
+
+## 2026-11-02 — Brainstorm worktree switch happens inside _brainstorm_in_thread; a make() failure becomes a Brainstorm-stopped error
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-7
+
+**Because:** git worktree add is slow I/O so it belongs off the UI thread, and falling back to the live relay's checkout would defeat the isolation
+
+**Rejected:**
+
+- fall back to console root on worktree failure — could collide with the running relay's files
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 307f46fa36a44afc87c0e273c7eed38a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:54:31.867Z"} -->
+
+## 2026-11-02 — Pass LSN-7 console Brainstorm worktree behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-7
+
+**Because:** The 15 focused Brainstorm tests and the complete tests/console/test_tui.py module pass; the full suite's only failure is the pre-existing RelaySetupScreen mount race in untouched tests/console/test_recovery.py and does not execute the changed Brainstorm path
+
+**Rejected:**
+
+- Fail LSN-7 for the full-suite RelaySetupScreen failure — the traceback is confined to untouched relay_screens.py setup, is unrelated to Brainstorm, and the task-scoped suites pass
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: af0023adb41e42d2a5d0b71970dea14b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:09:11.472Z"} -->
+
+## 2026-11-02 — Approve LSN-7 relay-safe console Brainstorms
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-7
+
+**Because:** The diff creates a brainstorm worktree only when running.live reports a relay, announces its exact path and derived branch before invoking the runner, preserves the console root otherwise, and tests both paths through the asynchronous TUI worker; the changed tests passed in the full run, whose sole failure was an unrelated RelaySetupScreen mount race that passed on isolated rerun
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness, safety, or coverage defect was found
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 0959417edef04151a4d59fd3426202ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:21:56.711Z"} -->

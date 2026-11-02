@@ -4580,8 +4580,24 @@ class WhylineConsoleApp(App):
             self.call_from_thread(self._brainstorm_progress, line, token)
 
         try:
+            root = self.session.root
+            from whyline import worktrees
+            from whyline_relay import running
+
+            if running.live(root) is not None:
+                # A relay owns this checkout; keep the Brainstorm's files apart.
+                root = worktrees.make(root, "brainstorm", choice["topic"])
+                branch = f"brainstorm/{root.name.removeprefix('brainstorm-')}"
+                self.call_from_thread(
+                    self.render_event,
+                    SessionEvent(
+                        kind="output",
+                        text=f"A relay is running here, so this Brainstorm runs in "
+                             f"{root} (branch {branch}).",
+                    ),
+                )
             result = adapters.run_brainstorm(
-                self.session.root,
+                root,
                 progress=progress,
                 cancel_event=cancel_event,
                 **choice,
