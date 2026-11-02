@@ -316,7 +316,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   While Ask agent runs, the status line reads `Ask agent: <agent> · <elapsed>` and updates every second. The Relay row's Stop button ends the Ask agent run (reuse LSN-1's process-group end), then shows "Ask agent stopped." and the Resolve options again.
   Tests: elapsed time advances under a fake clock, Stop ends the fake agent and shows the options, and a normal finish clears the status line.
 
-- [ ] LSN-3: Resolve says when a pause cause repeats
+- [x] LSN-3: Resolve says when a pause cause repeats
   Edit `src/whyline/console/recovery.py` (`_pause_identity`, `record_attempt`, and the Resolve header) and `tests/console/test_recovery.py` only.
   Keep a normalised cause with each recorded attempt: the reason with round numbers, paths, and text after the first 120 characters removed. When a new pause on the same task has the same cause as its last attempt, the Resolve header starts with "Same cause as the last pause (round <n>)." If the cause is a refused test command, put "Set the test command in Settings, then Resume and keep changes" first.
   Tests: two pauses with the same cause show the line, different causes don't, and a refused test command gets the Settings hint.
