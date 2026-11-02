@@ -32768,3 +32768,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4d91a5469a6b48288df59cae1982a333 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:13:11.008Z"} -->
+
+## 2026-11-02 — Test command input saves only when text differs from the value shown at open
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-5
+
+**Because:** avoids writing the detected command into config.toml and avoids an extra config commit on untouched Set up
+
+**Rejected:**
+
+- always save on Check — would pin the detected command
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 7eff75a5454f4df7b5710840ff192922 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:15:53.583Z"} -->
+
+## 2026-11-02 — Pass LSN-5 Round 2 test-command console behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-5
+
+**Because:** The focused setup-screen module passed all 71 tests, including detected display, typed save, clearing, untouched behavior, and 80x24 fit; the installed whyline_relay config signatures match the integration; the full suite reached 3293 passed and one skip with one unrelated Textual mount race that passed immediately in isolation
+
+**Rejected:**
+
+- Fail LSN-5 for the full-suite mount race — the failure was outside the task files and behavior, and its exact test passed in isolation
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 4edafe09d6d64b03b3672b19a98ee1b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:29:42.137Z"} -->
+
+## 2026-11-02 — Reject LSN-5 Round 3 until test-command edits invalidate a passed check
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-5
+
+**Because:** RelaySetupScreen.on_input_changed only invalidates model inputs, so after Check succeeds a user can edit rs-test-command and press the still-enabled Start button; the changed command is neither saved nor checked, contrary to the screen's stated save-and-check lifecycle, and the added tests do not cover this transition
+
+**Rejected:**
+
+- Approve based on pre-Check save tests — they miss the stale enabled Start state after a post-Check edit
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: f55533d68e224c62ab34d909f3403667 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:42:33.369Z"} -->
+
+## 2026-11-02 — Editing rs-test-command invalidates a passed Check (disables Start)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-5
+
+**Because:** the edited command is neither saved nor checked until Check reruns, so Start must not stay enabled
+
+**Rejected:**
+
+- save on every keystroke — would write config before the user confirms with Check
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 6b6172c566ee4aa7b16a962ae69747d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:46:12.813Z"} -->
+
+## 2026-11-02 — Pass LSN-5 Round 5 test-command console behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-5
+
+**Because:** All 72 focused setup-screen tests passed, including detected display, typed and cleared saves, post-check edit invalidation, and 80x24 fit; the full suite had one unrelated Textual mount-order race in test_recovery that moved between missing child queries and passed on the second identical isolation rerun
+
+**Rejected:**
+
+- Fail LSN-5 for the recovery smoke-test race — the failure did not exercise test-command behavior, was nondeterministic across mount locations, and cleared under identical isolation
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/relay_ops.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: ee172d504fd94574b73e9bab05457ba1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T09:59:49.147Z"} -->
+
+## 2026-11-02 — Approve LSN-5 Round 6 test-command console integration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-5
+
+**Because:** The diff is task-scoped, uses whyline_relay.config for detection and saving, and all 72 setup-screen tests pass including detected, typed, cleared, invalidation, untouched, and 80x24 behavior; the full suite's two failures were unrelated Textual timing races, with the resume test passing in isolation and the recovery test failing at different unmounted framework children across reruns
+
+**Rejected:**
+
+- Request changes for the full-suite failures — their tracebacks do not exercise the test-command path and their changing missing Textual children demonstrate pre-existing mount-order instability
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/relay_screens.py, tests/console/test_relay_setup_screen.py
+
+<!-- whyline-event: 31dd8f291fa8409583ffcd64f1ab3775 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:14:01.744Z"} -->

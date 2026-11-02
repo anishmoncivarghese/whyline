@@ -1552,6 +1552,7 @@ class RelaySetupScreen(ModalScreen):
         self._backup = list(self._roles.get("backup") or [])
         self._timeout = relay_ops.relay_timeout(root)
         self._resolve_mode = relay_ops.resolve_mode(root)
+        self._test_command, self._test_detected = relay_ops.relay_test_command(root)
         self._token: object | None = None
         self._model_token: object | None = None
         self._filling = True  # ignore change events while the form is built
@@ -1731,6 +1732,15 @@ class RelaySetupScreen(ModalScreen):
                         allow_blank=False,
                         id="rs-timeout",
                     ).with_tooltip("How long one agent may run before the relay stops it"),
+                ),
+                Horizontal(
+                    Label("Test command:", classes="field-label"),
+                    Input(
+                        value=self._test_command,
+                        placeholder="command that runs the tests",
+                        id="rs-test-command",
+                    ).with_tooltip("Empty removes the setting and the relay detects it"),
+                    Static("(detected)" if self._test_detected else "", id="rs-test-detected"),
                 ),
                 Horizontal(
                     Label("Resolve:", classes="field-label"),
@@ -2112,7 +2122,9 @@ class RelaySetupScreen(ModalScreen):
 
     def on_input_changed(self, event: "Input.Changed") -> None:
         if event.input.id and (
-            event.input.id.startswith("rs-model-") or event.input.id.startswith("rs-model-input-")
+            event.input.id.startswith("rs-model-")
+            or event.input.id.startswith("rs-model-input-")
+            or event.input.id == "rs-test-command"
         ):
             self._invalidate()
 
@@ -2242,6 +2254,8 @@ class RelaySetupScreen(ModalScreen):
         release = self.query_one("#rs-release", Select).value
         timeout = self.query_one("#rs-timeout", Select).value
         resolve_mode = self.query_one("#rs-resolve-mode", Select).value
+        test_command = self.query_one("#rs-test-command", Input).value.strip()
+        shown_test_command = self._test_command
         plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
         models_to_save = {a: self._chosen_model(a) for a in self._model_agents()}
 
@@ -2254,6 +2268,9 @@ class RelaySetupScreen(ModalScreen):
                 # Only on a change: each write is its own config commit.
                 if timeout != relay_ops.relay_timeout(root):
                     relay_ops.save_timeout(root, timeout)
+                if test_command != shown_test_command:
+                    relay_ops.save_test_command(root, test_command)
+                    self._test_command = test_command
                 if resolve_mode != relay_ops.resolve_mode(root):
                     relay_ops.save_resolve_mode(root, resolve_mode)
                 for a, picked_model in models_to_save.items():

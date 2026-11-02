@@ -2420,3 +2420,98 @@ async def test_paused_clean_tree_is_unchanged(tmp_path, monkeypatch, ops):
         await pilot.click("#rs-start")
         await _wait_for(pilot, lambda: launched, "the resume launch")
     assert launched[0] == ["resume"]
+
+
+async def test_test_command_shows_the_detected_value(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "relay_test_command", lambda root: ("uv run pytest", True))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        assert screen.query_one("#rs-test-command", tui.Input).value == "uv run pytest"
+        assert str(screen.query_one("#rs-test-detected", tui.Static).renderable) == "(detected)"
+
+
+async def test_test_command_saves_the_typed_text(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_test_command", lambda root: ("pytest", True))
+    monkeypatch.setattr(
+        relay_ops, "save_test_command", lambda root, text: ops.append(("test", text))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-test-command", tui.Input).value = "make test"
+        await pilot.pause()
+        screen.query_one("#rs-check", tui.Button).press()
+        start = screen.query_one("#rs-start", tui.Button)
+        await _wait_for(pilot, lambda: not start.disabled, "check")
+    assert ("test", "make test") in ops
+
+
+async def test_editing_the_test_command_after_a_check_disables_start_until_rechecked(
+    tmp_path, monkeypatch, ops
+):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_test_command", lambda root: ("pytest", True))
+    monkeypatch.setattr(
+        relay_ops, "save_test_command", lambda root, text: ops.append(("test", text))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        start = screen.query_one("#rs-start", tui.Button)
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "first check")
+        screen.query_one("#rs-test-command", tui.Input).value = "make test"
+        await pilot.pause()
+        assert start.disabled
+        assert ("test", "make test") not in ops
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "recheck")
+    assert ("test", "make test") in ops
+
+
+async def test_clearing_the_test_command_saves_an_empty_string(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_test_command", lambda root: ("make test", False))
+    monkeypatch.setattr(
+        relay_ops, "save_test_command", lambda root, text: ops.append(("test", text))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-test-command", tui.Input).value = ""
+        await pilot.pause()
+        screen.query_one("#rs-check", tui.Button).press()
+        start = screen.query_one("#rs-start", tui.Button)
+        await _wait_for(pilot, lambda: not start.disabled, "check")
+    assert ("test", "") in ops
+
+
+async def test_untouched_test_command_is_not_saved(tmp_path, monkeypatch, ops):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_test_command", lambda root: ("pytest", True))
+    monkeypatch.setattr(
+        relay_ops, "save_test_command", lambda root, text: ops.append(("test", text))
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-check", tui.Button).press()
+        start = screen.query_one("#rs-start", tui.Button)
+        await _wait_for(pilot, lambda: not start.disabled, "check")
+    assert not [op for op in ops if op[0] == "test"]
+
+
+async def test_setup_screen_fits_80x24_with_test_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "relay_test_command", lambda root: ("uv run pytest", True))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen = RelaySetupScreen(tmp_path, paused=False)
+        app.push_screen(screen)
+        await pilot.pause()
+        start_btn = screen.query_one("#rs-start", tui.Button)
+        assert start_btn.region.height > 0
+        assert start_btn.region.bottom <= 24
+        assert screen.query_one("#rs-test-command", tui.Input).display

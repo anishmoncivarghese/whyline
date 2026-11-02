@@ -1194,6 +1194,22 @@ def save_timeout(root: Path, minutes: int) -> None:
     setup.write_timeout_minutes(root, minutes)
 
 
+def relay_test_command(root: Path) -> tuple[str, bool]:
+    """The command the relay will run, and whether it was detected, not set."""
+    try:
+        from whyline_relay import config
+
+        return config.test_command(root), config.configured_test_command(root) is None
+    except Exception:
+        return "", False
+
+
+def save_test_command(root: Path, command: str) -> None:
+    from whyline_relay import config
+
+    config.save_test_command(root, command)
+
+
 def resolve_mode_path(root: Path | str) -> Path:
     return Path(root) / ".whyline" / "relay" / "resolve-mode.json"
 
