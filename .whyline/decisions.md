@@ -31974,3 +31974,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 05747998f4524b369c4985c11808a4d4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:55:43.376Z"} -->
+
+## 2026-11-02 — Set up labels not-ready agents via relay readiness; Check warns from a CheckLine appended after run_checks
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-2
+
+**Because:** Readiness lives in relay_ops.agent_readiness; appending the warn in the Set up check thread keeps preflight untouched and the label still lets the agent be chosen
+
+**Rejected:**
+
+- Edit OrderedChain labels in chain_editor.py — outside task scope, so _SetupChain relabels its checkboxes after sync
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 021b144436df4e5c8e18a60e800c314e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T00:58:45.236Z"} -->
+
+## 2026-11-02 — Pass SWP-2 Round 2: unavailable-agent labels and Check warning behave correctly
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-2
+
+**Because:** Limited role and backup options show the readiness reason without preventing selection, ready labels remain unchanged, saving a limited implementer adds the required warn line, the focused file passed 10 tests, and the full suite passed with one skip
+
+**Rejected:**
+
+- Fail — no acceptance-criteria defect or regression was observed
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: 222a81fdbea344d68c77487d5e087112 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:10:34.238Z"} -->
+
+## 2026-11-02 — Approve SWP-2 Round 3: readiness labels and role warning meet the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-2
+
+**Because:** Not-ready role and backup choices show the readiness reason without changing their selectable agent values, ready labels stay unchanged, Check warns for the saved limited implementer, the focused file passed 10 tests, and the full suite passed with one skip
+
+**Rejected:**
+
+- Request changes — no acceptance-criteria defect, unsafe behavior, or material coverage gap was found
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: 27dbed466e6f4f5ab25f09237fd29725 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T01:22:25.962Z"} -->

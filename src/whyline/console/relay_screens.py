@@ -18,7 +18,7 @@ from textual.widgets import Button, Checkbox, Input, Label, Select, Static, Text
 
 from whyline.console import relay_ops
 from whyline.console.attachments_ui import AttachmentsField
-from whyline.console.chain_editor import OrderedChain
+from whyline.console.chain_editor import OrderedChain, _ChainCheck
 from whyline.console.plan_job import PlanRequest
 from whyline.console.repl import NO_SUBSCRIPTIONS, provider_enabled
 from whyline.console.tui import ConfirmScreen
@@ -1340,6 +1340,22 @@ class _SetupChain(OrderedChain):
     without enabling it in Settings or showing it as a choice.
     """
 
+    labels: dict[str, str] = {}
+
+    def _sync(self) -> None:
+        super()._sync()
+        if self.labels and self.is_mounted:
+            self.call_after_refresh(self._relabel)
+
+    def _relabel(self) -> None:
+        """Show why an agent cannot run beside its name. The value stays the name."""
+        from rich.text import Text
+
+        for box in self.query(_ChainCheck):
+            text = self.labels.get(box.agent_name)
+            if text:
+                box.label = Text(text)
+
     def parked(self) -> list[str]:
         """Saved names that are not enabled choices."""
         return list(self._unknown)
@@ -1512,6 +1528,7 @@ class RelaySetupScreen(ModalScreen):
             self._recommended = {}
             self._unusable = []
 
+        self._not_ready = self._read_not_ready(root)
         self._release = relay_ops.release_role(root)
         self._release_saved = self._release
         # current_roles() fills unsaved defaults; those are not a saved
@@ -1537,6 +1554,15 @@ class RelaySetupScreen(ModalScreen):
         self._filling = True  # ignore change events while the form is built
         self._fail_lines: list[str] = []
 
+    @staticmethod
+    def _read_not_ready(root: Path) -> dict[str, str]:
+        """Agent -> why it cannot run right now. Empty when readiness is unknown."""
+        try:
+            rows = relay_ops.agent_readiness(root)
+        except Exception:
+            return {}
+        return {row.agent: (row.why or "not ready") for row in rows if not row.ready}
+
     def _roles_line(self) -> str:
         r = self._configured_roles
         backup = " → ".join(r.get("backup", [])) or "none"
@@ -1560,8 +1586,12 @@ class RelaySetupScreen(ModalScreen):
             "Check cannot pass until you choose enabled providers."
         )
 
+    def _agent_label(self, agent: str) -> str:
+        why = self._not_ready.get(agent)
+        return f"{agent} — {why}" if why else agent
+
     def _role_options(self, wanted: str) -> list[tuple[str, str]]:
-        return [(a, a) for a in self._agents]
+        return [(self._agent_label(a), a) for a in self._agents]
 
     def _role_value(self, wanted: str) -> str | None:
         if wanted and wanted in self._agents:
@@ -1619,6 +1649,7 @@ class RelaySetupScreen(ModalScreen):
                     )
                 )
             chain = _SetupChain(self._agents, self._fill_backup, id="rs-backup")
+            chain.labels = {a: self._agent_label(a) for a in self._agents if a in self._not_ready}
             chain.load([agent for agent in self._backup if agent in self._agents])
             model_rows = []
             initial_active = set(self._initial_model_agents())
@@ -2229,7 +2260,15 @@ class RelaySetupScreen(ModalScreen):
                 relay_ops.prepare_agents(root, agents_to_prepare)
                 if plan is not None:
                     relay_ops.select_plan(root, plan)
-                checks = relay_ops.run_checks(root, plan)
+                checks = list(relay_ops.run_checks(root, plan))
+                not_ready = self._read_not_ready(root)
+                for role, agent in zip(("implementer", "tester", "reviewer"), chosen[:3]):
+                    if agent in not_ready:
+                        checks.append(
+                            relay_ops.CheckLine(
+                                "warn", f"{role} is {agent}, which is {not_ready[agent]}"
+                            )
+                        )
                 running = relay_ops.live_run(root)
             except Exception as error:
                 self.app.call_from_thread(self._check_failed, error, token)

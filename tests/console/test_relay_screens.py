@@ -201,3 +201,69 @@ async def test_default_summary_reads_plan_steps(tmp_path, monkeypatch):
     assert "Plan: p.plan.md" in summary
     assert "Steps: 1 of 3 done" in summary
     assert "Stop the relay to change them." in RunAgentsScreen.READ_ONLY
+
+
+# --- Set up labels agents that cannot run (SWP-2) ---
+
+from types import SimpleNamespace  # noqa: E402
+
+from whyline.console.chain_editor import OrderedChain, _ChainCheck  # noqa: E402
+
+from .test_relay_setup_screen import _checks, _checks_text, _open, _wait_for, ops  # noqa: E402,F401
+
+LIMITED = "out of quota until 2026-11-04 18:30"
+
+
+def _readiness(monkeypatch):
+    monkeypatch.setattr(
+        relay_ops,
+        "relay_agents",
+        lambda root=None, which=None: ["claude", "codex", "antigravity"],
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "agent_readiness",
+        lambda root: [
+            SimpleNamespace(agent="claude", ready=True, why=""),
+            SimpleNamespace(agent="codex", ready=True, why=""),
+            SimpleNamespace(agent="antigravity", ready=False, why=LIMITED),
+        ],
+    )
+
+
+def _option_labels(select):
+    return [str(prompt) for prompt, value in select._options if value is not tui.Select.BLANK]
+
+
+async def test_limited_agent_label_carries_its_reason_and_ready_label_is_unchanged(
+    tmp_path, monkeypatch, ops
+):
+    _readiness(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        for role in ("implementer", "tester", "reviewer"):
+            labels = _option_labels(screen.query_one(f"#rs-{role}", tui.Select))
+            assert f"antigravity — {LIMITED}" in labels
+            assert "claude" in labels and "codex" in labels
+        await pilot.pause()
+        chain = screen.query_one("#rs-backup", OrderedChain)
+        boxes = {b.agent_name: str(b.label) for b in chain.query(_ChainCheck)}
+        assert boxes["antigravity"] == f"antigravity — {LIMITED}"
+        assert boxes["claude"] == "claude"
+
+
+async def test_saving_a_limited_implementer_makes_check_warn(tmp_path, monkeypatch, ops):
+    _readiness(monkeypatch)
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    monkeypatch.setattr(relay_ops, "forget_antigravity_decline", lambda root: None)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-implementer", tui.Select).value = "antigravity"
+        await pilot.click("#rs-check")
+        await _wait_for(pilot, lambda: "warn" in _checks_text(screen), "the warning")
+        text = _checks_text(screen)
+        assert f"warn  implementer is antigravity, which is {LIMITED}" in text
+        assert "tester is" not in text
+    assert ops[0][0] == "antigravity"
