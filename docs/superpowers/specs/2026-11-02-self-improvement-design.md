@@ -13,6 +13,11 @@ Today whyline only does work when someone starts it. Tests can break on a new Py
 
 It should work on whyline itself and on any repo the user has chosen and given permission to in whyline.
 
+Two rules from the user shape everything below:
+
+- **Vulnerabilities.** Each run looks for newly published vulnerabilities that affect each repo's dependencies, and works out how to resolve each one.
+- **Always human in the loop for GitHub.** Self-improvement pulls the latest code, works on it and makes the change locally, then tells the user what changed. It pushes to GitHub only after the user approves that change. Merging is always the user's call too. No level pushes or merges on its own.
+
 ## What the user gets
 
 1. **Everything lives in Settings.** The console's **Settings** opens with two tabs: **AI providers**, which is today's screen, and **Self-improvement**. Settings is reachable from every mode, Relay included. The Self-improvement tab has:
@@ -23,7 +28,7 @@ It should work on whyline itself and on any repo the user has chosen and given p
      - Daily has a **Weekdays only** checkbox.
    - **Time:** HH:MM, local time, for example 02:00. Below it: `Next run: Tue 3 Nov, 02:00` and `The Mac must be awake at that time; a missed run is reported when it wakes.`
    - **Messages:** **Combined** (default) or **One per repo**, plus **Delivery…** for Telegram and/or email, attachment Word or Markdown, and **Send test**.
-   - **Limits:** run limit (minutes), max agent starts per run, and the defaults for new repos (Fix from, Max fixes, Max minutes per repo, Max changed lines, CI wait).
+   - **Limits:** run limit (minutes), max agent starts per run, and the defaults for new repos (Fix from, Max fixes, Max minutes per repo, Max changed lines).
    - **Repos:** a table of the repos it looks after. Each row shows:
      - the permission level
      - the last result, for example `✅ all checks pass` or `🔧 PR #212 waiting for you`
@@ -33,10 +38,10 @@ It should work on whyline itself and on any repo the user has chosen and given p
    - **Run now** (all repos or the selected one, with a Dry run checkbox), **History** and **Pause / Resume**.
    - **Save** and **Cancel**, like the providers tab. Nothing changes until Save.
 
-   **Relay → Set up** also shows one line for the current repo: `Self-improvement: Open PRs · daily 02:00 · Change…`, or `Self-improvement: off for this repo · Turn on…`. **Change…** opens that repo's row in Settings → Self-improvement. There is one place to save, and two ways in.
+   **Relay → Set up** also shows one line for the current repo: `Self-improvement: Fix and ask · daily 02:00 · Change…`, or `Self-improvement: off for this repo · Turn on…`. **Change…** opens that repo's row in Settings → Self-improvement. There is one place to save, and two ways in.
 2. **Add repo…** takes a folder and a level, then runs **Check** with a ✓ or ✗ per line and a fix button where one exists:
    - the folder is a git repo with a GitHub `origin`
-   - `gh` is signed in and can push to it (only for levels that open PRs)
+   - `gh` is signed in and can push to it (only for Fix and ask, checked so an approval can't fail later)
    - a test command is set (from the relay setup, or typed here)
    - the relay is set up **and committed** (`.whyline/relay/config.toml` tracked), and `doctor` passes. This applies to Plan and above, since the SDLC roles come from it.
    - the review agent has a verified read-only setting (all levels)
@@ -45,27 +50,30 @@ It should work on whyline itself and on any repo the user has chosen and given p
    Saving shows what this level allows, in plain lines, and the user accepts them. That is the permission, the same way an agent is accepted today.
 3. **Permission levels**, per repo:
 
-   | Level | Checks | Writes a fix plan | Fixes on a branch, opens a PR | Merges the PR |
-   |---|---|---|---|---|
-   | **Report only** | ✓ | | | |
-   | **Plan** | ✓ | ✓ (sent in the report, not run) | | |
-   | **Open PRs** (default) | ✓ | ✓ | ✓ | |
-   | **Merge when green** | ✓ | ✓ | ✓ | ✓ once CI passes |
+   | Level | Checks and vulnerabilities | Writes a fix plan | Makes the fix locally and asks you |
+   |---|---|---|---|
+   | **Report only** | ✓ | | |
+   | **Plan** | ✓ | ✓ (sent in the report, not run) | |
+   | **Fix and ask** (default) | ✓ | ✓ | ✓ |
 
-   A **Release** level is not in this plan. It comes after `plans/release-button.plan.md` ships (see Out of scope).
+   After a fix is made, nothing goes to GitHub until the user approves it (see **Approving a change** below). There is no level that pushes or merges by itself. A Release step is not in this plan.
 4. **One schedule for all repos**, set in Settings: daily (optionally weekdays only), weekly on chosen days, or monthly on a day, at a time. It uses the existing agents heartbeat, so it needs no new launchd job. Turning the loop on also turns the agents heartbeat on when it is off, after saying so. One run covers every repo, **one repo at a time**, so a run can't use several agents' quotas at once.
 5. **One combined message per run**, by Telegram, email or both. Delivery is set up the way it is for an agent. Example:
 
    ```
    whyline improve — Mon 2 Nov, 02:00 (ran 47 min)
    ✅ whyline-relay   all checks pass, nothing to do
-   🔧 agentdock       2 findings → PR #212 opened, CI green, waiting for you
+   🔧 agentdock       2 fixes ready (+38 −12 in 3 files) → waiting for your OK to push
+   🛡 agentdock       1 new vulnerability: urllib3 2.2.1, GHSA-xxxx (high), fixed in 2.2.2 → included in the fix
+   ✋ whyline-docs    PR #41: CI green → waiting for you to merge
    📝 TradingPlatform tests fail on 3.11 → plan written (Plan level, not run)
    ⏭ cvfix           skipped: a relay is running there
    Full report attached.
    ```
 
-   - **Attachment:** one Word file with a section per repo: checks and their output tails, findings, the plan, what the fix changed, and the PR link. `.md` is the other choice, through the existing `attach` setting.
+   - **Attachments:**
+     - **The report:** one Word file with a section per repo. It has the checks and their output tails, the vulnerabilities, the findings, the plan, what the fix changed (files, line counts, and a plain summary of each change), and the PR link once there is one. `.md` is the other choice, through the existing `attach` setting.
+     - **The change:** a `<repo>-<date>.patch` file for each fix waiting for approval, so it can be read on a phone.
    - **Heartbeat:** the message is sent **every run, even when everything passes**, so a missing message means Self-improvement didn't run.
    - **Combined or one per repo:** combined is the default.
    - **Immediate alerts**, sent as they happen, outside the digest:
@@ -73,15 +81,35 @@ It should work on whyline itself and on any repo the user has chosen and given p
      - the guard stopped a fix
      - a time limit was hit
      - a scheduled run was missed because the Mac was asleep or off. This is sent on the next heartbeat after it wakes.
-   - **Telegram buttons:** for each PR waiting at **Open PRs**, a separate card follows the digest, with **Merge #212** and **Close #212**. It is an assistant request card, sent through the assistant outbox:
-     - **Action:** a new `improve_pr` action (merge or close)
-     - **Expiry:** its confirm code lasts until the next scheduled run, or 24 hours if Self-improvement has no schedule
-     - **Confirm:** a confirming tap is required whatever the action's approval policy says
-     - **When not sent:** only when the Idea Inbox bot is set up and bound to the same chat as the Self-improvement delivery. Otherwise there is no card, and the digest has the link only.
+     - a **new** high or critical vulnerability was found in a repo's dependencies
+   - **Approval cards:** after the digest, each waiting decision gets its own assistant request card, through the assistant outbox:
+     - a fix waiting to be pushed: **Push and open PR** / **Discard**
+     - an open PR whose CI is green: **Merge #41** / **Close #41**
+     - Each is a new `improve_change` action (push, discard, merge or close).
+     - **Confirm:** a confirming tap is always needed, whatever the action's approval policy says.
+     - **Expiry:** the code lasts until the next scheduled run, or 24 hours if there is no schedule. The next digest offers the card again.
+     - **Telegram:** the card is sent when the assistant bot is bound to the same chat as the delivery.
+     - **Email:** the card is sent through the assistant's existing `yes <code>` email replies, when assistant email is set up. Otherwise the digest says to approve in the console or with `whyline improve approve <repo>`.
+6. **Approving a change.** A fix waiting for approval shows as **⏳ Waiting for you** on its repo's row in Settings → Self-improvement. **Review change…** shows:
+   - the plain summary of each change, and the findings and vulnerabilities it resolves
+   - the checks before and after
+   - the guard result
+   - the full diff, file by file
 
-     Email gets the PR link only.
-6. **History** lists past runs. Each run opens its report, per-repo logs, the plan, the PR, and **Resend**.
-7. **A CLI for scripts**, saving through the same functions as the console:
+   Its buttons:
+   - **Push and open PR**
+   - **Ask for changes…:** typed feedback. The relay revises the fix on the same branch, then the checks, guard and recheck run again, and the user is told again. This uses the same flow as SDLC's Ask for changes.
+   - **Discard**
+   - **Open in console:** work on the clone by hand.
+
+   **Push and open PR** does this, in order:
+   1. Fetch `origin` again. If the default branch moved, rebase the branch on it, then rerun the checks and the guard. On a conflict or a failure, nothing is pushed, and the user is told why.
+   2. Push the `improve/<date>` branch, never a default branch.
+   3. Open the PR.
+
+   A waiting change blocks new fixes for that repo, but checks and reviews still run, and each digest reminds the user with `waiting since <date>`. It never expires on its own. **Merge** appears once the PR's CI is green. The user can also merge on GitHub as usual.
+7. **History** lists past runs. Each run opens its report, per-repo logs, the plan, the change, the PR, and **Resend**.
+8. **A CLI for scripts**, saving through the same functions as the console:
 
    ```
    whyline improve status | run [--repo NAME] [--dry-run] | history | pause | resume
@@ -89,6 +117,7 @@ It should work on whyline itself and on any repo the user has chosen and given p
    whyline improve on | off
    whyline improve schedule daily HH:MM [--weekdays] | weekly DAYS HH:MM | monthly DAY|last HH:MM
    whyline improve delivery ...
+   whyline improve changes NAME | approve NAME | revise NAME "feedback" | discard NAME | merge NAME | vulns NAME
    ```
 
    `--dry-run` runs the checks and the review and writes the report, but never plans, fixes, pushes or sends.
@@ -100,7 +129,7 @@ Each step records its result. A step that fails stops that repo and the run move
 1. **Skip checks.** Skip the repo, with the reason in the digest, when:
    - Self-improvement is paused, or the repo is paused
    - a relay is running in the repo's own checkout. The user is working there, and it would compete for agent quota.
-   - the previous Self-improvement PR for this repo is still open. Self-improvement never piles up PRs, and the digest repeats the open PR.
+   - **No new fix** while the repo has a change waiting for approval, an open Self-improvement PR, or a held fix. Checks, vulnerabilities and review still run and are reported, so the user still hears about new problems.
    - the default branch can't be fetched
 2. **Workspace.** Self-improvement never touches the user's checkout or its `.git`.
    - **Clone:** it keeps its own **separate clone** per repo, `~/.whyline/improve/work/<repo-slug>`, cloned from `origin`, so no `improve/*` branch shows up in the user's repo.
@@ -110,14 +139,36 @@ Each step records its result. A step that fails stops that repo and the run move
    - **Tests:** the repo's test command. A failing command is rerun once. If it passes on the rerun, it is recorded as **flaky** rather than failing.
    - **Extra checks** the user adds per repo, each with a name and a command. Examples: `uv run --python 3.11 pytest -q`, `ruff check`, `uv lock --check`, `pip-audit`. **Detect** offers likely ones from the files it finds: `pyproject.toml`, `package.json`, `ruff.toml`, `uv.lock`.
    - **CI on the default branch:** the latest run's result from `gh run list`, read-only.
+   - **Vulnerabilities** in the repo's dependencies, looked up fresh each run:
+     - **Dependencies:**
+       - **Read from lock files:** `uv.lock`, `poetry.lock`, pinned `requirements*.txt`, `package-lock.json` and `pnpm-lock.yaml`.
+       - **Direct or transitive:** each is marked by checking `pyproject.toml` or `package.json`.
+     - **Sources:**
+       - **OSV.dev** (`/v1/querybatch`), which covers the GitHub advisory database, PyPA and npm advisories. It is called over HTTPS with the standard library. No key is needed, and only package names and versions are sent.
+       - The repo's open **Dependabot alerts** through `gh api`, when the repo has them enabled and the user can read them. Otherwise this source is skipped with a note.
+     - **What is kept** for each vulnerability:
+       - id and aliases (CVE)
+       - summary
+       - severity, from the CVSS score, or the database's severity when there is none
+       - published date
+       - the affected package, version and fixed versions
+       - **new**: whether this run is the first to see it for this repo, tracked per repo
+     - **Failure:** a source that can't be reached is reported as `vulnerability check unavailable: <reason>`. It never fails the repo.
 4. **Review.** One read-only agent run, using the agents runner with `unattended=True`. It gets:
    - the check results
    - the commits since the last Self-improvement run, at most 30
    - the repo's own open whyline Idea Inbox items, read-only, if any
+   - the vulnerabilities, with the advisory text marked as untrusted data
+
+   For each vulnerability, the review says how to resolve it:
+   - **upgrade** to the lowest fixed version that the repo's version constraints allow, or say which constraint has to change
+   - with no fixed version, a **mitigation** in the code. It checks whether the repo uses the affected function or feature (with file:line evidence), so a vulnerability that can't be reached is reported as `not affected: <why>` rather than fixed.
+
+   Each becomes a finding with `kind: "security"`. A vulnerability the review doesn't mention is added by whyline as a security finding, so none are dropped.
 
    It writes **findings**, each with id, severity (`high` / `medium` / `low`), title, evidence (a file:line or a check name), suggested fix and size (`small` / `too big`). Its output is parsed as JSON. If the JSON is bad, the whole text goes into the report and the repo stops at this step. Any failing check that the review misses is added by whyline as a `high` finding, so a red test is never dropped.
 5. **Choose.**
-   - **Take:** findings at or above the repo's **Fix from** severity (default `medium`), and only those of size `small`, up to **Max fixes per run** (default 3), highest severity first.
+   - **Take:** findings at or above the repo's **Fix from** severity (default `medium`), and only those of size `small`, up to **Max fixes per run** (default 3). Security findings come first, then the rest by severity.
    - **Report only:** findings marked `too big`. They are listed with a note to plan them as features.
    - **Level stop:** at **Report only**, the repo stops here.
 6. **Plan.**
@@ -139,32 +190,44 @@ Each step records its result. A step that fails stops that repo and the run move
      - `.github/workflows/**`
      - `.whyline/**`, except `.whyline/decisions.md`
      - release and publishing settings
-     - lock files, unless a finding is about dependencies
+     - lock files and dependency manifests, unless a taken finding is a security or dependency finding, and then only for the packages it names
 
      Changes under `docs/sdlc/improve-*` and `plans/improve-*` are always allowed.
    - is bigger than **Max changed lines** (default 400)
    - contains something that looks like a secret, using the same pattern set the release security gate will use. The first version uses a small built-in set.
-9. **Recheck.** All the checks run again on the branch. The tests must pass, and every check that failed before must now pass or be listed as not fixed. If the tests fail, nothing is pushed and the digest says why.
-10. **PR.** At **Open PRs** and above:
-    - **Push:** the branch is pushed. It is never the default branch, and never forced over a branch Self-improvement didn't create.
-    - **Open:** `gh pr create` opens a PR titled `improve: <summary>`. Its body lists the findings, the checks before and after, the guard result and links to the documents.
-11. **Merge.** At **Merge when green**:
-    - **Wait:** Self-improvement waits up to **CI wait** (default 30 minutes) for the PR's checks.
-    - **All green:** it merges with `gh pr merge --squash --delete-branch`.
-    - **Otherwise:** it leaves the PR open and says so. The next run won't add another PR, and tries the merge again.
+9. **Recheck.** All the checks and the vulnerability lookup run again on the branch.
+   - The tests must pass.
+   - Every check that failed before must now pass, or be listed as not fixed.
+   - Every vulnerability taken must be gone, or be listed as not fixed.
+
+   If the tests fail, the change is not offered, and the digest says why.
+10. **Tell the user and wait.** The change stays on `improve/<date>` in the clone, as **waiting for approval**:
+    - A plain summary of each change is written: what changed, why, which finding or vulnerability it resolves, and files and lines.
+    - It goes into the report, with the `.patch` attached and an approval card.
+    - Nothing is pushed.
+
+    What happens next is the user's decision: approve, ask for changes, or discard (see **Approving a change**).
+11. **On approval.** It fetches, rebases if needed and rechecks, pushes the branch, and opens a PR titled `improve: <summary>`. The PR body lists:
+    - the findings and vulnerabilities
+    - the checks before and after
+    - the guard result
+    - the links to the documents
+
+    From then on, the repo's row and each digest show the PR's CI state. **Merge** is offered only when CI is green, and runs only on the user's tap or click, using `gh pr merge --squash --delete-branch`.
 
 ## Safety rules
 
+- **Nothing leaves this Mac without the user's approval.** A push, a PR and a merge each need an explicit approval of that change. An approval is a console button, a confirmed Telegram or email card, or `whyline improve approve`. An approval applies to the exact commit it was shown: if the branch changes afterwards, for example after a rebase or Ask for changes, the user approves again.
 - Nothing is pushed to a default branch, ever. Every change goes through a branch, a PR and CI.
 - A repo is looked after only when the user has added it and accepted its level on this Mac. The list and levels live in `~/.whyline/improve/repos.toml` (0600), never in the repo, for the same reason deliveries are per Mac. Raising a level asks for acceptance again.
 - Limits stop a run that goes wrong quietly:
   - per-repo minutes and per-run minutes (default 240, after which remaining repos are skipped)
   - max fixes per run
   - max changed lines
-  - one open PR per repo
+  - one waiting change or open PR per repo
   - Self-improvement's own agent count per run (default 40 agent starts, review and relay together). It is separate from the workflows daily agent cap, which counts workflow steps only.
 - **Pause Self-improvement** stops future runs at once and stops a running one at its next step. It is in the console, the CLI, and Telegram as `pause improvement` / `resume improvement`, which are assistant verbs.
-- **Outside text is untrusted.** Test output, repo files and commit messages can contain text aimed at an agent. The review agent is read-only. The fix runs only through the relay's normal reviewer and tester. The guard checks the diff mechanically. At **Open PRs**, a human still merges. The design accepts that a hostile repo could steer a fix within those bounds. That is why the default level is **Open PRs**, not **Merge when green**.
+- **Outside text is untrusted.** Test output, repo files and commit messages can contain text aimed at an agent. The review agent is read-only. Vulnerability advisories come from the internet and are treated the same way. The fix runs only through the relay's normal reviewer and tester. The guard checks the diff mechanically. A human approves every push and every merge, after seeing the diff.
 - Secrets never go out. Report text is redacted for the Telegram token and stored credentials before it is written or sent. Output tails are capped at 60 lines per check.
 - One Self-improvement run at a time, under `~/.whyline/improve/run.lock`. A heartbeat that finds it held does nothing.
 
@@ -191,7 +254,9 @@ New package `src/whyline/improve/`:
 - `review.py`: the review prompt, the agent run, findings parsing and the merge with failing checks
 - `fix.py`: the SDLC Small/Auto plan, the relay run with limits, pause handling
 - `guard.py`: diff rules
-- `github.py`: push, PR create, PR state, CI wait, merge (all through `gh`, with an injectable runner)
+- `github.py`: push, PR create, PR state, CI state, merge, Dependabot alerts (all through `gh`, with an injectable runner)
+- `vulns.py`: reading lock files, OSV querybatch with an injectable HTTP call, Dependabot alerts, severity, and what's new since last run
+- `changes.py`: waiting changes, the change summary and `.patch`, approve (fetch, rebase, recheck, push, PR), ask for changes, discard, merge
 - `report.py`: the per-repo section, the digest text, `report.md` → `.docx` through `whyline.agents.docx`
 - `notify.py`: the digest and immediate alerts through `whyline.agents.deliver.send`, and the Telegram buttons through the assistant's request cards
 - `runner.py`: one run over all repos, the lock, the limits, pause
@@ -208,7 +273,8 @@ Heartbeat: `agents/tick.py` gets `_run_improve(now)` beside `_run_workflows`. It
 - **All settings in Settings → Self-improvement**, the user's request, with an On/Off switch and Daily / Weekly / Monthly at a time. Relay → Set up links to it for the current repo, rather than having a second editor. My call: a tab in the existing Settings modal, not a new console mode. That keeps the top bar as it is.
 - **One schedule and one combined digest for all repos**, the user's preference. Per repo is a setting.
 - **Word attachment by default.** whyline already makes `.docx`, and it opens on a phone.
-- **Default level Open PRs**: it updates through GitHub, and a human merges.
+- **Human approval for every push and merge** is the user's rule. There is no auto-push or auto-merge level. The default level is **Fix and ask**.
+- **OSV.dev for vulnerabilities**, plus Dependabot when available. It's my call: free, no key, and it covers PyPI and npm with fixed versions. Rejected: requiring `pip-audit` or `npm audit`. They are still available as extra checks, but they'd be a dependency per ecosystem.
 - **Plans go through the SDLC pipeline at Small/Auto**, not a new planner. Self-improvement's fixes get the same reviewable documents as any other work.
 - **Its own clone and an `improve/` branch.** It never touches the user's checkout or branches.
 - **Rejected: one agent with full access doing everything.** It can't be limited or checked. The checks are commands, the review is read-only, the fix goes through the relay's reviewer and tester, and the guard is mechanical.
@@ -216,7 +282,7 @@ Heartbeat: `agents/tick.py` gets `_run_improve(now)` beside `_run_workflows`. It
 
 ## Calls made after the builder check
 
-- **Telegram buttons.** A separate assistant card, not buttons on the digest. It has a long expiry and always needs a confirming tap, and it is sent only when the assistant bot is bound to the same chat.
+- **Approval cards.** A separate assistant card per decision (push, discard, merge, close), not buttons on the digest. Each one has a long expiry and always needs a confirming tap.
 - **SDLC Auto.** It gets a **build off** option. Self-improvement runs the relay itself, with its own limits, and never writes the relay config.
 - **A separate clone.** Self-improvement uses a clone, not a `git worktree` of the user's repo, so the user's repo and `.git` are never changed.
 - **A firm time limit.** It runs `whyline-relay stop`, then kills the process group after 2 minutes.
@@ -230,6 +296,7 @@ Heartbeat: `agents/tick.py` gets `_run_improve(now)` beside `_run_workflows`. It
 - **Running on another machine or in the cloud.** Self-improvement runs on this Mac only, so the Mac must be awake at the scheduled time. Missed runs are reported, see above.
 - **Repos on hosts other than GitHub.**
 - **Fixing findings marked "too big".** They are reported, so the user can plan them as features.
+- **Vulnerabilities in the language runtime, OS packages or container images.** Dependencies in lock files only, for now.
 
 ## Testing
 
@@ -244,10 +311,12 @@ Heartbeat: `agents/tick.py` gets `_run_improve(now)` beside `_run_workflows`. It
   - the combined digest text exactly
   - the heartbeat on an all-pass run
   - an alert on a guard refusal
-  - nothing pushed at Plan level
-  - no second PR while one is open
+  - nothing pushed at any level until approval
+  - no second fix while one is waiting
+  - an approval of an old commit refused
+  - a new vulnerability alerted once, not on the next run
 - An integration test with a real local git repo and a bare "origin" checks:
   - worktree reset
   - branch naming
-  - push to the bare remote (`gh` faked)
+  - nothing pushed before approval, then a push to the bare remote after approval (`gh` faked)
   - the user's checkout and its `.git` refs unchanged before and after
