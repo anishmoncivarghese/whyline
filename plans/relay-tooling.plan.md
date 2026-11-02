@@ -376,7 +376,7 @@ Global constraints:
 - Every subprocess goes through an injected `run`, and every agent through the existing injectable runner. No test runs a real agent.
 - Verify every task with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing outside the files a task names.
 
-- [ ] FIX-1: Snapshot and Undo fix
+- [x] FIX-1: Snapshot and Undo fix
   Create `src/whyline/console/fixmode.py` and `tests/console/test_fixmode.py` only.
   - `snapshot(root, *, run) -> Snapshot(id, head, branch, commit, untracked, created)`:
     - build a commit of the whole working tree with a temporary index: `GIT_INDEX_FILE=<tmp> git add -A`, then `git write-tree`, then `git commit-tree <tree> -p HEAD -m "whyline fix snapshot <id>"`. This covers tracked changes and untracked files that aren't ignored. HEAD, the real index and the working tree are never touched.
