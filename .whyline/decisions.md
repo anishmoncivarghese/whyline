@@ -32340,3 +32340,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 25dd4794db3c4e6f91b6ab36e9a34dc8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:41:49.711Z"} -->
+
+## 2026-11-02 — Console Help text edited in repl.py, not tui.py; docs in README relay section
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-7
+
+**Because:** Help text lives in repl._help_text (tui only dispatches /help); no docs/relay.md exists
+
+**Rejected:**
+
+- edit tui.py — contains no help text
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: a54a1da8b8ff4abd8ac91c47646438a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:43:04.730Z"} -->
+
+## 2026-11-02 — Pass SWP-7 Round 2 behavioral testing despite unrelated relay-screen suite failures
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-7
+
+**Because:** README and console Help explain Continue with, Also use as backup next time, Set up quota labels, and whyline relay roles status; targeted console tests pass, while the full suite's two failures are in untouched relay_screens behavior and one passes when rerun in isolation
+
+**Rejected:**
+
+- Fail SWP-7 for the full-suite failures — neither failure exercises or originates from the README/help-only task changes
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 942d2f1ed1aa43be9f00572c6be80de6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T04:55:41.202Z"} -->
+
+## 2026-11-02 — Approve SWP-7 Round 3 documentation and help changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-7
+
+**Because:** README and console Help accurately explain Continue with, the backup checkbox, Set up quota labels, and whyline relay roles status; the focused test covers the mandated Help phrases, git diff --check is clean, and uv run pytest -q completed at 100% with one skip and no failures
+
+**Rejected:**
+
+- Request changes — no concrete correctness, scope, safety, or test-coverage defect was found
+
+**Files:** README.md, src/whyline/console/repl.py, tests/console/test_repl.py
+
+<!-- whyline-event: 7023044899cd4b44973a75eea100aff5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T05:07:41.766Z"} -->

@@ -113,6 +113,11 @@ def _help_text() -> str:
         "           manual  confirm a release's manual checks",
         "  Agents   list, run/edit/delete/history <name>, pause/resume/accept <name>",
         "  Resolve  explain a Set up or Resume problem and fix it with one click",
+        "  Continue with <agent>  on a usage-limit or login pause, switch that role to a\n"
+        "           ready agent and resume; tick \"Also use as backup next time\" to add it\n"
+        "           to the role's backup chain. Set up marks agents that can't run, e.g.\n"
+        "           \"antigravity — out of quota until …\". The same readiness from a\n"
+        "           terminal: whyline relay roles status",
         "  Files    split the console and follow the file the agent is writing",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),

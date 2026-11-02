@@ -92,6 +92,15 @@ limit, the next one takes over. Resolve names the model that ran out, offers
 another, and offers to switch back once the original is signed in again. On a
 Mac, **Awake** keeps the computer from sleeping through a long run.
 
+When a run pauses because an agent hit a usage limit or is signed out, Resolve
+shows one **Continue with `<agent>`** button for each agent that is ready. One
+tap switches that role to the agent and resumes. Tick **Also use as backup next
+time** to add the agent to the role's backup chain as well. In **Set up**, any
+role or backup choice that cannot run is labelled with the reason, for example
+`antigravity — out of quota until 2026-11-04 18:30`. You can still pick it, and
+Check warns about it. For the same readiness from a terminal, run
+`whyline relay roles status`.
+
 ### 🤖 Agents that work while you don't
 
 A **saved Agent** is a reusable, **read-only** job with its own instructions,

@@ -1242,6 +1242,13 @@ def test_timeout_slash_command_reads_sets_and_validates_in_repl(tmp_path, monkey
     assert seen_timeouts[1] == ("finite-turn", 900)
 
 
+def test_help_text_names_continue_with_and_roles_status():
+    text = repl._help_text()
+    assert "Continue with" in text
+    assert "Also use as backup next time" in text
+    assert "whyline relay roles status" in text
+
+
 def test_help_text_includes_manual_checks_line():
     assert "manual  confirm a release's manual checks" in repl._help_text()
 
