@@ -6921,3 +6921,62 @@ def test_auto_run_recreated_rule_pause_asks_agent_instead_of_once_per_round_reje
     assert launched == []
 
 
+
+
+def _cause_problem(tmp_path: Path, reason: str) -> "recovery.Problem":
+    problem = recovery.Problem(
+        id="other",
+        summary="Paused",
+        evidence=[],
+        options=[recovery.Option("show", "Show evidence", "", recommended=False, confirm=False)],
+        task_id="LSN-9",
+        pause_reason=reason,
+    )
+    return recovery._with_ask_agent(tmp_path.resolve(), problem)
+
+
+def test_same_cause_as_last_pause_shows_line_with_round(tmp_path: Path) -> None:
+    recovery.record_attempt(
+        tmp_path, "LSN-9", 2, "resolve-auto", "claude", "ok",
+        pause_reason="claude exited without handing off in round 2 (/tmp/a/log.txt)",
+    )
+    problem = _cause_problem(
+        tmp_path, "claude exited without handing off in round 3 (/tmp/b/log.txt)"
+    )
+    assert problem.summary.startswith("Same cause as the last pause (round 2).")
+
+
+def test_different_cause_shows_no_same_cause_line(tmp_path: Path) -> None:
+    recovery.record_attempt(
+        tmp_path, "LSN-9", 2, "resolve-auto", "claude", "ok",
+        pause_reason="claude exited without handing off",
+    )
+    problem = _cause_problem(tmp_path, "claude hit a usage or rate limit")
+    assert "Same cause" not in problem.summary
+
+
+def test_refused_test_command_gets_settings_hint_first(tmp_path: Path) -> None:
+    reason = "claude could not run a required command: uv run pytest -q: permission denied"
+    recovery.record_attempt(
+        tmp_path, "LSN-9", 1, "resolve-auto", "claude", "ok", pause_reason=reason
+    )
+    problem = _cause_problem(tmp_path, reason)
+    lines = problem.summary.splitlines()
+    assert lines[0] == "Set the test command in Settings, then Resume and keep changes"
+    assert lines[1].startswith("Same cause as the last pause (round 1)")
+
+
+def test_normalise_cause_strips_numeric_round_and_bare_paths() -> None:
+    a = recovery.normalise_cause("stopped after 3-round limit editing work.py")
+    b = recovery.normalise_cause("stopped after 5-round limit editing other.py")
+    assert a == b
+    assert "3" not in a and ".py" not in a
+
+
+def test_record_attempt_cause_uses_inherited_pause_reason(tmp_path: Path) -> None:
+    recovery.record_attempt(tmp_path, "LSN-9", 2, "round-cap", "claude", "ok", pause_reason="hit the 3-round cap on work.py")
+    entry = recovery.record_attempt(tmp_path, "LSN-9", 2, "resolve-auto", "claude", "ok")
+    assert entry["pause_reason"] == "hit the 3-round cap on work.py"
+    assert entry["cause"] == recovery.normalise_cause("hit the 9-round cap on x.py")
+    problem = _cause_problem(tmp_path, "hit the 4-round cap on other.py")
+    assert problem.summary.startswith("Same cause as the last pause (round 2).")

@@ -32542,3 +32542,76 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cd49bc5eddb5467db9581c694999bf0b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:36:49.729Z"} -->
+
+## 2026-11-02 — LSN-3 round-two behavioral testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-3
+
+**Because:** The focused recovery suite verifies repeated normalized causes show the prior round, different causes omit the repeat line, and refused test commands put the Settings guidance first; the complete project suite also passed with one expected skip
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 3d16498a975c42c2a6077cd142a4708e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T06:51:38.225Z"} -->
+
+## 2026-11-02 — LSN-3 round-three review requests normalization fixes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-3
+
+**Because:** The full suite passed, but normalise_cause does not remove the project's existing numeric round-cap form such as 3-round or bare relative paths such as work.py, and record_attempt derives cause before it may inherit pause_reason, so repeated pauses can be missed and some final records can lack their required cause
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 25fa2ea361994af5a7cbae3ab563967a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T07:04:01.870Z"} -->
+
+## 2026-11-02 — LSN-3: derive cause after resolve-auto inheritance; strip N-round and bare file names
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-3
+
+**Because:** Inherited pause_reason must feed the stored cause so repeats match; 3-round and work.py varied between pauses
+
+**Rejected:**
+
+- Keep cause derivation up front — misses inherited pause_reasons
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: f75f22e990b346c1989793b8078ae9cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T07:18:14.127Z"} -->
+
+## 2026-11-02 — LSN-3 round-five behavioral testing passes
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-3
+
+**Because:** The focused recovery suite passed all 154 tests, covering normalized repeated causes, different causes, refused test command ordering, numeric round forms, bare paths, and inherited pause reasons; the full suite reached 3285 passed and 1 skipped with one unrelated order-dependent RelaySetupScreen smoke failure that passed both in the focused file and immediately in isolation
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 116505f313784e6cb15af440fef29e89 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T07:31:44.656Z"} -->
+
+## 2026-11-02 — LSN-3 round-six review approves repeated pause-cause guidance
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-3
+
+**Because:** The implementation stores normalized causes after inherited pause reasons are resolved, compares the current pause with the latest attempt for the same task, orders refused-test Settings guidance first, and uv run pytest -q completed with exit code 0
+
+**Rejected:**
+
+- Request changes — no correctness, safety, or coverage defect was found
+
+**Files:** src/whyline/console/recovery.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4ba3a45e27e24f9cac76b52ca9029d3f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T07:44:27.124Z"} -->

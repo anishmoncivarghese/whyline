@@ -432,6 +432,13 @@ def record_attempt(
                     entry["steps"] = prev.get("steps")
                 if prev.get("pause_reason"):
                     entry["pause_reason"] = prev.get("pause_reason")
+    if not entry.get("cause"):
+        raw_reason = str(entry.get("pause_reason") or "")
+        if not raw_reason:
+            raw_reason = str(_read_state_dict(Path(root)).get("paused_reason") or "")
+        cause = normalise_cause(raw_reason)
+        if cause:
+            entry["cause"] = cause
     attempts.append(entry)
     save_attempts(root, attempts)
     return entry
@@ -1616,6 +1623,50 @@ def _is_step_auto_safe(root_path: Path, step: dict[str, Any], task_id: str) -> t
         return True, ""
 
     return False, f"step '{action}' is outside the auto safe set"
+
+
+def normalise_cause(reason: str) -> str:
+    """A pause reason with round numbers, paths, and text past 120 characters removed."""
+    r = _clean_pause_reason(reason)
+    r = re.sub(r"\b[Rr]ound\s*\d+(\s*(?:of|/)\s*\d+)?", "", r)
+    r = re.sub(r"\b\d+[- ]rounds?\b", "", r, flags=re.IGNORECASE)
+    r = re.sub(r"\S*[/\\]\S*", "", r)
+    r = re.sub(r"\b[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{1,5}\b", "", r)
+    r = re.sub(r"\s+", " ", r).strip().lower()
+    return r[:120].strip()
+
+
+_TEST_COMMAND_RE = re.compile(
+    r"\b(pytest|unittest|tox|nox|jest|vitest|(?:npm|yarn|pnpm|cargo|go|make|uv run)\s+(?:run\s+)?test)\b",
+    re.IGNORECASE,
+)
+
+_TEST_COMMAND_HINT = "Set the test command in Settings, then Resume and keep changes"
+
+
+def _is_refused_test_command(reason: str) -> bool:
+    from whyline.console import adapters
+
+    if adapters.failure_kind(reason) != "sandbox":
+        return False
+    return bool(_TEST_COMMAND_RE.search(adapters.extract_refused_command(reason)))
+
+
+def _repeat_cause_round(root_path: Path, task_id: str, reason: str) -> int | None:
+    """Round of the task's last attempt when it has the same cause as `reason`."""
+    cause = normalise_cause(reason)
+    if not cause or not task_id:
+        return None
+    last = next(
+        (e for e in reversed(load_attempts(root_path)) if str(e.get("task")) == task_id),
+        None,
+    )
+    if last is None or str(last.get("cause") or "") != cause:
+        return None
+    try:
+        return int(last.get("round") or 0)
+    except (TypeError, ValueError):
+        return None
 
 
 def _clean_pause_reason(reason: str) -> str:
@@ -3459,6 +3510,15 @@ def _with_ask_agent(root_path: Path, problem: Problem) -> Problem:
             first_proposal=first_proposal_name,
             options=[replace(o, recommended=False) for o in new_prob.options],
         )
+
+    header: list[str] = []
+    if _is_refused_test_command(reason):
+        header.append(_TEST_COMMAND_HINT)
+    repeat_round = _repeat_cause_round(root_path, eff_task, reason)
+    if repeat_round is not None:
+        header.append(f"Same cause as the last pause (round {repeat_round}).")
+    if header:
+        new_prob = replace(new_prob, summary="\n".join([*header, new_prob.summary]))
 
     return new_prob
 
