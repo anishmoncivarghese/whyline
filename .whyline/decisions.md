@@ -33015,3 +33015,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6730a96aa99f4f1b925b1d71dac5ef80 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:50:53.160Z"} -->
+
+## 2026-11-02 — Undo resets the index to HEAD then re-adds the snapshot's staged paths
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-1
+
+**Because:** restores exactly the staged set, at the cost of losing partial-hunk staging
+
+**Rejected:**
+
+- git read-tree of the snapshot index — snapshot commit stores the worktree tree, not the real index
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: fee6cd13bb5e4ddf886726c3aa74c6b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:51:58.644Z"} -->
+
+## 2026-11-02 — Pass FIX-1 snapshot and undo behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-1
+
+**Because:** The six focused tests and an independent staged-add/delete and unusual-filename integration probe passed; the full suite's sole failure is isolated to unchanged relay_screens.py UI code that neither imports nor exercises fixmode
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 6f9fc15916954a3abfa80ee7271fbff3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T12:05:20.629Z"} -->
+
+## 2026-11-02 — Request FIX-1 changes for path-type replacement undo
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-1
+
+**Because:** undo restores deleted snapshot paths before removing added paths; when a snapshot file was replaced by a directory, git restore recreates the file and the later child unlink raises NotADirectoryError, leaving undo partially applied before index restoration
+
+**Rejected:**
+
+- Approve based on the six focused tests — they do not cover file-to-directory or directory-to-file replacements required by whole-tree restoration
+
+**Files:** src/whyline/console/fixmode.py, tests/console/test_fixmode.py
+
+<!-- whyline-event: bded2f10e033477b82aefb1afe858ffc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T12:18:40.484Z"} -->
+
+## 2026-11-02 — Undo removes post-snapshot additions before restoring snapshot paths
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-1
+
+**Because:** restoring first collides when a path changed between file and directory (NotADirectoryError mid-undo)
+
+**Rejected:**
+
+- try/except around restore — leaves partial state and hides the error
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 23671d6205bf451dae2b300d2bd4b637 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T12:19:29.641Z"} -->
+
+## 2026-11-02 — Pass FIX-1 snapshot and path-type replacement undo behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-1
+
+**Because:** All eight focused tests pass, including file-to-directory and directory-to-file replacements; the full suite reached 3317 passed and one flaky unchanged Textual UI failure that passed in isolation and does not exercise fixmode
+
+**Files:** src/whyline/console/fixmode.py, tests/console/test_fixmode.py
+
+<!-- whyline-event: acc277754d4746eaa74c75c0d0ba9b89 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T12:32:15.851Z"} -->
+
+## 2026-11-02 — Approve FIX-1 snapshot and undo implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-1
+
+**Because:** The implementation snapshots the complete non-ignored working tree through a temporary index, restores content and staged paths without disturbing snapshot-time state, safely handles file-directory replacements, and all 8 focused tests pass; the full suite's only failure is an unchanged Textual mount race outside fixmode that reproduced at a different widget in isolation
+
+**Files:** src/whyline/console/fixmode.py, tests/console/test_fixmode.py
+
+<!-- whyline-event: 8d951d302fa44e22b8b5f5309d299ec0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T12:45:30.571Z"} -->
