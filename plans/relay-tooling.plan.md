@@ -283,7 +283,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   When the configured agent has a limit (`failover.agent_limits`), the problem text says "<agent> is logged in but out of quota until …" and "Switch back to <agent> anyway" is left out. For a limit pause with a ready agent, option 1 (recommended) is "Continue with <first ready agent>", which runs `relay_ops.switch_role` and the resume it returns. Ask agent moves after it. Auto Resolve applies option 1 only when that agent is already in the backup chain. Otherwise it stops and asks, so Auto never starts an agent the user did not choose.
   Tests: a limited configured agent gets the quota text and no "Switch back" option, the ready agent is recommended, Auto applies it only from the chain, and with no ready agent the options are unchanged.
 
-- [ ] SWP-7: Docs and help
+- [x] SWP-7: Docs and help
   Edit `docs/relay.md` (or the relay section of `README.md` if there is no `docs/relay.md`) and the console Help text in `src/whyline/console/tui.py`, with their tests only.
   Explain the Continue with buttons, the "Also use as backup next time" checkbox, the quota labels in Set up, and `whyline relay roles status` for the same readiness from the command line.
   Tests: the Help text names Continue with and roles status.
