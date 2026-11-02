@@ -306,7 +306,7 @@ Console first: every new setting has a console control that saves through the sa
 
 Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with no duration. No fixed sleep, no network, no real vendor agent (inject fake runners), no real home directory, and no `/Users/` path. New console tests must pass at 80x24. `uv run pytest -q` is the suite command.
 
-- [ ] LSN-1: Ask agent has a time limit
+- [x] LSN-1: Ask agent has a time limit
   Edit `src/whyline/console/recovery.py` (`ask_agent`) and `tests/console/test_recovery.py` only.
   `ask_agent` takes `timeout_seconds`. The default is the relay timeout from `relay_ops` (`_timeout_seconds_kwarg`), capped at 10 minutes. When it runs out, end the agent's whole process group. Then return a result whose diagnosis says "<agent> did not answer within <n> min", with no recommendation, so Resolve still offers its other options.
   Tests: a fake agent that never exits is ended at the limit and its process group is gone, a fast agent is unchanged, and a timed-out result offers Resume and keep changes.
