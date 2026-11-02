@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-01T18:00:00+05:30 -->
 # Plan as an agentic SDLC pipeline, with a reviewable document set
 
-Runs after `plans/relay-tooling.plan.md` and before `plans/job-search-5.plan.md`. Design: `docs/superpowers/specs/2026-11-01-agentic-sdlc-pipeline-design.md`. Read it before any task. This plan replaces PFB-1..5, which were dropped from `plans/relay-tooling.plan.md`. It needs whyline-relay 0.2.41 with RDOC-1..3 (`~/whyline-relay/plans/documents.plan.md`), which SDLC-1 checks.
+Runs after `plans/relay-chat.plan.md` (which runs after `plans/relay-tooling.plan.md`) and before `plans/job-search-5.plan.md`. Design: `docs/superpowers/specs/2026-11-01-agentic-sdlc-pipeline-design.md`. Read it before any task. This plan replaces PFB-1..5, which were dropped from `plans/relay-tooling.plan.md`. It needs whyline-relay 0.2.41 with RDOC-1..3 (`~/whyline-relay/plans/documents.plan.md`), which SDLC-1 checks.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

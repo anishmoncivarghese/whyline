@@ -58,7 +58,7 @@ Rules every task keeps:
   - **Plan progress:** done and open task ids with titles, from the plan file's checkboxes.
   - **Changes so far:** `git --no-optional-locks diff --stat <start>` and `git --no-optional-locks log --oneline -10`.
 
-  Each section is wrapped in `<untrusted-data section="…">` tags. The whole snapshot is trimmed to `max_chars`, oldest log lines first, through `whyline.textbudget`.
+  Each section is wrapped in `<untrusted-data section="…">` tags. The whole snapshot is trimmed to `max_chars`, oldest log lines first; the trimming lives in `snapshot.py` (`whyline.textbudget` has only clipping helpers).
 
   A missing piece (no relay yet, no handoff, no log) becomes one plain line, never an error.
   Tests:
@@ -69,7 +69,7 @@ Rules every task keeps:
 
 - [ ] RCH-3: Choosing the chat agent
   Create `src/whyline/relaychat/agent_choice.py` and its tests.
-  1. `choices(repo) -> list[str]` lists the agents installed that have a read-only mode in `whyline.agents.capabilities`.
+  1. `choices(repo) -> list[str]` lists the installed agents for which `whyline.agents.capabilities.can_run(cli)` is true, which means they have a read-only mode.
   2. `pick(repo, chosen=None) -> Pick(agent, shares_quota: bool, why)`:
      1. a saved or `chosen` agent wins if it is in `choices`
      2. otherwise the first agent in the relay backup chain (`whyline_relay.setup.read_backup`) that is in `choices` and isn't the agent of the role now working (`relay_ops.current_roles` plus relay state)
@@ -86,7 +86,10 @@ Rules every task keeps:
      - says it must not edit, run tests or run commands that change anything
      - asks it to answer briefly and cite files as `path:line`
      - includes the snapshot, the last 6 exchanges from history, and the question
-  3. Run through `whyline.agents.runner` with `capabilities` read-only arguments, in the repo, with `GIT_OPTIONAL_LOCKS=0` added to the environment, and the timeout from settings (0 means none).
+  3. Run the agent:
+     - Build its command the way `whyline.agents.runner._command` does, then pass it through `capabilities.read_only_command(cli, command)`. A `None` result refuses with a plain message.
+     - Run that in the repo with `GIT_OPTIONAL_LOCKS=0` added to the environment, with the timeout from settings (0 means none), killing the process group on timeout or cancel.
+     - Read the answer with the same adapter `runner._answer` uses.
   4. Append the question and the answer to history under the snapshot's `run_id`.
   5. Outcomes:
      - a timeout, a missing agent or a limit gives `ok=False` with a plain message, and is recorded too

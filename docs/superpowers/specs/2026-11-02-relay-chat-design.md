@@ -42,7 +42,7 @@ The agent behind it is a fresh one and must never disturb the running relay.
 
 ## What the snapshot holds
 
-Built fresh for every question, capped at a size limit (default 40,000 characters, trimmed oldest-log-first through `whyline.textbudget`):
+Built fresh for every question, capped at a size limit (default 40,000 characters, trimmed oldest-log-first):
 - **Relay state:** running / paused (with reason) / stopped / done, branch, plan file, current task id and title, round, stage, role agents, time on this turn. This comes from `whyline_relay.state` and `adapters.run_status`.
 - **Recent log:** the last 120 lines of the current round log.
 - **Latest handoff:** status, summary, files, tests.
@@ -82,7 +82,7 @@ These are the requirements this feature exists for:
 
 ## Decisions (my calls)
 
-- **Reuse the read-only runner.** Use `whyline.agents.runner` and `capabilities`, not `adapters.run_chat_turn`. Chat mode's `chat.run_turn` allows edits and reports a diff stat, which is wrong here.
+- **Reuse the read-only command builder.** Build the command as `whyline.agents.runner` does and make it read-only with `capabilities.read_only_command`. Don't use `adapters.run_chat_turn`. Chat mode's `chat.run_turn` allows edits and reports a diff stat, which is wrong here.
 - **Code layout:**
   - non-widget code in `src/whyline/relaychat/`: `snapshot.py`, `ask.py`, `history.py`, `settings.py`
   - widget code in `src/whyline/console/relay_chat_tab.py`
