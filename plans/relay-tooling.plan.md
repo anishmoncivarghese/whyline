@@ -257,7 +257,7 @@ Tests use `App.run_test()`, press buttons by id, and `await pilot.pause()` with 
   Each role and backup option whose readiness row is not ready reads `<agent> — <why>`, for example "antigravity — out of quota until 2026-11-04 18:30". It can still be chosen. When one is saved for a role, Check shows `warn  <role> is <agent>, which is <why>`.
   Tests: a limited agent's label carries its reason, a ready agent's label is unchanged, and saving a limited implementer makes Check warn.
 
-- [ ] SWP-3: Tell the paused task's own changes from other changes
+- [x] SWP-3: Tell the paused task's own changes from other changes
   Edit `src/whyline/console/recovery.py` and `tests/console/test_recovery.py` only.
   Add `recovery.task_owned_dirty(root, task_id) -> tuple[list[str], list[str]]`, returning (owned, unrelated). Relay runtime state under `.whyline/relay/` is ignored. A dirty path counts as owned when any of these is true:
   - one of the task's handoffs lists it (reuse `_task_handoff_paths`)
