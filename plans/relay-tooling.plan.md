@@ -577,8 +577,17 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   Tests: the list holds no effort suffix; `claude-opus-5-5-high` is refused with a reason; `sonnet` and `claude-opus-5-5` pass; a recovery step naming a bad model is refused and `config.toml` is unchanged.
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
+- [ ] AUTO-1: Auto allows one recovery per pause, not per round number
+  Edit `src/whyline/console/recovery.py`, `src/whyline/console/tui.py` and their tests only.
+  On 2026-11-02, FIX-2 paused three times at "round 18": the round number doesn't change while a stage is retried. `recovery.allowed(root, task_id, round_num)` therefore refused every Auto recovery after the first, with "recovery already attempted for FIX-2 round 18", even though each pause had a different cause.
+  1. Key the record by the pause, not the round: `task`, `round`, the saved `stage`, the stage visit counts, and a short hash of `paused_reason`. `allowed` refuses only when that exact pause was already attempted.
+  2. Old records without the new fields still load and are matched by task and round only, as today.
+  3. The Auto stop text names the pause it refused to repeat: "Auto already tried this exact pause (<first 60 characters of the reason>)".
+  Tests: two pauses on the same round with different reasons both get one attempt; the same pause twice stops; old records still load.
+  Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
+
 ## Publish
 
-- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, RCAP-1..2, RST-8 and MDL-1
+- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, RCAP-1..2, RST-8, MDL-1 and AUTO-1
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
