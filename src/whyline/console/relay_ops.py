@@ -955,6 +955,36 @@ def ready_for(root: Path, role: str) -> list[str]:
     return [name for name in setup_choice_agents(root) if name in ready and name not in taken]
 
 
+def switch_role(root: Path, role: str, agent: str, add_backup: bool) -> list[str]:
+    """Point `role` at `agent` for good, optionally adding it to the backup
+    chain, and return the arguments that resume the paused run.
+
+    Only `role` changes; the other roles are saved as they were. The resume
+    keeps the task's dirty work (`--allow-dirty`) only when every dirty path is
+    the task's own, as `recovery.task_owned_dirty` classifies them."""
+    stored = current_roles(root)
+    if role not in ("implementer", "tester", "reviewer"):
+        raise ValueError(f"unknown role: {role}")
+    chain = list(stored["backup"])
+    if add_backup and agent not in chain:
+        chain.append(agent)
+    picked = {key: stored[key] for key in ("implementer", "tester", "reviewer")}
+    picked[role] = agent
+    save_roles(root, picked["implementer"], picked["tester"], picked["reviewer"], chain)
+    try:
+        from whyline.console import recovery
+        from whyline_relay import state as relay_state
+
+        saved = relay_state.load(root)
+        task_id = saved.task_id if saved else ""
+        owned, unrelated = recovery.task_owned_dirty(root, task_id) if task_id else ([], [])
+    except Exception:  # unreadable state: let the relay refuse a dirty tree itself
+        return ["resume"]
+    if owned and not unrelated:
+        return ["resume", "--allow-dirty"]
+    return ["resume"]
+
+
 def read_agent_model(root: Path, agent: str) -> str:
     """The default model configured for `agent` in .whyline/relay/config.toml,
     or '' if none is configured (CLI default)."""

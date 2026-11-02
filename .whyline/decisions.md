@@ -32157,3 +32157,101 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b7c7439aa660424a846de528964dd8e0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:40:58.288Z"} -->
+
+## 2026-11-02 — Continue with <agent> infers the paused role from the pause text, falling back to implementer
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-5
+
+**Because:** relay state stores no paused role; the pause text names it or begins with the limited agent
+
+**Rejected:**
+
+- Add a role field to relay state — outside SWP-5's file scope
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 03106bd839894d2f85820b89af2b0398 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:44:12.480Z"} -->
+
+## 2026-11-02 — Pass SWP-5 Round 2 continuation behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-5
+
+**Because:** The five focused usage-limit pause tests passed for ready-agent buttons, no-ready messaging, non-limit hiding, backup-chain opt-in, role persistence, and resume --allow-dirty; the full suite also passed with 3269 tests and one skip
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 143a7487fac646f8aa9cce57039d670d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T02:56:03.459Z"} -->
+
+## 2026-11-02 — Reject SWP-5 Round 3 because pause role inference can persist the wrong role
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-5
+
+**Because:** Real quota and login pause messages normally name only the failed agent; when one agent fills multiple roles, _paused_role selects the first matching run role instead of the role mapped from RelayState.stage, and the new tests avoid this by injecting 'for implementer' into the pause text
+
+**Rejected:**
+
+- Approve from focused test success — the tests pass but do not cover the ambiguous production pause format
+
+**Files:** src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 61f4fb8512d04835b021c771789f87d2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T03:08:45.643Z"} -->
+
+## 2026-11-02 — Continue with <agent> resolves the paused role from RelayState.stage via the configured pipeline first; text inference is only a fallback
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SWP-5
+
+**Because:** real quota/login pause text names only the failed agent, so with one agent in several roles first-match inference could save the wrong role
+
+**Rejected:**
+
+- Add a role field to relay state — outside SWP-5 file scope
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 4eb1cb750dad4c7cae34d31a62a4718f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T03:10:02.684Z"} -->
+
+## 2026-11-02 — Pass SWP-5 Round 5 continuation behavior
+
+**Actor:** codex
+**Role:** tester
+**Task:** SWP-5
+
+**Because:** The six focused tests passed for ready-agent buttons, no-ready messaging, non-limit hiding, configured-stage role resolution, backup-chain opt-in, role persistence, and resume --allow-dirty; two full-suite runs each hit a different unrelated asynchronous TUI flake, and both failing tests passed in isolation
+
+**Rejected:**
+
+- Fail SWP-5 for the full-suite flakes — neither failure exercised the changed behavior, the failures moved between unrelated tests, and each reproduced test passed on rerun
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: 00f916da4b4f4302a5487548f2aaabd7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T03:34:12.101Z"} -->
+
+## 2026-11-02 — Approve SWP-5 Round 6 continuation behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SWP-5
+
+**Because:** The implementation shows up to three ready-agent choices only for quota, login, or exhausted-backup pauses; resolves the paused role from the configured stage; saves only that role with optional deduplicated backup insertion; resumes with allow-dirty only for task-owned changes; and the plain full suite plus diff check passed
+
+**Rejected:**
+
+- Request further changes — no task-scoped correctness, safety, or test-coverage defect remained after the Round 5 role-resolution fix
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, tests/console/test_tui.py
+
+<!-- whyline-event: b6957280a6f24c409381dfdc3a990272 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T03:46:22.302Z"} -->

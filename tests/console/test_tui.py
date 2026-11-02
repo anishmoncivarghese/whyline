@@ -4517,3 +4517,138 @@ async def test_switch_note_reads_run_roles_at_most_every_two_seconds(tmp_path, m
         clock["mono"] += 1
         app._tick()
         assert len(reads) == before + 1
+
+
+def _limit_pause_app(
+    tmp_path,
+    monkeypatch,
+    text="claude hit its usage limit for implementer; try again later",
+    ready=("codex", "gemini"),
+):
+    from types import SimpleNamespace
+
+    from whyline.console import relay_ops
+
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    monkeypatch.setattr(relay_ops, "stale_pause", lambda root: None)
+    monkeypatch.setattr(relay_ops, "ready_for", lambda root, role: list(ready))
+    monkeypatch.setattr(
+        relay_ops,
+        "agent_readiness",
+        lambda root: [
+            SimpleNamespace(agent="claude", ready=False, why="usage limit"),
+            *[SimpleNamespace(agent=a, ready=True, why="") for a in ready],
+        ],
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._last_pause_text = text
+    return app
+
+
+def _continue_buttons(app):
+    return [b for b in app.query("#pause-actions Button") if b.display and b.id != "pause-change-agents"]
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_limit_pause_shows_a_continue_button_per_ready_agent(tmp_path, monkeypatch):
+    app = _limit_pause_app(tmp_path, monkeypatch)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert {str(b.label) for b in _continue_buttons(app)} == {
+            "Continue with codex",
+            "Continue with gemini",
+        }
+        assert app.query_one("#pause-add-backup", tui.Checkbox).value is True
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_limit_pause_with_no_ready_agent_says_why(tmp_path, monkeypatch):
+    app = _limit_pause_app(tmp_path, monkeypatch, ready=())
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert not _continue_buttons(app)
+        note = str(app.query_one("#pause-continue-note").render())
+        assert "No other agent is ready: claude — usage limit" in note
+        assert app.query_one("#pause-change-agents", tui.Button).display
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_shared_agent_pause_uses_the_paused_stage_role(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from whyline.console import relay_ops
+    from whyline_relay import config as relay_config, state as relay_state
+
+    app = _limit_pause_app(tmp_path, monkeypatch, text="claude hit its usage limit; try again later")
+    asked = []
+    monkeypatch.setattr(relay_ops, "ready_for", lambda root, role: asked.append(role) or ["codex"])
+    monkeypatch.setattr(
+        relay_ops,
+        "run_roles",
+        lambda root: [
+            SimpleNamespace(role="implementer", current="claude"),
+            SimpleNamespace(role="tester", current="claude"),
+            SimpleNamespace(role="reviewer", current="claude"),
+        ],
+    )
+    monkeypatch.setattr(relay_state, "load", lambda root: SimpleNamespace(stage="check", paused_reason="x"))
+    pipe = SimpleNamespace(stages={"check": SimpleNamespace(role="tester")})
+    monkeypatch.setattr(relay_config, "load", lambda root: SimpleNamespace(pipeline=pipe, backup_chain=[]))
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert asked and set(asked) == {"tester"}
+        assert app._pause_role == "tester"
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_another_kind_of_pause_shows_no_continue_buttons(tmp_path, monkeypatch):
+    app = _limit_pause_app(tmp_path, monkeypatch, text="tests failed twice; fix and resume")
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_relay_buttons()
+        await pilot.pause()
+        assert not _continue_buttons(app)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ticked", [True, False])
+async def test_continue_press_saves_the_role_and_resumes(tmp_path, monkeypatch, ticked):
+    from types import SimpleNamespace
+
+    from whyline.console import recovery, relay_ops
+    from whyline_relay import state as relay_state
+
+    app = _limit_pause_app(tmp_path, monkeypatch)
+    saved = []
+    roles = {"implementer": "claude", "tester": "codex", "reviewer": "codex", "backup": ["gemini"]}
+    monkeypatch.setattr(relay_ops, "current_roles", lambda root: dict(roles))
+    monkeypatch.setattr(
+        relay_ops, "save_roles", lambda root, i, t, r, b: saved.append((i, t, r, list(b))) or {}
+    )
+    monkeypatch.setattr(recovery, "task_owned_dirty", lambda root, task: (["a.py"], []))
+    monkeypatch.setattr(
+        relay_state, "load", lambda root: SimpleNamespace(task_id="T-1", paused_reason="x")
+    )
+    launched = []
+    monkeypatch.setattr(app, "_launch_relay", lambda args, **kw: launched.append(list(args)))
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_relay_buttons()
+        await pilot.pause()
+        app.query_one("#pause-add-backup", tui.Checkbox).value = ticked
+        app._continue_with("codex")
+        await pilot.pause()
+    chain = ["gemini", "codex"] if ticked else ["gemini"]
+    assert saved == [("codex", "codex", "codex", chain)]
+    assert launched == [["resume", "--allow-dirty"]]

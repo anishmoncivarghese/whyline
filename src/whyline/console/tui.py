@@ -1068,6 +1068,9 @@ class WhylineConsoleApp(App):
     #plan-actions { height: auto; display: none; }
     #manual-actions { height: auto; display: none; }
     #pause-actions { height: auto; display: none; }
+    #pause-continue-0, #pause-continue-1, #pause-continue-2 { display: none; }
+    #pause-add-backup { display: none; }
+    #pause-continue-note { display: none; width: auto; padding: 1 1; }
     #resolve-actions { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
@@ -2177,6 +2180,8 @@ class WhylineConsoleApp(App):
                 and not getattr(self, "_release_task", None)
                 and not getattr(self, "_manual_checks", None)
             )
+            if self._main("#pause-actions").display:
+                self._sync_continue_buttons()
         except (NoMatches, IndexError):
             pass
 
@@ -3593,6 +3598,11 @@ class WhylineConsoleApp(App):
                 id="manual-actions",
             ),
             Horizontal(
+                Static("", id="pause-continue-note", markup=False),
+                Button("", id="pause-continue-0", variant="success"),
+                Button("", id="pause-continue-1", variant="success"),
+                Button("", id="pause-continue-2", variant="success"),
+                Checkbox("Also use as backup next time", True, id="pause-add-backup"),
                 Button("Change agents", id="pause-change-agents", variant="primary"),
                 id="pause-actions",
             ),
@@ -3680,6 +3690,8 @@ class WhylineConsoleApp(App):
         if event.kind == "pause" and not getattr(self, "_manual_checks", None):
             try:
                 self._main("#pause-actions").display = True
+                self._last_pause_text = event.text
+                self._sync_continue_buttons()
             except (NoMatches, IndexError):
                 pass
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
@@ -3812,6 +3824,8 @@ class WhylineConsoleApp(App):
                 self._open_relay_setup(plan=self._setup_plan_hint)
         elif button_id in ("pause-change-agents", "change-agents"):
             self._open_relay_setup()
+        elif button_id and button_id.startswith("pause-continue-"):
+            self._continue_with(button_id.removeprefix("pause-continue-"))
 
         elif button_id == "relay-resume":
             if getattr(self, "_release_task", None):
@@ -5253,6 +5267,109 @@ class WhylineConsoleApp(App):
         if self._run_flow:
             self._run_flow = False
             self.render_event(SessionEvent(kind="output", text=text))
+
+    def _pause_text(self) -> str:
+        text = getattr(self, "_last_pause_text", "") or ""
+        if text:
+            return text
+        try:
+            from whyline_relay import state as relay_state
+
+            saved = relay_state.load(self.session.root)
+            return saved.paused_reason if saved and saved.paused_reason else ""
+        except Exception:
+            return ""
+
+    def _stage_role(self) -> str:
+        """The role the saved RelayState.stage maps to through the configured
+        pipeline (or the legacy stage names); empty when unknown."""
+        try:
+            from whyline_relay import config as relay_config, state as relay_state
+
+            saved = relay_state.load(self.session.root)
+            stage = getattr(saved, "stage", "") or ""
+            if not stage:
+                return ""
+            pipe = relay_config.load(self.session.root).pipeline
+            found = pipe.stages.get(stage) if pipe is not None else None
+            if found is not None:
+                return found.role
+            return {"implement": "implementer", "test": "tester", "review": "reviewer"}.get(stage, "")
+        except Exception:
+            return ""
+
+    def _paused_role(self, text: str) -> str:
+        """The role of the paused stage. Falls back to a role the pause text
+        names, then the limited agent's role, then the implementer."""
+        staged = self._stage_role()
+        if staged:
+            return staged
+        lowered = text.lower()
+        for role in ("implementer", "tester", "reviewer"):
+            if role in lowered:
+                return role
+        try:
+            for row in relay_ops.run_roles(self.session.root):
+                if row.current and lowered.startswith(row.current.lower()):
+                    return row.role
+        except Exception:
+            pass
+        return "implementer"
+
+    def _sync_continue_buttons(self) -> None:
+        """Continue with <agent> buttons on a limit, login or exhausted-chain
+        pause; hidden for any other pause."""
+        from whyline.console import recovery
+
+        buttons = [self._main(f"#pause-continue-{i}", Button) for i in range(3)]
+        note = self._main("#pause-continue-note", Static)
+        box = self._main("#pause-add-backup")
+        text = self._pause_text()
+        limit_pause = bool(text) and (
+            recovery._quota_text(text)
+            or recovery._looks_logged_out(text)
+            or "every backup in the chain is unavailable" in text
+        )
+        ready: list[str] = []
+        why = ""
+        if limit_pause:
+            role = self._paused_role(text)
+            try:
+                ready = relay_ops.ready_for(self.session.root, role)[:3]
+                if not ready:
+                    why = ", ".join(
+                        f"{row.agent} — {row.why}"
+                        for row in relay_ops.agent_readiness(self.session.root)
+                        if not row.ready
+                    )
+            except Exception:
+                ready = []
+            self._pause_role = role
+        self._continue_agents = ready
+        for i, button in enumerate(buttons):
+            agent = ready[i] if i < len(ready) else ""
+            button.label = f"Continue with {agent}" if agent else ""
+            button.display = bool(agent)
+        box.display = bool(ready)
+        note.display = limit_pause and not ready
+        if note.display:
+            note.update(f"No other agent is ready: {why}" if why else "No other agent is ready")
+
+    def _continue_with(self, index: str) -> None:
+        agents = getattr(self, "_continue_agents", [])
+        agent = agents[int(index)] if index.isdigit() and int(index) < len(agents) else index
+        if agent not in agents:
+            return
+        role = getattr(self, "_pause_role", "implementer")
+        try:
+            add_backup = bool(self._main("#pause-add-backup", Checkbox).value)
+            args = relay_ops.switch_role(self.session.root, role, agent, add_backup)
+        except Exception as exc:
+            self.render_event(SessionEvent(kind="error", text=f"Could not switch {role}: {exc}"))
+            return
+        self.render_event(SessionEvent(kind="output", text=f"Switched {role} to {agent}; resuming."))
+        self._manual_passed = False
+        self._launch_relay(args)
 
     def _resume_should_allow_dirty(self) -> bool:
         try:
