@@ -954,3 +954,68 @@ async def test_reminders_denial_opens_the_reminders_page(assistant_home, monkeyp
         button.press()
         await pilot.pause()
         assert opened == ["reminders"]
+
+
+@pytest.fixture
+def wt_repo(tmp_path, monkeypatch, assistant_home):
+    import subprocess
+
+    def git(cwd, *a):
+        subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = tmp_path / "proj"
+    root.mkdir()
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.email", "t@example.com")
+    git(root, "config", "user.name", "t")
+    (root / "a.txt").write_text("a")
+    git(root, "add", "a.txt")
+    git(root, "commit", "-m", "init")
+    monkeypatch.chdir(root)
+    return root
+
+
+async def test_worktrees_list_matches_the_cli(wt_repo, capsys):
+    import argparse
+
+    from whyline import worktrees
+    from whyline.ideas import cli as ideas_cli
+
+    worktrees.make(wt_repo, "brainstorm", "one")
+    worktrees.make(wt_repo, "plan", "two")
+    assert ideas_cli.cmd_worktrees(argparse.Namespace(remove=None)) == 0
+    cli_lines = capsys.readouterr().out.splitlines()
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        shown = [_plain(r.render()).rstrip() for r in screen.query(".as-worktree-text")]
+    assert shown == cli_lines
+    assert len(shown) == 2
+
+
+async def test_remove_refuses_a_dirty_worktree_and_shows_why(wt_repo):
+    from whyline import worktrees
+
+    path = worktrees.make(wt_repo, "plan", "dirty")
+    (path / "new.txt").write_text("x")
+    clean = worktrees.make(wt_repo, "plan", "clean")
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause()
+        index = [w.path for w in screen._worktrees].index(path)
+        screen.query_one(f"#as-worktree-remove-{index}", tui.Button).press()
+        await pilot.pause()
+        error = _plain(screen.query_one("#as-worktree-error", tui.Static).render())
+        assert "uncommitted changes" in error
+        assert path.exists()
+
+        index = [w.path for w in screen._worktrees].index(clean)
+        screen.query_one(f"#as-worktree-remove-{index}", tui.Button).press()
+        await pilot.pause()
+        assert not clean.exists()
+        assert len(screen._worktrees) == 1

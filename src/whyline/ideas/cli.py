@@ -145,6 +145,9 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     rm_r.add_argument("name", help="Repository short name")
     repos_sub.add_parser("list", help="List allowed repositories")
 
+    wt = sub.add_parser("worktrees", help="List or remove brainstorm and plan worktrees")
+    wt.add_argument("--remove", metavar="PATH", help="Remove one clean worktree")
+
     email = sub.add_parser("email", help="Allowed senders for email inbox")
     email_sub = email.add_subparsers(dest="idea_email_command", required=True)
     allow_e = email_sub.add_parser("allow", help="Allow an email address")
@@ -226,7 +229,7 @@ def run(args: argparse.Namespace) -> int:
         print(
             "usage: whyline idea add|list|show|score|refine|drop|reopen|"
             "export|documents|agents|assistant|doctor|telegram|service|work|"
-            "request|remind|repos|email|actions|memory|brief",
+            "request|remind|repos|worktrees|email|actions|memory|brief",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -1362,6 +1365,89 @@ def _memory_check() -> _Check:
     return _Check("memory", True, f"{path} mode 0600")
 
 
+# A worktree this old is probably forgotten work.
+_WORKTREE_OLD_AFTER = timedelta(days=14)
+
+
+def worktree_list() -> list:
+    """The worktrees of this repo. The CLI and the console both call this."""
+    from whyline import paths as core_paths
+    from whyline import worktrees
+
+    root = core_paths.find_repo_root()
+    if root is None:
+        return []
+    return worktrees.list_all(root)
+
+
+def worktree_age(item, now: datetime | None = None) -> timedelta | None:
+    """How long since the folder last changed; None when it is gone."""
+    if not item.exists:
+        return None
+    try:
+        modified = datetime.fromtimestamp(item.path.stat().st_mtime)
+    except OSError:
+        return None
+    return (now or datetime.now()) - modified
+
+
+def worktree_line(item, now: datetime | None = None) -> str:
+    age = worktree_age(item, now)
+    note = "folder missing" if not item.exists else f"{age.days}d old" if age else ""
+    return f"{item.kind:<10} {item.branch or '-'}  {item.path}  {note}".rstrip()
+
+
+def remove_worktree(path: Path) -> None:
+    """Remove one worktree; raises WorktreeError (dirty, unknown, git failed)."""
+    from whyline import paths as core_paths
+    from whyline import worktrees
+
+    root = core_paths.find_repo_root()
+    if root is None:
+        raise worktrees.WorktreeError("not inside a git repository")
+    worktrees.remove(root, path)
+
+
+def cmd_worktrees(args: argparse.Namespace) -> int:
+    from whyline import worktrees
+
+    try:
+        if args.remove:
+            remove_worktree(Path(args.remove))
+            print(f"removed {args.remove}")
+            return EXIT_OK
+        items = worktree_list()
+    except worktrees.WorktreeError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_ERROR
+    if not items:
+        print("No worktrees.")
+        return EXIT_OK
+    for item in items:
+        print(worktree_line(item))
+    return EXIT_OK
+
+
+def _worktrees_check(now: datetime | None) -> _Check:
+    from whyline import worktrees
+
+    try:
+        items = worktree_list()
+    except worktrees.WorktreeError as exc:
+        return _Check("worktrees", True, f"could not list: {exc}", level="warn")
+    problems = []
+    for item in items:
+        if not item.exists:
+            problems.append(f"{item.path} folder is gone; run git worktree prune")
+            continue
+        age = worktree_age(item, now)
+        if age is not None and age > _WORKTREE_OLD_AFTER:
+            problems.append(f"{item.path} is {age.days} days old")
+    if problems:
+        return _Check("worktrees", True, "; ".join(problems), level="warn")
+    return _Check("worktrees", True, f"{len(items)} worktree(s)")
+
+
 def assistant_doctor(conn, *, now: datetime | None = None) -> list[Check]:
     """The assistant checks. ``whyline idea doctor`` and the console share this.
 
@@ -1378,6 +1464,7 @@ def assistant_doctor(conn, *, now: datetime | None = None) -> list[Check]:
         _last_email_check(conn),
         _overdue_reminders_check(conn, now),
         _memory_check(),
+        _worktrees_check(now),
         *brief.check(),
     ]
 
@@ -1730,6 +1817,7 @@ _COMMANDS = {
     "request": cmd_request,
     "remind": cmd_remind,
     "repos": cmd_repos,
+    "worktrees": cmd_worktrees,
     "email": cmd_email,
     "actions": cmd_actions,
     "memory": cmd_memory,

@@ -82,6 +82,13 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-memory-clear { min-width: 10; width: auto; margin-right: 1; }
     AssistantScreen #as-memory-error { height: auto; max-height: 3; color: $error; }
     AssistantScreen #as-memory-error.-empty { display: none; }
+    AssistantScreen .as-worktree-row { height: 3; }
+    AssistantScreen .as-worktree-text { width: 1fr; padding: 1 1; }
+    AssistantScreen .as-worktree-open { min-width: 8; width: auto; margin-right: 1; }
+    AssistantScreen .as-worktree-remove { min-width: 8; width: auto; margin-right: 1; }
+    AssistantScreen #as-worktrees-empty { padding: 1 1; color: $text-muted; }
+    AssistantScreen #as-worktree-error { height: auto; max-height: 3; color: $error; }
+    AssistantScreen #as-worktree-error.-empty { display: none; }
     AssistantScreen #as-brief-calendars { height: auto; max-height: 8; margin-top: 1; }
     AssistantScreen #as-brief-calendars.-empty { display: none; }
     AssistantScreen #as-brief-access { height: auto; margin-top: 1; }
@@ -127,10 +134,41 @@ class AssistantScreen(ModalScreen):
             self._editing_memory_line: int | None = None
         finally:
             conn.close()
+        self._worktrees = self._load_worktrees()
         self._brief_providers = brief.eligible_providers()
         self._brief_agent = brief.current()
         # macOS answers for Mail only by asking, so this is the last Grant's result.
         self._mail_access = "not checked yet"
+
+    @staticmethod
+    def _load_worktrees() -> list:
+        from whyline.ideas import cli as ideas_cli
+
+        try:
+            return ideas_cli.worktree_list()
+        except Exception:
+            return []
+
+    def _make_worktree_row(self, i: int, item) -> Horizontal:
+        from whyline.ideas import cli as ideas_cli
+
+        return Horizontal(
+            Static(
+                ideas_cli.worktree_line(item),
+                classes="as-worktree-text",
+                markup=False,
+            ),
+            Button("Open", id=f"as-worktree-open-{i}", classes="as-worktree-open",
+                   disabled=not item.exists),
+            Button("Remove", id=f"as-worktree-remove-{i}", classes="as-worktree-remove"),
+            id=f"as-worktree-{i}",
+            classes="as-worktree-row",
+        )
+
+    def _worktree_rows(self) -> list:
+        if not self._worktrees:
+            return [Static("No worktrees.", id="as-worktrees-empty", markup=False)]
+        return [self._make_worktree_row(i, w) for i, w in enumerate(self._worktrees)]
 
     def _make_reminder_row(self, reminder: reminders.Reminder) -> Horizontal:
         due = reminder.due_at.replace("T", " ")[:16]
@@ -283,6 +321,9 @@ class AssistantScreen(ModalScreen):
                     id="as-memory-controls",
                 ),
                 Static("", id="as-memory-error", markup=False, classes="-empty"),
+                Label("Worktrees", classes="as-section", id="as-worktrees-title"),
+                Vertical(*self._worktree_rows(), id="as-worktrees"),
+                Static("", id="as-worktree-error", markup=False, classes="-empty"),
                 Label("Morning brief", classes="as-section", id="as-brief-title"),
                 Static("", id="as-brief-access", markup=False),
                 SelectionList[str](
@@ -414,6 +455,12 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-brief-grant-mail":
             event.stop()
             self._mail_preview()
+        elif button_id.startswith("as-worktree-open-"):
+            event.stop()
+            self._open_worktree(int(button_id.rsplit("-", 1)[1]))
+        elif button_id.startswith("as-worktree-remove-"):
+            event.stop()
+            self._remove_worktree(int(button_id.rsplit("-", 1)[1]))
         elif button_id in ("as-brief-open-settings", "as-brief-open-settings-mail"):
             event.stop()
             self._open_settings(event.button)
@@ -709,6 +756,39 @@ class AssistantScreen(ModalScreen):
         else:
             for item in self._reminders:
                 container.mount(self._make_reminder_row(item))
+
+    def _set_worktree_error(self, message: str) -> None:
+        error = self.query_one("#as-worktree-error", Static)
+        error.update(message)
+        error.set_class(not message, "-empty")
+
+    def _open_worktree(self, i: int) -> None:
+        from whyline.console.ideas_screen import _open_with_macos
+
+        if i >= len(self._worktrees):
+            return
+        problem = _open_with_macos(self._worktrees[i].path)
+        self._set_worktree_error(problem)
+
+    def _remove_worktree(self, i: int) -> None:
+        from whyline import worktrees
+        from whyline.ideas import cli as ideas_cli
+
+        if i >= len(self._worktrees):
+            return
+        try:
+            ideas_cli.remove_worktree(self._worktrees[i].path)
+        except worktrees.WorktreeError as exc:
+            self._set_worktree_error(str(exc))
+            return
+        self._set_worktree_error("")
+        self._worktrees = self._load_worktrees()
+        container = self.query_one("#as-worktrees", Vertical)
+        container.remove_children()
+        for child in list(container.children):
+            container._nodes._remove(child)
+        for row in self._worktree_rows():
+            container.mount(row)
 
     def _set_memory_error(self, message: str) -> None:
         try:

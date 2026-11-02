@@ -32972,3 +32972,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0959417edef04151a4d59fd3426202ab -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:21:56.711Z"} -->
+
+## 2026-11-02 — Worktree age is the folder mtime; doctor warns (never fails) on a gone folder or >14 days
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LSN-8
+
+**Because:** worktrees.Worktree carries no creation time and the task limits edits to four files, so mtime is the available signal; warn level keeps whyline idea doctor's exit code unchanged
+
+**Rejected:**
+
+- add a created field to Worktree — worktrees.py is outside this task's files
+
+**Files:** src/whyline/ideas/cli.py
+
+<!-- whyline-event: 45bd31042fd14f709d718f251827ceeb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:25:44.383Z"} -->
+
+## 2026-11-02 — LSN-8 passes round-2 testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-8
+
+**Because:** The focused CLI and console tests passed, and the complete project pytest suite also exited 0 with no failures
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: f5d470792ead433f8eb3548e67ea068d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:38:27.520Z"} -->
+
+## 2026-11-02 — LSN-8 approved in round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-8
+
+**Because:** The CLI and Assistant screen share worktree listing and removal behavior, dirty removal errors are surfaced, doctor warns for missing and stale worktrees, and the full pytest suite exited 0
+
+**Files:** src/whyline/console/assistant_screen.py
+
+<!-- whyline-event: 6730a96aa99f4f1b925b1d71dac5ef80 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T11:50:53.160Z"} -->

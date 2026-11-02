@@ -1510,3 +1510,72 @@ def test_brief_access_prints_the_shared_status(ideas_home, capsys, monkeypatch):
     assert "Calendar: granted" in out
     assert "Reminders: denied" in out
     assert "Mail:" in out
+
+
+@pytest.fixture
+def wt_repo(tmp_path, monkeypatch):
+    import subprocess
+
+    def git(cwd, *a):
+        subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = tmp_path / "proj"
+    root.mkdir()
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.email", "t@example.com")
+    git(root, "config", "user.name", "t")
+    (root / "a.txt").write_text("a")
+    git(root, "add", "a.txt")
+    git(root, "commit", "-m", "init")
+    monkeypatch.chdir(root)
+    return root
+
+
+def test_worktrees_lists_and_removes_a_clean_one(wt_repo, ideas_home, capsys):
+    from whyline import worktrees
+
+    path = worktrees.make(wt_repo, "brainstorm", "topic")
+
+    code, out, _ = invoke(["idea", "worktrees"], capsys)
+    assert code == 0
+    assert "brainstorm/topic" in out and str(path) in out
+
+    code, out, _ = invoke(["idea", "worktrees", "--remove", str(path)], capsys)
+    assert code == 0 and not path.exists()
+    assert "No worktrees." in invoke(["idea", "worktrees"], capsys)[1]
+
+
+def test_worktrees_remove_refuses_a_dirty_one(wt_repo, ideas_home, capsys):
+    from whyline import worktrees
+
+    path = worktrees.make(wt_repo, "plan", "dirty")
+    (path / "new.txt").write_text("x")
+
+    code, _, err = invoke(["idea", "worktrees", "--remove", str(path)], capsys)
+    assert code == 1
+    assert "uncommitted changes" in err
+    assert path.exists()
+
+
+def test_doctor_warns_about_a_missing_worktree_folder_and_old_ones(
+    wt_repo, ideas_home
+):
+    import os
+    import shutil
+    import time
+
+    from whyline import worktrees
+    from whyline.ideas import cli as ideas_cli
+
+    gone = worktrees.make(wt_repo, "brainstorm", "gone")
+    old = worktrees.make(wt_repo, "plan", "old")
+    shutil.rmtree(gone)
+    stamp = time.time() - 20 * 86400
+    os.utime(old, (stamp, stamp))
+
+    check = ideas_cli._worktrees_check(None)
+
+    assert check.level == "warn"
+    assert f"{gone} folder is gone" in check.detail
+    assert f"{old} is 20 days old" in check.detail
