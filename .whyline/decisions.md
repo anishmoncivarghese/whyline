@@ -32870,3 +32870,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 31dd8f291fa8409583ffcd64f1ab3775 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:14:01.744Z"} -->
+
+## 2026-11-02 — LSN-6 testing failed because collision suffixes exceed the 40-character name cap
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-6
+
+**Because:** A sanitized 40-character name is preserved in full before appending -2, producing a 42-character unique name contrary to the task contract
+
+**Rejected:**
+
+- Pass based on focused tests — they do not cover a collision at the maximum name length
+
+**Files:** src/whyline/worktrees.py
+
+<!-- whyline-event: fdb4006ba78c46568cff94a35601c922 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:27:28.972Z"} -->
+
+## 2026-11-02 — LSN-6 round 4 testing passed with the collision suffix kept within the 40-character cap
+
+**Actor:** codex
+**Role:** tester
+**Task:** LSN-6
+
+**Because:** All 8 focused worktree tests pass and cover make, repeated names including a 40-character collision, list, remove, dirty refusal, and pruning; the only full-suite failure was an unrelated console smoke test that passed on immediate isolated rerun
+
+**Rejected:**
+
+- Fail LSN-6 for the console smoke failure — the failing files are outside this task's changes and the exact test passed when rerun
+
+**Files:** src/whyline/worktrees.py, tests/test_worktrees.py
+
+<!-- whyline-event: 41d8c2fc5d1342e7a3090e2a077d3595 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:40:28.620Z"} -->
+
+## 2026-11-02 — LSN-6 round 5 review approved the centralized worktree helpers
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LSN-6
+
+**Because:** The implementation matches the requested API and safety behavior, all 8 focused tests pass, and the sole full-suite failure was an unrelated console timeout that passed on isolated rerun
+
+**Rejected:**
+
+- Request changes for the full-suite timeout — the failing console test is outside the task files and passed immediately in isolation
+
+**Files:** src/whyline/worktrees.py, tests/test_worktrees.py
+
+<!-- whyline-event: 04ba3276bf954302bcc52aa20d005bd7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T10:53:14.278Z"} -->
