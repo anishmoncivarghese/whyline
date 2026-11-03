@@ -53,3 +53,32 @@ def _no_update_check(monkeypatch):
 
     monkeypatch.setattr(update, "check", lambda current, **_kwargs: None)
     monkeypatch.setattr(update, "install_problem", lambda **_kwargs: "whyline runs from a test.")
+
+
+@pytest.fixture
+def wait_until_settled():
+    """Pause until the current screen's Select widgets are fully built.
+
+    A pilot test that ends as soon as a screen appears can tear the app down
+    while that screen's Selects are still mounting; Textual's Select then
+    fails looking for its own "#label" child (NoMatches) and the test fails at
+    random. Await this before the test ends.
+    """
+
+    def settled(screen) -> bool:
+        from textual.widgets._select import SelectCurrent
+
+        if not screen.is_mounted:
+            return False
+        return all(current.query("#label") for current in screen.query(SelectCurrent))
+
+    async def wait(pilot, tries: int = 100) -> None:
+        calm = 0
+        for _ in range(tries):
+            await pilot.pause(0.02)
+            calm = calm + 1 if settled(pilot.app.screen) else 0
+            if calm >= 2:
+                return
+        raise AssertionError(f"{pilot.app.screen!r} did not finish mounting")
+
+    return wait

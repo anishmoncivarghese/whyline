@@ -74,7 +74,12 @@ idea → brainstorm → spec and plan → implement → test → review → veri
 - **It pauses instead of guessing** when it hits a question, a risky recovery
   step, a manual check, or a release.
 - **Resolve** explains why it paused and offers safe options. **Ask agent**
-  lets an AI read the logs and propose the fix.
+  lets an AI read the logs and propose the fix, and you can reply to it. In
+  **Fix** mode the agent may edit files and run checks, but never commit or
+  push (whyline enforces that and can **Undo fix**); whyline checks the result
+  before the relay continues. Bugs in whyline itself go to the Idea Inbox, and
+  **Check** gives a read-only health note on a running relay. See
+  [docs/resolve.md](docs/resolve.md).
 - **Files** shows the agent's current output, the live plan, and the whole
   repository in a side pane.
 

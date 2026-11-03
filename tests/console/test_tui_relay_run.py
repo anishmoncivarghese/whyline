@@ -269,7 +269,7 @@ async def test_change_agents_opens_setup_from_a_pause(
         assert app.screen._paused
 
 
-async def test_resume_in_setup_saves_and_then_resumes(tmp_path, monkeypatch):
+async def test_resume_in_setup_saves_and_then_resumes(tmp_path, monkeypatch, wait_until_settled):
     import subprocess
     from whyline.console.relay_screens import RelaySetupScreen
     from whyline_relay import failover
@@ -353,6 +353,7 @@ async def test_resume_in_setup_saves_and_then_resumes(tmp_path, monkeypatch):
         await pilot.pause()
         assert isinstance(app.screen, RelaySetupScreen)
         screen = app.screen
+        await wait_until_settled(pilot)
 
         screen.query_one("#rs-implementer", tui.Select).value = "antigravity"
         await pilot.pause()

@@ -2898,7 +2898,7 @@ def test_non_generic_agent_with_invalid_reset_time_offers_switch_back_anyway_and
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
 async def test_resolve_choose_agents_pushes_relay_setup_screen_in_console(
-    tmp_path: Path, monkeypatch, installed_agents
+    tmp_path: Path, monkeypatch, installed_agents, wait_until_settled
 ) -> None:
     from whyline import account
     from whyline.console.relay_screens import RelaySetupScreen
@@ -2943,6 +2943,7 @@ async def test_resolve_choose_agents_pushes_relay_setup_screen_in_console(
 
         assert isinstance(app.screen, RelaySetupScreen)
         assert app._main("#resolve-actions").display is False
+        await wait_until_settled(pilot)
 
 
 def test_fail_line_not_logged_in_is_logged_out_with_login_claude_first(
