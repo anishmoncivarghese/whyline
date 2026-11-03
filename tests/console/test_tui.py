@@ -4781,10 +4781,11 @@ async def test_brainstorm_runs_in_a_worktree_while_a_relay_is_live(tmp_path, mon
     seen, made, lines, root, wt = await _brainstorm_root(tmp_path, monkeypatch, True)
     assert seen == [wt]
     assert made == [(root, "brainstorm", "retry policy")]
-    text = " ".join(lines)
-    assert "A relay is running here, so this Brainstorm runs in" in text
+    # The transcript wraps long temp paths, so compare without whitespace.
+    text = "".join("".join(lines).split())
+    assert "Arelayisrunninghere,sothisBrainstormrunsin" in text
     assert "brainstorm-retry-policy" in text
-    assert "branch brainstorm/retry-policy" in text
+    assert "branchbrainstorm/retry-policy" in text
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

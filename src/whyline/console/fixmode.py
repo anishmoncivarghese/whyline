@@ -350,7 +350,16 @@ def _ticked(plan: Path | None) -> list[str]:
 
 def _inside(root: Path, path: Path) -> bool:
     try:
-        path.resolve().relative_to(root.resolve())
+        resolved = path.resolve()
+        if path.is_symlink():
+            # Python 3.13's non-strict resolve no longer raises on a loop,
+            # so resolve strictly to catch one. A dangling link keeps the
+            # non-strict answer.
+            try:
+                resolved = path.resolve(strict=True)
+            except FileNotFoundError:
+                pass
+        resolved.relative_to(root.resolve())
     except ValueError:
         return False
     except (RuntimeError, OSError):
