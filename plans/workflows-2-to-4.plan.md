@@ -18,7 +18,7 @@ Global constraints:
 - No new runtime dependency. HTTP uses `urllib`/`http.client`; DNS uses `socket.getaddrinfo`.
 - Tests never resolve real hostnames or open real sockets. Inject a resolver and a connection factory.
 
-Review focus, each one pinned by the test named in its task:
+Review focus, each one pinned by the test named in its task. This list, plus each task's own Review focus and tests, is the complete bar for approval: a reviewer who finds a gap outside it records `whyline handoff <task> --issue "follow-up: <gap>"` and approves, and never rejects for it.
 
 - A hostname that resolves to a public address at check time and `127.0.0.1` at connect time: refused. WF-17, `test_dns_rebinding_is_refused`.
 - A redirect to another host: refused, and the credential is not sent there. WF-16, `test_cross_origin_redirect_not_followed`.
@@ -82,6 +82,16 @@ Review focus, each one pinned by the test named in its task:
   - a name with one public and one private address is refused
   - TLS hostname verification uses the name, not the IP
   Verify with `uv run pytest -q tests/workflows/test_netguard.py tests/workflows/test_http_step.py`. Change nothing else.
+  Review focus (the complete list). Approve when each has a passing test:
+  1. every refused range above, in IPv4 and IPv6, including `::ffff:127.0.0.1`
+  2. the other IP spellings `getaddrinfo` accepts for those ranges: decimal (`2130706433`), octal (`0177.0.0.1`), short (`127.1`) and IPv4-compatible (`::127.0.0.1`); the guard judges the resolved address, so one test per spelling is enough
+  3. NAT64 (`64:ff9b::/96`) and 6to4 (`2002::/16`) addresses that embed a refused IPv4 address
+  4. DNS rebinding (`test_dns_rebinding_is_refused`)
+  5. a name with one public and one private address is refused
+  6. each redirect hop is checked
+  7. TLS is verified against the name
+  8. `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` in the environment are ignored by `http.request`
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff WF-17 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
 
 - [ ] WF-18: Taint analysis and the fuller capability summary
   Create `src/whyline/workflows/taint.py` and `tests/workflows/test_taint.py`; edit `src/whyline/workflows/capabilities.py` and `tests/workflows/test_capabilities.py` only.
@@ -93,6 +103,13 @@ Review focus, each one pinned by the test named in its task:
   - a POST with literal fields after an untainted condition is not gated
   - taint passes through two `set` steps
   - the summary of the spec 4 example lists the host, the credential and no gated writes
+  Review focus (the complete list). Taint is a gate for writes, not a full information-flow proof. It covers:
+  1. direct use of a tainted value in a step field
+  2. passing through `set` steps and template expressions
+  3. a write inside a branch whose condition reads a tainted value (`test_write_behind_tainted_branch_is_gated`)
+  4. loop items drawn from a tainted list
+  Timing, step counts, error-vs-success and other side channels are out of scope.
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff WF-18 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
   Verify with `uv run pytest -q tests/workflows/test_taint.py tests/workflows/test_capabilities.py`. Change nothing else.
 
 - [ ] WF-19: Approvals for gated writes, and trust per step
@@ -120,6 +137,8 @@ Review focus, each one pinned by the test named in its task:
     - an approval nonce reused, used from another actor id after expiry, or applied to a different run is out of date
     - a POST that is approved once and then retried by `resolve(... retry)` asks again
     - grep every file under the temp home and `state.sqlite` for the sentinel value after a full run: none
+  Review focus (the complete list): the seven attacks above. Fix only what one of those tests shows to be wrong. A new attack idea is not part of this task.
+  A gap outside this list is not a reason to reject. The reviewer records it with `whyline handoff WF-20 --issue "follow-up: <gap>"` and approves; the follow-ups become a later task.
   Verify with `uv run pytest -q tests/workflows/`. Change nothing else.
 
 ## Part 2: tools (MCP servers and Mac steps), a step picker, a flow preview and starter templates
@@ -144,7 +163,7 @@ Global constraints:
 - Tests never start a real vendor MCP server and never use the network. They use the fake server script added in WF-28 (`tests/workflows/fixtures/fake_mcp_server.py`, run with `sys.executable`), and inject `run` for the Mac steps.
 - Console first. Every CLI command added here has a console counterpart in the same task, and both call one function in `whyline.workflows.service`.
 
-Review focus, each one pinned by the test named in its task:
+Review focus, each one pinned by the test named in its task. This list, plus each task's own Review focus and tests, is the complete bar for approval: a reviewer who finds a gap outside it records `whyline handoff <task> --issue "follow-up: <gap>"` and approves, and never rejects for it.
 - A server that prints non-JSON, hangs, or exits mid-call: the step fails with a plain reason and the process group is killed. WF-28, `test_hung_server_is_killed_at_timeout`.
 - A credential passed to a server as an environment variable: never in argv, the config file, the log or the output. WF-28, `test_mcp_secret_never_leaves_env`.
 - A tool with no `readOnlyHint` whose arguments read agent output: gated. WF-29, `test_unmarked_tool_with_tainted_args_is_gated`.
@@ -285,7 +304,7 @@ Global constraints:
 - Only the inbox's allowed chats can list, run, pause, resume, cancel or approve. Every callback is answered, and the card is edited to show what happened.
 - Telegram tests use the fake `http` used in `tests/ideas/test_bot.py`; the conftest guard blocks real Telegram calls.
 
-Review focus, each one pinned by the test named in its task:
+Review focus, each one pinned by the test named in its task. This list, plus each task's own Review focus and tests, is the complete bar for approval: a reviewer who finds a gap outside it records `whyline handoff <task> --issue "follow-up: <gap>"` and approves, and never rejects for it.
 
 - `flow digest key=value` where `digest` declares no `key`: refused, nothing runs. WF-21, `test_undeclared_input_refused`.
 - The same Telegram update delivered twice: one run. WF-21, `test_repeated_update_runs_once`.

@@ -2012,11 +2012,12 @@ def delivery_for(root: Path, agent: str, kind: str) -> str:
 
 # The same sentence preflight._role_checks emits when Antigravity is in use.
 _ANTIGRAVITY_GENERIC = (
-    "antigravity is a generic agent, and its headless permission "
-    "enforcement is known to be unreliable -- see README, 'Using "
-    "Antigravity today', and "
-    "github.com/google-antigravity/antigravity-cli#548. The relay "
-    "does not manage its permissions, login or denials"
+    "antigravity is a generic agent and needs agy 1.4.12 or later; "
+    "older versions hang in headless mode on any permission prompt "
+    "(github.com/google-antigravity/antigravity-cli#548, fixed). A "
+    "refused tool call still exits 0 and names only the tool type, "
+    "and the relay does not manage its login -- see README, 'Using "
+    "Antigravity today'"
 )
 _PROMPT_NAMES = ("implement", "test", "review")
 
