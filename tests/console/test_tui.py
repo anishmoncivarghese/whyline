@@ -2591,7 +2591,7 @@ async def test_auto_mode_second_pause_in_same_round_applies_nothing_and_shows_bu
 
         assert launched == []
         lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
-        assert any("Auto stopped: recovery already attempted for REC-4F round 1" in line for line in lines)
+        assert any("Auto stopped: Auto already tried this exact pause (dirty)" in line for line in lines)
         assert app.query_one("#resolve-actions", tui.Horizontal).display is True
 
 

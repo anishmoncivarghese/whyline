@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -432,6 +433,8 @@ def record_attempt(
                     entry["steps"] = prev.get("steps")
                 if prev.get("pause_reason"):
                     entry["pause_reason"] = prev.get("pause_reason")
+    for key, value in pause_fields(root, str(entry.get("pause_reason") or "")).items():
+        entry.setdefault(key, value)
     if not entry.get("cause"):
         raw_reason = str(entry.get("pause_reason") or "")
         if not raw_reason:
@@ -532,8 +535,33 @@ def _find_applied_rule_fix_for_pause(
     return None
 
 
+def pause_fields(root: Path | str, reason: str = "") -> dict[str, Any]:
+    """The saved stage, stage visit counts and a short hash of the pause reason.
+
+    Empty when the pause has no reason, so such a pause matches by task and round.
+    """
+    st = _read_state_dict(Path(root))
+    text = reason or str(st.get("paused_reason") or "")
+    if not text:
+        return {}
+    visits = st.get("stage_visits")
+    return {
+        "stage": str(st.get("stage") or ""),
+        "stage_visits": dict(visits) if isinstance(visits, dict) else {},
+        "reason_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:12],
+    }
+
+
+def _same_pause(entry: dict[str, Any], current: dict[str, Any]) -> bool:
+    """True unless both sides name a pause and it is a different one."""
+    if not current or "reason_hash" not in entry:
+        return True
+    return all(entry.get(k) == current.get(k) for k in ("stage", "stage_visits", "reason_hash"))
+
+
 def allowed(root: Path | str, task: str, round: int) -> bool:
-    """Return False once that task and round have one entry, else True."""
+    """Return False once that exact pause (task, round, stage, visits, reason) was attempted."""
+    current = pause_fields(root)
     # Check if the current relay pause is a cap pause (caps are governed per-task, not per-round)
     try:
         from whyline_relay import state as relay_state
@@ -565,6 +593,8 @@ def allowed(root: Path | str, task: str, round: int) -> bool:
         if str(entry.get("task")) != str(task):
             continue
         if str(entry.get("round")) != str(round):
+            continue
+        if not _same_pause(entry, current):
             continue
 
         kind = str(entry.get("kind") or "")

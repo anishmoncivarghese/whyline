@@ -34376,3 +34376,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d3165f326dd04939b3615efa1660382e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T18:59:11.576Z"} -->
+
+## 2026-11-03 — Auto recovery limit keyed by pause (task, round, stage, visits, reason hash), not round alone
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AUTO-1
+
+**Because:** FIX-2 paused 3 times on round 18 with different causes; round number does not change on stage retry
+
+**Rejected:**
+
+- keep round-only key — refuses every Auto recovery after the first
+- match on reason text only — ignores a stage retried with a new visit count
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 554f3e71989845e687caee14e314b45c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T19:21:54.951Z"} -->
+
+## 2026-11-03 — Pass AUTO-1: recovery limits keyed by pause instead of round number; console and full pytest suites pass cleanly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AUTO-1
+
+**Because:** pause_fields hashes reason and captures stage/visits, allowed correctly distinguishes separate pauses within the same round while rejecting repeated pauses, old records match on task/round, Auto stop message reports exact pause reason, and all tests in tests/console and the full suite pass
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: a126a8686de946d3bc15d2fe9af8e488 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T20:23:38.369Z"} -->
+
+## 2026-11-03 — Approve AUTO-1: recovery limits keyed by exact pause with backwards compatibility and updated stop text
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** AUTO-1
+
+**Because:** recovery entries are keyed by task, round, stage, stage_visits, and reason_hash, allowing separate pauses within the same round while preventing repeats; legacy records continue to match on task and round; stop message formats the exact pause reason; tests cover two pauses in one round, duplicate pauses, and legacy records; both console and full test suites pass
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: e9443b017e284fc3b2b3b3b5019db02a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T21:05:01.536Z"} -->

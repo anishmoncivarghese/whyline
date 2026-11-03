@@ -65,6 +65,59 @@ def test_decision_log_only_dirty_set_is_fix_and_adding_one_more_path_is_human() 
     assert recovery.route("dirty", None) == "human"
 
 
+def _save_pause(root: Path, reason: str, visits: dict[str, int] | None = None) -> None:
+    state_file = root / ".whyline" / "relay" / "state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
+        json.dumps({
+            "task_id": "FIX-2",
+            "round": 18,
+            "stage": "review",
+            "stage_visits": visits or {"review": 2},
+            "paused_reason": reason,
+        }),
+        encoding="utf-8",
+    )
+
+
+def test_two_pauses_on_one_round_with_different_reasons_each_get_one_attempt(tmp_path: Path) -> None:
+    _save_pause(tmp_path, "codex is no longer logged in")
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is True
+    recovery.record_attempt(tmp_path, task="FIX-2", round=18, kind="agent", verdict="resolved")
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is False
+
+    _save_pause(tmp_path, "exited without handing off")
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is True
+    recovery.record_attempt(tmp_path, task="FIX-2", round=18, kind="agent", verdict="resolved")
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is False
+
+
+def test_same_pause_twice_stops_and_new_visit_counts_do_not(tmp_path: Path) -> None:
+    _save_pause(tmp_path, "exited without handing off")
+    recovery.record_attempt(tmp_path, task="FIX-2", round=18, kind="agent", verdict="resolved")
+    entry = recovery.load_attempts(tmp_path)[0]
+    assert entry["stage"] == "review"
+    assert entry["stage_visits"] == {"review": 2}
+    assert len(entry["reason_hash"]) == 12
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is False
+
+    _save_pause(tmp_path, "exited without handing off", visits={"review": 3})
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is True
+
+
+def test_old_records_without_pause_fields_match_by_task_and_round(tmp_path: Path) -> None:
+    path = recovery.recovery_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps([{"task": "FIX-2", "round": 18, "kind": "agent", "verdict": "human"}]),
+        encoding="utf-8",
+    )
+    assert len(recovery.load_attempts(tmp_path)) == 1
+    _save_pause(tmp_path, "something else entirely")
+    assert recovery.allowed(tmp_path, "FIX-2", 18) is False
+    assert recovery.allowed(tmp_path, "FIX-2", 19) is True
+
+
 def test_allowed_refuses_second_attempt_and_allows_new_round(tmp_path: Path) -> None:
     # Initially allowed
     assert recovery.allowed(tmp_path, "REC-1", 1) is True

@@ -6772,7 +6772,7 @@ class WhylineConsoleApp(App):
         is_auto = getattr(self, "_auto_relay", False)
 
         if not recovery.allowed(self.session.root, task_id, round_num):
-            stop_reason = f"recovery already attempted for {task_id} round {round_num}"
+            stop_reason = f"Auto already tried this exact pause ({reason[:60]})"
             self.render_event(SessionEvent(kind="output", text=f"Auto stopped: {stop_reason}"))
             self._resolve_problem = problems[0]
             self._resolve_problems = problems
