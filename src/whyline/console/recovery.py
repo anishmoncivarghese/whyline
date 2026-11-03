@@ -568,6 +568,8 @@ def allowed(root: Path | str, task: str, round: int) -> bool:
             continue
 
         kind = str(entry.get("kind") or "")
+        if kind == "auto-fix":
+            continue  # fixmode.auto_gate limits Auto fix, and names it when it stops
         opt = str(entry.get("option") or entry.get("agent") or "")
         verdict = str(entry.get("verdict") or "")
         cap_kind = str(entry.get("cap_kind") or "")

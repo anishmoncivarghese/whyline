@@ -5964,6 +5964,100 @@ class WhylineConsoleApp(App):
             self._mount_resolve_buttons(self._resolve_problem)
         self._sync_relay_buttons()
 
+    def _auto_fix_wanted(self, problem: Any) -> bool:
+        """Auto fix runs in Auto when no rule-based fix applies, at Fix level Auto fix."""
+        from whyline.console import fixmode, recovery, relay_ops
+
+        if not getattr(self, "_auto_relay", False) or getattr(self, "_fix_active", False):
+            return False
+        if problem.id in recovery._HUMAN_KINDS or problem.id == "logged-out":
+            return False
+        root = self.session.root
+        return (
+            relay_ops.resolve_mode(root) == "auto"
+            and fixmode.fix_level(root) == fixmode.LEVEL_AUTO
+        )
+
+    def _begin_auto_fix(
+        self, problem: Any, problems: list[Any], task_id: str, round_num: int, reason: str
+    ) -> None:
+        """One guarded Auto fix turn off the UI thread; see fixmode.auto_fix."""
+        import threading
+
+        from whyline.console import fixmode, recovery
+        from whyline_relay import setup as relay_setup
+
+        session = self._open_fix_session()
+        root = self.session.root
+        chain: list[str] = []
+        for name in [session.agent or self.session.agent or "", *self._fix_backups(relay_setup, root)]:
+            if name and name not in chain:
+                chain.append(name)
+        cancel = threading.Event()
+        self._ask_cancel = cancel
+        self._ask_started = self._clock()
+        self._ask_agent_name = chain[0] if chain else "the agent"
+        self._resolve_running = True
+        self._fix_active = True
+        runner = self._runner or recovery._AUTO_RUNNER
+
+        def say(text: str) -> None:
+            self.call_from_thread(self.render_event, SessionEvent(kind="output", text=text))
+
+        def launch(args: list[str]) -> None:
+            self.call_from_thread(self._launch_relay, args, auto=True)
+
+        def in_thread() -> None:
+            outcome = fixmode.AutoFixOutcome("stopped", "Auto fix could not run")
+            try:
+                outcome = fixmode.auto_fix(
+                    root, session, task=task_id, round_num=round_num, reason=reason,
+                    agent_chain=chain, runner=runner, launch=launch,
+                    on_progress=say, cancel_event=cancel,
+                )
+            except Exception as exc:
+                outcome = fixmode.AutoFixOutcome("stopped", f"Auto fix failed: {exc}")
+            finally:
+                self.call_from_thread(self._auto_fix_finished, outcome, problem, problems)
+
+        self.render_event(SessionEvent(kind="output", text=f"Auto fix: {self._ask_agent_name} is fixing…"))
+        self._set_busy(True, f"{self._ask_agent_name} is fixing")
+        self.run_worker(in_thread, thread=True)
+
+    def _auto_fix_finished(self, outcome: Any, problem: Any, problems: list[Any]) -> None:
+        self._ask_cancel = None
+        self._fix_active = False
+        self._resolve_running = False
+        self._set_busy(False)
+        if outcome.status == "applied":
+            self.render_event(SessionEvent(kind="output", text=outcome.message))
+            if outcome.resumed:
+                self._close_resolve_flow()
+                return
+            self._sync_relay_buttons()
+            return
+        # Auto stops: say why, show the proposal, keep the conversation open.
+        self._auto_relay = False
+        self.render_event(SessionEvent(kind="output", text=f"Auto stopped: {outcome.reason}"))
+        res = outcome.result
+        if res is not None and (res.diagnosis or res.steps):
+            from whyline.console import recovery
+
+            lines = [res.diagnosis] if res.diagnosis else []
+            lines += [f"  {i}. {recovery.format_step_label(s)}" for i, s in enumerate(res.steps, 1)]
+            self.render_event(SessionEvent(kind="output", text="Proposal:\n" + "\n".join(lines)))
+        self._resolve_problem = problem
+        self._resolve_problems = problems
+        self._resolve_source = "resume"
+        self._show_resolve_problem(problem, is_first=True, count=len(problems))
+        if outcome.check_failed and outcome.checked is not None:
+            self._fix_check_failed(outcome.checked)  # keeps the conversation open
+        else:
+            self._mount_resolve_buttons(problem)
+            self._show_reply_box()
+        self._end_run_flow("Auto run stopped.")
+        self._sync_relay_buttons()
+
     def _fix_check_failed(self, checked: Any) -> None:
         """A failed check goes back to the conversation; the snapshot stays for Undo."""
         from whyline.console import fixmode
@@ -6473,6 +6567,9 @@ class WhylineConsoleApp(App):
         for problem in problems:
             opt = recovery.auto_option(problem)
             if opt is None:
+                if self._auto_fix_wanted(problem):
+                    self._begin_auto_fix(problem, problems, task_id, round_num, reason)
+                    return
                 stop_reason = problem.summary
                 self.render_event(SessionEvent(kind="output", text=f"Auto stopped: {stop_reason}"))
                 self._resolve_problem = problem

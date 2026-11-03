@@ -732,6 +732,7 @@ def run_fix(
     runner: Callable[..., object] | None = None,
     on_progress: Callable[[str], None] | None = None,
     cancel_event: object | None = None,
+    max_minutes: int | None = None,
     run: Run = subprocess.run,
 ) -> FixResult:
     """One Fix turn: the first agent in the chain that has a guarded fix command.
@@ -790,6 +791,8 @@ def run_fix(
         if st and st.timeout_minutes is not None
         else getattr(settings, "timeout_minutes", None)
     )
+    if max_minutes is not None:
+        minutes = max_minutes if not minutes else min(minutes, max_minutes)
     timeout = relay_ops._timeout_seconds_kwarg(minutes)
     prompt = recovery.build_fix_prompt(root, session.turns)
     active = runner if runner is not None else relay_agents.run
@@ -1022,3 +1025,230 @@ def verify(
         result.output = out
         return result
     return result
+
+
+# ---------------------------------------------------------------------------
+# Auto fix guard rails: one attempt per pause, safe steps only, all recorded.
+# ---------------------------------------------------------------------------
+
+AUTO_FIX_MINUTES = 20  # the most one Auto fix turn may run
+AUTO_FIX_KIND = "auto-fix"
+# ASK-4's safe set lives in recovery; these steps are also safe in an Auto fix.
+AUTO_EXTRA_STEPS = frozenset({"run-check", "config-commit", "report-bug", "undo-fix"})
+
+
+@dataclass
+class AutoFixOutcome:
+    status: str  # applied | stopped
+    reason: str = ""  # why Auto stopped, for the panel
+    result: FixResult | None = None
+    checked: VerifyResult | None = None
+    message: str = ""
+    resumed: bool = False
+    check_failed: bool = False
+
+
+def attempts_path(root: Path, run: Run = subprocess.run) -> Path:
+    return _git_dir(Path(root), run) / "whyline-fix" / "attempts.json"
+
+
+def load_attempts(root: Path, run: Run = subprocess.run) -> list[dict]:
+    try:
+        data = json.loads(attempts_path(root, run).read_text(encoding="utf-8"))
+    except (OSError, ValueError, FixModeError):
+        return []
+    return [d for d in data if isinstance(d, dict)] if isinstance(data, list) else []
+
+
+def record_attempt(
+    root: Path,
+    *,
+    task: str,
+    round_num: int,
+    pause: str,
+    reason: str,
+    agent: str,
+    diagnosis: str,
+    files: list[str],
+    checks: str,
+    result: str,
+    run: Run = subprocess.run,
+) -> dict:
+    """Write one Auto fix attempt to recovery.json and .git/whyline-fix/attempts.json."""
+    from whyline.console import recovery
+
+    root = Path(root)
+    entry = {
+        "task": task,
+        "round": round_num,
+        "kind": AUTO_FIX_KIND,
+        "pause_id": pause,
+        "pause_reason": reason,
+        "cause": recovery.normalise_cause(reason),
+        "agent": agent,
+        "diagnosis": diagnosis,
+        "files": files,
+        "checks": checks,
+        "result": result,
+        "verdict": result,
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    try:
+        recovery.record_attempt(root, dict(entry))
+    except OSError:
+        pass
+    try:
+        path = attempts_path(root, run)
+        records = load_attempts(root, run)
+        records.append(entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(records, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except (OSError, FixModeError):
+        pass
+    return entry
+
+
+def auto_gate(
+    root: Path, *, pause: str, reason: str, run: Run = subprocess.run
+) -> str:
+    """Why Auto may not try a fix now, or "" when it may."""
+    from whyline.console import recovery
+
+    cause = recovery.normalise_cause(reason)
+    records = load_attempts(root, run)
+    if cause:
+        for rec in reversed(records):
+            if rec.get("result") == "applied" and rec.get("cause") == cause:
+                files = ", ".join(rec.get("files") or []) or "no files"
+                what = rec.get("diagnosis") or "a fix"
+                return (
+                    f"the same pause came back after Auto applied {what} "
+                    f"(files: {files})"
+                )
+    if any(rec.get("pause_id") == pause for rec in records):
+        return "Auto already tried one fix for this pause"
+    return ""
+
+
+def auto_steps_ok(
+    root: Path, steps: list[dict], task: str, notes: list[str] | None = None
+) -> tuple[bool, str]:
+    """Whether every proposed step may run without asking."""
+    from whyline.console import recovery
+
+    if notes:
+        return False, f"the proposal has invalid or dropped steps: {'; '.join(notes)}"
+    if not steps:
+        return False, "the fix proposed no steps to continue with"
+    caps = 0
+    for step in steps:
+        action = step.get("action", "")
+        if action == "commit-task":
+            status = recovery._last_handoff_status(root, str(step.get("task") or task))
+            if status != "approved":
+                return False, (
+                    "commit-task needs an approved handoff "
+                    f"(the last one is {status or 'missing'})"
+                )
+        elif action in AUTO_EXTRA_STEPS:
+            continue
+        else:
+            if action in ("retry-stage", "raise-rounds", "more-rounds"):
+                caps += 1
+                if caps > 1:
+                    return False, "multiple cap options proposed"
+            ok, why = recovery._is_step_auto_safe(root, step, task)
+            if not ok:
+                return False, why
+    return True, ""
+
+
+def auto_fix(
+    root: Path,
+    session: Session,
+    *,
+    task: str,
+    round_num: int,
+    reason: str,
+    agent_chain: list[str],
+    runner: Callable[..., object] | None = None,
+    launch: Callable[[list[str]], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    cancel_event: object | None = None,
+    verify_fn: Callable[[Path, str], VerifyResult] | None = None,
+    run: Run = subprocess.run,
+) -> AutoFixOutcome:
+    """One guarded Auto fix: gate, fix turn, safe steps, checks, then apply."""
+    from whyline.console import recovery
+
+    root = Path(root).resolve()
+    why = auto_gate(root, pause=session.pause_id, reason=reason, run=run)
+    if why:
+        return AutoFixOutcome("stopped", why)
+
+    agent, diagnosis, files, checks = "", "", [], ""
+
+    def done(outcome: AutoFixOutcome, result: str) -> AutoFixOutcome:
+        record_attempt(
+            root, task=task, round_num=round_num, pause=session.pause_id,
+            reason=reason, agent=agent, diagnosis=diagnosis, files=files,
+            checks=checks, result=result, run=run,
+        )
+        return outcome
+
+    try:
+        res = run_fix(
+            root, session, agent_chain=agent_chain, runner=runner,
+            on_progress=on_progress, cancel_event=cancel_event,
+            max_minutes=AUTO_FIX_MINUTES, run=run,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return done(AutoFixOutcome("stopped", f"the fix agent failed: {exc}"), "error")
+    agent, diagnosis = res.agent, res.diagnosis
+    files = [c.path for c in res.changes]
+    if res.status != "proposal":
+        text = {
+            "cancelled": "the fix was stopped; its edits were undone",
+            "violation": "the fix broke a guard rule and was undone",
+        }.get(res.status, "no agent could make a guarded fix")
+        return done(AutoFixOutcome("stopped", text, res), res.status)
+
+    ok, why = auto_steps_ok(root, res.steps, task, res.notes)
+    if not ok:
+        return done(AutoFixOutcome("stopped", why, res), "needs-approval")
+
+    check = verify_fn or verify
+    try:
+        checked = check(root, task)
+    except Exception as exc:  # noqa: BLE001
+        checked = VerifyResult(False, tests_ok=False, output=f"The check could not run: {exc}")
+    checks = checked.summary()
+    if not checked.ok:
+        return done(
+            AutoFixOutcome(
+                "stopped", f"the checks failed ({checks})", res, checked, check_failed=True
+            ),
+            "check-failed",
+        )
+
+    resumed = False
+
+    def launcher(args: list[str]) -> None:
+        nonlocal resumed
+        resumed = True
+        if launch is not None:
+            launch(args)
+
+    try:
+        out = recovery.apply_steps(root, res.steps, launch=launcher)
+    except Exception as exc:  # noqa: BLE001
+        return done(
+            AutoFixOutcome("stopped", f"applying the steps failed: {exc}", res, checked),
+            "apply-failed",
+        )
+    message = str(out.message)
+    if not out.success:
+        return done(AutoFixOutcome("stopped", message, res, checked), "apply-failed")
+    return done(AutoFixOutcome("applied", "", res, checked, message, resumed), "applied")

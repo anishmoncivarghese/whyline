@@ -34056,3 +34056,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c659b3e2b8da4dee878d5f05dc7ed822 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T08:50:05.981Z"} -->
+
+## 2026-11-03 — Auto fix guard rails live in fixmode.auto_fix; recovery.allowed ignores kind auto-fix
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-7
+
+**Because:** one gate (auto_gate) names the earlier fix when the same pause returns, instead of allowed() stopping first with a generic message; steps reuse ASK-4's _is_step_auto_safe plus run-check, config-commit, report-bug, undo-fix, and commit-task only after an approved handoff
+
+**Rejected:**
+
+- Reuse recovery._are_steps_auto_safe unchanged — it rejects run-check, config-commit, report-bug and undo-fix
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 10d15fe847f444b7b37fd2ebbe06f78b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T08:59:22.165Z"} -->
+
+## 2026-11-03 — Pass FIX-7 round-two testing: auto fix guard rails, dual recording, and TUI wiring verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** FIX-7
+
+**Because:** All task requirements verified: one fix attempt per pause, repeated pause reasons stop naming previous fix and files, 20-min cap enforced, step safety rules and handoff approval check for commit-task pass, dual persistence in recovery.json and attempts.json verified, TUI auto fix lifecycle confirmed; full test suite (pytest) and tests/console pass completely
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: ffde4f603ace4d1ba59d995a4b95a33c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T09:38:47.933Z"} -->
+
+## 2026-11-03 — Approve FIX-7: auto fix guard rails, step safety, and dual attempt recording
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** FIX-7
+
+**Because:** All requirements met: one attempt per pause, repeated pause reasons stop naming previous fix and files, 20-min cap enforced, step safety rules and handoff approval check for commit-task pass, dual persistence in recovery.json and attempts.json verified, TUI auto fix lifecycle confirmed; full test suite passes completely
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 35940e374d764bd1b07ee7e55263c020 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T11:03:21.097Z"} -->
