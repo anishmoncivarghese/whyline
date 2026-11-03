@@ -1642,11 +1642,11 @@ def test_saving_resolve_mode_outside_git_still_works(tmp_path: Path) -> None:
 
 def test_save_and_read_agent_model_lands_in_right_place(repo):
     # claude: built-in adapter uses model = "..."
-    relay_ops.save_agent_model(repo, "claude", "claude-opus-5-5-high")
-    assert relay_ops.read_agent_model(repo, "claude") == "claude-opus-5-5-high"
+    relay_ops.save_agent_model(repo, "claude", "claude-opus-5-5")
+    assert relay_ops.read_agent_model(repo, "claude") == "claude-opus-5-5"
     text = (repo / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
     assert "[agents.claude]" in text
-    assert 'model = "claude-opus-5-5-high"' in text
+    assert 'model = "claude-opus-5-5"' in text
 
     # codex: built-in adapter uses model = "..."
     relay_ops.save_agent_model(repo, "codex", "gpt-5.6-sol")
@@ -1675,6 +1675,48 @@ def test_save_and_read_agent_model_lands_in_right_place(repo):
     assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == [
         ".whyline/relay/config.toml"
     ]
+
+
+def test_claude_model_list_holds_no_effort_suffix():
+    models = relay_ops.AGENT_MODELS["claude"]
+    assert models[:3] == ["opus", "sonnet", "haiku"]
+    assert not [m for m in models if m.endswith(("-low", "-medium", "-high", "-max"))]
+    assert all(relay_ops.valid_model("claude", m) is None for m in models)
+
+
+def test_valid_model_refuses_an_effort_suffix_with_a_reason():
+    reason = relay_ops.valid_model("claude", "claude-opus-5-5-high")
+    assert reason and "claude-opus-5-5-high" in reason
+    assert relay_ops.valid_model("claude", "claude-opus-5-5-max")
+    assert relay_ops.valid_model("claude", "gpt-5.6")
+
+
+def test_valid_model_accepts_aliases_and_real_ids():
+    assert relay_ops.valid_model("claude", "sonnet") is None
+    assert relay_ops.valid_model("claude", "claude-opus-5-5") is None
+    assert relay_ops.valid_model("claude", "claude-sonnet-4-6") is None
+    assert relay_ops.valid_model("antigravity", "gemini-3.8-flash-high") is None
+
+
+def test_save_agent_model_refuses_a_bad_id_and_leaves_config_unchanged(repo):
+    relay_ops.save_agent_model(repo, "claude", "sonnet")
+    config = repo / ".whyline" / "relay" / "config.toml"
+    before = config.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="claude-opus-5-5-high"):
+        relay_ops.save_agent_model(repo, "claude", "claude-opus-5-5-high")
+    assert config.read_text(encoding="utf-8") == before
+
+
+def test_recovery_step_naming_a_bad_model_is_refused(repo):
+    from whyline.console import recovery
+
+    config = repo / ".whyline" / "relay" / "config.toml"
+    relay_ops.save_agent_model(repo, "claude", "sonnet")
+    before = config.read_text(encoding="utf-8")
+    step = {"action": "set-model", "agent": "claude", "model": "claude-opus-5-5-high"}
+    with pytest.raises(ValueError):
+        recovery._execute_single_step(repo, step)
+    assert config.read_text(encoding="utf-8") == before
 
 
 def test_cli_default_removes_model(repo):
@@ -1813,10 +1855,7 @@ def test_cached_model_options_never_launches_agy(monkeypatch):
     monkeypatch.setattr(relay_ops, "_agy_runner", boom)
     assert relay_ops.antigravity_models_status() == "untried"
     assert relay_ops.model_options_for_agent("antigravity") is None
-    assert relay_ops.cached_model_options("claude")[0] == (
-        "claude-opus-5-5-high",
-        "claude-opus-5-5-high",
-    )
+    assert relay_ops.cached_model_options("claude")[0] == ("opus", "opus")
     assert relay_ops.cached_model_options("codex")[0][0] == "gpt-5.6-sol"
     assert relay_ops.cached_model_options("grok") == [("grok-4.6", "grok-4.6"), ("grok-4", "grok-4")]
 

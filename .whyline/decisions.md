@@ -34333,3 +34333,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e22f050765b14b46a10e1d02836d43f4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T17:29:47.224Z"} -->
+
+## 2026-11-03 — Validate model ids in save_agent_model, the single choke point, not in each caller
+
+**Actor:** claude
+**Role:** implementer
+**Task:** MDL-1
+
+**Because:** Change agents, Continue with, Resolve steps and Auto recovery all save through relay_ops.save_agent_model, so one check there refuses a bad id before config.toml is touched
+
+**Rejected:**
+
+- Check in each caller (screens, recovery) — easy to miss a path, as claude-opus-5-5-high showed
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: c8def6107dd04f8292dd3fb796074d8b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T18:04:23.136Z"} -->
+
+## 2026-11-03 — Pass MDL-1: Model lists hold only real model ids, validated before saving to config.toml
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** MDL-1
+
+**Because:** Verified AGENT_MODELS['claude'] alias ordering and replacement of claude-opus-5-5-high, valid_model refuses effort suffixes and bad model formats with descriptive reasons, save_agent_model enforces valid_model preventing corrupting config.toml during recovery or setup, and both console and full pytest test suites passed with exit code 0
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 532cc4c1be2e4d2f8a4457ae819d4003 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T18:33:33.393Z"} -->
+
+## 2026-11-03 — Approve MDL-1: Validate real model ids before saving and update Claude model list
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** MDL-1
+
+**Because:** AGENT_MODELS['claude'] correctly places aliases first and removes effort suffixes, valid_model rejects invalid ids and effort suffixes with clear reasons, save_agent_model protects config.toml at the choke point, and all console and full test suites pass
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: d3165f326dd04939b3615efa1660382e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T18:59:11.576Z"} -->

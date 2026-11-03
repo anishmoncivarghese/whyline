@@ -725,12 +725,12 @@ def save_release(root: Path, value: str) -> None:
 
 AGENT_MODELS: dict[str, list[str]] = {
     "claude": [
-        "claude-opus-5-5-high",
-        "claude-sonnet-4-6",
-        "claude-opus-4-6",
         "opus",
         "sonnet",
         "haiku",
+        "claude-opus-5-5",
+        "claude-sonnet-4-6",
+        "claude-opus-4-6",
     ],
     "codex": [
         "gpt-5.6-sol",
@@ -742,6 +742,28 @@ AGENT_MODELS: dict[str, list[str]] = {
         "grok-4",
     ],
 }
+
+_CLAUDE_ALIASES = ("opus", "sonnet", "haiku")
+_CLAUDE_MODEL_ID = re.compile(r"claude-[a-z]+-\d+(-\d+)*")
+_EFFORT_SUFFIXES = ("-low", "-medium", "-high", "-max")
+
+
+def valid_model(agent: str, model: str) -> str | None:
+    """A plain reason when `model` is not a real id for `agent`, else None."""
+    if agent != "claude" or not model or model in _CLAUDE_ALIASES:
+        return None
+    if model.endswith(_EFFORT_SUFFIXES):
+        return (
+            f"'{model}' is not a Claude model id: the -low/-medium/-high/-max "
+            "suffix is antigravity's naming, and Claude would refuse it."
+        )
+    if not _CLAUDE_MODEL_ID.fullmatch(model):
+        return (
+            f"'{model}' is not a Claude model id: use opus, sonnet, haiku, "
+            "or an id like claude-opus-5-5."
+        )
+    return None
+
 
 _AGY_MODELS_TIMEOUT = 10
 _AGY_NEGATIVE_TTL = 60.0
@@ -1159,6 +1181,9 @@ def save_agent_model(root: Path, agent: str, model: str, *, commit: bool = True)
     """
     from whyline_relay import adapters, config, gitcheck, recipes
 
+    reason = valid_model(agent, model)
+    if reason:
+        raise ValueError(reason)
     is_builtin = agent in adapters.BUILTIN
     default_cmd = list(recipes.RECIPES.get(agent, (agent, "-p")))
     config_file = config.config_path(root)
