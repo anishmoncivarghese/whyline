@@ -5094,6 +5094,53 @@ def _trim_head(text: str, excess: int) -> str:
     return "[trimmed]\n" + rest
 
 
+def build_followup_prompt(
+    base: str,
+    turns: Sequence[Any],
+    reply: str,
+    *,
+    limit: int | None = None,
+) -> str:
+    """The original Ask agent context, the conversation so far, then the reply.
+
+    The context and the reply always stay; the oldest turns drop first until
+    the prompt fits `limit` bytes (40 KB by default).
+    """
+    from whyline.console import fixmode
+
+    limit = fixmode.PROMPT_LIMIT if limit is None else limit
+    head = "\n\n## Conversation so far\n"
+    tail = (
+        "\n\n## Reply\n"
+        f"you › {reply}\n\n"
+        "Answer the reply, read-only. If you propose steps, end with the fenced "
+        "JSON block from the instructions above."
+    )
+    none_body = "(none kept)"
+
+    def size(text: str) -> int:
+        return len(text.encode("utf-8"))
+
+    fixed = size(head + tail) + size(none_body)
+    if size(base) + fixed > limit:
+        # Even with no turns it will not fit: shrink the base from its middle,
+        # keeping its opening context and its closing instructions.
+        marker = "\n[context trimmed]\n"
+        room = max(limit - fixed - size(marker), 0)
+        data = base.encode("utf-8")
+        front = data[: room // 2].decode("utf-8", errors="ignore")
+        back = data[len(data) - (room - room // 2) :].decode("utf-8", errors="ignore") if room - room // 2 else ""
+        base = front + marker + back
+    budget = limit - size(base) - size(head + tail)
+    kept = fixmode.trim_turns(list(turns), budget)
+    body = "\n".join(fixmode.format_turn(t) for t in kept) if kept else none_body
+    prompt = base + head + body + tail
+    if size(prompt) > limit:
+        # Safety net for a reply too large to leave any room.
+        prompt = prompt.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+    return prompt
+
+
 def build_ask_agent_prompt(
     root: Path | str,
     fail_lines: Sequence[str] | None = None,
@@ -6296,8 +6343,13 @@ def ask_agent(
     options_catalog: dict[str, str] | None = None,
     on_fallback: Callable[[str, str, str | None], None] | None = None,
     timeout_seconds: int | None = None,
+    turns: Sequence[Any] | None = None,
+    reply: str | None = None,
 ) -> AskAgentResult:
     """Ask the selected agent, then the backup chain, for a Resolve option.
+
+    With `reply`, this is a follow-up: the prompt adds `turns` (the earlier
+    conversation, trimmed oldest-first) and the reply. It stays read-only.
 
     Each agent runs read-only where its CLI has a read-only mode; any edit
     left behind (by an agent without one) is refused. An agent that hits a
@@ -6338,6 +6390,8 @@ def ask_agent(
         selected_agent = agent
     else:
         selected_agent = None
+    if agent and reply is not None:
+        selected_agent = agent  # a follow-up stays with the agent that answered
 
     try:
         backup_chain = list(relay_setup.read_backup(root_path))
@@ -6414,6 +6468,8 @@ def ask_agent(
         git_status=git_status,
         options_catalog=catalog,
     )
+    if reply is not None:
+        prompt = build_followup_prompt(prompt, turns or [], reply)
 
     settings = relay_config.load(root_path)
     if timeout_seconds is None:

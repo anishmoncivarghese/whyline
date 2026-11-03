@@ -390,3 +390,30 @@ def test_guard_self_referential_symlink_fails_closed(repo: Path) -> None:
     (repo / "loop").symlink_to("loop")
     found = fixmode.guard(repo, snap, before, run=subprocess.run)
     assert "outside" in _kinds(found)
+
+
+def test_new_pause_starts_a_new_session_and_keeps_the_old_one(repo: Path) -> None:
+    first = fixmode.open_session(repo, fixmode.pause_id("limit", "1"), "codex")
+    first.turns.append(fixmode.Turn("codex", "Stash it.", "t1"))
+    fixmode.save_session(repo, first)
+
+    again = fixmode.open_session(repo, fixmode.pause_id("limit", "1"), "codex")
+    assert [t.text for t in again.turns] == ["Stash it."]
+
+    second = fixmode.open_session(repo, fixmode.pause_id("limit", "2"), "codex")
+    assert second.turns == []
+    assert second.pause_id != first.pause_id
+    kept = fixmode.session_path(repo).with_name("session-1.json")
+    assert kept.is_file()
+    assert "Stash it." in kept.read_text(encoding="utf-8")
+
+    fixmode.open_session(repo, fixmode.pause_id("limit", "3"), "codex")
+    assert fixmode.session_path(repo).with_name("session-2.json").is_file()
+
+
+def test_trim_turns_drops_the_oldest_first() -> None:
+    turns = [fixmode.Turn("codex", f"turn-{i}-" + "x" * 100) for i in range(10)]
+    budget = 3 * (len(fixmode.format_turn(turns[-1]).encode("utf-8")) + 1)
+    kept = fixmode.trim_turns(turns, budget)
+    assert [t.text[:6] for t in kept] == ["turn-7", "turn-8", "turn-9"]
+    assert fixmode.trim_turns(turns, 0) == []

@@ -1072,6 +1072,7 @@ class WhylineConsoleApp(App):
     #pause-add-backup { display: none; }
     #pause-continue-note { display: none; width: auto; padding: 1 1; }
     #resolve-actions { height: auto; display: none; }
+    #resolve-reply-row { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
     /* Shown only once there is something to update to. */
@@ -1145,6 +1146,7 @@ class WhylineConsoleApp(App):
         self._ask_cancel: Any = None  # set while Ask agent runs; Stop sets it
         self._ask_started = 0.0
         self._ask_agent_name = ""
+        self._fix_session: Any = None  # the Resolve conversation for this pause
         self._external_relay: str | None = None  # a relay another console started
         self._antigravity_ok = False
         self._release_task: tuple[str, list[str]] | None = None
@@ -3610,6 +3612,11 @@ class WhylineConsoleApp(App):
                 id="pause-actions",
             ),
             Horizontal(id="resolve-actions"),
+            Horizontal(
+                Input(placeholder="Reply to the agent, or type fix", id="resolve-reply"),
+                Button("Reply", id="reply-send", variant="success"),
+                id="resolve-reply-row",
+            ),
             AttachmentTray(id="tray"),
             Static("", id="slash-hint"),
             Horizontal(
@@ -3860,6 +3867,8 @@ class WhylineConsoleApp(App):
             self._launch_relay(retry_args)
         elif button_id == "relay-resolve":
             self._start_resolve_flow(source="resume")
+        elif button_id == "reply-send":
+            self._submit_resolve_reply()
         elif button_id and button_id.startswith("resolve-"):
             if button_id == "resolve-setup":
                 self._main("#resolve-actions").display = False
@@ -3900,6 +3909,8 @@ class WhylineConsoleApp(App):
         # input (the brainstorm topic) is that dialog's business.
         if event.input.id == "prompt":
             self._send()
+        elif event.input.id == "resolve-reply":
+            self._submit_resolve_reply()
         elif event.input.id in ("cb-model", "cb-repo"):
             self._cb_save()
 
@@ -5689,6 +5700,7 @@ class WhylineConsoleApp(App):
         self._resolve_problem = None
         self._resolve_problems = []
         self._resolve_running = False
+        self._hide_reply_box()
         try:
             self._main("#resolve-actions").display = False
         except (NoMatches, IndexError):
@@ -5708,62 +5720,15 @@ class WhylineConsoleApp(App):
             pass
         self._sync_relay_buttons()
 
+        if opt.id == "fix-it":
+            self._resolve_running = False
+            self._switch_to_fix()
+            self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
         if opt.id == "ask-agent":
-            import inspect
-            import threading
-
-            from whyline_relay import agents as relay_agents
-
-            cancel = threading.Event()
-            self._ask_cancel = cancel
-            self._ask_started = self._clock()
-            self._ask_agent_name = self.session.agent or "the agent"
-            inner = self._runner or recovery._AUTO_RUNNER or relay_agents.run
-            try:
-                params = inspect.signature(inner).parameters.values()
-                takes_cancel = any(
-                    p.name == "cancel_event" or p.kind is inspect.Parameter.VAR_KEYWORD
-                    for p in params
-                )
-            except (TypeError, ValueError):
-                takes_cancel = False
-
-            def stoppable_runner(*args: Any, **kwargs: Any) -> Any:
-                # Stop sets `cancel`; the relay's runner then ends the
-                # agent's whole process group (LSN-1).
-                if cancel.is_set():
-                    raise relay_agents.AgentCancelled("Ask agent stopped")
-                if takes_cancel:
-                    kwargs["cancel_event"] = cancel
-                return inner(*args, **kwargs)
-
-            def passed_over(agent: str, why: str, following: str | None) -> None:
-                self.call_from_thread(self._ask_agent_passed_over, agent, why, following)
-
-            def ask_thread() -> None:
-                ask_res = None
-                try:
-                    ask_res = recovery.ask_agent(
-                        self.session.root,
-                        session=self.session,
-                        runner=stoppable_runner,
-                        fail_lines=self._current_fail_lines(),
-                        problem=self._resolve_problem,
-                        on_fallback=passed_over,
-                    )
-                except Exception:
-                    pass
-                finally:
-                    self.call_from_thread(self._ask_agent_finished, ask_res, cancel)
-
-            # The turn can take minutes; without the status line the
-            # disabled buttons look like a frozen console.
-            agent = self._ask_agent_name
-            self.render_event(
-                SessionEvent(kind="output", text=f"Asking {agent} to analyse the problem…")
-            )
-            self._set_busy(True, f"{agent} is analysing the problem")
-            self.run_worker(ask_thread, thread=True)
+            self._begin_ask(None)
             return
 
         def in_thread() -> None:
@@ -5787,6 +5752,172 @@ class WhylineConsoleApp(App):
                 self.call_from_thread(self._resolve_option_finished, opt, res, did_resume)
 
         self.run_worker(in_thread, thread=True)
+
+    def _begin_ask(self, reply: str | None) -> None:
+        """Run Ask agent, or send `reply` as a follow-up to its last answer."""
+        import inspect
+        import threading
+
+        from whyline.console import fixmode, recovery
+        from whyline_relay import agents as relay_agents
+
+        cancel = threading.Event()
+        self._ask_cancel = cancel
+        self._ask_started = self._clock()
+        self._ask_agent_name = self.session.agent or "the agent"
+        inner = self._runner or recovery._AUTO_RUNNER or relay_agents.run
+        try:
+            params = inspect.signature(inner).parameters.values()
+            takes_cancel = any(
+                p.name == "cancel_event" or p.kind is inspect.Parameter.VAR_KEYWORD
+                for p in params
+            )
+        except (TypeError, ValueError):
+            takes_cancel = False
+
+        def stoppable_runner(*args: Any, **kwargs: Any) -> Any:
+            # Stop sets `cancel`; the relay's runner then ends the
+            # agent's whole process group (LSN-1).
+            if cancel.is_set():
+                raise relay_agents.AgentCancelled("Ask agent stopped")
+            if takes_cancel:
+                kwargs["cancel_event"] = cancel
+            return inner(*args, **kwargs)
+
+        def passed_over(agent: str, why: str, following: str | None) -> None:
+            self.call_from_thread(self._ask_agent_passed_over, agent, why, following)
+
+        extra: dict[str, Any] = {}
+        if reply is not None:
+            session = self._open_fix_session()
+            extra = {"turns": list(session.turns), "reply": reply}
+            if session.agent:
+                extra["agent"] = session.agent
+                self._ask_agent_name = session.agent
+            session.turns.append(fixmode.Turn("you", reply, self._wall().isoformat()))
+            self._save_fix_session()
+
+        def ask_thread() -> None:
+            ask_res = None
+            try:
+                ask_res = recovery.ask_agent(
+                    self.session.root,
+                    session=self.session,
+                    runner=stoppable_runner,
+                    fail_lines=self._current_fail_lines(),
+                    problem=self._resolve_problem,
+                    on_fallback=passed_over,
+                    **extra,
+                )
+            except Exception:
+                pass
+            finally:
+                self.call_from_thread(self._ask_agent_finished, ask_res, cancel)
+
+        # The turn can take minutes; without the status line the
+        # disabled buttons look like a frozen console.
+        agent = self._ask_agent_name
+        if reply is None:
+            status = f"Asking {agent} to analyse the problem…"
+        else:
+            self.render_event(SessionEvent(kind="output", text=f"you › {reply}"))
+            status = f"Asking {agent}…"
+        self.render_event(SessionEvent(kind="output", text=status))
+        self._set_busy(True, f"{agent} is analysing the problem")
+        self.run_worker(ask_thread, thread=True)
+
+    def _open_fix_session(self) -> Any:
+        """This pause's conversation; a different pause starts a new one."""
+        from whyline.console import fixmode
+        from whyline_relay import state as relay_state
+
+        root = self.session.root
+        reason, at = "", ""
+        try:
+            st = relay_state.load(root)
+            reason = st.paused_reason if st and st.paused_reason else ""
+            at = str(relay_state.path(root).stat().st_mtime_ns)
+        except Exception:
+            pass
+        pid = fixmode.pause_id(reason, at)
+        current = self._fix_session
+        if current is not None and current.pause_id == pid:
+            return current
+        agent = self.session.agent or ""
+        try:
+            self._fix_session = fixmode.open_session(root, pid, agent)
+        except Exception:
+            self._fix_session = fixmode.Session(pause_id=pid, agent=agent)
+        return self._fix_session
+
+    def _save_fix_session(self) -> None:
+        from whyline.console import fixmode
+
+        if self._fix_session is None:
+            return
+        try:
+            fixmode.save_session(self.session.root, self._fix_session)
+        except Exception:
+            pass  # the conversation still works in memory
+
+    def _record_agent_turn(self, res: Any) -> None:
+        from whyline.console import fixmode
+
+        session = self._open_fix_session()
+        agent = res.agent or self._ask_agent_name
+        session.agent = agent
+        if res.explanation:
+            session.turns.append(
+                fixmode.Turn(agent, res.explanation, self._wall().isoformat())
+            )
+        self._save_fix_session()
+
+    def _show_reply_box(self) -> None:
+        try:
+            self._main("#resolve-reply-row").display = True
+            self._main("#resolve-reply", Input).value = ""
+        except (NoMatches, IndexError):
+            pass
+
+    def _hide_reply_box(self) -> None:
+        try:
+            self._main("#resolve-reply-row").display = False
+        except (NoMatches, IndexError):
+            pass
+
+    def _submit_resolve_reply(self) -> None:
+        if self._resolve_problem is None or getattr(self, "_resolve_running", False):
+            return
+        try:
+            box = self._main("#resolve-reply", Input)
+        except (NoMatches, IndexError):
+            return
+        text = box.value.strip()
+        if not text:
+            return
+        box.value = ""
+        if text.lower() == "fix":
+            self._switch_to_fix()
+            return
+        self._resolve_running = True
+        try:
+            for btn in self._main("#resolve-actions").query(Button):
+                btn.disabled = True
+        except (NoMatches, IndexError):
+            pass
+        self._hide_reply_box()
+        self._sync_relay_buttons()
+        self._begin_ask(text)
+
+    def _switch_to_fix(self) -> None:
+        """`fix` typed in the reply box, or Fix it: this pause moves to Fix."""
+        from whyline.console import fixmode
+
+        session = self._open_fix_session()
+        session.level = fixmode.FIX
+        self._save_fix_session()
+        self._hide_reply_box()
+        self.render_event(SessionEvent(kind="output", text="Fix mode is on for this pause."))
 
     def _resolve_option_finished(self, opt: Any, res: Any, did_resume: bool) -> None:
         from whyline.console import recovery
@@ -5848,6 +5979,7 @@ class WhylineConsoleApp(App):
         problem_gone = not any(p.id == prev_id for p in new_problems)
 
         if problem_gone:
+            self._hide_reply_box()
             if not new_problems:
                 self._resolve_problem = None
                 self._resolve_problems = []
@@ -5916,8 +6048,31 @@ class WhylineConsoleApp(App):
         kept = [
             recovery.Option(o.id, o.label, o.detail, recommended=False, confirm=o.confirm)
             for o in (self._resolve_problem.options if self._resolve_problem else [])
-            if o.id not in ("show", "cancel", "ask-agent")
+            if o.id not in ("show", "cancel", "ask-agent", "fix-it")
         ]
+
+        # A real answer joins the conversation, opens the reply box and
+        # offers Fix it beside the other options.
+        fix_opts: list[Any] = []
+        if res is not None and res.status in ("recommended", "unlisted", "human", "proposal"):
+            import dataclasses
+
+            record = getattr(self, "_record_agent_turn", None)
+            if record is not None:
+                record(res)
+            if res.explanation:
+                res = dataclasses.replace(
+                    res, explanation=f"{res.agent or 'agent'} › {res.explanation}"
+                )
+            fix_opts = [
+                recovery.Option(
+                    "fix-it", "Fix it", "switch this pause to Fix",
+                    recommended=False, confirm=False,
+                )
+            ]
+            show_reply = getattr(self, "_show_reply_box", None)
+            if show_reply is not None:
+                show_reply()
 
         if res is None:
             self.render_event(SessionEvent(kind="output", text="Agent inquiry failed."))
@@ -5937,7 +6092,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[*kept, show_opt, cancel_opt],
+                options=[*kept, *fix_opts, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -5952,7 +6107,7 @@ class WhylineConsoleApp(App):
             cancel_opt = recovery.Option(
                 "cancel", "Cancel", "cancel resolve", recommended=False, confirm=False
             )
-            new_opts = [res.option, show_opt, cancel_opt]
+            new_opts = [res.option, *fix_opts, show_opt, cancel_opt]
             self._resolve_problem = recovery.Problem(
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
@@ -5991,7 +6146,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[*kept, show_opt, cancel_opt],
+                options=[*kept, *fix_opts, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -6021,7 +6176,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[*kept, show_opt, cancel_opt],
+                options=[*kept, *fix_opts, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -6046,7 +6201,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[*kept, show_opt, cancel_opt],
+                options=[*kept, *fix_opts, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()
@@ -6083,7 +6238,7 @@ class WhylineConsoleApp(App):
                 id=self._resolve_problem.id if self._resolve_problem else "unknown",
                 summary=self._resolve_problem.summary if self._resolve_problem else "Unknown problem",
                 evidence=self._resolve_problem.evidence if self._resolve_problem else [],
-                options=[*kept, show_opt, cancel_opt],
+                options=[*kept, *fix_opts, show_opt, cancel_opt],
             )
             self._mount_resolve_buttons(self._resolve_problem)
             self._sync_relay_buttons()

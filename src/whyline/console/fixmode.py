@@ -541,3 +541,130 @@ def guard(
         except FixModeError as exc:
             found.append(Violation("undo", f"could not undo: {exc}"))
     return found
+
+
+# ---------------------------------------------------------------------------
+# The Resolve conversation: one session per pause.
+# ---------------------------------------------------------------------------
+
+SUGGEST = "suggest"
+FIX = "fix"
+PROMPT_LIMIT = 40 * 1024  # bytes: the most a follow-up prompt may hold
+
+
+@dataclass(frozen=True)
+class Turn:
+    role: str  # "you" or the agent's name
+    text: str
+    at: str = ""
+
+
+@dataclass
+class Session:
+    pause_id: str
+    agent: str = ""
+    level: str = SUGGEST
+    turns: list[Turn] = field(default_factory=list)
+    snapshots: list[str] = field(default_factory=list)
+    attempts: int = 0
+
+
+def pause_id(reason: str, at: str | int | float) -> str:
+    """Identify a pause by why it paused and when."""
+    return hashlib.sha256(f"{at}\n{reason}".encode()).hexdigest()[:12]
+
+
+def _session_dir(root: Path, run: Run) -> Path:
+    return _git_dir(root, run) / "whyline-fix"
+
+
+def session_path(root: Path, *, run: Run = subprocess.run) -> Path:
+    return _session_dir(Path(root), run) / "session.json"
+
+
+def load_session(root: Path, *, run: Run = subprocess.run) -> Session | None:
+    try:
+        data = json.loads(session_path(root, run=run).read_text(encoding="utf-8"))
+    except (OSError, ValueError, FixModeError):
+        return None
+    if not isinstance(data, dict) or not data.get("pause_id"):
+        return None
+    turns = [
+        Turn(str(t.get("role", "")), str(t.get("text", "")), str(t.get("at", "")))
+        for t in data.get("turns") or []
+        if isinstance(t, dict)
+    ]
+    attempts = data.get("attempts")
+    return Session(
+        pause_id=str(data["pause_id"]),
+        agent=str(data.get("agent") or ""),
+        level=str(data.get("level") or SUGGEST),
+        turns=turns,
+        snapshots=[str(s) for s in data.get("snapshots") or []],
+        attempts=attempts if isinstance(attempts, int) else 0,
+    )
+
+
+def save_session(root: Path, session: Session, *, run: Run = subprocess.run) -> None:
+    path = session_path(root, run=run)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(asdict(session), indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def open_session(
+    root: Path,
+    pause: str,
+    agent: str = "",
+    level: str = SUGGEST,
+    *,
+    run: Run = subprocess.run,
+) -> Session:
+    """The saved session for this pause, or a new one.
+
+    A session left from a different pause is kept as ``session-<n>.json``.
+    """
+    root = Path(root)
+    current = load_session(root, run=run)
+    if current is not None and current.pause_id == pause:
+        return current
+    path = session_path(root, run=run)
+    if current is not None:
+        n = 1
+        while path.with_name(f"session-{n}.json").exists():
+            n += 1
+        os.replace(path, path.with_name(f"session-{n}.json"))
+    fresh = Session(pause_id=pause, agent=agent, level=level)
+    save_session(root, fresh, run=run)
+    return fresh
+
+
+def format_turn(turn: Turn) -> str:
+    return f"{turn.role} › {turn.text}"
+
+
+def _size(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def trim_turns(turns: list[Turn], budget: int) -> list[Turn]:
+    """The newest turns whose lines fit in ``budget`` bytes; oldest drop first.
+
+    A single newest turn that is too big is cut from its start, not dropped.
+    """
+    kept: list[Turn] = []
+    used = 0
+    for turn in reversed(turns):
+        cost = _size(format_turn(turn)) + 1
+        if used + cost > budget:
+            if not kept and budget > 0:
+                room = budget - _size(f"{turn.role} › ") - _size("[trimmed]\n") - 1
+                if room > 0:
+                    tail = turn.text.encode("utf-8")[-room:].decode("utf-8", "ignore")
+                    kept.append(Turn(turn.role, "[trimmed]\n" + tail, turn.at))
+            break
+        kept.append(turn)
+        used += cost
+    kept.reverse()
+    return kept

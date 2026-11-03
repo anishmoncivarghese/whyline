@@ -7179,3 +7179,120 @@ def test_undo_fix_restores_snapshot(tmp_path: Path) -> None:
     assert not (repo / "new.txt").exists()
     with pytest.raises(ValueError):
         recovery.apply_step(repo, dict(action="undo-fix", snapshot="nope"))
+
+
+def test_follow_up_prompt_carries_the_first_answer_and_the_reply(tmp_path: Path) -> None:
+    from whyline.console import fixmode
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    prompts: list[str] = []
+
+    def runner(command, prompt, **kwargs):
+        prompts.append(prompt)
+        return "EXPLANATION: Because the tree is dirty.\nRECOMMEND: stash\n"
+
+    session = ConsoleSession(root=repo, agent="codex")
+    recovery.ask_agent(session, runner=runner)
+    turns = [fixmode.Turn("codex", "Stash the changes first.")]
+    res = recovery.ask_agent(session, runner=runner, turns=turns, reply="why stash?")
+
+    assert "Stash the changes first." not in prompts[0]
+    assert "codex › Stash the changes first." in prompts[1]
+    assert "you › why stash?" in prompts[1]
+    assert "## Instructions" in prompts[1]  # the original context is still there
+    assert res.status == "recommended"
+
+
+def test_follow_up_trim_keeps_the_context_and_the_newest_turns() -> None:
+    from whyline.console import fixmode
+
+    base = "CONTEXT " * 100
+    turns = [fixmode.Turn("codex", f"answer-{i} " + "y" * 500) for i in range(30)]
+    prompt = recovery.build_followup_prompt(base, turns, "last question", limit=4000)
+
+    assert len(prompt.encode("utf-8")) <= 4000
+    assert prompt.startswith(base)
+    assert "you › last question" in prompt
+    assert "answer-29 " in prompt
+    assert "answer-0 " not in prompt
+
+
+def test_follow_up_prompt_stays_under_40kb_with_a_near_limit_base() -> None:
+    from whyline.console import fixmode
+
+    base = "## Instructions\n" + "z" * 40_850 + "\nEND-INSTRUCTIONS"
+    turns = [fixmode.Turn("codex", "old answer " * 50)]
+    for reply in ("short", "r" * 5_000, "é" * 30_000):
+        prompt = recovery.build_followup_prompt(base, turns, reply)
+        assert len(prompt.encode("utf-8")) <= fixmode.PROMPT_LIMIT
+    short = recovery.build_followup_prompt(base, [], "short")
+    assert short.startswith("## Instructions")
+    assert "END-INSTRUCTIONS" in short
+    assert "you › short" in short
+
+
+def test_a_follow_up_proposal_shows_apply_buttons(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from whyline.console.session import ConsoleSession
+    from whyline.console.tui import WhylineConsoleApp
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    reply = (
+        'Do this:\n```json\n{"diagnosis": "Resume it.", '
+        '"steps": [{"action": "resume", "allow_dirty": true}], '
+        '"confidence": "high"}\n```\n'
+    )
+    res = recovery.ask_agent(
+        ConsoleSession(root=repo, agent="codex"),
+        runner=lambda cmd, prompt, **kw: reply,
+        turns=[],
+        reply="what should I do?",
+    )
+    assert res.status == "proposal"
+
+    ask = recovery.Option("ask-agent", "Ask agent", "ask", recommended=False, confirm=False)
+    problem = recovery.Problem(id="x", summary="paused", evidence=[], options=[ask])
+    events: list[str] = []
+    mounted: list[recovery.Problem] = []
+    boxes: list[bool] = []
+    fake = SimpleNamespace(
+        _resolve_problem=problem,
+        _resolve_running=True,
+        _set_busy=lambda *a, **k: None,
+        render_event=lambda ev: events.append(ev.text),
+        _mount_resolve_buttons=mounted.append,
+        _sync_relay_buttons=lambda: None,
+        _record_agent_turn=lambda r: None,
+        _show_reply_box=lambda: boxes.append(True),
+    )
+
+    WhylineConsoleApp._ask_agent_finished(fake, res)
+
+    # The proposal button opens the screen with Apply all / Apply step 1 only.
+    assert [o.id for o in mounted[0].options] == ["proposal", "fix-it", "show", "cancel"]
+    assert "Apply all" in mounted[0].options[0].detail
+    assert boxes == [True]
+    assert any(e.startswith("codex › ") for e in events)
+
+
+def test_follow_up_goes_to_the_agent_that_answered_not_the_configured_one(tmp_path: Path) -> None:
+    from whyline.console import fixmode
+    from whyline.console.session import ConsoleSession
+
+    repo = _init_scratch_repo(tmp_path / "repo")
+    commands: list[object] = []
+
+    def runner(command, prompt, **kwargs):
+        commands.append(command)
+        return "EXPLANATION: ok.\nRECOMMEND: stash\n"
+
+    session = ConsoleSession(root=repo, agent="codex")  # configured; claude answered
+    turns = [fixmode.Turn("claude", "Stash first.")]
+    res = recovery.ask_agent(
+        session, runner=runner, agent="claude", turns=turns, reply="why?"
+    )
+
+    assert res.agent == "claude"
+    assert "claude" in str(commands[0]).lower()

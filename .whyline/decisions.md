@@ -33667,3 +33667,139 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8dd4dcd135ad46cab475087efb7b56ce -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-02T21:44:08.595Z"} -->
+
+## 2026-11-02 — Resolve follow-ups append the trimmed conversation and the reply to the original Ask agent prompt; proposals reuse the existing Review steps button
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-4
+
+**Because:** keeps one prompt builder, read-only at Suggest; _ProposalStatus already equals 'recommended' so no new proposal branch is needed
+
+**Rejected:**
+
+- separate proposal branch in the TUI — unreachable since the recommended branch matches first
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 79c9929e737f42cb86be35b781d78ba2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T22:04:42.205Z"} -->
+
+## 2026-11-02 — Fail FIX-4 round-two behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-4
+
+**Because:** Focused FIX-4 tests pass and the lone full-suite failure is the known Textual mount race, but a direct follow-up behavior check proves that after an initial fallback answer the reply is sent using the console's configured agent rather than the agent that answered
+
+**Rejected:**
+
+- Pass based only on the requested focused tests — those tests do not exercise the required same-agent behavior after fallback
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 6189ebc36d6541b2821f4037c4a88e99 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T22:19:31.281Z"} -->
+
+## 2026-11-02 — Follow-ups pass the fix-session's answering agent to ask_agent; explicit agent overrides session.agent only when a reply is given
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-4
+
+**Because:** after a fallback the answering agent differs from the configured one; other callers keep the old precedence
+
+**Rejected:**
+
+- mutate self.session.agent — would change the user's configured chat agent
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 08d875b9c30d459887806c60d054f90c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T22:21:32.925Z"} -->
+
+## 2026-11-02 — Pass FIX-4 round-four behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-4
+
+**Because:** All 197 focused fixmode/recovery tests pass; a direct TUI probe confirms follow-ups use the answering agent after fallback; the full suite had only the known intermittent RelaySetupScreen mount race, and that exact test passed alone on immediate rerun
+
+**Rejected:**
+
+- Fail FIX-4 for the full-suite UI race — the traceback is outside the changed FIX-4 paths and the test passes when rerun
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/recovery.py, src/whyline/console/fixmode.py
+
+<!-- whyline-event: 5e16538abb72421a8799e4be52f48788 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T22:35:32.548Z"} -->
+
+## 2026-11-02 — Reject FIX-4 round-five review because follow-up prompts can exceed 40 KB
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-4
+
+**Because:** build_followup_prompt budgets only stored turns; a real 40,882-byte build_ask_agent_prompt result plus a short reply becomes 41,053 bytes even with no turns, violating the task's total prompt cap despite the full suite passing
+
+**Rejected:**
+
+- Approve — the required 40 KB ceiling is explicit and the added trimming test does not cover a near-limit base prompt
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 1161434b19bb4b649fd168ac8e3a047f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T22:48:48.335Z"} -->
+
+## 2026-11-02 — Follow-up prompt shrinks an oversized base from its middle and hard-caps total bytes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-4
+
+**Because:** total prompt must stay under 40 KB even when the base alone nears it; keeping base head and closing instructions preserves the JSON-proposal contract
+
+**Rejected:**
+
+- Trim only turns — base plus headings and reply can exceed the cap
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: d9b95b6aea64496ba7fffb68546cc2ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T22:50:42.014Z"} -->
+
+## 2026-11-02 — Pass FIX-4 round-seven behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-4
+
+**Because:** All seven FIX-4 scenario tests pass; a direct 40,882-byte base probe produces a 40,960-byte capped prompt while ordinary context retains newest turns; the full suite's sole failure was the known intermittent RelaySetupScreen Textual mount race, and the exact test passed twice in isolation
+
+**Rejected:**
+
+- Fail for the full-suite UI race — it is outside the FIX-4 implementation paths and is non-reproducible in two isolated reruns
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, src/whyline/console/fixmode.py
+
+<!-- whyline-event: 2378f69b494c4145a5facf6f58445ece -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-02T23:05:48.207Z"} -->
+
+## 2026-11-03 — Approve FIX-4 round-eight review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-4
+
+**Because:** The implementation persists and rotates per-pause conversations, sends byte-bounded read-only follow-ups to the answering agent, exposes reply and Fix controls, preserves proposal Apply actions, and the full uv run pytest -q suite passed with exit code 0
+
+**Rejected:**
+
+- Request changes — the working-tree diff and full-suite result show no unsafe or clearly incorrect behavior within FIX-4 scope
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_fixmode.py, tests/console/test_recovery.py
+
+<!-- whyline-event: 4a2c5e6b83ac48819f71311735e38bae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T04:39:51.537Z"} -->
