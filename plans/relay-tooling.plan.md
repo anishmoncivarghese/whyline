@@ -568,7 +568,7 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   - no state and a missing configured plan gives zeros
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] MDL-1: Only real model ids in the model lists, checked before saving
+- [x] MDL-1: Only real model ids in the model lists, checked before saving
   Edit `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
   On 2026-11-02 at FIX-2 round 18, an Auto recovery step set Claude's model to `claude-opus-5-5-high`, the first entry of `AGENT_MODELS["claude"]`. That id doesn't exist (the effort suffix is antigravity's naming), so Claude refused the turn in under a second (API 404).
   1. In `AGENT_MODELS["claude"]`, replace `claude-opus-5-5-high` with `claude-opus-5-5`, and put the aliases `opus`, `sonnet`, `haiku` first.
