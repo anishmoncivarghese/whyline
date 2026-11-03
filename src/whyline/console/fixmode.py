@@ -668,3 +668,215 @@ def trim_turns(turns: list[Turn], budget: int) -> list[Turn]:
         used += cost
     kept.reverse()
     return kept
+
+
+# ---------------------------------------------------------------------------
+# A Fix turn: snapshot, run the agent with edits allowed, guard, report.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FixResult:
+    status: str  # proposal | violation | cancelled | exhausted
+    agent: str = ""
+    snapshot: Snapshot | None = None
+    diagnosis: str = ""
+    steps: list[dict] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    changes: list[Change] = field(default_factory=list)
+    counts: dict[str, tuple[int, int]] = field(default_factory=dict)  # path -> (+, -)
+    violations: list[Violation] = field(default_factory=list)
+    tried: list[str] = field(default_factory=list)
+    fallbacks: list[tuple[str, str]] = field(default_factory=list)
+    elapsed: float = 0.0
+
+
+def change_counts(
+    root: Path, snap: Snapshot, *, run: Run = subprocess.run
+) -> dict[str, tuple[int, int]]:
+    """Lines added and removed per path since the snapshot (binary files: 0, 0)."""
+    root = Path(root)
+    tree = _write_tree(root, run)
+    out = _git(
+        root,
+        ["diff-tree", "-r", "--no-renames", "--numstat", "-z", snap.commit, tree],
+        run=run,
+    )
+    counts: dict[str, tuple[int, int]] = {}
+    for part in _split_nul(out):
+        pieces = part.split("\t", 2)
+        if len(pieces) != 3:
+            continue
+        added, removed, path = pieces
+        counts[path] = (
+            int(added) if added.isdigit() else 0,
+            int(removed) if removed.isdigit() else 0,
+        )
+    return counts
+
+
+def _restore(root: Path, snap: Snapshot, before: GuardState, run: Run) -> None:
+    """Put the tree back after an agent that failed or was stopped."""
+    guard(root, snap, before, run=run)  # undoes a commit or branch change, if any
+    try:
+        undo(root, snap, run=run)
+    except FixModeError:
+        pass
+
+
+def run_fix(
+    root: Path,
+    session: Session,
+    *,
+    agent_chain: list[str],
+    runner: Callable[..., object] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    cancel_event: object | None = None,
+    run: Run = subprocess.run,
+) -> FixResult:
+    """One Fix turn: the first agent in the chain that has a guarded fix command.
+
+    A snapshot is taken first. An agent without a fix command is skipped; one
+    that times out or hits a limit is undone and passes the turn on. Stop
+    (``cancel_event``) ends the turn and undoes what it left. After the turn the
+    guard runs; a violation is undone and reported.
+    """
+    import inspect
+    import time
+
+    from whyline.agents import capabilities
+    from whyline.console import recovery, relay_ops
+    from whyline_relay import agents as relay_agents
+    from whyline_relay import chat as relay_chat
+    from whyline_relay import config as relay_config
+    from whyline_relay import state as relay_state
+
+    root = Path(root).resolve()
+    started = time.monotonic()
+    say = on_progress or (lambda _text: None)
+
+    def cancelled() -> bool:
+        return cancel_event is not None and bool(cancel_event.is_set())  # type: ignore[attr-defined]
+
+    result = FixResult(status="exhausted")
+
+    def finish(status: str) -> FixResult:
+        result.status = status
+        result.elapsed = time.monotonic() - started
+        return result
+
+    if cancelled():
+        return finish("cancelled")
+    snap = snapshot(root, run=run)
+    result.snapshot = snap
+    session.snapshots.append(snap.id)
+    session.attempts += 1
+    session.level = FIX
+    try:
+        save_session(root, session, run=run)
+    except (OSError, FixModeError):
+        pass
+
+    settings = relay_config.load(root)
+    plan = Path(settings.plan) if getattr(settings, "plan", None) else None
+    if plan is not None and not plan.is_absolute():
+        plan = root / plan
+    try:
+        st = relay_state.load(root)
+    except Exception:
+        st = None
+    minutes = (
+        st.timeout_minutes
+        if st and st.timeout_minutes is not None
+        else getattr(settings, "timeout_minutes", None)
+    )
+    timeout = relay_ops._timeout_seconds_kwarg(minutes)
+    prompt = recovery.build_fix_prompt(root, session.turns)
+    active = runner if runner is not None else relay_agents.run
+    try:
+        params = inspect.signature(active).parameters.values()
+        takes_cancel = any(
+            p.name == "cancel_event" or p.kind is inspect.Parameter.VAR_KEYWORD
+            for p in params
+        )
+    except (TypeError, ValueError):
+        takes_cancel = False
+
+    def pass_over(agent: str, why: str) -> None:
+        result.fallbacks.append((agent, why))
+        say(f"{agent} {why}")
+
+    for agent in agent_chain:
+        if agent in result.tried:
+            continue
+        if cancelled():
+            return finish("cancelled")
+        try:
+            command = relay_chat.resolve_command(settings, agent)
+        except Exception:
+            command = [agent]
+        fix = capabilities.fix_command(agent, list(command))
+        if fix is None:
+            pass_over(agent, "has no guard for Fix mode, so it was skipped")
+            continue
+        result.tried.append(agent)
+        before = observe(root, plan, run=run)
+        log = root / ".whyline" / "relay" / "logs" / f"fix-agent-{agent}.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        kwargs: dict = {
+            "cwd": root,
+            "log_path": log,
+            "echo": False,
+            "agent_name": agent,
+            **timeout,
+        }
+        if takes_cancel and cancel_event is not None:
+            kwargs["cancel_event"] = cancel_event
+        say(f"{agent} is fixing…")
+        raw = ""
+        failure: Exception | None = None
+        try:
+            out = active(fix, prompt, **kwargs)
+            if isinstance(out, str):
+                raw = out
+            else:
+                raw = getattr(out, "output", None) or getattr(out, "stdout", None) or ""
+        except Exception as exc:  # noqa: BLE001
+            failure = exc
+        if not raw and failure is None and log.is_file():
+            raw = log.read_text(encoding="utf-8", errors="replace")
+
+        if cancelled() or isinstance(failure, relay_agents.AgentCancelled):
+            _restore(root, snap, before, run)
+            return finish("cancelled")
+        if failure is not None:
+            _restore(root, snap, before, run)
+            if not recovery._is_model_failure(failure, ""):
+                raise failure
+            pass_over(agent, recovery._fallback_reason(failure, ""))
+            continue
+
+        result.agent = agent
+        violations = guard(root, snap, before, run=run)
+        if violations:
+            result.violations = violations
+            return finish("violation")
+        result.changes = changed_since(root, snap, run=run)
+        result.counts = change_counts(root, snap, run=run)
+        data = recovery.extract_fenced_json(raw)
+        if data is not None:
+            result.diagnosis = str(data.get("diagnosis") or "").strip()
+            result.steps, result.notes = recovery.validate_steps(
+                root, data.get("steps") or []
+            )
+        else:
+            result.diagnosis = raw.strip()
+        stamp = datetime.now(timezone.utc).isoformat()
+        session.turns.append(Turn(agent, result.diagnosis, stamp))
+        session.agent = agent
+        try:
+            save_session(root, session, run=run)
+        except (OSError, FixModeError):
+            pass
+        return finish("proposal")
+    return finish("exhausted")

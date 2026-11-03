@@ -1188,6 +1188,7 @@ class WhylineConsoleApp(App):
         self._resolve_problems: list = []
         self._resolve_problem: Any = None
         self._resolve_running: bool = False
+        self._fix_active: bool = False  # a Fix turn (worker or cleanup) is in flight
         self._resume_fail_lines: list[str] = []
         self._last_relay_args: list[str] = []
 
@@ -4214,8 +4215,9 @@ class WhylineConsoleApp(App):
             return
         if self._ask_cancel is not None and self._busy_text:
             secs = int(self._clock() - self._ask_started)
+            what = "Fix agent" if self._fix_active else "Ask agent"
             thinking.update(
-                f"{_SPINNER[self._spin]} Ask agent: {self._ask_agent_name} · "
+                f"{_SPINNER[self._spin]} {what}: {self._ask_agent_name} · "
                 f"{secs // 60}:{secs % 60:02d}"
             )
             return
@@ -5723,8 +5725,6 @@ class WhylineConsoleApp(App):
         if opt.id == "fix-it":
             self._resolve_running = False
             self._switch_to_fix()
-            self._mount_resolve_buttons(self._resolve_problem)
-            self._sync_relay_buttons()
             return
 
         if opt.id == "ask-agent":
@@ -5826,6 +5826,135 @@ class WhylineConsoleApp(App):
         self._set_busy(True, f"{agent} is analysing the problem")
         self.run_worker(ask_thread, thread=True)
 
+    def _begin_fix(self) -> None:
+        """Run one Fix turn: the agent may edit, the guard checks, then the
+        result panel asks to approve, undo, ask again or stop."""
+        import threading
+
+        from whyline.console import fixmode, recovery
+        from whyline_relay import setup as relay_setup
+
+        session = self._open_fix_session()
+        root = self.session.root
+        chain: list[str] = []
+        for name in [session.agent or self.session.agent or "", *self._fix_backups(relay_setup, root)]:
+            if name and name not in chain:
+                chain.append(name)
+        cancel = threading.Event()
+        self._ask_cancel = cancel
+        self._ask_started = self._clock()
+        self._ask_agent_name = chain[0] if chain else "the agent"
+        self._resolve_running = True
+        self._fix_active = True
+        runner = self._runner or recovery._AUTO_RUNNER
+
+        def progress(text: str) -> None:
+            self.call_from_thread(
+                self.render_event, SessionEvent(kind="output", text=text)
+            )
+
+        def fix_thread() -> None:
+            res = None
+            try:
+                res = fixmode.run_fix(
+                    root, session, agent_chain=chain, runner=runner,
+                    on_progress=progress, cancel_event=cancel,
+                )
+            except Exception as exc:
+                progress(f"Fix failed: {exc}")
+            finally:
+                self.call_from_thread(self._fix_finished, res, cancel)
+
+        self.render_event(SessionEvent(kind="output", text=f"{self._ask_agent_name} is fixing…"))
+        self._set_busy(True, f"{self._ask_agent_name} is fixing")
+        self.run_worker(fix_thread, thread=True)
+
+    @staticmethod
+    def _fix_backups(relay_setup: Any, root: Any) -> list[str]:
+        try:
+            return list(relay_setup.read_backup(root))
+        except Exception:
+            return []
+
+    def _fix_finished(self, res: Any, cancel: Any) -> None:
+        from whyline.console.relay_screens import FixResultScreen
+
+        self._ask_cancel = None
+        self._fix_active = False
+        self._resolve_running = False
+        self._set_busy(False)
+        stopped = cancel.is_set()
+        if stopped or res is None or res.status not in ("proposal", "violation"):
+            self.render_event(
+                SessionEvent(
+                    kind="output",
+                    text="Fix stopped; partial edits were undone."
+                    if stopped
+                    else "No agent could make a guarded fix.",
+                )
+            )
+            if self._resolve_problem is not None:
+                self._mount_resolve_buttons(self._resolve_problem)
+            self._sync_relay_buttons()
+            return
+
+        def view_diff(path: str) -> None:
+            self._open_tree_file(Path(self.session.root) / path)
+
+        self.push_screen(
+            FixResultScreen(res, view_diff=view_diff),
+            lambda answer: self._fix_decided(res, answer),
+        )
+
+    def _fix_decided(self, res: Any, answer: Any) -> None:
+        from whyline.console import fixmode, recovery
+
+        root = self.session.root
+        say = lambda text: self.render_event(SessionEvent(kind="output", text=text))  # noqa: E731
+        if answer == "approve":
+            self._resolve_running = True
+            did_resume = False
+
+            def in_thread() -> None:
+                nonlocal did_resume
+                def launcher(args: list[str]) -> None:
+                    nonlocal did_resume
+                    did_resume = True
+                    self.call_from_thread(self._launch_relay, args)
+                try:
+                    out = recovery.apply_steps(root, res.steps, launch=launcher)
+                    message = str(out.message)
+                except Exception as exc:
+                    message = f"Resolve error: {exc}"
+                self.call_from_thread(self._fix_applied, message, did_resume)
+
+            self.run_worker(in_thread, thread=True)
+            return
+        if answer == "undo" and res.snapshot is not None:
+            try:
+                restored = fixmode.undo(root, res.snapshot)
+                say(f"Undid the fix: {len(restored)} path(s) restored.")
+            except fixmode.FixModeError as exc:
+                say(f"Could not undo the fix: {exc}")
+        elif answer == "ask":
+            say("Changes kept. Reply to ask again.")
+            self._show_reply_box()
+        else:
+            say("Fix stopped." + (" Its changes were undone." if res.status == "violation" else " Changes kept."))
+        if self._resolve_problem is not None:
+            self._mount_resolve_buttons(self._resolve_problem)
+        self._sync_relay_buttons()
+
+    def _fix_applied(self, message: str, did_resume: bool) -> None:
+        self._resolve_running = False
+        self.render_event(SessionEvent(kind="output", text=message))
+        if did_resume:
+            self._close_resolve_flow()
+            return
+        if self._resolve_problem is not None:
+            self._mount_resolve_buttons(self._resolve_problem)
+        self._sync_relay_buttons()
+
     def _open_fix_session(self) -> Any:
         """This pause's conversation; a different pause starts a new one."""
         from whyline.console import fixmode
@@ -5918,6 +6047,7 @@ class WhylineConsoleApp(App):
         self._save_fix_session()
         self._hide_reply_box()
         self.render_event(SessionEvent(kind="output", text="Fix mode is on for this pause."))
+        self._begin_fix()
 
     def _resolve_option_finished(self, opt: Any, res: Any, did_resume: bool) -> None:
         from whyline.console import recovery
@@ -6026,6 +6156,14 @@ class WhylineConsoleApp(App):
         the Resolve options back."""
         cancel = self._ask_cancel
         if cancel is None:
+            return
+        if self._fix_active:
+            # A Fix turn can edit files: keep Resolve disabled until run_fix
+            # has exited and restored the snapshot (_fix_finished).
+            if not cancel.is_set():
+                cancel.set()
+                self._set_busy(True, "Stopping fix, undoing partial edits")
+                self.render_event(SessionEvent(kind="output", text="Stopping the fix…"))
             return
         cancel.set()
         self._ask_cancel = None

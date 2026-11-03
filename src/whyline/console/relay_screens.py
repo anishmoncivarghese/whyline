@@ -2825,6 +2825,96 @@ class ResolveProposalScreen(ModalScreen):
         self._apply(all_steps=False)
 
 
+def fix_changes_text(changes, counts) -> str:
+    """One line per changed file: its kind and +added/−removed line counts."""
+    if not changes:
+        return "No files changed."
+    lines = []
+    for change in changes:
+        plus, minus = counts.get(change.path, (0, 0))
+        lines.append(f"  {change.path}  +{plus} −{minus} ({change.kind})")
+    return "\n".join(lines)
+
+
+class FixResultScreen(ModalScreen):
+    """What a Fix turn did. Dismisses with "approve", "undo", "ask" or "stop".
+
+    A guard violation shows what was undone and offers only Ask again or Stop.
+    """
+
+    DEFAULT_CSS = """
+    FixResultScreen { align: center middle; }
+    #frs-dialog {
+        width: 90; height: auto; max-height: 90%;
+        border: thick $accent; background: $surface; padding: 1 2;
+    }
+    #frs-title { text-style: bold; margin-bottom: 1; }
+    #frs-dialog Static { margin-bottom: 1; }
+    #frs-buttons { height: auto; align: right middle; }
+    #frs-buttons Button { margin-left: 1; }
+    """
+
+    def __init__(self, result, *, view_diff=None) -> None:
+        super().__init__()
+        self._result = result
+        self._view_diff = view_diff
+        self._next_file = 0
+
+    def compose(self) -> ComposeResult:
+        from whyline.console import recovery
+
+        res = self._result
+        violated = res.status == "violation"
+        with Vertical(id="frs-dialog"):
+            if violated:
+                yield Label(f"{res.agent} broke the Fix rules. Its changes were undone.", id="frs-title")
+                yield Static(
+                    "What was undone:\n" + "\n".join(f"- {v.message}" for v in res.violations),
+                    id="frs-violations",
+                )
+            else:
+                yield Label(f"{res.agent} made a fix", id="frs-title")
+                yield Static(f"Diagnosis:\n{res.diagnosis}", id="frs-diagnosis")
+                yield Static(
+                    "Changed files:\n" + fix_changes_text(res.changes, res.counts),
+                    id="frs-files",
+                )
+                steps = "\n".join(
+                    f"{i}. {recovery.format_step_label(s)}" for i, s in enumerate(res.steps, 1)
+                )
+                yield Static(f"Proposed steps:\n{steps or 'No steps proposed.'}", id="frs-steps")
+                if res.notes:
+                    yield Static("Notes:\n" + "\n".join(f"- {n}" for n in res.notes), id="frs-notes")
+            with Horizontal(id="frs-buttons"):
+                if not violated:
+                    yield Button("View diff", id="frs-diff", disabled=not res.changes)
+                    yield Button(
+                        "Approve and continue", id="frs-approve", variant="primary",
+                        disabled=not res.steps,
+                    )
+                    yield Button("Undo fix", id="frs-undo")
+                yield Button("Ask again", id="frs-ask")
+                yield Button("Stop", id="frs-stop")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        button = event.button.id or ""
+        if button == "frs-diff":
+            paths = [c.path for c in self._result.changes]
+            if paths and self._view_diff is not None:
+                self._view_diff(paths[self._next_file % len(paths)])
+                self._next_file += 1
+            return
+        answers = {
+            "frs-approve": "approve",
+            "frs-undo": "undo",
+            "frs-ask": "ask",
+            "frs-stop": "stop",
+        }
+        if button in answers:
+            self.dismiss(answers[button])
+
+
 _ISSUE_NUMBER = re.compile(r"^\s*\d+\.\s+")
 
 

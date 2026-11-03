@@ -6326,6 +6326,57 @@ class AskAgentResult:
 
 ASK_AGENT_MAX_SECONDS = 10 * 60
 
+FIX_INSTRUCTIONS = """\
+## Fix instructions
+You may now edit files in this repository to resolve the pause.
+- Make the smallest change that resolves the pause.
+- Do not commit, push or change branches.
+- Prefer config changes over code changes.
+- If the cause is a bug in whyline or whyline-relay itself, do not edit the \
+installed tool; propose a `report-bug` step and any workaround instead.
+- End with the fenced JSON block from the instructions above (diagnosis and \
+steps). Its last step must be the way to continue."""
+
+
+def build_fix_prompt(root: Path | str, turns: Sequence[Any], *, limit: int | None = None) -> str:
+    """The Ask agent context, the conversation so far, then the Fix instructions."""
+    from whyline.console import fixmode
+
+    root_path = Path(root).resolve()
+    limit = fixmode.PROMPT_LIMIT if limit is None else limit
+    st_dict = _read_state_dict(root_path)
+    log_tail = ""
+    log_path = str(st_dict.get("log_path") or "")
+    if log_path:
+        lp = Path(log_path)
+        lp = lp if lp.is_absolute() else root_path / lp
+        try:
+            log_tail = "\n".join(lp.read_text(encoding="utf-8", errors="replace").splitlines()[-80:])
+        except OSError:
+            pass
+    try:
+        git_status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=root_path, capture_output=True, text=True
+        ).stdout.strip()
+    except Exception:
+        git_status = ""
+    base = build_ask_agent_prompt(
+        root_path,
+        pause_reason=str(st_dict.get("paused_reason") or ""),
+        round_log=log_tail,
+        git_status=git_status,
+    )
+    head = "\n\n## Conversation so far\n"
+    tail = "\n\n" + FIX_INSTRUCTIONS
+
+    def size(text: str) -> int:
+        return len(text.encode("utf-8"))
+
+    budget = limit - size(base) - size(head + tail) - size("(none kept)")
+    kept = fixmode.trim_turns(list(turns), budget)
+    body = "\n".join(fixmode.format_turn(t) for t in kept) if kept else "(none kept)"
+    return base + head + body + tail
+
 
 def ask_agent(
     root: Path | str | Any,

@@ -33803,3 +33803,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4a2c5e6b83ac48819f71311735e38bae -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T04:39:51.537Z"} -->
+
+## 2026-11-03 — Fix turn undoes partial edits on Stop or agent failure; Fix panel reuses Ask's cancel/elapsed status
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-5
+
+**Because:** a half-finished edit must not leak into the next agent or be silently kept; reusing _ask_cancel gives Stop and elapsed time for free
+
+**Rejected:**
+
+- keep partial edits on Stop — unreviewed changes with no proposal
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: a6cdbf31d1f747cda10ee026f83917f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T04:53:26.107Z"} -->
+
+## 2026-11-03 — Pass FIX-5 round-two behavioral testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-5
+
+**Because:** All five required fix-with-approval scenarios passed; the focused console suite passed; the full suite's sole failure was the previously documented intermittent RelaySetupScreen Textual mount race, and the exact test alternated pass and failure in isolation without code changes
+
+**Rejected:**
+
+- Fail FIX-5 for the RelaySetupScreen smoke-test race — the same test passed in the focused run and one isolated rerun, failed in other isolated reruns at different missing widgets, and is a known pre-existing timing race unrelated to FIX-5 behavior
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/recovery.py, src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_fixmode_run.py
+
+<!-- whyline-event: 3a11a91897414c09ad975fbc6bef7a2f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T05:10:11.703Z"} -->
+
+## 2026-11-03 — Reject FIX-5 round-three review for unsafe Fix Stop lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-5
+
+**Because:** The plain full suite passed, but tui.py reuses the Ask Stop handler for a write-capable Fix turn: it clears _resolve_running and remounts Resolve actions before run_fix has exited and restored the snapshot, so a second turn can start on partial edits and then be overwritten by the first turn's delayed undo; the timer and Stop message also incorrectly say Ask agent during Fix
+
+**Rejected:**
+
+- Approve from passing tests — the five fake-agent tests do not cover the console lifecycle between Stop and cleanup completion
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: aa73c0f50e184a05a3b6c420e8c71ab7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T05:23:25.093Z"} -->
+
+## 2026-11-03 — Fix Stop keeps Resolve disabled until run_fix cleanup finishes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-5
+
+**Because:** Stop only sets cancel; _fix_finished (after run_fix restored the snapshot) clears _resolve_running, so no second turn overlaps the undo
+
+**Rejected:**
+
+- re-enable Resolve at Stop like Ask — lets a new turn start on partial edits that the delayed undo then overwrites
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 71dc6c992383449b85002ad746439493 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T05:28:59.080Z"} -->
+
+## 2026-11-03 — Pass FIX-5 round-five testing
+
+**Actor:** codex
+**Role:** tester
+**Task:** FIX-5
+
+**Because:** The full project suite exited 0 and all six dedicated fake-agent tests passed, including cancellation rollback and keeping Resolve disabled until Fix cleanup completes
+
+**Rejected:**
+
+- Fail from the earlier 120-second console timeout — the uninterrupted full suite completed successfully when allowed to run
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: bb78975b20ef4bd981a4f2011e3160ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T05:48:52.926Z"} -->
+
+## 2026-11-03 — Approve FIX-5 round-six review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FIX-5
+
+**Because:** The full plain test suite exited 0, and the implementation safely snapshots, runs the first guarded fix agent with relay timeout and cancellation, guards and reports changes, exposes the required Resolve actions, and tests all five required fake-agent cases plus the Stop cleanup race
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found in the working-tree diff
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 655f2fedd50744b49aeebc9bfe9ae430 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T06:02:46.758Z"} -->
