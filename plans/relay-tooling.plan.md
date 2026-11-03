@@ -522,7 +522,7 @@ Global constraints:
 
 Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `.whyline/relay/config.toml` had no `max_rounds`, so the relay's default of 3 applied. agentdock had 24. The only ways to change it were editing the file, `--max-rounds` for one run, or **Resolve** adding 6 after a pause.
 
-- [ ] RCAP-1: A Round cap field in Set up, with a sensible default
+- [x] RCAP-1: A Round cap field in Set up, with a sensible default
   Edit `src/whyline/console/relay_screens.py`, `src/whyline/console/relay_ops.py`, `src/whyline/console/recovery.py` (only to call the new saver), `src/whyline/cli.py` and their tests only.
   1. Add `relay_ops.save_max_rounds(root, n)`. It validates 1 to 99 and writes `max_rounds` with the same top-level setter `recovery._raise_max_rounds` uses (`relay_setup._set_unquoted_top_level`), as a `setup: max_rounds N` commit. `recovery._raise_max_rounds` calls it, so there is one saver.
   2. In `RelaySetupScreen`, add **Round cap** next to Timeout: an `Input` restricted to digits, showing the repository's current `max_rounds`. Under it, a hint: `Rounds per task before the relay pauses. Each review or test send-back uses one.`
