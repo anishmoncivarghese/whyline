@@ -496,7 +496,7 @@ Global constraints:
   - When Auto stops, the panel says why and keeps the conversation open.
   Tests: one attempt per pause, the same reason twice stops, commit-task without approval stops, a non-safe step stops with the proposal, and the record is written.
 
-- [ ] FIX-8: Check a running relay
+- [x] FIX-8: Check a running relay
   Edit `src/whyline/console/fixmode.py`, `src/whyline/console/tui.py` and their tests only.
   - A **Check** button in the Relay row (Relay mode only, enabled while a relay runs or is paused) asks the main agent, read-only, with:
     - the live marker
