@@ -483,7 +483,7 @@ Global constraints:
   - The Fix level setting: **Suggest / Fix with approval / Auto fix**, shown next to Resolve's Ask/Auto and saved the same way. It defaults to Fix with approval.
   Tests: passing checks apply the steps and launch resume; a failing test returns to the conversation with its output; Verify-with parsing finds both commands in a task like JOB-23's; the setting round-trips.
 
-- [ ] FIX-7: Auto fix guard rails
+- [x] FIX-7: Auto fix guard rails
   Edit `src/whyline/console/recovery.py`, `src/whyline/console/fixmode.py`, `src/whyline/console/tui.py` and their tests only.
   - In Auto (Resolve mode auto) with Fix level Auto fix, run when no rule-based fix applies or one already failed on this pause:
     - one fix attempt per pause
