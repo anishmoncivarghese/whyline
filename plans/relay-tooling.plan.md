@@ -446,7 +446,7 @@ Global constraints:
   - The transcript shows `you ›` and `<agent> ›` lines.
   Tests: a second question includes the first answer; a new pause starts a new session; trimming keeps the context and the newest turns; a proposal in a follow-up shows Apply buttons.
 
-- [ ] FIX-5: Fix with approval
+- [x] FIX-5: Fix with approval
   Edit `src/whyline/console/fixmode.py`, `src/whyline/console/recovery.py`, `src/whyline/console/tui.py`, `src/whyline/console/relay_screens.py` and their tests only.
   - `fixmode.run_fix(root, session, *, agent_chain, runner, on_progress, cancel_event) -> FixResult`:
     1. Take a snapshot.
