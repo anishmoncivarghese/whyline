@@ -16,7 +16,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static, TextArea
 
-from whyline.console import relay_ops
+from whyline.console import fixmode, relay_ops
 from whyline.console.attachments_ui import AttachmentsField
 from whyline.console.chain_editor import OrderedChain, _ChainCheck
 from whyline.console.plan_job import PlanRequest
@@ -1754,6 +1754,15 @@ class RelaySetupScreen(ModalScreen):
                         id="rs-resolve-mode",
                     ),
                 ),
+                Horizontal(
+                    Label("Fix level:", classes="field-label"),
+                    Select(
+                        [(fixmode.FIX_LEVEL_LABELS[lv], lv) for lv in fixmode.FIX_LEVELS],
+                        value=fixmode.fix_level(self._root),
+                        allow_blank=False,
+                        id="rs-fix-level",
+                    ),
+                ),
                 Label("Backup, used when an agent fails:"),
                 chain,
                 Static("", id="rs-meaning"),
@@ -1824,6 +1833,18 @@ class RelaySetupScreen(ModalScreen):
         return [(f"{m} minutes", m) for m in minutes] + [("none (no limit)", 0)]
 
     def on_mount(self) -> None:
+        # Composed children (and Select's inner label) can land a refresh
+        # after the screen's Mount event; wait for them instead of crashing.
+        tries = getattr(self, "_mount_tries", 0)
+        try:
+            self._setup_children()
+        except NoMatches:
+            if tries >= 20:
+                raise
+            self._mount_tries = tries + 1
+            self.call_after_refresh(self.on_mount)
+
+    def _setup_children(self) -> None:
         has_choices = bool(self._agents)
         self.query_one("#rs-open-settings").display = not has_choices
         self.query_one("#rs-make-plan").display = has_choices and not self._plans
@@ -2254,6 +2275,7 @@ class RelaySetupScreen(ModalScreen):
         release = self.query_one("#rs-release", Select).value
         timeout = self.query_one("#rs-timeout", Select).value
         resolve_mode = self.query_one("#rs-resolve-mode", Select).value
+        fix_level = self.query_one("#rs-fix-level", Select).value
         test_command = self.query_one("#rs-test-command", Input).value.strip()
         shown_test_command = self._test_command
         plan = Path(self.query_one("#rs-plan", Select).value) if self._plans else None
@@ -2273,6 +2295,8 @@ class RelaySetupScreen(ModalScreen):
                     self._test_command = test_command
                 if resolve_mode != relay_ops.resolve_mode(root):
                     relay_ops.save_resolve_mode(root, resolve_mode)
+                if fix_level != fixmode.fix_level(root):
+                    fixmode.save_fix_level(root, fix_level)
                 for a, picked_model in models_to_save.items():
                     current_model = relay_ops.read_agent_model(root, a)
                     if picked_model != current_model:

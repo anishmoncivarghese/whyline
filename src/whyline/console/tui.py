@@ -5898,6 +5898,13 @@ class WhylineConsoleApp(App):
             self._sync_relay_buttons()
             return
 
+        from whyline.console import fixmode
+
+        if res.status == "proposal" and fixmode.fix_level(self.session.root) == fixmode.LEVEL_AUTO:
+            self.render_event(SessionEvent(kind="output", text="Auto fix: checking the fix."))
+            self._fix_decided(res, "approve")
+            return
+
         def view_diff(path: str) -> None:
             self._open_tree_file(Path(self.session.root) / path)
 
@@ -5921,9 +5928,21 @@ class WhylineConsoleApp(App):
                     nonlocal did_resume
                     did_resume = True
                     self.call_from_thread(self._launch_relay, args)
+                task = str(recovery._read_state_dict(root).get("task_id") or "")
+                try:
+                    checked = fixmode.verify(root, task)
+                except Exception as exc:
+                    checked = fixmode.VerifyResult(
+                        False, tests_ok=False, output=f"The check could not run: {exc}"
+                    )
+                if not checked.ok:
+                    self.call_from_thread(self._fix_check_failed, checked)
+                    return
                 try:
                     out = recovery.apply_steps(root, res.steps, launch=launcher)
                     message = str(out.message)
+                    if out.success and did_resume:
+                        message = f"Fix checked ({checked.summary()}); resuming {task or 'the relay'}."
                 except Exception as exc:
                     message = f"Resolve error: {exc}"
                 self.call_from_thread(self._fix_applied, message, did_resume)
@@ -5941,6 +5960,28 @@ class WhylineConsoleApp(App):
             self._show_reply_box()
         else:
             say("Fix stopped." + (" Its changes were undone." if res.status == "violation" else " Changes kept."))
+        if self._resolve_problem is not None:
+            self._mount_resolve_buttons(self._resolve_problem)
+        self._sync_relay_buttons()
+
+    def _fix_check_failed(self, checked: Any) -> None:
+        """A failed check goes back to the conversation; the snapshot stays for Undo."""
+        from whyline.console import fixmode
+
+        self._resolve_running = False
+        session = self._open_fix_session()
+        session.turns.append(
+            fixmode.Turn("you", f"The check failed:\n{checked.output}", self._wall().isoformat())
+        )
+        self._save_fix_session()
+        self.render_event(
+            SessionEvent(
+                kind="output",
+                text=f"Fix check failed ({checked.summary()}); not continuing. "
+                f"Undo is still available.\n{checked.output}",
+            )
+        )
+        self._show_reply_box()
         if self._resolve_problem is not None:
             self._mount_resolve_buttons(self._resolve_problem)
         self._sync_relay_buttons()
@@ -6042,6 +6083,13 @@ class WhylineConsoleApp(App):
         """`fix` typed in the reply box, or Fix it: this pause moves to Fix."""
         from whyline.console import fixmode
 
+        if fixmode.fix_level(self.session.root) == fixmode.LEVEL_SUGGEST:
+            self._hide_reply_box()
+            self.render_event(
+                SessionEvent(kind="output", text="Fix level is Suggest, so the agent will answer without editing.")
+            )
+            self._begin_ask(None)
+            return
         session = self._open_fix_session()
         session.level = fixmode.FIX
         self._save_fix_session()

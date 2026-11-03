@@ -880,3 +880,145 @@ def run_fix(
             pass
         return finish("proposal")
     return finish("exhausted")
+
+
+# ---------------------------------------------------------------------------
+# Fix level: how far Fix mode may go on its own.
+# ---------------------------------------------------------------------------
+
+LEVEL_SUGGEST = "suggest"  # the agent only answers; it never edits
+LEVEL_APPROVAL = "approval"  # it edits; the user approves before checks run
+LEVEL_AUTO = "auto"  # it edits, the checks run, and a pass continues the relay
+FIX_LEVELS = (LEVEL_SUGGEST, LEVEL_APPROVAL, LEVEL_AUTO)
+FIX_LEVEL_LABELS = {
+    LEVEL_SUGGEST: "Suggest",
+    LEVEL_APPROVAL: "Fix with approval",
+    LEVEL_AUTO: "Auto fix",
+}
+_LEVEL_IGNORE = ".whyline/relay/fix-level.json"
+
+
+def fix_level_path(root: Path | str) -> Path:
+    return Path(root) / ".whyline" / "relay" / "fix-level.json"
+
+
+def fix_level(root: Path | str) -> str:
+    try:
+        data = json.loads(fix_level_path(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return LEVEL_APPROVAL
+    level = data.get("level") if isinstance(data, dict) else None
+    return level if level in FIX_LEVELS else LEVEL_APPROVAL
+
+
+def _ignore_level_file(root: Path) -> None:
+    """Keep the saved level out of `git status`, as resolve-mode.json is."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-path", "info/exclude"],
+            capture_output=True, text=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return
+    target = Path(res.stdout.strip())
+    if not target.is_absolute():
+        target = root / target
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    if _LEVEL_IGNORE in existing.splitlines():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(_LEVEL_IGNORE + "\n")
+
+
+def save_fix_level(root: Path | str, level: str) -> None:
+    if level not in FIX_LEVELS:
+        raise ValueError(f"Invalid fix level: {level!r}; must be one of {', '.join(FIX_LEVELS)}")
+    root = Path(root)
+    _ignore_level_file(root)
+    path = fix_level_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"schema": 1, "level": level}, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
+# Check before continuing: doctor, then the task's tests.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class VerifyResult:
+    ok: bool
+    doctor_ok: bool = True
+    tests_ok: bool = True
+    ran: list[str] = field(default_factory=list)  # test commands that passed
+    output: str = ""  # what failed, for the conversation
+
+    def summary(self) -> str:
+        doctor = "doctor ✓" if self.doctor_ok else "doctor ✗"
+        if not self.tests_ok:
+            return f"{doctor}, tests ✗"
+        return f"{doctor}, tests ✓" if self.ran else f"{doctor}, no test command"
+
+
+def verify_commands(root: Path, task: str) -> list[str]:
+    """The task's `Verify with` commands, else the relay config's test command."""
+    from whyline.console import recovery
+
+    commands: list[str] = []
+    if task:
+        plan = str(recovery._read_state_dict(root).get("plan") or "")
+        text = recovery._saved_task_text(root, plan, task)
+        for line in text.splitlines():
+            _, sep, tail = line.partition("Verify with")
+            if sep:
+                commands.extend(re.findall(r"`([^`]+)`", tail))
+    if not commands:
+        try:
+            from whyline_relay import config as relay_config
+
+            commands.append(relay_config.test_command(root))
+        except Exception:
+            pass
+    unique: list[str] = []
+    for command in (" ".join(c.split()) for c in commands if c and c.strip()):
+        if command not in recovery._DOCTOR_COMMANDS and command not in unique:
+            unique.append(command)
+    return unique
+
+
+def verify(
+    root: Path,
+    task: str,
+    *,
+    doctor: Callable[[Path], object] | None = None,
+    check: Callable[[Path, dict], str] | None = None,
+) -> VerifyResult:
+    """Relay doctor, then each test command through run-check; stops at the first failure."""
+    from whyline.console import adapters, recovery
+
+    root = Path(root).resolve()
+    doctor = doctor or adapters.run_doctor
+    check = check or recovery._fix_run_check
+    event = doctor(root)
+    if getattr(event, "kind", "output") == "error":
+        text = str(getattr(event, "text", ""))
+        return VerifyResult(False, doctor_ok=False, output=f"relay doctor failed:\n{text}")
+    result = VerifyResult(True)
+    for command in verify_commands(root, task):
+        try:
+            out = check(root, {"command": command, "task": task})
+        except ValueError as exc:
+            out = f"run-check {command}: exit 1\n{exc}"
+        match = re.match(r"run-check .*: exit (-?\d+)", out)
+        if match and match.group(1) == "0":
+            result.ran.append(command)
+            continue
+        result.ok = result.tests_ok = False
+        result.output = out
+        return result
+    return result

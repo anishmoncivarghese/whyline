@@ -2515,3 +2515,30 @@ async def test_setup_screen_fits_80x24_with_test_command(tmp_path, monkeypatch):
         assert start_btn.region.height > 0
         assert start_btn.region.bottom <= 24
         assert screen.query_one("#rs-test-command", tui.Input).display
+
+
+async def test_fix_level_select_saves_and_reopening_shows_it(tmp_path, monkeypatch, ops):
+    from whyline.console import fixmode
+
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        level = screen.query_one("#rs-fix-level", tui.Select)
+        assert level.value == fixmode.LEVEL_APPROVAL
+        assert [p for p, v in level._options if v is not tui.Select.BLANK] == [
+            "Suggest",
+            "Fix with approval",
+            "Auto fix",
+        ]
+        level.value = fixmode.LEVEL_AUTO
+        await pilot.pause()
+        start = screen.query_one("#rs-start", tui.Button)
+        screen.query_one("#rs-check", tui.Button).press()
+        await _wait_for(pilot, lambda: not start.disabled, "check")
+        assert fixmode.fix_level(tmp_path) == fixmode.LEVEL_AUTO
+
+        screen.dismiss(None)
+        await pilot.pause()
+        screen2, _ = await _open(app, pilot)
+        assert screen2.query_one("#rs-fix-level", tui.Select).value == fixmode.LEVEL_AUTO
