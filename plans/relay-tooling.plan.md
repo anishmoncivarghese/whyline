@@ -510,7 +510,7 @@ Global constraints:
   - The button is disabled while a check is running.
   Tests: the prompt contains the marker, timeout and log tail; nothing is applied while running; a stored proposal is offered at the next pause.
 
-- [ ] FIX-9: Docs
+- [x] FIX-9: Docs
   Edit `README.md` and `docs/` (create `docs/resolve.md` if there is none) only.
   Cover:
   - the conversation, the three levels and what the agent may and may not do (and that whyline enforces it)
