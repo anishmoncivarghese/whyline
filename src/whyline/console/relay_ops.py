@@ -1242,6 +1242,66 @@ def save_max_rounds(root: Path, n: object, *, commit: bool = True) -> int:
     return rounds
 
 
+ADD_ROUNDS = 6
+
+
+def is_round_cap_pause(reason: str) -> bool:
+    """True when a pause reason is a round cap, by the match the adapters use."""
+    from whyline.console import adapters
+
+    return bool(reason) and adapters.failure_kind(reason) == "round-cap"
+
+
+def current_round_cap(root: Path) -> int:
+    """The cap the relay will use: the saved value, else the relay's own default."""
+    from whyline_relay import config
+
+    try:
+        return int(config.load(root).max_rounds)
+    except Exception:
+        return int(config.DEFAULTS["max_rounds"])
+
+
+def paused_task_round(root: Path) -> tuple[str, int]:
+    """The saved run's task id and the round it reached; ("", 0) when unknown."""
+    try:
+        from whyline_relay import state
+
+        saved = state.load(root)
+        if saved and saved.task_id:
+            return saved.task_id, int(saved.round or 0)
+    except Exception:
+        pass
+    return "", 0
+
+
+def raise_round_cap(root: Path, new_cap: object) -> tuple[int, int, str]:
+    """Saves `new_cap` through `save_max_rounds` unless the paused task already
+    reached that round. Returns (old cap, new cap, task id)."""
+    rounds = parse_max_rounds(new_cap)
+    task, reached = paused_task_round(root)
+    if task and rounds <= reached:
+        raise ValueError(f"{task} is at round {reached}; choose more than {reached}.")
+    old = current_round_cap(root)
+    save_max_rounds(root, rounds)
+    return old, rounds, task
+
+
+def add_rounds(root: Path, by: int = ADD_ROUNDS) -> tuple[int, int, str]:
+    """Raises the cap by `by` (to at most 99); returns (old, new, task id)."""
+    return raise_round_cap(root, min(current_round_cap(root) + by, MAX_ROUNDS))
+
+
+def parse_rounds_command(text: str) -> tuple[str, str] | None:
+    """`rounds 12` -> ("set", "12"); `rounds +6` -> ("add", "6"); else None."""
+    parts = text.split()
+    if len(parts) != 2 or parts[0] != "rounds":
+        return None
+    if parts[1].startswith("+"):
+        return "add", parts[1][1:]
+    return "set", parts[1]
+
+
 def round_cap_checks(rounds: int) -> list[CheckLine]:
     lines = [CheckLine("ok", f"Round cap: {rounds}")]
     if rounds < LOW_ROUND_CAP:

@@ -93,6 +93,7 @@ from whyline.console.repl import (
 )
 from whyline.console.session import ConsoleSession, SessionEvent
 
+ROUND_CAP_HINT = f"Raise the cap with Add {relay_ops.ADD_ROUNDS} rounds, or set it in Set up."
 _PREFIX = {"error": "⚠ ", "pause": "⏸ ", "input": "› "}
 
 _MODES = ("chat", "relay", "agents", "assistant", "workflows")
@@ -303,6 +304,44 @@ class ConfirmScreen(ModalScreen):
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
         self.dismiss(event.button.id == "confirm")
+
+
+class RoundCapScreen(ModalScreen):
+    """Sets the round cap; dismisses with ("resume" | "save", value) or None."""
+
+    DEFAULT_CSS = """
+    RoundCapScreen { align: center middle; }
+    RoundCapScreen > Vertical {
+        width: 70; height: auto; padding: 1 2;
+        border: thick $warning; background: $surface;
+    }
+    RoundCapScreen Label { width: 100%; }
+    RoundCapScreen Horizontal { height: auto; margin-top: 1; }
+    RoundCapScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, current: int) -> None:
+        super().__init__()
+        self._current = current
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(f"Round cap is {self._current}. New cap (1 to 99):"),
+            Input(value=str(self._current), type="integer", max_length=2, id="round-cap-value"),
+            Horizontal(
+                Button("Save and resume", id="round-cap-resume", variant="success"),
+                Button("Save only", id="round-cap-save", variant="primary"),
+                Button("Cancel", id="round-cap-cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        action = {"round-cap-resume": "resume", "round-cap-save": "save"}.get(event.button.id or "")
+        if action is None:
+            self.dismiss(None)
+            return
+        self.dismiss((action, self.query_one("#round-cap-value", Input).value))
 
 
 class QuitRelayScreen(ModalScreen):
@@ -3621,6 +3660,8 @@ class WhylineConsoleApp(App):
                 Button("", id="pause-continue-2", variant="success"),
                 Checkbox("Also use as backup next time", True, id="pause-add-backup"),
                 Button("Change agents", id="pause-change-agents", variant="primary"),
+                Button(f"Add {relay_ops.ADD_ROUNDS} rounds and resume", id="pause-add-rounds", variant="success"),
+                Button("Set round cap…", id="pause-set-rounds"),
                 id="pause-actions",
             ),
             Horizontal(id="resolve-actions"),
@@ -3719,6 +3760,8 @@ class WhylineConsoleApp(App):
             except (NoMatches, IndexError):
                 pass
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
+        if event.kind == "pause" and relay_ops.is_round_cap_pause(event.text):
+            line += f"\n{ROUND_CAP_HINT}"
         # What you typed is set apart from replies, so the transcript reads
         # as a conversation rather than an unattributed log.
         transcript.write(
@@ -3851,6 +3894,13 @@ class WhylineConsoleApp(App):
                 self._open_relay_setup(plan=self._setup_plan_hint)
         elif button_id in ("pause-change-agents", "change-agents"):
             self._open_relay_setup()
+        elif button_id == "pause-add-rounds":
+            self._change_round_cap("add", str(relay_ops.ADD_ROUNDS), resume=True)
+        elif button_id == "pause-set-rounds":
+            self.push_screen(
+                RoundCapScreen(relay_ops.current_round_cap(self.session.root)),
+                self._round_cap_chosen,
+            )
         elif button_id and button_id.startswith("pause-continue-"):
             self._continue_with(button_id.removeprefix("pause-continue-"))
 
@@ -4404,6 +4454,10 @@ class WhylineConsoleApp(App):
                 return
         if (self.session.mode == "relay" or getattr(self, "_manual_checks", None)) and first_word == "manual":
             self._handle_manual_input(stripped_relay)
+            return
+        rounds_cmd = relay_ops.parse_rounds_command(stripped_relay) if self.session.mode == "relay" else None
+        if rounds_cmd is not None:
+            self._change_round_cap(rounds_cmd[0], rounds_cmd[1], resume=False)
             return
         if self.session.mode == "relay" and (text.strip() == "run" or text.split() == ["start"]):
             self._run_flow_start()
@@ -5410,9 +5464,39 @@ class WhylineConsoleApp(App):
             button.label = f"Continue with {agent}" if agent else ""
             button.display = bool(agent)
         box.display = bool(ready)
+        cap_pause = relay_ops.is_round_cap_pause(text)
+        self._main("#pause-add-rounds", Button).display = cap_pause
+        self._main("#pause-set-rounds", Button).display = cap_pause
         note.display = limit_pause and not ready
         if note.display:
             note.update(f"No other agent is ready: {why}" if why else "No other agent is ready")
+
+    def _round_cap_chosen(self, choice: Any) -> None:
+        if choice:
+            action, value = choice
+            self._change_round_cap("set", value, resume=action == "resume")
+
+    def _change_round_cap(self, how: str, value: str, *, resume: bool) -> None:
+        """Saves a new round cap (`set` to value, or `add` value), then optionally resumes."""
+        root = self.session.root
+        try:
+            if how == "add":
+                by = relay_ops.parse_max_rounds(value)
+                old, new, task = relay_ops.add_rounds(root, by)
+            else:
+                old, new, task = relay_ops.raise_round_cap(root, value)
+        except Exception as exc:
+            self.render_event(SessionEvent(kind="error", text=str(exc)))
+            return
+        text = f"Round cap {old} → {new}"
+        if resume:
+            text += f"; resuming {task}." if task else "; resuming."
+        else:
+            text += "."
+        self.render_event(SessionEvent(kind="output", text=text))
+        if resume:
+            self._manual_passed = False
+            self._launch_relay(["resume"])
 
     def _continue_with(self, index: str) -> None:
         agents = getattr(self, "_continue_agents", [])

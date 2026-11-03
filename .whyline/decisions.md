@@ -34247,3 +34247,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c739558dd8d141ac95ccabe7a6859cc9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T14:30:56.778Z"} -->
+
+## 2026-11-03 — Round-cap helpers live in relay_ops; typed 'rounds' works in any relay-mode state
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCAP-2
+
+**Because:** buttons, dialog and typed commands share raise_round_cap so the refusal and the single saver path cannot drift
+
+**Rejected:**
+
+- logic inside tui.py — harder to test and the CLI could not reuse it
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 1a43509d85254915819643c91ea1fec1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T14:57:38.253Z"} -->
+
+## 2026-11-03 — Pass RCAP-2: round-cap pause buttons, dialog, transcript hint, validation refusal, and typed rounds commands verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCAP-2
+
+**Because:** Buttons show only for round-cap pause, Add 6 raises and resumes, dialog saves with/without resume, non-advancing cap is refused with reached round message, and full console and repo test suites pass cleanly
+
+**Files:** tests/console/test_round_cap_pause.py
+
+<!-- whyline-event: 2d78e2a072a34bd19fe91bbd04d57e82 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T15:22:15.150Z"} -->
+
+## 2026-11-03 — Approve RCAP-2: round-cap pause buttons, dialog, transcript hint, validation refusal, and typed rounds commands
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RCAP-2
+
+**Because:** Meets all requirements: Add 6 and Set round cap buttons appear only on round-cap pause, Add 6 raises cap and resumes, dialog saves with and without resuming, cap <= reached round is refused, typed rounds commands save without resume, and all tests pass cleanly
+
+**Files:** src/whyline/console/relay_ops.py, src/whyline/console/tui.py, tests/console/test_round_cap_pause.py
+
+<!-- whyline-event: 9b2b9a7ed66249abb63b077ee0a427be -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T15:49:06.199Z"} -->
