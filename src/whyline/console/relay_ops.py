@@ -1586,7 +1586,13 @@ def live_status(root: Path) -> LiveStatus | None:
     task = marker.task
     position = total = done = 0
     try:
-        path = Path(state.load(root).plan)
+        saved = state.load(root)
+        named = getattr(saved, "plan", "") if saved is not None else ""
+        # The relay only saves state when it pauses, so a running task
+        # falls back to the plan chosen in Set up.
+        path = Path(named) if named else configured_plan(root)
+        if path is None:
+            raise ValueError("no plan")
         if not path.is_absolute():
             path = root / path
         tasks = relay_plan.parse(path.read_text(encoding="utf-8"))

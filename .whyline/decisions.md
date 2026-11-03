@@ -34290,3 +34290,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9b2b9a7ed66249abb63b077ee0a427be -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T15:49:06.199Z"} -->
+
+## 2026-11-03 — live_status falls back to configured_plan when no saved state names a plan
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RST-8
+
+**Because:** relay only writes state.json on pause, so a running task had total 0 and lost (P of T, X%); saved state still wins since a paused run may name another plan
+
+**Rejected:**
+
+- read the plan from the running marker — marker has no plan field
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 5896a1a470ef406893abb601e5f5ca57 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T16:10:45.241Z"} -->
+
+## 2026-11-03 — Pass RST-8: live_status falls back to configured_plan when no saved state names a plan
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RST-8
+
+**Because:** All requirements verified: position, total and done accurately reflect configured plan during active run, saved state takes precedence over configured plan, missing plan safely defaults to zeros without raising, and all tests pass cleanly
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: 8eb81f569b5d4cb4be09d37ef5c0e71e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T17:04:02.399Z"} -->
+
+## 2026-11-03 — Approve RST-8: live_status falls back to configured_plan when no saved state names a plan
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RST-8
+
+**Because:** Meets all requirements: live_status falls back to configured_plan during active runs without saved state, saved state takes precedence when present, missing or broken plan safely defaults to zeros, and test suites pass cleanly
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: e22f050765b14b46a10e1d02836d43f4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T17:29:47.224Z"} -->

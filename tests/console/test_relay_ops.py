@@ -205,12 +205,12 @@ def test_format_live_elapsed(seconds, text):
     assert line.endswith(text)
 
 
-def _live(monkeypatch, **extra):
+def _live(monkeypatch, task="T-2", **extra):
     from types import SimpleNamespace
     from whyline_relay import running
 
     marker = SimpleNamespace(
-        agent="claude", task="T-2", round=2, started="2026-11-01T10:00:00+05:30",
+        agent="claude", task=task, round=2, started="2026-11-01T10:00:00+05:30",
         pid=1, **extra,
     )
     monkeypatch.setattr(running, "live", lambda root: marker)
@@ -260,6 +260,32 @@ def test_live_status_missing_state_drops_only_the_plan_part(repo, monkeypatch):
     got = relay_ops.live_status(repo)
     assert (got.position, got.total, got.done) == (0, 0, 0)
     assert got.max_rounds > 0 and got.task == "T-2"
+
+
+def test_live_status_without_state_uses_the_configured_plan(repo, monkeypatch):
+    _live(monkeypatch, task="T-3", role="implementer")
+    lines =[f"- [{'x' if n <= 2 else ' '}] T-{n}: t\n" for n in range(1, 11)]
+    (repo / "conf.md").write_text("".join(lines))
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: root / "conf.md")
+    got = relay_ops.live_status(repo)
+    assert (got.position, got.total, got.done) == (3, 10, 2)
+    assert "(3 of 10, 20%)" in relay_ops.format_live(got, _at(5))
+
+
+def test_live_status_saved_state_wins_over_the_configured_plan(repo, monkeypatch):
+    _live(monkeypatch, role="implementer")
+    _good_plan(repo)
+    (repo / "conf.md").write_text("- [ ] T-1: a\n- [ ] T-2: b\n- [ ] T-3: c\n")
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: root / "conf.md")
+    got = relay_ops.live_status(repo)
+    assert (got.position, got.total, got.done) == (2, 2, 1)
+
+
+def test_live_status_without_state_and_missing_configured_plan_is_zero(repo, monkeypatch):
+    _live(monkeypatch, role="implementer")
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: root / "nope.md")
+    got = relay_ops.live_status(repo)
+    assert (got.position, got.total, got.done) == (0, 0, 0)
 
 
 def test_live_status_unparsable_plan_drops_only_the_plan_part(repo, monkeypatch):
