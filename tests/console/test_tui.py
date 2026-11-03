@@ -4771,7 +4771,7 @@ async def _brainstorm_root(tmp_path, monkeypatch, live):
         await app.workers.wait_for_complete()
         await pilot.pause()
         root = app.session.root
-        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
+        lines = [line.text for line in app.query_one("#transcript", tui.RichLog).lines]
     return seen, made, lines, root, wt
 
 
@@ -4781,7 +4781,8 @@ async def test_brainstorm_runs_in_a_worktree_while_a_relay_is_live(tmp_path, mon
     seen, made, lines, root, wt = await _brainstorm_root(tmp_path, monkeypatch, True)
     assert seen == [wt]
     assert made == [(root, "brainstorm", "retry policy")]
-    # The transcript wraps long temp paths, so compare without whitespace.
+    # The transcript wraps long temp paths mid-sentence, so compare the
+    # joined lines without whitespace.
     text = "".join("".join(lines).split())
     assert "Arelayisrunninghere,sothisBrainstormrunsin" in text
     assert "brainstorm-retry-policy" in text
