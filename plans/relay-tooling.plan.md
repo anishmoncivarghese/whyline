@@ -434,7 +434,7 @@ Global constraints:
   - `undo-fix {snapshot}`: calls `fixmode.undo`.
   Tests: commit-task makes both commits only after an approved handoff; run-check refuses an unlisted command; report-bug writes one idea with the tag and versions; undo-fix restores.
 
-- [ ] FIX-4: A conversation in the Resolve panel
+- [x] FIX-4: A conversation in the Resolve panel
   Edit `src/whyline/console/recovery.py`, `src/whyline/console/tui.py`, `src/whyline/console/fixmode.py` and their tests only.
   - `fixmode.Session(pause_id, agent, level, turns: list[Turn(role, text, at)], snapshots, attempts)` is saved in `.git/whyline-fix/session.json`. A new pause (a different `pause_id`, taken from the state's pause reason and time) starts a new session, and the old one is kept as `session-<n>.json`.
   - After Ask agent answers, the Resolve panel shows a reply box. Each reply is sent to the same agent with:
