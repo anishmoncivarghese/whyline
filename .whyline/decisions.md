@@ -34190,3 +34190,60 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c366ce3590a94a9bab82e05d791e7592 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T12:47:05.145Z"} -->
+
+## 2026-11-03 — Set up saves max_rounds=24 when config has none; one saver relay_ops.save_max_rounds shared with Resolve
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCAP-1
+
+**Because:** a new repo must never run with the relay's default of 3; one saver keeps the setup: max_rounds commit and 1-99 validation in one place
+
+**Rejected:**
+
+- writing the default only at relay init — Set up on existing repos would still run with 3
+- unclamped Resolve raise — 97+6 would fail validation, so it clamps at 99
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: da8fb6c1bee241b194eb92892f4d3dce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T13:11:43.768Z"} -->
+
+## 2026-11-03 — Reject RCAP-1 round 2: test_guided_setup_summarises_roles_and_looks_good_runs_the_check fails when Set up saves round cap on bare tmp_path
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCAP-1
+
+**Because:** RelaySetupScreen._check calls relay_ops.save_max_rounds when max_rounds is unset, which raises GitError on bare tmp_path because test_run_flow.py does not stub save_max_rounds
+
+**Files:** tests/console/test_run_flow.py
+
+<!-- whyline-event: 19c291682b3342ceb0bde9d605ab0dc2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T13:27:48.112Z"} -->
+
+## 2026-11-03 — Pass RCAP-1: Round cap field, default 24, low-cap warning, and CLI command behave correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCAP-1
+
+**Because:** Verified all 24 unit tests in test_round_cap.py plus full console and repository test suites pass cleanly after stubbing save_max_rounds in test_run_flow
+
+**Files:** tests/console/test_round_cap.py
+
+<!-- whyline-event: 6244aa866b664c45a99e374ad8971c69 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T14:05:17.437Z"} -->
+
+## 2026-11-03 — Approve RCAP-1: Round cap setup field, default 24, low-cap warning, and CLI command
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RCAP-1
+
+**Because:** All task requirements verified, implementation is clean, and both console and full test suites pass completely
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: c739558dd8d141ac95ccabe7a6859cc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T14:30:56.778Z"} -->

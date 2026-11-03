@@ -3469,17 +3469,14 @@ def find_stronger_model(root_path: Path | str, agent: str) -> tuple[str, str] | 
 
 
 def _raise_max_rounds(root_path: Path, by: int = MORE_ROUNDS, commit: bool = True) -> int:
-    from whyline_relay import setup as relay_setup
+    from whyline.console import relay_ops
 
-    new_rounds = _current_max_rounds(root_path) + by
     # Commits config.toml alone; the capped task's draft stays uncommitted.
-    relay_setup._write_config(
+    return relay_ops.save_max_rounds(
         root_path,
-        lambda text: relay_setup._set_unquoted_top_level(text, "max_rounds", new_rounds),
-        f"setup: max_rounds {new_rounds}",
-        commit,
+        min(_current_max_rounds(root_path) + by, relay_ops.MAX_ROUNDS),
+        commit=commit,
     )
-    return new_rounds
 
 
 def _stronger_model_screen(root_path: Path, cap_kind: str, agent: str) -> Any:

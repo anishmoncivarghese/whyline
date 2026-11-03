@@ -1906,7 +1906,29 @@ def cmd_relay(args: argparse.Namespace) -> int:
             raise
         print(relay_install_hint(), file=sys.stderr)
         return EXIT_ERROR
+    if args.args and args.args[0] == "rounds":
+        return _relay_rounds(args.args[1:])
     return relay_cli.main(args.args or [], prog="whyline relay")
+
+
+def _relay_rounds(rest: list[str]) -> int:
+    """`whyline relay rounds [N]`: print the round cap, or save N."""
+    from whyline.console import relay_ops
+
+    root = Path.cwd()
+    if len(rest) > 1:
+        print("usage: whyline relay rounds [N]", file=sys.stderr)
+        return EXIT_ERROR
+    if not rest:
+        print(f"Round cap: {relay_ops.setup_max_rounds(root)}")
+        return EXIT_OK
+    try:
+        rounds = relay_ops.save_max_rounds(root, rest[0])
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Round cap: {rounds}")
+    return EXIT_OK
 
 
 COMMANDS = {

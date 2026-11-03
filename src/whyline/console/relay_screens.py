@@ -1551,6 +1551,12 @@ class RelaySetupScreen(ModalScreen):
         self._summary = self._guided and self._configured and bool(self._agents)
         self._backup = list(self._roles.get("backup") or [])
         self._timeout = relay_ops.relay_timeout(root)
+        self._rounds = relay_ops.setup_max_rounds(root)
+        self._rounds_saved = relay_ops.saved_max_rounds(root) is not None
+        try:
+            self._running_now = relay_ops.live_run(root)
+        except Exception:
+            self._running_now = None
         self._resolve_mode = relay_ops.resolve_mode(root)
         self._test_command, self._test_detected = relay_ops.relay_test_command(root)
         self._token: object | None = None
@@ -1734,6 +1740,22 @@ class RelaySetupScreen(ModalScreen):
                     ).with_tooltip("How long one agent may run before the relay stops it"),
                 ),
                 Horizontal(
+                    Label("Round cap:", classes="field-label"),
+                    Input(
+                        value=str(self._rounds),
+                        restrict=r"[0-9]*",
+                        max_length=2,
+                        disabled=bool(self._running_now),
+                        id="rs-rounds",
+                    ),
+                    Static(self._rounds_note(), id="rs-rounds-note"),
+                ),
+                Static(
+                    "Rounds per task before the relay pauses. "
+                    "Each review or test send-back uses one.",
+                    id="rs-rounds-hint",
+                ),
+                Horizontal(
                     Label("Test command:", classes="field-label"),
                     Input(
                         value=self._test_command,
@@ -1825,6 +1847,13 @@ class RelaySetupScreen(ModalScreen):
                 id="rs-buttons",
             ),
         )
+
+    def _rounds_note(self) -> str:
+        if self._running_now:
+            return "Takes effect on the next run or resume."
+        if not self._rounds_saved:
+            return "(not saved yet; the relay's own default is 3)"
+        return ""
 
     def _timeout_options(self) -> list[tuple[str, int]]:
         """30, 45, 60 minutes, then none (0). A saved value outside those stays
@@ -2145,7 +2174,7 @@ class RelaySetupScreen(ModalScreen):
         if event.input.id and (
             event.input.id.startswith("rs-model-")
             or event.input.id.startswith("rs-model-input-")
-            or event.input.id == "rs-test-command"
+            or event.input.id in ("rs-test-command", "rs-rounds")
         ):
             self._invalidate()
 
@@ -2274,6 +2303,14 @@ class RelaySetupScreen(ModalScreen):
         root, chosen = self._root, self._chosen()
         release = self.query_one("#rs-release", Select).value
         timeout = self.query_one("#rs-timeout", Select).value
+        rounds = None
+        if not self._running_now:
+            try:
+                rounds = relay_ops.parse_max_rounds(self.query_one("#rs-rounds", Input).value)
+            except ValueError as error:
+                self._error(str(error))
+                self.query_one("#rs-checks", Static).update("")
+                return
         resolve_mode = self.query_one("#rs-resolve-mode", Select).value
         fix_level = self.query_one("#rs-fix-level", Select).value
         test_command = self.query_one("#rs-test-command", Input).value.strip()
@@ -2290,6 +2327,10 @@ class RelaySetupScreen(ModalScreen):
                 # Only on a change: each write is its own config commit.
                 if timeout != relay_ops.relay_timeout(root):
                     relay_ops.save_timeout(root, timeout)
+                # Also when none is saved yet, so 24 is written, not the relay's 3.
+                if rounds is not None and rounds != relay_ops.saved_max_rounds(root):
+                    relay_ops.save_max_rounds(root, rounds)
+                    self._rounds_saved = True
                 if test_command != shown_test_command:
                     relay_ops.save_test_command(root, test_command)
                     self._test_command = test_command
@@ -2308,6 +2349,7 @@ class RelaySetupScreen(ModalScreen):
                 if plan is not None:
                     relay_ops.select_plan(root, plan)
                 checks = list(relay_ops.run_checks(root, plan))
+                checks += relay_ops.round_cap_checks(relay_ops.setup_max_rounds(root))
                 not_ready = self._read_not_ready(root)
                 for role, agent in zip(("implementer", "tester", "reviewer"), chosen[:3]):
                     if agent in not_ready:
@@ -2420,6 +2462,7 @@ class RelaySetupScreen(ModalScreen):
         self._fail_lines = fail_lines
         try:
             self.query_one("#rs-checks", Static).update("\n".join(lines))
+            self.query_one("#rs-rounds-note", Static).update(self._rounds_note())
             if running:
                 self._error(f"A relay is already running here ({running}).")
             self.query_one("#rs-start", Button).disabled = failures > 0 or bool(running)

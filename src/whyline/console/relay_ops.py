@@ -1194,6 +1194,63 @@ def save_timeout(root: Path, minutes: int) -> None:
     setup.write_timeout_minutes(root, minutes)
 
 
+DEFAULT_SETUP_ROUNDS = 24
+MIN_ROUNDS = 1
+MAX_ROUNDS = 99
+LOW_ROUND_CAP = 6
+
+
+def saved_max_rounds(root: Path) -> int | None:
+    """The `max_rounds` written in config.toml, or None when it has none."""
+    try:
+        from whyline_relay import config
+
+        raw = tomllib.loads(config.config_path(root).read_text(encoding="utf-8"))
+        return int(raw["max_rounds"])
+    except Exception:
+        return None
+
+
+def setup_max_rounds(root: Path) -> int:
+    """What Set up shows: the saved cap, else 24 rather than the relay's 3."""
+    saved = saved_max_rounds(root)
+    return DEFAULT_SETUP_ROUNDS if saved is None else saved
+
+
+def parse_max_rounds(value: object) -> int:
+    """`value` as a round cap of 1 to 99, or ValueError saying why not."""
+    text = str(value).strip()
+    if not text.isascii() or not text.isdigit():
+        raise ValueError(f"Round cap must be a whole number from {MIN_ROUNDS} to {MAX_ROUNDS}.")
+    rounds = int(text)
+    if not MIN_ROUNDS <= rounds <= MAX_ROUNDS:
+        raise ValueError(f"Round cap must be from {MIN_ROUNDS} to {MAX_ROUNDS}.")
+    return rounds
+
+
+def save_max_rounds(root: Path, n: object, *, commit: bool = True) -> int:
+    """Writes top-level `max_rounds` as a `setup: max_rounds N` commit."""
+    from whyline_relay import setup
+
+    rounds = parse_max_rounds(n)
+    setup._write_config(
+        root,
+        lambda text: setup._set_unquoted_top_level(text, "max_rounds", rounds),
+        f"setup: max_rounds {rounds}",
+        commit,
+    )
+    return rounds
+
+
+def round_cap_checks(rounds: int) -> list[CheckLine]:
+    lines = [CheckLine("ok", f"Round cap: {rounds}")]
+    if rounds < LOW_ROUND_CAP:
+        lines.append(
+            CheckLine("warn", f"A cap under {LOW_ROUND_CAP} pauses most tasks after one or two send-backs.")
+        )
+    return lines
+
+
 def relay_test_command(root: Path) -> tuple[str, bool]:
     """The command the relay will run, and whether it was detected, not set."""
     try:

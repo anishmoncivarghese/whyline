@@ -36,6 +36,7 @@ def ops(monkeypatch):
     monkeypatch.setattr(relay_ops, "paused_run", lambda root: False)
     monkeypatch.setattr(relay_ops, "save_roles", lambda *a: None)
     monkeypatch.setattr(relay_ops, "save_release", lambda *a: None)
+    monkeypatch.setattr(relay_ops, "save_max_rounds", lambda root, n, **kw: int(n))
     monkeypatch.setattr(relay_ops, "select_plan", lambda *a: None)
     monkeypatch.setattr(relay_ops, "antigravity_state", lambda root: "trusted")
 

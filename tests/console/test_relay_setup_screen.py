@@ -17,6 +17,7 @@ from whyline.console.repl import NO_SUBSCRIPTIONS
 # Captured before the autouse stub so a regression can restore the real
 # `agent_status` and prove Set up does not call it.
 _REAL_AGENT_STATUS = account_module.agent_status
+_REAL_SAVE_MAX_ROUNDS = relay_ops.save_max_rounds
 
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
@@ -88,6 +89,8 @@ def ops(monkeypatch):
         "save_release",
         lambda root, value: saved.append(("release", value)),
     )
+    # tmp_path is not a git repo here, so the real saver could not commit.
+    monkeypatch.setattr(relay_ops, "save_max_rounds", lambda root, n, **kw: int(n))
     monkeypatch.setattr(relay_ops, "release_role", lambda root: "human")
     plans = [
         relay_ops.PlanInfo(Path("/r/plans/new.plan.md"), "new", "draft", "2026-10-04T10:00:00+05:30", 0, 3),
