@@ -577,7 +577,7 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   Tests: the list holds no effort suffix; `claude-opus-5-5-high` is refused with a reason; `sonnet` and `claude-opus-5-5` pass; a recovery step naming a bad model is refused and `config.toml` is unchanged.
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] AUTO-1: Auto allows one recovery per pause, not per round number
+- [x] AUTO-1: Auto allows one recovery per pause, not per round number
   Edit `src/whyline/console/recovery.py`, `src/whyline/console/tui.py` and their tests only.
   On 2026-11-02, FIX-2 paused three times at "round 18": the round number doesn't change while a stage is retried. `recovery.allowed(root, task_id, round_num)` therefore refused every Auto recovery after the first, with "recovery already attempted for FIX-2 round 18", even though each pause had a different cause.
   1. Key the record by the pause, not the round: `task`, `round`, the saved `stage`, the stage visit counts, and a short hash of `paused_reason`. `allowed` refuses only when that exact pause was already attempted.
