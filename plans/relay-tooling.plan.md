@@ -557,7 +557,7 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   - the typed commands
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] RST-8: Show "N of T, X%" while a task runs, not only after a pause
+- [x] RST-8: Show "N of T, X%" while a task runs, not only after a pause
   Edit `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
   `live_status` takes the plan path from `whyline_relay.state.load(root).plan`. The relay writes `state.json` only when it pauses, and clears it on `done`, `skip` and completion. So during a normal run there is no state, `total` is 0, and the busy line drops `(P of T, X%)`. This was seen on 2026-11-01 at LIVE-1 and RDOC-1.
   1. When `state.load(root)` is None or has no `plan`, use `configured_plan(root)` (the plan from Set up). Keep the saved state first when it exists, because a paused run may name a different plan.
