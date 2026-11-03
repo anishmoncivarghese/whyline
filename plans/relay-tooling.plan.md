@@ -472,7 +472,7 @@ Global constraints:
   - an agent without a guard is skipped for the next one
   - Stop cancels
 
-- [ ] FIX-6: Check, then continue the relay
+- [x] FIX-6: Check, then continue the relay
   Edit `src/whyline/console/fixmode.py`, `src/whyline/console/tui.py` and their tests only.
   - **Approve and continue**, or Auto fix, runs `verify(root, task)`:
     - relay doctor through `adapters.run_doctor`
