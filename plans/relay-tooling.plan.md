@@ -539,7 +539,7 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
   - the CLI
   Verify with `uv run pytest -q tests/console` and then `uv run pytest -q`. Change nothing else.
 
-- [ ] RCAP-2: "Add rounds" on a round-cap pause
+- [x] RCAP-2: "Add rounds" on a round-cap pause
   Edit `src/whyline/console/tui.py`, `src/whyline/console/relay_ops.py` and their tests only. Needs RCAP-1's `save_max_rounds`.
   Today a round-cap pause shows only **Change agents** under the transcript. Raising the cap is hidden inside **Resolve**.
   1. When the saved pause reason is a round cap (`hit the N-round cap`, the same match `adapters` uses for `round-cap`), show two more buttons in `#pause-actions` next to **Change agents**:
