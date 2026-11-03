@@ -99,7 +99,7 @@ _MODES = ("chat", "relay", "agents", "assistant", "workflows")
 # Agents widgets arrive with the Agents plan. Until then these ids match nothing.
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
-    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues"),
+    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues", "relay-check"),
     "agents": (
         "agents-new",
         "agents-list",
@@ -1075,6 +1075,7 @@ class WhylineConsoleApp(App):
     #resolve-reply-row { height: auto; display: none; }
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
+    #relay-check-apply { display: none; }
     /* Shown only once there is something to update to. */
     #update, #update-restart { display: none; }
     #split { height: 1fr; }
@@ -1189,6 +1190,8 @@ class WhylineConsoleApp(App):
         self._resolve_problem: Any = None
         self._resolve_running: bool = False
         self._fix_active: bool = False  # a Fix turn (worker or cleanup) is in flight
+        self._check_active: bool = False  # a relay Check is asking the agent
+        self._check_result: Any = None  # its answer, while Apply when paused is on offer
         self._resume_fail_lines: list[str] = []
         self._last_relay_args: list[str] = []
 
@@ -2097,7 +2100,7 @@ class WhylineConsoleApp(App):
         self._main("#awake", Button).label = "Awake ●" if self._awake else "Awake"
         controls = self._main("#controls")
         for button in controls.query(Button):
-            if button.id in ("relay-resolve", "relay-retry-stage", "update", "update-restart"):
+            if button.id in ("relay-resolve", "relay-retry-stage", "relay-check-apply", "update", "update-restart"):
                 continue
             button.display = button.id in wanted
         self._fit_controls()
@@ -2156,6 +2159,14 @@ class WhylineConsoleApp(App):
         except Exception:
             stale = None
         self._main("#relay-issues", Button).disabled = not (in_relay and self._task_outcomes()[1])
+        self._main("#relay-check", Button).disabled = not (
+            in_relay
+            and (running or bool(paused) or self._live_relay() is not None)
+            and not getattr(self, "_check_active", False)
+        )
+        self._main("#relay-check-apply", Button).display = (
+            in_relay and getattr(self, "_check_result", None) is not None
+        )
         resume = self._main("#relay-resume", Button)
         if getattr(self, "_release_task", None):
             resume.label = "Release done…"
@@ -3636,6 +3647,8 @@ class WhylineConsoleApp(App):
                 Button("Set up", id="relay-setup", disabled=True),
                 Button("Resume", id="relay-resume", disabled=True),
                 Button("Issues", id="relay-issues", disabled=True),
+                Button("Check", id="relay-check", disabled=True),
+                Button("Apply when paused", id="relay-check-apply"),
                 Button("Retry stage", id="relay-retry-stage", disabled=True),
                 Button("Resolve", id="relay-resolve", disabled=True),
                 Button("New", id="agents-new"),
@@ -3855,6 +3868,10 @@ class WhylineConsoleApp(App):
                 self._launch_relay(["resume"])
         elif button_id == "relay-issues":
             self._open_issues()
+        elif button_id == "relay-check":
+            self._begin_check()
+        elif button_id == "relay-check-apply":
+            self._store_check_proposal()
         elif button_id == "relay-retry-stage":
             from whyline.console import recovery
 
@@ -5574,6 +5591,7 @@ class WhylineConsoleApp(App):
                 self._sync_relay_buttons()
             return
 
+        problems[0] = self._offer_check_proposal(problems[0])
         self._resolve_problem = problems[0]
         self._show_resolve_problem(problems[0], is_first=True, count=len(problems))
         self._mount_resolve_buttons(problems[0])
@@ -5731,6 +5749,10 @@ class WhylineConsoleApp(App):
             self._begin_ask(None)
             return
 
+        if opt.id == "check-proposal":
+            self._apply_check_proposal()
+            return
+
         def in_thread() -> None:
             res = ""
             did_resume = False
@@ -5868,6 +5890,121 @@ class WhylineConsoleApp(App):
         self.render_event(SessionEvent(kind="output", text=f"{self._ask_agent_name} is fixing…"))
         self._set_busy(True, f"{self._ask_agent_name} is fixing")
         self.run_worker(fix_thread, thread=True)
+
+    def _begin_check(self) -> None:
+        """Ask the main agent, read-only, how the running relay is doing.
+
+        Nothing it suggests is applied; see _store_check_proposal."""
+        import threading
+
+        from whyline.console import fixmode, recovery
+        from whyline_relay import setup as relay_setup
+
+        if getattr(self, "_check_active", False):
+            return
+        root = self.session.root
+        chain: list[str] = []
+        for name in [self.session.agent or "", *self._fix_backups(relay_setup, root)]:
+            if name and name not in chain:
+                chain.append(name)
+        self._check_active = True
+        self._check_result = None
+        agent = chain[0] if chain else "the agent"
+        runner = self._runner or recovery._AUTO_RUNNER
+
+        def check_thread() -> None:
+            res = None
+            try:
+                res = fixmode.run_check(root, agent_chain=chain, runner=runner)
+            except Exception as exc:
+                res = fixmode.CheckResult(status="exhausted", note=f"Check failed: {exc}")
+            finally:
+                self.call_from_thread(self._check_finished, res)
+
+        self.render_event(SessionEvent(kind="output", text=f"check › asking {agent}…"))
+        self._sync_relay_buttons()
+        self.run_worker(check_thread, thread=True)
+
+    def _check_finished(self, res: Any) -> None:
+        self._check_active = False
+        self._check_result = None
+        if res is not None and res.status == "note" and res.note:
+            self.render_event(SessionEvent(kind="output", text=f"check › {res.note}"))
+            if res.steps:
+                self._check_result = res
+                self.render_event(SessionEvent(
+                    kind="output",
+                    text="check › Apply when paused keeps its steps for the next pause. "
+                    "Nothing is applied while the relay runs.",
+                ))
+        elif res is not None and res.status == "cancelled":
+            self.render_event(SessionEvent(kind="output", text="check › stopped."))
+        else:
+            why = (res.note if res is not None and res.note else "no agent could answer.")
+            self.render_event(SessionEvent(kind="output", text=f"check › {why}"))
+        self._sync_relay_buttons()
+
+    def _store_check_proposal(self) -> None:
+        from whyline.console import fixmode
+
+        res = getattr(self, "_check_result", None)
+        if res is None:
+            return
+        try:
+            fixmode.store_check_proposal(self.session.root, res.steps, res.note, res.agent)
+        except Exception as exc:
+            self.render_event(SessionEvent(kind="output", text=f"check › could not store it: {exc}"))
+            return
+        self._check_result = None
+        self.render_event(SessionEvent(
+            kind="output", text="check › stored; it will be offered at the next pause."))
+        self._sync_relay_buttons()
+
+    def _offer_check_proposal(self, problem: Any) -> Any:
+        """The stored Check proposal, as one more option on a pause's problem."""
+        import dataclasses
+
+        from whyline.console import fixmode, recovery
+
+        if fixmode.load_check_proposal(self.session.root) is None:
+            return problem
+        offer = recovery.Option(
+            "check-proposal", "Apply check suggestion",
+            "apply the steps a Check suggested earlier", recommended=False, confirm=True,
+        )
+        rest = [o for o in problem.options if o.id not in ("show", "cancel", "check-proposal")]
+        tail = [o for o in problem.options if o.id in ("show", "cancel")]
+        return dataclasses.replace(problem, options=[*rest, offer, *tail])
+
+    def _apply_check_proposal(self) -> None:
+        from whyline.console import fixmode, recovery
+
+        root = self.session.root
+        stored = fixmode.load_check_proposal(root)
+        if stored is None:
+            self._resolve_running = False
+            self.render_event(SessionEvent(kind="output", text="No stored check suggestion."))
+            return
+        did_resume = False
+
+        def in_thread() -> None:
+            nonlocal did_resume
+
+            def launcher(args: list[str]) -> None:
+                nonlocal did_resume
+                did_resume = True
+                self.call_from_thread(self._launch_relay, args)
+
+            try:
+                out = recovery.apply_steps(root, stored["steps"], launch=launcher)
+                message = str(out.message)
+                if out.success:
+                    fixmode.clear_check_proposal(root)
+            except Exception as exc:
+                message = f"Resolve error: {exc}"
+            self.call_from_thread(self._fix_applied, message, did_resume)
+
+        self.run_worker(in_thread, thread=True)
 
     @staticmethod
     def _fix_backups(relay_setup: Any, root: Any) -> list[str]:

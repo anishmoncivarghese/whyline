@@ -1252,3 +1252,349 @@ def auto_fix(
     if not out.success:
         return done(AutoFixOutcome("stopped", message, res, checked), "apply-failed")
     return done(AutoFixOutcome("applied", "", res, checked, message, resumed), "applied")
+
+
+# ---------------------------------------------------------------------------
+# Check: a read-only health note on a relay that is running or paused.
+# ---------------------------------------------------------------------------
+
+CHECK_LOG_LINES = 200
+CHECK_MAX_SECONDS = 10 * 60
+
+
+@dataclass
+class CheckResult:
+    status: str  # note | cancelled | exhausted
+    agent: str = ""
+    note: str = ""
+    steps: list[dict] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    tried: list[str] = field(default_factory=list)
+    fallbacks: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _seconds_since(started: str, now: datetime) -> int | None:
+    try:
+        then = datetime.fromisoformat(started)
+    except (TypeError, ValueError):
+        return None
+    if then.tzinfo is None:
+        then = then.astimezone()
+    return max(0, int((now - then).total_seconds()))
+
+
+def _minutes_text(seconds: int) -> str:
+    return f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+def _check_timeout_minutes(root: Path, st: object | None) -> int | None:
+    minutes = getattr(st, "timeout_minutes", None)
+    if minutes is not None:
+        return minutes
+    try:
+        from whyline_relay import config as relay_config
+
+        return getattr(relay_config.load(root), "timeout_minutes", None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _check_round_lines(root: Path, task: str) -> list[str]:
+    if not task:
+        return []
+    try:
+        from whyline.console import relay_ops
+
+        rounds = relay_ops.task_rounds(root, task)
+    except Exception:  # noqa: BLE001 - no ledger, or no relay installed
+        return []
+    return [
+        f"- {r.from_actor} -> {r.to_actor}: {r.status}"
+        f"{' (sent back)' if r.sent_back else ''} {r.summary[:200]}".rstrip()
+        for r in rounds
+    ]
+
+
+def _check_plan_progress(root: Path, st: object | None) -> str:
+    plan_name = str(getattr(st, "plan", "") or "")
+    if not plan_name:
+        try:
+            from whyline_relay import config as relay_config
+
+            plan_name = str(relay_config.load(root).plan or "")
+        except Exception:  # noqa: BLE001
+            return "(no plan found)"
+    if not plan_name:
+        return "(no plan found)"
+    plan = Path(plan_name)
+    plan = plan if plan.is_absolute() else root / plan
+    try:
+        lines = plan.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return "(no plan found)"
+    boxes = [ln for ln in lines if re.match(r"\s*[-*]\s*\[[ xX]\]", ln)]
+    done = [ln for ln in boxes if re.match(r"\s*[-*]\s*\[[xX]\]", ln)]
+    return f"{len(done)} of {len(boxes)} plan items ticked"
+
+
+def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
+    """The context for a Check: live marker, turn time against the timeout, the
+    last 200 log lines, quota evidence, stage visits, send-backs and progress.
+
+    It asks for a health note, and its step catalog is the one Ask agent uses.
+    """
+    from whyline.console import recovery
+
+    root = Path(root).resolve()
+    now = now or datetime.now(timezone.utc)
+    st_dict = recovery._read_state_dict(root)
+    try:
+        from whyline_relay import state as relay_state
+
+        st = relay_state.load(root)
+    except Exception:  # noqa: BLE001
+        st = None
+    marker = None
+    try:
+        from whyline_relay import running
+
+        marker = running.read(root)
+    except Exception:  # noqa: BLE001
+        pass
+    if marker is not None:
+        elapsed = _seconds_since(marker.started, now)
+        live = (
+            f"agent {marker.agent} ({marker.role or 'no role'}) on {marker.task} "
+            f"round {marker.round}, stage {marker.stage or '-'} visit {marker.visit}, "
+            f"pid {marker.pid}, turn started {marker.started}"
+        )
+    else:
+        elapsed = None
+        live = "no live marker: no agent turn is running"
+    minutes = _check_timeout_minutes(root, st)
+    limit = "no limit" if minutes == 0 else (_minutes_text(minutes * 60) if minutes else "unknown")
+    turn_time = (
+        f"{_minutes_text(elapsed)} elapsed of a {limit} timeout"
+        if elapsed is not None
+        else f"no running turn; the timeout is {limit}"
+    )
+    log_tail = ""
+    log_path = str(st_dict.get("log_path") or "")
+    if log_path:
+        lp = Path(log_path)
+        lp = lp if lp.is_absolute() else root / lp
+        try:
+            lines = lp.read_text(encoding="utf-8", errors="replace").splitlines()
+            log_tail = "\n".join(lines[-CHECK_LOG_LINES:])
+        except OSError:
+            pass
+    visits = st_dict.get("stage_visits")
+    visits_text = (
+        ", ".join(f"{k}={v}" for k, v in sorted(visits.items()))
+        if isinstance(visits, dict) and visits
+        else "(none)"
+    )
+    task = str(st_dict.get("task_id") or "")
+    rounds = _check_round_lines(root, task)
+    sent_back = sum(1 for line in rounds if "(sent back)" in line)
+    catalog = recovery.get_rec_4c_options(root)
+    parts = [
+        "You are checking on a relay while it runs or is paused. Be read-only: "
+        "do not edit, stage or commit anything, and nothing you suggest is "
+        "applied while the relay runs.",
+        "",
+        "## Live Marker",
+        live,
+        "",
+        "## Turn Time Against Timeout",
+        turn_time,
+        "",
+        f"## Last {CHECK_LOG_LINES} Transcript Lines",
+        log_tail or "None",
+        "",
+        "## Quota Evidence",
+        "\n".join(recovery._ask_quota_lines(root)),
+        "",
+        "## Stage Visits and Send-backs",
+        f"task: {task or '(none)'}; stage: {st_dict.get('stage') or '(none)'}; "
+        f"round: {st_dict.get('round') or '(none)'}",
+        f"visits: {visits_text}",
+        f"send-backs this task: {sent_back} of {len(rounds)} handoffs",
+        *rounds,
+        "",
+        "## Plan Progress",
+        _check_plan_progress(root, st),
+        "",
+        "## Available Step Catalog",
+        "- set-model {agent, model}",
+        "- set-roles {implementer?, tester?, reviewer?, backup?}",
+        "- clear-override reviewer",
+        "- raise-rounds {by}",
+        "- retry-stage",
+        "- resume {allow_dirty}",
+        "- wait-until {time}",
+        "- human {text}",
+        "",
+        "## Available REC-4C Options",
+        *(f"- {opt_id}: {label}" for opt_id, label in catalog.items()),
+        "",
+        "## Instructions",
+        "Give a short health note. Start it with exactly one of: stuck, going "
+        "round in circles, quota risk, fine. Then one or two sentences why.",
+        "If you suggest changes, pick steps only from the catalog above and end "
+        "with a fenced JSON block: "
+        '{"diagnosis": "...", "steps": [...], "confidence": "high|medium|low"}. '
+        "They are kept for the next pause and not applied now. If the relay is "
+        "fine, give no steps.",
+    ]
+    return "\n".join(parts)
+
+
+def run_check(
+    root: Path,
+    *,
+    agent_chain: list[str],
+    runner: Callable[..., object] | None = None,
+    cancel_event: object | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    now: datetime | None = None,
+) -> CheckResult:
+    """Ask the first agent in the chain that has a read-only mode for a note.
+
+    Nothing is applied: any steps are only validated and returned.
+    """
+    import inspect
+
+    from whyline.agents import capabilities
+    from whyline.console import recovery, relay_ops
+    from whyline_relay import agents as relay_agents
+    from whyline_relay import chat as relay_chat
+    from whyline_relay import config as relay_config
+
+    root = Path(root).resolve()
+    say = on_progress or (lambda _text: None)
+    result = CheckResult(status="exhausted")
+
+    def cancelled() -> bool:
+        return cancel_event is not None and bool(cancel_event.is_set())  # type: ignore[attr-defined]
+
+    settings = relay_config.load(root)
+    try:
+        from whyline_relay import state as relay_state
+
+        st = relay_state.load(root)
+    except Exception:  # noqa: BLE001
+        st = None
+    timeout = relay_ops._timeout_seconds_kwarg(_check_timeout_minutes(root, st))
+    seconds = timeout.get("timeout_seconds")
+    if isinstance(seconds, int) and not isinstance(seconds, bool):
+        timeout = {"timeout_seconds": max(1, min(seconds, CHECK_MAX_SECONDS))}
+    else:
+        timeout = {"timeout_seconds": CHECK_MAX_SECONDS}
+    prompt = build_check_prompt(root, now=now)
+    active = runner if runner is not None else relay_agents.run
+    try:
+        params = inspect.signature(active).parameters.values()
+        takes_cancel = any(
+            p.name == "cancel_event" or p.kind is inspect.Parameter.VAR_KEYWORD
+            for p in params
+        )
+    except (TypeError, ValueError):
+        takes_cancel = False
+
+    def pass_over(agent: str, why: str) -> None:
+        result.fallbacks.append((agent, why))
+        say(f"{agent} {why}")
+
+    for agent in agent_chain:
+        if agent in result.tried:
+            continue
+        if cancelled():
+            result.status = "cancelled"
+            return result
+        try:
+            command = relay_chat.resolve_command(settings, agent)
+        except Exception:  # noqa: BLE001
+            command = [agent]
+        read_only = capabilities.read_only_command(agent, list(command))
+        if read_only is None:
+            pass_over(agent, "has no read-only mode, so it was skipped")
+            continue
+        result.tried.append(agent)
+        log = root / ".whyline" / "relay" / "logs" / f"check-agent-{agent}.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        kwargs: dict = {
+            "cwd": root, "log_path": log, "echo": False, "agent_name": agent, **timeout,
+        }
+        if takes_cancel and cancel_event is not None:
+            kwargs["cancel_event"] = cancel_event
+        raw = ""
+        failure: Exception | None = None
+        try:
+            out = active(read_only, prompt, **kwargs)
+            raw = out if isinstance(out, str) else (
+                getattr(out, "output", None) or getattr(out, "stdout", None) or ""
+            )
+        except Exception as exc:  # noqa: BLE001
+            failure = exc
+        if not raw and failure is None and log.is_file():
+            raw = log.read_text(encoding="utf-8", errors="replace")
+        if cancelled() or isinstance(failure, relay_agents.AgentCancelled):
+            result.status = "cancelled"
+            return result
+        if failure is not None:
+            if not recovery._is_model_failure(failure, ""):
+                raise failure
+            pass_over(agent, recovery._fallback_reason(failure, ""))
+            continue
+        result.agent = agent
+        data = recovery.extract_fenced_json(raw)
+        if data is not None:
+            result.note = str(data.get("diagnosis") or "").strip()
+            result.steps, result.notes = recovery.validate_steps(root, data.get("steps") or [])
+            prose = raw.split("```", 1)[0].strip()
+            if prose:
+                result.note = prose
+        else:
+            result.note = raw.strip()
+        result.status = "note"
+        return result
+    return result
+
+
+# A Check's proposal waits here until the relay pauses.
+def check_proposal_path(root: Path, *, run: Run = subprocess.run) -> Path:
+    return _session_dir(Path(root), run) / "check-proposal.json"
+
+
+def store_check_proposal(
+    root: Path, steps: list[dict], note: str, agent: str, *, run: Run = subprocess.run
+) -> None:
+    path = check_proposal_path(root, run=run)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    record = {
+        "steps": steps,
+        "note": note,
+        "agent": agent,
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def load_check_proposal(root: Path, *, run: Run = subprocess.run) -> dict | None:
+    try:
+        data = json.loads(check_proposal_path(root, run=run).read_text(encoding="utf-8"))
+    except (OSError, ValueError, FixModeError):
+        return None
+    if not isinstance(data, dict) or not data.get("steps"):
+        return None
+    return data
+
+
+def clear_check_proposal(root: Path, *, run: Run = subprocess.run) -> None:
+    try:
+        check_proposal_path(root, run=run).unlink(missing_ok=True)
+    except (OSError, FixModeError):
+        pass

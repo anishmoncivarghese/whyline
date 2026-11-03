@@ -34099,3 +34099,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 35940e374d764bd1b07ee7e55263c020 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T11:03:21.097Z"} -->
+
+## 2026-11-03 — Check runs its own read-only prompt in fixmode.run_check, and stores proposals under .git/whyline-fix, not via recovery.ask_agent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FIX-8
+
+**Because:** ask_agent builds a fixed pause prompt and recovery.py is out of scope for FIX-8; the stored steps are offered as a check-proposal option at the next Resolve
+
+**Rejected:**
+
+- extend ask_agent with a prompt override — recovery.py is outside the task's files
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 82f833b2880947cba050680e08f619a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T11:09:40.759Z"} -->
+
+## 2026-11-03 — Pass FIX-8 round-two testing: Check relay button, read-only health prompt, and proposal storage verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** FIX-8
+
+**Because:** All task requirements verified: Check button in Relay row enabled while running/paused and disabled during check, read-only prompt includes live marker, timeout, last 200 lines, quota evidence, stage visits and send-backs, and plan progress; proposals stored under session dir and offered at next pause without running apply while relay runs; full pytest suite (3391 passed) and console tests pass completely
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/tui.py, tests/console/test_fixmode_check.py, tests/console/test_mode_buttons.py
+
+<!-- whyline-event: a5f2410e113b4edc86738a2818749053 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T11:24:15.687Z"} -->
+
+## 2026-11-03 — Approve FIX-8: relay Check button, read-only health prompt, and pause proposal flow
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** FIX-8
+
+**Because:** Meets all requirements: Check button enabled during relay run/pause and disabled while active, read-only agent check prompt includes live marker, timeout, log tail, quota evidence, stage visits and plan progress, suggestions are non-destructive and offered at the next pause via Apply when paused; tests fully verify behavior and suite passes
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 8d287ab000b34f55826a6f19b1606b20 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-03T12:03:22.507Z"} -->
