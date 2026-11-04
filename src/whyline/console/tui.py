@@ -2196,12 +2196,84 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             return
 
+    def _pause_info(self) -> tuple[str, Any]:
+        """The relay's pause state name and details; ("none", None) when it
+        cannot be read."""
+        try:
+            info = relay_ops.pause_state(self.session.root)
+            return str(getattr(info, "kind", None) or info.state), info
+        except Exception:  # no relay installed, unreadable state
+            return "none", None
+
     def _pause_state_name(self) -> str:
         """The relay's pause state, or "none" when it cannot be read."""
+        return self._pause_info()[0]
+
+    def _pausing_text(self, info: Any, fallback_agent: str = "") -> str:
+        since = getattr(info, "since", None)
+        agent = getattr(info, "agent", "") or fallback_agent or "the agent"
+        so_far = ""
+        if since is not None:
+            secs = int((self._wall() - since).total_seconds())
+            so_far = f" ({relay_ops._elapsed(secs)} so far)"
+        return f"⏸ Pausing — letting {agent} finish its turn so nothing is lost{so_far}"
+
+    def _paused_text(self, kind: str, info: Any) -> str:
+        """The status line for a run paused by the user or cut off; "" for any
+        other pause, which keeps today's text."""
+        if kind == "paused_by_user":
+            task = getattr(info, "task_id", "") or "its task"
+            return (
+                f"⏸ Paused by you at {task}, round {getattr(info, 'round', 0)} "
+                "— press Resume to continue"
+            )
+        if kind == "cut_off":
+            agent = getattr(info, "agent", "") or "the agent"
+            try:
+                from whyline_relay import state as relay_state
+
+                saved = relay_state.load(self.session.root)
+                count = len((saved.cut_off or {}).get("changed_files") or [])
+            except Exception:
+                count = 0
+            noun = "changed file" if count == 1 else "changed files"
+            return (
+                f"⏸ Paused — {agent}'s turn was cut off; its {count} {noun} are kept. "
+                "Press Resume to continue."
+            )
+        return ""
+
+    def _note_pause_change(self, kind: str, running: bool) -> None:
+        """One transcript line each time the pause state changes."""
+        before = getattr(self, "_pause_seen", None)
+        self._pause_seen = kind
+        if before is None or before == kind:
+            return
+        line = ""
+        if kind == "pausing":
+            line = "Pause requested…"
+        elif kind == "paused_by_user":
+            line = "Paused by you."
+        elif before == "pausing" and kind == "none" and running:
+            line = "Pause withdrawn."
+        if line:
+            self.render_event(SessionEvent(kind="output", text=line))
+
+    def _show_paused_line(self, kind: str, info: Any, running: bool) -> None:
+        """Put the paused text on the status line while nothing else uses it."""
         try:
-            return str(relay_ops.pause_state(self.session.root).state)
-        except Exception:  # no relay installed, unreadable state
-            return "none"
+            thinking = self._main("#thinking", Static)
+        except (NoMatches, IndexError):
+            return
+        text = "" if running or self._busy_text else self._paused_text(kind, info)
+        if text:
+            thinking.update(text)
+            thinking.display = True
+            self._paused_line = True
+        elif getattr(self, "_paused_line", False):
+            self._paused_line = False
+            if not self._busy_text and not self._relay_label:
+                thinking.display = False
 
     def _sync_pause_buttons(self) -> None:
         """Pause while a relay runs, Pausing… with Pause now and Keep going
@@ -2216,13 +2288,17 @@ class WhylineConsoleApp(App):
         )
         if not running:
             self._pause_requested = False
-        pausing = running and (
-            getattr(self, "_pause_requested", False) or self._pause_state_name() == "pausing"
-        )
+        kind, info = self._pause_info()
+        pausing = running and (getattr(self, "_pause_requested", False) or kind == "pausing")
         shown["pause"].display = running and not pausing
         for name in ("pausing", "pause-now", "pause-cancel"):
             shown[name].display = pausing
         self._fit_controls()
+        if self.session.mode == "relay":
+            effective = "pausing" if pausing else kind
+            self._pause_info_now = (effective, info)
+            self._note_pause_change(effective, running)
+            self._show_paused_line(effective, info, running)
 
     def _pause_tick(self) -> None:
         if self.session.mode == "relay":
@@ -4390,6 +4466,13 @@ class WhylineConsoleApp(App):
             summary = relay_ops.format_live(
                 self._relay_status, self._wall(), self._relay_progress
             )
+            kind, info = getattr(self, "_pause_info_now", ("none", None))
+            if kind == "pausing":
+                # The plan % and task ticks stay: keep the status head.
+                head = summary.split(" · ")[0]
+                text = self._pausing_text(info, self._relay_status.agent)
+                thinking.update(f"{_SPINNER[self._spin]} {text} · {head}{note}")
+                return
             thinking.update(f"{_SPINNER[self._spin]} relay: {summary}{note}")
             return
         if self._ask_cancel is not None and self._busy_text:

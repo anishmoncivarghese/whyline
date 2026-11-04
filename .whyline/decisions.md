@@ -35142,3 +35142,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e94683a734fe496893829947a30be27d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T22:29:18.685Z"} -->
+
+## 2026-11-04 — PZ-3 reads pause kind from PauseState.kind (falling back to .state); paused text rides the #thinking line
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-3
+
+**Because:** installed whyline_relay PauseState has only kind, so the PZ-2 .state read always gave none against the real relay; the thinking Static is the existing status line and is hidden when idle, so paused text shows it from the 1s pause tick
+
+**Rejected:**
+
+- new dedicated status widget — duplicates the RST-1 line and its layout
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: ba86864d2e8546679f5ca49c34e38fbe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T22:41:52.150Z"} -->
+
+## 2026-11-04 — Pass PZ-3 pause status line testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-3
+
+**Because:** All 7 pause-status tests in test_pause_status.py pass along with safe-pause tests; pausing, paused_by_user, cut_off, and fallback texts behave correctly, plan percent and task ticks stay preserved, transcript change notifications write exactly once, and full test suites exit cleanly
+
+**Files:** src/whyline/console/tui.py, tests/console/test_pause_status.py
+
+<!-- whyline-event: 5d2709aba54f456391a69a8535ec3065 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T23:21:19.202Z"} -->
+
+## 2026-11-04 — Approve PZ-3 pause status line
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-3
+
+**Because:** Pausing, paused_by_user, and cut_off texts match the spec, plan percent stays on the RST-1 line, transcript lines fire once per change, and uv run pytest -q failed only on an unrelated setup-screen flake that passed on rerun
+
+**Rejected:**
+
+- request changes for the setup-screen failure — it is outside PZ-3 files and passed in isolation
+- request changes for singular cut-off grammar — the spec always uses changed files are kept
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8540b49655fb4cad8168d0dba80ae89b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T23:40:29.211Z"} -->
