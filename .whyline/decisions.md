@@ -35052,3 +35052,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 70e2602c1c014ba296bae0b596f63952 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:21:10.075Z"} -->
+
+## 2026-11-04 — Pause buttons driven by a _pause_requested flag plus pause_state, so Pausing… shows before the timer
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-2
+
+**Because:** pause_state only reads the request file after request_pause lands; the flag makes the switch immediate and is cleared when no relay runs or on Keep going
+
+**Rejected:**
+
+- wait for the 1s timer — the task needs Pausing… at once
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 125a44379c904a539cc3cb711e235a85 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:24:55.751Z"} -->
+
+## 2026-11-04 — PZ-2 passes tester verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-2
+
+**Because:** All requirements verified: Pause, Pausing…, Pause now, Keep going buttons displayed correctly across running/pausing/paused states; immediate transition to Pausing… on press; cancel_pause on Keep going; confirmation prompt before pause_now; existing resume on paused; and 1485 console tests passed cleanly alongside the rest of the test suite
+
+**Files:** src/whyline/console/tui.py, tests/console/test_safe_pause.py
+
+<!-- whyline-event: 1c73a1671fc14c7d9737c1f0565e21fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:38:28.243Z"} -->
+
+## 2026-11-04 — PZ-2 timer hides Pause on pause but never enables Resume
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-2
+
+**Because:** Requirement 2 says the 1s timer shows the existing Resume for paused_by_user/cut_off; _pause_tick only calls _sync_pause_buttons, so Resume stays disabled unless _relay_finished or _open already synced it
+
+**Rejected:**
+
+- leave Resume to existing _relay_finished — that misses a live relay started elsewhere
+
+**Files:** src/whyline/console/tui.py, tests/console/test_safe_pause.py
+
+<!-- whyline-event: dfadf3db7cfa426d9bd44e9a2c9e163e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:57:55.606Z"} -->
+
+## 2026-11-04 — PZ-2 _pause_tick also calls _sync_relay_buttons so Resume enables for runs paused elsewhere
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-2
+
+**Because:** pause_state alone hid Pause but left Resume disabled unless the console itself had launched the run
+
+**Rejected:**
+
+- enable Resume directly from pause_state — duplicates the paused/stale/release logic in _sync_relay_buttons
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3020a0978438460f841d30fe2f5050e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:58:38.777Z"} -->
+
+## 2026-11-04 — Pass PZ-2 round 5 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-2
+
+**Because:** All 11 safe-pause tests including the timer enabling Resume on pause pass, and the entire test suite (1487 console tests, 534 root unit tests, 1501 component tests) exits cleanly
+
+**Files:** src/whyline/console/tui.py, tests/console/test_safe_pause.py
+
+<!-- whyline-event: f0a35d6bcc2041feb26d1315ca54add4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T22:12:55.563Z"} -->
+
+## 2026-11-04 — Approve PZ-2 pause buttons including timer-enabled Resume
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-2
+
+**Because:** The four pause buttons, immediate Pausing switch, Keep going cancel, Pause now confirm, and existing Resume all match the spec; _pause_tick now also syncs Resume; tests cover each state; uv run pytest -q exited 0
+
+**Files:** src/whyline/console/tui.py, tests/console/test_safe_pause.py
+
+<!-- whyline-event: e94683a734fe496893829947a30be27d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T22:29:18.685Z"} -->

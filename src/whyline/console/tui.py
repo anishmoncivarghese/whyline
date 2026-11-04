@@ -111,6 +111,7 @@ _MODE_BUTTONS = {
     "assistant": ("assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check"),
     "workflows": ("workflows-library", "workflows-new", "workflows-runs"),
 }
+_PAUSE_BUTTONS = ("pause", "pausing", "pause-now", "pause-cancel")
 _SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy", "settings")
 # Files shows the plan and the files an agent is changing; Agents and
 # Assistant work on no checkout, so it has nothing to show there.
@@ -1937,6 +1938,7 @@ class WhylineConsoleApp(App):
         self._cb_fit()
         self.set_interval(0.1, self._tick)
         self.set_interval(1.0, self._watch_external_relay)
+        self.set_interval(1.0, self._pause_tick)
         self._main("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
@@ -2179,9 +2181,13 @@ class WhylineConsoleApp(App):
         self._main("#awake", Button).label = "Awake ●" if self._awake else "Awake"
         controls = self._main("#controls")
         for button in controls.query(Button):
-            if button.id in ("relay-resolve", "relay-retry-stage", "relay-check-apply", "update", "update-restart"):
+            if button.id in (
+                "relay-resolve", "relay-retry-stage", "relay-check-apply", "update", "update-restart",
+                *_PAUSE_BUTTONS,
+            ):
                 continue
             button.display = button.id in wanted
+        self._sync_pause_buttons()
         self._fit_controls()
         self._sync_split()
         self._main("#attach").display = self.session.mode == "chat"
@@ -2189,6 +2195,57 @@ class WhylineConsoleApp(App):
             self._main("#agents-bar").display = self.session.mode == "agents"
         except (NoMatches, IndexError):
             return
+
+    def _pause_state_name(self) -> str:
+        """The relay's pause state, or "none" when it cannot be read."""
+        try:
+            return str(relay_ops.pause_state(self.session.root).state)
+        except Exception:  # no relay installed, unreadable state
+            return "none"
+
+    def _sync_pause_buttons(self) -> None:
+        """Pause while a relay runs, Pausing… with Pause now and Keep going
+        while it waits for the turn to end. A paused run shows the existing
+        Resume instead, so every pause button is hidden then."""
+        try:
+            shown = {name: self._main(f"#{name}", Button) for name in _PAUSE_BUTTONS}
+        except (NoMatches, IndexError):
+            return
+        running = self.session.mode == "relay" and (
+            self._relay_running() or self._live_relay() is not None
+        )
+        if not running:
+            self._pause_requested = False
+        pausing = running and (
+            getattr(self, "_pause_requested", False) or self._pause_state_name() == "pausing"
+        )
+        shown["pause"].display = running and not pausing
+        for name in ("pausing", "pause-now", "pause-cancel"):
+            shown[name].display = pausing
+        self._fit_controls()
+
+    def _pause_tick(self) -> None:
+        if self.session.mode == "relay":
+            self._sync_pause_buttons()
+            self._sync_relay_buttons()  # enables Resume once a run has paused
+
+    def _ask_pause_now(self) -> None:
+        try:
+            agent = relay_ops.pause_state(self.session.root).agent
+        except Exception:
+            agent = ""
+        message = (
+            f"Cut off {agent or 'the agent'}'s turn now? Its changed files are kept "
+            "and the next turn continues from them."
+        )
+
+        def done(confirmed: bool | None) -> None:
+            if confirmed:
+                relay_ops.pause_now(self.session.root)
+                self._pause_requested = True
+                self._sync_pause_buttons()
+
+        self.push_screen(ConfirmScreen(message, "Pause now"), done)
 
     def _fit_controls(self) -> None:
         """One row when the bar's buttons fit the window, a grid when not.
@@ -3726,6 +3783,10 @@ class WhylineConsoleApp(App):
                 Button("Run", id="relay-run", disabled=True),
                 Button("Plan", id="relay-plan", disabled=True),
                 Button("Set up", id="relay-setup", disabled=True),
+                Button("Pause", id="pause"),
+                Button("Pausing…", id="pausing", disabled=True),
+                Button("Pause now", id="pause-now"),
+                Button("Keep going", id="pause-cancel"),
                 Button("Resume", id="relay-resume", disabled=True),
                 Button("Issues", id="relay-issues", disabled=True),
                 Button("Check", id="relay-check", disabled=True),
@@ -3945,6 +4006,16 @@ class WhylineConsoleApp(App):
         elif button_id and button_id.startswith("pause-continue-"):
             self._continue_with(button_id.removeprefix("pause-continue-"))
 
+        elif button_id == "pause":
+            relay_ops.request_pause(self.session.root)
+            self._pause_requested = True
+            self._sync_pause_buttons()
+        elif button_id == "pause-cancel":
+            relay_ops.cancel_pause(self.session.root)
+            self._pause_requested = False
+            self._sync_pause_buttons()
+        elif button_id == "pause-now":
+            self._ask_pause_now()
         elif button_id == "relay-resume":
             if getattr(self, "_release_task", None):
                 self._send_with("done")
