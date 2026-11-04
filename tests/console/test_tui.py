@@ -885,9 +885,10 @@ async def test_console_in_the_home_repo_says_so_at_start(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
-        lines = [str(line) for line in app.query_one("#transcript", tui.RichLog).lines]
-    text = " ".join(lines)
-    assert "home directory" in text and "TradingPlatform" in text
+        lines = [line.text for line in app.query_one("#transcript", tui.RichLog).lines]
+    # A long temp path can wrap the message, so compare without whitespace.
+    text = "".join("".join(lines).split())
+    assert "homedirectory" in text and "TradingPlatform" in text
 
 
 
