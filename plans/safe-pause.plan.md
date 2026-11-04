@@ -37,7 +37,7 @@ Rules every task keeps:
      - `pause_state(root)`
   Tests: the wrappers call whyline-relay with the right arguments; `pause_now` on a live run interrupts it.
 
-- [ ] PZ-2: The Pause / Pausing… / Resume buttons
+- [x] PZ-2: The Pause / Pausing… / Resume buttons
   Edit `src/whyline/console/tui.py` and add tests in `tests/console/test_safe_pause.py`.
   1. Add these buttons to the relay controls:
      - `Button("Pause", id="pause")`, shown while a relay runs
