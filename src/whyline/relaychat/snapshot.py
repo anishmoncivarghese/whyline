@@ -123,7 +123,8 @@ def _handoff_section(record: dict | None) -> str:
 
 
 def _changes_section(repo: Path, run: Callable, base: str) -> str:
-    stat = _git(repo, run, "diff", "--stat", base) if base else _git(repo, run, "diff", "--stat")
+    # Not `git diff`: it refreshes and rewrites the index even with --no-optional-locks.
+    stat = _git(repo, run, "diff-index", "--stat", base or "HEAD")
     log = _git(repo, run, "log", "--oneline", "-10")
     if not stat and not log:
         return "No git changes could be read."

@@ -34701,3 +34701,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 40e0c664c76547b782152cc160866ac4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:21:40.232Z"} -->
+
+## 2026-11-04 — Snapshot uses git diff-index --stat instead of git diff --stat
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-5
+
+**Because:** the RCH-5 guard test showed git diff rewrites .git/index even with --no-optional-locks, disturbing a running relay
+
+**Rejected:**
+
+- keep git diff and exempt it in the test — hides a real index write
+
+**Files:** src/whyline/relaychat/snapshot.py
+
+<!-- whyline-event: be270adaf23748159cdf7d557f09bcfe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:24:09.692Z"} -->
+
+## 2026-11-04 — Pass RCH-5 guard tests for relay isolation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-5
+
+**Because:** verified tests/relaychat/test_never_disturbs.py: live ask does not disturb running relay, index.lock is never taken, no forbidden relay calls made, AST scan enforces isolation rules, and full test suite passed
+
+**Files:** tests/relaychat/test_never_disturbs.py
+
+<!-- whyline-event: 3e97dc0d7d2e4b80aeebf1c309720ae3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:40:15.966Z"} -->
+
+## 2026-11-04 — Approve RCH-5 isolation guard tests and the diff-index snapshot fix
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-5
+
+**Because:** live ask fingerprints the repo excluding fake relay writes, watches index.lock, and asserts launcher/stop/interrupt fakes on whyline_relay and relay_ops were never called; the AST scan bans start/stop/interrupt/resume/select_plan/launcher, writes to .whyline/relay, and git argv without --no-optional-locks; snapshot.py uses git diff-index so git does not rewrite the index; uv run pytest -q failed only in unrelated tests/console/test_new_agent_deliveries.py; tests/relaychat isolation tests passed
+
+**Rejected:**
+
+- request changes for extra snapshot.py edits — the guard test found a real index write from git diff
+
+**Files:** tests/relaychat/test_never_disturbs.py
+
+<!-- whyline-event: b8a73b2aab94444b8cae221de5cc3d9f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:59:24.077Z"} -->

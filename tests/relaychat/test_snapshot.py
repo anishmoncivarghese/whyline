@@ -40,7 +40,7 @@ def test_every_section_appears(tmp_path):
     assert "relay/p" in snap.text and "log line 4" in snap.text
     assert "did the thing" in snap.text and "pytest: ok" in snap.text
     assert "T-1: First thing" in snap.text and "T-2: Second thing" in snap.text
-    assert "out for diff --stat abcdef1234567890" in snap.text
+    assert "out for diff-index --stat abcdef1234567890" in snap.text
 
 
 def test_trimming_removes_oldest_log_lines_first(tmp_path):
