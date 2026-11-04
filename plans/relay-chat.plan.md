@@ -49,7 +49,7 @@ Rules every task keeps:
   - two repos don't mix
   - clear keeps the old file
 
-- [ ] RCH-2: The relay snapshot
+- [x] RCH-2: The relay snapshot
   Create `src/whyline/relaychat/snapshot.py` and its tests.
   `build(repo, *, max_chars, run=subprocess.run) -> Snapshot(text, run_id, state)`. It collects:
   - **Relay state:** running / paused with reason / stopped / done, branch, plan file, current task id and title, round, stage, role agents, time on this turn. From `whyline_relay.state` and `whyline.console.adapters.run_status`.
