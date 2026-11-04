@@ -99,7 +99,7 @@ Rules every task keeps:
   - the prompt contains the snapshot and the history
   - timeout, cancel and missing-agent paths
 
-- [ ] RCH-5: Guard test: the chat never touches the relay
+- [x] RCH-5: Guard test: the chat never touches the relay
   Create `tests/relaychat/test_never_disturbs.py` only.
   1. In a temporary repo with a fake running relay (state file plus a log being appended by a background thread), call `ask` with a fake agent that tries to write a file and run `git status` through the provided environment. Check that:
      - nothing outside the fake relay's own writes changed in the repo or `.git`
