@@ -26,7 +26,7 @@ Rules every task keeps:
 
 ## Part 1: Pause, Pausing… and Resume
 
-- [ ] PZ-1: whyline-relay safe pause is out, and the relay_ops wrappers
+- [x] PZ-1: whyline-relay safe pause is out, and the relay_ops wrappers
   Edit `src/whyline/console/relay_ops.py`, `pyproject.toml`, `uv.lock` and their tests only.
   1. Check that whyline-relay with RPZ-1..4 is published (`whyline_relay.loop.request_pause` and `whyline_relay.status.pause_state` exist in the newest release on PyPI). If not, write `@blocked: needs whyline-relay safe pause (RPZ-5)` in the handoff and stop.
   2. Raise the `whyline-relay` lower bound to that version, and run `uv lock`.
