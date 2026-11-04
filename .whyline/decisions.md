@@ -34654,3 +34654,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1227e741718f4c7b977c8660cfbf84a3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:45:49.170Z"} -->
+
+## 2026-11-04 — Relay chat ask() reuses agents.run and runner._classify/_answer instead of a new subprocess runner
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-4
+
+**Because:** agents.run already kills the process group on timeout/cancel and accepts env; classification of limit/login/missing stays consistent with agent runs
+
+**Rejected:**
+
+- own Popen runner — duplicates kill/timeout logic
+
+**Files:** src/whyline/relaychat/ask.py
+
+<!-- whyline-event: f008e3eaea794c9cb017519f5a7944de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:47:05.364Z"} -->
+
+## 2026-11-04 — Approve RCH-4 asking implementation: ask() runs read-only with locks disabled and records results
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-4
+
+**Because:** Full test suite passed (3468 passed, 1 skipped) and all RCH-4 requirements verified including timeout, cancellation, missing agent, and read-only commands
+
+**Files:** src/whyline/relaychat/ask.py
+
+<!-- whyline-event: e306d274fbc84b5fbe66c931f74abd23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:02:44.220Z"} -->
+
+## 2026-11-04 — Approve RCH-4 ask(): read-only observer, GIT_OPTIONAL_LOCKS=0, outcomes recorded
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-4
+
+**Because:** ask() picks the agent, builds the snapshot from settings, writes the observer prompt with snapshot and last 6 exchanges, runs via agents.run after read_only_command with GIT_OPTIONAL_LOCKS=0 and timeout 0 as none, extracts with runner._answer, and records timeout/cancel/missing/limit; tests cover runner args, prompt, timeout, cancel, missing agent; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for mocked _command — _command mirrors runner._command, the None path is tested, and the required tests pass
+
+**Files:** src/whyline/relaychat/ask.py
+
+<!-- whyline-event: 40e0c664c76547b782152cc160866ac4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:21:40.232Z"} -->
