@@ -588,6 +588,6 @@ Why: whyline-relay paused RLY-1 at "the 3-round cap" because that repository's `
 
 ## Publish
 
-- [ ] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, RCAP-1..2, RST-8, MDL-1 and AUTO-1
+- [x] RTL-2: Publish whyline with LIVE-1..4, SWP-1..7, LSN-1..8, FIX-1..9, RCAP-1..2, RST-8, MDL-1 and AUTO-1
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
