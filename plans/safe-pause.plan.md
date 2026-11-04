@@ -153,8 +153,21 @@ Rules every task keeps:
   - The box has a border, and its placeholder is "Ask about this relay".
   - The existing tab tests still pass unchanged.
 
+- [ ] PZ-12: A working line while Chat waits for an answer
+  Edit `src/whyline/console/relay_chat_tab.py` and `tests/console/test_relay_chat_tab.py` only.
+  An answer can take a minute or more. Today the only sign is the Stop button, so on 2026-11-05 a question looked unanswered while grok was still working.
+  1. While a question is out, show one line between the answer log and the question box: `⠋ grok is working on your question… 42s`. Use the agent the answer is coming from (`agent_choice.pick`), the console's `_SPINNER` frames from `tui.py` (import them, don't copy), and seconds since the question was sent.
+  2. Turn the frame and the seconds with `set_interval` about every 0.2 seconds, using a clock the tests can replace. Stop the timer when the answer, an error or Stop arrives, and hide the line.
+  3. After Stop, the line says `Stopping…` until the worker returns.
+  4. A quick-question button sends nothing while a question is out, the same as Send.
+  Tests:
+  - Sending shows the line with the agent's name and `0s`, and moving the fake clock moves the seconds.
+  - The line hides and the timer stops when the answer arrives, when the agent fails, and after Stop.
+  - Stop changes the line to `Stopping…`.
+  - Nothing new is sent while a question is out.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8, PZ-10 and PZ-11
+- [ ] PZ-9: Publish whyline with PZ-1..8, PZ-10, PZ-11 and PZ-12
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
