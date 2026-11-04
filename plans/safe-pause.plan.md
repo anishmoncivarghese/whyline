@@ -166,8 +166,27 @@ Rules every task keeps:
   - Stop changes the line to `Stopping…`.
   - Nothing new is sent while a question is out.
 
+- [ ] PZ-13: Chat answers show only the final answer, with markdown styled
+  Edit `src/whyline/relaychat/ask.py`, `src/whyline/console/relay_chat_tab.py` and their tests (`tests/relaychat/test_ask.py`, `tests/console/test_relay_chat_tab.py`) only.
+  On 2026-11-05 a grok answer began "…give a short status.I have the snapshot; next I'll cite…": its progress messages were joined to the answer with no space. It also showed `**running PZ-1**` and backticks as raw text.
+  1. Final answer only:
+     - Add to `INSTRUCTIONS` in `ask.py`: "Reply with the final answer only. Do not describe what you are about to read or do."
+     - In `ask.py`, after `_extract`, call a new `final_message(cli: str, raw: str, text: str) -> str`. For grok, if its JSON output holds the turn as a list of separate assistant messages, return the last non-empty one. Otherwise return `text` unchanged. Never guess where to split a single combined string.
+     - Save one real grok `--output-format json` output with more than one assistant message as `tests/relaychat/fixtures/grok_multi_message.json`, with paths and ids replaced by placeholders. If grok's output has no separate messages, say so in the handoff and keep only the instruction change.
+  2. Markdown in the tab:
+     - Add `render_answer(repo: Path, text: str) -> Text` in `relay_chat_tab.py`, used by `_write` for agent lines in place of the plain `link_paths` call.
+     - `**x**` becomes bold `x`, and `` `x` `` becomes cyan `x` without the backticks.
+     - A line starting `# `, `## ` or `### ` becomes a bold line without the hashes, and a line starting `- ` or `* ` becomes `• `.
+     - Then apply the `path:line` links from `link_paths` to the rendered text, so a path inside backticks is still a link.
+     - Unmatched `**` or a single backtick stays as typed.
+     - History, `whyline ask` output and Copy keep the raw text.
+  Tests:
+  - `final_message` returns the last message from the grok fixture, and returns `text` unchanged for other agents and for a single combined string.
+  - `render_answer`: bold and code are styled without their markers; headings and bullets as above; `` `src/a.py:3` `` is a link that opens line 3; unmatched markers stay; the plain text has no `**` or backticks.
+  - The prompt contains the new instruction.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8, PZ-10, PZ-11 and PZ-12
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..13
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
