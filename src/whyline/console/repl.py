@@ -118,6 +118,11 @@ def _help_text() -> str:
         "           to the role's backup chain. Set up marks agents that can't run, e.g.\n"
         "           \"antigravity — out of quota until …\". The same readiness from a\n"
         "           terminal: whyline relay roles status",
+        "  Chat tab  in Relay, next to All files: ask a read-only agent what the running\n"
+        "           relay is doing. It never stops, steers or slows the relay, and it may share\n"
+        "           quota with a working agent. History is kept under ~/.whyline/relay-chat/.\n"
+        "           From a terminal: whyline ask \"why did it stop?\". Agent, time limit and\n"
+        "           snapshot size are in Settings → Relay chat",
         "  Files    split the console and follow the file the agent is writing",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),

@@ -15,7 +15,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Label, Static
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 PROVIDERS = ("claude", "codex", "grok", "antigravity")
 _PATH_ONLY = frozenset({"grok", "antigravity"})
@@ -106,6 +106,9 @@ class ProviderSettingsScreen(ModalScreen):
     ProviderSettingsScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; width: 16; }
     ProviderSettingsScreen Checkbox:focus { border: none; }
     ProviderSettingsScreen .ss-status { width: 1fr; height: auto; padding: 0 1; }
+    ProviderSettingsScreen Select { width: 1fr; }
+    ProviderSettingsScreen Input { width: 12; }
+    ProviderSettingsScreen .ss-chat-label { width: 36; padding: 0 1; }
     """
 
     def __init__(
@@ -113,8 +116,16 @@ class ProviderSettingsScreen(ModalScreen):
         records: dict | None,
         check_provider: Callable[[str], dict],
         save_enabled: Callable[[dict, dict | None], None],
+        chat: dict | None = None,
+        save_chat: Callable[[dict], object] | None = None,
     ) -> None:
+        """``chat`` shows the Relay chat section: ``choices`` (agent names),
+        ``agent`` (str | None), ``timeout_seconds`` and ``snapshot_chars``.
+        ``save_chat`` receives only the values changed, as ``relaychat.settings.save``
+        keyword names."""
         super().__init__()
+        self._chat = dict(chat) if chat is not None and save_chat is not None else None
+        self._save_chat = save_chat
         raw = records or {}
         self._records = {
             agent: dict(raw[agent]) if isinstance(raw.get(agent), dict) else {}
@@ -147,6 +158,7 @@ class ProviderSettingsScreen(ModalScreen):
                 Label("AI subscriptions", id="ss-section"),
                 Label("Choose only the subscriptions Whyline may use."),
                 *rows,
+                *self._chat_widgets(),
                 id="ss-body",
             ),
             Static(_HINT, id="ss-hint", markup=False),
@@ -158,6 +170,59 @@ class ProviderSettingsScreen(ModalScreen):
                 id="ss-buttons",
             ),
         )
+
+    def _chat_widgets(self) -> list:
+        if self._chat is None:
+            return []
+        chat = self._chat
+        choices = [str(name) for name in chat.get("choices") or []]
+        agent = chat.get("agent")
+        options = [("Automatic", "")] + [(name, name) for name in choices]
+        timeout = int(chat.get("timeout_seconds", 0))
+        return [
+            Label("Relay chat", id="ss-chat-section"),
+            Label("Answers questions about a running relay, read-only."),
+            Horizontal(
+                Label("Agent", classes="ss-chat-label"),
+                Select(options, value=agent if agent in choices else "",
+                       allow_blank=False, id="ss-chat-agent"),
+                classes="ss-row",
+            ),
+            Horizontal(
+                Label("Time limit (minutes, 0 = none)", classes="ss-chat-label"),
+                Input(value=_minutes_text(timeout), id="ss-chat-minutes"),
+                classes="ss-row",
+            ),
+            Horizontal(
+                Label("Snapshot size (characters)", classes="ss-chat-label"),
+                Input(value=str(chat.get("snapshot_chars", "")), id="ss-chat-snapshot"),
+                classes="ss-row",
+            ),
+        ]
+
+    def _chat_changes(self) -> dict:
+        """Values that differ from what the section opened with; raises ValueError."""
+        if self._chat is None:
+            return {}
+        changes: dict = {}
+        picked = self.query_one("#ss-chat-agent", Select).value
+        picked = picked if isinstance(picked, str) and picked else None
+        shown = self._chat.get("agent")
+        if shown not in (self._chat.get("choices") or []):
+            shown = None  # the saved agent isn't installed, so Automatic was shown
+        if picked != shown:
+            changes["agent"] = picked
+        text = self.query_one("#ss-chat-minutes", Input).value.strip()
+        if text != _minutes_text(int(self._chat.get("timeout_seconds", 0))):
+            if not text.isdecimal():
+                raise ValueError("Time limit must be a whole number of minutes (0 means none).")
+            changes["timeout_seconds"] = int(text) * 60
+        text = self.query_one("#ss-chat-snapshot", Input).value.strip()
+        if text != str(self._chat.get("snapshot_chars", "")):
+            if not text.isdecimal():
+                raise ValueError("Snapshot size must be a whole number of characters.")
+            changes["snapshot_chars"] = int(text)
+        return changes
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._check_currently_staged)
@@ -245,9 +310,20 @@ class ProviderSettingsScreen(ModalScreen):
         completed = {agent: dict(result) for agent, result in self._completed.items()}
         button = self.query_one("#ss-save", Button)
         button.disabled = True
+        saved_chat = False
         try:
+            changes = self._chat_changes()
+            if changes:
+                self._save_chat(changes)
+                saved_chat = True
             self._save_enabled(values, completed)
         except Exception as error:
+            if saved_chat:
+                before = {name: self._chat.get(name) for name in changes}
+                try:
+                    self._save_chat(before)
+                except Exception:
+                    pass
             button.disabled = False
             self._set_error(str(error) or error.__class__.__name__)
             return
@@ -273,6 +349,10 @@ class ProviderSettingsScreen(ModalScreen):
             self.query_one("#ss-error", Static).update(_one_line(text) if text else "")
         except NoMatches:
             return
+
+
+def _minutes_text(seconds: int) -> str:
+    return str(seconds // 60) if seconds % 60 == 0 else f"{seconds / 60:g}"
 
 
 def _checkbox_agent(widget_id: str | None) -> str | None:

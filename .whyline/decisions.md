@@ -34948,3 +34948,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 21f64060dbd74143abb42be2d257631e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T10:27:37.794Z"} -->
+
+## 2026-11-04 — Relay chat settings live in the existing Settings modal, saving only changed fields; chat is written first and rolled back if the provider save fails
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-9
+
+**Because:** keeps Save transactional without a second modal, and a CLI-set 90s timeout is not rounded to whole minutes by an untouched field
+
+**Rejected:**
+
+- separate Relay chat settings screen — Settings is the one place users look
+- always write all three values — would overwrite sub-minute CLI timeouts
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 7aeb9d5861b54b2a8baebb3dcff43988 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T10:34:35.171Z"} -->
+
+## 2026-11-04 — Pass RCH-9: Relay chat settings section, transactional save and rollback, Help text, and docs
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-9
+
+**Because:** All requirements met: Relay chat controls added to Settings modal saving only changed fields through relaychat.settings.save with rollback on failure, Help text and docs cover tab answers, read-only guarantees, quota note, history location, and whyline ask CLI, and full test suite passes cleanly
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: aa345d51ed9b4a38945876bcbddfb03a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T10:49:17.187Z"} -->
+
+## 2026-11-04 — Approve RCH-9: Relay chat Settings section, Help, docs, and tests
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-9
+
+**Because:** Settings modal has agent, minutes, and snapshot controls that save only changed fields through relaychat.settings.save with rollback if the provider save fails; Help and docs/relay-chat.md cover the tab, read-only guarantees, quota, history, and whyline ask; tests cover the round trip, validation, rollback, and Help; uv run pytest -q exited 0
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 7e9c5adfc3c3407ca3f2010dd3ba6703 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T11:05:52.167Z"} -->

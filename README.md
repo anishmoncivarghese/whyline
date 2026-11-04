@@ -222,6 +222,10 @@ Whyline checks PyPI once a day and offers **Update** inside the console.
 | **Relay** | Plan, Set up, Check, Run, Auto, Resolve, Resume, Stop, Files, and Awake on a Mac. |
 | **Agents** | Saved Agents with schedules, history and delivery, plus the **Ideas** backlog and **Inbox** settings for Telegram and email. |
 
+In Relay, the **Chat** tab next to All files answers questions about a running
+relay from a read-only agent, and never stops or steers it. See
+[docs/relay-chat.md](docs/relay-chat.md); `whyline ask` does the same from a terminal.
+
 Everything you set up or run is available in the console without a terminal.
 The CLI (`whyline --help`) exposes the same functions for scripts.
 

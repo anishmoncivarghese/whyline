@@ -4750,12 +4750,23 @@ class WhylineConsoleApp(App):
     def _open_settings(self) -> None:
         from whyline import account
         from whyline.console.settings_screen import ProviderSettingsScreen
+        from whyline.relaychat import agent_choice
+        from whyline.relaychat import settings as chat_settings
 
+        root = self.session.root
+        current = chat_settings.load(root)
         self.push_screen(
             ProviderSettingsScreen(
                 account.load_global() or {},
                 account.check_provider,
                 account.set_enabled_many,
+                chat={
+                    "choices": agent_choice.choices(root),
+                    "agent": current.agent,
+                    "timeout_seconds": current.timeout_seconds,
+                    "snapshot_chars": current.snapshot_chars,
+                },
+                save_chat=lambda changes: chat_settings.save(root, **changes),
             ),
             self._settings_closed,
         )
