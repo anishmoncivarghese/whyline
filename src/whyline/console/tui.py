@@ -1128,7 +1128,8 @@ class WhylineConsoleApp(App):
     #file-choices { width: 1fr; height: auto; }
     /* One row at 80x24: default 3-row buttons would push #file-view off. */
     #file-choices Button { height: 1; min-height: 1; border: none; padding: 0 1; }
-    #file-working, #file-plan, #file-all { display: none; }
+    #file-working, #file-plan, #file-all, #file-chat { display: none; }
+    #relay-chat-panel { height: 1fr; min-height: 0; display: none; }
     """
 
     def __init__(self, *, root: Path, runner: Any = None) -> None:
@@ -1287,7 +1288,7 @@ class WhylineConsoleApp(App):
             self._file_choice = "working"
             self._hide_file_tree()
             self._show_newest_working_file()
-        for name in ("working", "plan", "all"):
+        for name in ("working", "plan", "all", "chat"):
             button = self._main_widget(f"#file-{name}", Button)
             if button is None:
                 continue
@@ -1299,7 +1300,27 @@ class WhylineConsoleApp(App):
             if button is not None:
                 button.display = show_nav
 
+    def _set_chat_panel(self, shown: bool) -> None:
+        panel = self._main_widget("#relay-chat-panel")
+        if panel is not None:
+            panel.display = shown
+
+    def _show_chat_panel(self) -> None:
+        for selector in ("#file-view", "#file-tree"):
+            widget = self._main_widget(selector)
+            if widget is not None:
+                widget.display = False
+        if self._main_widget("#relay-chat-panel") is None:
+            from whyline.console.relay_chat_tab import RelayChatPanel
+
+            pane = self._main_widget("#file-pane")
+            if pane is None:
+                return
+            pane.mount(RelayChatPanel(self.session.root, id="relay-chat-panel"))
+        self._set_chat_panel(True)
+
     def _hide_file_tree(self) -> None:
+        self._set_chat_panel(False)
         tree = self._main_widget("#file-tree")
         if tree is not None:
             tree.display = False
@@ -1308,6 +1329,7 @@ class WhylineConsoleApp(App):
             view.display = True
 
     def _show_file_tree(self) -> None:
+        self._set_chat_panel(False)
         tree = self._main_widget("#file-tree")
         if tree is not None:
             tree.display = True
@@ -1316,6 +1338,11 @@ class WhylineConsoleApp(App):
             view.display = False
 
     def _select_file_choice(self, choice: str) -> None:
+        if choice == "chat":
+            self._file_choice = "chat"
+            self._sync_file_choice_widgets()
+            self._show_chat_panel()
+            return
         if choice == "all":
             tree = self._main_widget("#file-tree")
             already_showing = tree is not None and tree.display
@@ -3721,6 +3748,7 @@ class WhylineConsoleApp(App):
                 Button("Working file", id="file-working", variant="success"),
                 Button("Plan", id="file-plan"),
                 Button("All files", id="file-all"),
+                Button("Chat", id="file-chat"),
                 id="file-choices",
             ),
             Horizontal(
@@ -3789,7 +3817,7 @@ class WhylineConsoleApp(App):
             self._sync_split()
             self._cb_fit()
             self.call_after_refresh(self._cb_fit)
-        elif button_id in ("file-working", "file-plan", "file-all"):
+        elif button_id in ("file-working", "file-plan", "file-all", "file-chat"):
             self._select_file_choice(button_id.removeprefix("file-"))
         elif button_id == "file-earlier":
             self._on_file_earlier()

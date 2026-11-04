@@ -34798,3 +34798,76 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2b77c6dfec6b40c4a1ff43c564495c2d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:36:03.996Z"} -->
+
+## 2026-11-04 — Chat tab panel is mounted lazily once under #file-pane and hidden/shown via display; handles its own buttons and stops their events
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-7
+
+**Because:** keeps tui.py edits to mounting and routing, conversation survives tab switches, and the relay's #stop/_relay/_ask_cancel are never touched
+
+**Rejected:**
+
+- route chat buttons through tui on_button_pressed — would grow tui.py and risk sharing #stop state
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 42bd992a690d4da4bab24b281fcd4901 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:38:35.260Z"} -->
+
+## 2026-11-04 — Fail RCH-7: relay_chat_tab.py triggers banned call AST guard in test_never_disturbs.py
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-7
+
+**Because:** event.stop() calls in on_select_changed, on_input_submitted, and on_button_pressed match BANNED_CALLS['stop'] in test_chat_code_never_drives_or_writes_the_relay
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 633ca980e4194f959ec45aa42054d14d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:56:03.827Z"} -->
+
+## 2026-11-04 — Chat panel lets its events bubble instead of calling event.stop()
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-7
+
+**Because:** the never-disturbs AST guard bans any call named stop; tui handlers dispatch on exact ids (cb-*, send, mode-*...) so chat-* ids fall through harmlessly
+
+**Rejected:**
+
+- getattr(event,'stop')() — evades the guard rather than satisfying it
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 7f019eacc69146f78459a7c696b8849d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:57:08.732Z"} -->
+
+## 2026-11-04 — Pass RCH-7: Relay chat tab satisfies AST guards and passes all pilot and regression tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-7
+
+**Because:** Removed event.stop() resolves BANNED_CALLS violation in test_never_disturbs.py; chat event IDs bubble safely without triggering tui handlers; all 16 target tests and 3497 test suite tests pass cleanly
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 1467a3edb34a419b85e73ef0c7c0d08b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T09:13:11.006Z"} -->
+
+## 2026-11-04 — Approve RCH-7: Chat tab matches the spec, keeps the relay isolated, and the full suite passes
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-7
+
+**Because:** file-chat mounts RelayChatPanel once under #file-pane; send/stop use a private cancel event and never touch #stop/_relay/prompt; tui.py only mounts and routes; bubbling chat-* events miss tui handlers; uv run pytest -q exited 0 with one skip
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: dceb9f9c374f41df939d4f064494c607 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T09:33:34.357Z"} -->
