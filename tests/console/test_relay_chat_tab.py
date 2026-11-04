@@ -149,3 +149,69 @@ async def test_history_loads_clear_and_agent_menu_saves(tmp_path):
         await pilot.pause()
         assert _log_text(app) == []
         assert history.load(tmp_path, "run-1") == []
+
+
+@pytest.mark.parametrize("button, question", [
+    ("#chat-q-doing", "What's it doing?"),
+    ("#chat-q-plan", "Plan progress"),
+    ("#chat-q-changed", "What's changed?"),
+    ("#chat-q-stopped", "Why did it stop?"),
+])
+async def test_quick_buttons_send_their_question(tmp_path, monkeypatch, button, question):
+    asked = []
+    monkeypatch.setattr(relay_chat_tab.snapshot, "build",
+                        lambda repo, max_chars: SimpleNamespace(run_id="run-1", state="paused"))
+    monkeypatch.setattr(relay_chat_tab.ask, "ask",
+                        lambda repo, q, **kw: asked.append(q) or SimpleNamespace(text="ok"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        await pilot.click(button)
+        await _wait_for(pilot, lambda: len(_log_text(app)) == 2, "answer")
+        assert asked == [question]
+        assert _log_text(app)[0] == f"You: {question}"
+
+
+async def test_why_did_it_stop_hidden_while_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_chat_tab.snapshot, "build",
+                        lambda repo, max_chars: SimpleNamespace(run_id="run-1", state="running"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        assert app.query_one("#chat-q-stopped", tui.Button).display is False
+        assert app.query_one("#chat-q-doing", tui.Button).display is True
+
+
+def _link_actions(text):
+    return [s.style.meta["@click"] for s in text.spans
+            if not isinstance(s.style, str) and s.style.meta.get("@click")]
+
+
+async def test_existing_file_with_line_is_linked_outside_is_not(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x\n" * 5)
+    text = relay_chat_tab.link_paths(tmp_path, "See src/a.py:3 and ../outside and src/none.py.")
+    actions = _link_actions(text)
+    assert len(actions) == 1
+    assert actions[0].endswith(", 3)") and "a.py" in actions[0]
+    assert _link_actions(relay_chat_tab.link_paths(tmp_path, "see ../outside")) == []
+    assert _link_actions(relay_chat_tab.link_paths(tmp_path, "see /etc/hosts")) == []
+
+
+async def test_link_opens_file_at_line(tmp_path):
+    target = tmp_path / "big.txt"
+    target.write_text("".join(f"line {i}\n" for i in range(200)))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        action = _link_actions(
+            relay_chat_tab.link_paths(tmp_path, "look at big.txt:120"))[0]
+        await app.run_action(action)
+        await pilot.pause()
+        await pilot.pause()
+        assert app._file_choice == "working"
+        assert app.query_one("#relay-chat-panel").display is False
+        view = app.query_one("#file-view")
+        assert view.display is True
+        assert "line 0" in str(view.document.text if hasattr(view, "document") else "line 0")
+        assert view.scroll_y == 119

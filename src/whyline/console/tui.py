@@ -1369,7 +1369,11 @@ class WhylineConsoleApp(App):
             return
         self._open_tree_file(Path(event.path))
 
-    def _open_tree_file(self, path: Path) -> None:
+    def action_open_chat_file(self, path: str, line: int = 1) -> None:
+        self._select_file_choice("working")
+        self._open_tree_file(Path(path), line)
+
+    def _open_tree_file(self, path: Path, line: int = 1) -> None:
         self._hide_file_tree()
         view = self._main_widget("#file-view", FollowView)
         relative = self._plan_relative(path)
@@ -1406,6 +1410,15 @@ class WhylineConsoleApp(App):
                 self._set_file_path(relative)
             view.scroll_x = 0
             view.scroll_y = 0
+        finally:
+            self._follow_moving = False
+        if line > 1:
+            self.call_after_refresh(self._scroll_file_to_line, view, line)
+
+    def _scroll_file_to_line(self, view, line: int) -> None:
+        self._follow_moving = True
+        try:
+            view.scroll_to(y=line - 1, animate=False)
         finally:
             self._follow_moving = False
 

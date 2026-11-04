@@ -6,9 +6,11 @@ it started.
 """
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 
+from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -18,6 +20,39 @@ from whyline.relaychat import agent_choice, ask, history, settings, snapshot
 
 AUTO = ""
 
+QUICK = {
+    "chat-q-doing": "What's it doing?",
+    "chat-q-stopped": "Why did it stop?",
+    "chat-q-plan": "Plan progress",
+    "chat-q-changed": "What's changed?",
+}
+STOPPED_STATES = ("paused", "stopped", "failed")
+_PATH = re.compile(r"[\w./-]+(?::\d+)?")
+
+
+def link_paths(repo: Path, text: str) -> Text:
+    """Text with `path` and `path:line` references to repo files as links."""
+    out = Text(text)
+    root = Path(repo).resolve()
+    for match in _PATH.finditer(text):
+        token = match.group(0).rstrip(".,")
+        name, _, number = token.partition(":")
+        if not name or name.startswith("/") or not (number or "/" in name or "." in name):
+            continue
+        try:
+            target = (root / name).resolve()
+            target.relative_to(root)
+            if not target.is_file():
+                continue
+        except (OSError, ValueError):
+            continue
+        line = int(number) if number else 1
+        action = f"app.open_chat_file({str(target)!r}, {line})"
+        begin = match.span()[0]
+        out.stylize(Style(meta={"@click": action}, underline=True, color="cyan"),
+                    begin, begin + len(token))
+    return out
+
 
 class RelayChatPanel(Vertical):
     def __init__(self, repo: Path, **kwargs) -> None:
@@ -26,6 +61,7 @@ class RelayChatPanel(Vertical):
         self._cancel: threading.Event | None = None
         self._run_id = self._current_run_id()
         self._shares_quota = False
+        self._state = "none"
 
     def _current_run_id(self) -> str | None:
         try:
@@ -40,6 +76,10 @@ class RelayChatPanel(Vertical):
         yield RichLog(id="chat-log", wrap=True, markup=False)
         yield Input(placeholder="Ask about this relay", id="chat-input")
         yield Horizontal(
+            *[Button(label, id=bid, classes="chat-quick") for bid, label in QUICK.items()],
+            id="chat-quick",
+        )
+        yield Horizontal(
             Button("Send", id="chat-send"),
             Button("Stop", id="chat-stop"),
             Button("Clear", id="chat-clear"),
@@ -48,7 +88,16 @@ class RelayChatPanel(Vertical):
 
     def on_mount(self) -> None:
         self.query_one("#chat-stop", Button).display = False
-        self.query_one("#chat-actions").styles.height = "auto"
+        self.query_one("#chat-quick").styles.height = 1
+        self.query_one("#chat-actions").styles.height = 1
+        chat_input = self.query_one("#chat-input", Input)
+        chat_input.styles.height = 1
+        chat_input.styles.border = ("none", "black")
+        # Compact rows: the pane is short, so both button rows are one line high.
+        for button in self.query("#chat-quick Button, #chat-actions Button"):
+            button.styles.height = 1
+            button.styles.min_width = 0
+            button.styles.border = ("none", "black")
         self.query_one("#chat-log", RichLog).styles.height = "1fr"
         self._refresh_header()
         self._load_log()
@@ -68,6 +117,11 @@ class RelayChatPanel(Vertical):
         if pick.shares_quota:
             text += " · shares quota with the relay"
         self.query_one("#chat-header", Static).update(text)
+        try:
+            self._state = getattr(snapshot.build(self._repo, max_chars=1), "state", "none")
+        except Exception:
+            self._state = "none"
+        self.query_one("#chat-q-stopped", Button).display = self._state in STOPPED_STATES
 
     def _load_log(self) -> None:
         log = self.query_one("#chat-log", RichLog)
@@ -80,7 +134,7 @@ class RelayChatPanel(Vertical):
         if role == "user":
             log.write(Text(f"You: {text}", style="bold cyan"))
         else:
-            log.write(Text(f"Agent: {text}"))
+            log.write(link_paths(self._repo, f"Agent: {text}"))
 
     @property
     def asking(self) -> bool:
@@ -102,6 +156,9 @@ class RelayChatPanel(Vertical):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
+        if button_id in QUICK:
+            self._send(QUICK[button_id])
+            return
         if button_id not in ("chat-send", "chat-stop", "chat-clear"):
             return
         if button_id == "chat-send":
@@ -112,12 +169,14 @@ class RelayChatPanel(Vertical):
         else:
             self._clear()
 
-    def _send(self) -> None:
+    def _send(self, question: str | None = None) -> None:
         box = self.query_one("#chat-input", Input)
-        question = box.value.strip()
+        typed = question is None
+        question = box.value.strip() if typed else question
         if not question or self._cancel is not None:
             return
-        box.value = ""
+        if typed:
+            box.value = ""
         self._write("user", question)
         cancel = threading.Event()
         self._cancel = cancel
