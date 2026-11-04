@@ -34992,3 +34992,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7e9c5adfc3c3407ca3f2010dd3ba6703 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T11:05:52.167Z"} -->
+
+## 2026-11-04 — Untrack .whyline/relay/agent-limits.json and ignore it
+
+**Actor:** claude
+**Role:** implementer
+**Task:** safe-pause-setup
+
+**Because:** whyline-relay rewrites and deletes it as usage limits come and go; FIX-6 committed it by accident, so its deletion dirtied the tree and blocked Set up
+
+**Rejected:**
+
+- Start with --allow-dirty — hides the problem and it recurs every run
+
+**Files:** .whyline/relay/.gitignore
+
+<!-- whyline-event: 57c6e642c400403b82f79cb69339a205 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T20:47:14.809Z"} -->
