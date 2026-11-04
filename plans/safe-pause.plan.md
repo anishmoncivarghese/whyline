@@ -59,7 +59,7 @@ Rules every task keeps:
   - Pause now asks first
   - Resume after a safe pause calls the existing resume
 
-- [ ] PZ-3: The status line while pausing and paused
+- [x] PZ-3: The status line while pausing and paused
   Edit `src/whyline/console/tui.py` (the relay status line from RST-1) and its tests.
   1. While **pausing**, the status text becomes `⏸ Pausing — letting <agent> finish its turn so nothing is lost (<elapsed> so far)`. The plan % and task ticks stay.
   2. Once **paused_by_user**, it becomes `⏸ Paused by you at <task>, round <n> — press Resume to continue`.
