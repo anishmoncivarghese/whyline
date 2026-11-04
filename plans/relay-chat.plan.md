@@ -146,7 +146,7 @@ Rules every task keeps:
   - the relay's `#stop` state is unchanged throughout
   - switching tabs keeps the conversation
 
-- [ ] RCH-8: Quick questions and file links
+- [x] RCH-8: Quick questions and file links
   Edit `src/whyline/console/relay_chat_tab.py` and its tests. Edit `tui.py` only to add the link handler.
   1. Quick buttons send fixed questions:
      - **What's it doing?**
