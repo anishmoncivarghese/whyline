@@ -557,6 +557,12 @@ def _add_workflow(subparsers: "argparse._SubParsersAction") -> None:
     add_parser(subparsers)
 
 
+def _add_ask(subparsers: "argparse._SubParsersAction") -> None:
+    from whyline.relaychat.cli import add_parser
+
+    add_parser(subparsers)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -591,6 +597,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_idea(subparsers)
     _add_jobs(subparsers)
     _add_workflow(subparsers)
+    _add_ask(subparsers)
     return parser
 
 
@@ -1781,6 +1788,12 @@ def cmd_idea(args: argparse.Namespace) -> int:
     return run(args)
 
 
+def cmd_ask(args: argparse.Namespace) -> int:
+    from whyline.relaychat.cli import run
+
+    return run(args)
+
+
 def cmd_jobs(args: argparse.Namespace) -> int:
     from whyline.jobs.cli import run
 
@@ -1956,6 +1969,7 @@ COMMANDS = {
     "idea": cmd_idea,
     "jobs": cmd_jobs,
     "workflow": cmd_workflow,
+    "ask": cmd_ask,
 }
 
 

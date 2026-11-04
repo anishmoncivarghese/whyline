@@ -34748,3 +34748,53 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b8a73b2aab94444b8cae221de5cc3d9f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T07:59:24.077Z"} -->
+
+## 2026-11-04 — ask --history/--clear default to the snapshot's current run id; setters short-circuit before asking
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-6
+
+**Because:** same run id the answer path records under, so history matches what ask wrote; setters take priority so a stray question is never sent
+
+**Rejected:**
+
+- separate run-id lookup — would drift from snapshot's id
+
+**Files:** src/whyline/relaychat/cli.py
+
+<!-- whyline-event: 572fb5d542a64ed0858ac2286a750d04 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:00:19.957Z"} -->
+
+## 2026-11-04 — RCH-6 passes tester verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-6
+
+**Because:** Full pytest suite exits 0; relaychat CLI tests cover answer output formatting, exit codes, history, clear, and settings persistence with fakes; manual CLI verification confirms proper dispatch and error exits
+
+**Test:** uv run pytest tests/relaychat/test_cli.py: 13 passed
+**Test:** uv run pytest -q: passed
+
+**Files:** src/whyline/cli.py, src/whyline/relaychat/cli.py, tests/relaychat/test_cli.py
+
+<!-- whyline-event: b4c78596ca094c7e958c0490dddbd131 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:17:24.215Z"} -->
+
+## 2026-11-04 — Approve RCH-6 whyline ask CLI
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-6
+
+**Because:** Commands, exit codes, and settings.save match the task; tests drive cli.main with fakes for answer, history, clear, and setters; uv run pytest -q exited 0
+
+**Rejected:**
+
+- reject for no console Chat tab — that is RCH-7
+
+**Files:** src/whyline/cli.py, src/whyline/relaychat/cli.py, tests/relaychat/test_cli.py
+
+<!-- whyline-event: 2b77c6dfec6b40c4a1ff43c564495c2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T08:36:03.996Z"} -->
