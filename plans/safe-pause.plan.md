@@ -185,8 +185,31 @@ Rules every task keeps:
   - `render_answer`: bold and code are styled without their markers; headings and bullets as above; `` `src/a.py:3` `` is a link that opens line 3; unmatched markers stay; the plain text has no `**` or backticks.
   - The prompt contains the new instruction.
 
+- [ ] PZ-14: A roomier Settings screen with spaced sections
+  Edit `src/whyline/console/settings_screen.py` and its tests only. Runs after PZ-8, which adds the Relay safety section to this screen.
+  On 2026-11-05 the screen was cramped: the popup is 78 wide, the body is capped at 10 rows, the sections run together, and the Relay chat Agent dropdown was cut off.
+  1. Size:
+     - The popup is 100 wide, at most 90% of the terminal.
+     - The body (`#ss-body`) may use up to 70% of the terminal height (`70vh`) and scrolls past that.
+     - The title, hint, error line and buttons always stay visible below the body.
+  2. Sections, in this order: **AI subscriptions**, **Relay chat**, **Relay safety**.
+     - Each heading is bold and has one blank row above it, except the first.
+     - Each section's one-line description sits under its heading.
+     - Give every section heading a shared class `ss-section-title` and keep the existing ids.
+  3. Rows:
+     - Each provider row stays one line.
+     - Rows with a `Select` or `Input` are tall enough to show the whole control with its border, so the Agent dropdown is never cut off.
+     - Field labels stay in one column of width 36.
+  4. Behaviour, ids and saving do not change.
+  Tests:
+  - At 160×50: the popup is 100 wide; all four providers and every Relay chat and Relay safety field are visible without scrolling.
+  - At 80×24: the buttons are visible, and the body scrolls.
+  - Each heading after the first has a blank row above it, and the headings come in the order above.
+  - The Agent `Select` region is its full height.
+  - The existing Settings tests pass unchanged.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..13
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..14
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
