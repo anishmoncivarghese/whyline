@@ -32,7 +32,7 @@ Rules every task keeps:
 
 ## Part 1: The engine
 
-- [ ] RCH-1: Settings and history files
+- [x] RCH-1: Settings and history files
   Create `src/whyline/relaychat/__init__.py`, `src/whyline/relaychat/settings.py`, `src/whyline/relaychat/history.py` and their tests.
   1. `settings.load(repo) -> ChatSettings(agent: str | None, timeout_seconds: int = 180, snapshot_chars: int = 40000)` and `settings.save(repo, **changes)`.
      - Stored in `~/.whyline/relay-chat/settings.toml`, keyed by the resolved repo path. The base dir is injectable.
