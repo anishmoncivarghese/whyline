@@ -126,7 +126,7 @@ Rules every task keeps:
 
 ## Part 3: Console
 
-- [ ] RCH-7: The Chat tab
+- [x] RCH-7: The Chat tab
   Create `src/whyline/console/relay_chat_tab.py`. Edit `src/whyline/console/tui.py` only to mount the tab and route its buttons. Add tests in `tests/console/test_relay_chat_tab.py`.
   1. Add a `Button("Chat", id="file-chat")` after `file-all` in `#file-choices`, with the same display and variant rules as the other three in `_sync_file_choice_widgets`.
      - `_select_file_choice("chat")` hides `#file-view` and `#file-tree` and shows a `RelayChatPanel`.
