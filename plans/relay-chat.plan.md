@@ -162,7 +162,7 @@ Rules every task keeps:
   - a link opens the file at its line
   - `../outside` isn't linked
 
-- [ ] RCH-9: Settings section, Help and docs
+- [x] RCH-9: Settings section, Help and docs
   Edit `src/whyline/console/settings_screen.py`, the console Help text, `README.md`, and create `docs/relay-chat.md`, with tests.
   1. The Settings screen gets a **Relay chat** section with three controls, saved on Save through `relaychat.settings.save`, and transactional like the rest of the screen:
      - agent, from `agent_choice.choices`
