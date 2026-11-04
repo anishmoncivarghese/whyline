@@ -135,8 +135,26 @@ Rules every task keeps:
   2. Its line says: "The reviewer's rejection was read as a refused command. Send it back to <agent> as a normal rejection."
   Tests: the option shows only for that pause with a rejected handoff; it launches `resume --as-rejection`; Auto picks it once per pause.
 
+- [ ] PZ-11: A bigger question box in the Chat tab
+  Edit `src/whyline/console/relay_chat_tab.py` and `tests/console/test_relay_chat_tab.py` only.
+  Today `#chat-input` is a one-row `Input` with its border removed (`on_mount`). It is hard to see, and a long question scrolls sideways out of view.
+  1. Replace it with a small `TextArea` subclass, `ChatQuestion`, in the same file, keeping the id `chat-input`:
+     - `soft_wrap=True`, no line numbers, and a visible border like the main `#prompt` box.
+     - Placeholder "Ask about this relay".
+     - Its height follows the wrapped text: at least 3 rows of text, growing to at most 6, plus the border. Past 6 rows it scrolls inside the box.
+     - The answer log (`#chat-log`, `1fr`) gives up the rows. The quick-question and Send/Clear rows stay one line high.
+  2. Enter sends the question, the same as before. Terminals cannot reliably tell Shift+Enter from Enter, so there is no new-line key. Text pasted with new lines is kept as typed.
+  3. Keep a `value` property (get and set, mapped to the text) so `_send` and the existing tests keep working. `_send` clears the box after sending, and an empty or whitespace-only question still sends nothing.
+  4. The Send button, the quick questions, Stop and Clear behave as before.
+  Tests:
+  - Enter in the box sends the typed question and clears the box.
+  - Enter on an empty box sends nothing.
+  - A question longer than the box's width wraps, and the box grows past 3 rows of text without going over 6.
+  - The box has a border, and its placeholder is "Ask about this relay".
+  - The existing tab tests still pass unchanged.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10
+- [ ] PZ-9: Publish whyline with PZ-1..8, PZ-10 and PZ-11
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
