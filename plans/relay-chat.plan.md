@@ -114,7 +114,7 @@ Rules every task keeps:
 
 ## Part 2: Command line
 
-- [ ] RCH-6: `whyline ask`
+- [x] RCH-6: `whyline ask`
   Edit `src/whyline/cli.py`. Create `src/whyline/relaychat/cli.py` and its tests.
   1. Commands:
      - `whyline ask "<question>" [--agent X] [--repo PATH]` prints the answer, the agent name, and `(shares quota with the relay)` when true.
