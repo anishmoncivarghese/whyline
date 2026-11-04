@@ -1,8 +1,0 @@
-{
-  "codex": {
-    "reason": "rate-limit",
-    "since": "2026-11-03T14:05:34.124204+05:30",
-    "resets_at": "",
-    "detail": "ERROR: You\u2019ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try a"
-  }
-}
