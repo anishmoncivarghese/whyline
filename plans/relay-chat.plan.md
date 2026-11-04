@@ -77,7 +77,7 @@ Rules every task keeps:
      4. with no read-only agent at all, `agent=None` with a plain `why`
   Tests: each branch; an agent without a read-only mode is never picked, even when saved.
 
-- [ ] RCH-4: Asking
+- [x] RCH-4: Asking
   Create `src/whyline/relaychat/ask.py` and its tests.
   `ask(repo, question, *, agent=None, runner=None, cancel_event=None, clock=None) -> Answer(text, agent, shares_quota, seconds, ok)`:
   1. Pick the agent (RCH-3) and build the snapshot (RCH-2), using the RCH-1 settings.
