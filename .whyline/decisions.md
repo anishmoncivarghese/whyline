@@ -34564,3 +34564,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dac1617944e34f90b348b070f2ac2bc6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:54:39.437Z"} -->
+
+## 2026-11-04 — Chat agent pick treats the relay's working agent as the stage's role agent only while a relay is live
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-3
+
+**Because:** A stopped or paused relay uses no quota, so its roles don't need to be avoided; cut_off agent wins when set
+
+**Rejected:**
+
+- Always avoid the stage agent — would skip good backups when nothing is running
+
+**Files:** src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 23b9b823abb2409c9a17057b0d3e0dd5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:55:28.069Z"} -->
+
+## 2026-11-04 — Pass RCH-3 agent choice and tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-3
+
+**Because:** verified read-only choices filtering, chosen/saved preference, backup chain skipping active working agent, fallback to reviewer with shares_quota=True, no-agent handling, and full test suite passing (3455 passed, 1 skipped)
+
+**Files:** src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 78296d57f7174c15979dd55aabe3abfd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:09:52.102Z"} -->
+
+## 2026-11-04 — Request changes: skip the live marker agent, not last-pause cut_off or stage
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-3
+
+**Because:** While a relay is live, state.load is last-pause history, so preferring saved.cut_off or saved.stage can skip the wrong agent and pick the one actually working; tests stub _working_agent so they never catch this
+
+**Files:** src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 87d187b6d0d84444bb317f35a6476d14 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:13:58.153Z"} -->
+
+## 2026-11-04 — Chat agent pick skips only the live marker's agent; saved cut_off/stage ignored
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-3
+
+**Because:** Saved state during a live run is last-pause history; only running.live().agent is using quota
+
+**Rejected:**
+
+- Keep cut_off/stage lookup — stale after resume, skips the wrong agent
+
+**Files:** src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 1d52592aca174aa3850601134139bbde -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:14:38.372Z"} -->
+
+## 2026-11-04 — Pass RCH-3 agent choice with live marker working agent check and full suite passing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-3
+
+**Because:** Verified read-only choices filtering, chosen/saved preference, live marker agent skipping in backup chain, reviewer fallback with shares_quota=True, no-agent handling, and full test suite passing (3458 passed, 1 skipped)
+
+**Files:** src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 600ba2188eb44bbe8c842603b4ff1a1f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:29:08.025Z"} -->
+
+## 2026-11-04 — Approve RCH-3 chat agent choice with live-marker skip and full suite passing
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-3
+
+**Because:** choices filters capabilities.can_run; pick prefers chosen/saved in choices, then backup except running.live().agent, then reviewer with shares_quota=True; agents without read-only are never picked; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for unused roles arg on _working_agent — leftover from last-pause lookup, live marker already carries .agent
+
+**Files:** src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 1227e741718f4c7b977c8660cfbf84a3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T06:45:49.170Z"} -->
