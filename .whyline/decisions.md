@@ -34420,3 +34420,100 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e9443b017e284fc3b2b3b3b5019db02a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-03T21:05:01.536Z"} -->
+
+## 2026-11-04 — Relay chat settings are one TOML file keyed by resolved repo path; history clear renames, never deletes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-1
+
+**Because:** one file keeps atomic writes simple; rename keeps old chats recoverable
+
+**Rejected:**
+
+- one settings file per repo — harder to inspect and edit by hand
+- delete on clear — spec says never delete
+
+**Files:** src/whyline/relaychat/settings.py, src/whyline/relaychat/history.py
+
+<!-- whyline-event: 70df7c5febf14523b995d2bebc3c820b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T04:17:56.120Z"} -->
+
+## 2026-11-04 — Pass RCH-1: settings and history meet specification and all tests pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-1
+
+**Because:** Full test suite (3440 passed, 1 skipped) and targeted relaychat unit tests pass; settings atomic writes, input validation, repo isolation, and history clear/rename behavior verified
+
+**Test:** ./.venv/bin/pytest: 3440 passed, 1 skipped in 761.67s
+**Test:** ./.venv/bin/pytest tests/relaychat/test_chat_files.py: 7 passed in 0.04s
+
+**Files:** src/whyline/relaychat/settings.py, src/whyline/relaychat/history.py
+
+<!-- whyline-event: a2129312e562430e9bf5f5a224ec730b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T04:32:50.660Z"} -->
+
+## 2026-11-04 — Request changes: timeout_seconds=0 must be accepted as no limit
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-1
+
+**Because:** The same plan (RCH-4) and the design say a timeout of 0 means none; settings.py:_number requires 1 <= value so save cannot store that, and RCH-4 is not allowed to edit settings.py
+
+**Rejected:**
+
+- approve as-is — later tasks cannot persist unlimited timeout without crossing their file boundary
+
+**Files:** src/whyline/relaychat/settings.py
+
+<!-- whyline-event: f1f6acb6cd4c4447b2aecf550997b6b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T04:50:11.298Z"} -->
+
+## 2026-11-04 — timeout_seconds=0 means no limit; snapshot_chars stays >= 1
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-1
+
+**Because:** RCH-4 needs to persist unlimited timeout and cannot edit settings.py
+
+**Rejected:**
+
+- separate no_timeout flag — extra setting for the same meaning
+
+**Files:** src/whyline/relaychat/settings.py
+
+<!-- whyline-event: 5851167035674338827606fd11dae99f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T04:50:41.633Z"} -->
+
+## 2026-11-04 — Pass RCH-1: settings timeout_seconds=0 support verified and full test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-1
+
+**Because:** Full test suite (3441 passed, 1 skipped) and targeted relaychat unit tests pass; settings atomic writes, timeout_seconds=0 unlimited timeout support, input validation, repo isolation, and history clear/rename behavior verified
+
+**Test:** ./.venv/bin/pytest: 3441 passed, 1 skipped in 768.91s
+**Test:** ./.venv/bin/pytest tests/relaychat/test_chat_files.py: 8 passed in 0.03s
+
+**Files:** src/whyline/relaychat/settings.py, src/whyline/relaychat/history.py
+
+<!-- whyline-event: 8c4144ff643e428887dd002ff6f5e9ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:05:38.218Z"} -->
+
+## 2026-11-04 — Approve RCH-1: settings and history files meet the spec, including timeout_seconds=0
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-1
+
+**Because:** Settings load/save, atomic TOML writes, unknown-key refusal, repo isolation, history JSONL path/append/load, and clear-by-rename all match the task; timeout_seconds=0 now persists as unlimited; uv run pytest -q exited 0
+
+**Files:** src/whyline/relaychat/settings.py, src/whyline/relaychat/history.py
+
+<!-- whyline-event: 439b7bae284542fca853ebe628b1b7d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:21:06.020Z"} -->
