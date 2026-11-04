@@ -67,7 +67,7 @@ Rules every task keeps:
   - each git call has `--no-optional-locks`
   - no relay gives the "No relay has run here yet" line
 
-- [ ] RCH-3: Choosing the chat agent
+- [x] RCH-3: Choosing the chat agent
   Create `src/whyline/relaychat/agent_choice.py` and its tests.
   1. `choices(repo) -> list[str]` lists the installed agents for which `whyline.agents.capabilities.can_run(cli)` is true, which means they have a read-only mode.
   2. `pick(repo, chosen=None) -> Pick(agent, shares_quota: bool, why)`:
