@@ -1832,6 +1832,36 @@ def interrupt_live_run(root: Path) -> bool:
     return True
 
 
+def request_pause(root: Path):
+    """Ask the relay running here, however it was started, to pause once the
+    current agent finishes its turn."""
+    from whyline_relay import loop
+
+    return loop.request_pause(root)
+
+
+def cancel_pause(root: Path) -> bool:
+    """Withdraw a pause request. True when there was one to withdraw."""
+    from whyline_relay import loop
+
+    return loop.cancel_pause(root)
+
+
+def pause_now(root: Path) -> bool:
+    """Pause without waiting for the turn: record a now request, then stop
+    the agent as Ctrl+C would. False when no relay is running here."""
+    from whyline_relay import loop
+
+    loop.request_pause(root, now=True)
+    return interrupt_live_run(root)
+
+
+def pause_state(root: Path):
+    from whyline_relay import status
+
+    return status.pause_state(root)
+
+
 def paused_run(root: Path) -> bool:
     from whyline_relay import state
 

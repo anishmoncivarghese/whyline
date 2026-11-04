@@ -35009,3 +35009,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 57c6e642c400403b82f79cb69339a205 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T20:47:14.809Z"} -->
+
+## 2026-11-04 — pause_now records request_pause(now=True) before interrupting, and returns interrupt_live_run's result
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-1
+
+**Because:** the request file must exist before SIGINT lands so the relay reads it as a user pause; False when no relay is live
+
+**Rejected:**
+
+- bumping the whyline-relay bound — already >=0.2.42, which has request_pause and pause_state
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 09c514c06db64c9b901f472f35b89480 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T20:49:48.945Z"} -->
+
+## 2026-11-04 — Pass PZ-1: Safe pause wrappers delegate cleanly to whyline-relay and pause_now interrupts live run
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-1
+
+**Because:** whyline-relay>=0.2.42 is published on PyPI and specified in pyproject.toml; request_pause, cancel_pause, pause_state, and pause_now pass correct arguments and interrupt live runs; uv lock is up to date and full pytest suite (3511 passed, 1 skipped) passes
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: b2c91c1df0d74badb289a7e70a43597d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:05:29.842Z"} -->
+
+## 2026-11-04 — Approve PZ-1: pause wrappers delegate to whyline-relay 0.2.42 and pause_now interrupts a live run
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-1
+
+**Because:** PyPI 0.2.42 exposes request_pause, cancel_pause, and pause_state; pyproject already bounds whyline-relay>=0.2.42,<0.3; wrappers pass the right arguments and pause_now records now=True before interrupt_live_run; tests cover that contract; uv run pytest -q exited 0
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops.py
+
+<!-- whyline-event: 70e2602c1c014ba296bae0b596f63952 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T21:21:10.075Z"} -->

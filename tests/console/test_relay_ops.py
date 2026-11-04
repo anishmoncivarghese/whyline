@@ -2176,3 +2176,41 @@ def test_ready_for_skips_disabled_providers_and_the_roles_agent(monkeypatch, tmp
     # grok not ready, antigravity a disabled provider, claude and codex are the role's own
     assert relay_ops.ready_for(tmp_path, "implementer") == []
     assert relay_ops.ready_for(tmp_path, "tester") == ["claude"]
+
+
+def test_pause_wrappers_call_whyline_relay(tmp_path, monkeypatch):
+    from whyline_relay import loop, status
+
+    calls = []
+    monkeypatch.setattr(loop, "request_pause", lambda root, **kw: calls.append(("request", root, kw)) or "req")
+    monkeypatch.setattr(loop, "cancel_pause", lambda root: calls.append(("cancel", root)) or True)
+    monkeypatch.setattr(status, "pause_state", lambda root: calls.append(("state", root)) or "state")
+    assert relay_ops.request_pause(tmp_path) == "req"
+    assert relay_ops.cancel_pause(tmp_path) is True
+    assert relay_ops.pause_state(tmp_path) == "state"
+    assert calls == [("request", tmp_path, {}), ("cancel", tmp_path), ("state", tmp_path)]
+
+
+def test_pause_now_requests_now_then_interrupts_the_live_run(tmp_path, monkeypatch):
+    import os
+    import signal
+    from types import SimpleNamespace
+
+    from whyline_relay import loop, running
+
+    order = []
+    monkeypatch.setattr(loop, "request_pause", lambda root, **kw: order.append(("request", kw)))
+    monkeypatch.setattr(running, "live", lambda root: SimpleNamespace(pid=4242))
+    monkeypatch.setattr(os, "kill", lambda pid, sig: order.append(("kill", pid, sig)))
+    assert relay_ops.pause_now(tmp_path) is True
+    assert order[0] == ("request", {"now": True})
+    if os.name != "nt":
+        assert order[1] == ("kill", 4242, signal.SIGINT)
+
+
+def test_pause_now_with_nothing_running(tmp_path, monkeypatch):
+    from whyline_relay import loop, running
+
+    monkeypatch.setattr(loop, "request_pause", lambda root, **kw: None)
+    monkeypatch.setattr(running, "live", lambda root: None)
+    assert relay_ops.pause_now(tmp_path) is False
