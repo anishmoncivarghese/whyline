@@ -22,8 +22,8 @@ command = ["grok", "--output-format", "json", "--permission-mode", "dontAsk", "-
 
 [roles]
 implementer = "claude"
-tester = "codex"
-reviewer = "codex"
+tester = "antigravity"
+reviewer = "grok"
 release = "human"
 
 [pipeline]
@@ -61,4 +61,4 @@ review = "codex"
 test = ""
 
 [backup]
-chain = ["antigravity"]
+chain = ["antigravity", "grok"]
