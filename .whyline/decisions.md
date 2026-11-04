@@ -34517,3 +34517,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 439b7bae284542fca853ebe628b1b7d1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:21:06.020Z"} -->
+
+## 2026-11-04 — Relay snapshot trims oldest log lines one at a time, then hard-clips the tail as a last resort
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCH-2
+
+**Because:** keeps handoff, plan and git sections intact; trimming must live in snapshot.py
+
+**Rejected:**
+
+- whyline.textbudget clipping — only clips, cannot drop oldest lines
+
+**Files:** src/whyline/relaychat/snapshot.py
+
+<!-- whyline-event: 413583709451409a88f7259b41ffa768 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:22:16.151Z"} -->
+
+## 2026-11-04 — Pass RCH-2 snapshot builder and tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCH-2
+
+**Because:** verified snapshot section assembly, untrusted-data wrapping, oldest-log-first trimming, --no-optional-locks git flags, missing-piece fallbacks, and full test suite passing
+
+**Files:** src/whyline/relaychat/snapshot.py
+
+<!-- whyline-event: 5b23d487d2994a26a6e8909ab949ea53 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:36:49.630Z"} -->
+
+## 2026-11-04 — Approve RCH-2 snapshot builder and tests
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** RCH-2
+
+**Because:** build() collects the five required sections, wraps each in untrusted-data tags, trims oldest log lines first in snapshot.py, passes --no-optional-locks on every git call, and turns missing pieces into plain lines; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for missing current-task title in the relay-state section — plan-progress already lists task titles and the required tests pass
+
+**Files:** src/whyline/relaychat/snapshot.py
+
+<!-- whyline-event: dac1617944e34f90b348b070f2ac2bc6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T05:54:39.437Z"} -->
