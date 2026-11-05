@@ -36,7 +36,7 @@ Global constraints:
   - Pending setup files: `add_pending(root, path)`, `pending(root) -> list[Path]` and `clear_pending(root)`, kept in `.git/whyline-release/pending.json`. Set up records each file it writes there (a workflow, a Dockerfile). The release commit adds them, and the Ready check's clean-tree item ignores them. A recorded path that no longer exists is dropped on read.
   Tests: defaults, round-trip with every field set, each `ConfigError`, each detection case, normalise, pending add/read/clear and a dropped missing path.
 
-- [ ] REL-2: Read and bump the version
+- [x] REL-2: Read and bump the version
   Create `src/whyline/release/version.py` and `tests/release/test_version.py` only.
   - `current(root, cfg) -> str`: from `pyproject.toml` `[project] version`, else `package.json` `version`, else `VersionError("No version found; add one to pyproject.toml or package.json, or list a file in version_files")`.
   - `bump(version, kind) -> str` for `patch`, `minor`, `major` (plain `X.Y.Z`; a pre-release suffix is refused with a clear message). `validate(text)` accepts `X.Y.Z` and `X.Y.ZrcN`/`-rc.N`.
