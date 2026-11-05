@@ -78,7 +78,7 @@ async def test_release_task_pause_shows_checklist_and_subtitle(tmp_path):
         assert any('Type "done" when finished, or "skip".' in line for line in lines)
         assert "· release" in app.sub_title
         resume = app.query_one("#relay-resume", tui.Button)
-        assert str(resume.label) == "Release done…"
+        assert str(resume.label) == tui.MARK_RELEASED == "Mark released…"
         assert not resume.disabled
 
 
@@ -134,10 +134,57 @@ async def test_pressing_resume_behaves_like_typing_done(tmp_path):
 
         await pilot.click("#relay-resume")
         await pilot.pause()
+        # It asks first, and says that nothing is published.
+        assert isinstance(app.screen, tui.ConfirmScreen)
+        assert str(app.screen.query_one("#confirm", tui.Button).label) == "Mark released"
+        message = str(app.screen.query_one(tui.Label).render())
+        assert "Mark T-2 as released and finish the relay?" in message
+        assert "Nothing is published by this button." in message
+        await pilot.click("#confirm")
+        await pilot.pause()
 
         proc2 = FakeProcess.instances[-1]
         assert proc2.args == ["done", "T-2"]
         assert any("done" in line for line in _lines(app))
+
+
+async def test_mark_released_label_is_never_cut_off(tmp_path):
+    # On one row the button kept Resume's width, so the label showed as "Releas".
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(200, 50)) as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        proc = FakeProcess.instances[-1]
+        await asyncio.to_thread(proc.finish, 3, RELEASE_PAUSE_TEXT)
+        await pilot.pause()
+        await pilot.pause()
+
+        resume = app.query_one("#relay-resume", tui.Button)
+        assert str(resume.label) == tui.MARK_RELEASED
+        assert resume.size.height == 1 or "wrap" in app.query_one("#controls").classes
+        assert resume.content_size.width >= len(tui.MARK_RELEASED)
+
+
+async def test_cancelling_mark_released_runs_nothing(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        proc = FakeProcess.instances[-1]
+        await asyncio.to_thread(proc.finish, 3, RELEASE_PAUSE_TEXT)
+        await pilot.pause()
+        count = len(FakeProcess.instances)
+
+        await pilot.click("#relay-resume")
+        await pilot.pause()
+        await pilot.click("#cancel")
+        await pilot.pause()
+
+        assert len(FakeProcess.instances) == count
+        assert "· release" in app.sub_title
+        assert str(app.query_one("#relay-resume", tui.Button).label) == tui.MARK_RELEASED
 
 
 # An agent that prints tui.py or a plan echoes the release marker into the
@@ -236,7 +283,7 @@ async def test_switching_to_relay_mode_restores_the_release_prompt(tmp_path, mon
         await pilot.click("#mode-relay")
         await pilot.pause()
         assert "· release" in app.sub_title
-        assert str(app.query_one("#relay-resume", tui.Button).label) == "Release done…"
+        assert str(app.query_one("#relay-resume", tui.Button).label) == tui.MARK_RELEASED
         assert any("T-2 is a release task waiting for you" in line for line in _lines(app))
 
 

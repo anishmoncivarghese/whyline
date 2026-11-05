@@ -282,6 +282,10 @@ class _OtherModelInput(Input):
         self.app._cb_cancel_other()
 
 
+# The Resume button's label while the relay waits on a release task.
+MARK_RELEASED = "Mark released…"
+
+
 class ConfirmScreen(ModalScreen):
     """A yes/no dialog; dismisses with True only for the confirm button."""
 
@@ -2411,6 +2415,20 @@ class WhylineConsoleApp(App):
 
         self.push_screen(ConfirmScreen(message, "Pause now"), done)
 
+    def _ask_mark_released(self) -> None:
+        """Mark released only marks the release task done; it publishes nothing."""
+        task_id = (getattr(self, "_release_task", None) or ("the release task",))[0]
+        message = (
+            f"Mark {task_id} as released and finish the relay? "
+            "Nothing is published by this button."
+        )
+
+        def done(confirmed: bool | None) -> None:
+            if confirmed and getattr(self, "_release_task", None):
+                self._send_with("done")
+
+        self.push_screen(ConfirmScreen(message, "Mark released"), done)
+
     def _fit_controls(self) -> None:
         """One row when the bar's buttons fit the window, a grid when not.
 
@@ -2471,8 +2489,9 @@ class WhylineConsoleApp(App):
             in_relay and getattr(self, "_check_result", None) is not None
         )
         resume = self._main("#relay-resume", Button)
+        label_before = str(resume.label)
         if getattr(self, "_release_task", None):
-            resume.label = "Release done…"
+            resume.label = MARK_RELEASED
             resume.disabled = running
             self._stale_pause = None
         elif getattr(self, "_manual_checks", None):
@@ -2491,6 +2510,11 @@ class WhylineConsoleApp(App):
             resume.label = "Resume"
             self._stale_pause = None
             resume.disabled = not paused or running
+        if str(resume.label) != label_before:
+            # A width:auto button keeps its old width after a label change
+            # (Textual 2.1), so "Release done…" showed as "Releas".
+            resume.refresh(layout=True)
+            self._fit_controls()
 
         try:
             self._main("#pause-actions").display = (
@@ -4269,7 +4293,7 @@ class WhylineConsoleApp(App):
             self._ask_pause_now()
         elif button_id == "relay-resume":
             if getattr(self, "_release_task", None):
-                self._send_with("done")
+                self._ask_mark_released()
             elif getattr(self, "_stale_pause", None):
                 task = self._stale_pause
                 relay_ops.clear_pause(self.session.root)
