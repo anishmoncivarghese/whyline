@@ -66,7 +66,7 @@ Global constraints:
   - A second `run` while state shows a run in progress by a live pid (same pid check as the relay marker) raises `AlreadyReleasing`.
   Tests: order and skipping, each mode's confirm calls, a declined confirm pauses, a failure saves state, resume skips done steps and reruns the failed one, `done_check` skips, cancel between steps, a version mismatch on resume, the % at each step.
 
-- [ ] REL-5: GitHub steps
+- [x] REL-5: GitHub steps
   Create `src/whyline/release/github.py` and `tests/release/test_github.py` only.
   Build `Step`s for spec steps 4–9 (commit, checks, push, ci, tag, github_release):
   - `commit`: add only the paths returned by `version.write`, the notes file and `config.pending(root)`, commit `chore: release v<version>`, then `config.clear_pending(root)`. Its `done_check` is true when HEAD's subject is that message.
