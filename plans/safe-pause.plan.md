@@ -229,7 +229,7 @@ Rules every task keeps:
   - `issues_text` shows the label, and the `Why:` line only for sent-back rounds.
   - The status line count matches the view.
 
-- [ ] PZ-16: Check falls back to the backups when an agent is out
+- [x] PZ-16: Check falls back to the backups when an agent is out
   Edit `src/whyline/console/fixmode.py`, `src/whyline/console/tui.py`, `tests/console/test_fixmode_check.py` and `tests/console/test_tui_relay_run.py` only.
   On 2026-11-05 codex was over its usage limit. Check ran it and showed its output (codex's echo of the prompt, then "ERROR: You've hit your usage limit…") as codex's note. It never tried the backups, antigravity and grok. `run_check` only moves on when the runner raises, and a usage limit returns a non-zero exit instead.
   1. Skip agents known to be out. Before running an agent, `run_check` checks `relay_ops.agent_readiness(root)`. An agent whose row is not ready is skipped, using its `why` (for example "codex has reached its usage limit until Nov 8, 00:27"), and the skip is recorded through `pass_over`. If readiness can't be read, nothing is skipped.
