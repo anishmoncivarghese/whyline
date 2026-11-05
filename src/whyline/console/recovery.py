@@ -1635,6 +1635,15 @@ def _is_step_auto_safe(root_path: Path, step: dict[str, Any], task_id: str) -> t
             return False, f"unrelated dirty files block resume: {', '.join(unrelated)}"
         return True, ""
 
+    # 4b. send-back, once per pause, only for a misread rejection
+    if action == "send-back":
+        reason = str(_read_state_dict(root_path).get("paused_reason") or "")
+        if not _send_back_agent(root_path, reason, task_id):
+            return False, "the pause is not a rejection read as a refused command"
+        if _applied_this_pause(root_path, "send-back"):
+            return False, "send-back already ran for this pause"
+        return True, ""
+
     # 5. start when the pause's own task is the next unchecked one
     if action == "start":
         from whyline_relay import plan as plan_mod, state as relay_state
@@ -1682,6 +1691,24 @@ def _is_refused_test_command(reason: str) -> bool:
     if adapters.failure_kind(reason) != "sandbox":
         return False
     return bool(_TEST_COMMAND_RE.search(adapters.extract_refused_command(reason)))
+
+
+_SEND_BACK_RE = re.compile(r"^(?:Paused:\s*)?\S+ could not run a required command")
+_SEND_BACK_LINE = (
+    "The reviewer's rejection was read as a refused command. "
+    "Send it back to {agent} as a normal rejection."
+)
+
+
+def _send_back_agent(root_path: Path, reason: str, task_id: str = "") -> str:
+    """The implementer to send a misread rejection back to, or '' when the
+    pause is not a refused-command pause over a rejected handoff."""
+    if not _SEND_BACK_RE.match(reason.strip()):
+        return ""
+    task = task_id or str(_read_state_dict(root_path).get("task_id") or "")
+    if not task or _last_handoff_status(root_path, task) != "rejected":
+        return ""
+    return _configured_implementer(root_path) or "the implementer"
 
 
 def _repeat_cause_round(root_path: Path, task_id: str, reason: str) -> int | None:
@@ -2080,6 +2107,7 @@ REC_4C_OPTIONS: dict[str, str] = {
     "resume-longer": "Resume with longer timeout",
     "resume": "Resume as is",
     "retry-stage": "Retry stage",
+    "send-back": "Send back",
 }
 
 
@@ -2244,6 +2272,16 @@ def make_rec_4c_option(
         detail = "print whyline relay status"
     elif opt_id == "retry-stage":
         detail = "whyline relay resume --retry-stage"
+    elif opt_id == "send-back":
+        agent = ""
+        if root is not None:
+            try:
+                state_reason = str(_read_state_dict(Path(root)).get("paused_reason") or "")
+                agent = _send_back_agent(Path(root), state_reason, task_id)
+            except Exception:
+                pass
+        label = f"Send back to {agent or 'the implementer'}"
+        detail = "whyline-relay resume --as-rejection"
     elif opt_id == "resume":
         detail = "resume with current timeout"
     elif opt_id == "resume-longer":
@@ -4536,6 +4574,27 @@ def _rule_problems(
             )
         )
 
+    # 8b. a rejection read as a refused command: listed first, so a dirty
+    # decision log or task file cannot make Auto resume instead of sending back
+    send_back_agent = _send_back_agent(root_path, reason, saved_task_id)
+    if send_back_agent:
+        problems.insert(
+            0,
+            Problem(
+                id="rejection-misread",
+                summary=_SEND_BACK_LINE.format(agent=send_back_agent),
+                evidence=[reason],
+                options=[
+                    make_rec_4c_option("send-back", root=root_path),
+                    Option("show", "Show evidence", "print the evidence again", recommended=False, confirm=False),
+                    Option("cancel", "Cancel", "cancel resolve", recommended=False, confirm=False),
+                ],
+                task_id=saved_task_id,
+                root=root_path,
+                pause_reason=reason,
+            )
+        )
+
     # 9. unknown fallback
     if not problems and (reason or fails):
         opts = [
@@ -4612,6 +4671,20 @@ def apply(
         task_id = (st.task_id if st and st.task_id else "") or str(st_dict.get("task_id") or "")
         gitcheck.commit_decision_log(root_path, task_id)
         return f"Committed decision log for {task_id}." if task_id else "Committed decision log."
+
+    if option_id == "send-back":
+        record_attempt(
+            root_path,
+            task=task_id,
+            round=int(round_num),
+            kind="rejection-misread",
+            agent="send-back",
+            verdict="Send back",
+            option="send-back",
+            pause_reason=pause_reason,
+        )
+        launch(["resume", "--as-rejection"])
+        return "Sent the rejection back to the implementer."
 
     if option_id == "resume-keep":
         launch(["resume", "--allow-dirty"])
@@ -5584,6 +5657,7 @@ CATALOG_ACTIONS = frozenset({
     "config-commit",
     "report-bug",
     "undo-fix",
+    "send-back",
 })
 
 
@@ -5866,6 +5940,11 @@ def validate_steps(
                 or not str(step.get("body") or "").strip()
             ):
                 notes.append("Dropped report-bug: it needs a title, a body and component whyline or whyline-relay.")
+                continue
+        elif action == "send-back":
+            reason = str(_read_state_dict(root_path).get("paused_reason") or "")
+            if not _send_back_agent(root_path, reason):
+                notes.append("Dropped send-back: the pause is not a rejection read as a refused command.")
                 continue
         elif action == "undo-fix":
             if not str(step.get("snapshot") or "").strip():
@@ -6206,6 +6285,7 @@ def _execute_single_step(
             "move-aside",
             "reset-role",
             "resume-longer",
+            "send-back",
             "split-task",
             "more-rounds",
             "retry-stronger-model",

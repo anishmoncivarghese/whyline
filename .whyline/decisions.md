@@ -35491,3 +35491,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a8afb75a559d48f4a1ab3c0b13c6464b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T06:00:14.870Z"} -->
+
+## 2026-11-05 — Resolve gets a rejection-misread problem with Send back as its first option, auto-safe once per pause
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-10
+
+**Because:** A refused-command pause over a rejected handoff is a misread rejection; a dedicated problem keeps it out of the human-only sandbox kinds so Auto can pick it, and apply records the attempt so it runs once
+
+**Rejected:**
+
+- Reuse the unknown fallback — its id is excluded from Auto and the summary would still read as a sandbox pause
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 3e3ace96665e426d8f951a4a03df0b5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T06:16:37.537Z"} -->
+
+## 2026-11-05 — Pass PZ-10: Send back as a rejection in Resolve verified across unit and console test suites
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-10
+
+**Because:** When a pause reason begins with an agent refusing a required command and the latest task handoff is rejected, Resolve correctly diagnoses rejection-misread, offering Send back to <implementer> as the first option with the specified prompt line, launching resume --as-rejection, allowing Auto to pick it once per pause, and including send-back in the Ask Agent catalog and auto-safe set. All 5 dedicated PZ-10 tests, 177 recovery tests, 21 resolve tests, and 1530 console tests passed.
+
+**Files:** src/whyline/console/recovery.py, src/whyline/console/tui.py, tests/console/test_recovery.py
+
+<!-- whyline-event: bc64df6df9a0482f8601ba77a86a4b4e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T06:33:23.901Z"} -->
+
+## 2026-11-05 — Request changes: insert rejection-misread first so Send back stays the first option when the tree is dirty
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-10
+
+**Because:** Resolve shows problems[0] and Auto applies the first auto-safe option; a dirty decisions.md or task file makes dirty-log or dirty-paused-work win, so Auto resume-keeps and never send-backs
+
+**Rejected:**
+
+- Approve as-is — the isolated tests pass only because tmp_path is not a git repo, and Auto would recreate the original Resume loop on a real pause
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 48657531af58443684df4187014de997 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T06:53:37.872Z"} -->
+
+## 2026-11-05 — Insert rejection-misread at index 0 of diagnose, like visit-cap
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-10
+
+**Because:** Resolve and Auto use problems[0]; appended, a dirty decisions.md made dirty-log win and Auto never sent back
+
+**Rejected:**
+
+- Keep append and special-case dirty-log — more branches, same ordering bug for dirty-paused-work
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 3207bbf9126e40c2a706cca6758fbab5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T06:55:27.283Z"} -->
+
+## 2026-11-05 — Pass PZ-10: Send back stays first problem when tree is dirty, verified via dedicated regression test and recovery suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-10
+
+**Because:** Inserting rejection-misread at index 0 of diagnose problems ensures it takes precedence over dirty-log and dirty-paused-work, allowing Auto to pick send-back instead of looping on resume-keep. All 6 send-back tests and 178 recovery tests pass.
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: 2bd638cbd5394f049af0c71ebe503262 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T07:12:33.808Z"} -->
+
+## 2026-11-05 — Approve PZ-10: Send back is first for a misread rejection, including when the tree is dirty
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-10
+
+**Because:** Diagnose inserts rejection-misread at index 0, so Resolve and Auto pick send-back over dirty-log or dirty-paused-work. The option is offered only for a refused-command pause with a rejected handoff, launches resume --as-rejection, is auto-safe once per pause, and is in the Ask Agent catalog. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request another dirty-paused-work test — insert(0) already covers that path; the dirty-log git-repo test is the regression that was missing
+
+**Files:** src/whyline/console/recovery.py
+
+<!-- whyline-event: f2fb469ab73847abb0382104d21724c9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T07:29:11.308Z"} -->

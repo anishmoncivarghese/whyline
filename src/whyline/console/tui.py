@@ -7447,6 +7447,7 @@ class WhylineConsoleApp(App):
     def _relay_flag_hint(args: list[str]) -> str | None:
         KNOWN_FLAGS = {
             "--allow-dirty",
+            "--as-rejection",
             "--retry-stage",
             "--skip-checks",
             "--dry-run",

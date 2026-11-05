@@ -7350,3 +7350,85 @@ def test_follow_up_goes_to_the_agent_that_answered_not_the_configured_one(tmp_pa
 
     assert res.agent == "claude"
     assert "claude" in str(commands[0]).lower()
+
+
+_MISREAD = "grok could not run a required command: sandbox denied the review"
+
+
+def _misread_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str = "rejected") -> Path:
+    state = tmp_path / ".whyline" / "relay"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "state.json").write_text(
+        json.dumps({"task_id": "PZ-10", "round": 2, "paused_reason": _MISREAD}), encoding="utf-8"
+    )
+    monkeypatch.setattr(recovery, "_last_handoff_status", lambda root, task: status)
+    monkeypatch.setattr(recovery, "_configured_implementer", lambda root: "claude")
+    return tmp_path
+
+
+def test_send_back_offered_first_for_misread_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _misread_repo(tmp_path, monkeypatch)
+    problem = recovery.diagnose(root, pause_reason=_MISREAD)[0]
+    assert problem.options[0].id == "send-back"
+    assert problem.options[0].label == "Send back to claude"
+    assert problem.summary == (
+        "The reviewer's rejection was read as a refused command. "
+        "Send it back to claude as a normal rejection."
+    )
+
+
+def test_send_back_stays_first_with_a_dirty_decision_log_in_a_git_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _init_scratch_repo(tmp_path / "repo")
+    _misread_repo(repo, monkeypatch)
+    (repo / ".whyline" / "decisions.md").write_text("# Decisions\n- new entry\n", encoding="utf-8")
+    problems = recovery.diagnose(repo, pause_reason=_MISREAD)
+    assert problems[0].id == "rejection-misread"
+    assert problems[0].options[0].id == "send-back"
+    picked = recovery.auto_option(problems[0], repo)
+    assert picked is not None and picked.id == "send-back"
+
+
+def test_send_back_not_offered_without_rejected_handoff_or_other_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _misread_repo(tmp_path, monkeypatch, status="ready")
+    ids = [o.id for p in recovery.diagnose(root, pause_reason=_MISREAD) for o in p.options]
+    assert "send-back" not in ids
+    root = _misread_repo(tmp_path, monkeypatch, status="rejected")
+    other = "grok exited without handing off"
+    ids = [o.id for p in recovery.diagnose(root, pause_reason=other) for o in p.options]
+    assert "send-back" not in ids
+
+
+def test_send_back_launches_resume_as_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _misread_repo(tmp_path, monkeypatch)
+    problem = recovery.diagnose(root, pause_reason=_MISREAD)[0]
+    launched: list[list[str]] = []
+    recovery.apply(root, problem, "send-back", launch=launched.append)
+    assert launched == [["resume", "--as-rejection"]]
+
+
+def test_auto_picks_send_back_once_per_pause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _misread_repo(tmp_path, monkeypatch)
+    problem = recovery.diagnose(root, pause_reason=_MISREAD)[0]
+    picked = recovery.auto_option(problem, root)
+    assert picked is not None and picked.id == "send-back"
+    recovery.apply(root, problem, "send-back", launch=lambda args: None)
+    again = recovery.auto_option(problem, root)
+    assert again is None or again.id != "send-back"
+
+
+def test_send_back_is_in_the_ask_agent_catalog_and_auto_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _misread_repo(tmp_path, monkeypatch)
+    assert "send-back" in recovery.CATALOG_ACTIONS
+    assert recovery._is_step_auto_safe(root, {"action": "send-back"}, "PZ-10") == (True, "")
