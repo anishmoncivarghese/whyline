@@ -2304,6 +2304,27 @@ class WhylineConsoleApp(App):
         if self.session.mode == "relay":
             self._sync_pause_buttons()
             self._sync_relay_buttons()  # enables Resume once a run has paused
+            self._battery_tick()
+
+    def _battery_tick(self) -> None:
+        from whyline import relaysafety
+        from whyline.console import power
+
+        watch = getattr(self, "_battery_watch", None)
+        if watch is None:
+            watch = self._battery_watch = power.LowBatteryWatch()
+        running = self._relay_running() or self._live_relay() is not None
+        try:
+            limit = relaysafety.load().battery_percent if running else None
+            percent = watch.check(time.monotonic(), limit, running)
+            if percent is None:
+                return
+            relay_ops.request_pause(self.session.root)
+        except Exception:
+            return
+        self._pause_requested = True
+        self.render_event(SessionEvent(kind="output", text=power.message(percent)))
+        self._sync_pause_buttons()
 
     def _ask_pause_now(self) -> None:
         try:

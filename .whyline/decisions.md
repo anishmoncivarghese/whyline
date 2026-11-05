@@ -35236,3 +35236,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9bc44200bf8a4744a4f9b3a25b621287 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T00:13:09.867Z"} -->
+
+## 2026-11-05 — Low-battery pause lives in a LowBatteryWatch state object driven from the TUI's existing 1s _pause_tick, throttled to 60s
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-5
+
+**Because:** pure and testable without Textual; re-arms when battery recovers or relay stops running
+
+**Rejected:**
+
+- separate set_interval timer — extra timer, harder to test
+
+**Files:** src/whyline/console/power.py
+
+<!-- whyline-event: a3951c2dc4cd4ad79496bfa59131c986 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T00:14:01.161Z"} -->
+
+## 2026-11-05 — Pass PZ-5 low battery safe pause testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-5
+
+**Because:** battery() correctly parses macOS pmset samples and handles failure/non-darwin; LowBatteryWatch throttles checks to 60s, fires once when on battery <= limit, re-arms when battery recovers or relay resumes, and remains dormant when battery_percent is off; TUI _battery_tick invokes request_pause and renders safe-pause notification; full console test suite passes with 0 failures
+
+**Test:** uv run pytest -q tests/console/test_power.py: 11 passed
+**Test:** uv run pytest -q tests/console/: 1509 passed
+
+**Files:** src/whyline/console/power.py, src/whyline/console/tui.py, tests/console/test_power.py
+
+<!-- whyline-event: 0d8be13d734141a0a81430deffa633c0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T00:43:42.001Z"} -->
+
+## 2026-11-05 — Approve PZ-5 low battery safe pause
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-5
+
+**Because:** battery() parses pmset and returns None off macOS or on failure; LowBatteryWatch checks once a minute, fires once at or below the limit on battery, re-arms above the limit or when the relay stops, and stays dormant when battery_percent is off; TUI _battery_tick calls request_pause and shows the spec message; uv run pytest -q exited 0
+
+**Rejected:**
+
+- require TUI tests for _battery_tick — listed cases are covered by LowBatteryWatch and the TUI glue is a thin call
+- isolate real battery() from other _pause_tick tests — full suite passed and non-darwin CI gets None
+
+**Files:** src/whyline/console/power.py, src/whyline/console/tui.py, tests/console/test_power.py
+
+<!-- whyline-event: 6a298b8174db4c29a9ed8b63c3d2936b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T01:02:15.889Z"} -->
