@@ -262,13 +262,19 @@ Rules every task keeps:
   3. "Other…" opens a one-line `Input` next to the select, for a custom id. Enter or Save saves it, and `relay_ops.valid_model` checks it first, as today. Esc or an empty value returns to the previous choice.
   4. A saved model not in the list shows as an extra option, "<id> (saved)", so it never disappears.
   5. While the shown agent or model differs from the saved one, `#cb-save` stays enabled as today, and a muted label after it says "not saved yet". Check and Chat keep using the saved agent. The label goes away on Save or when the choice is set back.
-  6. Every code path that reads `#cb-model` (`_cb_saved_tuple`, `_cb_dirty`, `_cb_save`, the narrow-layout label) reads the select's value, or the Other input's value when Other is chosen.
+  6. "default" is a valid choice. Today `_cb_save` refuses an empty model through `_model_rejected` ("A model name is required"), so switching to an agent with no saved model could never be saved. On 2026-11-05 switching to claude failed this way and Check kept running codex.
+     - Save accepts "default" (value `""`) and writes the agent with no model through `model.set_one(root, agent, "")`, which already clears it.
+     - `_model_rejected` still refuses spaces and quotes in an Other… id.
+     - A Save that is refused prints its error and also shows it in place of "not saved yet", so it can't be missed.
+  7. Every code path that reads `#cb-model` (`_cb_saved_tuple`, `_cb_dirty`, `_cb_save`, the narrow-layout label) reads the select's value, or the Other input's value when Other is chosen.
   Tests:
   - Choosing claude lists default, opus, sonnet, haiku and the claude ids, then Other…. Choosing codex lists codex's models.
   - Switching agent selects that agent's saved model.
   - A saved id that isn't listed shows as "(saved)".
   - Other… with "claude-opus-5-5-high" is refused by `valid_model`, and a valid custom id is saved.
   - "not saved yet" appears after changing the agent and goes away after Save.
+  - Switching to claude with "default" and pressing Save writes `default_agent: claude` with no claude model, and Check then uses claude.
+  - A refused Save shows its error next to Save.
   - Save writes the agent and model through `model.set_default_agent` and `model.set_one`, as today.
   - The existing context-bar tests are updated only where they typed into `#cb-model`.
 
