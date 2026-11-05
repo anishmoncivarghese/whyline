@@ -208,8 +208,29 @@ Rules every task keeps:
   - The Agent `Select` region is its full height.
   - The existing Settings tests pass unchanged.
 
+- [ ] PZ-15: A sent-back round never shows "0 issues"
+  Edit `src/whyline/console/relay_ops.py`, `src/whyline/console/relay_screens.py`, `tests/console/test_relay_ops.py` and `tests/console/test_tui_relay_run.py` only.
+  On 2026-11-05 PZ-6 round 2 showed "✗ sent back · 0 issues" with "Test: … 1 failed". The tester explained the failure in its summary but filed no `--issue`, and its handoff had an empty issues list, so `task_rounds` skipped the summary bullets.
+  1. In `task_rounds`, the issues for a round come from the first of these that is not empty:
+     - the handoff's own `issues` list
+     - the summary's bullets (`_summary_bullets`), now also when `issues` is an empty list
+     - for a sent-back round only:
+       - one issue per test whose result reports a failure (`failed`, `error` or a non-zero exit), worded `Test failed: <command>: <result>`
+       - failing that, the summary's first sentence, at most 200 characters
+     A passed round with nothing filed still has 0 issues.
+  2. `RoundOutcome` gets `derived: bool`, true when the issues did not come from the handoff's `issues` list. `issues_text` adds "(from the summary)" or "(from the tests)" after the count, so the user can tell a filed issue from a derived one.
+  3. Under a sent-back round, `issues_text` adds a `Why:` line with the summary's first sentence (at most 200 characters), after the issues and before the tests.
+  4. The status line's issue count (`last_issues`) uses the same issues, so it matches the Issues view.
+  Tests:
+  - An empty `issues` list with summary bullets gives those bullets.
+  - A sent-back round with no bullets and a "1 failed" test gives one `Test failed: …` issue.
+  - A sent-back round with no bullets and no failing test gives the first sentence.
+  - A passed round with nothing filed has 0 issues, and filed issues win over everything else.
+  - `issues_text` shows the label, and the `Why:` line only for sent-back rounds.
+  - The status line count matches the view.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..14
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..15
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
