@@ -36341,3 +36341,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bf48db06a2814cf4874637dd2ec07d41 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:15:58.259Z"} -->
+
+## 2026-11-05 — GitHub steps raise StepError (with open_pr flag) and take changed_files as a callable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-5
+
+**Because:** engine Result has no open_pr field, so the exception carries it for the screen; changed files are only known after the version step runs
+
+**Rejected:**
+
+- pass a fixed path list — unknown at plan build time
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: 0ef9b19ca17a4c408cf5c569add8cd14 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:18:19.239Z"} -->
+
+## 2026-11-05 — Pass REL-5: GitHub steps 4-9 adhere to spec with passing full and release test suites
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-5
+
+**Because:** Full pytest suite (3720 passed) and release tests (88 passed, 18 in test_github.py) verified step ordering, commit selective staging, streaming checks, push ancestor/protection handling, CI polling/timeout/no-CI, tag creation, and GitHub release creation.
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: 8ad5eb6860194499a3c690494731f7e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:34:16.004Z"} -->
+
+## 2026-11-05 — Approve REL-5: GitHub steps 4-9 match spec; StepError.open_pr is the step result
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-5
+
+**Because:** github.py implements commit, checks, push, CI, tag, and github_release as specified; tests cover each step, done_check, diverged origin, protected-branch open_pr, and CI pass/fail/ignore/no-CI/timeout; uv run pytest -q exited 0. open_pr cannot live on engine.Result in this task.
+
+**Rejected:**
+
+- Request engine.Result.open_pr — REL-5 may only add github.py and its tests
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: 80344e7427f34be9811866a2db3d9ce3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:53:00.089Z"} -->
