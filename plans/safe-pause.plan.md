@@ -290,8 +290,42 @@ Rules every task keeps:
   - Save writes the agent and model through `model.set_default_agent` and `model.set_one`, as today.
   - The existing context-bar tests are updated only where they typed into `#cb-model`.
 
+- [ ] PZ-18: Check's answer as a short report, with actions and follow-up
+  Edit `src/whyline/console/fixmode.py`, `src/whyline/console/relay_screens.py`, `src/whyline/console/tui.py` and their tests (`tests/console/test_fixmode_check.py`, `tests/console/test_relay_screens.py`, `tests/console/test_tui_relay_run.py`) only. Runs after PZ-16.
+  On 2026-11-05 Check's answer came back as one long paragraph inside the transcript. It was hard to read, and it offered nothing to do next and no way to ask about it.
+  1. Ask for a structure. In `build_check_prompt`, replace the closing instructions with a request for one fenced JSON block:
+     ```
+     {"health": "fine|stuck|going round in circles|quota risk",
+      "headline": "<one sentence, at most 120 characters>",
+      "findings": ["<at most 4 short points, each at most 140 characters, citing path:line where it helps>"],
+      "steps": [...catalog steps, as today...],
+      "confidence": "high|medium|low"}
+     ```
+     Prose outside the block is ignored.
+  2. Parse it. `CheckResult` gets `health: str`, `headline: str` and `findings: list[str]`. `run_check` reads them from the JSON:
+     - An unknown `health` becomes "unclear".
+     - Findings past 4 are dropped, and long ones are cut at 140 characters with "…".
+     - With no JSON block, the first sentence becomes the headline, the next three sentences become the findings, and health is "unclear". The raw text is never shown whole.
+  3. Show it in a modal, `CheckReportScreen` in `relay_screens.py`, styled like `IssuesScreen`. It shows, in order:
+     - A health line with a mark: `✓ Fine`, `⚠ Quota risk`, `⚠ Going round in circles`, `✗ Stuck` or `? Unclear`, then `· asked claude · 31s` (plus "after codex: usage limit" when it fell back).
+     - The headline.
+     - The findings as bullets. `path:line` opens the file, using `relay_chat_tab.link_paths`.
+     - Under "Suggested for the next pause", each step in plain words from the catalog labels (for example "Use claude for the reviewer"), or "Nothing to change" when there are none.
+  4. Buttons:
+     - **Apply when paused** shows only when there are steps, and calls the existing `_store_check_proposal`.
+     - **Ask about this** puts the report into the Chat history as an assistant line (`relaychat.history.append(..., "assistant", <report text>, agent="check")`), opens the Files pane's Chat tab and focuses its question box. Chat's next question then has the report as context.
+     - **Check again** and **Close**.
+  5. The transcript gets one line, `check › ⚠ Quota risk — <headline> (Show report)`, and clicking it reopens the last report. The full text stays in `check-agent-<agent>.log`.
+  Tests:
+  - JSON with all fields fills the result. A bad health becomes "unclear". The 5th finding is dropped, and a long finding is cut.
+  - Text with no JSON gives a headline and at most 3 findings.
+  - The report shows the health mark, the agent, the headline, the bullets and the plain-word steps. "Apply when paused" is hidden when there are no steps.
+  - Ask about this appends one assistant line with agent "check", and shows the Chat tab with focus in its box.
+  - The transcript line reopens the report.
+  - The prompt asks for the JSON fields above.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..17
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..18
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
