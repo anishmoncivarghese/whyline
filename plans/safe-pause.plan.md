@@ -128,7 +128,7 @@ Rules every task keeps:
      - `whyline-relay pause` and `whyline relay-safety`
   Tests: the Settings round trip; the Help mentions Pause, Pause now and `whyline relay-safety`.
 
-- [ ] PZ-10: "Send back as a rejection" in Resolve
+- [x] PZ-10: "Send back as a rejection" in Resolve
   Edit `src/whyline/console/recovery.py`, `src/whyline/console/tui.py` and their tests only. Needs whyline-relay RPZ-7 (`resume --as-rejection`), which PZ-1's version floor covers.
   On 2026-11-02 a review rejection mentioning "sandbox" was misread as a refused command, and Resume paused again on the same text every time.
   1. When the pause reason starts with "<agent> could not run a required command" and the last handoff is `rejected`, Resolve offers **Send back to <implementer agent>** as the first option. It runs `whyline-relay resume --as-rejection`. Ask agent's catalog gets the same action as `send-back`, in the auto-safe set.
