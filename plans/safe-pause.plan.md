@@ -185,7 +185,7 @@ Rules every task keeps:
   - `render_answer`: bold and code are styled without their markers; headings and bullets as above; `` `src/a.py:3` `` is a link that opens line 3; unmatched markers stay; the plain text has no `**` or backticks.
   - The prompt contains the new instruction.
 
-- [ ] PZ-14: A roomier Settings screen with spaced sections
+- [x] PZ-14: A roomier Settings screen with spaced sections
   Edit `src/whyline/console/settings_screen.py` and its tests only. Runs after PZ-8, which adds the Relay safety section to this screen.
   On 2026-11-05 the screen was cramped: the popup is 78 wide, the body is capped at 10 rows, the sections run together, and the Relay chat Agent dropdown was cut off.
   1. Size:
