@@ -35444,3 +35444,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3a7dc76d565543a785536ed34bb12eda -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T05:26:24.683Z"} -->
+
+## 2026-11-05 — Relay safety section added to the Settings screen with its own safety/save_safety injection, rolled back like Relay chat
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-8
+
+**Because:** mirrors the existing transactional chat section; saves only changed keys through relaysafety.save
+
+**Rejected:**
+
+- writing relaysafety directly from the screen — breaks the injected-save pattern and tests
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 8d24c592bf7149d89d392b5ad55d392c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T05:27:51.451Z"} -->
+
+## 2026-11-05 — Pass PZ-8: Relay safety settings section, Help text and safe-pause docs verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-8
+
+**Because:** Settings screen Relay safety round trip saves changed values through relaysafety.save and rolls back on failure; Help text and docs/safe-pause.md cover Pause vs Pause now vs Stop, Pausing wait, Resume behavior, safeguards, whyline-relay pause and whyline relay-safety; all 5 safety tests and full 3574-test suite passed.
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 241d7c20a9854480a983b452878f7df5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T05:43:54.597Z"} -->
+
+## 2026-11-05 — Approve PZ-8: Relay safety settings, Help, and safe-pause docs
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-8
+
+**Because:** Settings adds a Relay safety section saved through relaysafety.save with the same transactional rollback as Relay chat; Help and docs/safe-pause.md cover Pause vs Pause now vs Stop, why Pausing can wait, Resume after each, safeguards, whyline-relay pause and whyline relay-safety; uv run pytest -q exited 0 with 1 skipped.
+
+**Rejected:**
+
+- request changes for Help duplicate and — user-facing typo that does not fail the spec or tests
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: a8afb75a559d48f4a1ab3c0b13c6464b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T06:00:14.870Z"} -->

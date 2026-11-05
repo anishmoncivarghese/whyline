@@ -4969,13 +4969,14 @@ class WhylineConsoleApp(App):
         self._sync_mode_indicator()
 
     def _open_settings(self) -> None:
-        from whyline import account
+        from whyline import account, relaysafety
         from whyline.console.settings_screen import ProviderSettingsScreen
         from whyline.relaychat import agent_choice
         from whyline.relaychat import settings as chat_settings
 
         root = self.session.root
         current = chat_settings.load(root)
+        safety = relaysafety.load()
         self.push_screen(
             ProviderSettingsScreen(
                 account.load_global() or {},
@@ -4988,6 +4989,12 @@ class WhylineConsoleApp(App):
                     "snapshot_chars": current.snapshot_chars,
                 },
                 save_chat=lambda changes: chat_settings.save(root, **changes),
+                safety={
+                    "battery_percent": safety.battery_percent,
+                    "on_wake": safety.on_wake,
+                    "on_quit": safety.on_quit,
+                },
+                save_safety=relaysafety.save,
             ),
             self._settings_closed,
         )

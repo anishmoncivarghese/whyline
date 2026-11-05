@@ -73,6 +73,10 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   for you rather than guessing.
 - **It pauses instead of guessing** when it hits a question, a risky recovery
   step, a manual check, or a release.
+- **Pause safely** with **Pause** (waits for the current turn), **Pause now**
+  or **Stop**, then **Resume**. Battery, wake and quit safeguards are in
+  Settings → Relay safety or `whyline relay-safety`; see
+  [docs/safe-pause.md](docs/safe-pause.md).
 - **Resolve** explains why it paused and offers safe options. **Ask agent**
   lets an AI read the logs and propose the fix, and you can reply to it. In
   **Fix** mode the agent may edit files and run checks, but never commit or

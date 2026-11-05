@@ -123,6 +123,13 @@ def _help_text() -> str:
         "           quota with a working agent. History is kept under ~/.whyline/relay-chat/.\n"
         "           From a terminal: whyline ask \"why did it stop?\". Agent, time limit and\n"
         "           snapshot size are in Settings → Relay chat",
+        "  Pause    in Relay, stops after the current turn finishes (Pausing… can take a\n"
+        "           while: the agent is mid-turn). Pause now stops the agent immediately and\n"
+        "           and records the files it left changed; Stop does the same. Resume starts\n"
+        "           the next turn after Pause; after Pause now or Stop it starts the cut-off\n"
+        "           turn again and tells the agent which files were left changed. Safeguards pause on low battery, Mac wake and quit. Set them\n"
+        "           in Settings → Relay safety or run: whyline relay-safety. From a terminal:\n"
+        "           whyline-relay pause. See docs/safe-pause.md",
         "  Files    split the console and follow the file the agent is writing",
         "Commands:",
         *(f"  {_COMMAND_HELP[name]}" for name in SLASH_COMMANDS),

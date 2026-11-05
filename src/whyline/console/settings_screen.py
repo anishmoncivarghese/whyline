@@ -17,6 +17,8 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
+from whyline import relaysafety
+
 PROVIDERS = ("claude", "codex", "grok", "antigravity")
 _PATH_ONLY = frozenset({"grok", "antigravity"})
 _DISPLAY = {
@@ -118,14 +120,20 @@ class ProviderSettingsScreen(ModalScreen):
         save_enabled: Callable[[dict, dict | None], None],
         chat: dict | None = None,
         save_chat: Callable[[dict], object] | None = None,
+        safety: dict | None = None,
+        save_safety: Callable[..., object] | None = None,
     ) -> None:
         """``chat`` shows the Relay chat section: ``choices`` (agent names),
         ``agent`` (str | None), ``timeout_seconds`` and ``snapshot_chars``.
         ``save_chat`` receives only the values changed, as ``relaychat.settings.save``
-        keyword names."""
+        keyword names. ``safety`` shows the Relay safety section: ``battery_percent``
+        (int | None), ``on_wake`` and ``on_quit``; ``save_safety`` takes
+        ``relaysafety.save`` keywords."""
         super().__init__()
         self._chat = dict(chat) if chat is not None and save_chat is not None else None
         self._save_chat = save_chat
+        self._safety = dict(safety) if safety is not None and save_safety is not None else None
+        self._save_safety = save_safety
         raw = records or {}
         self._records = {
             agent: dict(raw[agent]) if isinstance(raw.get(agent), dict) else {}
@@ -159,6 +167,7 @@ class ProviderSettingsScreen(ModalScreen):
                 Label("Choose only the subscriptions Whyline may use."),
                 *rows,
                 *self._chat_widgets(),
+                *self._safety_widgets(),
                 id="ss-body",
             ),
             Static(_HINT, id="ss-hint", markup=False),
@@ -222,6 +231,53 @@ class ProviderSettingsScreen(ModalScreen):
             if not text.isdecimal():
                 raise ValueError("Snapshot size must be a whole number of characters.")
             changes["snapshot_chars"] = int(text)
+        return changes
+
+    def _safety_widgets(self) -> list:
+        if self._safety is None:
+            return []
+        safety = self._safety
+        return [
+            Label("Relay safety", id="ss-safety-section"),
+            Label("Safeguards that pause a running relay. See docs/safe-pause.md."),
+            Horizontal(
+                Label("Battery limit (off, 10, 15, 20, 25 or a number)", classes="ss-chat-label"),
+                Input(value=_battery_text(safety.get("battery_percent")), id="ss-safety-battery"),
+                classes="ss-row",
+            ),
+            Horizontal(
+                Label("When the Mac wakes", classes="ss-chat-label"),
+                Select([(name, name) for name in relaysafety.ON_WAKE_CHOICES],
+                       value=safety.get("on_wake", "ask"), allow_blank=False,
+                       id="ss-safety-wake"),
+                classes="ss-row",
+            ),
+            Horizontal(
+                Label("When quitting", classes="ss-chat-label"),
+                Select([(name, name) for name in relaysafety.ON_QUIT_CHOICES],
+                       value=safety.get("on_quit", "ask"), allow_blank=False,
+                       id="ss-safety-quit"),
+                classes="ss-row",
+            ),
+        ]
+
+    def _safety_changes(self) -> dict:
+        """Values that differ from what the section opened with; raises ValueError."""
+        if self._safety is None:
+            return {}
+        changes: dict = {}
+        text = self.query_one("#ss-safety-battery", Input).value.strip()
+        if text != _battery_text(self._safety.get("battery_percent")):
+            if text.lower() == "off":
+                changes["battery_percent"] = None
+            elif text.isdecimal() and 1 <= int(text) <= 99:
+                changes["battery_percent"] = int(text)
+            else:
+                raise ValueError("Battery limit must be off or a whole number from 1 to 99.")
+        for key, widget in (("on_wake", "#ss-safety-wake"), ("on_quit", "#ss-safety-quit")):
+            picked = self.query_one(widget, Select).value
+            if picked != self._safety.get(key):
+                changes[key] = picked
         return changes
 
     def on_mount(self) -> None:
@@ -310,18 +366,28 @@ class ProviderSettingsScreen(ModalScreen):
         completed = {agent: dict(result) for agent, result in self._completed.items()}
         button = self.query_one("#ss-save", Button)
         button.disabled = True
-        saved_chat = False
+        saved_chat = saved_safety = False
         try:
             changes = self._chat_changes()
+            safety_changes = self._safety_changes()
             if changes:
                 self._save_chat(changes)
                 saved_chat = True
+            if safety_changes:
+                self._save_safety(**safety_changes)
+                saved_safety = True
             self._save_enabled(values, completed)
         except Exception as error:
             if saved_chat:
                 before = {name: self._chat.get(name) for name in changes}
                 try:
                     self._save_chat(before)
+                except Exception:
+                    pass
+            if saved_safety:
+                before = {name: self._safety.get(name) for name in safety_changes}
+                try:
+                    self._save_safety(**before)
                 except Exception:
                     pass
             button.disabled = False
@@ -349,6 +415,10 @@ class ProviderSettingsScreen(ModalScreen):
             self.query_one("#ss-error", Static).update(_one_line(text) if text else "")
         except NoMatches:
             return
+
+
+def _battery_text(value: object) -> str:
+    return "off" if value is None else str(value)
 
 
 def _minutes_text(seconds: int) -> str:
