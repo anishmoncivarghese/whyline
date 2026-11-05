@@ -52,7 +52,7 @@ Global constraints:
   - `ok(items) -> bool`.
   Tests: all ✓ on a prepared temp repository, then each item ✗ alone with its fix text, a running relay versus a release pause, an exception item, the time budget (fake clock).
 
-- [ ] REL-4: Step engine, run state, modes and Resume
+- [x] REL-4: Step engine, run state, modes and Resume
   Create `src/whyline/release/engine.py`, `src/whyline/release/state.py` and `tests/release/test_engine.py` only.
   - `Step(id, title, irreversible, done_check, run)`. `Plan(version, steps)`. `Progress(step_index, total, title, detail, started_at, step_started_at)`.
   - State in `.git/whyline-release/state.json` (atomic write): version, step ids, done ids, failed id and reason, mode, started. `state.load/save/clear`.
