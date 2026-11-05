@@ -135,7 +135,7 @@ Rules every task keeps:
   2. Its line says: "The reviewer's rejection was read as a refused command. Send it back to <agent> as a normal rejection."
   Tests: the option shows only for that pause with a rejected handoff; it launches `resume --as-rejection`; Auto picks it once per pause.
 
-- [ ] PZ-11: A bigger question box in the Chat tab
+- [x] PZ-11: A bigger question box in the Chat tab
   Edit `src/whyline/console/relay_chat_tab.py` and `tests/console/test_relay_chat_tab.py` only.
   Today `#chat-input` is a one-row `Input` with its border removed (`on_mount`). It is hard to see, and a long question scrolls sideways out of view.
   1. Replace it with a small `TextArea` subclass, `ChatQuestion`, in the same file, keeping the id `chat-input`:
