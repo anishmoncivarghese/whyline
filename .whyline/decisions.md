@@ -36247,3 +36247,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5cc3f42c26c24c16842e701600ff0f14 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:04:27.525Z"} -->
+
+## 2026-11-05 — Ready check takes injected run/fetch/relay_state plus clock/budget; relay_state returns a string state
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-3
+
+**Because:** keeps check() testable with a fake clock and no network; paused-on-release passes, paused-elsewhere fails
+
+**Rejected:**
+
+- relay_state as bool — cannot tell a release pause from another pause
+
+**Files:** src/whyline/release/ready.py
+
+<!-- whyline-event: b15ce361cfc247beb09b216c35c6c0b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:05:58.347Z"} -->
+
+## 2026-11-05 — Approve REL-3 ready check: 8 base checks, registry, error handling, and budget pass unit and full-suite tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-3
+
+**Because:** tests/release/test_ready.py covers all 8 items, individual failure fixes, relay running vs paused states, exceptions, and fake clock budget; full suite passed with 3687 tests
+
+**Files:** src/whyline/release/ready.py
+
+<!-- whyline-event: a29e016e2ce64784b19f7c168e50345c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:21:20.773Z"} -->
+
+## 2026-11-05 — Approve REL-3 ready check: eight base items, registry, isolation, and budget match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-3
+
+**Because:** ready.py implements the ordered checks, per-item try, 30s budget, and register_ready with none registered; tests cover all-ok, each failure plus fix, relay running vs release pause, exceptions, and a fake clock; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for extra decisions.md entries — those notes belong to REL-3, unlike RUN-7 unrelated history
+
+**Files:** src/whyline/release/ready.py
+
+<!-- whyline-event: fd054d065305410fbb34f8eb43d25836 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:39:53.168Z"} -->
