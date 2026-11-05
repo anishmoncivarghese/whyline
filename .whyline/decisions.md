@@ -35287,3 +35287,117 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6a298b8174db4c29a9ed8b63c3d2936b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T01:02:15.889Z"} -->
+
+## 2026-11-05 — Ask-on-wake uses ConfirmScreen modal (Pause safely / Keep going) rather than inline buttons
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-6
+
+**Because:** tui has no inline-button transcript line; the modal reuses an existing tested widget and also writes the same line to the transcript
+
+**Rejected:**
+
+- inline transcript buttons — no existing widget for it, large change in a 7.7k-line file
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 811b08c251f64698ac5c84477c9f8e18 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T01:14:13.080Z"} -->
+
+## 2026-11-05 — Fail PZ-6 sleep/wake testing due to console test failure on low battery test host
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-6
+
+**Because:** WakeWatch, awake_hint, and _wake_tick pass tests/console/test_power.py (18 passed), but full console suite fails: tests/console/test_pause_status.py::test_transcript_lines_written_once fails when the test machine is on battery <= 15% because _pause_tick calls unisolated pmset via _battery_tick/LowBatteryWatch, triggering an unexpected safe pause. Console tests must isolate host battery state, and LowBatteryWatch should resolve its sample function dynamically so battery mocks take effect.
+
+**Rejected:**
+
+- pass PZ-6 regardless — test suite must pass with 0 failures before review
+
+**Test:** uv run pytest -q tests/console/test_power.py: 18 passed
+**Test:** uv run pytest -q tests/console/: 1 failed (test_transcript_lines_written_once), 1527 passed
+
+**Files:** tests/console/test_pause_status.py, src/whyline/console/power.py, src/whyline/console/tui.py
+
+<!-- whyline-event: c8e6476de8544568a40c16f10cd670b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T01:34:05.080Z"} -->
+
+## 2026-11-05 — Isolate host battery in console tests via autouse fixture; LowBatteryWatch resolves battery() at call time
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-6
+
+**Because:** test_transcript_lines_written_once tripped a real safe pause when the dev Mac was on battery <=15%; patching power.battery only works if the watch looks it up dynamically
+
+**Rejected:**
+
+- patch pmset subprocess in each test — many tests tick _pause_tick, too easy to miss one
+
+**Files:** src/whyline/console/power.py, tests/console/conftest.py
+
+<!-- whyline-event: 5702390f0d6c483a9e4b26fd4b1a3d52 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T03:24:31.989Z"} -->
+
+## 2026-11-05 — Fail PZ-6 sleep/wake testing due to intermittent NoMatches in _sync_relay_buttons during _pause_tick in console tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-6
+
+**Because:** LowBatteryWatch host battery isolation in conftest.py and call-time resolution resolved the low battery pause failure on tests/console/test_pause_status.py (now passing). However, running the full tests/console/ suite still fails due to _pause_tick: _pause_tick calls self._sync_relay_buttons(), which queries '#relay-run' via _main without catching (NoMatches, IndexError). When the 1s timer ticks while screens are mounting or transitioning in heavy test runs, it crashes Textual (e.g. FAILED test_typed_run_offers_new_or_existing_and_existing_opens_guided_setup or test_resolve_closes_setup_and_prints_problem_with_recommended_option_first). Catching (NoMatches, IndexError) in _sync_relay_buttons or guarding the call in _pause_tick is required for a clean pass of the test suite.
+
+**Rejected:**
+
+- pass PZ-6 regardless — full tests/console suite must pass with 0 failures before review
+
+**Files:** src/whyline/console/tui.py, tests/console/test_run_flow.py, tests/console/test_tui.py
+
+<!-- whyline-event: 9eca5c2c96574eed99b36f72e3bad53e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T04:03:22.955Z"} -->
+
+## 2026-11-05 — Catch NoMatches/IndexError around _sync_relay_buttons in _pause_tick only
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-6
+
+**Because:** the 1s timer can fire while a screen is mounting or closing; the tick is best-effort and retries next second
+
+**Rejected:**
+
+- catch inside _sync_relay_buttons — it has ~40 other callers that should still surface real bugs
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d8533acce0bb4a6399919631dde52499 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T04:15:56.852Z"} -->
+
+## 2026-11-05 — Pass PZ-6: sleep and wake detection, on_wake policies, and Awake hint verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-6
+
+**Because:** WakeWatch gap detection and drift tolerance, on_wake policies (ask/pause/off), and the battery Awake hint are implemented and verified with unit tests. The _sync_relay_buttons guard in _pause_tick eliminated intermittent NoMatches during screen mounts/transitions, and the full test suite (1512 console tests and 2038 other tests) passes cleanly.
+
+**Files:** src/whyline/console/power.py
+
+<!-- whyline-event: 2ee2793925294ba9847ca6a4fb18693b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T04:38:59.931Z"} -->
+
+## 2026-11-05 — Approve PZ-6 sleep/wake detection, on_wake policies, and Awake hint
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-6
+
+**Because:** WakeWatch reports sleep when wall-clock gain exceeds monotonic by more than 2 minutes and ignores sub-2-minute drift; on_wake ask shows ConfirmScreen Pause safely/Keep going, pause calls request_pause with the line and no buttons, off does nothing; the Awake hint is only on battery with Awake off; required tests are present; uv run pytest -q exited 0
+
+**Files:** src/whyline/console/power.py
+
+<!-- whyline-event: c1fad32dc9f140f5a08745c1127c7e5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T04:55:55.732Z"} -->

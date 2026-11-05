@@ -2303,8 +2303,51 @@ class WhylineConsoleApp(App):
     def _pause_tick(self) -> None:
         if self.session.mode == "relay":
             self._sync_pause_buttons()
-            self._sync_relay_buttons()  # enables Resume once a run has paused
+            try:
+                self._sync_relay_buttons()  # enables Resume once a run has paused
+            except (NoMatches, IndexError):  # a screen is mounting or closing
+                pass
             self._battery_tick()
+            self._wake_tick()
+
+    def _wake_tick(self) -> None:
+        from whyline import relaysafety
+        from whyline.console import power
+
+        watch = getattr(self, "_wake_watch", None)
+        if watch is None:
+            watch = self._wake_watch = power.WakeWatch(time.time, time.monotonic)
+        slept = watch.tick()
+        if slept is None:
+            return
+        try:
+            if not (self._relay_running() or self._live_relay() is not None):
+                return
+            mode = relaysafety.load().on_wake
+            if mode == "off":
+                return
+            try:
+                agent = relay_ops.pause_state(self.session.root).agent
+            except Exception:
+                agent = ""
+            text = power.wake_message(slept, agent)
+            if mode == "pause":
+                relay_ops.request_pause(self.session.root)
+                self._pause_requested = True
+        except Exception:
+            return
+        self.render_event(SessionEvent(kind="output", text=text))
+        if mode == "pause":
+            self._sync_pause_buttons()
+            return
+
+        def done(pause: bool | None) -> None:
+            if pause:
+                relay_ops.request_pause(self.session.root)
+                self._pause_requested = True
+                self._sync_pause_buttons()
+
+        self.push_screen(ConfirmScreen(text, "Pause safely", "Keep going"), done)
 
     def _battery_tick(self) -> None:
         from whyline import relaysafety
@@ -7481,6 +7524,17 @@ class WhylineConsoleApp(App):
         self._main("#thinking", Static).display = True
         self._main("#stop", Button).disabled = False
         self._sync_relay_buttons()
+        self._awake_hint()
+
+    def _awake_hint(self) -> None:
+        from whyline.console import power
+
+        try:
+            hint = power.awake_hint(power.battery(), awake.status() is not None)
+        except Exception:
+            return
+        if hint:
+            self.render_event(SessionEvent(kind="output", text=hint))
 
     def _relay_line(self, line: str) -> None:
         self.render_event(SessionEvent(kind="output", text=f"relay · {line}"))

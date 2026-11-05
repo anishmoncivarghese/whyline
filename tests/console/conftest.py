@@ -55,6 +55,19 @@ def _no_update_check(monkeypatch):
     monkeypatch.setattr(update, "install_problem", lambda **_kwargs: "whyline runs from a test.")
 
 
+@pytest.fixture(autouse=True)
+def _no_real_battery(monkeypatch):
+    """The low-battery safe pause and the Awake hint read `pmset`. A test must
+    not depend on the developer's battery level; a test that passes its own
+    `run` still reaches the real parser."""
+    from whyline.console import power
+
+    real = power.battery
+    monkeypatch.setattr(
+        power, "battery", lambda run=None: real(run) if run is not None else None
+    )
+
+
 @pytest.fixture
 def wait_until_settled():
     """Pause until the current screen's Select widgets are fully built.

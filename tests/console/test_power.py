@@ -110,3 +110,97 @@ def test_unreadable_battery_does_nothing():
 def test_message():
     assert power.message(14) == (
         "Battery at 14% — pausing safely so nothing is lost. Plug in and press Resume.")
+
+
+class Clock:
+    def __init__(self):
+        self.wall = 1000.0
+        self.mono = 50.0
+
+    def advance(self, seconds, slept=0.0):
+        self.mono += seconds
+        self.wall += seconds + slept
+
+
+def wake_watch(clock):
+    return power.WakeWatch(lambda: clock.wall, lambda: clock.mono)
+
+
+def test_wake_watch_detects_42_minute_gap():
+    clock = Clock()
+    w = wake_watch(clock)
+    clock.advance(1, slept=42 * 60)
+    assert w.tick() == 42 * 60
+    clock.advance(1)
+    assert w.tick() is None
+
+
+def test_wake_watch_ignores_small_drift():
+    clock = Clock()
+    w = wake_watch(clock)
+    clock.advance(1, slept=5)
+    assert w.tick() is None
+    clock.advance(1, slept=119)
+    assert w.tick() is None
+
+
+def test_wake_message():
+    assert power.wake_message(42 * 60 + 10, "codex") == (
+        "The Mac slept for 42m while codex was working; its turn may time out.")
+
+
+def test_awake_hint_only_on_battery_with_awake_off():
+    assert power.awake_hint(Battery(True, 80), False) == (
+        "On battery: press Awake to keep the Mac from sleeping mid-turn.")
+    assert power.awake_hint(Battery(True, 80), True) is None
+    assert power.awake_hint(Battery(False, 80), False) is None
+    assert power.awake_hint(None, False) is None
+
+
+def _wake_app(monkeypatch, mode):
+    from whyline import relaysafety
+    from whyline.console import tui
+
+    calls = dict(pause=0, events=[], screens=[])
+    monkeypatch.setattr(relaysafety, "load", lambda *a, **k: SimpleNamespace(on_wake=mode))
+    monkeypatch.setattr(tui.relay_ops, "pause_state", lambda root: SimpleNamespace(agent="codex"))
+    monkeypatch.setattr(tui.relay_ops, "request_pause",
+                        lambda root: calls.update(pause=calls["pause"] + 1))
+    app = SimpleNamespace(
+        session=SimpleNamespace(root="r"),
+        _wake_watch=SimpleNamespace(tick=lambda: 42 * 60.0),
+        _relay_running=lambda: True,
+        _live_relay=lambda: None,
+        render_event=lambda e: calls["events"].append(e.text),
+        _sync_pause_buttons=lambda: None,
+        push_screen=lambda screen, cb: calls["screens"].append((screen, cb)),
+    )
+    return tui, app, calls
+
+
+LINE = "The Mac slept for 42m while codex was working; its turn may time out."
+
+
+def test_on_wake_pause_pauses_without_buttons(monkeypatch):
+    tui, app, calls = _wake_app(monkeypatch, "pause")
+    tui.WhylineConsoleApp._wake_tick(app)
+    assert calls["pause"] == 1 and calls["events"] == [LINE] and calls["screens"] == []
+
+
+def test_on_wake_off_does_nothing(monkeypatch):
+    tui, app, calls = _wake_app(monkeypatch, "off")
+    tui.WhylineConsoleApp._wake_tick(app)
+    assert calls == dict(pause=0, events=[], screens=[])
+
+
+def test_on_wake_ask_offers_buttons(monkeypatch):
+    tui, app, calls = _wake_app(monkeypatch, "ask")
+    tui.WhylineConsoleApp._wake_tick(app)
+    assert calls["pause"] == 0 and calls["events"] == [LINE]
+    screen, cb = calls["screens"][0]
+    assert screen._message == LINE
+    assert (screen._confirm_label, screen._cancel_label) == ("Pause safely", "Keep going")
+    cb(False)
+    assert calls["pause"] == 0
+    cb(True)
+    assert calls["pause"] == 1
