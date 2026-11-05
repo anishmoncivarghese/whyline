@@ -84,7 +84,7 @@ Rules every task keeps:
      - Exit codes: 0, or 2 on a bad value.
   Tests: round trip, refusals, CLI.
 
-- [ ] PZ-5: Low battery pauses safely
+- [x] PZ-5: Low battery pauses safely
   Create `src/whyline/console/power.py` and edit `src/whyline/console/tui.py`, with tests.
   1. `battery(run=subprocess.run) -> Battery(on_battery: bool, percent: int) | None` parses `pmset -g batt`. It returns None off macOS or on any failure.
   2. While a relay runs, check once a minute.
