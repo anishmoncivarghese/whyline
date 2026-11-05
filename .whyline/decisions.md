@@ -36152,3 +36152,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6045ef1b24e84f3dad761361eaabed3e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T18:04:49.846Z"} -->
+
+## 2026-11-05 — Write docker/homebrew options as top-level [docker] and [homebrew] tables, and name the Targets fields docker_options and homebrew_options
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-1
+
+**Because:** The spec shape has both docker = false under [targets] and a [targets.docker] table, which is a duplicate key that tomllib rejects; a dataclass field also cannot be both a bool and a DockerTarget
+
+**Rejected:**
+
+- [targets.docker] with an enabled key — changes the bool shape the rest of the plan reads
+
+**Files:** src/whyline/release/config.py
+
+<!-- whyline-event: ec08967dc82d440d880621bc6bc43570 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T18:44:57.272Z"} -->
+
+## 2026-11-05 — REL-1 passes round-2 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-1
+
+**Because:** Full test suite (3657 passed, 1 skipped) and release suite (25 passed) passed with exit 0; verified config loading/saving, detection, normalisation, error handling naming bad keys, and pending files tracking in .git/whyline-release/pending.json.
+
+**Rejected:**
+
+- Fail the task — the spec deviation separating [docker] and [homebrew] options is syntactically necessary for valid TOML and verified to round-trip cleanly
+
+**Files:** src/whyline/release/config.py
+
+<!-- whyline-event: a4009977056e48469a3a35a8c1896d23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T18:59:48.771Z"} -->
+
+## 2026-11-05 — REL-1 approved: load/save/detect/normalise/pending match the task
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-1
+
+**Because:** Frozen dataclasses, named ConfigError keys, atomic save round-trip, each detection case, normalise, and pending add/read/clear/drop are implemented and covered. tests/release: 25 passed. Full pytest had one flake in tests/console/test_relay_setup_screen.py::test_resolve_closes_setup_with_resolve_tuple; that screen does not import whyline.release and the test passed on rerun.
+
+**Rejected:**
+
+- Reject for writing [docker]/[homebrew] instead of [targets.docker] — that spec shape is invalid TOML, and a dataclass cannot hold both a bool and a DockerTarget
+- Fail the task for the setup-screen timeout — unrelated flake, passed on rerun
+
+**Files:** src/whyline/release/config.py
+
+<!-- whyline-event: 14d9067e3ed340eea9443ce79c1a77b8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T19:17:50.062Z"} -->
