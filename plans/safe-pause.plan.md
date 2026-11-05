@@ -103,7 +103,7 @@ Rules every task keeps:
   3. When a relay starts on battery with Awake off, add the line: `On battery: press Awake to keep the Mac from sleeping mid-turn.`
   Tests: the fake clocks detect a 42-minute gap and ignore small drift; each `on_wake` value; the Awake hint shows only on battery with Awake off.
 
-- [ ] PZ-7: Pause safely and quit
+- [x] PZ-7: Pause safely and quit
   Edit `src/whyline/console/tui.py` (`action_quit`) and its tests.
   1. When quitting while a relay this console can see is running, ask: **Pause safely and quit** / **Leave it running** / **Cancel**.
      - `on_quit=pause` skips the question and pauses safely.
