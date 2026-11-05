@@ -208,7 +208,7 @@ Rules every task keeps:
   - The Agent `Select` region is its full height.
   - The existing Settings tests pass unchanged.
 
-- [ ] PZ-15: A sent-back round never shows "0 issues"
+- [x] PZ-15: A sent-back round never shows "0 issues"
   Edit `src/whyline/console/relay_ops.py`, `src/whyline/console/relay_screens.py`, `tests/console/test_relay_ops.py` and `tests/console/test_tui_relay_run.py` only.
   On 2026-11-05 PZ-6 round 2 showed "✗ sent back · 0 issues" with "Test: … 1 failed". The tester explained the failure in its summary but filed no `--issue`, and its handoff had an empty issues list, so `task_rounds` skipped the summary bullets.
   1. In `task_rounds`, the issues for a round come from the first of these that is not empty:
