@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 from pathlib import Path
 
 from rich.style import Style
@@ -19,6 +20,7 @@ from textual.strip import Strip
 from textual.message import Message
 from textual.widgets import Button, RichLog, Select, Static, TextArea
 
+from whyline.console.tui import _SPINNER
 from whyline.relaychat import agent_choice, ask, history, settings, snapshot
 
 AUTO = ""
@@ -120,6 +122,12 @@ class RelayChatPanel(Vertical):
         self._run_id = self._current_run_id()
         self._shares_quota = False
         self._state = "none"
+        self._clock = time.monotonic  # tests replace this
+        self._timer = None
+        self._started = 0.0
+        self._frame = 0
+        self._agent = "agent"
+        self._stopping = False
 
     def _current_run_id(self) -> str | None:
         try:
@@ -132,6 +140,7 @@ class RelayChatPanel(Vertical):
         yield Select(self._options(), value=self._selected(), allow_blank=False,
                      id="chat-agent")
         yield RichLog(id="chat-log", wrap=True, markup=False)
+        yield Static("", id="chat-working", markup=False)
         yield ChatQuestion(id="chat-input")
         yield Horizontal(
             *[Button(label, id=bid, classes="chat-quick") for bid, label in QUICK.items()],
@@ -146,11 +155,14 @@ class RelayChatPanel(Vertical):
 
     def on_mount(self) -> None:
         self.query_one("#chat-stop", Button).display = False
+        working = self.query_one("#chat-working", Static)
+        working.display = False
+        working.styles.height = 1
         self.query_one("#chat-quick").styles.height = 1
         self.query_one("#chat-actions").styles.height = 1
         self.query_one("#chat-input", ChatQuestion).styles.border = ("round", "grey")
         # On a short pane the box yields, so the log and buttons stay on screen.
-        self.query_one("#chat-input").styles.max_height = "50%"
+        self.query_one("#chat-input").styles.max_height = "40%"
         # Compact rows: the pane is short, so both button rows are one line high.
         for button in self.query("#chat-quick Button, #chat-actions Button"):
             button.styles.height = 1
@@ -230,6 +242,8 @@ class RelayChatPanel(Vertical):
         elif button_id == "chat-stop":
             if self._cancel is not None:
                 self._cancel.set()
+                self._stopping = True
+                self._tick()
         else:
             self._clear()
 
@@ -245,6 +259,7 @@ class RelayChatPanel(Vertical):
         cancel = threading.Event()
         self._cancel = cancel
         self.query_one("#chat-stop", Button).display = True
+        self._start_working()
         self.run_worker(lambda: self._ask(question, cancel), thread=True, exclusive=False)
 
     def _ask(self, question: str, cancel: threading.Event) -> None:
@@ -262,8 +277,42 @@ class RelayChatPanel(Vertical):
         self._write("assistant", text)
         if self._cancel is cancel:
             self._cancel = None
+            self._stop_working()
         self.query_one("#chat-stop", Button).display = False
         self._refresh_header()
+
+    def _start_working(self) -> None:
+        try:
+            self._agent = agent_choice.pick(self._repo).agent or "agent"
+        except Exception:
+            self._agent = "agent"
+        self._started = self._clock()
+        self._frame = 0
+        self._stopping = False
+        self.query_one("#chat-working", Static).display = True
+        self._tick(advance=False)
+        if self._timer is not None:
+            self._timer.pause()
+        self._timer = self.set_interval(0.2, self._tick)
+
+    def _stop_working(self) -> None:
+        if self._timer is not None:
+            self._timer.pause()  # pause, not stop: the never-disturbs guard bans .stop()
+            self._timer = None
+        self._stopping = False
+        self.query_one("#chat-working", Static).display = False
+
+    def _tick(self, advance: bool = True) -> None:
+        if self._cancel is None:
+            return
+        if advance:
+            self._frame = (self._frame + 1) % len(_SPINNER)
+        if self._stopping:
+            text = "Stopping…"
+        else:
+            secs = int(self._clock() - self._started)
+            text = f"{_SPINNER[self._frame]} {self._agent} is working on your question… {secs}s"
+        self.query_one("#chat-working", Static).update(text)
 
     def _clear(self) -> None:
         if self._cancel is not None:

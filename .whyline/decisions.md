@@ -35664,3 +35664,76 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8af953547a49489c925fe2143b263836 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T08:48:00.692Z"} -->
+
+## 2026-11-05 — Chat working line sits between log and box; question box max height cut from 50% to 40%
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-12
+
+**Because:** the extra row pushed Stop under the mode buttons on the 24-row test screen, so clicks missed
+
+**Rejected:**
+
+- overlay the line on the log — spec wants its own line between log and box
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: e09d5e2e11044bb5b291fb1851ecf797 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T08:51:10.224Z"} -->
+
+## 2026-11-05 — Fail PZ-12: relay_chat_tab.py triggers banned call AST guard in test_never_disturbs.py
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-12
+
+**Because:** self._timer.stop() calls on lines 295 and 300 match BANNED_CALLS['stop'] in test_chat_code_never_drives_or_writes_the_relay; 1 failure in tests/relaychat/test_never_disturbs.py
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 6916d8e7f0f4435e86a317f68984ee75 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T09:08:06.711Z"} -->
+
+## 2026-11-05 — Chat working timer halted with Timer.pause(), not stop()
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-12
+
+**Because:** BANNED_CALLS in test_never_disturbs.py flags any .stop() call; pause() halts ticking and the timer is dropped
+
+**Rejected:**
+
+- alias stop call — evades the guard rather than satisfying it
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 35bdf6acccc0427fa034fa1255b25ae6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T09:09:37.374Z"} -->
+
+## 2026-11-05 — Pass PZ-12: Working line implementation passes all tests and AST guards
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-12
+
+**Because:** Timer.pause() satisfies test_never_disturbs.py AST guard; all 21 chat tab tests, 58 relaychat tests, and 1539 console tests pass
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: e84a07a760ca4da7bc2dd6815be1a226 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T09:37:00.569Z"} -->
+
+## 2026-11-05 — Approve PZ-12: working line, timer, and tests match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-12
+
+**Because:** The line sits between log and box, uses agent_choice.pick plus imported _SPINNER, and set_interval 0.2 with a replaceable clock. It hides after answer, error, or Stop; Stop shows Stopping… until the worker returns; Send and quick buttons send nothing while a question is out. Timer.pause() satisfies the never-disturbs AST guard. uv run pytest -q exited 0 with one skip.
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: ada58449c7ff476f92ee15d23877f289 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T09:52:41.710Z"} -->

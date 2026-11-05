@@ -278,3 +278,106 @@ async def test_box_has_border_and_placeholder(tmp_path):
         box = app.query_one("#chat-input")
         assert box.placeholder == "Ask about this relay"
         assert box.styles.border.top[0] != ""
+
+
+def _working(app):
+    widget = app.query_one("#chat-working")
+    return widget.display, str(widget.renderable)
+
+
+async def test_working_line_counts_seconds_and_hides_on_answer(tmp_path, monkeypatch):
+    release = threading.Event()
+
+    def fake(repo, question, **kwargs):
+        release.wait(5)
+        return SimpleNamespace(text="Done.")
+
+    monkeypatch.setattr(relay_chat_tab.ask, "ask", fake)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        panel = app.query_one("#relay-chat-panel")
+        now = [100.0]
+        panel._clock = lambda: now[0]
+        assert _working(app)[0] is False
+        app.query_one("#chat-input").value = "hello"
+        await pilot.click("#chat-send")
+        await pilot.pause()
+        shown, text = _working(app)
+        assert shown is True
+        assert text.endswith("codex is working on your question… 0s")
+        assert text[0] in tui._SPINNER
+        now[0] = 142.0
+        await pilot.pause(0.5)
+        assert _working(app)[1].endswith("… 42s")
+        release.set()
+        await _wait_for(pilot, lambda: "Agent: Done." in _log_text(app), "answer")
+        assert _working(app)[0] is False
+        assert panel._timer is None
+
+
+async def test_working_line_hides_when_agent_fails(tmp_path, monkeypatch):
+    def fake(repo, question, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(relay_chat_tab.ask, "ask", fake)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        app.query_one("#chat-input").value = "hello"
+        await pilot.click("#chat-send")
+        await _wait_for(pilot, lambda: len(_log_text(app)) == 2, "error line")
+        assert _working(app)[0] is False
+        assert app.query_one("#relay-chat-panel")._timer is None
+
+
+async def test_stop_shows_stopping_then_hides(tmp_path, monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake(repo, question, cancel_event=None, **kwargs):
+        started.set()
+        cancel_event.wait(5)
+        release.wait(5)
+        return SimpleNamespace(text="Stopped.")
+
+    monkeypatch.setattr(relay_chat_tab.ask, "ask", fake)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        app.query_one("#chat-input").value = "hello"
+        await pilot.click("#chat-send")
+        await _wait_for(pilot, started.is_set, "ask started")
+        await pilot.click("#chat-stop")
+        await pilot.pause(0.5)
+        assert _working(app) == (True, "Stopping…")
+        release.set()
+        await _wait_for(pilot, lambda: "Agent: Stopped." in _log_text(app), "stopped")
+        assert _working(app)[0] is False
+        assert app.query_one("#relay-chat-panel")._timer is None
+
+
+async def test_nothing_new_is_sent_while_a_question_is_out(tmp_path, monkeypatch):
+    calls = []
+    release = threading.Event()
+
+    def fake(repo, question, **kwargs):
+        calls.append(question)
+        release.wait(5)
+        return SimpleNamespace(text="Done.")
+
+    monkeypatch.setattr(relay_chat_tab.ask, "ask", fake)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        app.query_one("#chat-input").value = "first"
+        await pilot.click("#chat-send")
+        await _wait_for(pilot, lambda: calls, "first sent")
+        app.query_one("#chat-input").value = "second"
+        await pilot.click("#chat-send")
+        await pilot.click("#chat-q-doing")
+        await pilot.pause(0.3)
+        assert calls == ["first"]
+        assert _log_text(app) == ["You: first"]
+        release.set()
+        await _wait_for(pilot, lambda: len(_log_text(app)) == 2, "answer")
