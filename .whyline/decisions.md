@@ -36118,3 +36118,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d145ac39d51941ea8a7a24dceadd50e1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T16:03:24.589Z"} -->
+
+## 2026-11-05 — Release-task button is 'Mark released…' with a confirm; Resume relayouts on label change
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-9
+
+**Because:** Textual 2.1 keeps a width:auto button's old width after a label change, so 'Release done…' showed as 'Releas', and one click ended the relay without saying nothing is published
+
+**Rejected:**
+
+- fixed width for #relay-resume — wastes space when it says Resume
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 04f929cce3e4425f81b61f34af683782 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T18:04:49.688Z"} -->
+
+## 2026-11-05 — Check tests stub relay_ops.agent_readiness in the repo fixture; released 0.3.64 after CI green on Linux/macOS
+
+**Actor:** claude
+**Role:** release
+**Task:** PZ-9
+
+**Because:** the fixture used the machine's real agent CLIs, so with none installed (CI, clean env) every agent was skipped; the interrupt test failure was local load only and passed on CI
+
+**Rejected:**
+
+- skip readiness inside run_check under tests — hides a real code path
+
+**Files:** tests/console/test_fixmode_check.py
+
+<!-- whyline-event: 6045ef1b24e84f3dad761361eaabed3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T18:04:49.846Z"} -->
