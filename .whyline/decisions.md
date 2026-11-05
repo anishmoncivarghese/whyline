@@ -36204,3 +36204,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 14d9067e3ed340eea9443ce79c1a77b8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T19:17:50.062Z"} -->
+
+## 2026-11-05 — version.write calls run(argv, cwd=root) and validates every file before writing any
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-2
+
+**Because:** keeps the fake run simple and makes a missing old version leave all files untouched
+
+**Rejected:**
+
+- global string replace — would hit dependency pins like x==1.2.3
+
+**Files:** src/whyline/release/version.py
+
+<!-- whyline-event: 6598132c9c5a47c6903a7c5566c2d5de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T19:19:11.973Z"} -->
+
+## 2026-11-05 — Accept REL-2 version bumping and validation implementation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-2
+
+**Because:** Full test suite (3669 passed, 1 skipped) and 12 targeted unit tests pass, verifying version extraction, bumper logic, pre-release refusal, atomic write safety, and lock command invocation
+
+**Files:** src/whyline/release/version.py
+
+<!-- whyline-event: 648c09efdfc54c01a0aa492ad05b20a7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T19:34:37.880Z"} -->
+
+## 2026-11-05 — Approve REL-2 version read, bump, validate, and targeted write
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-2
+
+**Because:** Implementation matches the task: current() from pyproject then package.json, bump of plain X.Y.Z with a clear pre-release refusal, validate of X.Y.Z and rc forms, files_to_change including src-layout __version__, line-local replace with all-or-nothing writes, and lock commands via injected run. Required tests are present and uv run pytest -q passed (exit 0).
+
+**Files:** src/whyline/release/version.py
+
+<!-- whyline-event: 5cc3f42c26c24c16842e701600ff0f14 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:04:27.525Z"} -->
