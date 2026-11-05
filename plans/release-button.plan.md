@@ -77,7 +77,7 @@ Global constraints:
   - `github_release`: `gh release create v<version> --title v<version> --notes-file <notes>` (or `--generate-notes` when notes is ""). Its `done_check` is that `gh release view v<version>` exits 0.
   Tests against a temp repository and a bare origin, with `gh` faked through `run`: each step, its `done_check`, push to a diverged origin, the protected-branch result, CI pass/fail/ignored/no-CI/timeout.
 
-- [ ] REL-6: Release notes drafted by an agent
+- [x] REL-6: Release notes drafted by an agent
   Create `src/whyline/release/notes.py` and `tests/release/test_notes.py` only.
   - `commits_since_last_tag(root, *, run) -> list[str]`: subjects from `git log <last v-tag>..HEAD`, or the last 50 when there is no tag.
   - `draft(root, cfg, version, *, ask_agent) -> str`: a prompt with the version, the commit subjects and the previous notes file (if `notes` names a pattern and the previous version's file exists) as a style example. It asks for markdown notes for users, grouped by what changed, without inventing anything not in the commits. `ask_agent(prompt) -> str` is injected. The console passes a function that calls `adapters.run_chat_turn` with the relay's main agent, then each backup in turn on failure.
