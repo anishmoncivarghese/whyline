@@ -26,7 +26,7 @@ Global constraints:
 - Console first: every CLI command here has a console counterpart that calls the same function.
 - Verify every task with `uv run pytest -q tests/release tests/console` and then `uv run pytest -q`. Change nothing outside the files a task names.
 
-- [ ] REL-1: Release config: load, save, detect
+- [x] REL-1: Release config: load, save, detect
   Create `src/whyline/release/__init__.py`, `src/whyline/release/config.py` and `tests/release/test_config.py` only.
   - `ReleaseConfig` (frozen dataclass) with the fields and defaults of the spec's `.whyline/release.toml`: mode, branch, start_after_plan, checks, ci_ignore, notes, version_files, after, and `targets: Targets` (github, pypi, npm, docker, homebrew bools, `docker: DockerTarget(registries, image)`, `homebrew: HomebrewTarget(tap, formula)`, `custom: tuple[CustomTarget(name, run, verify), ...]`).
   - `load(root) -> ReleaseConfig`: defaults when the file is missing. `ConfigError` with the key named for a bad value: mode not in ask/step/auto, a non-list `checks`, a custom entry without `name` or `run`, or a duplicate custom name.
