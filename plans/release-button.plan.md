@@ -85,7 +85,7 @@ Global constraints:
   - `write(root, cfg, version, text) -> Path | None`: writes to `notes.format(version=...)` and returns None when notes is "".
   Tests: commits with and without tags, the prompt includes the style example, the fallback on agent failure, write with and without a notes path.
 
-- [ ] REL-7: `whyline release` CLI
+- [x] REL-7: `whyline release` CLI
   Create `src/whyline/release/cli.py` and `tests/release/test_cli.py`; edit `src/whyline/cli.py` only to register it the way `_add_workflows`/`cmd_workflows` do.
   - `whyline release check [--version X]`: prints the Ready items. Exits 1 when any is ✗.
   - `whyline release run [--bump patch|minor|major|--version X] [--mode ask|step|auto] [--yes]`: builds the plan (`release.plan.build(root, cfg, version, ...)` in a new `src/whyline/release/plan.py`, which assembles ready → version → notes → commit → checks → github steps → after) and runs it, printing progress lines. In ask/step mode on a terminal it asks y/n at each confirm. Without a terminal it refuses unless `--yes` or mode auto. Notes use the agent with the fallback, and in ask mode it prints the notes path and asks to continue.
