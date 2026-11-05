@@ -2990,11 +2990,23 @@ def issues_text(rounds) -> str:
     blocks = []
     for number, item in enumerate(rounds, 1):
         verdict = "✗ sent back" if item.sent_back else "✓ passed"
+        label = ""
+        if getattr(item, "derived", False):
+            label = (
+                " (from the tests)" if getattr(item, "source", "") == "tests"
+                else " (from the summary)"
+            )
         lines = [
             f"Round {number} · {item.from_actor} → {item.to_actor} · {verdict}"
-            f" · {len(item.issues)} issues"
+            f" · {len(item.issues)} issues{label}"
         ]
         lines += [f"  {n}. {issue}" for n, issue in enumerate(item.issues, 1)]
+        if item.sent_back:
+            from whyline.console.relay_ops import first_sentence
+
+            why = first_sentence(item.summary)
+            if why:
+                lines.append(f"  Why: {why}")
         lines += [f"  Test: {command}: {result}" for command, result in item.tests]
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)

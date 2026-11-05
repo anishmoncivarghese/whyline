@@ -2054,9 +2054,56 @@ def test_task_rounds_falls_back_to_summary_bullets(tmp_path):
     _hand(tmp_path, "T1", "failed", summary="no bullets here")
     rounds = relay_ops.task_rounds(tmp_path, "T1")
     assert [r.issues for r in rounds] == [
-        ("missing test", "bad name"), ("one", "two"), (),
+        ("missing test", "bad name"), ("one", "two"), ("no bullets here",),
     ]
     assert all(r.sent_back for r in rounds)
+
+
+def test_task_rounds_empty_issues_list_uses_summary_bullets(tmp_path):
+    _hand(tmp_path, "T1", "failed", issues=[], summary="Found: - one - two")
+    [got] = relay_ops.task_rounds(tmp_path, "T1")
+    assert got.issues == ("one", "two")
+    assert (got.derived, got.source) == (True, "summary")
+
+
+def test_task_rounds_sent_back_failing_test_becomes_an_issue(tmp_path):
+    _hand(tmp_path, "T1", "failed", issues=[], summary="It broke. More.",
+          tests=[{"command": "uv run pytest", "result": "1 failed"},
+                 {"command": "ruff", "result": "passed"}])
+    [got] = relay_ops.task_rounds(tmp_path, "T1")
+    assert got.issues == ("Test failed: uv run pytest: 1 failed",)
+    assert (got.derived, got.source) == (True, "tests")
+
+
+def test_task_rounds_sent_back_falls_back_to_first_sentence(tmp_path):
+    _hand(tmp_path, "T1", "failed", summary="Wrong output on empty input. Also slow.",
+          tests=[{"command": "uv run pytest", "result": "5 passed"}])
+    [got] = relay_ops.task_rounds(tmp_path, "T1")
+    assert got.issues == ("Wrong output on empty input.",)
+    assert got.derived
+
+
+def test_task_rounds_passed_with_nothing_filed_has_no_issues(tmp_path, changes_status):
+    _hand(tmp_path, "T1", "ready-for-review", issues=[], summary="All good.",
+          tests=[{"command": "x", "result": "1 failed"}])
+    [got] = relay_ops.task_rounds(tmp_path, "T1")
+    assert got.issues == () and not got.derived
+
+
+def test_task_rounds_filed_issues_win(tmp_path):
+    _hand(tmp_path, "T1", "failed", issues=["filed"], summary="S. - bullet",
+          tests=[{"command": "x", "result": "1 failed"}])
+    [got] = relay_ops.task_rounds(tmp_path, "T1")
+    assert got.issues == ("filed",) and not got.derived
+
+
+def test_live_status_issue_count_matches_the_view(repo, monkeypatch):
+    _live(monkeypatch, role="reviewer")
+    _good_plan(repo)
+    _hand(repo, "T-2", "failed", issues=[], summary="Broke.",
+          tests=[{"command": "t", "result": "2 failed"}])
+    [got] = relay_ops.task_rounds(repo, "T-2")
+    assert relay_ops.live_status(repo).last_issues == len(got.issues) == 1
 
 
 def test_task_rounds_ignores_other_tasks(tmp_path):

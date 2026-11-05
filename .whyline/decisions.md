@@ -35862,3 +35862,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 41ca7b04e1404c42b58d8721e52f5168 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T11:36:49.926Z"} -->
+
+## 2026-11-05 — Pass PZ-15: task_rounds derives issues for sent-back rounds, issues_text displays derivation labels and Why line
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-15
+
+**Because:** All 4 requirements for PZ-15 are verified; 199 console relay tests pass and full pytest suite (3604 passed, 1 skipped) passes cleanly
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 22ae198517ae4b3697382fe7443f777c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T11:54:35.737Z"} -->
+
+## 2026-11-05 — Approve PZ-15: sent-back rounds derive issues from bullets, failing tests, or the first sentence
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-15
+
+**Because:** Priority matches the spec; derived labels and Why line render correctly; last_issues uses the same issues; required tests are present; uv run pytest -q exited 0
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 9421d7a2f9924c79b517c03858e4d092 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T12:11:23.918Z"} -->

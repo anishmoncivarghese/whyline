@@ -712,6 +712,21 @@ def _outcome(issues=("fix a", "fix b"), sent_back=True):
     )
 
 
+async def test_issues_text_labels_derived_issues_and_why_only_when_sent_back():
+    from dataclasses import replace
+
+    from whyline.console.relay_screens import issues_text
+
+    back = replace(_outcome(), summary="It broke. More.", derived=True, source="summary")
+    text = issues_text([back])
+    assert "2 issues (from the summary)" in text
+    assert text.index("2. fix b") < text.index("  Why: It broke.") < text.index("Test:")
+    assert "(from the tests)" in issues_text([replace(back, source="tests")])
+    passed = replace(back, sent_back=False)
+    assert "Why:" not in issues_text([passed])
+    assert "(from" not in issues_text([_outcome()])
+
+
 async def test_issues_button_is_disabled_with_no_outcomes(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_ops, "current_task", lambda root: "T1")
     monkeypatch.setattr(relay_ops, "task_rounds", lambda root, task: [])

@@ -1516,6 +1516,28 @@ class RoundOutcome:
     issues: tuple[str, ...]
     tests: tuple[tuple[str, str], ...]
     sent_back: bool
+    derived: bool = False
+    source: str = ""  # "summary" or "tests" when derived
+
+
+def first_sentence(summary: str, limit: int = 200) -> str:
+    """The summary's first sentence, at most `limit` characters."""
+    text = " ".join(summary.split())
+    match = re.search(r"[.!?](?:\s|$)", text)
+    if match:
+        text = text[: match.start() + 1]
+    return text[:limit]
+
+
+_FAILED = re.compile(r"\b(failed|failures?|error|errors)\b", re.IGNORECASE)
+_EXIT = re.compile(r"\bexit(?:\s*code)?\s*[:=]?\s*(-?\d+)", re.IGNORECASE)
+
+
+def _test_failed(result: str) -> bool:
+    if _FAILED.search(result):
+        return True
+    code = _EXIT.search(result)
+    return bool(code and int(code.group(1)) != 0)
 
 
 _BULLET = re.compile(r"^\s*(?:[-*•])\s+")
@@ -1564,9 +1586,27 @@ def task_rounds(root: Path, task_id: str) -> list[RoundOutcome]:
     for event in mine[start:]:
         status = str(event.get("status", ""))
         summary = str(event.get("summary") or "")
+        sent_back = status.strip().lower() in ("failed", changes)
+        tests = tuple(
+            (str(item.get("command", "")), str(item.get("result", "")))
+            for item in event.get("tests") or [] if isinstance(item, dict)
+        )
         issues = event.get("issues")
-        if not isinstance(issues, list):
+        derived, source = False, ""
+        if not isinstance(issues, list) or not issues:
+            derived, source = True, "summary"
             issues = _summary_bullets(summary)
+            if not issues and sent_back:
+                issues = [
+                    f"Test failed: {command}: {result}"
+                    for command, result in tests if _test_failed(result)
+                ]
+                if issues:
+                    source = "tests"
+                elif first_sentence(summary):
+                    issues = [first_sentence(summary)]
+            if not issues:
+                derived, source = False, ""
         outcomes.append(RoundOutcome(
             at=str(event.get("ts", "")),
             from_actor=str(event.get("from_actor", "")),
@@ -1574,11 +1614,10 @@ def task_rounds(root: Path, task_id: str) -> list[RoundOutcome]:
             status=status,
             summary=summary,
             issues=tuple(str(item) for item in issues),
-            tests=tuple(
-                (str(item.get("command", "")), str(item.get("result", "")))
-                for item in event.get("tests") or [] if isinstance(item, dict)
-            ),
-            sent_back=status.strip().lower() in ("failed", changes),
+            tests=tests,
+            sent_back=sent_back,
+            derived=derived,
+            source=source,
         ))
     return outcomes
 
