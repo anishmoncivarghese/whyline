@@ -57,8 +57,127 @@ def test_prompt_has_marker_timeout_log_tail_and_progress(repo: Path):
     assert "draft=2, review=1" in prompt
     assert "2 of 3 plan items ticked" in prompt
     assert "## Quota Evidence" in prompt
-    assert "stuck, going round in circles, quota risk, fine" in prompt
+    assert "fine|stuck|going round in circles|quota risk" in prompt
+    for field in ('"headline"', '"findings"', '"steps"', '"confidence"'):
+        assert field in prompt
+    assert "at most 120 characters" in prompt and "each at most 140 characters" in prompt
     assert "- retry-stage" in prompt
+
+
+def _check_reply(**fields) -> str:
+    return "```json\n" + json.dumps(fields) + "\n```"
+
+
+def test_json_with_all_fields_fills_the_result(repo: Path):
+    reply = _check_reply(
+        health="quota risk", headline="Claude is nearly out.", findings=["a.txt:1 loops", "b"],
+        steps=[{"action": "retry-stage"}], confidence="high",
+    )
+    result = fixmode.run_check(repo, agent_chain=["claude"], runner=lambda c, p, **k: reply)
+    assert (result.health, result.headline) == ("quota risk", "Claude is nearly out.")
+    assert result.findings == ["a.txt:1 loops", "b"]
+    assert result.steps and result.steps[0]["action"] == "retry-stage"
+
+
+def test_bad_health_is_unclear_extra_findings_dropped_long_cut(repo: Path):
+    reply = _check_reply(
+        health="great", headline="h", findings=["x" * 300, "2", "3", "4", "5"], steps=[],
+    )
+    result = fixmode.run_check(repo, agent_chain=["claude"], runner=lambda c, p, **k: reply)
+    assert result.health == "unclear"
+    assert len(result.findings) == 4 and "5" not in result.findings
+    assert len(result.findings[0]) == 140 and result.findings[0].endswith("…")
+
+
+def test_no_json_gives_headline_and_at_most_three_findings(repo: Path):
+    reply = "It is fine. One. Two. Three. Four."
+    result = fixmode.run_check(repo, agent_chain=["claude"], runner=lambda c, p, **k: reply)
+    assert result.health == "unclear"
+    assert result.headline == "It is fine."
+    assert result.findings == ["One.", "Two.", "Three."]
+
+
+def test_plain_steps_and_health_line():
+    assert fixmode.plain_step({"action": "set-roles", "reviewer": "claude"}) == (
+        "Use claude for the reviewer"
+    )
+    res = fixmode.CheckResult(
+        status="note", agent="claude", health="quota risk",
+        fallbacks=[("codex", "has reached its usage limit.")],
+    )
+    assert fixmode.check_health_line(res, 31) == (
+        "⚠ Quota risk · asked claude · 31s · after codex: usage limit"
+    )
+
+
+def _finish(app, **fields):
+    res = fixmode.CheckResult(status="note", agent="claude", **fields)
+    app._check_finished(res)
+    return res
+
+
+@pytest.mark.asyncio
+async def test_report_screen_shows_parts_and_hides_apply_without_steps(repo: Path):
+    from whyline.console.relay_screens import CheckReportScreen
+
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test() as pilot:
+        res = fixmode.CheckResult(
+            status="note", agent="claude", note="h", health="stuck", headline="It loops.",
+            findings=["a.txt:1 repeats"], steps=[{"action": "set-roles", "reviewer": "claude"}],
+        )
+        app._check_report, app._check_seconds, app._check_result = res, 31, res
+        app.action_show_check_report()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, CheckReportScreen)
+        assert str(screen.query_one("#check-health").renderable) == "✗ Stuck · asked claude · 31s"
+        assert str(screen.query_one("#check-headline").renderable) == "It loops."
+        assert "• a.txt:1 repeats" in "".join(
+            strip.text for strip in screen.query_one("#check-findings").lines
+        )
+        assert "Use claude for the reviewer" in str(screen.query_one("#check-steps").renderable)
+        assert screen.query_one("#check-apply").display
+        screen.dismiss(None)
+        await pilot.pause()
+        quiet = fixmode.CheckResult(status="note", agent="claude", health="fine", headline="Ok.")
+        app._check_report, app._check_result = quiet, None
+        app.action_show_check_report()
+        await pilot.pause()
+        assert not app.screen.query_one("#check-apply").display
+        assert "Nothing to change" in str(app.screen.query_one("#check-steps").renderable)
+
+
+@pytest.mark.asyncio
+async def test_transcript_line_reopens_report_and_ask_feeds_chat(repo: Path, monkeypatch):
+    from whyline.console.relay_screens import CheckReportScreen
+    from whyline.relaychat import history
+
+    app = tui.WhylineConsoleApp(root=repo)
+    async with app.run_test() as pilot:
+        app.session.mode = "relay"
+        app._sync_mode_indicator()
+        await pilot.pause()
+        seen: list[str] = []
+        real = app.render_event
+        app.render_event = lambda ev: (seen.append(ev.text), real(ev))[1]  # type: ignore[method-assign]
+        _finish(app, health="quota risk", headline="Low on quota.", note="Low on quota.")
+        await pilot.pause()
+        assert "check › ⚠ Quota risk — Low on quota. (Show report)" in seen
+        assert isinstance(app.screen, CheckReportScreen)
+        app.screen.dismiss(None)
+        await pilot.pause()
+        app.action_show_check_report()  # what the transcript link runs
+        await pilot.pause()
+        assert isinstance(app.screen, CheckReportScreen)
+        await pilot.click("#check-ask")
+        await pilot.pause(0.3)
+        lines = [h for h in history.load(repo, None) if h.get("agent") == "check"]
+        assert len(lines) == 1 and lines[0]["role"] == "assistant"
+        assert "Low on quota." in lines[0]["text"]
+        panel = app.query_one("#relay-chat-panel")
+        assert panel.display
+        assert app.focused is app.query_one("#chat-input")
 
 
 def test_check_applies_nothing_while_running(repo: Path, monkeypatch):
@@ -323,6 +442,8 @@ async def test_busy_line_names_agent_and_seconds_then_clears(repo: Path, monkeyp
             await pilot.pause(0.05)
         assert not app._check_active
         assert app._busy_text == ""
+        app.screen.dismiss(None)  # the report opened over the console
+        await pilot.pause()
         assert not app.query_one("#relay-check-stop", tui.Button).display
 
 

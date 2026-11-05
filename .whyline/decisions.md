@@ -36070,3 +36070,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8af4b7a694a0454f897ababb3ea8d3b5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T14:52:15.048Z"} -->
+
+## 2026-11-05 — Check parses its own JSON (health/headline/findings) and opens a report modal automatically
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-18
+
+**Because:** recovery.extract_fenced_json requires diagnosis+steps keys, so fixmode has its own extractor; modal opens on finish and the transcript line reopens it
+
+**Rejected:**
+
+- edit recovery.extract_fenced_json — outside task file scope
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 012ecb06fde44ac38a6891eef4329ddd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T14:58:32.356Z"} -->
+
+## 2026-11-05 — Pass PZ-18: Check report structured JSON parsing, modal display, chat follow-up, and reopened reports verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-18
+
+**Because:** All PZ-18 requirements verified: prompt asks for fenced JSON (health, headline, findings, steps, confidence); CheckResult correctly parses fields with fallback sentence splitting when JSON missing; health unknown handled; findings capped at 4 and 140 chars; CheckReportScreen displays health mark, headline, findings with linked paths, plain steps, and dynamic Apply button; Ask about this feeds chat history and focuses input; transcript Show report reopens modal; full test suite passes (3630 passed, 1 skipped) including all console tests
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: aba534bb0f644bf2a5eedd16520022ba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T15:43:00.225Z"} -->
+
+## 2026-11-05 — Approve PZ-18: Check report JSON, modal, chat follow-up, and transcript reopen
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-18
+
+**Because:** Prompt asks for the fenced JSON fields; CheckResult parses health/headline/findings with unclear fallback, 4-finding/140-char caps, and sentence split when JSON is missing; CheckReportScreen shows the health mark, headline, linked findings, and plain-word steps with Apply hidden when empty; Ask about this appends an assistant line agent=check and focuses Chat; transcript Show report reopens the last report. uv run pytest -q exited 0 at 100% with one skip.
+
+**Rejected:**
+
+- Request changes for path — line not turning the Files pane on: the spec asked to use link_paths, and action_open_chat_file already opens the file after dismissing the modal
+- Fail for tests only in test_fixmode_check.py — the extra test files were allowed, not required, and the spec cases are covered there
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: d145ac39d51941ea8a7a24dceadd50e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T16:03:24.589Z"} -->

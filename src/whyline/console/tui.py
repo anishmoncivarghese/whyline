@@ -1390,6 +1390,10 @@ class WhylineConsoleApp(App):
         self._open_tree_file(Path(event.path))
 
     def action_open_chat_file(self, path: str, line: int = 1) -> None:
+        from whyline.console.relay_screens import CheckReportScreen
+
+        if isinstance(self.screen, CheckReportScreen):
+            self.screen.dismiss(None)
         self._select_file_choice("working")
         self._open_tree_file(Path(path), line)
 
@@ -4100,6 +4104,16 @@ class WhylineConsoleApp(App):
         line = f"{_PREFIX.get(event.kind, '')}{event.text}"
         if event.kind == "pause" and relay_ops.is_round_cap_pause(event.text):
             line += f"\n{ROUND_CAP_HINT}"
+        if event.kind == "output" and line.endswith("(Show report)"):
+            from rich.style import Style
+
+            link = Text(line)
+            link.stylize(
+                Style(meta={"@click": "app.show_check_report"}, underline=True, color="cyan"),
+                len(line) - len("Show report)"), len(line) - 1,
+            )
+            transcript.write(link, expand=True)
+            return
         # What you typed is set apart from replies, so the transcript reads
         # as a conversation rather than an unattributed log.
         transcript.write(
@@ -6437,7 +6451,13 @@ class WhylineConsoleApp(App):
         self._check_result = None
         self._set_busy(False)
         if res is not None and res.status == "note" and res.note:
-            self.render_event(SessionEvent(kind="output", text=f"check › {res.note}"))
+            from whyline.console import fixmode
+
+            self._check_report = res
+            self._check_seconds = max(0, int(self._clock() - self._check_started))
+            mark = fixmode.check_health_line(res).split(" · ", 1)[0]
+            self.render_event(SessionEvent(
+                kind="output", text=f"check › {mark} — {res.headline or res.note} (Show report)"))
             if res.steps:
                 self._check_result = res
                 self.render_event(SessionEvent(
@@ -6445,6 +6465,7 @@ class WhylineConsoleApp(App):
                     text="check › Apply when paused keeps its steps for the next pause. "
                     "Nothing is applied while the relay runs.",
                 ))
+            self.action_show_check_report()
         elif res is not None and res.status == "cancelled":
             self.render_event(SessionEvent(kind="output", text="check › stopped."))
         else:
@@ -6456,6 +6477,69 @@ class WhylineConsoleApp(App):
             else:
                 self.render_event(SessionEvent(kind="output", text="check › no agent could answer."))
         self._sync_relay_buttons()
+
+    def action_show_check_report(self) -> None:
+        """Open the last Check report (the transcript's Show report link)."""
+        from whyline.console.relay_screens import CheckReportScreen
+
+        res = getattr(self, "_check_report", None)
+        if res is None or isinstance(self.screen, CheckReportScreen):
+            return
+        try:
+            self.push_screen(
+                CheckReportScreen(
+                    self.session.root, res, getattr(self, "_check_seconds", None),
+                    can_apply=getattr(self, "_check_result", None) is not None,
+                ),
+                self._after_check_report,
+            )
+        except Exception:  # noqa: BLE001 - no running screen stack to show it on
+            pass
+
+    def _after_check_report(self, choice: Any) -> None:
+        if choice == "apply":
+            self._store_check_proposal()
+        elif choice == "ask":
+            self._ask_about_check()
+        elif choice == "again":
+            self._begin_check()
+
+    def _ask_about_check(self) -> None:
+        """Put the report into Chat's history, then open Chat with the box focused."""
+        from whyline.console import fixmode
+        from whyline.relaychat import history, snapshot
+
+        res = getattr(self, "_check_report", None)
+        if res is None:
+            return
+        root = self.session.root
+        try:
+            run_id = snapshot.build(root, max_chars=1).run_id
+        except Exception:  # noqa: BLE001
+            run_id = None
+        text = fixmode.check_report_text(res, getattr(self, "_check_seconds", None))
+        try:
+            history.append(root, run_id, "assistant", text, agent="check")
+        except Exception as exc:  # noqa: BLE001
+            self.render_event(
+                SessionEvent(kind="output", text=f"check › could not add it to Chat: {exc}"))
+            return
+        existed = self._main_widget("#relay-chat-panel") is not None
+        if not self._files_on:
+            self._files_on = True
+            self._sync_split()
+            self._cb_fit()
+        self._select_file_choice("chat")
+        panel = self._main_widget("#relay-chat-panel")
+        if existed and panel is not None:
+            panel._load_log()
+
+        def focus() -> None:
+            box = self._main_widget("#chat-input")
+            if box is not None:
+                box.focus()
+
+        self.call_after_refresh(focus)
 
     def _store_check_proposal(self) -> None:
         from whyline.console import fixmode

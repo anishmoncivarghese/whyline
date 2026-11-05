@@ -14,7 +14,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Input, Label, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, Input, Label, RichLog, Select, Static, TextArea
 
 from whyline.console import fixmode, relay_ops
 from whyline.console.attachments_ui import AttachmentsField
@@ -3066,3 +3066,72 @@ class IssuesScreen(ModalScreen):
                 self.dismiss((line, "Copied 1 line to clipboard."))
         else:
             self.dismiss(None)
+
+
+class CheckReportScreen(ModalScreen):
+    """Check's answer as a short report. Read-only; dismisses with
+    "apply", "ask" or "again", or None."""
+
+    DEFAULT_CSS = """
+    CheckReportScreen { align: center middle; }
+    CheckReportScreen > Vertical {
+        width: 90%; height: 90%; padding: 1 2; border: thick $primary; background: $surface;
+    }
+    CheckReportScreen VerticalScroll { height: 1fr; }
+    CheckReportScreen Static { margin-bottom: 1; }
+    CheckReportScreen Horizontal { height: auto; margin-top: 1; }
+    CheckReportScreen Button { margin-right: 2; }
+    """
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    def __init__(self, root: Path, result, seconds: int | None = None,
+                 can_apply: bool = True) -> None:
+        super().__init__()
+        self._root = Path(root)
+        self._result = result
+        self._seconds = seconds
+        self._can_apply = can_apply and bool(result.steps)
+
+    def compose(self) -> ComposeResult:
+        from rich.text import Text
+
+        from whyline.console.relay_chat_tab import link_paths
+
+        res = self._result
+        findings = RichLog(id="check-findings", wrap=True, markup=False)
+        findings.styles.height = max(1, min(len(res.findings) * 2, 10))
+        findings.styles.margin = (0, 0, 1, 0)
+        for item in res.findings:
+            findings.write(Text("• ").append_text(link_paths(self._root, item)))
+        steps = "\n".join(f"• {fixmode.plain_step(s)}" for s in res.steps) or "Nothing to change"
+        yield Vertical(
+            Label("Check report"),
+            VerticalScroll(
+                Static(Text(fixmode.check_health_line(res, self._seconds), style="bold"),
+                       id="check-health"),
+                Static(Text(res.headline or "(no headline)"), id="check-headline"),
+                findings,
+                Static(Text("Suggested for the next pause", style="bold"), id="check-steps-title"),
+                Static(Text(steps), id="check-steps"),
+            ),
+            Horizontal(
+                Button("Apply when paused", id="check-apply", variant="primary"),
+                Button("Ask about this", id="check-ask"),
+                Button("Check again", id="check-again"),
+                Button("Close", id="check-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#check-apply", Button).display = self._can_apply
+        self.query_one("#check-findings").display = bool(self._result.findings)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss({
+            "check-apply": "apply", "check-ask": "ask", "check-again": "again",
+        }.get(event.button.id or ""))

@@ -1280,6 +1280,125 @@ class CheckResult:
     notes: list[str] = field(default_factory=list)
     tried: list[str] = field(default_factory=list)
     fallbacks: list[tuple[str, str]] = field(default_factory=list)
+    health: str = "unclear"
+    headline: str = ""
+    findings: list[str] = field(default_factory=list)
+
+
+CHECK_HEALTHS = ("fine", "stuck", "going round in circles", "quota risk")
+CHECK_HEADLINE_MAX = 120
+CHECK_FINDING_MAX = 140
+CHECK_FINDINGS_MAX = 4
+_HEALTH_MARKS = {
+    "fine": "✓ Fine",
+    "quota risk": "⚠ Quota risk",
+    "going round in circles": "⚠ Going round in circles",
+    "stuck": "✗ Stuck",
+    "unclear": "? Unclear",
+}
+_FALLBACK_SHORT = {
+    "has reached its usage limit.": "usage limit",
+    "needs you to sign in.": "sign-in needed",
+    "took too long, so it was stopped.": "timed out",
+    "is not installed or not on PATH.": "not installed",
+    "could not answer.": "failed",
+    "gave no answer.": "no answer",
+}
+
+
+def _cut(text: object, limit: int) -> str:
+    one = " ".join(str(text or "").split())
+    return one if len(one) <= limit else one[: limit - 1].rstrip() + "…"
+
+
+def parse_check_answer(answer: str, data: dict | None) -> tuple[str, str, list[str]]:
+    """(health, headline, findings) from a Check's answer.
+
+    With the JSON block, its fields; without it, the first sentence is the
+    headline and the next three are the findings. Never the raw text whole."""
+    if data is not None:
+        health = str(data.get("health") or "").strip().lower()
+        if health not in CHECK_HEALTHS:
+            health = "unclear"
+        headline = _cut(data.get("headline"), CHECK_HEADLINE_MAX)
+        raw = data.get("findings")
+        items = raw if isinstance(raw, list) else []
+        findings = [_cut(i, CHECK_FINDING_MAX) for i in items if str(i or "").strip()]
+        if headline:
+            return health, headline, findings[:CHECK_FINDINGS_MAX]
+        answer = answer.split("```", 1)[0]
+        sentences = [x for x in re.split(r"(?<=[.!?])\s+", answer.strip()) if x.strip()]
+        headline = _cut(sentences[0] if sentences else data.get("diagnosis"), CHECK_HEADLINE_MAX)
+        return health, headline, findings[:CHECK_FINDINGS_MAX]
+    sentences = [x for x in re.split(r"(?<=[.!?])\s+", answer.strip()) if x.strip()]
+    headline = _cut(sentences[0], CHECK_HEADLINE_MAX) if sentences else ""
+    findings = [_cut(x, CHECK_FINDING_MAX) for x in sentences[1:4]]
+    return "unclear", headline, findings
+
+
+def _check_json(answer: str) -> dict | None:
+    """The last fenced JSON object that carries any Check field."""
+    keys = {"health", "headline", "findings", "steps", "diagnosis"}
+    for match in reversed(list(re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", answer, re.I))):
+        block = match.group(1).strip()
+        for text in (block, block[block.find("{"): block.rfind("}") + 1]):
+            try:
+                data = json.loads(text)
+            except ValueError:
+                continue
+            if isinstance(data, dict) and keys & set(data):
+                return data
+    return None
+
+
+def plain_step(step: dict) -> str:
+    """One catalog step in plain words."""
+    from whyline.console import recovery
+
+    action = step.get("action", "")
+    if action == "set-model":
+        return f"Use model {step.get('model', '')} for {step.get('agent', '')}".strip()
+    if action == "set-roles":
+        parts = [
+            f"Use {step[r]} for the {r}" for r in ("implementer", "tester", "reviewer") if step.get(r)
+        ]
+        if step.get("backup"):
+            parts.append(f"Use {step['backup']} as the backup")
+        return "; ".join(parts) or "Change the roles"
+    if action == "clear-override":
+        return f"Stop overriding the {step.get('role', 'reviewer')}"
+    if action == "raise-rounds":
+        return f"Allow {step.get('by', 6)} more rounds"
+    if action == "retry-stage":
+        return "Retry the stage"
+    if action == "resume":
+        return "Resume the relay" + (" even with uncommitted files" if step.get("allow_dirty") else "")
+    if action == "wait-until":
+        return f"Wait until {step.get('time', '')}".strip()
+    if action == "human":
+        return str(step.get("text") or "Needs a person")
+    return recovery.format_step_label(step)
+
+
+def check_health_line(res: "CheckResult", seconds: int | None = None) -> str:
+    line = _HEALTH_MARKS.get(res.health, _HEALTH_MARKS["unclear"])
+    line += f" · asked {res.agent or 'the agent'}"
+    if seconds is not None:
+        line += f" · {seconds}s"
+    if res.fallbacks:
+        line += " · after " + ", ".join(
+            f"{a}: {_FALLBACK_SHORT.get(w, w.rstrip('.'))}" for a, w in res.fallbacks
+        )
+    return line
+
+
+def check_report_text(res: "CheckResult", seconds: int | None = None) -> str:
+    """The report as plain text (the Chat history line)."""
+    lines = [f"Check report: {check_health_line(res, seconds)}", res.headline]
+    lines += [f"- {f}" for f in res.findings]
+    lines.append("Suggested for the next pause:")
+    lines += [f"- {plain_step(s)}" for s in res.steps] or ["- Nothing to change"]
+    return "\n".join(x for x in lines if x)
 
 
 def _seconds_since(started: str, now: datetime) -> int | None:
@@ -1476,13 +1595,18 @@ def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
         *(f"- {opt_id}: {label}" for opt_id, label in catalog.items()),
         "",
         "## Instructions",
-        "Give a short health note. Start it with exactly one of: stuck, going "
-        "round in circles, quota risk, fine. Then one or two sentences why.",
-        "If you suggest changes, pick steps only from the catalog above and end "
-        "with a fenced JSON block: "
-        '{"diagnosis": "...", "steps": [...], "confidence": "high|medium|low"}. '
-        "They are kept for the next pause and not applied now. If the relay is "
-        "fine, give no steps.",
+        "Answer with one fenced JSON block and nothing that matters outside it "
+        "(prose outside the block is ignored):",
+        "```json",
+        '{"health": "fine|stuck|going round in circles|quota risk",',
+        ' "headline": "<one sentence, at most 120 characters>",',
+        ' "findings": ["<at most 4 short points, each at most 140 characters, '
+        'citing path:line where it helps>"],',
+        ' "steps": [...catalog steps...],',
+        ' "confidence": "high|medium|low"}',
+        "```",
+        "Pick steps only from the catalog above. They are kept for the next "
+        "pause and not applied now. If the relay is fine, give no steps.",
     ]
     return "\n".join(parts)
 
@@ -1672,15 +1796,11 @@ def run_check(
             pass_over(agent, "gave no answer.")
             continue
         result.agent = agent
-        data = recovery.extract_fenced_json(answer)
+        data = _check_json(answer)
         if data is not None:
-            result.note = str(data.get("diagnosis") or "").strip()
             result.steps, result.notes = recovery.validate_steps(root, data.get("steps") or [])
-            prose = answer.split("```", 1)[0].strip()
-            if prose:
-                result.note = prose
-        else:
-            result.note = answer
+        result.health, result.headline, result.findings = parse_check_answer(answer, data)
+        result.note = result.headline
         result.status = "note"
         return result
     return result
