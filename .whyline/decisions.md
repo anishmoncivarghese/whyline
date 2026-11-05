@@ -36479,3 +36479,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4a46353268f84bd3ac9d065a081afccf -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T23:05:57.436Z"} -->
+
+## 2026-11-05 — REL-8 GitHub setup passes tester verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-8
+
+**Because:** Full test suite (3766 passed) and release tests (134 passed) pass; status covers missing gh/auth/api/origin cases, sign_in streams web auth login with newline, create_repo validates regex and origin existence and never pushes, cli correctly handles interactive login and repo creation
+
+**Files:** src/whyline/release/setup_github.py
+
+<!-- whyline-event: 50cc0bfa73a64a68a739c8b5c19fb661 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T23:22:47.656Z"} -->
+
+## 2026-11-05 — Approve REL-8 GitHub setup sign-in and repo create
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-8
+
+**Because:** status, sign_in, and create_repo match the task: name regex, origin refusal, argv for private/public with --source . --remote origin, streamed gh auth login --web with newline on stdin; CLI prints status, signs in on a terminal, and creates when asked; tests cover each required case; uv run pytest -q exited 0
+
+**Files:** src/whyline/release/setup_github.py, src/whyline/release/cli.py, tests/release/test_setup_github.py
+
+<!-- whyline-event: 62108cf94be44de6891341a55b435913 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T23:41:14.912Z"} -->

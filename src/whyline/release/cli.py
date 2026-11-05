@@ -9,6 +9,7 @@ from pathlib import Path
 from whyline.release import config as release_config
 from whyline.release import engine, plan as release_plan
 from whyline.release import ready as release_ready
+from whyline.release import setup_github
 from whyline.release import state as release_state
 from whyline.release import version as release_version
 
@@ -16,7 +17,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 
-VERBS = ("check", "run", "status", "resume")
+VERBS = ("check", "run", "status", "resume", "setup")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--mode", choices=release_config.MODES)
     run.add_argument("--yes", action="store_true", help="do not ask")
     sub.add_parser("status", help="The release in progress, if any")
+    setup = sub.add_parser("setup", help="Set up what releases need")
+    setup_sub = setup.add_subparsers(dest="setup_target", required=True)
+    github = setup_sub.add_parser("github", help="Sign in to GitHub and create the repository")
+    github.add_argument("--create", metavar="NAME", help="create a repository with this name")
+    github.add_argument("--public", action="store_true", help="make the new repository public")
     resume = sub.add_parser("resume", help="Continue a stopped release")
     resume.add_argument("--yes", action="store_true", help="do not ask")
     return parser
@@ -157,7 +163,42 @@ def _resume(args, root: Path, cfg) -> int:
     return _finish(result)
 
 
-_HANDLERS = {"check": _check, "run": _run, "status": _status, "resume": _resume}
+def _setup(args, root: Path, cfg) -> int:
+    current = setup_github.status(root)
+    print(f"GitHub CLI: {'installed' if current.gh_installed else 'not installed'}")
+    if current.signed_in:
+        print(f"Signed in as {current.user or 'unknown'}")
+    else:
+        print("Not signed in")
+    if current.origin_url:
+        kind = "GitHub" if current.origin_is_github else "not GitHub"
+        print(f"Origin: {current.origin_url} ({kind})")
+    else:
+        print("Origin: none")
+    if not current.gh_installed:
+        print("Install the GitHub CLI from https://cli.github.com, then run this again.",
+              file=sys.stderr)
+        return EXIT_ERROR
+    if not current.signed_in:
+        if not _interactive():
+            print("Sign in needs a terminal. Run: gh auth login", file=sys.stderr)
+            return EXIT_ERROR
+        print("Opening GitHub sign in. Enter the one-time code in your browser.")
+        if setup_github.sign_in(on_line=print) != 0:
+            print("Sign in did not finish.", file=sys.stderr)
+            return EXIT_ERROR
+    if args.create:
+        try:
+            url = setup_github.create_repo(root, args.create, private=not args.public)
+        except setup_github.SetupError as error:
+            print(str(error), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"Created {url}")
+    return EXIT_OK
+
+
+_HANDLERS = {"check": _check, "run": _run, "status": _status, "resume": _resume,
+             "setup": _setup}
 
 
 def run(args: argparse.Namespace) -> int:
