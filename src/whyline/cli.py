@@ -340,7 +340,8 @@ def _add_release(subparsers: "argparse._SubParsersAction") -> None:
         "release",
         help="Release advisory ownership",
         description="Release claims: TASK --actor A (one claim), TASK (every "
-        "actor's claim on TASK), --stale (expired claims) or --all.",
+        "actor's claim on TASK), --stale (expired claims) or --all. "
+        "To release the project instead: whyline release check|run|status|resume.",
     )
     parser.add_argument("task", nargs="?", default=None)
     parser.add_argument("--actor", default=None)
@@ -2006,6 +2007,13 @@ COMMANDS = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    from whyline.release import cli as release_cli
+
+    tokens = sys.argv[1:] if argv is None else argv
+    # `whyline release` also releases ownership claims (positional TASK), so the
+    # project-release verbs are routed here before that parser sees them.
+    if len(tokens) > 1 and tokens[0] == "release" and tokens[1] in release_cli.VERBS:
+        return release_cli.main(tokens[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.command:

@@ -36435,3 +36435,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ee7c4901999e4c2fbf92893df6c924e6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T22:27:18.583Z"} -->
+
+## 2026-11-05 — whyline release verbs are routed in cli.main before argparse, not registered as subparsers
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-7
+
+**Because:** whyline release already takes a positional TASK for ownership claims; a subparser would break 'whyline release TASK'
+
+**Rejected:**
+
+- subparsers on the existing release parser — positional TASK and required subcommand conflict
+- renaming the new group — plan fixes the name whyline release
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 3b4ec4df3f7541ebb8fe482a420c0046 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T22:29:33.354Z"} -->
+
+## 2026-11-05 — REL-7 release CLI and plan pass tester verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-7
+
+**Because:** Full pytest suite exits 0; release unit tests (111 passed) and CLI tests (67 passed) cover check, run, status, resume, interactive/non-terminal refusal, --yes, step assembly, and the after step with telegram notification and command failure warnings
+
+**Files:** src/whyline/release/cli.py, src/whyline/release/plan.py, tests/release/test_cli.py
+
+<!-- whyline-event: 5758812ef40a4a1685647630942723dd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T22:47:25.364Z"} -->
+
+## 2026-11-05 — Approve REL-7 whyline release CLI and plan
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-7
+
+**Because:** check/run/status/resume match the task; plan.build assembles ready through after; non-tty run refuses unless --yes or auto; after warns on command failure, sends Telegram when the assistant bot is set, redacts the token, and skips quietly otherwise. uv run pytest -q exited 0.
+
+**Files:** src/whyline/release/cli.py, src/whyline/release/plan.py, src/whyline/cli.py, tests/release/test_cli.py
+
+<!-- whyline-event: 4a46353268f84bd3ac9d065a081afccf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T23:05:57.436Z"} -->
