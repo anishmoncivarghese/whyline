@@ -243,6 +243,18 @@ Rules every task keeps:
   4. The console shows the fallbacks:
      - `_begin_check` passes `on_progress` and prints each line as `check › codex has reached its usage limit, trying antigravity…`. The line is posted to the UI thread with `call_from_thread`.
      - When every agent is passed over, `_check_finished` prints one line per agent with its reason, instead of "no agent could answer."
+  5. Show that Check is working. On 2026-11-05 a claude Check took about 30 seconds, and the only sign was "check › asking claude…".
+     - While Check runs, the busy line shows `⠋ check: asking claude · 12s`, using `_SPINNER`, the agent being asked, and seconds since it started. The same tick turns it that drives the Ask agent busy line.
+     - The line updates when Check moves to the next agent.
+     - The Check button is disabled while it runs, and a Stop next to it cancels through `cancel_event`.
+     - The line clears on any result.
+  6. Don't let old logs pass as current. On 2026-11-05 Check reported "Grok's balance is exhausted (402)" from a grok log dated the day before, although grok had reviewed successfully since.
+     - The prompt gives each log or error it quotes with that file's modification time.
+     - The prompt says: "A failure older than the agent's most recent successful turn is history, not current state."
+  Tests (additional):
+  - The busy line shows the agent and the seconds while a fake runner blocks, moves to the next agent on a fallback, and clears on the result.
+  - The Check button is disabled while running, and Stop cancels.
+  - The prompt carries the log times and the history sentence.
   Tests:
   - A fake runner returns exit 1 with codex's usage-limit text: Check tries the next agent, and its note is that agent's answer.
   - A not-ready agent in a fake `agent_readiness` is never run, and its skip reason is recorded.
