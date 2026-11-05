@@ -32,7 +32,8 @@ _NOT_USED = "Not used by Whyline"
 _NOT_CHECKED = "Not checked yet"
 _CHECKING = "Checking…"
 _NOT_INSTALLED = "Not installed"
-_PATH_READY = "Installed · login not automatically verified"
+_CHROME_ROWS = 10
+_PATH_READY ="Installed · login not automatically verified"
 
 
 def _one_line(text: object) -> str:
@@ -92,13 +93,16 @@ class ProviderSettingsScreen(ModalScreen):
     DEFAULT_CSS = """
     ProviderSettingsScreen { align: center middle; }
     ProviderSettingsScreen > Vertical {
-        width: 78; max-width: 100%; height: auto; max-height: 100%;
+        width: 100; max-width: 90%; height: auto; max-height: 100%;
         padding: 0 1; border: thick $accent; background: $surface;
     }
     /* 1fr does nothing in an auto-height popup and once pushed the
-       buttons off a 24-row terminal. Cap the provider body; the title,
-       error line, and buttons stay after it. */
-    ProviderSettingsScreen #ss-body { height: auto; max-height: 10; }
+       buttons off a 24-row terminal. Cap the body (on_resize lowers the cap
+       on short terminals); the title, hint, error line, and buttons stay
+       after it. */
+    ProviderSettingsScreen #ss-body { height: auto; max-height: 70vh; }
+    ProviderSettingsScreen .ss-section-title { text-style: bold; margin-top: 1; }
+    ProviderSettingsScreen #ss-section { margin-top: 0; }
     ProviderSettingsScreen #ss-error { height: auto; color: $error; }
     ProviderSettingsScreen #ss-hint { height: auto; color: $text-muted; }
     ProviderSettingsScreen #ss-buttons { height: auto; margin-top: 1; }
@@ -108,9 +112,9 @@ class ProviderSettingsScreen(ModalScreen):
     ProviderSettingsScreen Checkbox { border: none; height: 1; padding: 0 1; margin: 0; width: 16; }
     ProviderSettingsScreen Checkbox:focus { border: none; }
     ProviderSettingsScreen .ss-status { width: 1fr; height: auto; padding: 0 1; }
-    ProviderSettingsScreen Select { width: 1fr; }
-    ProviderSettingsScreen Input { width: 12; }
-    ProviderSettingsScreen .ss-chat-label { width: 36; padding: 0 1; }
+    ProviderSettingsScreen Select { width: 1fr; height: auto; }
+    ProviderSettingsScreen Input { width: 12; height: 3; }
+    ProviderSettingsScreen .ss-chat-label { width: 36; height: 3; padding: 0 1; content-align: left middle; }
     """
 
     def __init__(
@@ -163,7 +167,7 @@ class ProviderSettingsScreen(ModalScreen):
         yield Vertical(
             Label("Settings", id="ss-title"),
             VerticalScroll(
-                Label("AI subscriptions", id="ss-section"),
+                Label("AI subscriptions", id="ss-section", classes="ss-section-title"),
                 Label("Choose only the subscriptions Whyline may use."),
                 *rows,
                 *self._chat_widgets(),
@@ -189,7 +193,7 @@ class ProviderSettingsScreen(ModalScreen):
         options = [("Automatic", "")] + [(name, name) for name in choices]
         timeout = int(chat.get("timeout_seconds", 0))
         return [
-            Label("Relay chat", id="ss-chat-section"),
+            Label("Relay chat", id="ss-chat-section", classes="ss-section-title"),
             Label("Answers questions about a running relay, read-only."),
             Horizontal(
                 Label("Agent", classes="ss-chat-label"),
@@ -238,7 +242,7 @@ class ProviderSettingsScreen(ModalScreen):
             return []
         safety = self._safety
         return [
-            Label("Relay safety", id="ss-safety-section"),
+            Label("Relay safety", id="ss-safety-section", classes="ss-section-title"),
             Label("Safeguards that pause a running relay. See docs/safe-pause.md."),
             Horizontal(
                 Label("Battery limit (off, 10, 15, 20, 25 or a number)", classes="ss-chat-label"),
@@ -279,6 +283,15 @@ class ProviderSettingsScreen(ModalScreen):
             if picked != self._safety.get(key):
                 changes[key] = picked
         return changes
+
+    def on_resize(self, event) -> None:
+        # Leave room for the border, title, hint, error line and buttons.
+        height = event.size.height
+        cap = max(3, min(height * 7 // 10, height - _CHROME_ROWS))
+        try:
+            self.query_one("#ss-body").styles.max_height = cap
+        except NoMatches:
+            return
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._check_currently_staged)

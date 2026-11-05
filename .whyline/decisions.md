@@ -35815,3 +35815,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f51f651e29654c93bc0ac0128c791393 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T10:46:41.162Z"} -->
+
+## 2026-11-05 — Settings body cap lowered in on_resize on short terminals
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-14
+
+**Because:** 70vh alone leaves 25 rows of content on a 24-row terminal, pushing buttons off; cap = min(70%, height-10)
+
+**Rejected:**
+
+- CSS-only max-height 70vh — buttons clipped at 80x24
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: cd4e8976e45b41719e0c062b38dcaeb7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T10:51:20.205Z"} -->
+
+## 2026-11-05 — Pass PZ-14: Roomier Settings popup layout and section spacing verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-14
+
+**Because:** Popup is 100 wide (max 90%); body is capped at 70vh with on_resize adjustment keeping buttons visible on 80x24 while body scrolls; sections (AI subscriptions, Relay chat, Relay safety) follow order with bold ss-section-title headings and 1-line margin except first; Agent Select full height (3 rows) with 36-width label; all 25 settings tests and 1547 console tests pass.
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: ea65cfd48c754f70a1e2b9ce42bbbe10 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T11:20:15.407Z"} -->
+
+## 2026-11-05 — Approve PZ-14: roomier Settings layout matches spec and tests pass
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-14
+
+**Because:** Popup is 100 wide (max 90%); body uses 70vh with on_resize cap min(70%, height-10) so title, hint, error, and buttons stay visible at 80x24 while the body scrolls; sections AI subscriptions, Relay chat, Relay safety keep existing ids, share ss-section-title, are bold, and have a blank row except the first; Select/Input rows are height 3 with labels width 36; saving and ids unchanged; uv run pytest -q exited 0
+
+**Rejected:**
+
+- request changes for missing space after _PATH_READY = — formatting nit, string value unchanged
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: 41ca7b04e1404c42b58d8721e52f5168 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T11:36:49.926Z"} -->
