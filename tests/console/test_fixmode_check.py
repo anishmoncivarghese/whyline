@@ -45,6 +45,11 @@ def repo(tmp_path: Path, monkeypatch) -> Path:
         "pid": 1, "role": "implementer", "stage": "draft", "visit": 2,
     }))
     monkeypatch.setattr(fixmode, "_check_timeout_minutes", lambda root, st: 20)
+    # Readiness looks at the real agent CLIs and quota files. Without this, a
+    # machine with no agents installed (CI) skips every agent and runs nothing.
+    from whyline.console import relay_ops
+
+    monkeypatch.setattr(relay_ops, "agent_readiness", lambda root: [])
     return tmp_path
 
 
