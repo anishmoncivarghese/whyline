@@ -35190,3 +35190,49 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8540b49655fb4cad8168d0dba80ae89b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-04T23:40:29.211Z"} -->
+
+## 2026-11-04 — Store battery 'off' as the string "off" in relay-safety.toml
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-4
+
+**Because:** TOML has no null, and the string keeps load() able to tell off apart from a missing key (default 15)
+
+**Rejected:**
+
+- battery_percent = 0 — a magic number that reads like a threshold
+
+**Files:** src/whyline/relaysafety.py
+
+<!-- whyline-event: e8ab06df579242229db682460431b26c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T23:41:18.333Z"} -->
+
+## 2026-11-04 — PZ-4 passes tester verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-4
+
+**Because:** Full pytest suite exits 0; unit tests cover load, save, atomic 0600 file creation, round-trip persistence, fallback on bad values, and CLI exits/output formatting; manual CLI verification confirms proper dispatch and error exits
+
+**Test:** uv run pytest tests/test_relaysafety.py: 13 passed
+**Test:** uv run pytest -q: passed
+
+**Files:** src/whyline/cli.py, src/whyline/relaysafety.py, tests/test_relaysafety.py
+
+<!-- whyline-event: b2859991ecc54cc09eb2f22e1e6b64ff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-04T23:56:16.617Z"} -->
+
+## 2026-11-05 — Approve PZ-4 relaysafety settings and relay-safety CLI
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-4
+
+**Because:** load/save round-trip ~/.whyline/relay-safety.toml with injectable base, atomic 0600 write, validated battery/on_wake/on_quit, and CLI prints or sets with exit 0 or 2; tests cover round-trip, refusals, and CLI; uv run pytest -q exited 0
+
+**Files:** src/whyline/relaysafety.py, src/whyline/cli.py, tests/test_relaysafety.py
+
+<!-- whyline-event: 9bc44200bf8a4744a4f9b3a25b621287 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T00:13:09.867Z"} -->

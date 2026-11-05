@@ -563,6 +563,36 @@ def _add_ask(subparsers: "argparse._SubParsersAction") -> None:
     add_parser(subparsers)
 
 
+def _add_relay_safety(subparsers: "argparse._SubParsersAction") -> None:
+    parser = subparsers.add_parser(
+        "relay-safety", help="Show or change the relay's safeguards on this Mac"
+    )
+    parser.add_argument("--battery", metavar="N|off", help="pause at this battery percent, or off")
+    parser.add_argument("--on-wake", dest="on_wake", metavar="ask|pause|off")
+    parser.add_argument("--on-quit", dest="on_quit", metavar="ask|pause|leave")
+
+
+def cmd_relay_safety(args: argparse.Namespace) -> int:
+    from whyline import relaysafety
+
+    changes = {
+        name: value
+        for name, value in (
+            ("battery_percent", args.battery),
+            ("on_wake", args.on_wake),
+            ("on_quit", args.on_quit),
+        )
+        if value is not None
+    }
+    try:
+        settings = relaysafety.save(**changes) if changes else relaysafety.load()
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_USAGE
+    print(relaysafety.describe(settings))
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whyline",
@@ -598,6 +628,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_jobs(subparsers)
     _add_workflow(subparsers)
     _add_ask(subparsers)
+    _add_relay_safety(subparsers)
     return parser
 
 
@@ -1970,6 +2001,7 @@ COMMANDS = {
     "jobs": cmd_jobs,
     "workflow": cmd_workflow,
     "ask": cmd_ask,
+    "relay-safety": cmd_relay_safety,
 }
 
 
