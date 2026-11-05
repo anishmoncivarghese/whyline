@@ -94,7 +94,7 @@ Global constraints:
   - The `after` step (spec step 14) lives in `plan.py`: run each `after` command (warn on failure), then send `Released v<version> of <repo>` through `whyline.agents.telegram.send_message` when the assistant's bot token and chat are set up. Otherwise skip quietly.
   Tests: each subcommand with a faked engine and run, the refusal without a terminal, `--yes`, and the after step's warning and Telegram call.
 
-- [ ] REL-8: GitHub setup: sign in, create and link the repository
+- [x] REL-8: GitHub setup: sign in, create and link the repository
   Create `src/whyline/release/setup_github.py` and `tests/release/test_setup_github.py`; edit `src/whyline/release/cli.py` and its test only.
   - `status(root, *, run) -> GitHubStatus(gh_installed, signed_in, user, origin_url, origin_is_github)`.
   - `sign_in(*, run_streaming, on_line)`: runs `gh auth login --web --git-protocol https --hostname github.com` with "\n" on stdin, passing each output line to `on_line` (the one-time code appears there). It returns the exit code.
