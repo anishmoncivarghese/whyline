@@ -35888,3 +35888,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9421d7a2f9924c79b517c03858e4d092 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T12:11:23.918Z"} -->
+
+## 2026-11-05 — Check classifies every run and takes the agent's answer via runner._answer; keeps a JSON-less multi-line reply whole
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-16
+
+**Because:** Chat's extractor cuts plain text to its last line; Check's existing replies are plain text with a fenced JSON block, and codex needs its -o answer file to avoid the echo
+
+**Rejected:**
+
+- Using _answer output unconditionally — truncates plain replies to one line
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 6238e75a0a5849b7a41a2ec7a0c65630 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T12:26:37.246Z"} -->
+
+## 2026-11-05 — Pass PZ-16: Check fallback to backups and UI spinner/controls verified across full test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-16
+
+**Because:** All 6 requirements verified: run_check skips not-ready agents via agent_readiness, classifies runs via runner._classify, extracts answers via runner._answer without prompt echoing, posts fallback progress and per-agent failures on exhaustion, displays live spinner with asking agent and seconds, disables Check and provides Stop button during execution, and annotates prompt logs with modification timestamps and history advisory. All 14 dedicated check tests and full test suites (1564 console tests, 1503 agent/chat/workflow/job/ideas tests, 3067 total) passed.
+
+**Files:** src/whyline/console/fixmode.py, src/whyline/console/tui.py
+
+<!-- whyline-event: bc042199944b445a90dfdcbac6dbee3d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T12:41:29.839Z"} -->
+
+## 2026-11-05 — Request changes: _check_answer restores the prompt echo when the extracted last line matches
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-16
+
+**Because:** runner._answer already has the clean Codex -o or last-line text; the keep-whole-raw heuristic then replaces it with the full transcript whenever that text equals the last stdout line, so a successful Check can again show the prompt as the note. Dedicated tests pass because they never echo the prompt into a matching last line.
+
+**Rejected:**
+
+- approve as-is — requirement 3 says the note is the agent's answer, not its transcript, and I reproduced prompt-in-note via _check_answer
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 67c4137963884414988cfcc2e0701418 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T12:49:02.931Z"} -->
+
+## 2026-11-05 — Check keeps raw transcript only when no -o file and raw does not echo the prompt
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-16
+
+**Because:** clean _answer extract must not be replaced by a transcript containing the prompt
+
+**Rejected:**
+
+- always trust _answer — truncates JSON-less multi-line replies
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 5474ab8ffe104f98b7dd5e8ff64a3804 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T12:49:49.811Z"} -->
+
+## 2026-11-05 — Pass PZ-16: Verified _check_answer prompt-echo fix and full test suite suite pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-16
+
+**Because:** Prompt-echo avoidance when raw echoes prompt or answer file exists verified; all 15 check tests and full test suites (1565 console tests, 2050 other tests, 3615 total) passed
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: 1bcfc1c5c60c410398496a809ca2df74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T13:06:27.046Z"} -->
+
+## 2026-11-05 — Approve PZ-16: Check falls back when an agent is out and keeps the note as the answer
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-16
+
+**Because:** Usage-limit exit 1 is classified and passed over; _check_answer keeps runner._answer when the -o file has content or raw echoes the prompt, closing the prior review hole; spinner, Stop, progress, and log timestamps match the spec; dedicated Check tests and uv run pytest -q exited 0
+
+**Rejected:**
+
+- request changes for empty -o Codex transcript — runner._answer itself returns the whole raw, matching relaychat.ask
+
+**Files:** src/whyline/console/fixmode.py
+
+<!-- whyline-event: e305413999464628bfbceb75a2a82887 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T13:27:12.496Z"} -->

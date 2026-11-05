@@ -1346,6 +1346,29 @@ def _check_plan_progress(root: Path, st: object | None) -> str:
     return f"{len(done)} of {len(boxes)} plan items ticked"
 
 
+def _file_time(path: Path) -> str:
+    """A file's modification time, as a local timestamp."""
+    return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+
+
+def _quota_lines_with_times(root: Path) -> list[str]:
+    """recovery's quota lines, each log it quotes tagged with its mtime."""
+    from whyline.console import recovery
+
+    logs = root / ".whyline" / "relay" / "logs"
+    out: list[str] = []
+    for line in recovery._ask_quota_lines(root):
+        tail = re.search(r"; ([^;()]+\.log)\)$", line)
+        if tail is not None:
+            try:
+                stamp = _file_time(logs / tail.group(1))
+                line = line[: tail.start(1)] + f"{tail.group(1)}, modified {stamp})"
+            except OSError:
+                pass
+        out.append(line)
+    return out
+
+
 def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
     """The context for a Check: live marker, turn time against the timeout, the
     last 200 log lines, quota evidence, stage visits, send-backs and progress.
@@ -1388,6 +1411,7 @@ def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
         else f"no running turn; the timeout is {limit}"
     )
     log_tail = ""
+    log_time = ""
     log_path = str(st_dict.get("log_path") or "")
     if log_path:
         lp = Path(log_path)
@@ -1395,6 +1419,7 @@ def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
         try:
             lines = lp.read_text(encoding="utf-8", errors="replace").splitlines()
             log_tail = "\n".join(lines[-CHECK_LOG_LINES:])
+            log_time = _file_time(lp)
         except OSError:
             pass
     visits = st_dict.get("stage_visits")
@@ -1418,11 +1443,14 @@ def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
         "## Turn Time Against Timeout",
         turn_time,
         "",
-        f"## Last {CHECK_LOG_LINES} Transcript Lines",
+        f"## Last {CHECK_LOG_LINES} Transcript Lines"
+        + (f" (log last modified {log_time})" if log_time else ""),
         log_tail or "None",
         "",
         "## Quota Evidence",
-        "\n".join(recovery._ask_quota_lines(root)),
+        "A failure older than the agent's most recent successful turn is history, "
+        "not current state.",
+        "\n".join(_quota_lines_with_times(root)),
         "",
         "## Stage Visits and Send-backs",
         f"task: {task or '(none)'}; stage: {st_dict.get('stage') or '(none)'}; "
@@ -1459,6 +1487,41 @@ def build_check_prompt(root: Path | str, *, now: datetime | None = None) -> str:
     return "\n".join(parts)
 
 
+def _check_answer(
+    root: Path, agent: str, raw: str, answer_file: Path | None, prompt: str = ""
+) -> str:
+    """The agent's reply, as relaychat.ask extracts it (Codex's -o file, the
+    result field of JSON output). A JSON-less multi-line reply that the
+    adapter would cut down to its last line is kept whole."""
+    from types import SimpleNamespace
+
+    from whyline.agents import runner as agent_runner
+
+    text = agent_runner._answer(SimpleNamespace(root=root), agent, raw, answer_file).strip()
+    if answer_file is not None and answer_file.is_file() and answer_file.read_text(
+        encoding="utf-8", errors="replace"
+    ).strip():
+        return text
+    if prompt and prompt.strip()[:200] in raw:
+        return text
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    if len(lines) > 1 and text and text != raw.strip() and text in lines[-1] and text == (
+        "".join(ch for ch in lines[-1].strip() if ch.isprintable())
+    ):
+        return raw.strip()
+    return text
+
+
+# How Chat words each outcome (relaychat.ask), as the tail of "<agent> …".
+_CHECK_PASS_OVER = {
+    "usage_limit": "has reached its usage limit.",
+    "login_needed": "needs you to sign in.",
+    "timed_out": "took too long, so it was stopped.",
+    "missing": "is not installed or not on PATH.",
+    "failed": "could not answer.",
+}
+
+
 def run_check(
     root: Path,
     *,
@@ -1466,15 +1529,22 @@ def run_check(
     runner: Callable[..., object] | None = None,
     cancel_event: object | None = None,
     on_progress: Callable[[str], None] | None = None,
+    on_agent: Callable[[str], None] | None = None,
     now: datetime | None = None,
 ) -> CheckResult:
     """Ask the first agent in the chain that has a read-only mode for a note.
 
+    An agent known to be out (agent_readiness), or whose run is judged a usage
+    limit, sign-in, timeout, failure or empty answer, is passed over for the
+    next one. on_agent is told which agent is being asked.
+
     Nothing is applied: any steps are only validated and returned.
     """
     import inspect
+    from types import SimpleNamespace
 
     from whyline.agents import capabilities
+    from whyline.agents import runner as agent_runner
     from whyline.console import recovery, relay_ops
     from whyline_relay import agents as relay_agents
     from whyline_relay import chat as relay_chat
@@ -1482,6 +1552,7 @@ def run_check(
 
     root = Path(root).resolve()
     say = on_progress or (lambda _text: None)
+    asking = on_agent or (lambda _agent: None)
     result = CheckResult(status="exhausted")
 
     def cancelled() -> bool:
@@ -1513,14 +1584,33 @@ def run_check(
 
     def pass_over(agent: str, why: str) -> None:
         result.fallbacks.append((agent, why))
-        say(f"{agent} {why}")
+        later = [
+            a for a in agent_chain
+            if a != agent and a not in result.tried and a not in {f for f, _ in result.fallbacks}
+        ]
+        if later:
+            say(f"{agent} {why.rstrip('.')}, trying {later[0]}…")
+        else:
+            say(f"{agent} {why}")
+
+    not_ready: dict[str, str] = {}
+    try:
+        for row in relay_ops.agent_readiness(root):
+            if not row.ready:
+                why = str(row.why or "is not ready").strip()
+                not_ready[row.agent] = why[len(row.agent):].strip() if why.startswith(row.agent) else why
+    except Exception:  # noqa: BLE001 - readiness unreadable: skip nobody
+        not_ready = {}
 
     for agent in agent_chain:
-        if agent in result.tried:
+        if agent in result.tried or agent in {f for f, _ in result.fallbacks}:
             continue
         if cancelled():
             result.status = "cancelled"
             return result
+        if agent in not_ready:
+            pass_over(agent, not_ready[agent])
+            continue
         try:
             command = relay_chat.resolve_command(settings, agent)
         except Exception:  # noqa: BLE001
@@ -1530,6 +1620,7 @@ def run_check(
             pass_over(agent, "has no read-only mode, so it was skipped")
             continue
         result.tried.append(agent)
+        asking(agent)
         log = root / ".whyline" / "relay" / "logs" / f"check-agent-{agent}.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         kwargs: dict = {
@@ -1538,34 +1629,58 @@ def run_check(
         if takes_cancel and cancel_event is not None:
             kwargs["cancel_event"] = cancel_event
         raw = ""
+        code: int | None = 0  # a bare string result counts as exit 0
         failure: Exception | None = None
+        answer_dir = tempfile.TemporaryDirectory(prefix="whyline-check-")
+        answer_file: Path | None = None
+        try:
+            adapter = agent_runner._adapter(SimpleNamespace(root=root), agent)
+            if adapter is not None and adapter.uses_output_file:
+                answer_file = Path(answer_dir.name) / "answer.txt"
+                read_only = [*read_only, "-o", str(answer_file)]
+        except Exception:  # noqa: BLE001
+            answer_file = None
         try:
             out = active(read_only, prompt, **kwargs)
-            raw = out if isinstance(out, str) else (
-                getattr(out, "output", None) or getattr(out, "stdout", None) or ""
-            )
+            if isinstance(out, str):
+                raw = out
+            else:
+                raw = getattr(out, "output", None) or getattr(out, "stdout", None) or ""
+                got = getattr(out, "exit_code", None)
+                if isinstance(got, int) and not isinstance(got, bool):
+                    code = got
         except Exception as exc:  # noqa: BLE001
             failure = exc
         if not raw and failure is None and log.is_file():
             raw = log.read_text(encoding="utf-8", errors="replace")
+        answer = ""
+        if failure is None and code == 0 and raw.strip():
+            answer = _check_answer(root, agent, raw, answer_file, prompt)
+        answer_dir.cleanup()
         if cancelled() or isinstance(failure, relay_agents.AgentCancelled):
             result.status = "cancelled"
             return result
-        if failure is not None:
-            if not recovery._is_model_failure(failure, ""):
-                raise failure
-            pass_over(agent, recovery._fallback_reason(failure, ""))
+        outcome, _reason = agent_runner._classify(agent, code, raw, failure)
+        if outcome == "cancelled":
+            result.status = "cancelled"
+            return result
+        if outcome in _CHECK_PASS_OVER:
+            pass_over(agent, _CHECK_PASS_OVER[outcome])
+            continue
+        # The agent's answer, not its transcript (codex echoes the prompt).
+        if not answer:
+            pass_over(agent, "gave no answer.")
             continue
         result.agent = agent
-        data = recovery.extract_fenced_json(raw)
+        data = recovery.extract_fenced_json(answer)
         if data is not None:
             result.note = str(data.get("diagnosis") or "").strip()
             result.steps, result.notes = recovery.validate_steps(root, data.get("steps") or [])
-            prose = raw.split("```", 1)[0].strip()
+            prose = answer.split("```", 1)[0].strip()
             if prose:
                 result.note = prose
         else:
-            result.note = raw.strip()
+            result.note = answer
         result.status = "note"
         return result
     return result

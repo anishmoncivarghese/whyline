@@ -1117,6 +1117,7 @@ class WhylineConsoleApp(App):
     #relay-resolve { display: none; }
     #relay-retry-stage { display: none; }
     #relay-check-apply { display: none; }
+    #relay-check-stop { display: none; }
     /* Shown only once there is something to update to. */
     #update, #update-restart { display: none; }
     #split { height: 1fr; }
@@ -1233,6 +1234,9 @@ class WhylineConsoleApp(App):
         self._resolve_running: bool = False
         self._fix_active: bool = False  # a Fix turn (worker or cleanup) is in flight
         self._check_active: bool = False  # a relay Check is asking the agent
+        self._check_cancel: Any = None  # the running Check's cancel Event
+        self._check_agent: str = ""  # the agent the Check is asking now
+        self._check_started: float = 0.0
         self._check_result: Any = None  # its answer, while Apply when paused is on offer
         self._resume_fail_lines: list[str] = []
         self._last_relay_args: list[str] = []
@@ -2183,7 +2187,7 @@ class WhylineConsoleApp(App):
         controls = self._main("#controls")
         for button in controls.query(Button):
             if button.id in (
-                "relay-resolve", "relay-retry-stage", "relay-check-apply", "update", "update-restart",
+                "relay-resolve", "relay-retry-stage", "relay-check-apply", "relay-check-stop", "update", "update-restart",
                 *_PAUSE_BUTTONS,
             ):
                 continue
@@ -2441,6 +2445,9 @@ class WhylineConsoleApp(App):
             in_relay
             and (running or bool(paused) or self._live_relay() is not None)
             and not getattr(self, "_check_active", False)
+        )
+        self._main("#relay-check-stop", Button).display = (
+            in_relay and bool(getattr(self, "_check_active", False))
         )
         self._main("#relay-check-apply", Button).display = (
             in_relay and getattr(self, "_check_result", None) is not None
@@ -3932,6 +3939,7 @@ class WhylineConsoleApp(App):
                 Button("Resume", id="relay-resume", disabled=True),
                 Button("Issues", id="relay-issues", disabled=True),
                 Button("Check", id="relay-check", disabled=True),
+                Button("Stop", id="relay-check-stop"),
                 Button("Apply when paused", id="relay-check-apply"),
                 Button("Retry stage", id="relay-retry-stage", disabled=True),
                 Button("Resolve", id="relay-resolve", disabled=True),
@@ -4175,6 +4183,8 @@ class WhylineConsoleApp(App):
             self._open_issues()
         elif button_id == "relay-check":
             self._begin_check()
+        elif button_id == "relay-check-stop":
+            self._stop_check()
         elif button_id == "relay-check-apply":
             self._store_check_proposal()
         elif button_id == "relay-retry-stage":
@@ -4465,6 +4475,7 @@ class WhylineConsoleApp(App):
         if cancel_event is not None:
             cancel_event.set()
             self.render_event(SessionEvent(kind="output", text="Stopping…"))
+        self._stop_check()
         self._dispatch_token = object()
         self._sent_attachments = []
         if getattr(self, "_release_task", None):
@@ -4541,6 +4552,12 @@ class WhylineConsoleApp(App):
                 thinking.update(f"{_SPINNER[self._spin]} {text} · {head}{note}")
                 return
             thinking.update(f"{_SPINNER[self._spin]} relay: {summary}{note}")
+            return
+        if getattr(self, "_check_active", False) and self._busy_text:
+            secs = int(self._clock() - self._check_started)
+            thinking.update(
+                f"{_SPINNER[self._spin]} check: asking {self._check_agent} · {secs}s"
+            )
             return
         if self._ask_cancel is not None and self._busy_text:
             secs = int(self._clock() - self._ask_started)
@@ -6273,25 +6290,53 @@ class WhylineConsoleApp(App):
                 chain.append(name)
         self._check_active = True
         self._check_result = None
+        cancel = threading.Event()
+        self._check_cancel = cancel
         agent = chain[0] if chain else "the agent"
+        self._check_agent = agent
+        self._check_started = self._clock()
         runner = self._runner or recovery._AUTO_RUNNER
+
+        def progress(text: str) -> None:
+            self.call_from_thread(
+                self.render_event, SessionEvent(kind="output", text=f"check › {text}")
+            )
+
+        def asking(name: str) -> None:
+            self.call_from_thread(self._check_asking, name)
 
         def check_thread() -> None:
             res = None
             try:
-                res = fixmode.run_check(root, agent_chain=chain, runner=runner)
+                res = fixmode.run_check(
+                    root, agent_chain=chain, runner=runner,
+                    on_progress=progress, on_agent=asking, cancel_event=cancel,
+                )
             except Exception as exc:
                 res = fixmode.CheckResult(status="exhausted", note=f"Check failed: {exc}")
             finally:
                 self.call_from_thread(self._check_finished, res)
 
         self.render_event(SessionEvent(kind="output", text=f"check › asking {agent}…"))
+        self._set_busy(True, "check")
         self._sync_relay_buttons()
         self.run_worker(check_thread, thread=True)
 
+    def _check_asking(self, agent: str) -> None:
+        """Check moved on to `agent`: the busy line names it."""
+        self._check_agent = agent
+        self._tick()
+
+    def _stop_check(self) -> None:
+        cancel = getattr(self, "_check_cancel", None)
+        if cancel is not None and getattr(self, "_check_active", False):
+            cancel.set()
+
     def _check_finished(self, res: Any) -> None:
         self._check_active = False
+        self._check_cancel = None
         self._check_result = None
+        self._set_busy(False)
         if res is not None and res.status == "note" and res.note:
             self.render_event(SessionEvent(kind="output", text=f"check › {res.note}"))
             if res.steps:
@@ -6304,8 +6349,13 @@ class WhylineConsoleApp(App):
         elif res is not None and res.status == "cancelled":
             self.render_event(SessionEvent(kind="output", text="check › stopped."))
         else:
-            why = (res.note if res is not None and res.note else "no agent could answer.")
-            self.render_event(SessionEvent(kind="output", text=f"check › {why}"))
+            if res is not None and res.note:
+                self.render_event(SessionEvent(kind="output", text=f"check › {res.note}"))
+            elif res is not None and res.fallbacks:
+                for name, why in res.fallbacks:
+                    self.render_event(SessionEvent(kind="output", text=f"check › {name} {why}"))
+            else:
+                self.render_event(SessionEvent(kind="output", text="check › no agent could answer."))
         self._sync_relay_buttons()
 
     def _store_check_proposal(self) -> None:
