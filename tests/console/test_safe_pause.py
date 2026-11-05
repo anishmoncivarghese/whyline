@@ -142,3 +142,110 @@ async def test_resume_after_safe_pause_uses_existing_resume(tmp_path, monkeypatc
         app.query_one("#relay-resume", tui.Button).press()
         await pilot.pause()
         assert box.launched == [["resume"]]
+
+
+def _quit_app(tmp_path, monkeypatch, on_quit="ask", *, running=True):
+    from whyline import relaysafety
+
+    app, box = _app(tmp_path, monkeypatch, running=running)
+    monkeypatch.setattr(relaysafety, "load", lambda *a, **k: SimpleNamespace(on_quit=on_quit))
+    box.exits = []
+    monkeypatch.setattr(app, "exit", lambda *a, **k: box.exits.append(1))
+    return app, box
+
+
+async def test_quit_asks_with_pause_option(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        assert isinstance(app.screen, tui.QuitRelayScreen)
+        for ident in ("quit-pause", "quit-leave", "quit-cancel"):
+            app.screen.query_one(f"#{ident}", tui.Button)
+        assert box.calls == [] and box.exits == []
+
+
+async def test_quit_cancel_stays(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        app.screen.query_one("#quit-cancel", tui.Button).press()
+        await pilot.pause()
+        assert box.calls == [] and box.exits == []
+        assert not isinstance(app.screen, tui.QuitRelayScreen)
+
+
+async def test_quit_leave_choice_leaves_running(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        app.screen.query_one("#quit-leave", tui.Button).press()
+        await pilot.pause()
+        assert box.calls == [] and box.exits == [1]
+
+
+async def test_quit_pause_choice_waits_for_paused(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        app.screen.query_one("#quit-pause", tui.Button).press()
+        await pilot.pause()
+        assert box.calls == ["request"] and box.exits == []
+        app._pause_tick()
+        assert {"pausing", "pause-now", "pause-cancel"} <= _visible(app)
+        assert box.exits == []
+        box.state = "paused_by_user"
+        app._pause_tick()
+        assert box.exits == [1]
+
+
+async def test_on_quit_pause_skips_question(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch, "pause")
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        assert not isinstance(app.screen, tui.QuitRelayScreen)
+        assert box.calls == ["request"] and box.exits == []
+        box.state = "paused_by_user"
+        app._pause_tick()
+        assert box.exits == [1]
+
+
+async def test_on_quit_leave_skips_question(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch, "leave")
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        assert not isinstance(app.screen, tui.QuitRelayScreen)
+        assert box.calls == [] and box.exits == [1]
+
+
+async def test_keep_going_cancels_the_pending_quit(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch, "pause")
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        await app.action_quit()
+        await pilot.pause()
+        app._pause_tick()
+        app.query_one("#pause-cancel", tui.Button).press()
+        await pilot.pause()
+        box.state = "paused_by_user"
+        app._pause_tick()
+        assert box.exits == []
+
+
+async def test_quit_without_relay_is_unchanged(tmp_path, monkeypatch):
+    app, box = _quit_app(tmp_path, monkeypatch, "pause", running=False)
+    async with app.run_test() as pilot:
+        await app.action_quit()
+        await pilot.pause()
+        assert box.calls == [] and box.exits == [1]

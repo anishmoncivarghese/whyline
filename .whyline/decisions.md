@@ -35401,3 +35401,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c1fad32dc9f140f5a08745c1127c7e5c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T04:55:55.732Z"} -->
+
+## 2026-11-05 — Quit with a visible relay offers Pause safely and quit; on_quit=pause/leave skip the question; quit fires from _pause_tick once pause_state is paused
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-7
+
+**Because:** reuses the existing 1s pause tick and Pausing status; keeps Stop it, then quit as an extra existing choice
+
+**Rejected:**
+
+- Remove Stop button — existing feature and tests rely on it
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 44824791dc544653993690f6e03579d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T04:57:51.531Z"} -->
+
+## 2026-11-05 — Pass PZ-7: Pause safely and quit modal and configured on_quit behavior verified across the test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-7
+
+**Because:** Quit while a relay is visible correctly offers Pause safely and quit / Leave it running / Cancel (and keeps Stop); on_quit=pause/leave appropriately skips the prompt; pause safely requests pause, shows Pausing status with elapsed time, keeps pause controls active, and exits cleanly once the relay state becomes paused; quitting without a visible relay is unchanged. All 19 safe pause tests and full 1520 console tests passed.
+
+**Files:** src/whyline/console/tui.py, tests/console/test_safe_pause.py
+
+<!-- whyline-event: fea2d805885e4afe9949f13c5895140f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T05:10:37.003Z"} -->
+
+## 2026-11-05 — Approve PZ-7: pause-safely-and-quit matches the spec and is covered
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-7
+
+**Because:** Quit with a visible relay offers Pause safely and quit, Leave it running, and Cancel; on_quit=pause/leave skip the prompt; pause-and-quit calls request_pause, keeps Pausing status with elapsed time and Pause now, and exits only after pause_state is paused. 19 safe-pause tests and 1520 console tests passed.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3a7dc76d565543a785536ed34bb12eda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T05:26:24.683Z"} -->

@@ -368,7 +368,8 @@ class QuitRelayScreen(ModalScreen):
         rows = [
             Label(f"The relay is still working ({self._label}). Leave it running?"),
             Horizontal(
-                Button("Leave it running", id="quit-leave", variant="primary"),
+                Button("Pause safely and quit", id="quit-pause", variant="primary"),
+                Button("Leave it running", id="quit-leave"),
                 Button("Stop it, then quit", id="quit-stop", variant="warning"),
                 Button("Cancel", id="quit-cancel"),
             ),
@@ -391,7 +392,7 @@ class QuitRelayScreen(ModalScreen):
             self.query_one("#quit-keep-awake", Button).variant = "primary" if self.keep_awake else "default"
             self.query_one("#quit-let-sleep", Button).variant = "default" if self.keep_awake else "primary"
             return
-        choices = {"quit-leave": "leave", "quit-stop": "stop"}
+        choices = {"quit-pause": "pause", "quit-leave": "leave", "quit-stop": "stop"}
         self.dismiss(choices.get(event.button.id))
 
 
@@ -2301,6 +2302,7 @@ class WhylineConsoleApp(App):
             self._show_paused_line(effective, info, running)
 
     def _pause_tick(self) -> None:
+        self._quit_if_paused()
         if self.session.mode == "relay":
             self._sync_pause_buttons()
             try:
@@ -4153,6 +4155,7 @@ class WhylineConsoleApp(App):
         elif button_id == "pause-cancel":
             relay_ops.cancel_pause(self.session.root)
             self._pause_requested = False
+            self._quit_when_paused = False
             self._sync_pause_buttons()
         elif button_id == "pause-now":
             self._ask_pause_now()
@@ -7699,10 +7702,48 @@ class WhylineConsoleApp(App):
             )
             self._start_resolve_flow(source="resume", fail_lines=fail_lines)
 
+    def _relay_visible(self) -> bool:
+        return self._relay_running() or self._live_relay() is not None
+
+    def _pause_and_quit(self, keep_awake: bool = True) -> None:
+        """Ask the relay to pause between turns, then quit once it has."""
+        try:
+            relay_ops.request_pause(self.session.root)
+        except Exception as err:
+            self.render_event(SessionEvent(kind="output", text=f"Could not pause: {err}"))
+            return
+        self._pause_requested = True
+        self._quit_when_paused = True
+        self._pause_quit_keep_awake = keep_awake
+        self._sync_pause_buttons()
+        self._quit_if_paused()
+
+    def _quit_if_paused(self) -> None:
+        if not getattr(self, "_quit_when_paused", False):
+            return
+        kind = self._pause_state_name()
+        if kind in ("paused_by_user", "cut_off") or (
+            kind != "pausing" and not self._relay_visible()
+        ):
+            self._quit_when_paused = False
+            self._quit_choice("leave", self._pause_quit_keep_awake)
+
     async def action_quit(self) -> None:
         # Another console may have turned it off since this one last looked.
         self._awake = awake.status()
-        if self._relay_running():
+        if self._relay_visible():
+            from whyline import relaysafety
+
+            try:
+                on_quit = relaysafety.load().on_quit
+            except Exception:
+                on_quit = "ask"
+            if on_quit == "pause":
+                self._pause_and_quit()
+                return
+            if on_quit == "leave":
+                self._quit_choice("leave", True)
+                return
             screen = QuitRelayScreen(self._relay_label or "relay", awake_on=self._awake is not None)
             self.push_screen(screen, lambda choice: self._quit_choice(choice, screen.keep_awake))
             return
@@ -7727,6 +7768,9 @@ class WhylineConsoleApp(App):
 
     def _quit_choice(self, choice: "str | None", keep_awake: bool = True) -> None:
         if choice is None:
+            return
+        if choice == "pause":
+            self._pause_and_quit(keep_awake)
             return
         if not keep_awake:
             awake.stop()
