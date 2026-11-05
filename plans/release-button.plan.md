@@ -44,7 +44,7 @@ Global constraints:
   - `write(root, cfg, new, *, run) -> list[Path]`: replaces the old version string only on the known line in each file (never a global replace), then runs `uv lock` when `uv.lock` exists, or `npm install --package-lock-only` when `package-lock.json` exists. It returns every changed path. If a file holds no line with the old version, it raises before writing anything.
   Tests: each source, each bump, a pre-release refusal, `__version__` found in a src layout, a file without the old version leaves every file untouched, and the lock commands are recorded through the fake `run`.
 
-- [ ] REL-3: The Ready check
+- [x] REL-3: The Ready check
   Create `src/whyline/release/ready.py` and `tests/release/test_ready.py` only.
   - `ReadyItem(key, ok, text, fix)` and `check(root, cfg, version, *, run, fetch, relay_state) -> list[ReadyItem]`. The items, in order: git installed, gh installed, gh signed in (`gh auth status`), origin is GitHub (`git remote get-url origin` host github.com), tree clean (`git status --porcelain` empty apart from `config.pending(root)` paths, run with `GIT_OPTIONAL_LOCKS=0`), relay idle (from the injected `relay_state`: running → ✗, paused on a release task → ✓), HEAD on or ahead of `origin/<branch>` (after `git fetch origin <branch>`), tag `v<version>` absent locally and remotely (`git ls-remote --tags origin`).
   - Target items come from a registry, `register_ready(target, fn)`, which plan 2 fills in. This task registers none.
