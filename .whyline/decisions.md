@@ -35982,3 +35982,91 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e305413999464628bfbceb75a2a82887 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T13:27:12.496Z"} -->
+
+## 2026-11-05 — Other… box replaces the model dropdown in its slot; 'not saved yet' label borrows Repo/Timeout room
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-17
+
+**Because:** the 120-column row has no spare width: an extra 18-col Input pushed Save off screen
+
+**Rejected:**
+
+- Input beside the select — overflowed the bar and made Save unclickable
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 178756f883f1419989d3de53d8bcb16e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T13:39:20.724Z"} -->
+
+## 2026-11-05 — Fail PZ-17: tests/console/test_tui.py fails due to #cb-model being Select instead of Input
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-17
+
+**Because:** Full test suite (3625 tests) fails with 1 failure: tests/console/test_tui.py:651,657 queries #cb-model expecting tui.Input which raises NoMatches now that #cb-model is a Select
+
+**Rejected:**
+
+- Pass PZ-17 — The full test suite must pass cleanly without regressions before review
+
+**Test:** uv run pytest: 1 failed, 3623 passed, 1 skipped
+
+**Files:** tests/console/test_tui.py
+
+<!-- whyline-event: 62183ee4a085464aa67203cf80ec6c90 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T14:05:51.239Z"} -->
+
+## 2026-11-05 — Update test_tui context-label test to read #cb-model as a Select
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-17
+
+**Because:** #cb-model is now a Select; the old Input query raised NoMatches
+
+**Rejected:**
+
+- Shim query_one in tui.py — hides the real widget type from callers
+
+**Files:** tests/console/test_tui.py
+
+<!-- whyline-event: b1ca7e877fe24a4da124ec27d777f5a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T14:17:40.692Z"} -->
+
+## 2026-11-05 — Pass PZ-17: model dropdown, Other... input, and unsaved hint verified across full test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-17
+
+**Because:** All PZ-17 requirements verified: #cb-model is Select with default, agent models, (saved) handling, and Other... input; 'not saved yet' hint and error notifications display correctly; Save behaviour preserves defaults and models; full test suite passes (3624 passed, 1 skipped) including 173 console tests
+
+**Rejected:**
+
+- Fail PZ-17 — tests/console/test_tui.py was updated to query Select instead of Input which was required by the specification and all 3624 tests pass
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8bf2d41d2a7a4f65995e3a1ca0ee9e80 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T14:34:05.511Z"} -->
+
+## 2026-11-05 — Approve PZ-17: model Select, Other…, default save, and unsaved hint
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-17
+
+**Because:** All seven spec items are in tui.py: #cb-model is a Select with default, agent models, (saved), and Other…; agent switch rebuilds via _model_for; empty default saves through set_one; unsaved hint and refused-save error; widget readers go through _cb_model_text. uv run pytest -q exited 0 at 100% with one skip.
+
+**Rejected:**
+
+- Fail for Other… replacing the dropdown — the 120-column bar has no spare width and Save must stay on screen
+- Fail for editing test_tui.py — #cb-model is a Select so the Input query had to change
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8af4b7a694a0454f897ababb3ea8d3b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T14:52:15.048Z"} -->

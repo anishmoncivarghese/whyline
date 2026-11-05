@@ -648,13 +648,13 @@ async def test_context_label_shows_agent_model_and_repo(tmp_path, monkeypatch):
         # The context bar replaced the old #context text. claude has no
         # saved model yet, and this test leaves it unavailable.
         assert app.query_one("#cb-agent", tui.Select).value == "!claude"
-        assert app.query_one("#cb-model", tui.Input).value == ""
+        assert app.query_one("#cb-model", tui.Select).value == ""
         assert tmp_path.name in app.query_one("#cb-repo", tui.Input).value
         app.query_one("#prompt", tui.Input).value = "/model codex"
         await pilot.click("#send")
         await pilot.pause()
         assert app.query_one("#cb-agent", tui.Select).value == "codex"
-        assert app.query_one("#cb-model", tui.Input).value == "gpt-5"
+        assert app.query_one("#cb-model", tui.Select).value == "gpt-5"
 
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")

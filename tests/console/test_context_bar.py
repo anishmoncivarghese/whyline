@@ -90,6 +90,20 @@ async def _click_modal(pilot, app, selector: str) -> None:
     await pilot.pause()
 
 
+def _set_model(app, value):
+    """Pick `value` in the model dropdown, through Other… when it is not listed."""
+    select = app.query_one("#cb-model", tui.Select)
+    if value in getattr(select, "_legal_values", ()):
+        select.value = value
+        return
+    select.value = tui._CB_OTHER
+    app.query_one("#cb-model-other", tui.Input).value = value
+
+
+def _model(app):
+    return app._cb_model_text()
+
+
 def _lines(app):
     return [str(line) for line in app._main("#transcript", tui.RichLog).lines]
 
@@ -99,7 +113,7 @@ async def test_save_is_greyed_until_something_changes(tmp_path):
     async with app.run_test(size=(120, 40)) as pilot:
         save = app.query_one("#cb-save", tui.Button)
         assert save.disabled
-        app.query_one("#cb-model", tui.Input).value = "gpt-5.6"
+        _set_model(app, "gpt-5.6")
         await pilot.pause()
         assert not save.disabled
 
@@ -111,7 +125,8 @@ async def test_save_sets_the_repo_default_and_optionally_global(tmp_path, home):
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         app.query_one("#cb-agent", tui.Select).value = "codex"
-        app.query_one("#cb-model", tui.Input).value = "gpt-5.6"
+        await pilot.pause()
+        _set_model(app, "gpt-5.6")
         app.query_one("#cb-global", tui.Checkbox).value = True
         await pilot.click("#cb-save")
         await pilot.pause()
@@ -134,7 +149,8 @@ async def test_switching_repo_is_refused_while_a_job_runs_but_agent_saves(tmp_pa
     async with app.run_test(size=(120, 40)) as pilot:
         monkeypatch.setattr(app, "_relay_running", lambda: True)
         app.query_one("#cb-agent", tui.Select).value = "codex"
-        app.query_one("#cb-model", tui.Input).value = "gpt-5"
+        await pilot.pause()
+        _set_model(app, "gpt-5")
         app.query_one("#cb-repo", tui.Input).value = str(tmp_path / "other")
         await pilot.click("#cb-save")
         await pilot.pause()
@@ -153,8 +169,9 @@ async def test_a_new_folder_is_set_up_after_one_confirmation(tmp_path, monkeypat
     )
     app = tui.WhylineConsoleApp(root=_repo(tmp_path))
     async with app.run_test(size=(120, 40)) as pilot:
-        app.query_one("#cb-model", tui.Input).value = "gpt-5"
+        _set_model(app, "opus")
         app.query_one("#cb-repo", tui.Input).value = str(tmp_path / "fresh")
+        await pilot.pause()
         await pilot.click("#cb-save")
         await pilot.pause()
         assert isinstance(app.screen, tui.ConfirmScreen)
@@ -254,14 +271,14 @@ async def test_model_refresh_updates_an_agent_that_becomes_available(tmp_path, m
         select = app.query_one("#cb-agent", tui.Select)
         assert select.value == "!grok"
         assert _option_map(select)["!grok"] == "grok · not signed in"
-        app.query_one("#cb-model", tui.Input).value = "grok-4"
+        _set_model(app, "grok-4")
         app.query_one("#cb-global", tui.Checkbox).value = True
         await pilot.pause()
         app.query_one("#prompt", tui.Input).value = "/route chat"
         await pilot.click("#send")
         await pilot.pause()
         assert select.value == "!grok"
-        assert app.query_one("#cb-model", tui.Input).value == "grok-4"
+        assert _model(app) == "grok-4"
         assert app.query_one("#cb-global", tui.Checkbox).value is True
         assert not app.query_one("#cb-save", tui.Button).disabled
 
@@ -275,7 +292,7 @@ async def test_model_refresh_updates_an_agent_that_becomes_available(tmp_path, m
         assert options["grok"] == "grok · pro"
         assert "!grok" not in options
         assert "!antigravity" in options
-        assert app.query_one("#cb-model", tui.Input).value == "grok-4"
+        assert _model(app) == "grok-4"
         assert app.query_one("#cb-global", tui.Checkbox).value is True
         assert not app.query_one("#cb-save", tui.Button).disabled
 
@@ -284,7 +301,7 @@ async def test_model_refresh_updates_an_agent_that_becomes_available(tmp_path, m
         await pilot.click("#send")
         await pilot.pause()
         assert select.value == "grok"
-        assert app.query_one("#cb-model", tui.Input).value == "grok-4"
+        assert _model(app) == "grok-4"
 
 
 async def test_login_updates_an_agent_that_becomes_available(tmp_path, monkeypatch):
@@ -316,7 +333,7 @@ async def test_login_updates_an_agent_that_becomes_available(tmp_path, monkeypat
         app._login_fn = lambda argv: 0
         select = app.query_one("#cb-agent", tui.Select)
         assert select.value == "!grok"
-        app.query_one("#cb-model", tui.Input).value = "grok-4"
+        _set_model(app, "grok-4")
         await pilot.pause()
         app.query_one("#prompt", tui.Input).value = "/login grok"
         await pilot.click("#send")
@@ -325,7 +342,7 @@ async def test_login_updates_an_agent_that_becomes_available(tmp_path, monkeypat
         assert select.value == "grok"
         assert options["grok"] == "grok · pro"
         assert "!grok" not in options
-        assert app.query_one("#cb-model", tui.Input).value == "grok-4"
+        assert _model(app) == "grok-4"
         assert not app.query_one("#cb-save", tui.Button).disabled
 
 
@@ -420,7 +437,7 @@ async def test_none_then_save_clears_the_chain_and_keeps_the_role_line(tmp_path,
     role_override.write_text('{"implementer": {"agent": "grok"}}\n', encoding="utf-8")
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
-        app.query_one("#cb-model", tui.Input).value = "opus"
+        _set_model(app, "opus")
         app.query_one("#cb-backup", tui.Select).value = "none"
         await pilot.pause()
         await pilot.click("#cb-save")
@@ -452,7 +469,8 @@ async def test_all_repos_saves_the_global_default_and_leaves_the_chain(tmp_path,
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         app.query_one("#cb-agent", tui.Select).value = "codex"
-        app.query_one("#cb-model", tui.Input).value = "gpt-5.6"
+        await pilot.pause()
+        _set_model(app, "gpt-5.6")
         app.query_one("#cb-global", tui.Checkbox).value = True
         await pilot.pause()
         await pilot.click("#cb-save")
@@ -498,7 +516,8 @@ async def test_automatic_on_an_empty_chain_stages_the_other_usable_agents(tmp_pa
         await pilot.pause()
         assert _backup_closed(select) == "Automatic · claude → grok"
         assert not app.query_one("#cb-save", tui.Button).disabled
-        app.query_one("#cb-model", tui.Input).value = "gpt-5"
+        _set_model(app, "gpt-5")
+        await pilot.pause()
         await pilot.click("#cb-save")
         await pilot.pause()
         assert app.query_one("#cb-save", tui.Button).disabled
@@ -514,7 +533,7 @@ async def test_selecting_an_agent_moves_it_to_the_front(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         select = app.query_one("#cb-backup", tui.Select)
-        app.query_one("#cb-model", tui.Input).value = "opus"
+        _set_model(app, "opus")
         select.value = "claude"
         await pilot.pause()
         assert _backup_closed(select) == "claude"
@@ -534,7 +553,7 @@ async def test_save_while_a_relay_is_live_writes_nothing_and_stays_dirty(tmp_pat
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         select = app.query_one("#cb-backup", tui.Select)
-        app.query_one("#cb-model", tui.Input).value = "opus"
+        _set_model(app, "opus")
         select.value = "none"
         await pilot.pause()
         await pilot.click("#cb-save")
@@ -558,7 +577,8 @@ async def test_a_model_name_with_a_space_writes_neither_chain_nor_agent(tmp_path
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         app.query_one("#cb-agent", tui.Select).value = "codex"
-        app.query_one("#cb-model", tui.Input).value = "gpt 5"
+        await pilot.pause()
+        _set_model(app, "gpt 5")
         app.query_one("#cb-backup", tui.Select).value = "none"
         await pilot.pause()
         await pilot.click("#cb-save")
@@ -570,7 +590,7 @@ async def test_a_model_name_with_a_space_writes_neither_chain_nor_agent(tmp_path
     assert app.session.agent == "claude"
 
 
-async def test_an_empty_model_writes_neither_chain_nor_agent(tmp_path, monkeypatch):
+async def test_a_model_name_with_a_quote_writes_neither_chain_nor_agent(tmp_path, monkeypatch):
     from whyline import model
     from whyline.console import relay_ops
 
@@ -581,19 +601,175 @@ async def test_an_empty_model_writes_neither_chain_nor_agent(tmp_path, monkeypat
     app = tui.WhylineConsoleApp(root=root)
     async with app.run_test(size=(120, 40)) as pilot:
         app.query_one("#cb-agent", tui.Select).value = "codex"
-        app.query_one("#cb-model", tui.Input).value = ""
+        await pilot.pause()
+        _set_model(app, 'gpt"5')
         app.query_one("#cb-backup", tui.Select).value = "none"
         app.query_one("#cb-repo", tui.Input).value = str(tmp_path / "other")
         await pilot.pause()
         await pilot.click("#cb-save")
         await pilot.pause()
         assert not app.query_one("#cb-save", tui.Button).disabled
-        assert any("A model name is required" in line for line in _lines(app))
+        assert any("A model name has no spaces" in line for line in _lines(app))
         assert not isinstance(app.screen, tui.ConfirmScreen)
     assert relay_ops.read_backup(root) == ["grok", "claude"]
     assert model.resolve(root) == ("claude", "opus")
     assert app.session.agent == "claude"
     assert app.session.root == root
+
+
+def _model_values(app):
+    select = app.query_one("#cb-model", tui.Select)
+    return [value for _label, value in select._options if value is not tui.Select.BLANK]
+
+
+def _model_labels(app):
+    return [label for label, _value in app.query_one("#cb-model", tui.Select)._options]
+
+
+async def test_the_model_dropdown_lists_each_agents_models(tmp_path):
+    from whyline.console import relay_ops
+
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        select = app.query_one("#cb-agent", tui.Select)
+        select.value = "claude"
+        await pilot.pause()
+        expected = [""] + [v for _l, v in relay_ops.model_options_for_agent("claude") or []]
+        assert _model_values(app) == expected + [tui._CB_OTHER]
+        assert _model_labels(app)[0] == "default"
+        assert {"opus", "sonnet", "haiku"} <= set(_model_values(app))
+        select.value = "codex"
+        await pilot.pause()
+        expected = [""] + [v for _l, v in relay_ops.model_options_for_agent("codex") or []]
+        assert _model_values(app) == expected + [tui._CB_OTHER]
+
+
+async def test_an_agent_without_a_list_offers_default_and_other(tmp_path, monkeypatch):
+    from whyline.console import relay_ops
+
+    monkeypatch.setattr(relay_ops, "model_options_for_agent", lambda agent, **kw: None)
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert _model_values(app) == ["", tui._CB_OTHER]
+
+
+async def test_switching_agent_selects_that_agents_saved_model(tmp_path):
+    from whyline import model
+
+    root = _repo(tmp_path)
+    model.set_one(root, "codex", "gpt-5")
+    model.set_one(root, "claude", "sonnet")
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(120, 40)) as pilot:
+        assert _model(app) == "sonnet"
+        app.query_one("#cb-agent", tui.Select).value = "codex"
+        await pilot.pause()
+        assert _model(app) == "gpt-5"
+        app.query_one("#cb-agent", tui.Select).value = "claude"
+        await pilot.pause()
+        assert _model(app) == "sonnet"
+
+
+async def test_a_saved_model_that_is_not_listed_shows_as_saved(tmp_path):
+    from whyline import model
+
+    root = _repo(tmp_path)
+    model.set_one(root, "claude", "claude-zzz-9")
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert _model(app) == "claude-zzz-9"
+        assert "claude-zzz-9 (saved)" in _model_labels(app)
+
+
+async def test_other_refuses_a_suffixed_claude_id_and_saves_a_valid_one(tmp_path):
+    from whyline import model
+
+    root = _repo(tmp_path)
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(120, 40)) as pilot:
+        select = app.query_one("#cb-model", tui.Select)
+        select.value = tui._CB_OTHER
+        await pilot.pause()
+        other = app.query_one("#cb-model-other", tui.Input)
+        assert other.display
+        other.value = "claude-opus-5-5-high"
+        await pilot.pause()
+        await pilot.click("#cb-save")
+        await pilot.pause()
+        assert any("not a Claude model id" in line for line in _lines(app))
+        assert model.resolve(root)[1] == ""
+        other.value = "claude-opus-5-5"
+        other.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+    assert model.resolve(root) == ("claude", "claude-opus-5-5")
+
+
+async def test_escape_in_other_returns_to_the_previous_choice(tmp_path):
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        select = app.query_one("#cb-model", tui.Select)
+        select.value = "opus"
+        await pilot.pause()
+        select.value = tui._CB_OTHER
+        await pilot.pause()
+        assert app.query_one("#cb-model-other", tui.Input).has_focus
+        await pilot.press("escape")
+        await pilot.pause()
+        assert select.value == "opus"
+        assert not app.query_one("#cb-model-other", tui.Input).display
+
+
+async def test_not_saved_yet_shows_after_an_agent_change_and_clears_on_save(tmp_path):
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        label = app.query_one("#cb-unsaved", tui.Label)
+        assert not label.display
+        app.query_one("#cb-agent", tui.Select).value = "codex"
+        await pilot.pause()
+        assert label.display and _plain(label) == "not saved yet"
+        await pilot.click("#cb-save")
+        await pilot.pause()
+        assert not label.display
+        app.query_one("#cb-agent", tui.Select).value = "claude"
+        await pilot.pause()
+        assert label.display
+        app.query_one("#cb-agent", tui.Select).value = "codex"
+        await pilot.pause()
+        assert not label.display
+
+
+async def test_default_model_saves_the_agent_with_no_model(tmp_path):
+    from whyline import model
+
+    root = _repo(tmp_path)
+    model.set_default_agent(root, "codex")
+    app = tui.WhylineConsoleApp(root=root)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.query_one("#cb-agent", tui.Select).value = "claude"
+        await pilot.pause()
+        assert _model(app) == ""
+        await pilot.click("#cb-save")
+        await pilot.pause()
+        assert app.session.agent == "claude"
+    assert model.resolve(root) == ("claude", "")
+    assert model.default_agent(root) == "claude"
+
+
+async def test_a_refused_save_shows_its_error_next_to_save(tmp_path):
+    app = tui.WhylineConsoleApp(root=_repo(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.query_one("#cb-agent", tui.Select).value = "codex"
+        await pilot.pause()
+        _set_model(app, "gpt 5")
+        await pilot.pause()
+        await pilot.click("#cb-save")
+        await pilot.pause()
+        label = app.query_one("#cb-unsaved", tui.Label)
+        assert label.display and "no spaces" in _plain(label)
 
 
 async def test_unreadable_config_is_shown_on_the_backup_select(tmp_path, monkeypatch):
@@ -607,7 +783,7 @@ async def test_unreadable_config_is_shown_on_the_backup_select(tmp_path, monkeyp
     async with app.run_test(size=(120, 40)) as pilot:
         select = app.query_one("#cb-backup", tui.Select)
         assert "could not read" in _backup_closed(select)
-        app.query_one("#cb-model", tui.Input).value = "opus"
+        _set_model(app, "opus")
         select.value = "claude"
         await pilot.pause()
         await pilot.click("#cb-save")
@@ -775,7 +951,7 @@ async def test_save_keeps_a_sticky_override_and_shows_using(tmp_path, monkeypatc
         assert label.display
         assert _plain(label) == "using codex"
         assert app.query_one("#cb-save").region.right <= 120
-        app.query_one("#cb-model", tui.Input).value = "opus"
+        _set_model(app, "opus")
         await pilot.pause()
         await pilot.click("#cb-save")
         await pilot.pause()

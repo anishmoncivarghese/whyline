@@ -250,15 +250,15 @@ def _cb_agent_name(value: object) -> str:
     return str(value)
 
 
-def _model_rejected(value: str) -> bool:
-    """Save writes nothing for an empty name, or one with a space or a quote.
+_CB_OTHER = "\x00other"
+_CB_UNSAVED = "not saved yet"
 
-    A blank field is not the agent's default on Save. Whitespace alone is
-    empty. A name that still has characters is rejected when any character
-    is a space or a quote.
+
+def _model_rejected(value: str) -> bool:
+    """A custom model id with a space or a quote is refused on Save.
+
+    An empty value is "default", which clears the agent's model.
     """
-    if not value.strip():
-        return True
     return any(ch.isspace() or ch in "\"'" for ch in value)
 
 
@@ -271,6 +271,15 @@ def _cb_dedupe(names) -> tuple[str, ...]:
             seen.add(name)
             out.append(name)
     return tuple(out)
+
+
+class _OtherModelInput(Input):
+    """The custom model id box beside the model dropdown; Esc backs out."""
+
+    BINDINGS = [("escape", "cancel_other", "Back")]
+
+    def action_cancel_other(self) -> None:
+        self.app._cb_cancel_other()
 
 
 class ConfirmScreen(ModalScreen):
@@ -1085,6 +1094,10 @@ class WhylineConsoleApp(App):
     #cb-backup > SelectOverlay { width: 56; }
     #cb-backup-more { width: auto; height: 1; min-width: 2; }
     #cb-model { width: 18; }
+    #cb-model > SelectOverlay { width: 36; }
+    #cb-model-other { width: 18; display: none; }
+    #cb-unsaved { width: auto; max-width: 48; color: $text-muted; }
+    #cb-unsaved.-error { color: $error; }
     #cb-timeout { width: 10; }
     #cb-timeout > SelectOverlay { width: 14; }
     #cb-repo { width: 1fr; }
@@ -1219,6 +1232,7 @@ class WhylineConsoleApp(App):
         self._cb_backup_real = "none"
         self._cb_backup_unreadable: str | None = None
         self._cb_agent_shown: str | None = None
+        self._cb_model_prev = ""
         self._cb_status_seen: tuple[tuple[str, bool, str], ...] | None = None
         self._cb_refreshing = False
         self._agents_name: str | None = None
@@ -3108,10 +3122,52 @@ class WhylineConsoleApp(App):
             agent = ""
         return (
             agent,
-            self._main("#cb-model", Input).value,
+            self._cb_model_text(),
             self._main("#cb-repo", Input).value,
             self._cb_chain,
         )
+
+    def _cb_model_text(self) -> str:
+        """The model id: the dropdown's value, or the Other box when chosen."""
+        value = self._main("#cb-model", Select).value
+        if value == _CB_OTHER:
+            return self._main("#cb-model-other", Input).value.strip()
+        return value if isinstance(value, str) else ""
+
+    def _cb_model_options(self, agent: str, saved: str) -> list[tuple[str, str]]:
+        options = [("default", "")]
+        listed = relay_ops.model_options_for_agent(agent) or []
+        options.extend((label, value) for label, value in listed if value)
+        if saved and saved not in {value for _, value in options}:
+            options.append((f"{saved} (saved)", saved))
+        options.append(("Other…", _CB_OTHER))
+        return options
+
+    def _cb_set_model(self, agent: str, model_name: str) -> None:
+        """Show `agent`'s models with `model_name` chosen, Other box closed."""
+        select = self._main("#cb-model", Select)
+        other = self._main("#cb-model-other", Input)
+        with self.prevent(Select.Changed, Input.Changed):
+            select.set_options(self._cb_model_options(agent, model_name))
+            select.value = model_name
+            other.value = ""
+        other.display = False
+        select.display = True
+        self._cb_model_prev = model_name
+
+    def _cb_cancel_other(self) -> None:
+        """Esc or an empty Other box: back to the previous choice."""
+        select = self._main("#cb-model", Select)
+        other = self._main("#cb-model-other", Input)
+        legal = getattr(select, "_legal_values", ())
+        with self.prevent(Select.Changed, Input.Changed):
+            other.value = ""
+            if self._cb_model_prev in legal:
+                select.value = self._cb_model_prev
+        other.display = False
+        select.display = True
+        select.focus()
+        self._cb_mark_save()
 
     def _cb_backup_detail(self, name: str, status: dict) -> str:
         info = status.get(name) or {}
@@ -3500,8 +3556,27 @@ class WhylineConsoleApp(App):
     def _cb_mark_save(self) -> None:
         try:
             self._main("#cb-save", Button).disabled = not self._cb_dirty()
+            self._cb_show_unsaved(_CB_UNSAVED if self._cb_unsaved() else "")
         except (NoMatches, IndexError):
             return
+
+    def _cb_unsaved(self) -> bool:
+        if self._cb_saved is None:
+            return False
+        current = self._cb_current()
+        return current[:2] != self._cb_saved[:2]
+
+    def _cb_show_unsaved(self, text: str, error: bool = False) -> None:
+        label = self._main("#cb-unsaved", Label)
+        label.update(text)
+        label.set_class(error, "-error")
+        label.display = bool(text)
+        # The row is full at 120 columns: the note borrows the Repo box's
+        # room, and a long error borrows Timeout's too. Save stays on screen.
+        for name in ("#cb-repo-label", "#cb-repo"):
+            self._main(name).display = not text
+        for name in ("#cb-timeout-label", "#cb-timeout"):
+            self._main(name).display = not (text and error)
 
     def _model_for(self, agent: str) -> str:
         """This agent's model: the repo file, then the global file, then blank."""
@@ -3525,7 +3600,7 @@ class WhylineConsoleApp(App):
             return
         try:
             select = self._main("#cb-agent", Select)
-            model_input = self._main("#cb-model", Input)
+            self._main("#cb-model", Select)
             repo_input = self._main("#cb-repo", Input)
         except (NoMatches, IndexError):
             return
@@ -3541,7 +3616,7 @@ class WhylineConsoleApp(App):
                 select.set_options(options)
                 if select.value != chosen:
                     select.value = chosen
-                model_input.value = model_name
+                self._cb_set_model(agent, model_name)
                 repo_input.value = repo_text
                 try:
                     backup = self._main("#cb-backup", Select)
@@ -3679,15 +3754,19 @@ class WhylineConsoleApp(App):
         agent, model_name, repo_text, chain = self._cb_current()
         saved_agent, saved_model, saved_repo, saved_chain = self._cb_saved
         # Before the chain, the agent, the model, or the repo.
-        if _model_rejected(model_name):
-            text = (
-                "A model name is required"
-                if not model_name.strip()
-                else "A model name has no spaces"
-            )
-            self.render_event(SessionEvent(kind="error", text=text))
+        if model_name == "" and self._main("#cb-model", Select).value == _CB_OTHER:
+            self._cb_cancel_other()
             return
         agent_changed = (agent, model_name) != (saved_agent, saved_model)
+        refusal = ""
+        if _model_rejected(model_name):
+            refusal = "A model name has no spaces"
+        elif agent_changed and model_name:
+            refusal = relay_ops.valid_model(agent, model_name) or ""
+        if refusal:
+            self.render_event(SessionEvent(kind="error", text=refusal))
+            self._cb_show_unsaved(refusal, error=True)
+            return
         repo_changed = repo_text != saved_repo
         global_too = bool(self._main("#cb-global", Checkbox).value)
         chain_changed = chain != saved_chain
@@ -3731,6 +3810,7 @@ class WhylineConsoleApp(App):
                 box.value = False
             self._cb_agent_shown = agent
             self._cb_saved = (agent, model_name, saved_repo, saved_chain)
+            self._cb_set_model(agent, model_name)
             self._cb_sync_failover()
         elif chain_changed and not global_too:
             self._cb_saved = (saved_agent, saved_model, saved_repo, saved_chain)
@@ -3866,7 +3946,12 @@ class WhylineConsoleApp(App):
                 ),
                 Static("", id="cb-backup-more"),
                 Label("Model", id="cb-model-label"),
-                Input(placeholder="default", id="cb-model"),
+                Select(
+                    self._cb_model_options("claude", ""),
+                    allow_blank=False,
+                    id="cb-model",
+                ),
+                _OtherModelInput(placeholder="model id", id="cb-model-other"),
                 Label("Timeout", id="cb-timeout-label"),
                 Select(
                     _CB_TIMEOUT_OPTIONS,
@@ -3878,6 +3963,7 @@ class WhylineConsoleApp(App):
                 Input(id="cb-repo"),
                 Checkbox("all repos", id="cb-global"),
                 Button("Save", id="cb-save", disabled=True),
+                Label("", id="cb-unsaved"),
                 id="context-bar",
             ),
             self._transcript,
@@ -4244,11 +4330,16 @@ class WhylineConsoleApp(App):
             self._send()
         elif event.input.id == "resolve-reply":
             self._submit_resolve_reply()
-        elif event.input.id in ("cb-model", "cb-repo"):
+        elif event.input.id == "cb-model-other":
+            if event.value.strip():
+                self._cb_save()
+            else:
+                self._cb_cancel_other()
+        elif event.input.id == "cb-repo":
             self._cb_save()
 
     def on_input_changed(self, event: "Input.Changed") -> None:
-        if event.input.id in ("cb-model", "cb-repo"):
+        if event.input.id in ("cb-model-other", "cb-repo"):
             self._cb_mark_save()
             return
         if event.input.id != "prompt":
@@ -4275,6 +4366,20 @@ class WhylineConsoleApp(App):
                     "none" if event.value == "none" else int(event.value)
                 )
             return
+        if select.id == "cb-model":
+            if event.value != select.value:
+                return
+            if event.value == _CB_OTHER:
+                # The box takes the dropdown's place: the row has no spare room.
+                other = self._main("#cb-model-other", Input)
+                select.display = False
+                other.display = True
+                other.focus()
+            else:
+                self._main("#cb-model-other", Input).display = False
+                self._cb_model_prev = event.value if isinstance(event.value, str) else ""
+            self._cb_mark_save()
+            return
         if select.id != "cb-agent":
             return
         # Textual queues Changed, so a refresh can move the value again
@@ -4290,14 +4395,8 @@ class WhylineConsoleApp(App):
             self._cb_snap_back(value[1:])
             return
         if isinstance(value, str):
-            shown = self._cb_agent_shown
-            field = self._main("#cb-model", Input)
-            # Keep a model the user already typed. Replace the field only
-            # when it still shows the previous agent's saved model, which is
-            # what a click on the selector does before the next keystroke.
-            if shown != value and (shown is None or field.value == self._model_for(shown)):
-                with self.prevent(Input.Changed):
-                    field.value = self._model_for(value)
+            if self._cb_agent_shown != value:
+                self._cb_set_model(value, self._model_for(value))
             self._cb_agent_shown = value
         self._cb_mark_save()
 
