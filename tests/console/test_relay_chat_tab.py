@@ -381,3 +381,40 @@ async def test_nothing_new_is_sent_while_a_question_is_out(tmp_path, monkeypatch
         assert _log_text(app) == ["You: first"]
         release.set()
         await _wait_for(pilot, lambda: len(_log_text(app)) == 2, "answer")
+
+
+def _styles(text, word):
+    start = text.plain.index(word)
+    return [s.style for s in text.spans
+            if s.start <= start and s.end >= start + len(word)]
+
+
+def test_render_answer_bold_and_code_without_markers(tmp_path):
+    text = relay_chat_tab.render_answer(tmp_path, "now **running PZ-1** with `uv run`")
+    assert text.plain == "now running PZ-1 with uv run"
+    assert any(s.bold for s in _styles(text, "running PZ-1") if not isinstance(s, str))
+    assert any(getattr(s, "color", None) is not None and s.color.name == "cyan"
+               for s in _styles(text, "uv run") if not isinstance(s, str))
+
+
+def test_render_answer_headings_and_bullets(tmp_path):
+    text = relay_chat_tab.render_answer(tmp_path, "# Title\n## Sub\n### Third\n- one\n* two\n#nope")
+    assert text.plain == "Title\nSub\nThird\n• one\n• two\n#nope"
+    assert any(s.bold for s in _styles(text, "Sub") if not isinstance(s, str))
+    assert not any(s.bold for s in _styles(text, "#nope") if not isinstance(s, str))
+
+
+def test_render_answer_path_in_backticks_is_link(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x\n" * 5)
+    text = relay_chat_tab.render_answer(tmp_path, "see `src/a.py:3` here")
+    actions = _link_actions(text)
+    assert len(actions) == 1 and actions[0].endswith(", 3)")
+    assert text.plain == "see src/a.py:3 here"
+
+
+def test_render_answer_unmatched_markers_stay(tmp_path):
+    text = relay_chat_tab.render_answer(tmp_path, "a **b and `c")
+    assert text.plain == "a **b and `c"
+    shown = relay_chat_tab.render_answer(tmp_path, "**x** `y`").plain
+    assert "**" not in shown and "`" not in shown

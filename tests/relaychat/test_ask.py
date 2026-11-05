@@ -122,3 +122,13 @@ def test_seconds_come_from_clock(env):
     ticks = iter([10.0, 12.5])
     answer = ask.ask(env, "q", runner=Runner(), clock=lambda: next(ticks))
     assert answer.seconds == 2.5
+
+
+def test_prompt_asks_for_final_answer_only():
+    prompt = ask.build_prompt("snap", [], "q")
+    assert "Reply with the final answer only. Do not describe what you are about to read or do." in prompt
+
+
+def test_final_message_returns_text_unchanged():
+    assert ask.final_message("grok", '{"text": "a b"}', "a b") == "a b"
+    assert ask.final_message("claude", "raw", "answer") == "answer"

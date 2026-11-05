@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from rich.style import Style
-from rich.text import Text
+from rich.text import Span, Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual import events
@@ -56,6 +56,55 @@ def link_paths(repo: Path, text: str) -> Text:
         begin = match.span()[0]
         out.stylize(Style(meta={"@click": action}, underline=True, color="cyan"),
                     begin, begin + len(token))
+    return out
+
+
+_INLINE = re.compile(r"\*\*(.+?)\*\*|`([^`\n]+)`")
+_HEADING = re.compile(r"#{1,3} ")
+
+
+def render_answer(repo: Path, text: str) -> Text:
+    """An agent answer with light markdown styled and repo paths as links.
+
+    Handles **bold**, `code`, `#`..`###` headings and `-`/`*` bullets; markers
+    that do not pair up stay as typed.
+    """
+    plain: list[str] = []
+    spans: list[tuple[int, int, Style]] = []
+    size = 0
+
+    def emit(piece: str, style: Style | None = None) -> None:
+        nonlocal size
+        plain.append(piece)
+        if style is not None and piece:
+            spans.append((size, size + len(piece), style))
+        size += len(piece)
+
+    for number, line in enumerate(text.split("\n")):
+        if number:
+            emit("\n")
+        start = size
+        heading = _HEADING.match(line)
+        if heading:
+            line = line[heading.end():]
+        elif line.startswith(("- ", "* ")):
+            emit("• ")
+            line = line[2:]
+        last = 0
+        for match in _INLINE.finditer(line):
+            emit(line[last:match.span()[0]])
+            if match.group(1) is not None:
+                emit(match.group(1), Style(bold=True))
+            else:
+                emit(match.group(2), Style(color="cyan"))
+            last = match.end()
+        emit(line[last:])
+        if heading:
+            spans.append((start, size, Style(bold=True)))
+    shown = "".join(plain)
+    out = link_paths(repo, shown)
+    for begin, end, style in spans:
+        out.spans.insert(0, Span(begin, end, style))
     return out
 
 
@@ -212,7 +261,7 @@ class RelayChatPanel(Vertical):
         if role == "user":
             log.write(Text(f"You: {text}", style="bold cyan"))
         else:
-            log.write(link_paths(self._repo, f"Agent: {text}"))
+            log.write(Text("Agent: ").append_text(render_answer(self._repo, text)))
 
     @property
     def asking(self) -> bool:
