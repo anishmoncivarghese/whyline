@@ -252,8 +252,28 @@ Rules every task keeps:
   - When every agent fails, the console lists each agent with its reason.
   - The existing Check tests still pass.
 
+- [ ] PZ-17: A model dropdown in the top bar, and a "not saved yet" hint
+  Edit `src/whyline/console/tui.py` and `tests/console/test_context_bar.py` only.
+  On 2026-11-05 the user switched the top bar's Agent to claude and wasn't offered any models. The Model field (`#cb-model`) is a free-text `Input`, although `relay_ops.model_options_for_agent` already gives each agent's models and Resolve uses them as a dropdown. The switch also wasn't saved, so Check kept using codex and nothing said so.
+  1. Make `#cb-model` a `Select`, keeping its id:
+     - Its options are "default" (value `""`) first, then `relay_ops.model_options_for_agent(agent)` for the agent shown, then "Other…".
+     - When that function returns `None` (antigravity with no cached list), offer "default" and "Other…" only.
+  2. When the Agent select changes, rebuild the options for the new agent and select that agent's saved model (`_model_for`), or "default". This replaces today's rule for keeping typed text.
+  3. "Other…" opens a one-line `Input` next to the select, for a custom id. Enter or Save saves it, and `relay_ops.valid_model` checks it first, as today. Esc or an empty value returns to the previous choice.
+  4. A saved model not in the list shows as an extra option, "<id> (saved)", so it never disappears.
+  5. While the shown agent or model differs from the saved one, `#cb-save` stays enabled as today, and a muted label after it says "not saved yet". Check and Chat keep using the saved agent. The label goes away on Save or when the choice is set back.
+  6. Every code path that reads `#cb-model` (`_cb_saved_tuple`, `_cb_dirty`, `_cb_save`, the narrow-layout label) reads the select's value, or the Other input's value when Other is chosen.
+  Tests:
+  - Choosing claude lists default, opus, sonnet, haiku and the claude ids, then Other…. Choosing codex lists codex's models.
+  - Switching agent selects that agent's saved model.
+  - A saved id that isn't listed shows as "(saved)".
+  - Other… with "claude-opus-5-5-high" is refused by `valid_model`, and a valid custom id is saved.
+  - "not saved yet" appears after changing the agent and goes away after Save.
+  - Save writes the agent and model through `model.set_default_agent` and `model.set_one`, as today.
+  - The existing context-bar tests are updated only where they typed into `#cb-model`.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..16
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..17
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
