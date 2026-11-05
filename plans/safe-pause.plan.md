@@ -73,7 +73,7 @@ Rules every task keeps:
 
 ## Part 2: Safeguards
 
-- [ ] PZ-4: Safeguard settings and `whyline relay-safety`
+- [x] PZ-4: Safeguard settings and `whyline relay-safety`
   Create `src/whyline/relaysafety.py` and its tests. Edit `src/whyline/cli.py`.
   1. Add `load() -> SafetySettings(battery_percent: int | None = 15, on_wake: str = "ask", on_quit: str = "ask")` and `save(**changes)`.
      - They are stored per Mac in `~/.whyline/relay-safety.toml`, written atomically, with an injectable base dir.
