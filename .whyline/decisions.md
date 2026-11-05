@@ -36294,3 +36294,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fd054d065305410fbb34f8eb43d25836 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:39:53.168Z"} -->
+
+## 2026-11-05 — Engine passes cancel_event to Step.run; a None return counts as success, only False fails
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-4
+
+**Because:** Steps that wait need the event; most steps return nothing
+
+**Rejected:**
+
+- Step.run returning a result object — heavier than the plan needs
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: 1be54790a9ea493fbc73ed2e5c173822 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:41:43.116Z"} -->
+
+## 2026-11-05 — Approve REL-4 release step engine: run/resume lifecycle, modes, cancellation, and atomic state match spec
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-4
+
+**Because:** All 13 engine unit tests in tests/release/test_engine.py and 70 release tests pass; full test suite passed (3702 passed, 1 skipped)
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: e4d6b20202934745bb362034a8400a05 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T20:56:30.594Z"} -->
+
+## 2026-11-05 — Approve REL-4 release step engine, state, and resume
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-4
+
+**Because:** The three named files match the spec: run/resume lifecycle, confirm modes, cancel, atomic state, percent, and AlreadyReleasing. tests/release passed (70); the one full-suite failure was an unrelated flaky TUI test that passed on retry.
+
+**Rejected:**
+
+- Block on test_release_select_saves_chosen_agent — it is outside REL-4 and passed when re-run
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: bf48db06a2814cf4874637dd2ec07d41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:15:58.259Z"} -->
