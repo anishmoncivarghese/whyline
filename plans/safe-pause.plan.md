@@ -166,7 +166,7 @@ Rules every task keeps:
   - Stop changes the line to `Stopping…`.
   - Nothing new is sent while a question is out.
 
-- [ ] PZ-13: Chat answers show only the final answer, with markdown styled
+- [x] PZ-13: Chat answers show only the final answer, with markdown styled
   Edit `src/whyline/relaychat/ask.py`, `src/whyline/console/relay_chat_tab.py` and their tests (`tests/relaychat/test_ask.py`, `tests/console/test_relay_chat_tab.py`) only.
   On 2026-11-05 a grok answer began "…give a short status.I have the snapshot; next I'll cite…": its progress messages were joined to the answer with no space. It also showed `**running PZ-1**` and backticks as raw text.
   1. Final answer only:
