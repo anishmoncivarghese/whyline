@@ -290,7 +290,7 @@ Rules every task keeps:
   - Save writes the agent and model through `model.set_default_agent` and `model.set_one`, as today.
   - The existing context-bar tests are updated only where they typed into `#cb-model`.
 
-- [ ] PZ-18: Check's answer as a short report, with actions and follow-up
+- [x] PZ-18: Check's answer as a short report, with actions and follow-up
   Edit `src/whyline/console/fixmode.py`, `src/whyline/console/relay_screens.py`, `src/whyline/console/tui.py` and their tests (`tests/console/test_fixmode_check.py`, `tests/console/test_relay_screens.py`, `tests/console/test_tui_relay_run.py`) only. Runs after PZ-16.
   On 2026-11-05 Check's answer came back as one long paragraph inside the transcript. It was hard to read, and it offered nothing to do next and no way to ask about it.
   1. Ask for a structure. In `build_check_prompt`, replace the closing instructions with a request for one fenced JSON block:
