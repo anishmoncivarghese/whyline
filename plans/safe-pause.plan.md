@@ -93,7 +93,7 @@ Rules every task keeps:
   3. With `battery_percent` off, it never fires.
   Tests: parsing real `pmset` output samples, the threshold, firing once, and the setting turned off.
 
-- [ ] PZ-6: Sleep and wake, and the Awake hint
+- [x] PZ-6: Sleep and wake, and the Awake hint
   Edit `src/whyline/console/power.py` and `src/whyline/console/tui.py`, with tests.
   1. `WakeWatch(wall, mono)`: on each 1-second tick, a wall-clock gain more than 2 minutes beyond the monotonic gain means the Mac slept. It reports the sleep length.
   2. When the Mac woke while a relay was running:
