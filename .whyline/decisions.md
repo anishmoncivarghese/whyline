@@ -36388,3 +36388,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 80344e7427f34be9811866a2db3d9ce3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:53:00.089Z"} -->
+
+## 2026-11-05 — Notes draft falls back to commit list inside draft() on agent exception or empty reply; version-less prompt example comes from the last v-tag's notes file
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-6
+
+**Because:** a release must never block on an agent, and the previous version is whatever the last tag is
+
+**Rejected:**
+
+- Caller handles fallback — every caller would repeat it
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 7932de0b317b423e956b1c812468f0f6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T21:53:56.162Z"} -->
+
+## 2026-11-05 — Release notes drafting, prompt assembly, agent fallback, and write behavior verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-6
+
+**Because:** Unit tests in tests/release/test_notes.py cover tag commit extraction, style example inclusion, agent fallback on failure or empty output, and file write handling; all 8 tests in test_notes.py and full test suite pass
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 2b54c442247d4708a5e3c9bfbb3e402c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T22:10:23.317Z"} -->
+
+## 2026-11-05 — Approve REL-6: agent-drafted release notes with fallback and write
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-6
+
+**Because:** notes.py implements commits_since_last_tag, draft with style example and injected ask_agent, fallback on agent failure or empty reply, and write to notes.format returning None when notes is empty; tests cover tags, no tags, style example, fallback, and write paths; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for missing console ask_agent wiring — REL-6 only creates notes.py; the console injects the adapter later
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: ee7c4901999e4c2fbf92893df6c924e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T22:27:18.583Z"} -->
