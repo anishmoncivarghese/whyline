@@ -264,7 +264,7 @@ Rules every task keeps:
   - When every agent fails, the console lists each agent with its reason.
   - The existing Check tests still pass.
 
-- [ ] PZ-17: A model dropdown in the top bar, and a "not saved yet" hint
+- [x] PZ-17: A model dropdown in the top bar, and a "not saved yet" hint
   Edit `src/whyline/console/tui.py` and `tests/console/test_context_bar.py` only.
   On 2026-11-05 the user switched the top bar's Agent to claude and wasn't offered any models. The Model field (`#cb-model`) is a free-text `Input`, although `relay_ops.model_options_for_agent` already gives each agent's models and Resolve uses them as a dropdown. The switch also wasn't saved, so Check kept using codex and nothing said so.
   1. Make `#cb-model` a `Select`, keeping its id:
