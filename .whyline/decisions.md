@@ -35585,3 +35585,82 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f2fb469ab73847abb0382104d21724c9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T07:29:11.308Z"} -->
+
+## 2026-11-05 — Chat question box is a TextArea subclass with a hand-drawn placeholder; Select squeezed to 1 row, box max-height 50%
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-11
+
+**Because:** Textual 2.x TextArea has no placeholder; short panes (9 rows) must keep log and buttons visible
+
+**Rejected:**
+
+- Input with multiline — Input cannot wrap
+- editing tui.py pane height — out of task scope
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 56c3a40a999042dba11c23d0069e939c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T07:36:03.277Z"} -->
+
+## 2026-11-05 — Fail PZ-11: relay_chat_tab.py triggers banned call AST guard in test_never_disturbs.py
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-11
+
+**Because:** event.stop() calls on lines 111 and 220 match BANNED_CALLS['stop'] in test_chat_code_never_drives_or_writes_the_relay; full test suite has 1 failure out of 3583 tests
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: ab44d578f5bd48a6b2d4c803fa807f79 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T07:52:24.440Z"} -->
+
+## 2026-11-05 — Chat box submits on Enter via prevent_default only, no event.stop()
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PZ-11
+
+**Because:** BANNED_CALLS in tests/relaychat/test_never_disturbs.py flags any .stop() call; Submitted bubbling to the app is harmless
+
+**Rejected:**
+
+- alias stop call — evades the guard rather than satisfying it
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 603736267cab45238d340073a82b8834 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T08:14:19.967Z"} -->
+
+## 2026-11-05 — Pass PZ-11: ChatQuestion TextArea passes all behavior tests and never-disturbs AST guard
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PZ-11
+
+**Because:** BANNED_CALLS violation resolved; all 17 console tests, 10 never-disturbs tests, and full test suite (3583 passed) succeed cleanly
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 4475c7fd7c144ce9b2e79fb19af6e072 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T08:29:26.327Z"} -->
+
+## 2026-11-05 — Approve PZ-11: ChatQuestion TextArea meets the spec and the full suite is green
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** PZ-11
+
+**Because:** Enter sends and clears, empty or whitespace sends nothing, wrap grows from 3 to 6 text rows plus border, placeholder and value mapping are in place, Send/quick/Stop/Clear are unchanged, and uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- request changes for max_height 50% and Select squeeze — short panes must keep the log and buttons visible, already decided
+- request a paste-newlines test — TextArea paste keeps newlines and the required tests do not ask for it
+
+**Files:** src/whyline/console/relay_chat_tab.py
+
+<!-- whyline-event: 8af953547a49489c925fe2143b263836 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T08:48:00.692Z"} -->

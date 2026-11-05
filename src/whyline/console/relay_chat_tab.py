@@ -14,7 +14,10 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Input, RichLog, Select, Static
+from textual import events
+from textual.strip import Strip
+from textual.message import Message
+from textual.widgets import Button, RichLog, Select, Static, TextArea
 
 from whyline.relaychat import agent_choice, ask, history, settings, snapshot
 
@@ -54,6 +57,61 @@ def link_paths(repo: Path, text: str) -> Text:
     return out
 
 
+MIN_ROWS = 3
+MAX_ROWS = 6
+
+
+class ChatQuestion(TextArea):
+    """The question box: wraps, grows from 3 to 6 rows, Enter sends."""
+
+    class Submitted(Message):
+        pass
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(soft_wrap=True, show_line_numbers=False, **kwargs)
+        # Textual 2.x TextArea has no placeholder option, so draw it here.
+        self.placeholder = "Ask about this relay"
+
+    def render_line(self, y: int) -> Strip:
+        line = super().render_line(y)
+        if y == 0 and not self.text:
+            width = self.scrollable_content_region.width
+            hint = Text(self.placeholder, style="dim")
+            hint.truncate(width, pad=True)
+            return Strip(hint.render(self.app.console), width)
+        return line
+
+    @property
+    def value(self) -> str:
+        return self.text
+
+    @value.setter
+    def value(self, text: str) -> None:
+        self.text = text
+
+    def on_mount(self) -> None:
+        self._fit()
+
+    def on_resize(self) -> None:
+        self._fit()
+
+    def on_text_area_changed(self) -> None:
+        self._fit()
+
+    def _fit(self) -> None:
+        try:
+            lines = self.wrapped_document.height
+        except Exception:
+            lines = 1
+        rows = max(MIN_ROWS, min(MAX_ROWS, lines))
+        self.styles.height = rows + 2  # plus the border
+
+    async def _on_key(self, event: events.Key) -> None:
+        if event.key == "enter":
+            event.prevent_default()
+            self.post_message(self.Submitted())
+
+
 class RelayChatPanel(Vertical):
     def __init__(self, repo: Path, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -74,7 +132,7 @@ class RelayChatPanel(Vertical):
         yield Select(self._options(), value=self._selected(), allow_blank=False,
                      id="chat-agent")
         yield RichLog(id="chat-log", wrap=True, markup=False)
-        yield Input(placeholder="Ask about this relay", id="chat-input")
+        yield ChatQuestion(id="chat-input")
         yield Horizontal(
             *[Button(label, id=bid, classes="chat-quick") for bid, label in QUICK.items()],
             id="chat-quick",
@@ -90,15 +148,23 @@ class RelayChatPanel(Vertical):
         self.query_one("#chat-stop", Button).display = False
         self.query_one("#chat-quick").styles.height = 1
         self.query_one("#chat-actions").styles.height = 1
-        chat_input = self.query_one("#chat-input", Input)
-        chat_input.styles.height = 1
-        chat_input.styles.border = ("none", "black")
+        self.query_one("#chat-input", ChatQuestion).styles.border = ("round", "grey")
+        # On a short pane the box yields, so the log and buttons stay on screen.
+        self.query_one("#chat-input").styles.max_height = "50%"
         # Compact rows: the pane is short, so both button rows are one line high.
         for button in self.query("#chat-quick Button, #chat-actions Button"):
             button.styles.height = 1
             button.styles.min_width = 0
             button.styles.border = ("none", "black")
-        self.query_one("#chat-log", RichLog).styles.height = "1fr"
+        log = self.query_one("#chat-log", RichLog)
+        log.styles.height = "1fr"
+        log.styles.min_height = 1  # a log with no rows never shows what it was given
+        # The question box takes rows from the log; the agent menu is one line too.
+        picker = self.query_one("#chat-agent", Select)
+        picker.styles.height = 1
+        picker.query_one("SelectCurrent").styles.height = 1
+        picker.query_one("SelectCurrent").styles.border = ("none", "black")
+        picker.query_one("SelectCurrent").styles.padding = (0, 1)
         self._refresh_header()
         self._load_log()
 
@@ -149,9 +215,7 @@ class RelayChatPanel(Vertical):
             settings.save(self._repo, agent=chosen)
         self._refresh_header()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "chat-input":
-            return
+    def on_chat_question_submitted(self, event: ChatQuestion.Submitted) -> None:
         self._send()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -170,7 +234,7 @@ class RelayChatPanel(Vertical):
             self._clear()
 
     def _send(self, question: str | None = None) -> None:
-        box = self.query_one("#chat-input", Input)
+        box = self.query_one("#chat-input", ChatQuestion)
         typed = question is None
         question = box.value.strip() if typed else question
         if not question or self._cancel is not None:

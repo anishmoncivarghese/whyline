@@ -215,3 +215,66 @@ async def test_link_opens_file_at_line(tmp_path):
         assert view.display is True
         assert "line 0" in str(view.document.text if hasattr(view, "document") else "line 0")
         assert view.scroll_y == 119
+
+
+async def test_enter_sends_typed_question_and_clears(tmp_path, monkeypatch):
+    asked = []
+
+    def fake(repo, question, **kwargs):
+        asked.append(question)
+        return SimpleNamespace(text="ok")
+
+    monkeypatch.setattr(relay_chat_tab.ask, "ask", fake)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        box = app.query_one("#chat-input")
+        box.focus()
+        await pilot.press(*"hi there")
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: len(_log_text(app)) == 2, "both lines")
+        assert asked == ["hi there"]
+        assert box.value == ""
+
+
+async def test_enter_on_empty_box_sends_nothing(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.setattr(relay_chat_tab.ask, "ask",
+                        lambda repo, q, **k: asked.append(q) or SimpleNamespace(text="x"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        app.query_one("#chat-input").focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        app.query_one("#chat-input").value = "   "
+        await pilot.press("enter")
+        await pilot.pause()
+        assert asked == []
+        assert _log_text(app) == []
+
+
+async def test_long_question_wraps_and_box_grows_to_a_cap(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(100, 50)) as pilot:
+        await _open_chat(app, pilot)
+        box = app.query_one("#chat-input")
+        await pilot.pause()
+        assert box.size.height == 3  # text rows; the border is extra
+        width = box.size.width
+        box.value = "word " * (width * 4 // 5)
+        await pilot.pause()
+        assert box.wrapped_document.height > 3
+        assert 3 < box.size.height <= 6
+        box.value = "word " * (width * 3)
+        await pilot.pause()
+        assert box.size.height == 6
+
+
+async def test_box_has_border_and_placeholder(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        box = app.query_one("#chat-input")
+        assert box.placeholder == "Ask about this relay"
+        assert box.styles.border.top[0] != ""
