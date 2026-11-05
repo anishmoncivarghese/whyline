@@ -114,7 +114,7 @@ Rules every task keeps:
 
 ## Part 3: Settings, Help and docs
 
-- [ ] PZ-8: Settings section, Help and docs
+- [x] PZ-8: Settings section, Help and docs
   Edit `src/whyline/console/settings_screen.py`, the console Help text and `README.md`, and create `docs/safe-pause.md`, with tests.
   1. The Settings screen gets a **Relay safety** section, saved on Save through `relaysafety.save`, and transactional like the rest of the screen. It has:
      - the battery limit (off, 10, 15, 20, 25 or a number)
