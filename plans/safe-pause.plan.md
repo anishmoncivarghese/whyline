@@ -153,7 +153,7 @@ Rules every task keeps:
   - The box has a border, and its placeholder is "Ask about this relay".
   - The existing tab tests still pass unchanged.
 
-- [ ] PZ-12: A working line while Chat waits for an answer
+- [x] PZ-12: A working line while Chat waits for an answer
   Edit `src/whyline/console/relay_chat_tab.py` and `tests/console/test_relay_chat_tab.py` only.
   An answer can take a minute or more. Today the only sign is the Stop button, so on 2026-11-05 a question looked unanswered while grok was still working.
   1. While a question is out, show one line between the answer log and the question box: `⠋ grok is working on your question… 42s`. Use the agent the answer is coming from (`agent_choice.pick`), the console's `_SPINNER` frames from `tui.py` (import them, don't copy), and seconds since the question was sent.
