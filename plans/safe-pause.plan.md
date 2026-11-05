@@ -229,8 +229,31 @@ Rules every task keeps:
   - `issues_text` shows the label, and the `Why:` line only for sent-back rounds.
   - The status line count matches the view.
 
+- [ ] PZ-16: Check falls back to the backups when an agent is out
+  Edit `src/whyline/console/fixmode.py`, `src/whyline/console/tui.py`, `tests/console/test_fixmode_check.py` and `tests/console/test_tui_relay_run.py` only.
+  On 2026-11-05 codex was over its usage limit. Check ran it and showed its output (codex's echo of the prompt, then "ERROR: You've hit your usage limit…") as codex's note. It never tried the backups, antigravity and grok. `run_check` only moves on when the runner raises, and a usage limit returns a non-zero exit instead.
+  1. Skip agents known to be out. Before running an agent, `run_check` checks `relay_ops.agent_readiness(root)`. An agent whose row is not ready is skipped, using its `why` (for example "codex has reached its usage limit until Nov 8, 00:27"), and the skip is recorded through `pass_over`. If readiness can't be read, nothing is skipped.
+  2. Judge every run, not only exceptions:
+     - Classify each run with `whyline.agents.runner._classify(agent, exit_code, raw, failure)`, the same as `relaychat.ask`.
+     - `usage_limit`, `login_needed`, `timed_out`, `missing` and `failed` all move on to the next agent through `pass_over`, with a reason worded like Chat's ("codex has reached its usage limit.").
+     - `cancelled` still stops Check.
+     - A run that exits 0 with no text also moves on.
+     - Use the runner result's `exit_code` when it has one. A bare string result counts as exit 0.
+  3. The note is the agent's answer, not its transcript. Pass the output through `runner._answer` for that agent, the way `relaychat.ask` does, before looking for the JSON block and the prose.
+  4. The console shows the fallbacks:
+     - `_begin_check` passes `on_progress` and prints each line as `check › codex has reached its usage limit, trying antigravity…`. The line is posted to the UI thread with `call_from_thread`.
+     - When every agent is passed over, `_check_finished` prints one line per agent with its reason, instead of "no agent could answer."
+  Tests:
+  - A fake runner returns exit 1 with codex's usage-limit text: Check tries the next agent, and its note is that agent's answer.
+  - A not-ready agent in a fake `agent_readiness` is never run, and its skip reason is recorded.
+  - An empty exit-0 run moves on.
+  - Cancel still stops Check.
+  - A note never contains the prompt text.
+  - When every agent fails, the console lists each agent with its reason.
+  - The existing Check tests still pass.
+
 ## Publish
 
-- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..15
+- [ ] PZ-9: Publish whyline with PZ-1..8 and PZ-10..16
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
