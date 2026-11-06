@@ -134,7 +134,7 @@ Global constraints:
   - a failure offers Resume release, and Open PR when flagged
   - relay Run and Resume are disabled during a release
 
-- [ ] REL-11: The Set up tab: targets, mode, checks and GitHub
+- [x] REL-11: The Set up tab: targets, mode, checks and GitHub
   Edit `src/whyline/console/release_screens.py` and `tests/console/test_release_screens.py` only.
   - The tab loads `config.load`, or `config.detect` when the file is missing (shown with "Suggested; press Save to keep").
   - Rows:
