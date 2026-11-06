@@ -317,7 +317,7 @@ Global constraints:
   - The CLI gets `whyline security hook install|uninstall|status`. The Security section's **Check every commit** switch calls the same functions.
   Tests: install, uninstall, an existing foreign hook kept, `--hook` blocking on a staged secret and passing on a clean change (a temp repo with a real commit through the installed hook), the hook output is masked, the off setting.
 
-- [ ] SEC-11: GitHub's own protection
+- [x] SEC-11: GitHub's own protection
   Edit `src/whyline/release/setup_github.py`, `src/whyline/console/release_screens.py` and their tests only.
   - `protection_status(owner_repo, *, run)` reads `gh api repos/<o>/<r> --jq .security_and_analysis` and `gh api repos/<o>/<r>/vulnerability-alerts` (204 on, 404 off). It returns secret scanning, push protection and Dependabot alerts as on/off/unavailable.
   - `enable_protection(owner_repo, which, *, run)`:
