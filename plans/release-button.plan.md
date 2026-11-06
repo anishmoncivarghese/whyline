@@ -466,6 +466,36 @@ Global constraints:
     - an unticked target's steps never appear and none of its commands run
   - `docs/release.md`: a section per target (what it publishes, the one-time setup, where tokens live or why there are none, how to verify by hand), plus a troubleshooting list built from each step's failure messages.
 
-- [ ] RLS-1: Publish whyline with the Release button (REL-1..19) and the security checks (SEC-1..14)
+## Part 4: Relay chat answers that stopped early (found while running this plan, 2026-11-06)
+
+On 2026-11-06 the Chat tab was asked "status" while grok reviewed REL-10. The working line went away and the whole answer was "I'll read the relay snapshot and project state, then answer with the current status." Chat runs grok read-only (`--permission-mode dontAsk`, no allowed shell commands, `agents/capabilities.py:_grok`), and headless grok ends its whole turn as cancelled on any command outside that, with exit 0, `"stopReason": "cancelled"` and only its opening line as text. `ask.ask` treated that as an answer, and `ask.final_message` is still a stub that returns its input. The tab also showed a 4 Nov "adhoc" answer about PZ-1 as if it were current, because `RelayChatPanel` reads `_run_id` once when it's created, while `ask` saves under the run id of the moment. And `test_transcript_line_reopens_report_and_ask_feeds_chat` wrote `~/.whyline/relay-chat/test_transcript_line_reopens_r0-…` to the real home folder.
+
+- [ ] CHF-1: Chat retries a cancelled grok turn and never shows its opening line as the answer
+  Edit `src/whyline/relaychat/ask.py`, `src/whyline/console/relay_chat_tab.py` and `tests/console/test_fixmode_check.py`, with tests in `tests/console/test_relay_chat_tab.py` (and `tests/relaychat/` if that is where `ask` is tested).
+  1. `INSTRUCTIONS` gains: "Everything you need is in the snapshot below. Answer from it. Read a file only when the snapshot doesn't have what the question needs, and never run shell commands."
+  2. Add `ask.cancelled_turn(cli: str, raw: str) -> bool`: true for grok when the JSON object in `raw` (parse it the way `whyline.agents.runner._answer` does) has `stopReason == "cancelled"`. Other CLIs return False. Add `ask.refused_command(raw: str) -> str | None`: the command in the first "permission required: Execute `<command>`" in `raw`, else None.
+  3. In `ask.ask`, when the run exits 0 but `cancelled_turn` is true, and the user didn't press Stop:
+     - Run once more. When `raw` has a `sessionId`, use the same command with `--resume <sessionId>` inserted just before the final `-p`. Otherwise, start fresh with the same prompt. The retry prompt is: "Your last turn was stopped because a shell command isn't allowed in this read-only chat. Don't run shell commands. Answer the question from the snapshot you were given." When `refused_command` found one, add before it: "Your last command, `<command>`, is not allowed."
+     - A retry that answers normally is the answer, and is saved like any other.
+     - When the retry is cancelled too, or fails, the answer is `ok=False`: "<cli> stopped before answering: its read-only mode refused `<command>`. Ask again, or pick another agent in the list above." Without a found command: "<cli> stopped before answering (its read-only mode refused a command). Ask again, or pick another agent in the list above."
+     - A cancelled turn's text is never returned or saved as an answer.
+     - `ask` gains keyword `on_progress: Callable[[str], None] | None = None` and calls it with "<cli> was stopped by its read-only rules, retrying…" before the retry.
+  4. The Chat tab passes `on_progress`. The working line shows that text, keeping the spinner and the elapsed seconds, until the answer arrives. Stop still cancels the retry.
+  5. History follows the run. Before each question and each time the tab is shown, `RelayChatPanel` re-reads the run id with `_current_run_id()`. When it has changed, it updates `_run_id` and reloads the log. History entries older than today show their date in the log, as `You (4 Nov): …` and `Agent (4 Nov): …`.
+  6. In `tests/console/test_fixmode_check.py`, the `repo` fixture sets `HOME` to `tmp_path / "home"` with `monkeypatch.setenv`, the way `test_relay_chat_tab.py` does, so no test writes under the real `~/.whyline`.
+  Tests (fake runner, no real grok):
+  - a cancelled grok output (exit 0, `stopReason: cancelled`, text "I'll read the relay snapshot…", a "permission required: Execute `git -c x diff`" line, a `sessionId`) followed by a normal answer: the second call has `--resume <id>` before `-p`, its prompt names `git -c x diff`, `on_progress` got the retry text, and the answer and history are the second answer
+  - cancelled twice: `ok` is False, the text names the command, and history has no "I'll read the relay snapshot" entry
+  - a cancelled turn without a `sessionId` retries fresh with the retry prompt
+  - a codex or claude output with a `stopReason` key is not treated as cancelled
+  - a cancel_event set during the first run gives `STOPPED` and no retry
+  - the tab's working line shows the retry text with the spinner and seconds, then clears on the answer
+  - changing the run id between two questions reloads the log for the new run, and an entry dated yesterday shows its date
+  - `INSTRUCTIONS` contains "never run shell commands"
+  - after the Check tests, nothing under the real home is touched (the fixture's HOME is under tmp_path)
+
+## Release
+
+- [ ] RLS-1: Publish whyline with the Release button (REL-1..19), the security checks (SEC-1..14) and the Chat fix (CHF-1)
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
