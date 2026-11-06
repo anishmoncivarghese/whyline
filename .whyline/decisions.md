@@ -36950,3 +36950,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2937c9503950437b957f28cd307653c1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:02:48.837Z"} -->
+
+## 2026-11-06 — External scanners run with --exit-code 0 and report to a temp file; secrets merge on leading rule word
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-7
+
+**Because:** gitleaks exits 1 on leaks so exit code can't signal a crash; tools name the same rule differently (aws-access-token vs aws_access_key)
+
+**Rejected:**
+
+- parse stdout — would put findings in the transcript
+- compare full rule names — would never dedupe across tools
+
+**Files:** src/whyline/security/external.py
+
+<!-- whyline-event: baf3878451cf44e3a3a28d80da9ace6a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:04:08.171Z"} -->
+
+## 2026-11-06 — External scanner integration behaves correctly across scan, parse, merge, timeout, and redaction tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-7
+
+**Because:** Full test suite (3927 tests passed) and 17 dedicated external security tests passed cleanly
+
+**Files:** src/whyline/security/external.py
+
+<!-- whyline-event: d1ba25fd99a44ae98d6f6423d4af7111 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:20:21.719Z"} -->
+
+## 2026-11-06 — Approve SEC-7 external scanner integration
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-7
+
+**Because:** Matches the spec: available(), JSON reports to temp files with --redact, Findings with tool source and redacted preview, merge by (path, line, rule family) preferring external, 60s crash/timeout warnings. Tests cover parse, merge, crash, and --redact. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request betterleaks v2 CLI/JSON adaptation — package managers still ship v1, which matches the gitleaks flags the task assumed
+
+**Files:** src/whyline/security/external.py
+
+<!-- whyline-event: 606e0e1adde643bb96cd7e0f37b7f74e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:40:10.823Z"} -->
