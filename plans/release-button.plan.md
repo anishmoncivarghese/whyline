@@ -149,7 +149,7 @@ Global constraints:
   - **Ask agent** sends the GitHub status and the last error to the main agent through `adapters.run_chat_turn` and shows the reply. It never runs commands.
   Tests: detection prefill, save round-trip through the same `config.save`, normalise on tick, the unsaved guard, sign in shows the code, create's choices reach `create_repo`, Ask agent shows a reply.
 
-- [ ] REL-12: Release from a plan's release task, release after a plan, and docs
+- [x] REL-12: Release from a plan's release task, release after a plan, and docs
   Edit `src/whyline/console/tui.py`, `tests/console/test_tui_relay_run.py` and `README.md`; create `docs/release.md` only.
   1. When the relay is paused on a release task (`relay_ops.release_task` returns a value), the "Release done…" action offers **Run Release** as well as Done/Skip. It opens `ReleaseScreen` with the checklist from the pause shown above the steps. When the engine finishes successfully, the console sends `done <task_id>` through the same `_launch_relay(["done", task_id])` path typing it uses. A failed or stopped release leaves the relay paused.
   2. With `start_after_plan = true`, when the relay finishes with every plan task ticked, the console opens `ReleaseScreen` with **Check** already run. Ask and Step modes still wait for the user. Auto starts only when every Ready item is ✓.
