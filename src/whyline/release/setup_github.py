@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from collections.abc import Callable
@@ -83,6 +84,67 @@ def status(root: Path, *, run: Run = default_run) -> GitHubStatus:
                timeout=NETWORK_TIMEOUT)
     user = _out(who) if who is not None and _ok(who) else ""
     return GitHubStatus(True, True, user, origin, _is_github(origin))
+
+
+ON, OFF, UNAVAILABLE = "on", "off", "unavailable"
+PROTECTIONS = ("secret_scanning", "secret_scanning_push_protection", "dependabot_alerts")
+_ORIGIN_REPO = re.compile(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
+
+
+def owner_repo(origin_url: str) -> str:
+    """'owner/repo' from a GitHub origin URL, or '' when it is not one."""
+    found = _ORIGIN_REPO.search(origin_url) if _is_github(origin_url) else None
+    return f"{found.group(1)}/{found.group(2)}" if found else ""
+
+
+def _error_text(proc: object | None) -> str:
+    if proc is None:
+        return "gh could not run"
+    return _out(proc, "stderr") or _out(proc) or "no output"
+
+
+def protection_status(owner_repo: str, *, run: Run = default_run) -> dict[str, str]:
+    """Secret scanning, push protection and Dependabot alerts as on, off or unavailable."""
+    states = {key: UNAVAILABLE for key in PROTECTIONS}
+    proc = _try(run, ["gh", "api", f"repos/{owner_repo}", "--jq", ".security_and_analysis"],
+                timeout=NETWORK_TIMEOUT)
+    if proc is not None and _ok(proc):
+        try:
+            data = json.loads(_out(proc) or "null")
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            for key in PROTECTIONS[:2]:
+                section = data.get(key)
+                value = section.get("status") if isinstance(section, dict) else None
+                if value in ("enabled", "disabled"):
+                    states[key] = ON if value == "enabled" else OFF
+    alerts = _try(run, ["gh", "api", f"repos/{owner_repo}/vulnerability-alerts"],
+                  timeout=NETWORK_TIMEOUT)
+    if alerts is not None:
+        if _ok(alerts):
+            states["dependabot_alerts"] = ON
+        elif "404" in _error_text(alerts):
+            states["dependabot_alerts"] = OFF
+    return states
+
+
+def enable_protection(owner_repo: str, which: str, *, run: Run = default_run) -> str:
+    """Turn one protection on; returns "" on success, else why it did not work."""
+    if which == "dependabot_alerts":
+        args = ["gh", "api", "-X", "PUT", f"repos/{owner_repo}/vulnerability-alerts"]
+    elif which in PROTECTIONS:
+        args = ["gh", "api", "-X", "PATCH", f"repos/{owner_repo}",
+                "-f", f"security_and_analysis[{which}][status]=enabled"]
+    else:
+        return f"unknown protection: {which}"
+    proc = _try(run, args, timeout=NETWORK_TIMEOUT)
+    if proc is not None and _ok(proc):
+        return ""
+    detail = _error_text(proc)
+    if proc is not None and re.search(r"\b(403|422)\b", detail):
+        return f"not available for this repository: {detail}"
+    return f"could not turn on {which}: {detail}"
 
 
 def sign_in(*, run_streaming: RunStreaming = default_run_streaming,

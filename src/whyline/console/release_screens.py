@@ -33,7 +33,14 @@ SUGGESTED = "Suggested; press Save to keep."
 UNSAVED_PROMPT = "You have unsaved changes."
 PART_2 = "Comes with release part 2"
 GITHUB_WHY = "GitHub is ticked because every release target publishes through it."
-BREW_HINT = "GitHub's gh tool is missing. Install it with: brew install gh"
+PROTECTION_NOTE = ("GitHub's push protection is a second net, not a replacement for the "
+                   "local secret scan.")
+PROTECTION_LABELS = (
+    ("secret_scanning", "Secret scanning"),
+    ("secret_scanning_push_protection", "Push protection"),
+    ("dependabot_alerts", "Dependabot alerts"),
+)
+BREW_HINT ="GitHub's gh tool is missing. Install it with: brew install gh"
 BREW_COMMAND = "brew install gh"
 TARGETS = (
     ("github", "GitHub"), ("pypi", "PyPI"), ("npm", "npm"), ("docker", "Docker"),
@@ -111,6 +118,7 @@ class ReleaseScreen(ModalScreen):
         self._agent = agent
         self._gh_status: setup_github.GitHubStatus | None = None
         self._gh_error = ""
+        self._gh_repo = ""
         self._suggested = False
         self._saved_form: release_config.ReleaseConfig | None = None
         self._setup_base = release_config.ReleaseConfig()
@@ -265,6 +273,8 @@ class ReleaseScreen(ModalScreen):
             self._set_status("Copied.")
         elif button_id == "rs-gh-ask":
             self._start_ask()
+        elif button_id.startswith("rs-gh-prot-on-"):
+            self._start_protection(button_id[len("rs-gh-prot-on-"):])
 
     def action_close(self) -> None:
         if self._has_unsaved():
@@ -332,6 +342,14 @@ class ReleaseScreen(ModalScreen):
                     yield Label("Description")
                     yield Input("", id="rs-gh-description")
                     yield Button("Create repository", id="rs-gh-create")
+                with Vertical(id="rs-gh-prot-box", classes="-hidden"):
+                    yield Label("GitHub's own protection")
+                    yield Static(PROTECTION_NOTE, id="rs-gh-prot-note", markup=False)
+                    for key, label in PROTECTION_LABELS:
+                        yield Static(label, id=f"rs-gh-prot-{key}", markup=False)
+                        yield Button("Turn on", id=f"rs-gh-prot-on-{key}",
+                                     classes="-hidden")
+                    yield Static("", id="rs-gh-prot-msg", markup=False)
                 yield Button("Ask agent", id="rs-gh-ask")
                 yield Static("", id="rs-gh-reply", markup=False)
             yield from security_screens.compose_security_setup(cfg.security)
@@ -469,6 +487,45 @@ class ReleaseScreen(ModalScreen):
         show("#rs-gh-signin", found.gh_installed and not found.signed_in)
         show("#rs-gh-create-box",
              found.gh_installed and found.signed_in and not found.origin_url)
+        self._gh_repo = (setup_github.owner_repo(found.origin_url)
+                         if found.signed_in else "")
+        show("#rs-gh-prot-box", bool(self._gh_repo))
+        if self._gh_repo:
+            self._load_protection()
+
+    def _load_protection(self) -> None:
+        repo = self._gh_repo
+        self.run_worker(lambda: self._protection_in_thread(repo), thread=True,
+                        exclusive=True, group="rs-gh-prot", name="release-gh-protection")
+
+    def _protection_in_thread(self, repo: str, enable: str = "") -> None:
+        error = ""
+        try:
+            if enable:
+                error = setup_github.enable_protection(repo, enable, **self._run_kwargs())
+            states = setup_github.protection_status(repo, **self._run_kwargs())
+        except Exception as exc:  # noqa: BLE001 - shown in the panel
+            self.app.call_from_thread(self._show_protection, {}, str(exc))
+            return
+        self.app.call_from_thread(self._show_protection, states, error)
+
+    def _start_protection(self, key: str) -> None:
+        if not self._gh_repo or key not in setup_github.PROTECTIONS:
+            return
+        self.query_one(f"#rs-gh-prot-on-{key}", Button).disabled = True
+        self.query_one("#rs-gh-prot-msg", Static).update("Turning on…")
+        repo = self._gh_repo
+        self.run_worker(lambda: self._protection_in_thread(repo, key), thread=True,
+                        exclusive=True, group="rs-gh-prot", name="release-gh-protect")
+
+    def _show_protection(self, states: dict, error: str) -> None:
+        self.query_one("#rs-gh-prot-msg", Static).update(error)
+        for key, label in PROTECTION_LABELS:
+            state = states.get(key, setup_github.UNAVAILABLE)
+            self.query_one(f"#rs-gh-prot-{key}", Static).update(f"{label}: {state}")
+            button = self.query_one(f"#rs-gh-prot-on-{key}", Button)
+            button.disabled = False
+            button.set_class(state != setup_github.OFF, "-hidden")
 
     def _start_sign_in(self) -> None:
         self.query_one("#rs-gh-signin", Button).disabled = True

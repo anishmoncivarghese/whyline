@@ -413,3 +413,37 @@ async def test_refused_foreign_hook_shows_line_with_copy(tmp_path):
         await pilot.pause()
     assert copied == [hook.COMMAND]
     assert path.read_text() == "#!/bin/sh\necho mine\n"
+
+
+async def test_protection_rows_and_turn_on(tmp_path):
+    calls = []
+    state = {"on": False}
+    base = _gh_run(calls, origin="git@github.com:o/r.git")
+
+    def run(args, **kwargs):
+        if args[:3] == ["gh", "api", "repos/o/r"] and "--jq" in args:
+            status = "enabled" if state["on"] else "disabled"
+            return _proc(0, '{"secret_scanning":{"status":"' + status + '"},'
+                            '"secret_scanning_push_protection":{"status":"disabled"}}')
+        if args[:3] == ["gh", "api", "repos/o/r/vulnerability-alerts"]:
+            return _proc(0)
+        if args[:4] == ["gh", "api", "-X", "PATCH"]:
+            calls.append(list(args))
+            state["on"] = True
+            return _proc(0)
+        return base(args, **kwargs)
+
+    app = Host(_setup_screen(tmp_path, gh_run=run))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-github", Button).press()
+        await _until(pilot, lambda: "Dependabot alerts: on" in
+                     _text(app, "#rs-gh-prot-dependabot_alerts"))
+        assert "second net" in _text(app, "#rs-gh-prot-note")
+        assert "Secret scanning: off" in _text(app, "#rs-gh-prot-secret_scanning")
+        assert _shown(app, "#rs-gh-prot-on-secret_scanning")
+        assert not _shown(app, "#rs-gh-prot-on-dependabot_alerts")
+        _q(app, "#rs-gh-prot-on-secret_scanning", Button).press()
+        await _until(pilot, lambda: "Secret scanning: on" in
+                     _text(app, "#rs-gh-prot-secret_scanning"))
+    assert calls[-1][-1] == "security_and_analysis[secret_scanning][status]=enabled"

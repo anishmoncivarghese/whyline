@@ -213,3 +213,62 @@ def test_cli_setup_without_gh(root, monkeypatch, capsys):
     fake_status(monkeypatch, gh_installed=False, signed_in=False)
     assert release_cli.main(["setup", "github"]) == 1
     assert "not installed" in capsys.readouterr().out
+
+
+def _prot_run(security, alerts):
+    return Runner({("gh", "api", "repos/o/r", "--jq"): security,
+                   ("gh", "api", "repos/o/r/vulnerability-alerts"): alerts})
+
+
+def test_owner_repo_from_origin():
+    assert sg.owner_repo("git@github.com:a/b.git") == "a/b"
+    assert sg.owner_repo("https://github.com/a/b") == "a/b"
+    assert sg.owner_repo("https://gitlab.com/a/b.git") == ""
+
+
+def test_protection_status_all_on():
+    body = ('{"secret_scanning":{"status":"enabled"},'
+            '"secret_scanning_push_protection":{"status":"enabled"}}')
+    got = sg.protection_status("o/r", run=_prot_run(Result(0, body, ""), Result(0, "", "")))
+    assert got == {"secret_scanning": "on", "secret_scanning_push_protection": "on",
+                   "dependabot_alerts": "on"}
+
+
+def test_protection_status_off_and_404():
+    body = ('{"secret_scanning":{"status":"disabled"},'
+            '"secret_scanning_push_protection":{"status":"disabled"}}')
+    got = sg.protection_status(
+        "o/r", run=_prot_run(Result(0, body, ""), Result(1, "", "gh: Not Found (HTTP 404)")))
+    assert set(got.values()) == {"off"}
+
+
+def test_protection_status_unavailable():
+    got = sg.protection_status(
+        "o/r", run=_prot_run(Result(0, "null", ""), Result(1, "", "HTTP 403")))
+    assert set(got.values()) == {"unavailable"}
+
+
+def test_enable_protection_argv():
+    run = Runner({("gh",): Result(0, "", "")})
+    assert sg.enable_protection("o/r", "secret_scanning", run=run) == ""
+    assert sg.enable_protection("o/r", "secret_scanning_push_protection", run=run) == ""
+    assert sg.enable_protection("o/r", "dependabot_alerts", run=run) == ""
+    assert run.calls == [
+        ["gh", "api", "-X", "PATCH", "repos/o/r",
+         "-f", "security_and_analysis[secret_scanning][status]=enabled"],
+        ["gh", "api", "-X", "PATCH", "repos/o/r",
+         "-f", "security_and_analysis[secret_scanning_push_protection][status]=enabled"],
+        ["gh", "api", "-X", "PUT", "repos/o/r/vulnerability-alerts"],
+    ]
+
+
+@pytest.mark.parametrize("code", ["403", "422"])
+def test_enable_protection_unavailable_message(code):
+    run = Runner({("gh",): Result(1, "", f"Not allowed (HTTP {code})")})
+    got = sg.enable_protection("o/r", "secret_scanning", run=run)
+    assert got == f"not available for this repository: Not allowed (HTTP {code})"
+
+
+def test_enable_protection_gh_missing_does_not_crash():
+    run = Runner({("gh",): FileNotFoundError()})
+    assert "could not turn on" in sg.enable_protection("o/r", "dependabot_alerts", run=run)

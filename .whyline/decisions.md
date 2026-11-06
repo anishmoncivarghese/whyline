@@ -37179,3 +37179,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 01062bf808d54c7386c568faf97353f3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T21:21:41.791Z"} -->
+
+## 2026-11-06 — GitHub protection: status read from security_and_analysis JSON plus vulnerability-alerts 404=off; 403/422 on enable becomes a message
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-11
+
+**Because:** Private repos without the plan return null/403, which must show as unavailable, not crash; panel loads rows only when origin parses to owner/repo
+
+**Rejected:**
+
+- Show buttons always — a Turn on that can only 403 misleads, so it shows only when state is off
+
+**Files:** src/whyline/release/setup_github.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 60f2745ab3dc4a2c994526fe30990b9c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T21:23:18.602Z"} -->
+
+## 2026-11-06 — Pass SEC-11: GitHub protection status, enable endpoints, and console panel verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-11
+
+**Because:** Full test suite (3976 passed) and targeted tests verify protection_status (on/off/unavailable), enable_protection (argv and 403/422 handling), and the console setup panel with Turn on buttons and push protection disclaimer.
+
+**Files:** src/whyline/release/setup_github.py
+
+<!-- whyline-event: 42b05518f61743bf826c81f6817e9830 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T21:57:04.499Z"} -->
+
+## 2026-11-06 — Approve SEC-11: GitHub protection status, enable endpoints, and console Turn on panel
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-11
+
+**Because:** protection_status maps security_and_analysis enabled/disabled plus vulnerability-alerts 204/404 to on/off/unavailable; enable_protection uses the documented PATCH and PUT argv and turns 403/422 into the unavailable message; the Set up panel shows the three rows, Turn on when off, and the second-net note. Tests cover each status, the enable argv, 403/422, and the panel. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- request changes for always-visible Turn on buttons — hiding them when the state is not off avoids a button that can only 403
+
+**Files:** src/whyline/release/setup_github.py
+
+<!-- whyline-event: 69e371cd62d745ed8aa545c777a8a890 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T22:15:33.871Z"} -->
