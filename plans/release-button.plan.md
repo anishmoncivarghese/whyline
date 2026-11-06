@@ -118,7 +118,7 @@ Global constraints:
   - the planned steps show ⚠ on irreversible ones
   - Start passes the chosen version and mode
 
-- [ ] REL-10: Run a release from the console: progress, confirmations, notes review, failure
+- [x] REL-10: Run a release from the console: progress, confirmations, notes review, failure
   Edit `src/whyline/console/release_screens.py`, `src/whyline/console/tui.py`, `tests/console/test_release_screens.py` and `tests/console/test_tui_relay_run.py` only.
   1. `start_release` runs `plan.build` and the engine in a thread worker. Progress goes to the transcript as `release · <title>: <detail>` lines.
   2. The busy line reads `release: v<version> · step i of n (p%) · <title>[ · <detail>] · <elapsed of this step>`, using RST-2's formatting helpers for elapsed time. **Stop** sets the cancel event.
