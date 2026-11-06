@@ -23,6 +23,7 @@ from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import version as release_version
+from whyline.security import hook
 
 CUSTOM = "custom"
 CURRENT = "current"
@@ -237,6 +238,9 @@ class ReleaseScreen(ModalScreen):
         elif button_id == "rs-sec-copy":
             self.app.copy_to_clipboard(security_screens.BREW_COMMAND)
             self._set_status("Copied.")
+        elif button_id == "rs-sec-hook-copy":
+            self.app.copy_to_clipboard(hook.COMMAND)
+            self._set_status("Copied.")
         elif button_id == "release-start":
             self._start()
         elif button_id is None:
@@ -396,6 +400,7 @@ class ReleaseScreen(ModalScreen):
             return False
         self._cfg = cfg
         self._setup_base = cfg
+        hook_note = security_screens.apply_commit_hook(self.root, cfg.security)
         self._suggested = False
         self.query_one("#rs-source", Static).update("")
         github = self.query_one("#rs-t-github", Checkbox)
@@ -403,7 +408,13 @@ class ReleaseScreen(ModalScreen):
             github.value = cfg.targets.github
         self._saved_form = self._collect()
         self._show_confirm(False)
-        self._set_status(f"Saved to {release_config.CONFIG_PATH.as_posix()}.")
+        refused = cfg.security.pre_commit and hook.foreign(self.root)
+        self.query_one("#rs-sec-hook-line", Static).update(
+            f"Add this line to your pre-commit hook: {hook.COMMAND}" if refused else "")
+        self.query_one("#rs-sec-hook-line", Static).set_class(not refused, "-hidden")
+        self.query_one("#rs-sec-hook-copy", Button).set_class(not refused, "-hidden")
+        self._set_status(f"Saved to {release_config.CONFIG_PATH.as_posix()}."
+                         + (f" {hook_note}" if hook_note else ""))
         self._invalidate()
         self._show_steps()
         return True

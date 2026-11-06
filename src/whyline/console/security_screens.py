@@ -364,6 +364,8 @@ def compose_security_setup(settings: SecuritySettings,
     yield Select(AUDIT_LEVELS, value=settings.audit, allow_blank=False, id="rs-sec-audit")
     yield Static(text, id="rs-sec-tools", markup=False)
     yield Button("Copy", id="rs-sec-copy", classes="-hidden" if not missing else "")
+    yield Static("", id="rs-sec-hook-line", markup=False, classes="-hidden")
+    yield Button("Copy", id="rs-sec-hook-copy", classes="-hidden")
     yield Static(rules_text(), id="rs-sec-rules", markup=False)
     yield Button("Open Security…", id="rs-sec-open")
 
@@ -381,3 +383,11 @@ def collect_security(screen, base: SecuritySettings) -> SecuritySettings:
         audit=pick("audit", AUDIT_LEVELS),
         pre_commit=screen.query_one("#rs-sec-pre-commit", Checkbox).value,
     )
+
+
+def apply_commit_hook(root: Path, settings: SecuritySettings) -> str:
+    """The Check every commit switch: install or remove the pre-commit hook, as
+    `whyline security hook install|uninstall` does. Returns a status line or ''."""
+    from whyline.security import hook
+
+    return hook.set_installed(root, settings.pre_commit)

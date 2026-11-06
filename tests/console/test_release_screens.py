@@ -386,3 +386,30 @@ async def test_ask_agent_shows_the_reply(tmp_path):
     assert prompts[0][0] == "claude"
     assert "signed in: False" in prompts[0][1]
     assert "do not run commands" in prompts[0][1]
+
+
+async def test_refused_foreign_hook_shows_line_with_copy(tmp_path):
+    import subprocess
+
+    from whyline.security import hook
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    path = tmp_path / ".git" / "hooks" / "pre-commit"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\necho mine\n")
+    app = Host(_setup_screen(tmp_path))
+    copied = []
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.copy_to_clipboard = copied.append
+        assert "-hidden" in _q(app, "#rs-sec-hook-copy", Button).classes
+        _q(app, "#rs-sec-pre-commit", Checkbox).value = True
+        await pilot.pause()
+        _q(app, "#rs-save", Button).press()
+        await pilot.pause()
+        assert hook.COMMAND in _text(app, "#rs-sec-hook-line")
+        assert "-hidden" not in _q(app, "#rs-sec-hook-copy", Button).classes
+        _q(app, "#rs-sec-hook-copy", Button).press()
+        await pilot.pause()
+    assert copied == [hook.COMMAND]
+    assert path.read_text() == "#!/bin/sh\necho mine\n"

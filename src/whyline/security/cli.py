@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from whyline.security import external, scan
+from whyline.security import external, hook, scan
 from whyline.security import settings as st
 from whyline.security.findings import Finding
 
@@ -27,10 +27,14 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     group.add_argument("--history", action="store_true", help="every commit ever made")
     group.add_argument("--all", action="store_true", help="history, working tree, contents and dependencies")
     scan_p.add_argument("--json", action="store_true", help="print the result as JSON")
+    scan_p.add_argument("--hook", action="store_true",
+                        help="pre-commit mode: blocking secrets only, masked (use with --staged)")
     allow_p = sub.add_parser("allow", help="Allow one finding, by fingerprint")
     allow_p.add_argument("fingerprint")
     allow_p.add_argument("--reason", required=True, help="why this is safe")
     sub.add_parser("status", help="Settings, tools found, rules, last history scan")
+    hook_p = sub.add_parser("hook", help="Check every commit with a pre-commit hook")
+    hook_p.add_argument("hook_command", choices=("install", "uninstall", "status"))
 
 
 def _root() -> Path:
@@ -47,7 +51,7 @@ def _settings_and_branch(root: Path):
 
 
 def run(args: argparse.Namespace) -> int:
-    handlers = {"scan": _scan, "allow": _allow, "status": _status}
+    handlers = {"scan": _scan, "allow": _allow, "status": _status, "hook": _hook}
     try:
         return handlers[args.security_command](args)
     except Exception as exc:  # noqa: BLE001 - config and allowlist errors print one line
@@ -82,8 +86,50 @@ def as_dict(f: Finding) -> dict:
             "fingerprint": f.fingerprint, "fix_hint": f.fix_hint, "source": f.source}
 
 
+def _hook_scan(root: Path) -> int:
+    """`scan --staged --hook`: secrets only, nothing else, exit 1 on a block."""
+    settings, branch = _settings_and_branch(root)
+    if settings.secrets == "off":
+        return EXIT_OK
+    report = scan.run(root, "staged", settings, branch=branch)
+    if report.error:
+        print(f"Security scan failed: {report.error}")
+    for f in report.decision.blocking:
+        if f.kind == "secret":
+            print(f"[BLOCK] {f.title} ({f.rule}) {_where(f)}  {f.preview}".rstrip())
+    if report.blocks:
+        print(hook.STOP_LINE)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
+def _hook(args) -> int:
+    root = _root()
+    action = args.hook_command
+    try:
+        if action == "install":
+            path = hook.install(root)
+            print(f"Installed {path}.")
+        elif action == "uninstall":
+            print("Removed the whyline pre-commit hook." if hook.uninstall(root)
+                  else "No whyline pre-commit hook to remove.")
+        else:
+            state = ("on" if hook.installed(root)
+                     else "off (another pre-commit hook exists)" if hook.foreign(root) else "off")
+            print(f"Check every commit: {state}")
+    except hook.HookError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _scan(args) -> int:
     root = _root()
+    if getattr(args, "hook", False):
+        if not args.staged:
+            print("--hook needs --staged.", file=sys.stderr)
+            return EXIT_ERROR
+        return _hook_scan(root)
     settings, branch = _settings_and_branch(root)
     scope = _scope(args)
     report = scan.run(root, scope, settings, branch=branch,

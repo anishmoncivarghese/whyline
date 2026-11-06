@@ -37085,3 +37085,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e0dedfbe996a4167b7b4419415a3f2e5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:59:05.920Z"} -->
+
+## 2026-11-06 — Console Check every commit switch applies the hook on Setup save via security_screens.apply_commit_hook, called from release_screens._save_setup
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-10
+
+**Because:** collect_security is also used for unsaved-change detection so it must stay side-effect free; saving is the one place the switch commits
+
+**Rejected:**
+
+- install on checkbox change — fires before the config is saved and on every toggle
+
+**Files:** src/whyline/console/security_screens.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 3e218a5e3c6e468fbbde63466356d165 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T12:03:22.478Z"} -->
+
+## 2026-11-06 — Pass SEC-10: Pre-commit hook install/uninstall/status, staged secret blocking, masked output, and console integration verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-10
+
+**Because:** Unit, integration, console, and full test suite verify pre-commit hook installation, removal, foreign hook preservation with copyable guidance, secrets-only staged scan blocking commits with masked output, bypass on secrets=off, CLI hook commands, and console Setup save integration
+
+**Files:** src/whyline/security/hook.py
+
+<!-- whyline-event: 562e523c6f38437f85cb6c2cd7c216e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T12:34:04.342Z"} -->
+
+## 2026-11-06 — Request changes: foreign-hook install path needs a Copy button
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-10
+
+**Because:** SEC-10 says install refuses a foreign hook and shows the line with Copy; the console only dumps it into #rs-status and rs-sec-copy still copies the brew command. Core hook install, --hook blocking/masking, CLI, and save-time apply_commit_hook match. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- approve — the command is in the status string: a Textual Static is not copyable, which is why this app uses Copy buttons
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 9753e6af5141483ab4c5620a20ca1112 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T20:44:20.534Z"} -->
+
+## 2026-11-06 — Refused foreign-hook install shows the hook line with its own Copy button (rs-sec-hook-copy) in the Security section
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-10
+
+**Because:** rs-sec-copy copies the brew command, so the hook line needs a separate button copying hook.COMMAND; a Static is not copyable
+
+**Rejected:**
+
+- repurpose rs-sec-copy — it serves the scanner install hint
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 760a706f007746a6bca4d8592cd99020 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T20:46:31.481Z"} -->
+
+## 2026-11-06 — Pass SEC-10: Pre-commit hook install/uninstall, foreign hook preservation with copy button, and secret scanning verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-10
+
+**Because:** Full test suite (3969 passed) and targeted hook/console tests verify install, uninstall, foreign hook preservation with dedicated rs-sec-hook-copy button, staged secret blocking with masked output, and console integration.
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 64ea62576d56427eb95c63aa55fa5c99 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T21:03:12.248Z"} -->
+
+## 2026-11-06 — Approve SEC-10: pre-commit hook install/uninstall, --hook blocking with masked output, CLI, and console Copy for foreign hooks
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-10
+
+**Because:** install writes .git/hooks/pre-commit running whyline security scan --staged --hook; foreign hooks are kept and the console shows hook.COMMAND with rs-sec-hook-copy; uninstall removes only whyline's hook; --hook skips deps/contents, exits 0 when secrets=off, prints blocking secrets masked plus the stop line; CLI has hook install|uninstall|status; Setup save calls the same functions. Tests cover install, uninstall, foreign keep, real commit block/pass, masking, off, and the Copy button. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- request changes — the prior Copy-button gap is fixed
+
+**Files:** src/whyline/security/hook.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 01062bf808d54c7386c568faf97353f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T21:21:41.791Z"} -->
