@@ -37226,3 +37226,98 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 69e371cd62d745ed8aa545c777a8a890 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T22:15:33.871Z"} -->
+
+## 2026-11-06 — Audit verdict is kept in Finding.rule; method pinned to a commit SHA; ask_agent contract defined in audit.py
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-12
+
+**Because:** Finding has no verdict field and SEC-12 may only touch audit files; Cloudflare's repo has no tags or releases, so VERSION records main's SHA c1c8a8c; the relay agent runner was not found to reuse, so ask_agent(agent, prompt, *, cwd, cancel_event) returns ok/failure/text
+
+**Rejected:**
+
+- Add verdict field to Finding — outside SEC-12's file list
+- Bundle the .cjs validators — Node-only and the task asks for a built-in validator
+
+**Files:** src/whyline/security/audit.py
+
+<!-- whyline-event: 880549a8e05e4c11949f43b8e7f94c13 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T22:17:47.687Z"} -->
+
+## 2026-11-06 — Audit runner, bundled Cloudflare method, findings schema validator, and fallback pass all unit tests and full suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-12
+
+**Because:** 13/13 test_audit tests and 3991 full-suite tests passed verifying output directory isolation, schema validation, must-not prompt constraints, fallback on limit/auth, and Finding mapping
+
+**Files:** src/whyline/security/audit.py, tests/security/test_audit.py
+
+<!-- whyline-event: 7ac16207bcbb492eaf9693fb333fed74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T22:33:24.653Z"} -->
+
+## 2026-11-06 — Request changes: computed run dir can land inside the repository
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-12
+
+**Because:** run() only rejects out_dir when that path is the repo or a descendant, but next_run_dir then writes out_dir/<repo-name>/run-N, so out_dir=repo.parent creates repo/run-N. Reproduced: a parent out_dir listed run-1 inside the project tree. The task's isolation rule is never inside the repository; tests only cover out_dir nested under the repo.
+
+**Rejected:**
+
+- Approve as-is — the default ~/.whyline/security/audits path is outside the repo, but the guard is the task's hard requirement and is incomplete
+
+**Files:** src/whyline/security/audit.py
+
+<!-- whyline-event: ae6ce47e6c4a4ebbb601937cef39280f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T22:53:47.548Z"} -->
+
+## 2026-11-06 — Isolation check applies to the computed run dir, not out_dir
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-12
+
+**Because:** next_run_dir appends <repo-name>/run-N, so out_dir=repo.parent landed inside the repo
+
+**Rejected:**
+
+- Check base/root.name only — duplicates next_run_dir's layout
+
+**Files:** src/whyline/security/audit.py
+
+<!-- whyline-event: 71d3d311eb1c45759bf047c031c83078 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T22:54:21.207Z"} -->
+
+## 2026-11-06 — Output directory isolation guard against parent out_dir verified; test_audit and full test suite pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-12
+
+**Because:** 14/14 unit tests in test_audit.py and 3992/3992 full-suite tests passed, confirming that next_run_dir computed path cannot land inside the repo even when out_dir=repo.parent
+
+**Files:** src/whyline/security/audit.py
+
+<!-- whyline-event: 0441f700281e4b359c5d718115716af6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T23:10:42.439Z"} -->
+
+## 2026-11-06 — Approve SEC-12: computed run dir is isolated and the audit runner matches the task
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-12
+
+**Because:** run() now rejects the computed run_dir when it is the repo or a descendant, so out_dir=repo.parent cannot write repo/run-N; tests cover that case plus must-not prompt lines, verdicts, invalid JSON/schema, numbering, cancel, and limit/auth fallback; Cloudflare method files match c1c8a8c sizes and the MIT licence; uv run pytest -q exited 0 (1 skipped)
+
+**Rejected:**
+
+- Request another isolation round for unresolved symlink hops — a planted out_dir/<repo-name> symlink is outside the parent-out_dir hole already fixed
+
+**Files:** src/whyline/security/audit.py
+
+<!-- whyline-event: 66191d275a4d4622bd1da75c54d067b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T23:29:48.671Z"} -->
