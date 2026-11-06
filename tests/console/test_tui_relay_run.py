@@ -801,3 +801,278 @@ async def test_release_button_disabled_while_running_but_not_on_release_pause(tm
         app._release_task = ("REL-1", [])
         app._sync_relay_buttons()
         assert not app.query_one("#relay-release", tui.Button).disabled
+
+
+# -- REL-10: running a release from the console -------------------------------
+
+import threading
+from datetime import datetime, timezone
+
+from whyline.console.release_screens import (
+    ConfirmStepScreen, NotesReviewScreen, ReleaseChoice, ReleaseFailedScreen,
+)
+from whyline.release import engine as release_engine
+from whyline.release import github as release_github
+from whyline.release import plan as release_plan
+
+
+def _step(step_id, title, irreversible=False, run=None, done=False):
+    return release_engine.Step(
+        step_id, title, irreversible, lambda: done, run or (lambda cancel: None))
+
+
+def _fake_plan(monkeypatch, steps):
+    monkeypatch.setattr(
+        release_plan, "build",
+        lambda root, cfg, version, **kw: release_engine.Plan(version, list(steps)))
+
+
+async def _until(pilot, condition, tries=300):
+    for _ in range(tries):
+        if condition():
+            return
+        await pilot.pause(0.01)
+    raise AssertionError("condition never became true")
+
+
+def _screen_is(app, cls):
+    return isinstance(app.screen, cls)
+
+
+async def _begin(app, pilot, mode="ask"):
+    await _relay_mode(app, pilot)
+    app._start_release(ReleaseChoice("1.2.3", mode))
+    await pilot.pause()
+
+
+def _output(app):
+    return "\n".join(_lines(app))
+
+
+class _Engine:
+    """Stands in for the release engine module; only run is used."""
+
+    def __init__(self, run):
+        self.run = run
+
+
+async def test_release_run_updates_busy_line_with_step_and_percent(tmp_path, monkeypatch):
+    gate = threading.Event()
+    seen = []
+
+    def fake_run(root, plan, **kw):
+        now = datetime.now(timezone.utc)
+        kw["on_progress"](release_engine.Progress(1, 4, "Write release notes", "Running", now, now))
+        seen.append(True)
+        gate.wait(5)
+        return release_engine.Result("done", "The release finished.")
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(fake_run)
+    _fake_plan(monkeypatch, [_step("a", "A")])
+    async with app.run_test() as pilot:
+        await _begin(app, pilot)
+        await _until(pilot, lambda: seen)
+        await pilot.pause()
+        app._tick()
+        line = _thinking(app)
+        assert "release: v1.2.3 · step 2 of 4 (25%) · Write release notes · Running · " in line
+        assert any("release · Write release notes: Running" in l for l in _lines(app))
+        gate.set()
+        await _until(pilot, lambda: not app._release_running())
+        assert "Release v1.2.3 finished." in _output(app)
+
+
+@pytest.mark.parametrize(
+    "mode, expected",
+    [("step", ["Push", "Publish"]), ("ask", ["Push"]), ("auto", [])],
+)
+async def test_confirm_modals_per_mode(tmp_path, monkeypatch, mode, expected):
+    ran = []
+    steps = [
+        _step("push", "Push", True, lambda c: ran.append("push")),
+        _step("pub", "Publish", True, lambda c: ran.append("pub")),
+    ]
+    _fake_plan(monkeypatch, steps)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, mode)
+        asked = []
+        for _ in range(len(expected)):
+            await _until(pilot, lambda: _screen_is(app, ConfirmStepScreen))
+            asked.append(str(app.screen.query_one("#release-confirm-title").render()))
+            app.screen.query_one("#release-go", tui.Button).press()
+            await pilot.pause()
+        await _until(pilot, lambda: not app._release_running())
+        assert [a.removeprefix("Next step: ") for a in asked] == expected
+        assert ran == ["push", "pub"]
+
+
+async def test_stop_here_pauses_the_release(tmp_path, monkeypatch):
+    ran = []
+    _fake_plan(monkeypatch, [_step("push", "Push", True, lambda c: ran.append(1))])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "step")
+        await _until(pilot, lambda: _screen_is(app, ConfirmStepScreen))
+        app.screen.query_one("#release-stop-here", tui.Button).press()
+        await _until(pilot, lambda: not app._release_running())
+        assert ran == []
+        assert "You stopped before Push." in _output(app)
+
+
+async def test_notes_review_in_ask_mode(tmp_path, monkeypatch):
+    results = []
+
+    def fake_run(root, plan, **kw):
+        step = next(s for s in plan.steps if s.id == "notes")
+        try:
+            step.run(threading.Event())
+            results.append("used")
+        except Exception as exc:
+            results.append(str(exc))
+        return release_engine.Result("done", "")
+
+    opened = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(fake_run)
+    app._release_ask_agent = lambda prompt: "## New\n- a thing"
+    app._release_open_file = lambda path: opened.append(path) or ""
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        area = app.screen.query_one("#release-notes-text", tui.TextArea)
+        assert area.read_only and "a thing" in area.text
+        app.screen.query_one("#release-notes-use", tui.Button).press()
+        await _until(pilot, lambda: not app._release_running())
+        assert results == ["used"]
+
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        app.screen.query_one("#release-notes-edit", tui.Button).press()
+        await _until(pilot, lambda: not app._release_running())
+        assert opened and "stopped to edit" in results[-1]
+
+
+async def test_notes_stop_cancels_without_a_failure_popup(tmp_path, monkeypatch):
+    cancelled = []
+
+    def fake_run(root, plan, **kw):
+        step = next(s for s in plan.steps if s.id == "notes")
+        try:
+            step.run(kw["cancel_event"])
+        except Exception:
+            pass
+        cancelled.append(kw["cancel_event"].is_set())
+        return release_engine.Result("failed", "stopped")
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(fake_run)
+    app._release_ask_agent = lambda prompt: "notes"
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        app.screen.query_one("#release-notes-stop", tui.Button).press()
+        await _until(pilot, lambda: not app._release_running())
+        assert cancelled == [True]
+        assert not _screen_is(app, ReleaseFailedScreen)
+
+
+async def test_stop_button_cancels_the_release(tmp_path, monkeypatch):
+    started = threading.Event()
+
+    def slow(cancel):
+        started.set()
+        cancel.wait(5)
+
+    _fake_plan(monkeypatch, [_step("a", "Slow", False, slow), _step("b", "Never")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "auto")
+        await _until(pilot, started.is_set)
+        stop = app.query_one("#stop", tui.Button)
+        assert not stop.disabled
+        stop.press()
+        await _until(pilot, lambda: not app._release_running())
+        assert "The release was cancelled." in _output(app)
+        assert not _screen_is(app, ReleaseFailedScreen)
+
+
+async def test_failure_offers_resume_and_open_pr_when_flagged(tmp_path, monkeypatch):
+    attempts = []
+
+    def push(cancel):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise release_github.StepError(
+                "main is protected; open a pull request instead", open_pr=True)
+
+    _fake_plan(monkeypatch, [_step("push", "Push", False, push)])
+    prs = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_open_pr_fn = lambda root, branch: prs.append(branch) or "https://pr/1"
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "auto")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        assert "protected" in str(app.screen.query_one("#release-failed-reason").render())
+        app.screen.query_one("#release-open-pr", tui.Button).press()
+        await _until(pilot, lambda: "Pull request: https://pr/1" in _output(app))
+        assert prs == ["main"]
+
+
+async def test_failure_resume_release_runs_it_again(tmp_path, monkeypatch):
+    attempts = []
+
+    def push(cancel):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise release_github.StepError("git push failed")
+
+    _fake_plan(monkeypatch, [_step("push", "Push", False, push)])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "auto")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        app.screen.query_one("#release-resume", tui.Button).press()
+        await _until(pilot, lambda: len(attempts) == 2 and not app._release_running())
+        assert "Release v1.2.3 finished." in _output(app)
+
+
+async def test_plain_failure_has_no_open_pr(tmp_path, monkeypatch):
+    def boom(cancel):
+        raise release_github.StepError("git push failed")
+
+    _fake_plan(monkeypatch, [_step("push", "Push", False, boom)])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "auto")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        assert app.screen.query_one("#release-resume", tui.Button)
+        assert not app.screen.query("#release-open-pr")
+
+
+async def test_relay_run_and_resume_disabled_during_a_release(tmp_path, monkeypatch):
+    gate = threading.Event()
+    started = threading.Event()
+
+    def hold(cancel):
+        started.set()
+        gate.wait(5)
+
+    monkeypatch.setattr(relay_ops, "paused_run", lambda root: True)
+    _fake_plan(monkeypatch, [_step("a", "Hold", False, hold)])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._sync_relay_buttons()
+        assert not app.query_one("#relay-run", tui.Button).disabled
+        assert not app.query_one("#relay-resume", tui.Button).disabled
+        app._start_release(ReleaseChoice("1.2.3", "auto"))
+        await _until(pilot, started.is_set)
+        app._sync_relay_buttons()
+        assert app.query_one("#relay-run", tui.Button).disabled
+        assert app.query_one("#relay-resume", tui.Button).disabled
+        gate.set()
+        await _until(pilot, lambda: not app._release_running())
+        assert not app.query_one("#relay-run", tui.Button).disabled
+        assert not app.query_one("#relay-resume", tui.Button).disabled

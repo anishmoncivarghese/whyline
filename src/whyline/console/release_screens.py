@@ -11,7 +11,9 @@ from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, Static, TabbedContent, TabPane
+from textual.widgets import (
+    Button, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
+)
 
 from whyline.release import config as release_config
 from whyline.release import plan as release_plan
@@ -250,3 +252,121 @@ class ReleaseScreen(ModalScreen):
         choice = ReleaseChoice(version, self.chosen_mode())
         self.dismiss(None)
         self._start_release(choice)
+
+
+# -- the run's popups ---------------------------------------------------------
+
+GO = "Go"
+STOP_HERE = "Stop here"
+EDIT = "edit"
+USE = "use"
+STOP = "stop"
+RESUME = "resume"
+OPEN_PR = "open-pr"
+
+
+class ConfirmStepScreen(ModalScreen):
+    """Names the step about to run and what it will do. True on Go, False on Stop here."""
+
+    BINDINGS = [("escape", "stop_here", STOP_HERE)]
+    DEFAULT_CSS = """
+    ConfirmStepScreen { align: center middle; }
+    ConfirmStepScreen > Vertical { width: 70; height: auto; padding: 1 2;
+        border: thick $warning; background: $surface; }
+    ConfirmStepScreen Horizontal { height: auto; margin-top: 1; }
+    ConfirmStepScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, title: str, irreversible: bool) -> None:
+        super().__init__()
+        self._title = title
+        self._irreversible = irreversible
+
+    def compose(self) -> ComposeResult:
+        what = ("This cannot be undone once it runs." if self._irreversible
+                else "This changes your project.")
+        with Vertical():
+            yield Label(f"Next step: {self._title}", id="release-confirm-title")
+            yield Label(what, id="release-confirm-what")
+            with Horizontal():
+                yield Button(GO, id="release-go", variant="warning")
+                yield Button(STOP_HERE, id="release-stop-here")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(event.button.id == "release-go")
+
+    def action_stop_here(self) -> None:
+        self.dismiss(False)
+
+
+class NotesReviewScreen(ModalScreen):
+    """Shows the drafted notes read-only. Closes with EDIT, USE or STOP."""
+
+    BINDINGS = [("escape", "stop", "Stop")]
+    DEFAULT_CSS = """
+    NotesReviewScreen { align: center middle; }
+    NotesReviewScreen > Vertical { width: 90%; max-width: 100; height: 90%; padding: 1 2;
+        border: round $accent; background: $surface; }
+    NotesReviewScreen TextArea { height: 1fr; }
+    NotesReviewScreen Horizontal { height: auto; margin-top: 1; }
+    NotesReviewScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, path: Path | str, text: str) -> None:
+        super().__init__()
+        self._path = Path(path)
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(f"Release notes drafted in {self._path}", id="release-notes-title")
+            yield TextArea(self._text, read_only=True, id="release-notes-text")
+            with Horizontal():
+                yield Button("Edit", id="release-notes-edit")
+                yield Button("Use these", id="release-notes-use", variant="primary")
+                yield Button("Stop", id="release-notes-stop")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        choices = {"release-notes-edit": EDIT, "release-notes-use": USE}
+        self.dismiss(choices.get(event.button.id or "", STOP))
+
+    def action_stop(self) -> None:
+        self.dismiss(STOP)
+
+
+class ReleaseFailedScreen(ModalScreen):
+    """Shows why the release stopped. Closes with RESUME, OPEN_PR or None."""
+
+    BINDINGS = [("escape", "close", "Close")]
+    DEFAULT_CSS = """
+    ReleaseFailedScreen { align: center middle; }
+    ReleaseFailedScreen > Vertical { width: 80; height: auto; max-height: 90%; padding: 1 2;
+        border: thick $error; background: $surface; }
+    ReleaseFailedScreen Horizontal { height: auto; margin-top: 1; }
+    ReleaseFailedScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, reason: str, open_pr: bool = False) -> None:
+        super().__init__()
+        self._reason = reason
+        self._open_pr = open_pr
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("The release stopped", id="release-failed-title")
+            yield Static(self._reason, id="release-failed-reason")
+            with Horizontal():
+                yield Button("Resume release", id="release-resume", variant="primary")
+                if self._open_pr:
+                    yield Button("Open PR", id="release-open-pr")
+                yield Button("Close", id="release-failed-close")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        choices = {"release-resume": RESUME, "release-open-pr": OPEN_PR}
+        self.dismiss(choices.get(event.button.id or ""))
+
+    def action_close(self) -> None:
+        self.dismiss(None)

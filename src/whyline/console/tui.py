@@ -2466,11 +2466,14 @@ class WhylineConsoleApp(App):
         run is paused and nothing is running."""
         in_relay = self.session.mode == "relay"
         running = self._relay is not None and self._relay.running()
-        self._main("#relay-run", Button).disabled = not in_relay or running
+        releasing = self._release_running()
+        self._main("#relay-run", Button).disabled = not in_relay or running or releasing
         self._main("#relay-plan", Button).disabled = not in_relay
         self._main("#relay-setup", Button).disabled = not in_relay
-        self._main("#relay-release", Button).disabled = not in_relay or (
-            running and not getattr(self, "_release_task", None)
+        self._main("#relay-release", Button).disabled = (
+            not in_relay
+            or releasing
+            or (running and not getattr(self, "_release_task", None))
         )
         try:
             paused = in_relay and relay_ops.paused_run(self.session.root)
@@ -2514,6 +2517,8 @@ class WhylineConsoleApp(App):
             resume.label = "Resume"
             self._stale_pause = None
             resume.disabled = not paused or running
+        if releasing:
+            resume.disabled = True
         if str(resume.label) != label_before:
             # A width:auto button keeps its old width after a label change
             # (Textual 2.1), so "Release done…" showed as "Releas".
@@ -4620,6 +4625,10 @@ class WhylineConsoleApp(App):
             cancel_event.set()
             self.render_event(SessionEvent(kind="output", text="Stopping…"))
         self._stop_check()
+        release_cancel = getattr(self, "_release_cancel", None)
+        if release_cancel is not None:
+            release_cancel.set()
+            self.render_event(SessionEvent(kind="output", text="Stopping the release…"))
         self._dispatch_token = object()
         self._sent_attachments = []
         if getattr(self, "_release_task", None):
@@ -4637,7 +4646,7 @@ class WhylineConsoleApp(App):
         for worker in self.workers:
             worker.cancel()
         self._disarm_follow()
-        if cancel_event is None:
+        if cancel_event is None and not self._release_running():
             self._set_busy(False)
 
     def _set_busy(self, busy: bool, label: str | None = None) -> None:
@@ -4684,6 +4693,20 @@ class WhylineConsoleApp(App):
         if self._relay_label:
             self._refresh_switch_note()
         note = self._switch_note
+        progress = getattr(self, "_release_progress", None)
+        if self._release_running() and progress is not None:
+            from whyline.release import engine as release_engine
+
+            step = min(progress.step_index + 1, progress.total)
+            detail = getattr(self, "_release_detail", "") or progress.detail
+            secs = int((self._wall() - progress.step_started_at).total_seconds())
+            thinking.update(
+                f"{_SPINNER[self._spin]} release: v{self._release_choice.version} · "
+                f"step {step} of {progress.total} ({release_engine.percent(progress)}%) · "
+                f"{progress.title}{' · ' + detail if detail else ''} · "
+                f"{relay_ops._elapsed(secs)}"
+            )
+            return
         if self._relay_status is not None and not self._busy_text:
             summary = relay_ops.format_live(
                 self._relay_status, self._wall(), self._relay_progress
@@ -5795,6 +5818,9 @@ class WhylineConsoleApp(App):
         if self._relay_running():
             self.render_event(SessionEvent(kind="error", text="The relay is already running."))
             return
+        if self._release_running():
+            self.render_event(SessionEvent(kind="error", text="A release is running."))
+            return
         if self._plan_state:
             self.render_event(SessionEvent(
                 kind="error",
@@ -5979,8 +6005,173 @@ class WhylineConsoleApp(App):
         self.push_screen(ReleaseScreen(self.session.root, start_release=self._start_release))
 
     def _start_release(self, choice: Any) -> None:
-        """REL-10 starts the run; until then the choice is only remembered."""
         self._release_choice = choice
+        self._run_release(resume=False)
+
+    def _release_running(self) -> bool:
+        return bool(getattr(self, "_release_active", False))
+
+    def _run_release(self, *, resume: bool) -> None:
+        import threading
+
+        if self._release_running():
+            return
+        self._release_active = True
+        self._release_cancel = threading.Event()
+        self._release_pr_flag = False
+        self._release_stopped = False
+        self._release_progress = None
+        self._release_detail = ""
+        choice = self._release_choice
+        self._set_busy(True, f"release v{choice.version}")
+        self._sync_relay_buttons()
+        cancel = self._release_cancel
+        self.run_worker(lambda: self._release_thread(choice, resume, cancel), thread=True)
+
+    def _release_say(self, text: str) -> None:
+        self.call_from_thread(self.render_event, SessionEvent(kind="output", text=text))
+
+    def _release_ask(self, screen: Any, default: Any) -> Any:
+        """Shows a popup from the release thread and waits for its answer."""
+        import threading
+
+        done = threading.Event()
+        answer: list[Any] = []
+
+        def finished(result: Any) -> None:
+            answer.append(result)
+            done.set()
+
+        self.call_from_thread(self.push_screen, screen, finished)
+        while not done.wait(0.1):
+            if not self.is_running:
+                return default
+        return answer[0] if answer else default
+
+    def _release_thread(self, choice: Any, resume: bool, cancel: Any) -> None:
+        from dataclasses import replace
+
+        from whyline.console.release_screens import (
+            EDIT, USE, ConfirmStepScreen, NotesReviewScreen,
+        )
+        from whyline.release import config as release_config
+        from whyline.release import engine as release_engine
+        from whyline.release import plan as release_plan
+
+        root = self.session.root
+        engine = getattr(self, "_release_engine", None) or release_engine
+
+        def on_progress(progress: Any) -> None:
+            self._release_progress = progress
+            self._release_detail = ""
+            self._release_say(f"release · {progress.title}: {progress.detail}")
+
+        def on_detail(text: str) -> None:
+            self._release_detail = text
+            progress = self._release_progress
+            title = progress.title if progress is not None else "release"
+            self._release_say(f"release · {title}: {text}")
+
+        def confirm(step: Any) -> bool:
+            return bool(self._release_ask(
+                ConfirmStepScreen(step.title, step.irreversible), False))
+
+        def confirm_notes(path: Any) -> bool:
+            try:
+                text = Path(path).read_text(encoding="utf-8")
+            except OSError:
+                text = ""
+            answer = self._release_ask(NotesReviewScreen(path, text), "stop")
+            if answer == USE:
+                return True
+            if answer == EDIT:
+                opener = getattr(self, "_release_open_file", None)
+                if opener is None:
+                    from whyline.console.ideas_screen import _open_with_macos as opener
+                message = opener(Path(path))
+                if message:
+                    self._release_say(f"Could not open the notes: {message}")
+                return False  # the step stops; Resume release continues with the edited file
+            self._release_stopped = True
+            cancel.set()
+            return False
+
+        def tracked(step: Any) -> Any:
+            def run_step(cancel_event: Any) -> Any:
+                try:
+                    return step.run(cancel_event)
+                except Exception as exc:
+                    if getattr(exc, "open_pr", False):
+                        self._release_pr_flag = True
+                    raise
+
+            return replace(step, run=run_step)
+
+        try:
+            cfg = replace(release_config.load(root), mode=choice.mode)
+            built = release_plan.build(
+                root, cfg, choice.version,
+                ask_agent=getattr(self, "_release_ask_agent", None),
+                confirm_notes=confirm_notes, on_progress=on_detail, say=self._release_say,
+            )
+            steps = [tracked(step) for step in built.steps]
+            if resume:
+                result = engine.resume(
+                    root, {step.id: step for step in steps}, version=choice.version,
+                    mode=choice.mode, confirm=confirm, on_progress=on_progress,
+                    cancel_event=cancel)
+            else:
+                result = engine.run(
+                    root, release_engine.Plan(built.version, steps), mode=choice.mode,
+                    confirm=confirm, on_progress=on_progress, cancel_event=cancel)
+        except Exception as exc:  # a broken setup must not end the console
+            result = release_engine.Result("error", str(exc))
+        self.call_from_thread(self._release_finished, result)
+
+    def _release_finished(self, result: Any) -> None:
+        self._release_active = False
+        self._release_cancel = None
+        self._release_progress = None
+        self._set_busy(False)
+        self._sync_relay_buttons()
+        version = self._release_choice.version
+        if result.status == "done":
+            self.render_event(SessionEvent(kind="output", text=f"Release v{version} finished."))
+        elif result.status == "failed" and not self._release_stopped:
+            from whyline.console.release_screens import ReleaseFailedScreen
+
+            self.render_event(SessionEvent(kind="error", text=result.message))
+            self.push_screen(
+                ReleaseFailedScreen(result.message, self._release_pr_flag),
+                self._release_failure_done,
+            )
+        elif result.status == "error":
+            self.render_event(SessionEvent(kind="error", text=result.message))
+        else:
+            self.render_event(SessionEvent(kind="output", text=result.message))
+
+    def _release_failure_done(self, choice: Any) -> None:
+        if choice == "resume":
+            self._run_release(resume=True)
+        elif choice == "open-pr":
+            self._open_release_pr()
+
+    def _open_release_pr(self) -> None:
+        from whyline.release import config as release_config
+        from whyline.release import github
+
+        root = self.session.root
+        opener = getattr(self, "_release_open_pr_fn", None) or github.open_pr
+
+        def work() -> None:
+            try:
+                branch = release_config.load(root).branch
+                event = SessionEvent(kind="output", text=f"Pull request: {opener(root, branch)}")
+            except Exception as exc:
+                event = SessionEvent(kind="error", text=str(exc))
+            self.call_from_thread(self.render_event, event)
+
+        self.run_worker(work, thread=True)
 
     def _open_relay_setup(self, guided: bool = False, plan: Path | None = None) -> None:
         if self._refuse_in_home():

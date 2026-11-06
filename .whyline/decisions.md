@@ -36548,3 +36548,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 808f43dbb7e54191810b6245fa24568c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T00:32:07.806Z"} -->
+
+## 2026-11-06 — Release run: Stop on notes review sets cancel and skips the failure popup; Edit opens the file and ends the step so Resume release continues
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-10
+
+**Because:** Engine only reports a message, so open_pr is captured by wrapping each step's run; Edit cannot wait on an external editor
+
+**Rejected:**
+
+- Loop back to the review after Edit — the macOS open call returns before editing ends
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 25186d09beff4085a2513c1db837a57d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T00:46:46.810Z"} -->
+
+## 2026-11-06 — Pass REL-10: Console release run, busy line, confirm modals, notes review, failure handling, and button gating verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-10
+
+**Because:** Full test suite passed (3789 passed, 1 skipped); test_tui_relay_run.py verified release progress reporting, busy line formatting with RST-2 elapsed time, confirm modals, notes review modal, Stop cancellation, failure handling with Resume/Open PR, and relay Run/Resume disabling
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 899f1bc74d304c418330131aea6964ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T01:02:53.515Z"} -->
+
+## 2026-11-06 — Approve REL-10: Console release run, busy line, confirmations, notes review, and failure handling match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-10
+
+**Because:** Working-tree diff matches REL-10: start_release runs plan.build and the engine in a thread worker; transcript lines use release · title: detail; the busy line uses engine.percent and RST-2 _elapsed; Stop sets the cancel event; ConfirmStepScreen has Go and Stop here; ask-mode notes open a read-only TextArea with Edit, Use these, and Stop; failures show Resume release and Open PR when step.run sets open_pr; Run and Resume disable while releasing. Tests cover each spec bullet. uv run pytest -q failed once in test_resume_in_setup_dismisses_with_cleared_switches, an unrelated setup-screen timing flake that passed on rerun; REL-10 tests in test_tui_relay_run.py passed.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: b9596911d6b44dbca3d133b50c2bb737 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T04:42:49.734Z"} -->
