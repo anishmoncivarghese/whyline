@@ -36907,3 +36907,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 24d812b8822244a5bbd07ba0e79d468f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T09:20:14.748Z"} -->
+
+## 2026-11-06 — Build failures and a missing .dockerignore are severity medium; findings keep scanner rule ids with path rewritten to <artifact>:<member>
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-6
+
+**Because:** Finding has no warn severity, medium is the lowest that still shows as a warning; keeping scan_text/check_deny output means rule ids and allowlists stay uniform
+
+**Rejected:**
+
+- recompute fingerprints per artifact — secret value is not available after scan_text, and the same key in wheel and sdist is one issue
+
+**Files:** src/whyline/security/contents.py
+
+<!-- whyline-event: 8f1ebfbf043e433ba2a46365f9a8ca15 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T09:27:43.326Z"} -->
+
+## 2026-11-06 — Package contents scanning and dockerignore pattern matching behave correctly across Python, npm, and Docker fixtures
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-6
+
+**Because:** All 14 unit tests in test_contents.py and 3910 project test suite tests passed with clean build artifact cleanup and proper warn-level findings on build failures
+
+**Files:** src/whyline/security/contents.py
+
+<!-- whyline-event: d55c060c7f0e45ce81008c16578c213c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T09:43:34.726Z"} -->
+
+## 2026-11-06 — Approve SEC-6 package contents checker
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-6
+
+**Because:** Python wheel/sdist, npm pack, and Docker context scanning match the spec; required fixtures are covered; uv run pytest -q exited 0
+
+**Files:** src/whyline/security/contents.py
+
+<!-- whyline-event: 2937c9503950437b957f28cd307653c1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:02:48.837Z"} -->
