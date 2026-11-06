@@ -309,7 +309,7 @@ Global constraints:
     Everything saves through `config.save`.
   Tests: grouping and badges, Allow needs a reason and writes through `allow`, Ignore once, history scan progress and Stop, Copy report contains no full secret, the settings round-trip.
 
-- [ ] SEC-10: Check every commit (optional pre-commit hook)
+- [x] SEC-10: Check every commit (optional pre-commit hook)
   Create `src/whyline/security/hook.py` and `tests/security/test_hook.py`; edit `src/whyline/security/cli.py`, `src/whyline/console/security_screens.py` and their tests only.
   - `install(root)` writes `.git/hooks/pre-commit` running `whyline security scan --staged --hook`. If a hook already exists and isn't whyline's, it is kept: `install` refuses and tells the user to add the line themselves (shown with **Copy**). `uninstall(root)` removes only whyline's hook. `installed(root)`.
   - `--hook` mode prints only blocking secret findings (masked) and the line `Commit stopped by whyline security. Review: whyline security scan --staged`. It exits 1 on a block and 0 otherwise. It skips the dependency and contents checks, so it stays under 2 s. With `secrets = "off"`, it exits 0 at once.
