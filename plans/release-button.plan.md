@@ -274,7 +274,7 @@ Global constraints:
   - `check(root, *, run) -> list[Finding]` returns `contents` findings with `path` as `<artifact>:<member>`. A build failure is one finding, "could not build <kind>: <last line>", at warn level.
   Tests: a wheel fixture containing a `.env`, a sdist with a key in a text file, npm pack JSON listing a `.npmrc`, `.dockerignore` matching (negation included), and the build-failure finding.
 
-- [ ] SEC-7: Use gitleaks, betterleaks or osv-scanner when installed
+- [x] SEC-7: Use gitleaks, betterleaks or osv-scanner when installed
   Create `src/whyline/security/external.py` and `tests/security/test_external.py` only.
   - `available(which=shutil.which) -> dict[str, str]` (tool → path).
   - Run the tool with JSON output to a temp file, never to stdout in the transcript:
