@@ -36782,3 +36782,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fdb9d518763f458c9b71ac6279d50e2b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T07:29:55.200Z"} -->
+
+## 2026-11-06 — Scanner keeps the last-seen duplicate in git log order (newest first) so the earliest commit wins; scan_history takes an extra popen arg for streaming
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-3
+
+**Because:** git log is newest-first, so a later duplicate is an older commit; subprocess.run cannot stream
+
+**Rejected:**
+
+- sorting by commit date — slower and ambiguous on rebased history
+
+**Files:** src/whyline/security/secrets.py
+
+<!-- whyline-event: 049815ecda074c54b3215b19d12dec97 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T07:32:51.366Z"} -->
+
+## 2026-11-06 — Accept SEC-3 secret scanner implementation and test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-3
+
+**Because:** All 29 secret scanner tests and the full project test suite pass; scan scopes, DENY_NAMES, keyword pre-filtering, entropy checks, masked previews, and deduplication all behave as specified
+
+**Files:** src/whyline/security/secrets.py, tests/security/test_secrets.py
+
+<!-- whyline-event: 56e9291f4e2c4363b150815e1cefb29a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T07:48:09.526Z"} -->
+
+## 2026-11-06 — Approve SEC-3 secret scanner implementation and tests
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-3
+
+**Because:** scan_text, DENY_NAMES, range/staged/paths/history, keyword prefilter, entropy, masked previews, and earliest-commit fingerprint dedupe match the spec; required tests cover temp repos and assembled secrets; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for .whyline/decisions.md — whyline note is required shared history for this task
+- Request changes for empty denied files with no diff hunks — spec scans added lines from git patches; scan_paths still flags those names
+
+**Files:** src/whyline/security/secrets.py, tests/security/test_secrets.py
+
+<!-- whyline-event: 63e444e4f355408ab2cbe627687e4e9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T08:08:28.600Z"} -->
