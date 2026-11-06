@@ -100,7 +100,8 @@ _MODES = ("chat", "relay", "agents", "assistant", "workflows")
 # Agents widgets arrive with the Agents plan. Until then these ids match nothing.
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
-    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues", "relay-check"),
+    "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues", "relay-check",
+              "relay-release"),
     "agents": (
         "agents-new",
         "agents-list",
@@ -2468,6 +2469,9 @@ class WhylineConsoleApp(App):
         self._main("#relay-run", Button).disabled = not in_relay or running
         self._main("#relay-plan", Button).disabled = not in_relay
         self._main("#relay-setup", Button).disabled = not in_relay
+        self._main("#relay-release", Button).disabled = not in_relay or (
+            running and not getattr(self, "_release_task", None)
+        )
         try:
             paused = in_relay and relay_ops.paused_run(self.session.root)
         except Exception:  # no relay installed, unreadable state: not resumable
@@ -4057,6 +4061,7 @@ class WhylineConsoleApp(App):
                 Button("Apply when paused", id="relay-check-apply"),
                 Button("Retry stage", id="relay-retry-stage", disabled=True),
                 Button("Resolve", id="relay-resolve", disabled=True),
+                Button("Release", id="relay-release", disabled=True),
                 Button("New", id="agents-new"),
                 Button("Agents", id="agents-list"),
                 Button("Runs", id="agents-runs"),
@@ -4322,6 +4327,8 @@ class WhylineConsoleApp(App):
                     + ", ".join(unrelated),
                 ))
             self._launch_relay(retry_args)
+        elif button_id == "relay-release":
+            self._open_release()
         elif button_id == "relay-resolve":
             self._start_resolve_flow(source="resume")
         elif button_id == "reply-send":
@@ -5963,6 +5970,17 @@ class WhylineConsoleApp(App):
             return bool([p for p in dirty if p != ".whyline/decisions.md"])
         except Exception:
             return False
+
+    def _open_release(self) -> None:
+        if self._refuse_in_home():
+            return
+        from whyline.console.release_screens import ReleaseScreen
+
+        self.push_screen(ReleaseScreen(self.session.root, start_release=self._start_release))
+
+    def _start_release(self, choice: Any) -> None:
+        """REL-10 starts the run; until then the choice is only remembered."""
+        self._release_choice = choice
 
     def _open_relay_setup(self, guided: bool = False, plan: Path | None = None) -> None:
         if self._refuse_in_home():

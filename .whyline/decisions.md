@@ -36505,3 +36505,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 62108cf94be44de6891341a55b435913 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-05T23:41:14.912Z"} -->
+
+## 2026-11-05 — Release popup lists planned steps via release.plan.build (lazy steps, no side effects) behind an injectable steps callable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-9
+
+**Because:** Step bodies run only on execution, so building a plan to read titles and irreversible flags is safe and stays in sync with the engine
+
+**Rejected:**
+
+- hard-coded step list — would drift from plan.build
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: ac380d5773db4962a94cfa8574cd267d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-05T23:47:47.155Z"} -->
+
+## 2026-11-06 — Pass REL-9: Release button in Relay mode, ReleaseScreen tabs, check worker, and start stub verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-9
+
+**Because:** Full test suite passed (3777 passed, 1 skipped) including test_release_screens.py, test_mode_buttons.py, and test_tui_relay_run.py; all REL-9 specs verified
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 692c02ea96d441be9b898e9b68d496bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T00:12:30.497Z"} -->
+
+## 2026-11-06 — Approve REL-9: Release button and ReleaseScreen match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-9
+
+**Because:** Working-tree diff matches REL-9: Release sits after Resolve, is Relay-only via _MODE_BUTTONS, and is disabled while a relay runs unless _release_task is set. ReleaseScreen has Release and Set up tabs, version and mode selects, a threaded Check that gates Start, irreversible steps marked with ⚠, and Start as a stub that dismisses and calls start_release. Tests cover each spec bullet. uv run pytest -q exited 0.
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 808f43dbb7e54191810b6245fa24568c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T00:32:07.806Z"} -->

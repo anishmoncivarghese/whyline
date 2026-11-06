@@ -774,3 +774,30 @@ async def test_tester_narration_shows_suite_progress(tmp_path, monkeypatch):
         app._relay_line("The repository run has crossed 32% without an error")
         app._tick()
         assert "suite 32%, 0 failed (codex says)" in _thinking(app)
+
+
+async def test_release_button_shows_only_in_relay_mode(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        app.session.mode = "chat"
+        app._sync_mode_indicator()
+        await pilot.pause()
+        assert not app.query_one("#relay-release", tui.Button).display
+        await _relay_mode(app, pilot)
+        button = app.query_one("#relay-release", tui.Button)
+        assert button.display and not button.disabled
+
+
+async def test_release_button_disabled_while_running_but_not_on_release_pause(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        app._sync_relay_buttons()
+        assert app.query_one("#relay-release", tui.Button).disabled
+        await asyncio.to_thread(FakeProcess.instances[-1].finish, 0, "")
+        await pilot.pause()
+        app._release_task = ("REL-1", [])
+        app._sync_relay_buttons()
+        assert not app.query_one("#relay-release", tui.Button).disabled
