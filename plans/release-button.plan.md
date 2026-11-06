@@ -266,7 +266,7 @@ Global constraints:
   - A network failure returns `error="could not reach OSV.dev"` and no findings. The gate treats that as a warning, never as passing silently.
   Tests (fake fetch): a vulnerable and a clean package, chunking at 500, the cache hit, each severity source including a CVSS vector, fix hints, a private dep never in any request body, the network error.
 
-- [ ] SEC-6: Check what each package actually publishes
+- [x] SEC-6: Check what each package actually publishes
   Create `src/whyline/security/contents.py` and `tests/security/test_contents.py` only.
   - Python (`pyproject.toml` with `[project]`): run `uv build --out-dir <tmp under .git/whyline-release/build>`, list the wheel (zipfile) and sdist (tarfile) members, and run `scan_text` over each text member, plus DENY_NAMES on member names.
   - npm (`package.json`, not private): run `npm pack --dry-run --json`, then scan the listed files from the working tree.
