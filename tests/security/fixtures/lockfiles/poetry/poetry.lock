@@ -1,0 +1,25 @@
+[[package]]
+name = "Django_Rest.Framework"
+version = "3.15.0"
+description = "x"
+
+[[package]]
+name = "corp-lib"
+version = "2.0.0"
+
+[package.source]
+type = "legacy"
+url = "https://pypi.corp.example/simple"
+reference = "corp"
+
+[[package]]
+name = "gitpkg"
+version = "0.1.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/example/gitpkg.git"
+reference = "main"
+
+[metadata]
+lock-version = "2.0"

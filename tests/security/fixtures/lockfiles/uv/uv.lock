@@ -1,0 +1,38 @@
+version = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "myapp"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [{ name = "requests" }]
+
+[[package]]
+name = "Requests"
+version = "2.32.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "Typing_Extensions"
+version = "4.12.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "internal-lib"
+version = "1.0.0"
+source = { registry = "https://pypi.corp.example/simple" }
+
+[[package]]
+name = "local-tool"
+version = "0.2.0"
+source = { editable = "../local-tool" }
+
+[[package]]
+name = "gitdep"
+version = "0.3.0"
+source = { git = "https://github.com/example/gitdep?rev=abc#abc" }
+
+[[package]]
+name = "pathdep"
+version = "0.4.0"
+source = { directory = "vendor/pathdep" }

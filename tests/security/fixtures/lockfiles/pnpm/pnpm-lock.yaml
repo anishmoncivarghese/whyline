@@ -1,0 +1,25 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      left-pad:
+        specifier: ^1.3.0
+        version: 1.3.0
+
+packages:
+
+  left-pad@1.3.0:
+    resolution: {integrity: sha512-aaa}
+
+  '@scope/pkg@2.0.0(react@18.2.0)':
+    resolution: {integrity: sha512-bbb}
+
+  corp@3.0.0:
+    resolution: {tarball: https://npm.corp.example/corp-3.0.0.tgz}
+
+  localdep@file:../localdep:
+    resolution: {directory: ../localdep, type: directory}
+
+snapshots:
+  left-pad@1.3.0: {}

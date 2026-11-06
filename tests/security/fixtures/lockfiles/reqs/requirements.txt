@@ -1,0 +1,9 @@
+# pinned
+Flask_Login==0.6.3
+requests[security]==2.31.0 ; python_version > "3.8"
+numpy>=1.26
+-r other.txt
+--index-url https://pypi.corp.example/simple
+-e ./local
+git+https://github.com/example/x.git#egg=x
+pandas==2.*

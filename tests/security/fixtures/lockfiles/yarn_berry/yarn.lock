@@ -1,0 +1,13 @@
+__metadata:
+  version: 8
+
+"left-pad@npm:^1.3.0":
+  version: 1.3.0
+  resolution: "left-pad@npm:1.3.0"
+  checksum: abc
+  languageName: node
+
+"webapp@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "webapp@workspace:."
+  languageName: unknown

@@ -36830,3 +36830,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 63e444e4f355408ab2cbe627687e4e9d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T08:08:28.600Z"} -->
+
+## 2026-11-06 — Lockfile parser correctly extracts pinned dependencies and unpinned requirements across supported ecosystems
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-4
+
+**Because:** All 9 format tests in test_lockfiles.py and the full pytest suite passed without errors
+
+**Files:** src/whyline/security/lockfiles.py
+
+<!-- whyline-event: 565efccc0f9641bd8f39fe689b1093af -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T08:25:58.931Z"} -->
+
+## 2026-11-06 — Approve SEC-4 lockfile parsers for uv, poetry, requirements, npm, pnpm, and yarn
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-4
+
+**Because:** Fixtures cover public and private entries, root skip, PEP 503 names, and unpinned requirements; nine lockfile tests passed
+
+**Rejected:**
+
+- Request changes for the full-suite console failure — test_paused_clean_tree_is_unchanged is a UI timeout outside the SEC-4 file list
+
+**Verdict:** approved
+**Test:** uv run pytest -q tests/security/test_lockfiles.py: 9 passed
+**Test:** uv run pytest -q: 1 failed tests/console/test_relay_setup_screen.py:: test_paused_clean_tree_is_unchanged (unrelated)
+
+**Files:** src/whyline/security/lockfiles.py, tests/security/test_lockfiles.py
+
+<!-- whyline-event: 1bb290fa00ce40899d11f83c6ac5afc4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T08:44:36.162Z"} -->
