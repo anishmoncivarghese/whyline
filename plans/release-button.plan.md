@@ -201,7 +201,7 @@ Global constraints:
   - `decide(findings, settings) -> Decision(blocking, warnings, allowed)`.
   Tests: masking for short and long values, fingerprint stability, settings round-trip and errors, allow needs a reason, decide per setting (block-high lets medium through as a warning).
 
-- [ ] SEC-2: Bundled secret rules and the Go-to-Python regex translator
+- [x] SEC-2: Bundled secret rules and the Go-to-Python regex translator
   Create `src/whyline/security/rules/gitleaks.toml`, `src/whyline/security/rules/LICENSE-gitleaks`, `src/whyline/security/rules/VERSION`, `src/whyline/security/rules.py`, `scripts/update_secret_rules.py` and `tests/security/test_rules.py` only. Make sure the package data ships the `rules/` files (check `pyproject.toml`'s build config, and add the include there only if needed).
   - Copy gitleaks' `config/gitleaks.toml` from its latest release tag, with its MIT licence text. `VERSION` holds the tag and the date. `scripts/update_secret_rules.py --ref <tag>` refreshes all three. It's a developer-only script, never run by whyline.
   - `load_rules() -> RuleSet`. Each rule carries id, description, regex, secret_group, entropy, keywords (lowercased), path regex and its allowlists (regexes, stopwords, paths, `regexTarget`), plus the global allowlist.
