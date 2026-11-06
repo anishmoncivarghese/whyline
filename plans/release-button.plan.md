@@ -253,7 +253,7 @@ Global constraints:
   - Ecosystem names are OSV's (`PyPI`, `npm`). PyPI names are normalised as PEP 503 does.
   Tests: one fixture per format, with private and public entries, the root skipped, and unpinned requirements reported.
 
-- [ ] SEC-5: Check dependencies against OSV.dev
+- [x] SEC-5: Check dependencies against OSV.dev
   Create `src/whyline/security/deps.py` and `tests/security/test_deps.py` only.
   - `check(deps, *, fetch, cache_dir, now) -> DepReport(findings, not_checked, error)`.
     - POST `https://api.osv.dev/v1/querybatch` with only public deps, in chunks of 500, with a 20 s timeout per call. Then GET `https://api.osv.dev/v1/vulns/<id>` for each new id.
