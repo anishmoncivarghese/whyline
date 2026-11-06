@@ -558,6 +558,12 @@ def _add_workflow(subparsers: "argparse._SubParsersAction") -> None:
     add_parser(subparsers)
 
 
+def _add_security(subparsers: "argparse._SubParsersAction") -> None:
+    from whyline.security.cli import add_parser
+
+    add_parser(subparsers)
+
+
 def _add_ask(subparsers: "argparse._SubParsersAction") -> None:
     from whyline.relaychat.cli import add_parser
 
@@ -628,6 +634,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_idea(subparsers)
     _add_jobs(subparsers)
     _add_workflow(subparsers)
+    _add_security(subparsers)
     _add_ask(subparsers)
     _add_relay_safety(subparsers)
     return parser
@@ -1838,6 +1845,12 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     return run(args)
 
 
+def cmd_security(args: argparse.Namespace) -> int:
+    from whyline.security.cli import run
+
+    return run(args)
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -2001,6 +2014,7 @@ COMMANDS = {
     "idea": cmd_idea,
     "jobs": cmd_jobs,
     "workflow": cmd_workflow,
+    "security": cmd_security,
     "ask": cmd_ask,
     "relay-safety": cmd_relay_safety,
 }

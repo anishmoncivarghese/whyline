@@ -36998,3 +36998,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 606e0e1adde643bb96cd7e0f37b7f74e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:40:10.823Z"} -->
+
+## 2026-11-06 — Security Ready items run on every release via an _ALWAYS set in ready.check; a check may return None to hide its item
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-8
+
+**Because:** security is not a Targets field, so the target gate would never run it; the history suggestion must disappear after the first push or a scan
+
+**Rejected:**
+
+- add a Targets.security flag — config.py is outside this task and the gate must not be switchable off from targets
+
+**Files:** src/whyline/release/ready.py
+
+<!-- whyline-event: c2dfb91c34f44139970dd453183130b2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T10:45:24.711Z"} -->
+
+## 2026-11-06 — Approve SEC-8 security CLI and release gate implementation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-8
+
+**Because:** All 3946 tests in the full project suite passed, and 274 focused tests in tests/security and tests/release passed, verifying all scan scopes (release, staged, history, all), allowlist, JSON output, exit codes, and ready item states
+
+**Files:** src/whyline/security/scan.py, src/whyline/security/cli.py, src/whyline/release/ready.py
+
+<!-- whyline-event: 835e10565a5e46c6b5fe5963b8913009 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:01:20.679Z"} -->
+
+## 2026-11-06 — Approve SEC-8 security CLI and release Ready gate
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-8
+
+**Because:** scan.run covers release, staged, history and all with allowlist, ignore-once and decide; CLI scan/allow/status match including JSON secret masking and exit 1 on blocks; Ready item states and the pre-push history suggestion match; uv run pytest -q exited 0
+
+**Files:** src/whyline/security/scan.py, src/whyline/security/cli.py, src/whyline/release/ready.py
+
+<!-- whyline-event: 4d6c9e86938043839829cc5255714a71 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:20:06.389Z"} -->

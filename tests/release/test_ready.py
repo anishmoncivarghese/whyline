@@ -9,6 +9,7 @@ from whyline.release import config as release_config
 from whyline.release import ready
 from whyline.release.config import ReleaseConfig, Targets
 from whyline.release.ready import ReadyItem, Result
+from whyline.security.settings import SecuritySettings
 
 KEYS = ["git", "gh", "gh-auth", "origin", "clean", "relay", "synced", "tag"]
 
@@ -201,3 +202,62 @@ def test_time_budget(repo):
     for i in items[2:]:
         assert not i.ok
         assert i.text == "not checked (time limit)"
+
+
+# --- security ---------------------------------------------------------------------
+
+
+def _security_items(repo, monkeypatch, report, cfg=None):
+    from whyline.security import scan
+
+    monkeypatch.setattr(ready, "_TARGET_CHECKS", {
+        "security": ready._security, "security-history": ready._security_history})
+    monkeypatch.setattr(scan, "run", lambda *a, **k: report)
+    return by_key(run_check(repo, cfg=cfg))
+
+
+def _findings(kind, n):
+    from whyline.security.findings import Finding
+
+    return tuple(Finding(kind=kind, rule="r", title="t", severity="high", fingerprint=f"{kind}{i}")
+                 for i in range(n))
+
+
+def test_security_item_states(repo, monkeypatch):
+    from whyline.security.scan import ScanReport
+    from whyline.security.settings import Decision
+
+    got = _security_items(repo, monkeypatch, ScanReport("release"))["security"]
+    assert got == ReadyItem("security", True, "no findings")
+    warn = ScanReport("release", decision=Decision(warnings=_findings("dependency", 2)))
+    assert _security_items(repo, monkeypatch, warn)["security"] == ReadyItem("security", True, "2 warnings")
+    block = ScanReport("release", decision=Decision(
+        blocking=_findings("secret", 2) + _findings("dependency", 1) + _findings("contents", 3)))
+    assert _security_items(repo, monkeypatch, block)["security"] == ReadyItem(
+        "security", False, "6 blocking findings (secrets: 2, dependencies: 1, contents: 3)",
+        "Open Security to review")
+    failed = ScanReport("release", error="git log failed")
+    assert _security_items(repo, monkeypatch, failed)["security"] == ReadyItem(
+        "security", False, "security scan failed: git log failed", "Open Security to review")
+
+
+def test_history_suggestion_only_before_first_push(repo, tmp_path, monkeypatch):
+    from whyline.security.scan import ScanReport
+
+    # the fixture repo has pushed origin/main: no suggestion
+    assert "security-history" not in _security_items(repo, monkeypatch, ScanReport("release"))
+    fresh = tmp_path / "fresh"
+    _git(tmp_path, "init", "-b", "main", str(fresh))
+    _git(fresh, "config", "user.email", "t@example.com")
+    _git(fresh, "config", "user.name", "t")
+    (fresh / "a.txt").write_text("a\n")
+    _git(fresh, "add", ".")
+    _git(fresh, "commit", "-m", "init")
+    got = _security_items(fresh, monkeypatch, ScanReport("release"))["security-history"]
+    assert got == ReadyItem("security-history", False, "History has not been scanned for secrets", "Scan history")
+    warn = ReleaseConfig(security=SecuritySettings(secrets="warn"))
+    assert _security_items(fresh, monkeypatch, ScanReport("release"), warn)["security-history"].ok
+    done = ReleaseConfig(security=SecuritySettings(history_scanned="2026-11-06"))
+    assert "security-history" not in _security_items(fresh, monkeypatch, ScanReport("release"), done)
+    off = ReleaseConfig(security=SecuritySettings(secrets="off"))
+    assert "security-history" not in _security_items(fresh, monkeypatch, ScanReport("release"), off)

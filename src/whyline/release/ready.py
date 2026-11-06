@@ -41,9 +41,12 @@ class Result:
 Run = Callable[..., object]
 Fetch = Callable[[Path, str], object]
 RelayState = Callable[[], str]
-TargetCheck = Callable[[Path, ReleaseConfig, str, Run], ReadyItem]
+TargetCheck = Callable[[Path, ReleaseConfig, str, Run], ReadyItem | None]
 
 _TARGET_CHECKS: dict[str, TargetCheck] = {}
+
+# Checks that run on every release rather than for one switched-on target.
+_ALWAYS = frozenset({"security", "security-history"})
 
 
 def register_ready(target: str, fn: TargetCheck) -> None:
@@ -220,7 +223,7 @@ def check(root: Path | str, cfg: ReleaseConfig, version: str, *,
         jobs.append((key, lambda fn=fn: fn(root, cfg, version, run,
                                            fetch=fetch, relay_state=relay_state)))
     for target, fn in _TARGET_CHECKS.items():
-        if getattr(cfg.targets, target, False):
+        if target in _ALWAYS or getattr(cfg.targets, target, False):
             jobs.append((target, lambda fn=fn: fn(root, cfg, version, run)))
 
     start = clock()
@@ -230,8 +233,35 @@ def check(root: Path | str, cfg: ReleaseConfig, version: str, *,
             items.append(ReadyItem(key, False, "not checked (time limit)"))
             continue
         try:
-            items.append(job())
+            item = job()
+            if item is not None:
+                items.append(item)
         except Exception as exc:  # noqa: BLE001 - one broken item must not stop the rest
             reason = _short(str(exc)) or type(exc).__name__
             items.append(ReadyItem(key, False, f"could not check: {reason}"))
     return items
+
+
+_SECURITY_FIX = "Open Security to review"
+
+
+def _security(root, cfg, version, run, **_):
+    from whyline.security import scan
+
+    report = scan.run(root, "release", cfg.security, branch=cfg.branch)
+    good, text = scan.ready_text(report)
+    return ReadyItem("security", good, text, "" if good else _SECURITY_FIX)
+
+
+def _security_history(root, cfg, version, run, **_):
+    """Before the first push, suggest a one-off scan of the whole history."""
+    if cfg.security.history_scanned or cfg.security.secrets == "off":
+        return None
+    if _git(run, root, "rev-parse", "--verify", "-q", f"origin/{cfg.branch}").returncode == 0:
+        return None
+    return ReadyItem("security-history", cfg.security.secrets != "block",
+                     "History has not been scanned for secrets", "Scan history")
+
+
+register_ready("security", _security)
+register_ready("security-history", _security_history)
