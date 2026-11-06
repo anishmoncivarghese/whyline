@@ -102,7 +102,7 @@ Global constraints:
   - CLI: `whyline release setup github [--create NAME] [--public]`. It prints the status, runs sign in when not signed in and on a terminal, and creates the repository when asked.
   Tests: each status case, sign-in streams lines and passes the newline, create's argv for private and public, an existing origin is refused, a bad name is refused, no command contains a token.
 
-- [ ] REL-9: The Release button and its Release tab
+- [x] REL-9: The Release button and its Release tab
   Create `src/whyline/console/release_screens.py` and `tests/console/test_release_screens.py`; edit `src/whyline/console/tui.py` and `tests/console/test_tui_relay_run.py` only.
   1. Add `Button("Release", id="relay-release")` after **Resolve**. It shows only in Relay mode (follow how the other `relay-*` buttons are shown and hidden). It is disabled while a relay runs, unless the relay is paused on a release task.
   2. `ReleaseScreen(ModalScreen)` with tabs **Release** and **Set up**. This task builds **Release**; **Set up** shows "Set up comes in a later task" until REL-11.
