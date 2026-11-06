@@ -37041,3 +37041,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4d6c9e86938043839829cc5255714a71 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:20:06.389Z"} -->
+
+## 2026-11-06 — SecurityScreen takes injected scan_run/open_file; Fix opens via macOS open (no line support)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-9
+
+**Because:** keeps the popup testable without git or tools; the console has no in-app file editor, so Fix reuses the Idea screen's opener and reports path:line in the status
+
+**Rejected:**
+
+- Own editor widget — out of scope for SEC-9
+- Pass the Release popup's unsaved Set up form to scans — scans read the saved config, same as the CLI
+
+**Files:** src/whyline/console/security_screens.py
+
+<!-- whyline-event: 001a1c9cae274d7f9c63ba779de7affb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:23:25.125Z"} -->
+
+## 2026-11-06 — Pass SEC-9: SecurityScreen findings, actions, history scan, and Set up section verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-9
+
+**Because:** Full test suite and console security tests verify SecurityScreen popup, grouping, badges, Fix/Ignore/Allow actions, history scan worker progress and Stop, report masking, and Set up security configuration round-trip
+
+**Files:** src/whyline/console/security_screens.py
+
+<!-- whyline-event: 607d433e54174b95a399bcb740636aeb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:39:31.747Z"} -->
+
+## 2026-11-06 — Approve SEC-9: SecurityScreen findings, actions, history scan, and Set up section match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-9
+
+**Because:** Working-tree diff matches SEC-9: grouped findings with severity badges, Fix/Ignore/Allow, history worker with commits n of m and Stop, Copy report uses masked previews, Set up selects and Check every commit save through config.save. Tests cover grouping, Allow reason, Ignore once, history Stop, masked copy, and settings round-trip. uv run pytest -q had two unrelated relay-setup click timeouts that passed on re-run with the SEC-9 tests.
+
+**Files:** src/whyline/console/security_screens.py
+
+<!-- whyline-event: e0dedfbe996a4167b7b4419415a3f2e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T11:59:05.920Z"} -->

@@ -17,6 +17,7 @@ from textual.widgets import (
     Button, Checkbox, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
 )
 
+from whyline.console import security_screens
 from whyline.release import config as release_config
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
@@ -98,9 +99,11 @@ class ReleaseScreen(ModalScreen):
         gh_run_streaming: setup_github.RunStreaming | None = None,
         chat_turn: Callable[..., object] | None = None,
         agent: str | None = None,
+        security_screen: Callable[[], ModalScreen] | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
+        self._security_screen = security_screen
         self._gh_run = gh_run
         self._gh_run_streaming = gh_run_streaming
         self._chat_turn = chat_turn
@@ -177,6 +180,7 @@ class ReleaseScreen(ModalScreen):
                         yield Select([(m, m) for m in release_config.MODES], value=mode,
                                      allow_blank=False, id="release-mode")
                         yield Static("", id="release-check-result")
+                        yield Button("Open Security…", id="release-fix-security", classes="-hidden")
                         yield Static("", id="release-steps")
                 with TabPane("Set up", id="setup-tab"):
                     yield from self._compose_setup()
@@ -187,6 +191,7 @@ class ReleaseScreen(ModalScreen):
                 yield Button("Keep editing", id="rs-confirm-keep")
             with Horizontal(id="release-actions"):
                 yield Button("Check", id="release-check")
+                yield Button("Security…", id="release-security")
                 yield Button("Start", id="release-start", variant="primary", disabled=True)
                 yield Button("Close", id="release-close")
 
@@ -227,6 +232,11 @@ class ReleaseScreen(ModalScreen):
             self.action_close()
         elif button_id == "release-check":
             self._run_check()
+        elif button_id in ("release-security", "release-fix-security", "rs-sec-open"):
+            self._open_security()
+        elif button_id == "rs-sec-copy":
+            self.app.copy_to_clipboard(security_screens.BREW_COMMAND)
+            self._set_status("Copied.")
         elif button_id == "release-start":
             self._start()
         elif button_id is None:
@@ -320,6 +330,7 @@ class ReleaseScreen(ModalScreen):
                     yield Button("Create repository", id="rs-gh-create")
                 yield Button("Ask agent", id="rs-gh-ask")
                 yield Static("", id="rs-gh-reply", markup=False)
+            yield from security_screens.compose_security_setup(cfg.security)
             yield Static("", id="rs-status", markup=False)
             yield Button("Save", id="rs-save", variant="success")
 
@@ -346,6 +357,7 @@ class ReleaseScreen(ModalScreen):
             notes=self.query_one("#rs-notes", Input).value.strip() or base.notes,
             after=_lines(self.query_one("#rs-after", TextArea).text),
             targets=targets,
+            security=security_screens.collect_security(self, base.security),
         )
 
     def _has_unsaved(self) -> bool:
@@ -606,8 +618,17 @@ class ReleaseScreen(ModalScreen):
             if not item.ok and item.fix:
                 lines.append(f"    {item.fix}")
         self.query_one("#release-check-result", Static).update("\n".join(lines))
+        self.query_one("#release-fix-security", Button).set_class(
+            not any(item.key == "security" and not item.ok for item in items), "-hidden")
         self.query_one("#release-start", Button).disabled = not (
             items and release_ready.ok(items))
+
+    # -- security -----------------------------------------------------------
+
+    def _open_security(self) -> None:
+        screen = (self._security_screen() if self._security_screen is not None
+                  else security_screens.SecurityScreen(self.root, config=self._cfg))
+        self.app.push_screen(screen)
 
     # -- start --------------------------------------------------------------
 
