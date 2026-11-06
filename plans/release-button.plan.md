@@ -242,7 +242,7 @@ Global constraints:
   - each DENY_NAMES case, including `.env.example` passing
   - no finding, repr or exception message contains the full secret (assert across all outputs)
 
-- [ ] SEC-4: Read dependency lockfiles
+- [x] SEC-4: Read dependency lockfiles
   Create `src/whyline/security/lockfiles.py`, fixtures under `tests/security/fixtures/` and `tests/security/test_lockfiles.py` only.
   - `Dependency(name, version, ecosystem, source_file, public: bool)`. `read_all(root) -> list[Dependency]` finds and parses:
     - `uv.lock`: `[[package]]` with `source.registry` on pypi.org counts as public; editable, virtual, path, git and other registries are private. The root project itself is skipped.
