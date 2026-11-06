@@ -295,7 +295,7 @@ Global constraints:
   - Release: `register_ready("security", …)`. The Ready item is ✓ with "no findings" or "N warnings", ✗ with "N blocking findings (secrets: a, dependencies: b, contents: c)", or ✗ "security scan failed: <reason>". The fix text is "Open Security to review". When `history_scanned` is empty and the repository has never been pushed (no `origin/<branch>`), a second item suggests **Scan history** (✗ only when secrets is "block").
   Tests: each scope's combination (fakes), the exit codes, allow from the CLI, `--json` contains no secret, the Ready item in each state, the history suggestion only before the first push.
 
-- [ ] SEC-9: Security in the console
+- [x] SEC-9: Security in the console
   Create `src/whyline/console/security_screens.py` and `tests/console/test_security_screens.py`; edit `src/whyline/console/release_screens.py` and its test only.
   - `SecurityScreen(ModalScreen)` opens from **Security…** on the Release tab, from the Ready item's fix, and from a Security section in the Set up tab.
     - It shows findings grouped by kind: severity badge, title, `path:line`, commit short sha, masked preview and fix hint.
