@@ -285,7 +285,7 @@ Global constraints:
   - A tool that crashes or times out (60 s) becomes a warning, and the built-in results stand.
   Tests: parsing recorded JSON samples for each tool (fixtures written in the test, secrets built from pieces), merge de-duplication, a tool crash, `--redact` always passed.
 
-- [ ] SEC-8: `whyline security` CLI and the Release gate
+- [x] SEC-8: `whyline security` CLI and the Release gate
   Create `src/whyline/security/scan.py`, `src/whyline/security/cli.py` and `tests/security/test_cli.py`; edit `src/whyline/cli.py` only to register it the way `_add_workflows`/`cmd_workflows` do; edit `src/whyline/release/ready.py` and its test only to register the item.
   - `scan.run(root, scope, settings, *, run, fetch, which, on_progress, cancel_event) -> ScanReport`. Scope is `release` (`origin/<branch>..HEAD` plus contents plus deps), `staged`, `history` or `all`. It combines SEC-3 to SEC-7, filters through the allowlist and ignore-once, and calls `decide`. On a completed history scan it saves `history_scanned`.
   - CLI:
