@@ -494,8 +494,33 @@ On 2026-11-06 the Chat tab was asked "status" while grok reviewed REL-10. The wo
   - `INSTRUCTIONS` contains "never run shell commands"
   - after the Check tests, nothing under the real home is touched (the fixture's HOME is under tmp_path)
 
+On 2026-11-06 the console also showed "⏸ Pausing — letting antigravity finish its turn so nothing is lost" for over 12 minutes while the relay itself had no pause request: `whyline_relay.status.pause_state` said `none` and `.whyline/relay/PAUSE` did not exist. The run had been paused at 14:50 and resumed at 14:56. `_sync_pause_buttons` shows Pausing when `self._pause_requested or kind == "pausing"`, and clears `_pause_requested` only when a tick sees no running relay while the Relay buttons are mounted, so a pause and resume made while another screen was open left the flag on for the next run. The same screen showed the 16 relay buttons as a 6-column grid of equal, mostly empty cells over 3 rows (`#controls.wrap`, `grid-size: 6`), where two packed rows fit.
+
+- [ ] CHF-2: Pausing shows only while the relay has a pause request
+  Edit `src/whyline/console/tui.py`, with tests in `tests/console/test_pause_status.py`.
+  1. `_pause_requested` only bridges the click to the relay seeing `PAUSE`. In `_sync_pause_buttons`, once `pause_state` has returned `pausing` since the flag was set, a later `none` while a relay runs clears the flag ("Pause withdrawn." as today). A flag set more than 10 seconds ago whose request never showed is cleared too.
+  2. Starting or resuming a relay from the console (Run, Resume, Keep going after a pause, Continue with, Resolve's resume) sets `_pause_requested = False` and `_quit_when_paused = False` before the process starts.
+  3. When the flag is cleared because the request is gone, the status line and the Pausing / Pause now / Keep going buttons go back to Pause on the same tick.
+  Tests:
+  - flag set, relay running, `pause_state` returns `pausing` then `none`: the next tick shows Pause, not Pausing
+  - flag set with a fake clock, `pause_state` stays `none` for 11 seconds while running: Pausing goes away
+  - the 14:50 case: flag set, a pause screen pushed so the ticks can't reach the buttons, the relay pauses and a new run starts; after resume the bar shows Pause and the status line has no Pausing text
+  - Resume after a pause clears both flags before the process starts (fake process)
+  - a real pending request (`pause_state` `pausing`) still shows Pausing with Pause now and Keep going
+
+- [ ] CHF-3: The button bar wraps into packed rows, not a wide 6-column grid
+  Edit `src/whyline/console/tui.py`, with tests in `tests/console/test_awake.py` and a new `tests/console/test_controls_rows.py`.
+  1. `_fit_controls` keeps one row when the visible buttons fit. Otherwise it picks the fewest rows (2, then 3, …) where every row fits the bar's width, using the same width estimate as today (`max(6, len(label) + 2)` per button), with columns = ceil(visible / rows) and each grid column as wide as its widest button.
+  2. It sets that on `#controls` as `styles.grid_size_columns` with `grid-columns: auto` in `#controls.wrap`, so no cell is wider than its button. Buttons keep their order, left to right then top to bottom.
+  3. It runs again when the window or the split pane is resized and when a label changes (Mark released, Awake ●), as today.
+  Tests:
+  - the Relay bar while a relay runs (16 visible buttons, as in Pausing) at 130 columns wide uses 2 rows and every button's region is inside the bar
+  - at 80 columns, the same bar uses the fewest rows that fit, and no button is cut off (`test_each_mode_row_fits_80_columns_with_awake` still passes)
+  - no gap between two neighbouring buttons in a row is wider than 2 cells
+  - a bar that fits stays one row without the `wrap` class
+
 ## Release
 
-- [ ] RLS-1: Publish whyline with the Release button (REL-1..19), the security checks (SEC-1..14) and the Chat fix (CHF-1)
+- [ ] RLS-1: Publish whyline with the Release button (REL-1..19), the security checks (SEC-1..14) and the Chat and console fixes (CHF-1..3)
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
