@@ -36864,3 +36864,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1bb290fa00ce40899d11f83c6ac5afc4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T08:44:36.162Z"} -->
+
+## 2026-11-06 — OSV check takes an injected fetch(method,url,body,timeout) and any fetch/parse failure becomes error='could not reach OSV.dev' with no findings
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-5
+
+**Because:** keeps tests offline and never lets a partial result pass as clean; one finding per (dependency, vuln id)
+
+**Rejected:**
+
+- partial findings on failure — a partial list could read as passing
+
+**Files:** src/whyline/security/deps.py
+
+<!-- whyline-event: 40df3d9a8a764e2ab6e82e82b0a9de85 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T08:45:52.308Z"} -->
+
+## 2026-11-06 — Pass SEC-5 dependency check against OSV.dev
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-5
+
+**Because:** All 13 security/deps tests pass along with the full test suite (3896 passed); batching, 24h caching, CVSS/GHSA severity parsing, private dependency filtering, and network error handling behave correctly.
+
+**Files:** src/whyline/security/deps.py
+
+<!-- whyline-event: a615048eb855431f9af7de8e206072d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T09:02:05.610Z"} -->
+
+## 2026-11-06 — Approve SEC-5 OSV dependency checker
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-5
+
+**Because:** check() matches the spec: public-only querybatch in 500s with a 20s timeout, 24h vuln cache, GHSA then CVSS v3 then unknown severity, first-fixed upgrade hints, and any fetch/parse failure returns error with no findings; tests cover each required case and uv run pytest -q exited 0
+
+**Files:** src/whyline/security/deps.py
+
+<!-- whyline-event: 24d812b8822244a5bbd07ba0e79d468f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T09:20:14.748Z"} -->
