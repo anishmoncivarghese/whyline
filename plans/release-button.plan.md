@@ -327,7 +327,7 @@ Global constraints:
   - The GitHub Set up panel shows the three with **Turn on** buttons, and says that GitHub's push protection is a second net, not a replacement for the local scan.
   Tests: each status, the enable argv, the unavailable message on 403/422.
 
-- [ ] SEC-12: Deep audit run by the main agent
+- [x] SEC-12: Deep audit run by the main agent
   Create `src/whyline/security/audit.py`, `src/whyline/security/audit_method/` (the method files and `LICENSE-cloudflare`) and `tests/security/test_audit.py` only.
   - Bundle Cloudflare's security-audit-skill method (MIT) from its latest tag, keeping the licence and a `VERSION` file:
     - the phase instructions
