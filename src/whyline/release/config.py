@@ -8,6 +8,9 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from whyline.security import settings as security_settings
+from whyline.security.settings import SecuritySettings
+
 MODES = ("ask", "step", "auto")
 CONFIG_PATH = Path(".whyline") / "release.toml"
 PENDING_PATH = Path(".git") / "whyline-release" / "pending.json"
@@ -62,6 +65,7 @@ class ReleaseConfig:
     version_files: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
     targets: Targets = field(default_factory=Targets)
+    security: SecuritySettings = field(default_factory=SecuritySettings)
 
 
 # --- reading -----------------------------------------------------------------
@@ -124,6 +128,10 @@ def parse(data: dict) -> ReleaseConfig:
     targets = _table(data, "targets", "targets")
     docker = _table(data, "docker", "docker")
     homebrew = _table(data, "homebrew", "homebrew")
+    try:
+        security = security_settings.parse(data.get("security", {}))
+    except security_settings.SettingsError as exc:
+        raise ConfigError(str(exc)) from exc
     flags = {}
     for name in ("github", "pypi", "npm", "docker", "homebrew"):
         value = targets.get(name, getattr(base.targets, name))
@@ -151,6 +159,7 @@ def parse(data: dict) -> ReleaseConfig:
             ),
             custom=_custom(targets.get("custom", [])),
         ),
+        security=security,
     )
 
 
@@ -233,6 +242,17 @@ def render(cfg: ReleaseConfig) -> str:
             f"run = {_quote(target.run)}",
             f"verify = {_quote(target.verify)}",
         ]
+    s = cfg.security
+    lines += [
+        "",
+        "[security]",
+        f"secrets = {_quote(s.secrets)}",
+        f"dependencies = {_quote(s.dependencies)}",
+        f"contents = {_quote(s.contents)}",
+        f"history_scanned = {_quote(s.history_scanned)}",
+        f"pre_commit = {_flag(s.pre_commit)}",
+        f"audit = {_quote(s.audit)}",
+    ]
     return "\n".join(lines) + "\n"
 
 
@@ -249,6 +269,10 @@ def _write_atomic(path: Path, text: str) -> None:
 def save(root: Path, cfg: ReleaseConfig) -> None:
     if cfg.mode not in MODES:
         raise ConfigError(f"release.mode must be one of {', '.join(MODES)}, not {cfg.mode!r}")
+    try:
+        security_settings.validate(cfg.security)
+    except security_settings.SettingsError as exc:
+        raise ConfigError(str(exc)) from exc
     _write_atomic(Path(root) / CONFIG_PATH, render(cfg))
 
 

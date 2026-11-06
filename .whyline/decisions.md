@@ -36683,3 +36683,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d2af769f2a0a4e2aab9aa1bcff1b9d72 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T06:16:52.648Z"} -->
+
+## 2026-11-06 — Allowlist/ignore-once/decide live in security/settings.py; decide takes an optional is_exempt predicate
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-1
+
+**Because:** decide(findings, settings) has no root, so allowlist/ignore-once exemption is injected by the caller; fingerprint excludes line so moved code stays allowed
+
+**Rejected:**
+
+- decide reading the allowlist itself — needs root and state dir, couples pure policy to disk
+
+**Files:** src/whyline/security/settings.py
+
+<!-- whyline-event: 824420cfc4b443429237eaa5eefe4882 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T06:18:34.225Z"} -->
+
+## 2026-11-06 — SEC-1 passes round-2 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-1
+
+**Because:** Full test suite (3818 passed, 1 skipped) and security/release tests (37 passed) succeeded; verified Finding validation, secret masking, stable fingerprints without line numbers, release config security settings load/save round-trip and validation, committed allowlist requiring reasons, ignore-once tracking, and decide categorization.
+
+**Files:** src/whyline/security/settings.py
+
+<!-- whyline-event: aebca8cb88714f40af0cfa1cacc578a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T06:34:23.059Z"} -->
+
+## 2026-11-06 — Approve SEC-1: findings, settings, allowlist, and [security] config
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-1
+
+**Because:** Working-tree matches the task: Finding validates kind/severity/source, mask and stable fingerprints omit line, SecuritySettings load/save through release config with ConfigError on bad values, committed allowlist requiring a reason, ignore-once under the release state dir, and decide() including block-high medium-as-warning. Tests cover the required cases. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request changes because Finding.preview is not auto-masked — SEC-3 owns masking at scan time, and auto-mask would break already-redacted previews
+- Treat optional is_exempt on decide as a spec miss — decide(findings, settings) stays the signature, exemption is injected because decide has no root
+
+**Files:** src/whyline/security/settings.py
+
+<!-- whyline-event: 371f0b7989be414ba343a921a4e8209c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T06:52:06.796Z"} -->

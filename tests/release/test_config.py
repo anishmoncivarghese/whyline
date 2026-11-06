@@ -13,6 +13,21 @@ from whyline.release.config import (
     ReleaseConfig,
     Targets,
 )
+from whyline.security.settings import SecuritySettings
+
+
+def test_security_defaults_and_errors(tmp_path):
+    assert config.load(tmp_path).security == SecuritySettings()
+    for body in ('secrets = "maybe"', 'dependencies = "block-all"', "pre_commit = 1", "audit = 3"):
+        write_toml(tmp_path, f"[security]\n{body}\n")
+        with pytest.raises(ConfigError, match="security"):
+            config.load(tmp_path)
+
+
+def test_save_rejects_bad_security(tmp_path):
+    bad = replace(ReleaseConfig(), security=SecuritySettings(contents="nope"))
+    with pytest.raises(ConfigError, match="security.contents"):
+        config.save(tmp_path, bad)
 
 
 def write_toml(root: Path, text: str) -> None:
@@ -31,6 +46,14 @@ def full() -> ReleaseConfig:
         notes="notes/v{version}.md",
         version_files=("VERSION", "docs/v.txt"),
         after=("uv tool upgrade whyline",),
+        security=SecuritySettings(
+            secrets="warn",
+            dependencies="off",
+            contents="off",
+            history_scanned="2026-11-01",
+            pre_commit=True,
+            audit="block-confirmed",
+        ),
         targets=Targets(
             github=True,
             pypi=True,
