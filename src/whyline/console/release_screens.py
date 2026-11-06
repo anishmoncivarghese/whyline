@@ -4,27 +4,44 @@ planned steps, and Start. Starting is handed to an injected `start_release`
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Button, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
+    Button, Checkbox, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
 )
 
 from whyline.release import config as release_config
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
+from whyline.release import setup_github
 from whyline.release import version as release_version
 
 CUSTOM = "custom"
 CURRENT = "current"
 VERSION_KINDS = (*release_version.BUMPS, CURRENT, CUSTOM)
-SETUP_LATER = "Set up comes in a later task"
 IRREVERSIBLE_MARK = "⚠"
+SUGGESTED = "Suggested; press Save to keep."
+UNSAVED_PROMPT = "You have unsaved changes."
+PART_2 = "Comes with release part 2"
+GITHUB_WHY = "GitHub is ticked because every release target publishes through it."
+BREW_HINT = "GitHub's gh tool is missing. Install it with: brew install gh"
+BREW_COMMAND = "brew install gh"
+TARGETS = (
+    ("github", "GitHub"), ("pypi", "PyPI"), ("npm", "npm"), ("docker", "Docker"),
+    ("homebrew", "Homebrew"), (CUSTOM, "Custom"),
+)
+PRIVATE, PUBLIC = "private", "public"
+
+
+def _lines(text: str) -> tuple[str, ...]:
+    return tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
 @dataclass(frozen=True)
@@ -59,6 +76,13 @@ class ReleaseScreen(ModalScreen):
     #release-body { height: 1fr; }
     #release-custom { display: none; }
     #release-actions { height: auto; }
+    .-hidden { display: none; }
+    .rs-row { height: auto; }
+    .rs-row Static { width: 1fr; padding: 1 1; }
+    #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
+    #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
+    #rs-gh-code { text-style: bold; text-align: center; border: heavy $accent; padding: 1 2; }
+    #rs-confirm { height: auto; }
     """
 
     def __init__(
@@ -70,9 +94,24 @@ class ReleaseScreen(ModalScreen):
         current_version: str | None = None,
         ready_check: Callable[[str], list[release_ready.ReadyItem]] | None = None,
         steps: Callable[[str], list[tuple[str, bool]]] | None = None,
+        gh_run: setup_github.Run | None = None,
+        gh_run_streaming: setup_github.RunStreaming | None = None,
+        chat_turn: Callable[..., object] | None = None,
+        agent: str | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
+        self._gh_run = gh_run
+        self._gh_run_streaming = gh_run_streaming
+        self._chat_turn = chat_turn
+        self._agent = agent
+        self._gh_status: setup_github.GitHubStatus | None = None
+        self._gh_error = ""
+        self._suggested = False
+        self._saved_form: release_config.ReleaseConfig | None = None
+        self._setup_base = release_config.ReleaseConfig()
+        self._setup_error = ""
+        self._given_config = config is not None
         self._start_release = start_release
         self._cfg = config
         self._current = current_version
@@ -140,7 +179,12 @@ class ReleaseScreen(ModalScreen):
                         yield Static("", id="release-check-result")
                         yield Static("", id="release-steps")
                 with TabPane("Set up", id="setup-tab"):
-                    yield Static(SETUP_LATER, id="release-setup-later")
+                    yield from self._compose_setup()
+            with Horizontal(id="rs-confirm", classes="-hidden"):
+                yield Static(UNSAVED_PROMPT)
+                yield Button("Save", id="rs-confirm-save", variant="success")
+                yield Button("Discard", id="rs-confirm-discard")
+                yield Button("Keep editing", id="rs-confirm-keep")
             with Horizontal(id="release-actions"):
                 yield Button("Check", id="release-check")
                 yield Button("Start", id="release-start", variant="primary", disabled=True)
@@ -155,6 +199,7 @@ class ReleaseScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self._show_steps()
+        self._saved_form = self._collect()
 
     # -- events -------------------------------------------------------------
 
@@ -179,14 +224,335 @@ class ReleaseScreen(ModalScreen):
         event.stop()
         button_id = event.button.id
         if button_id == "release-close":
-            self.dismiss(None)
+            self.action_close()
         elif button_id == "release-check":
             self._run_check()
         elif button_id == "release-start":
             self._start()
+        elif button_id is None:
+            return
+        elif button_id.startswith("rs-setup-"):
+            self._setup_target(button_id[len("rs-setup-"):])
+        elif button_id == "rs-save":
+            self._save_setup()
+        elif button_id == "rs-confirm-save":
+            if self._save_setup():
+                self.dismiss(None)
+        elif button_id == "rs-confirm-discard":
+            self.dismiss(None)
+        elif button_id == "rs-confirm-keep":
+            self._show_confirm(False)
+        elif button_id == "rs-gh-signin":
+            self._start_sign_in()
+        elif button_id == "rs-gh-create":
+            self._start_create()
+        elif button_id == "rs-gh-copy":
+            self.app.copy_to_clipboard(BREW_COMMAND)
+            self._set_status("Copied.")
+        elif button_id == "rs-gh-ask":
+            self._start_ask()
 
     def action_close(self) -> None:
+        if self._has_unsaved():
+            self._show_confirm(True)
+            return
         self.dismiss(None)
+
+    # -- set up: the form ---------------------------------------------------
+
+    def _load_setup(self) -> release_config.ReleaseConfig:
+        """The saved file, or what detection suggests when there is none."""
+        if self._given_config and self._cfg is not None:
+            return self._cfg
+        if (self.root / release_config.CONFIG_PATH).exists():
+            try:
+                return release_config.load(self.root)
+            except release_config.ConfigError as exc:
+                self._setup_error = str(exc)
+        self._suggested = True
+        return release_config.detect(self.root)
+
+    def _compose_setup(self) -> ComposeResult:
+        cfg = self._load_setup()
+        self._setup_base = cfg
+        t = cfg.targets
+        ticked = {"github": t.github, "pypi": t.pypi, "npm": t.npm, "docker": t.docker,
+                  "homebrew": t.homebrew, CUSTOM: bool(t.custom)}
+        note = self._setup_error or (SUGGESTED if self._suggested else "")
+        with VerticalScroll(id="rs-body"):
+            yield Static(note, id="rs-source", markup=False)
+            for key, label in TARGETS:
+                with Horizontal(classes="rs-row"):
+                    yield Checkbox(label, ticked[key], id=f"rs-t-{key}")
+                    yield Static("Not checked" if key == "github" else "", id=f"rs-s-{key}",
+                                 markup=False)
+                    yield Button("Set up…", id=f"rs-setup-{key}")
+            yield Static("", id="rs-why", markup=False)
+            yield Label("Mode")
+            yield Select([(m, m) for m in release_config.MODES], value=cfg.mode,
+                         allow_blank=False, id="rs-mode")
+            yield Label("Branch")
+            yield Input(cfg.branch, id="rs-branch")
+            yield Checkbox("Release when a plan completes", cfg.start_after_plan,
+                           id="rs-after-plan")
+            yield Label("Checks (one per line)")
+            yield TextArea("\n".join(cfg.checks), id="rs-checks")
+            yield Label("CI jobs to ignore (one per line)")
+            yield TextArea("\n".join(cfg.ci_ignore), id="rs-ci-ignore")
+            yield Label("Notes path")
+            yield Input(cfg.notes, id="rs-notes")
+            yield Label("After-commands (one per line)")
+            yield TextArea("\n".join(cfg.after), id="rs-after")
+            with Vertical(id="rs-gh", classes="-hidden"):
+                yield Label("GitHub")
+                yield Static("", id="rs-gh-status", markup=False)
+                yield Static("", id="rs-gh-code", markup=False, classes="-hidden")
+                yield Static(BREW_HINT, id="rs-gh-install", markup=False, classes="-hidden")
+                yield Button("Copy", id="rs-gh-copy", classes="-hidden")
+                yield Button("Sign in", id="rs-gh-signin", classes="-hidden")
+                with Vertical(id="rs-gh-create-box", classes="-hidden"):
+                    yield Label("Repository name")
+                    yield Input(self.root.name, id="rs-gh-name")
+                    yield Select([("Private", PRIVATE), ("Public", PUBLIC)], value=PRIVATE,
+                                 allow_blank=False, id="rs-gh-visibility")
+                    yield Label("Description")
+                    yield Input("", id="rs-gh-description")
+                    yield Button("Create repository", id="rs-gh-create")
+                yield Button("Ask agent", id="rs-gh-ask")
+                yield Static("", id="rs-gh-reply", markup=False)
+            yield Static("", id="rs-status", markup=False)
+            yield Button("Save", id="rs-save", variant="success")
+
+    def _collect(self) -> release_config.ReleaseConfig:
+        """The form as a config; unticked Custom drops the custom targets."""
+        def box(name: str) -> bool:
+            return self.query_one(f"#rs-t-{name}", Checkbox).value
+
+        base = self._setup_base
+        mode = self.query_one("#rs-mode", Select).value
+        targets = replace(
+            base.targets,
+            github=box("github"), pypi=box("pypi"), npm=box("npm"),
+            docker=box("docker"), homebrew=box("homebrew"),
+            custom=base.targets.custom if box(CUSTOM) else (),
+        )
+        return replace(
+            base,
+            mode=str(mode) if mode in release_config.MODES else base.mode,
+            branch=self.query_one("#rs-branch", Input).value.strip() or base.branch,
+            start_after_plan=self.query_one("#rs-after-plan", Checkbox).value,
+            checks=_lines(self.query_one("#rs-checks", TextArea).text),
+            ci_ignore=_lines(self.query_one("#rs-ci-ignore", TextArea).text),
+            notes=self.query_one("#rs-notes", Input).value.strip() or base.notes,
+            after=_lines(self.query_one("#rs-after", TextArea).text),
+            targets=targets,
+        )
+
+    def _has_unsaved(self) -> bool:
+        if self._saved_form is None:
+            return False
+        try:
+            return self._collect() != self._saved_form
+        except NoMatches:
+            return False
+
+    def _show_confirm(self, show: bool) -> None:
+        self.query_one("#rs-confirm", Horizontal).set_class(not show, "-hidden")
+
+    def _set_status(self, text: str) -> None:
+        self.query_one("#rs-status", Static).update(text)
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if not (event.checkbox.id or "").startswith("rs-t-"):
+            return
+        others = any(self.query_one(f"#rs-t-{key}", Checkbox).value
+                     for key, _ in TARGETS if key != "github")
+        github = self.query_one("#rs-t-github", Checkbox)
+        why = self.query_one("#rs-why", Static)
+        if others and not github.value:
+            github.value = True
+            why.update(GITHUB_WHY)
+        elif not others:
+            why.update("")
+
+    def _save_setup(self) -> bool:
+        cfg = release_config.normalise(self._collect())
+        try:
+            release_config.save(self.root, cfg)
+        except (OSError, release_config.ConfigError) as exc:
+            self._set_status(f"Could not save: {exc}")
+            return False
+        self._cfg = cfg
+        self._setup_base = cfg
+        self._suggested = False
+        self.query_one("#rs-source", Static).update("")
+        github = self.query_one("#rs-t-github", Checkbox)
+        if cfg.targets.github != github.value:
+            github.value = cfg.targets.github
+        self._saved_form = self._collect()
+        self._show_confirm(False)
+        self._set_status(f"Saved to {release_config.CONFIG_PATH.as_posix()}.")
+        self._invalidate()
+        self._show_steps()
+        return True
+
+    def _setup_target(self, key: str) -> None:
+        if key != "github":
+            self.query_one(f"#rs-s-{key}", Static).update(PART_2)
+            return
+        self.query_one("#rs-gh", Vertical).remove_class("-hidden")
+        self._refresh_github()
+
+    # -- set up: GitHub -----------------------------------------------------
+
+    def _run_kwargs(self) -> dict:
+        return {"run": self._gh_run} if self._gh_run is not None else {}
+
+    def _refresh_github(self) -> None:
+        self.query_one("#rs-gh-status", Static).update("Checking GitHub…")
+        self.run_worker(self._status_in_thread, thread=True, exclusive=True,
+                        group="rs-gh-status", name="release-gh-status")
+
+    def _status_in_thread(self) -> None:
+        try:
+            found = setup_github.status(self.root, **self._run_kwargs())
+        except Exception as exc:  # noqa: BLE001 - shown in the panel
+            self.app.call_from_thread(self._github_failed, str(exc))
+            return
+        self.app.call_from_thread(self._show_github, found)
+
+    def _github_failed(self, message: str) -> None:
+        self._gh_error = message
+        self.query_one("#rs-gh-status", Static).update(f"Could not check GitHub: {message}")
+
+    def _show_github(self, found: setup_github.GitHubStatus) -> None:
+        self._gh_status = found
+        if not found.gh_installed:
+            line, short = "gh is not installed.", "gh is not installed"
+        elif not found.signed_in:
+            line, short = "gh is installed; not signed in.", "Not signed in"
+        else:
+            who = found.user or "unknown user"
+            line, short = f"Signed in as {who}.", f"Signed in as {who}"
+        origin = found.origin_url or "none"
+        self.query_one("#rs-gh-status", Static).update(f"{line}\nOrigin: {origin}")
+        self.query_one("#rs-s-github", Static).update(short)
+
+        def show(widget_id: str, visible: bool) -> None:
+            self.query_one(widget_id).set_class(not visible, "-hidden")
+
+        show("#rs-gh-install", not found.gh_installed)
+        show("#rs-gh-copy", not found.gh_installed)
+        show("#rs-gh-signin", found.gh_installed and not found.signed_in)
+        show("#rs-gh-create-box",
+             found.gh_installed and found.signed_in and not found.origin_url)
+
+    def _start_sign_in(self) -> None:
+        self.query_one("#rs-gh-signin", Button).disabled = True
+        self.query_one("#rs-gh-status", Static).update("Signing in; finish in your browser…")
+        self.run_worker(self._sign_in_in_thread, thread=True, exclusive=True,
+                        group="rs-gh-action", name="release-gh-sign-in")
+
+    def _sign_in_in_thread(self) -> None:
+        def on_line(line: str) -> None:
+            self.app.call_from_thread(self._sign_in_line, line)
+
+        kwargs = ({"run_streaming": self._gh_run_streaming}
+                  if self._gh_run_streaming is not None else {})
+        try:
+            code = setup_github.sign_in(on_line=on_line, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._sign_in_done, 1, str(exc))
+            return
+        self.app.call_from_thread(self._sign_in_done, code, "")
+
+    def _sign_in_line(self, line: str) -> None:
+        if re.search(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b", line):
+            code = self.query_one("#rs-gh-code", Static)
+            code.update(line.strip())
+            code.remove_class("-hidden")
+
+    def _sign_in_done(self, code: int, error: str) -> None:
+        self.query_one("#rs-gh-signin", Button).disabled = False
+        self.query_one("#rs-gh-code", Static).add_class("-hidden")
+        if code == 0:
+            self._gh_error = ""
+            self._refresh_github()
+            return
+        self._gh_error = error or f"gh sign in ended with exit code {code}"
+        self.query_one("#rs-gh-status", Static).update(f"Sign in failed: {self._gh_error}")
+
+    def _start_create(self) -> None:
+        name = self.query_one("#rs-gh-name", Input).value.strip()
+        private = self.query_one("#rs-gh-visibility", Select).value != PUBLIC
+        description = self.query_one("#rs-gh-description", Input).value.strip()
+        self.query_one("#rs-gh-create", Button).disabled = True
+        self.query_one("#rs-gh-status", Static).update("Creating the repository…")
+        self.run_worker(lambda: self._create_in_thread(name, private, description),
+                        thread=True, exclusive=True, group="rs-gh-action",
+                        name="release-gh-create")
+
+    def _create_in_thread(self, name: str, private: bool, description: str) -> None:
+        try:
+            url = setup_github.create_repo(self.root, name, private=private,
+                                           description=description, **self._run_kwargs())
+        except setup_github.SetupError as exc:
+            self.app.call_from_thread(self._create_done, "", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._create_done, "", str(exc))
+            return
+        self.app.call_from_thread(self._create_done, url, "")
+
+    def _create_done(self, url: str, error: str) -> None:
+        self.query_one("#rs-gh-create", Button).disabled = False
+        if error:
+            self._gh_error = error
+            self.query_one("#rs-gh-status", Static).update(error)
+            return
+        self._gh_error = ""
+        self._set_status(f"Created {url}" if url else "Created the repository.")
+        self._refresh_github()
+
+    def _ask_prompt(self) -> str:
+        found = self._gh_status
+        if found is None:
+            state = "GitHub status has not been checked yet."
+        else:
+            state = (f"gh installed: {found.gh_installed}; signed in: {found.signed_in}; "
+                     f"user: {found.user or 'none'}; origin: {found.origin_url or 'none'}; "
+                     f"origin is GitHub: {found.origin_is_github}.")
+        return ("I am setting up GitHub releases for this project. "
+                f"{state}\nLast error: {self._gh_error or 'none'}\n"
+                "Explain what to do next in plain words. Answer in text only: do not run "
+                "commands and do not change files.")
+
+    def _start_ask(self) -> None:
+        self.query_one("#rs-gh-ask", Button).disabled = True
+        self.query_one("#rs-gh-reply", Static).update("Asking…")
+        prompt = self._ask_prompt()
+        self.run_worker(lambda: self._ask_in_thread(prompt), thread=True, exclusive=True,
+                        group="rs-gh-ask", name="release-gh-ask")
+
+    def _ask_in_thread(self, prompt: str) -> None:
+        try:
+            turn = self._chat_turn
+            if turn is None:
+                from whyline.console import adapters
+                turn = adapters.run_chat_turn
+            agent = self._agent
+            if agent is None:
+                from whyline import model
+                agent = model.resolve(self.root)[0]
+            event = turn(self.root, agent=agent, prompt=prompt)
+            text = str(getattr(event, "text", event))
+        except Exception as exc:  # noqa: BLE001
+            text = f"Could not ask the agent: {exc}"
+        self.app.call_from_thread(self._show_reply, text)
+
+    def _show_reply(self, text: str) -> None:
+        self.query_one("#rs-gh-ask", Button).disabled = False
+        self.query_one("#rs-gh-reply", Static).update(text)
 
     # -- steps --------------------------------------------------------------
 

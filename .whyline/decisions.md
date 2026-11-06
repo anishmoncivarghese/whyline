@@ -36591,3 +36591,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b9596911d6b44dbca3d133b50c2bb737 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T04:42:49.734Z"} -->
+
+## 2026-11-06 — Set up tab lives inside ReleaseScreen with injectable gh_run, gh_run_streaming, chat_turn and agent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-11
+
+**Because:** Tests drive the real setup_github functions through fake runners, so create's choices are checked at the gh command line; the Custom checkbox keeps existing custom targets when ticked and drops them when unticked
+
+**Rejected:**
+
+- Separate SetupScreen modal — the unsaved guard and Close button are shared with the Release tab
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 0ab08c1e69584eafad287e1610118859 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T04:48:14.665Z"} -->
+
+## 2026-11-06 — Pass REL-11: Set up tab, target rows, config save/normalise, unsaved guard, GitHub status/sign-in/create/ask verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-11
+
+**Because:** Full test suite (3800 passed, 1 skipped) and release screen tests (20 passed) verify all REL-11 requirements
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: eaa2b11ff221483e9ffacfde7dcf304e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T05:03:50.727Z"} -->
+
+## 2026-11-06 — Approve REL-11: Set up tab, targets, save/normalise, unsaved guard, and GitHub setup match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-11
+
+**Because:** Working-tree diff matches REL-11: the tab loads config.load or detect with the suggested banner; target rows have checkbox, status and Set up; only GitHub works and others say Comes with release part 2; Save calls normalise then save; ticking another target ticks GitHub and shows why; Close with unsaved changes uses Save/Discard/Keep editing like jobs; GitHub Set up shows status, sign-in code, create choices, brew install gh Copy, and Ask agent through adapters.run_chat_turn. Tests cover each required bullet. uv run pytest -q exited 0.
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: dbb86156f2454becbfaf1b6026a1f4bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T05:23:30.203Z"} -->
