@@ -184,7 +184,7 @@ Global constraints:
 - Console first: every CLI command has a console counterpart calling the same function.
 - Verify every task with `uv run pytest -q tests/security tests/release tests/console` and then `uv run pytest -q`. Change nothing outside the files a task names.
 
-- [ ] SEC-1: Findings, settings and the allowlist
+- [x] SEC-1: Findings, settings and the allowlist
   Create `src/whyline/security/__init__.py`, `src/whyline/security/findings.py`, `src/whyline/security/settings.py` and `tests/security/test_settings.py`; edit `src/whyline/release/config.py` and its test only.
   - `Finding(kind, rule, title, severity, path, line, commit, preview, fingerprint, fix_hint, source)`:
     - `kind` is secret / dependency / contents / audit
