@@ -217,7 +217,7 @@ Global constraints:
   - every skipped id is reported
   - for 10 named rules (AWS access key, GitHub PAT, GitHub fine-grained PAT, Slack bot token, Stripe secret key, OpenAI key, Anthropic key, Google API key, a private key block, a generic API key), a synthetic sample matches and a near-miss doesn't. Build the samples in the test from pieces, so the test file itself never contains a matching literal: GitHub push protection and this plan's own scanner would flag it.
 
-- [ ] SEC-3: The built-in secret scanner
+- [x] SEC-3: The built-in secret scanner
   Create `src/whyline/security/secrets.py` and `tests/security/test_secrets.py` only.
   - `scan_text(text, path, rules) -> list[Finding]`:
     - skip paths in the global allowlist
