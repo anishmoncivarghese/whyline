@@ -1076,3 +1076,131 @@ async def test_relay_run_and_resume_disabled_during_a_release(tmp_path, monkeypa
         await _until(pilot, lambda: not app._release_running())
         assert not app.query_one("#relay-run", tui.Button).disabled
         assert not app.query_one("#relay-resume", tui.Button).disabled
+
+
+# -- REL-12: a plan's release task, and release after a plan --------------------
+
+from dataclasses import replace as _replace
+
+from whyline.console.release_screens import ReleaseScreen
+from whyline.release import config as release_config
+from whyline.release import ready as release_ready
+from whyline.release import version as release_version
+
+
+def _ready(monkeypatch, ok=True):
+    monkeypatch.setattr(release_version, "current", lambda root, cfg: "1.2.2")
+    items = [release_ready.ReadyItem("git", ok, "git is installed", "" if ok else "Install git")]
+    monkeypatch.setattr(release_ready, "check", lambda root, cfg, version, **kw: items)
+
+
+def _plan_done(monkeypatch, tmp_path, done=3, total=3):
+    plan = tmp_path / "plans" / "x.plan.md"
+    monkeypatch.setattr(relay_ops, "configured_plan", lambda root: plan)
+    monkeypatch.setattr(
+        relay_ops, "list_plans",
+        lambda root: [relay_ops.PlanInfo(plan, "x", "hand", "", done, total)])
+
+
+def _after_plan_config(tmp_path, mode):
+    release_config.save(tmp_path, _replace(
+        release_config.ReleaseConfig(), mode=mode, start_after_plan=True))
+
+
+async def _run_release_from_pause(app, pilot):
+    await _relay_mode(app, pilot)
+    app._release_task = ("REL-1", ["1. Tag it", "2. Push it"])
+    app._ask_mark_released()
+    await pilot.pause()
+    app.screen.query_one("#run-release", tui.Button).press()
+    await pilot.pause()
+    assert _screen_is(app, ReleaseScreen)
+    assert "Tag it" in str(app.screen.query_one("#release-body").query(tui.Static).first().render())
+    app.screen.query_one("#release-check", tui.Button).press()
+    await _until(pilot, lambda: not app.screen.query_one("#release-start", tui.Button).disabled)
+    app.screen.query_one("#release-start", tui.Button).press()
+
+
+async def test_run_release_on_a_release_pause_sends_done_after_success(tmp_path, monkeypatch):
+    _ready(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(lambda root, plan, **kw: release_engine.Result("done", ""))
+    _fake_plan(monkeypatch, [_step("a", "A")])
+    async with app.run_test() as pilot:
+        await _run_release_from_pause(app, pilot)
+        await _until(pilot, lambda: bool(FakeProcess.instances))
+        assert FakeProcess.instances[-1].args == ["done", "REL-1"]
+        assert app._release_task is None
+
+
+async def test_run_release_that_fails_leaves_the_relay_paused(tmp_path, monkeypatch):
+    _ready(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(lambda root, plan, **kw: release_engine.Result("failed", "boom"))
+    _fake_plan(monkeypatch, [_step("a", "A")])
+    async with app.run_test() as pilot:
+        await _run_release_from_pause(app, pilot)
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        assert FakeProcess.instances == []
+        assert app._release_task == ("REL-1", ["1. Tag it", "2. Push it"])
+
+
+async def test_start_after_plan_opens_the_screen_checked_and_waits_in_ask_mode(tmp_path, monkeypatch):
+    _ready(monkeypatch)
+    _plan_done(monkeypatch, tmp_path)
+    _after_plan_config(tmp_path, "ask")
+    ran = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(lambda root, plan, **kw: ran.append(1))
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._launch_relay(["start"])
+        await pilot.pause()
+        await asyncio.to_thread(FakeProcess.instances[-1].finish, 0, "all done")
+        await _until(pilot, lambda: _screen_is(app, ReleaseScreen))
+        await pilot.pause(0.1)
+        await _until(pilot, lambda: "✓ git is installed" in str(
+            app.screen.query_one("#release-check-result").render()))
+        await pilot.pause(0.1)
+        assert not app._release_running() and not ran
+        assert not app.screen.query_one("#release-start", tui.Button).disabled
+
+
+async def test_start_after_plan_does_nothing_while_tasks_are_unticked(tmp_path, monkeypatch):
+    _ready(monkeypatch)
+    _plan_done(monkeypatch, tmp_path, done=2, total=3)
+    _after_plan_config(tmp_path, "ask")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._release_after_plan()
+        await pilot.pause()
+        assert not _screen_is(app, ReleaseScreen)
+
+
+@pytest.mark.parametrize("ok, starts", [(True, True), (False, False)])
+async def test_auto_release_after_a_plan_only_starts_on_an_all_ready_check(
+        tmp_path, monkeypatch, ok, starts):
+    _ready(monkeypatch, ok)
+    _plan_done(monkeypatch, tmp_path)
+    _after_plan_config(tmp_path, "auto")
+    ran = []
+
+    def fake_run(root, plan, **kw):
+        ran.append(1)
+        return release_engine.Result("done", "")
+
+    _fake_plan(monkeypatch, [_step("a", "A")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_engine = _Engine(fake_run)
+    async with app.run_test() as pilot:
+        await _relay_mode(app, pilot)
+        app._release_after_plan()
+        await pilot.pause()
+        if starts:
+            await _until(pilot, lambda: bool(ran))
+        else:
+            await _until(pilot, lambda: "✗" in str(
+                app.screen.query_one("#release-check-result").render()))
+            await pilot.pause(0.1)
+            assert not ran and _screen_is(app, ReleaseScreen)

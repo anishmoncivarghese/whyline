@@ -36634,3 +36634,52 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dbb86156f2454becbfaf1b6026a1f4bf -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T05:23:30.203Z"} -->
+
+## 2026-11-06 — Release done… popup is a ConfirmScreen subclass (ReleaseTaskScreen) with Run Release/Mark released/Skip; the plan-release screen is a ReleaseScreen subclass built in tui.py
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-12
+
+**Because:** release_screens.py was out of this task's file list, so the checklist display and auto-check/auto-start hooks live in a subclass in tui.py; keeping #confirm 'Mark released' keeps the existing tests valid
+
+**Rejected:**
+
+- Editing ReleaseScreen to take checklist/auto_check args — outside the task's allowed files
+- Sending done on any release finish — only a release started from the release task sends done, and after-plan skips releases launched by done/skip
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: a12fd32b702e489db421799280f15c97 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T05:38:33.300Z"} -->
+
+## 2026-11-06 — Pass REL-12 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-12
+
+**Because:** ReleaseTaskScreen and PlanReleaseScreen correctly handle Run Release with checklist, sending done on success while leaving the relay paused on failure/stop; start_after_plan auto-checks and triggers auto-start only on all-ready checks; docs/release.md covers targets, setup, modes, resume, and security; full test suite (53 tui_relay_run tests and all suite tests) passes
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 87335459e2994cc0849114fe8357c6f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T05:58:03.493Z"} -->
+
+## 2026-11-06 — Approve REL-12: Run Release from a pause, after-plan auto-check, and docs match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-12
+
+**Because:** Working-tree diff matches REL-12: ReleaseTaskScreen offers Run Release/Mark released/Skip; success sends done via _launch_relay([done, task]) and failure leaves the pause; start_after_plan opens PlanReleaseScreen with Check already run and auto-starts only on an all-ready auto check; docs/release.md covers targets, setup, modes, Resume, and what is never stored; README links it. Tests cover each required bullet. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request CSS type selectors for the ReleaseTaskScreen/PlanReleaseScreen subclasses — layout still works via inherited widgets and id rules
+- Treat skipping after-plan on done/skip as a defect — those launches are how a release task is answered, and skipping them avoids a second release after Run Release succeeds
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d2af769f2a0a4e2aab9aa1bcff1b9d72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T06:16:52.648Z"} -->

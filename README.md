@@ -84,6 +84,9 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   before the relay continues. Bugs in whyline itself go to the Idea Inbox, and
   **Check** gives a read-only health note on a running relay. See
   [docs/resolve.md](docs/resolve.md).
+- **Release** checks, versions, notes, tags and publishes for you, and can run
+  from a plan's release task or after a plan finishes. See
+  [docs/release.md](docs/release.md).
 - **Files** shows the agent's current output, the live plan, and the whole
   repository in a side pane.
 

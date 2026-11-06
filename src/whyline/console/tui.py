@@ -321,6 +321,26 @@ class ConfirmScreen(ModalScreen):
         self.dismiss(event.button.id == "confirm")
 
 
+class ReleaseTaskScreen(ConfirmScreen):
+    """The "Release done…" popup: "run" starts the release here, "done" and
+    "skip" answer the paused release task, None cancels."""
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(self._message),
+            Horizontal(
+                Button("Run Release", id="run-release", variant="primary"),
+                Button(self._confirm_label, id="confirm", variant="warning"),
+                Button("Skip", id="skip"),
+                Button(self._cancel_label, id="cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss({"run-release": "run", "confirm": "done", "skip": "skip"}.get(event.button.id))
+
+
 class RoundCapScreen(ModalScreen):
     """Sets the round cap; dismisses with ("resume" | "save", value) or None."""
 
@@ -1212,6 +1232,7 @@ class WhylineConsoleApp(App):
         self._external_relay: str | None = None  # a relay another console started
         self._antigravity_ok = False
         self._release_task: tuple[str, list[str]] | None = None
+        self._release_for_task: str | None = None
         self._manual_task_id: str | None = None
         self._manual_checks: list[Any] = []
         self._manual_check: Any = None
@@ -2424,11 +2445,15 @@ class WhylineConsoleApp(App):
             "Nothing is published by this button."
         )
 
-        def done(confirmed: bool | None) -> None:
-            if confirmed and getattr(self, "_release_task", None):
-                self._send_with("done")
+        def done(answer: str | None) -> None:
+            if not getattr(self, "_release_task", None):
+                return
+            if answer == "run":
+                self._open_release_for_task()
+            elif answer in ("done", "skip"):
+                self._send_with(answer)
 
-        self.push_screen(ConfirmScreen(message, "Mark released"), done)
+        self.push_screen(ReleaseTaskScreen(message, "Mark released"), done)
 
     def _fit_controls(self) -> None:
         """One row when the bar's buttons fit the window, a grid when not.
@@ -6002,7 +6027,71 @@ class WhylineConsoleApp(App):
             return
         from whyline.console.release_screens import ReleaseScreen
 
+        self._release_for_task = None
         self.push_screen(ReleaseScreen(self.session.root, start_release=self._start_release))
+
+    def _release_screen(self, *, checklist: list[str], auto_check: bool) -> Any:
+        """A ReleaseScreen that shows a plan release task's checklist above the
+        steps and, with auto_check, runs Check as soon as it opens. In auto
+        mode a check with every item ✓ starts the release by itself."""
+        from whyline.console.release_screens import ReleaseScreen
+        from whyline.release import ready as release_ready
+
+        class PlanReleaseScreen(ReleaseScreen):
+            def on_mount(self) -> None:
+                super().on_mount()
+                if checklist:
+                    lines = ["The plan's release task:"]
+                    for i, item in enumerate(checklist, 1):
+                        clean = re.sub(r"^(\d+\.|\*|-)\s*", "", item)
+                        lines.append(f"   {i}. {clean}")
+                    self.query_one("#release-body").mount(
+                        Static("\n".join(lines), markup=False), before=0)
+                if auto_check:
+                    self._run_check()
+
+            def _show_check(self, version: str, items: list) -> None:
+                super()._show_check(version, items)
+                if (
+                    auto_check
+                    and self._items is items
+                    and self.chosen_mode() == "auto"
+                    and release_ready.ok(items)
+                ):
+                    self._start()
+
+        return PlanReleaseScreen(self.session.root, start_release=self._start_release)
+
+    def _open_release_for_task(self) -> None:
+        """Run Release from a plan's release task: once the release finishes,
+        the console sends `done <task>` the way typing it does."""
+        if self._refuse_in_home() or not getattr(self, "_release_task", None):
+            return
+        task_id, checklist = self._release_task
+        self._release_for_task = task_id
+        self.push_screen(self._release_screen(checklist=checklist, auto_check=False))
+
+    def _plan_release_due(self) -> bool:
+        """True when the plan has no unticked task and the release config asks
+        for a release after a plan."""
+        from whyline.release import config as release_config
+
+        try:
+            if not release_config.load(self.session.root).start_after_plan:
+                return False
+            plan = relay_ops.configured_plan(self.session.root)
+            return any(
+                info.total and info.done >= info.total and info.path == plan
+                for info in relay_ops.list_plans(self.session.root)
+            )
+        except Exception:
+            return False
+
+    def _release_after_plan(self) -> None:
+        if self._release_running() or not self._plan_release_due():
+            return
+        self._release_for_task = None
+        self.push_screen(self._release_screen(checklist=[], auto_check=True))
 
     def _start_release(self, choice: Any) -> None:
         self._release_choice = choice
@@ -6137,6 +6226,12 @@ class WhylineConsoleApp(App):
         version = self._release_choice.version
         if result.status == "done":
             self.render_event(SessionEvent(kind="output", text=f"Release v{version} finished."))
+            task = getattr(self, "_release_for_task", None)
+            self._release_for_task = None
+            if task and getattr(self, "_release_task", None):
+                self._release_task = None
+                self._sync_mode_indicator()
+                self._launch_relay(["done", task])
         elif result.status == "failed" and not self._release_stopped:
             from whyline.console.release_screens import ReleaseFailedScreen
 
@@ -8139,6 +8234,8 @@ class WhylineConsoleApp(App):
             if event.kind == "output":
                 self.render_event(SessionEvent(kind="output", text="Relay finished."))
                 self._end_run_flow("Auto run finished.")
+                if code == 0 and not (last_args and last_args[0] in ("done", "skip")):
+                    self._release_after_plan()
             else:
                 self.render_event(SessionEvent(
                     kind="error",
@@ -8153,6 +8250,8 @@ class WhylineConsoleApp(App):
             self.render_event(event)
         elif event.kind == "output":
             self.render_event(SessionEvent(kind="output", text="Relay finished."))
+            if code == 0 and not (last_args and last_args[0] in ("done", "skip")):
+                self._release_after_plan()
         else:
             self.render_event(SessionEvent(
                 kind="error",
