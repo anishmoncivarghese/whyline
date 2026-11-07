@@ -87,6 +87,11 @@ idea → brainstorm → spec and plan → implement → test → review → veri
 - **Release** checks, versions, notes, tags and publishes for you, and can run
   from a plan's release task or after a plan finishes. See
   [docs/release.md](docs/release.md).
+- **Security checks** run in the Release gate with nothing to install: secrets
+  in the commits about to be pushed, vulnerable dependencies (only public
+  package names and versions go to OSV.dev) and the files each package would
+  publish. Optional pre-commit hook, GitHub protection and a deep audit. See
+  [docs/security.md](docs/security.md).
 - **Files** shows the agent's current output, the live plan, and the whole
   repository in a side pane.
 
@@ -337,6 +342,7 @@ start it, and it commits only work that passed review. Releases stay with you.
 - [Idea Inbox setup](docs/idea-inbox.md) ·
   [Job search](docs/job-search.md) ·
   [Attachments](docs/attachments-capabilities.md) ·
+  [Security](docs/security.md) ·
   [Recording](docs/recording.md) ·
   [Measurements](docs/measurement.md)
 - [Release notes](https://github.com/anishmoncivarghese/whyline/releases) ·

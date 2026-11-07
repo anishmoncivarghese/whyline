@@ -37415,3 +37415,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 89a7902ccf1144808e33379ff8742286 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T00:49:12.922Z"} -->
+
+## 2026-11-07 — Pass SEC-14: Security documentation verified against code claims, link targets, and test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-14
+
+**Because:** docs/security.md accurately details all checks, OSV.dev privacy guarantees, settings/defaults, Allow vs Ignore once, history scan rotation rationale, pre-commit hook behavior, GitHub protection, deep audit limits/costs/artifacts, and credits; README.md and docs/release.md are updated within scope; local markdown links resolve; and the full test suite passed (4016 passed, 1 skipped)
+
+**Files:** docs/security.md
+
+<!-- whyline-event: be28f8100f2f4825b169f8ff1519e3bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T01:05:38.885Z"} -->
+
+## 2026-11-07 — Request changes: security.md copies plan wording the code does not implement
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-14
+
+**Because:** The page covers every required topic, local links resolve, credits match the bundled VERSION files, and uv run pytest -q exited 0. Four claims still describe the plan rather than the code: the secret mask format, the OSV cache path, the OSV-unreachable gate, and the private-package note.
+
+**Rejected:**
+
+- Approve as-is — the mandated sections are present and the tester passed, but those four lines would mislead a user about what they see and where data is stored
+
+**Files:** docs/security.md
+
+<!-- whyline-event: c6fbdefee30f4115b6dc1e4e5ac6e3f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T01:25:56.028Z"} -->
+
+## 2026-11-07 — Pass SEC-14 Round 5: Verified security documentation fixes against code behavior and ran full test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-14
+
+**Because:** Verified that the four review issues are resolved in docs/security.md (secret mask format first2****last2, OSV cache path under .git/whyline-release/osv-cache/, OSV unreachable error behavior and Ready status, and private package note format); verified links and credits match bundled VERSION files; git diff --check is clean; and the test suite passed in full (uv run pytest -q: 4016 passed, 1 skipped, exit 0).
+
+**Files:** docs/security.md
+
+<!-- whyline-event: f6ec03bde8334aeead7993c704089ca7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T01:56:21.244Z"} -->
+
+## 2026-11-07 — Approve SEC-14: security documentation matches the implementation
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-14
+
+**Because:** docs/security.md covers every required topic; the four prior mismatches (mask format, OSV cache path, OSV-unreachable Ready text, private-package note) now match the code; credits match the bundled VERSION files; local links resolve; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request more nits — remaining wording matches what the user sees and where data is stored
+
+**Files:** docs/security.md
+
+<!-- whyline-event: 6e46345431a04dd1b4ff1b9af691fd97 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:15:48.318Z"} -->

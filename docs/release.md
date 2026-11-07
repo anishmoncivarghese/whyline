@@ -52,7 +52,17 @@ about a ✗; Start stays off until every item is ✓.
 - **step**: asks before every step.
 - **auto**: asks nothing. Only use it after Check is all ✓.
 
-### Resume
+### Security checks
+
+Before anything is pushed, Ready gains a **Security** item: it scans the
+commits about to be pushed for secrets, checks dependencies against OSV.dev and
+inspects the files each package would publish. Secrets and package contents
+block by default; dependencies block on high or critical. Open **Security…**
+to Fix, Ignore once or Allow a finding. Settings, what leaves your Mac, Scan
+history, Check every commit, GitHub protection and the optional deep audit are
+in [docs/security.md](security.md).
+
+## Resume
 
 A failed or stopped release keeps its place in `.git/whyline-release/`.
 When a step fails, the popup offers **Resume release** (continue after you fix
