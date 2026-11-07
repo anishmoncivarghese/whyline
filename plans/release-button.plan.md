@@ -397,7 +397,7 @@ Global constraints:
   - Console: the PyPI **Set up…** panel shows those lines, with **Add workflow** (shown when none exists), **Open pypi.org** (opens `https://pypi.org/manage/account/publishing/` with `open`) and **Ask agent**.
   Tests: ready on 404/200/network error, reuse of an existing publishing workflow, template written once, verify retry, the panel's buttons and lines.
 
-- [ ] REL-15: npm target
+- [x] REL-15: npm target
   Create `src/whyline/release/targets/npm.py`, `src/whyline/release/templates/release-npm.yml` and `tests/release/test_target_npm.py`; edit `src/whyline/console/release_screens.py` and its test only.
   - The template runs on tag `v*` with `permissions: id-token: write, contents: read`. It uses `actions/setup-node` with `registry-url: https://registry.npmjs.org`, a current Node LTS, an npm new enough for trusted publishing (upgrade npm in the job when needed), `npm ci`, then `npm publish --provenance --access public`. Before writing it, check npm's trusted-publishing docs and match them.
   - The workflow file is found by `find_publishing(root, "npm publish")`, or `release-npm.yml`.
