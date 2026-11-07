@@ -458,7 +458,7 @@ Global constraints:
   - Console: the Custom panel lists entries with **Add**, **Edit** and **Remove** (name, command, optional verify command), and saves through `config.save`.
   Tests: ready on a missing command, the env vars reach the command, `verify` as `done_check`, the editor round-trips through `config.save`, a duplicate name is refused.
 
-- [ ] REL-19: End-to-end check and docs
+- [x] REL-19: End-to-end check and docs
   Create `tests/release/test_end_to_end.py`; edit `docs/release.md` and `README.md` only.
   - An end-to-end test: a temp repository with a bare origin, every target enabled through fakes for `gh`, `fetch`, `brew` and `docker`, and auto mode. It runs `plan.build` and the engine to completion. Then:
     - a second run is refused as already released (tag exists)
