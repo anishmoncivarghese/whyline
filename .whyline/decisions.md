@@ -38057,3 +38057,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0eae031184b94b9d87e87fad54f9713f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T15:03:13.522Z"} -->
+
+## 2026-11-07 — Kept agentdock's own [agents.grok] command and updated it to the 0.2.43 recipe instead of deleting it
+
+**Actor:** claude
+**Role:** releaser
+**Task:** RLY-16
+
+**Because:** it carries repo-specific allows (uv, pytest, .venv, git -C /Users/anish/whyline-relay) the built-in recipe lacks; the new rule's ban on git -C would block cross-repo plans, so it allows -C for that one path
+
+**Rejected:**
+
+- delete the block to use the recipe — loses the cross-repo and test-runner allows
+- copy GROK_RULES verbatim — tells grok never to use git -C, which cross-repo tasks need
+
+**Files:** .whyline/relay/config.toml
+
+<!-- whyline-event: 618c38e35072493d89c446879e109e5f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T16:17:50.876Z"} -->
