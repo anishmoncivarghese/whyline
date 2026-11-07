@@ -380,7 +380,7 @@ Global constraints:
   - A Verify step has `done_check` false, so it always runs.
   Tests: order of enabled targets, finding a publishing workflow (and ignoring one that runs only on branches), no overwrite, the tag-run wait for pass/fail/timeout/cancel, `plan.build` with two fake targets, verify listing failures.
 
-- [ ] REL-14: PyPI target
+- [x] REL-14: PyPI target
   Create `src/whyline/release/targets/pypi.py`, `src/whyline/release/templates/release-pypi.yml` and `tests/release/test_target_pypi.py`; edit `src/whyline/console/release_screens.py` and its test only.
   - The template runs on push of tags `v*`, uses environment `pypi` and `permissions: id-token: write, contents: read`, and does checkout, `astral-sh/setup-uv`, `uv build`, then `pypa/gh-action-pypi-publish`.
   - The workflow file is the existing publishing one (`find_publishing(root, "pypa/gh-action-pypi-publish")`) or `release-pypi.yml`.
