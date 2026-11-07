@@ -496,7 +496,7 @@ On 2026-11-06 the Chat tab was asked "status" while grok reviewed REL-10. The wo
 
 On 2026-11-06 the console also showed "⏸ Pausing — letting antigravity finish its turn so nothing is lost" for over 12 minutes while the relay itself had no pause request: `whyline_relay.status.pause_state` said `none` and `.whyline/relay/PAUSE` did not exist. The run had been paused at 14:50 and resumed at 14:56. `_sync_pause_buttons` shows Pausing when `self._pause_requested or kind == "pausing"`, and clears `_pause_requested` only when a tick sees no running relay while the Relay buttons are mounted, so a pause and resume made while another screen was open left the flag on for the next run. The same screen showed the 16 relay buttons as a 6-column grid of equal, mostly empty cells over 3 rows (`#controls.wrap`, `grid-size: 6`), where two packed rows fit.
 
-- [ ] CHF-2: Pausing shows only while the relay has a pause request
+- [x] CHF-2: Pausing shows only while the relay has a pause request
   Edit `src/whyline/console/tui.py`, with tests in `tests/console/test_pause_status.py`.
   1. `_pause_requested` only bridges the click to the relay seeing `PAUSE`. In `_sync_pause_buttons`, once `pause_state` has returned `pausing` since the flag was set, a later `none` while a relay runs clears the flag ("Pause withdrawn." as today). A flag set more than 10 seconds ago whose request never showed is cleared too.
   2. Starting or resuming a relay from the console (Run, Resume, Keep going after a pause, Continue with, Resolve's resume) sets `_pause_requested = False` and `_quit_when_paused = False` before the process starts.
