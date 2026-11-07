@@ -38039,3 +38039,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 10a430b01699426ead2f3be4cd641690 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T13:47:22.236Z"} -->
+
+## 2026-11-07 — Released whyline 0.3.65 (Release button, security checks, CHF-1..3) while whyline-relay's relay-followups run continues; installed tool upgrade deferred until that run ends
+
+**Actor:** claude
+**Role:** releaser
+**Task:** RLS-1
+
+**Because:** the release needs no new whyline-relay (floor stays 0.2.42), and upgrading the shared uv tool env mid-run could break the relay running in ~/whyline-relay
+
+**Rejected:**
+
+- wait and release together with whyline-relay RLY-16 — holds finished fixes for hours with no dependency between them
+- treat test_interrupt_stops_the_relay_like_ctrl_c, test_see_files and test_new_agent_deliveries failures as blockers — each failed once under load on one job and passed alone and on rerun
+
+**Files:** docs/releases/v0.3.65.md
+
+<!-- whyline-event: 0eae031184b94b9d87e87fad54f9713f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T15:03:13.522Z"} -->
