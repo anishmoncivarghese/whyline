@@ -434,7 +434,7 @@ Global constraints:
   - the draft goes through `ask_agent` and is never written without Save
   - verify with and without docker
 
-- [ ] REL-17: Homebrew target
+- [x] REL-17: Homebrew target
   Create `src/whyline/release/targets/homebrew.py` and `tests/release/test_target_homebrew.py`; edit `src/whyline/console/release_screens.py` and its test only.
   - The tap defaults to `<owner>/homebrew-tap` and the formula to the project name. `create_tap(owner, name, *, run)` runs `gh repo create <owner>/homebrew-<name> --public` (taps must be public for `brew tap` without credentials, so say so in the panel).
   - The tap is worked in a scratch clone: `gh repo clone <tap> <tmp>` under `.git/whyline-release/tap`, refreshed with `git pull` on reuse.
