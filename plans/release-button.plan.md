@@ -341,7 +341,7 @@ Global constraints:
   - Findings become `Finding(kind="audit", …)` keeping the verdict: confirmed, needs_validation or rejected. Rejected findings are only counted.
   Tests (fake agent writing fixture files): the output dir outside the repo, the prompt's must-not lines, a valid file to findings with verdicts, invalid JSON and schema errors reported, run numbering, cancel.
 
-- [ ] SEC-13: Deep audit in the console and the Release gate
+- [x] SEC-13: Deep audit in the console and the Release gate
   Edit `src/whyline/console/security_screens.py`, `src/whyline/security/scan.py`, `src/whyline/security/cli.py` and their tests only.
   - The Security screen gets an **Audit** tab. **Run deep audit** shows that it uses your main agent, may take a long time and many tokens, and that a single run finds only part of what repeated runs do. It then runs in a worker with elapsed time and **Stop**.
   - Findings are listed by verdict and severity, with **Open report** for the run folder's `REPORT.md`. Past runs are listed.
