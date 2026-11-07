@@ -24,6 +24,7 @@ from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import version as release_version
+from whyline.release.targets import docker as docker_target
 from whyline.release.targets import npm as npm_target
 from whyline.release.targets import pypi as pypi_target
 from whyline.security import hook
@@ -93,7 +94,7 @@ class ReleaseScreen(ModalScreen):
     .rs-row Static { width: 1fr; padding: 1 1; }
     #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
     #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
-    #rs-pypi, #rs-npm { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
+    #rs-pypi, #rs-npm, #rs-docker { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
     #rs-gh-code { text-style: bold; text-align: center; border: heavy $accent; padding: 1 2; }
     #rs-confirm { height: auto; }
     """
@@ -114,6 +115,8 @@ class ReleaseScreen(ModalScreen):
         security_screen: Callable[[], ModalScreen] | None = None,
         pypi_get: Callable[[str], int] | None = None,
         npm_get: Callable[[str], int] | None = None,
+        docker_ask: Callable[[str], str] | None = None,
+        docker_run: Callable[..., object] | None = None,
         open_url: Callable[[str], object] | None = None,
     ) -> None:
         super().__init__()
@@ -122,6 +125,9 @@ class ReleaseScreen(ModalScreen):
         self._gh_run = gh_run
         self._pypi = pypi_target.PyPITarget(get=pypi_get)
         self._npm = npm_target.NpmTarget(get=npm_get)
+        self._docker_ask = docker_ask
+        self._docker_run = docker_run
+        self._docker_draft = ""
         self._open_url = open_url
         self._gh_run_streaming = gh_run_streaming
         self._chat_turn = chat_turn
@@ -131,6 +137,7 @@ class ReleaseScreen(ModalScreen):
         self._gh_repo = ""
         self._pypi_lines: list[str] = []
         self._npm_lines: list[str] = []
+        self._docker_lines: list[str] = []
         self._suggested = False
         self._saved_form: release_config.ReleaseConfig | None = None
         self._setup_base = release_config.ReleaseConfig()
@@ -297,6 +304,18 @@ class ReleaseScreen(ModalScreen):
             self._open_npm()
         elif button_id == "rs-npm-ask":
             self._start_ask("rs-npm", self._npm_ask_prompt())
+        elif button_id == "rs-docker-add":
+            self._add_docker_workflow()
+        elif button_id == "rs-docker-draft":
+            self._start_docker_draft()
+        elif button_id == "rs-docker-save":
+            self._save_docker_draft()
+        elif button_id == "rs-docker-discard":
+            self._discard_docker_draft()
+        elif button_id == "rs-docker-store":
+            self._store_docker_secrets()
+        elif button_id == "rs-docker-ask":
+            self._start_ask("rs-docker", self._docker_ask_prompt())
         elif button_id.startswith("rs-gh-prot-on-"):
             self._start_protection(button_id[len("rs-gh-prot-on-"):])
 
@@ -390,6 +409,27 @@ class ReleaseScreen(ModalScreen):
                 yield Button("Open npmjs.com", id="rs-npm-open")
                 yield Button("Ask agent", id="rs-npm-ask")
                 yield Static("", id="rs-npm-reply", markup=False)
+            docker = cfg.targets.docker_options
+            with Vertical(id="rs-docker", classes="-hidden"):
+                yield Label("Docker")
+                yield Static("", id="rs-docker-status", markup=False)
+                yield Checkbox("GHCR", "ghcr" in docker.registries, id="rs-docker-ghcr")
+                yield Checkbox("Docker Hub", "dockerhub" in docker.registries,
+                               id="rs-docker-hub")
+                yield Input(docker.image, placeholder="Image name (default: owner/repo)",
+                            id="rs-docker-image")
+                yield Button("Add workflow", id="rs-docker-add", classes="-hidden")
+                yield Button("Draft Dockerfile", id="rs-docker-draft")
+                yield TextArea("", read_only=True, id="rs-docker-draft-view",
+                               classes="-hidden")
+                yield Button("Save as Dockerfile", id="rs-docker-save", classes="-hidden")
+                yield Button("Discard", id="rs-docker-discard", classes="-hidden")
+                yield Input(placeholder="Docker Hub username", id="rs-docker-user")
+                yield Input(placeholder="Docker Hub access token", password=True,
+                            id="rs-docker-token")
+                yield Button("Store as GitHub secrets", id="rs-docker-store")
+                yield Button("Ask agent", id="rs-docker-ask")
+                yield Static("", id="rs-docker-reply", markup=False)
             yield from security_screens.compose_security_setup(cfg.security)
             yield Static("", id="rs-status", markup=False)
             yield Button("Save", id="rs-save", variant="success")
@@ -405,6 +445,7 @@ class ReleaseScreen(ModalScreen):
             base.targets,
             github=box("github"), pypi=box("pypi"), npm=box("npm"),
             docker=box("docker"), homebrew=box("homebrew"),
+            docker_options=self._docker_options(base.targets.docker_options),
             custom=base.targets.custom if box(CUSTOM) else (),
         )
         return replace(
@@ -419,6 +460,16 @@ class ReleaseScreen(ModalScreen):
             targets=targets,
             security=security_screens.collect_security(self, base.security),
         )
+
+    def _docker_options(self, base: release_config.DockerTarget) -> release_config.DockerTarget:
+        try:
+            regs = tuple(name for name, box in (("ghcr", "#rs-docker-ghcr"),
+                                                ("dockerhub", "#rs-docker-hub"))
+                         if self.query_one(box, Checkbox).value)
+            image = self.query_one("#rs-docker-image", Input).value.strip()
+        except NoMatches:
+            return base
+        return release_config.DockerTarget(registries=regs or ("ghcr",), image=image)
 
     def _has_unsaved(self) -> bool:
         if self._saved_form is None:
@@ -483,6 +534,10 @@ class ReleaseScreen(ModalScreen):
         if key == "npm":
             self.query_one("#rs-npm", Vertical).remove_class("-hidden")
             self._refresh_npm()
+            return
+        if key == "docker":
+            self.query_one("#rs-docker", Vertical).remove_class("-hidden")
+            self._refresh_docker()
             return
         if key != "github":
             self.query_one(f"#rs-s-{key}", Static).update(PART_2)
@@ -776,6 +831,109 @@ class ReleaseScreen(ModalScreen):
             opener(npm_target.PUBLISHING_URL)
         except OSError as exc:
             self.query_one("#rs-npm-reply", Static).update(f"Could not open the page: {exc}")
+
+    # -- set up: Docker -----------------------------------------------------
+
+    def _docker_ask_prompt(self) -> str:
+        lines = "\n".join(self._docker_lines) or "Docker status has not been checked yet."
+        return ("I am setting up Docker image releases for this project. "
+                f"Current status:\n{lines}\nExplain what to do next in plain words. "
+                "Answer in text only: do not run commands and do not change files.")
+
+    def _docker_reply(self, text: str) -> None:
+        self.query_one("#rs-docker-reply", Static).update(text)
+
+    def _refresh_docker(self) -> None:
+        self.query_one("#rs-docker-status", Static).update("Checking Docker…")
+        cfg = self._collect()
+        self.run_worker(lambda: self._docker_in_thread(cfg), thread=True, exclusive=True,
+                        group="rs-docker-status", name="release-docker-status")
+
+    def _docker_in_thread(self, cfg: release_config.ReleaseConfig) -> None:
+        try:
+            lines = docker_target.DockerTarget().setup_status(
+                self.root, cfg, **self._run_kwargs_or_default())
+        except Exception as exc:  # noqa: BLE001 - shown in the panel
+            self.app.call_from_thread(self._show_docker, [f"Could not check Docker: {exc}"],
+                                      False)
+            return
+        has_workflow = docker_target.workflow_path(self.root) is not None
+        self.app.call_from_thread(self._show_docker, lines, has_workflow)
+
+    def _show_docker(self, lines: list[str], has_workflow: bool) -> None:
+        self._docker_lines = lines
+        self.query_one("#rs-docker-status", Static).update("\n".join(lines))
+        self.query_one("#rs-docker-add", Button).set_class(has_workflow, "-hidden")
+        self.query_one("#rs-s-docker", Static).update(
+            "Workflow found" if has_workflow else "No workflow yet")
+
+    def _add_docker_workflow(self) -> None:
+        try:
+            path = docker_target.add_workflow(self.root, self._collect(),
+                                              **self._run_kwargs_or_default())
+        except OSError as exc:
+            self._docker_reply(f"Could not add the workflow: {exc}")
+            return
+        self._docker_reply(
+            f"Added {path.relative_to(self.root).as_posix()}. Commit it with the release.")
+        self._refresh_docker()
+
+    def _start_docker_draft(self) -> None:
+        self.query_one("#rs-docker-draft", Button).disabled = True
+        self._docker_reply("Drafting a Dockerfile…")
+        self.run_worker(self._draft_in_thread, thread=True, exclusive=True,
+                        group="rs-docker-draft", name="release-docker-draft")
+
+    def _draft_in_thread(self) -> None:
+        try:
+            ask = self._docker_ask or release_plan.default_ask_agent(self.root)
+            text = docker_target.draft_dockerfile(self.root, ask_agent=ask)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._show_draft, "", f"Could not draft: {exc}")
+            return
+        self.app.call_from_thread(self._show_draft, text, "")
+
+    def _show_draft(self, text: str, error: str) -> None:
+        self.query_one("#rs-docker-draft", Button).disabled = False
+        self._docker_draft = text
+        view = self.query_one("#rs-docker-draft-view", TextArea)
+        view.load_text(text)
+        for widget in ("#rs-docker-draft-view", "#rs-docker-save", "#rs-docker-discard"):
+            self.query_one(widget).set_class(not text, "-hidden")
+        self._docker_reply(error or "Review the draft, then save or discard it.")
+
+    def _save_docker_draft(self) -> None:
+        path = self.root / "Dockerfile"
+        if path.exists():
+            self._docker_reply("A Dockerfile already exists; it was not changed.")
+            return
+        try:
+            path.write_text(self._docker_draft, encoding="utf-8")
+            release_config.add_pending(self.root, path)
+        except OSError as exc:
+            self._docker_reply(f"Could not save the Dockerfile: {exc}")
+            return
+        self._show_draft("", "")
+        self._docker_reply("Saved Dockerfile. Commit it with the release.")
+        self._refresh_docker()
+
+    def _discard_docker_draft(self) -> None:
+        self._show_draft("", "")
+        self._docker_reply("Draft discarded.")
+
+    def _store_docker_secrets(self) -> None:
+        user = self.query_one("#rs-docker-user", Input)
+        token = self.query_one("#rs-docker-token", Input)
+        run = self._docker_run or docker_target.stdin_run
+        try:
+            docker_target.store_dockerhub_secrets(self.root, user.value, token.value, run=run)
+        except Exception as exc:  # noqa: BLE001 - messages never carry the token
+            self._docker_reply(str(exc))
+            return
+        finally:
+            token.value = ""
+        self._docker_reply("Stored DOCKERHUB_USERNAME and DOCKERHUB_TOKEN as GitHub secrets.")
+        self._refresh_docker()
 
     # -- steps --------------------------------------------------------------
 

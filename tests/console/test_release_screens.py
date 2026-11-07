@@ -1,5 +1,6 @@
 import time
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -258,9 +259,9 @@ async def test_other_targets_say_part_2(tmp_path):
     app = Host(_setup_screen(tmp_path))
     async with app.run_test() as pilot:
         await pilot.pause()
-        _q(app, "#rs-setup-docker", Button).press()
+        _q(app, "#rs-setup-homebrew", Button).press()
         await pilot.pause()
-        assert _text(app, "#rs-s-docker") == "Comes with release part 2"
+        assert _text(app, "#rs-s-homebrew") == "Comes with release part 2"
 
 
 async def test_closing_without_changes_does_not_ask(tmp_path):
@@ -547,3 +548,98 @@ async def test_npm_open_and_ask(tmp_path):
         await _until(pilot, lambda: "trusted publisher" in _text(app, "#rs-npm-reply"))
     assert opened == ["https://www.npmjs.com/"]
     assert "Owner: octo" in prompts[0] and "do not run commands" in prompts[0]
+
+
+def _docker_screen(tmp_path, calls, **kwargs):
+    def run(args, **kw):
+        calls.append((list(args), kw))
+        if args[:3] == ["git", "remote", "get-url"]:
+            return _proc(0, "git@github.com:Octo/Demo.git")
+        if args[:3] == ["gh", "secret", "list"]:
+            return _proc(0, "[]")
+        return _proc(0)
+    return _setup_screen(tmp_path, gh_run=run, docker_run=run, **kwargs)
+
+
+async def test_docker_panel_adds_workflow_with_chosen_registries(tmp_path):
+    calls = []
+    app = Host(_docker_screen(tmp_path, calls))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-docker", Button).press()
+        await _until(pilot, lambda: "Image: octo/demo" in _text(app, "#rs-docker-status"))
+        assert "Dockerfile: none yet" in _text(app, "#rs-docker-status")
+        _q(app, "#rs-docker-hub", Checkbox).value = True
+        _q(app, "#rs-docker-image", Input).value = "Me/Thing"
+        await pilot.pause()
+        _q(app, "#rs-docker-add", Button).press()
+        await _until(pilot, lambda: not _shown(app, "#rs-docker-add"))
+    text = (tmp_path / ".github" / "workflows" / "release-docker.yml").read_text()
+    assert "secrets.DOCKERHUB_TOKEN" in text and "ghcr.io/me/thing" in text
+
+
+async def test_docker_draft_is_written_only_on_save(tmp_path):
+    prompts = []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        return "FROM python:3.13-slim\nUSER app"
+
+    app = Host(_docker_screen(tmp_path, [], docker_ask=ask))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-docker", Button).press()
+        await pilot.pause()
+        _q(app, "#rs-docker-draft", Button).press()
+        await _until(pilot, lambda: _shown(app, "#rs-docker-save"))
+        view = _q(app, "#rs-docker-draft-view", TextArea)
+        assert view.read_only and "USER app" in view.text
+        assert not (tmp_path / "Dockerfile").exists()
+        _q(app, "#rs-docker-discard", Button).press()
+        await pilot.pause()
+        assert not _shown(app, "#rs-docker-save") and not (tmp_path / "Dockerfile").exists()
+        _q(app, "#rs-docker-draft", Button).press()
+        await _until(pilot, lambda: _shown(app, "#rs-docker-save"))
+        _q(app, "#rs-docker-save", Button).press()
+        await pilot.pause()
+    assert (tmp_path / "Dockerfile").read_text() == "FROM python:3.13-slim\nUSER app\n"
+    assert Path("Dockerfile") in release_config.pending(tmp_path)
+    assert len(prompts) == 2
+
+
+async def test_docker_secrets_use_stdin_and_the_field_is_cleared(tmp_path):
+    sentinel = "tok-SENTINEL-77"
+    calls = []
+    app = Host(_docker_screen(tmp_path, calls))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-docker", Button).press()
+        await pilot.pause()
+        token = _q(app, "#rs-docker-token", Input)
+        assert token.password
+        _q(app, "#rs-docker-user", Input).value = "octo"
+        token.value = sentinel
+        _q(app, "#rs-docker-store", Button).press()
+        await _until(pilot, lambda: "Stored" in _text(app, "#rs-docker-reply"))
+        assert token.value == ""
+        assert sentinel not in _text(app, "#rs-docker-reply")
+    sets = [c for c in calls if c[0][:3] == ["gh", "secret", "set"]]
+    assert [c[1]["input"] for c in sets] == ["octo", sentinel]
+    assert sentinel not in repr([c[0] for c in calls])
+
+
+async def test_docker_ask_agent(tmp_path):
+    prompts = []
+
+    def chat(root, *, agent, prompt):
+        prompts.append(prompt)
+        return SimpleNamespace(kind="output", text="Draft a Dockerfile first.")
+
+    app = Host(_docker_screen(tmp_path, [], chat_turn=chat, agent="claude"))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-docker", Button).press()
+        await _until(pilot, lambda: "Dockerfile:" in _text(app, "#rs-docker-status"))
+        _q(app, "#rs-docker-ask", Button).press()
+        await _until(pilot, lambda: "Draft a Dockerfile" in _text(app, "#rs-docker-reply"))
+    assert "Dockerfile: none yet" in prompts[0] and "do not run commands" in prompts[0]

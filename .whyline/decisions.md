@@ -37610,3 +37610,101 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: af925061110445cfbd15c2bb984d54c7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T04:13:57.772Z"} -->
+
+## 2026-11-07 — Docker secrets use a local stdin_run in docker.py, not release.ready.default_run
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-16
+
+**Because:** default_run has no input= parameter and ready.py is outside REL-16's file list; values must go on stdin only
+
+**Rejected:**
+
+- Add input= to ready.default_run — out of task scope
+- Pass values via argv or env — would leak into process list/transcripts
+
+**Files:** src/whyline/release/targets/docker.py
+
+<!-- whyline-event: d752bf397cdf44b1b31a8390c436067d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T04:16:26.140Z"} -->
+
+## 2026-11-07 — Pass REL-16: Docker release target, workflow template, and console integration verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-16
+
+**Because:** Full test suite and targeted tests verify Docker workflow template rendering with GHCR/Docker Hub, ready checks, stdin secrets storage, agent Dockerfile drafting/saving/discarding, verify with and without docker, and console UI.
+
+**Files:** src/whyline/release/targets/docker.py
+
+<!-- whyline-event: dddf74b3306946e8aa9cd3d5154a184f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T04:34:01.419Z"} -->
+
+## 2026-11-07 — Request changes: Save Dockerfile must call add_pending
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-16
+
+**Because:** Part 3 records every Set up file, including Dockerfile, with add_pending so the clean-tree ready check ignores it and the release commit includes it. _save_docker_draft writes Dockerfile without add_pending, so drafting dirties the tree and blocks release.
+
+**Rejected:**
+
+- Approve as-is — REL-16 bullets omit add_pending, but the Part 3 constraint names Dockerfile and the dirty-tree failure is user-facing
+
+**Verdict:** rejected
+**Test:** uv run pytest -q: passed, exit 0, 1 skipped
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_screens.py
+
+<!-- whyline-event: a4e55c54818e420c856e45f3debbc667 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T04:55:25.190Z"} -->
+
+## 2026-11-07 — Save as Dockerfile records the file with add_pending
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-16
+
+**Because:** Part 3 requires every Set up file to be pending so the clean-tree check ignores it and the release commit includes it
+
+**Rejected:**
+
+- Leave Dockerfile untracked — drafting would dirty the tree and block Ready
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 1feb0c5d9c644a25b636ce7157629565 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T05:08:14.939Z"} -->
+
+## 2026-11-07 — Pass REL-16: Docker release target and console drafting verified with pending registration
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-16
+
+**Because:** Full test suite (passed, exit 0, 1 skipped) and targeted tests (46 passed) confirm Docker target workflow template, ready checks, stdin secrets storage, agent Dockerfile drafting/saving/discarding, verify logic, and that _save_docker_draft registers Dockerfile with add_pending so clean-tree check passes
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 36aff55c70e34d68bc0aeb5fc488244a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T05:31:33.604Z"} -->
+
+## 2026-11-07 — Approve REL-16: Docker target, template, ready/verify, stdin secrets, and console drafting
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-16
+
+**Because:** The Docker target matches REL-16: v* workflow with buildx, GHCR/Docker Hub login, metadata tags, and build-push; ready items; tag-run wait; verify via docker manifest inspect or the tag-run note; secrets on stdin; draft via ask_agent; Save as Dockerfile calls add_pending. Tests cover those paths. uv run pytest -q passed, exit 0, 1 skipped.
+
+**Rejected:**
+
+- Request more changes — the prior add_pending gap is fixed and covered by test_docker_draft_is_written_only_on_save
+
+**Files:** src/whyline/release/targets/docker.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 3910ae3ebbbe426fa275f213bc050bbf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T05:50:33.848Z"} -->
