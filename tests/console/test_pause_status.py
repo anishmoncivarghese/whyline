@@ -127,3 +127,121 @@ async def test_transcript_lines_written_once(tmp_path, monkeypatch):
             app._pause_tick()
         assert lines[-2:] == ["Pause requested…", "Paused by you."]
         assert lines.count("Paused by you.") == 1
+
+
+def _clock(app, start=NOW):
+    box = SimpleNamespace(now=start)
+    app._wall = lambda: box.now
+    return box
+
+
+def _states(monkeypatch, box):
+    monkeypatch.setattr(
+        relay_ops, "pause_state",
+        lambda root: SimpleNamespace(state=box.state, agent="codex", since=NOW),
+    )
+
+
+async def test_flag_clears_after_request_seen_then_gone(tmp_path, monkeypatch):
+    from .test_safe_pause import _visible
+
+    app, box = _app(tmp_path, monkeypatch)
+    _clock(app)
+    _states(monkeypatch, box)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        app._pause_requested = True
+        box.state = "pausing"
+        app._pause_tick()
+        assert "pausing" in _visible(app)
+        box.state = "none"
+        app._pause_tick()
+        shown = _visible(app)
+        assert "pause" in shown and not shown & {"pausing", "pause-now", "pause-cancel"}
+        assert app._pause_requested is False
+
+
+async def test_flag_never_seen_expires_after_ten_seconds(tmp_path, monkeypatch):
+    from .test_safe_pause import _visible
+
+    app, box = _app(tmp_path, monkeypatch)
+    clock = _clock(app)
+    _states(monkeypatch, box)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        app._pause_requested = True
+        clock.now = NOW + timedelta(seconds=5)
+        app._pause_tick()
+        assert "pausing" in _visible(app)
+        clock.now = NOW + timedelta(seconds=11)
+        app._pause_tick()
+        assert "pause" in _visible(app) and "pausing" not in _visible(app)
+
+
+async def test_stale_flag_after_new_run_with_pause_screen_open(tmp_path, monkeypatch):
+    from textual.screen import ModalScreen
+
+    from .test_safe_pause import _visible
+
+    app, box = _app(tmp_path, monkeypatch)
+    _clock(app)
+    _states(monkeypatch, box)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        app._pause_requested = True
+        box.state = "pausing"
+        app._pause_tick()
+        await app.push_screen(ModalScreen())  # ticks can't reach the buttons
+        await pilot.pause()
+        box.state = "none"  # relay paused, then a new run began
+        app.pop_screen()
+        await pilot.pause()
+        app._pause_tick()
+        assert "pause" in _visible(app) and "pausing" not in _visible(app)
+        assert "Pausing" not in str(app._main("#thinking", tui.Static).render())
+
+
+async def test_resume_clears_both_flags_before_process_starts(tmp_path, monkeypatch):
+    app, box = _app(tmp_path, monkeypatch, running=False)
+    seen = []
+
+    class FakeProcess:
+        def __init__(self, root, args, **kw):
+            pass
+
+        def start(self):
+            seen.append((app._pause_requested, app._quit_when_paused))
+
+        def running(self):
+            return True
+
+    monkeypatch.setattr(tui, "RelayProcess", FakeProcess)
+    monkeypatch.setattr(app, "_launch_relay", tui.WhylineConsoleApp._launch_relay.__get__(app))
+    monkeypatch.setattr(app, "_refuse_in_home", lambda: False)
+    monkeypatch.setattr(app, "_relay_running", lambda: False)
+    monkeypatch.setattr(relay_ops, "live_run", lambda root: None)
+    monkeypatch.setattr(
+        relay_ops, "current_roles",
+        lambda root: dict(implementer="codex", tester="codex", reviewer="codex", backup=[]),
+    )
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        app._pause_requested = True
+        app._quit_when_paused = True
+        app._launch_relay(["resume"])
+        assert seen == [(False, False)]
+
+
+async def test_real_pending_request_still_shows_pausing(tmp_path, monkeypatch):
+    from .test_safe_pause import _visible
+
+    app, box = _app(tmp_path, monkeypatch, state="pausing")
+    _clock(app)
+    _states(monkeypatch, box)
+    async with app.run_test() as pilot:
+        await _open(app, pilot)
+        app._pause_requested = True
+        for _ in range(3):
+            app._pause_tick()
+        shown = _visible(app)
+        assert {"pausing", "pause-now", "pause-cancel"} <= shown and "pause" not in shown

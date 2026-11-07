@@ -112,6 +112,7 @@ _MODE_BUTTONS = {
     "assistant": ("assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check"),
     "workflows": ("workflows-library", "workflows-new", "workflows-runs"),
 }
+_PAUSE_FLAG_SECONDS = 10
 _PAUSE_BUTTONS = ("pause", "pausing", "pause-now", "pause-cancel")
 _SHARED_BUTTONS = ("see-files", "awake", "stop", "help", "copy", "settings")
 # Files shows the plan and the files an agent is changing; Agents and
@@ -2245,6 +2246,31 @@ class WhylineConsoleApp(App):
         except (NoMatches, IndexError):
             return
 
+    @property
+    def _pause_requested(self) -> bool:
+        """True only to bridge a click to the relay showing PAUSE."""
+        return getattr(self, "_pause_flag", False)
+
+    @_pause_requested.setter
+    def _pause_requested(self, value: bool) -> None:
+        self._pause_flag = bool(value)
+        self._pause_flag_seen = False
+        wall = getattr(self, "_wall", None)
+        self._pause_flag_since = wall() if value and wall else None
+
+    def _expire_pause_flag(self, kind: str) -> None:
+        """Drop the click flag once the relay's own request is gone, or when
+        it never showed within _PAUSE_FLAG_SECONDS."""
+        if not self._pause_requested:
+            return
+        if kind == "pausing":
+            self._pause_flag_seen = True
+        elif kind == "none":
+            since = getattr(self, "_pause_flag_since", None)
+            late = since is not None and (self._wall() - since).total_seconds() > _PAUSE_FLAG_SECONDS
+            if getattr(self, "_pause_flag_seen", False) or late:
+                self._pause_requested = False
+
     def _pause_info(self) -> tuple[str, Any]:
         """The relay's pause state name and details; ("none", None) when it
         cannot be read."""
@@ -2338,7 +2364,9 @@ class WhylineConsoleApp(App):
         if not running:
             self._pause_requested = False
         kind, info = self._pause_info()
-        pausing = running and (getattr(self, "_pause_requested", False) or kind == "pausing")
+        if running:
+            self._expire_pause_flag(kind)
+        pausing = running and (self._pause_requested or kind == "pausing")
         shown["pause"].display = running and not pausing
         for name in ("pausing", "pause-now", "pause-cancel"):
             shown[name].display = pausing
@@ -8074,6 +8102,8 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(
                 kind="error", text=f"A relay is already running here ({other})."))
             return
+        self._pause_requested = False
+        self._quit_when_paused = False
         self._relay = RelayProcess(
             self.session.root, args,
             on_line=lambda line: self.call_from_thread(self._relay_line, line),

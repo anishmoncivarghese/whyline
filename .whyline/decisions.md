@@ -37941,3 +37941,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e78681d0029f4d939d3861d18284bf43 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T09:09:08.388Z"} -->
+
+## 2026-11-07 — Pause click flag is a property stamping the set time; expires once the relay's request was seen then gone, or after 10s unseen; cleared in _launch_relay before RelayProcess
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CHF-2
+
+**Because:** one setter covers all six places that set the flag, and the single launch path covers Run/Resume/Continue/Resolve
+
+**Rejected:**
+
+- clear in each button handler — easy to miss one path
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 3419d22bdd904f1289633fcfd3ce21f8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T09:27:53.310Z"} -->
+
+## 2026-11-07 — Pass CHF-2 testing: Pausing shows only while relay has a pause request
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CHF-2
+
+**Because:** _pause_requested property stamps set time and expires after 10s or once request was seen then gone; _sync_pause_buttons reverts status line and buttons to Pause on the same tick; starting or resuming a relay clears both flags in _launch_relay before process starts; all test_pause_status tests and the full pytest suite passed cleanly
+
+**Files:** src/whyline/console/tui.py, tests/console/test_pause_status.py
+
+<!-- whyline-event: 8f5616b36cfe4f25a1f8854cd66166e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T09:44:03.810Z"} -->
+
+## 2026-11-07 — Approve CHF-2: pause flag expires after seen-then-gone or 10s, and launch clears both flags
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CHF-2
+
+**Because:** Diff matches the spec: property stamps set time, expire on pausing-then-none or 10s unseen, buttons and pause_info_now update on the same tick, launch clears pause and quit flags before RelayProcess. Tests cover each required case. Full pytest had one unrelated flake in test_paused_clean_tree_is_unchanged which mocks launch and passed in isolation.
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e60bd9efffad44bd96e170e45eca8d6a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T12:54:28.871Z"} -->
