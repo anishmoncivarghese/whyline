@@ -450,7 +450,7 @@ Global constraints:
   - Console: the Homebrew panel shows tap and formula fields, **Create tap**, **Draft formula**, **Push to tap**, the `brew tap <owner>/<name>` / `brew install <formula>` lines users will run, with **Copy**, and **Ask agent**.
   Tests: the sha256 from a fixture tarball, only the url and sha256 lines change, resources updated when brew exists and a warning when it doesn't, `done_check`, verify, create_tap argv, the draft is reviewed before push.
 
-- [ ] REL-18: Custom targets
+- [x] REL-18: Custom targets
   Create `src/whyline/release/targets/custom.py` and `tests/release/test_target_custom.py`; edit `src/whyline/console/release_screens.py` and its test only.
   - Ready item per entry: the first word of `run` (after `shlex.split`) is on PATH, or is a path that exists.
   - One irreversible step per entry, `custom:<name>`, running `run` with `shell=True` in root, with `WHYLINE_RELEASE_VERSION=<version>` and `WHYLINE_RELEASE_TAG=v<version>` in the environment. Lines stream to detail, and a failure shows the last 20 lines. Its `done_check` runs `verify` when set (exit 0 = done), otherwise false.
