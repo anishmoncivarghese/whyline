@@ -38075,3 +38075,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 618c38e35072493d89c446879e109e5f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T16:17:50.876Z"} -->
+
+## 2026-11-07 — PyPI target treats uv publish and twine upload as existing publishing workflows; release.yml uploads to an existing GitHub release instead of creating one
+
+**Actor:** claude
+**Role:** implementer
+**Task:** release-setup
+
+**Because:** whyline's release.yml uses uv publish, so Set up offered a second release-pypi.yml that PyPI would reject or that would race the first; the Release button creates the GitHub release right after tagging, so the workflow's own gh release create failed after PyPI had the upload
+
+**Rejected:**
+
+- switch release.yml to pypa/gh-action-pypi-publish — changes a working publish path just to match a detector
+- drop the workflow's Create Release step — manual tag-only releases would ship with no GitHub release
+
+**Files:** src/whyline/release/targets/pypi.py, .github/workflows/release.yml
+
+<!-- whyline-event: 8959e559e64147e3a77ea5fba746cdda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T16:33:07.674Z"} -->
