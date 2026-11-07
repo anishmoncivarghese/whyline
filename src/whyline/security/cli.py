@@ -32,6 +32,8 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     allow_p = sub.add_parser("allow", help="Allow one finding, by fingerprint")
     allow_p.add_argument("fingerprint")
     allow_p.add_argument("--reason", required=True, help="why this is safe")
+    audit_p = sub.add_parser("audit", help="Deep audit by your main agent (slow, uses many tokens)")
+    audit_p.add_argument("--agent", metavar="NAME", help="agent to use instead of the main agent")
     sub.add_parser("status", help="Settings, tools found, rules, last history scan")
     hook_p = sub.add_parser("hook", help="Check every commit with a pre-commit hook")
     hook_p.add_argument("hook_command", choices=("install", "uninstall", "status"))
@@ -51,7 +53,7 @@ def _settings_and_branch(root: Path):
 
 
 def run(args: argparse.Namespace) -> int:
-    handlers = {"scan": _scan, "allow": _allow, "status": _status, "hook": _hook}
+    handlers = {"scan": _scan, "allow": _allow, "status": _status, "hook": _hook, "audit": _audit}
     try:
         return handlers[args.security_command](args)
     except Exception as exc:  # noqa: BLE001 - config and allowlist errors print one line
@@ -150,6 +152,7 @@ def _json(report: scan.ScanReport) -> dict:
         "blocking": [as_dict(f) for f in d.blocking],
         "warnings": [as_dict(f) for f in d.warnings],
         "allowed": [as_dict(f) for f in d.allowed],
+        "audit_missing": report.audit_missing,
         "notes": report.notes,
     }
 
@@ -170,11 +173,35 @@ def _print(report: scan.ScanReport) -> None:
             print(f"      fingerprint {f.fingerprint}")
             if f.fix_hint and label != "allowed":
                 print(f"      {f.fix_hint}")
+    if report.audit_missing:
+        print(f"[BLOCK] Audit: {scan.AUDIT_MISSING_TEXT}")
     for note in report.notes:
         print(f"note: {note}")
     if report.cancelled:
         print("The scan was cancelled; results are partial.")
     print(f"Summary: {len(d.blocking)} blocking, {len(d.warnings)} warnings, {len(d.allowed)} allowed")
+
+
+AUDIT_NOTICE = ("The deep audit uses your main agent, may take a long time and many tokens, "
+                "and one run finds only part of what repeated runs do.")
+
+
+def _audit(args) -> int:
+    root = _root()
+    print(AUDIT_NOTICE, file=sys.stderr)
+    try:
+        report = scan.run_audit(root, agent=args.agent,
+                                on_progress=lambda m: print(m, file=sys.stderr))
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_ERROR
+    for f in scan.sort_audit_findings(report.findings):
+        print(f"[{f.rule}] {f.severity} {f.title} {_where(f)}".rstrip())
+        print(f"      fingerprint {f.fingerprint}")
+    print(report.summary)
+    if report.report_path:
+        print(f"Report: {report.report_path}")
+    return EXIT_OK if report.ok else EXIT_ERROR
 
 
 def _allow(args) -> int:

@@ -11,13 +11,14 @@ from __future__ import annotations
 import dataclasses
 import shutil
 import subprocess
+import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
-from whyline.security import contents, deps, external, lockfiles, secrets
+from whyline.security import audit, contents, deps, external, lockfiles, secrets
 from whyline.security import settings as st
 from whyline.security.findings import Finding
 from whyline.security.settings import Decision, SecuritySettings
@@ -34,10 +35,11 @@ class ScanReport:
     notes: list[str] = field(default_factory=list)
     error: str = ""
     cancelled: bool = False
+    audit_missing: bool = False
 
     @property
     def blocks(self) -> bool:
-        return bool(self.error) or bool(self.decision.blocking)
+        return bool(self.error) or bool(self.decision.blocking) or self.audit_missing
 
 
 def state_dir(root: Path) -> Path:
@@ -71,6 +73,7 @@ def run(
     cancel_event: threading.Event | None = None,
     branch: str = "main",
     now: Callable[[], datetime] = datetime.now,
+    audit_base: Path | None = None,
 ) -> ScanReport:
     if scope not in SCOPES:
         raise ValueError(f"scope must be one of {', '.join(SCOPES)}, not {scope!r}")
@@ -92,6 +95,8 @@ def run(
         exempt = _exempt(root)
         report.findings = found
         report.decision = st.decide(found, settings, exempt)
+        if scope in ("release", "all") and settings.audit != "off":
+            _gate_audit(root, settings, exempt, report, audit_base)
     except (secrets.ScanError, st.SettingsError) as exc:
         report.error = str(exc)
         return report
@@ -162,6 +167,140 @@ def _save_history(root: Path, settings: SecuritySettings, when: datetime, report
         report.notes.append(f"could not save the history scan date: {exc}")
 
 
+# --- the deep audit --------------------------------------------------------------
+
+AUDIT_MISSING_TEXT = "run a deep audit first"
+_HIGH = ("critical", "high")
+_VERDICT_ORDER = {"confirmed": 0, "needs_validation": 1}
+_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
+@dataclass(frozen=True)
+class AuditRun:
+    """One finished run folder: its verdict counts and whether it can be read."""
+    number: int
+    path: Path
+    findings: tuple[Finding, ...] = ()
+    rejected: int = 0
+    valid: bool = True
+    has_report: bool = False
+
+    def count(self, verdict: str) -> int:
+        return sum(1 for f in self.findings if f.rule == verdict)
+
+    @property
+    def report_path(self) -> Path:
+        return self.path / audit.REPORT_FILE
+
+
+def sort_audit_findings(findings) -> list[Finding]:
+    """By verdict (confirmed first), then severity (worst first)."""
+    return sorted(findings, key=lambda f: (_VERDICT_ORDER.get(f.rule, 2),
+                                           _SEVERITY_ORDER.get(f.severity, 4)))
+
+
+def audit_runs(root: Path | str, base: Path | None = None) -> list[AuditRun]:
+    """Past runs for this repository, newest first. Runs with no findings.json
+    (stopped or failed before writing it) are left out."""
+    parent = (base or audit.audits_root()) / Path(root).resolve().name
+    runs: list[AuditRun] = []
+    if not parent.is_dir():
+        return runs
+    for folder in parent.glob("run-*"):
+        suffix = folder.name[4:]
+        if not suffix.isdigit() or not (folder / audit.FINDINGS_FILE).is_file():
+            continue
+        found, rejected, errors = audit.parse_findings(folder)
+        runs.append(AuditRun(int(suffix), folder, tuple(found), rejected, not errors,
+                             (folder / audit.REPORT_FILE).is_file()))
+    return sorted(runs, key=lambda r: r.number, reverse=True)
+
+
+def latest_audit(root: Path | str, base: Path | None = None) -> AuditRun | None:
+    """The newest run that can be read, or None when there is none."""
+    return next((r for r in audit_runs(root, base) if r.valid), None)
+
+
+def _gate_audit(root: Path, settings: SecuritySettings, exempt: Callable[[Finding], bool],
+                report: ScanReport, base: Path | None) -> None:
+    """Add the latest audit's confirmed findings to the decision. `warn` makes
+    them warnings; `block-confirmed` blocks the critical and high ones and warns
+    on the rest. `needs_validation` findings never reach the gate."""
+    run_ = latest_audit(root, base)
+    if run_ is None:
+        if settings.audit == "block-confirmed":
+            report.audit_missing = True
+        return
+    confirmed = [f for f in run_.findings if f.rule == "confirmed"]
+    d = report.decision
+    blocking, warnings, allowed = list(d.blocking), list(d.warnings), list(d.allowed)
+    for f in confirmed:
+        if exempt(f):
+            allowed.append(f)
+        elif settings.audit == "block-confirmed" and f.severity in _HIGH:
+            blocking.append(f)
+        else:
+            warnings.append(f)
+    report.findings = [*report.findings, *confirmed]
+    report.decision = Decision(tuple(blocking), tuple(warnings), tuple(allowed))
+
+
+def main_agents(root: Path | str) -> list[str]:
+    """The relay's main agent (the implementer) followed by its backup chain."""
+    from whyline.console import relay_ops
+
+    root = Path(root)
+    chain: list[str] = []
+    for name in (relay_ops.current_roles(root).get("implementer"), *relay_ops.read_backup(root)):
+        if isinstance(name, str) and name and name not in chain:
+            chain.append(name)
+    return chain
+
+
+def _default_ask(agent: str, prompt: str, *, cwd: Path, cancel_event: threading.Event | None = None):
+    """Run one agent with the audit prompt. It may take as long as the relay's own
+    agent timeout allows, and it must be able to write into the output folder."""
+    from types import SimpleNamespace
+
+    from whyline.agents import runner as agent_runner
+    from whyline_relay import agents, chat, config
+
+    argv = chat.resolve_command(config.load(cwd), agent)
+    extra = {} if cancel_event is None else {"cancel_event": cancel_event}
+    code, raw, error = None, "", None
+    try:
+        with tempfile.TemporaryDirectory(prefix="whyline-audit-") as tmp:
+            result = agents.run(argv, prompt, cwd=cwd, log_path=Path(tmp) / "output.log",
+                                timeout_seconds=None, capture=True,
+                                echo=False, agent_name=agent, **extra)
+            code, raw = result.exit_code, result.output or ""
+    except Exception as caught:  # AgentCancelled, AgentMissing, OSError
+        error = caught
+    if error is None and code == 0:
+        return SimpleNamespace(ok=True, failure="", text=raw)
+    outcome, reason = agent_runner._classify(agent, code, raw, error)
+    failure = {"usage_limit": "limit", "login_needed": "auth"}.get(outcome, outcome or "error")
+    return SimpleNamespace(ok=False, failure=failure, text=reason)
+
+
+def run_audit(
+    root: Path | str,
+    *,
+    agent: str | None = None,
+    ask_agent: Callable[..., object] | None = None,
+    cancel_event: threading.Event | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    out_dir: Path | None = None,
+) -> audit.AuditReport:
+    """Run one deep audit; the Security screen and `whyline security audit` both
+    call this. `agent` picks one agent; otherwise the main agent and its backups."""
+    chain = [agent] if agent else main_agents(root)
+    if not chain:
+        raise ValueError("no agent is configured for the audit; pass --agent NAME")
+    return audit.run(root, agent=chain, ask_agent=ask_agent or _default_ask, out_dir=out_dir,
+                     cancel_event=cancel_event, on_progress=on_progress)
+
+
 # --- the Release Ready items ---------------------------------------------------
 
 _BLOCK_LABEL = (("secret", "secrets"), ("dependency", "dependencies"), ("contents", "contents"))
@@ -170,6 +309,8 @@ _BLOCK_LABEL = (("secret", "secrets"), ("dependency", "dependencies"), ("content
 def ready_text(report: ScanReport) -> tuple[bool, str]:
     if report.error:
         return False, f"security scan failed: {report.error}"
+    if report.audit_missing and not report.decision.blocking:
+        return False, AUDIT_MISSING_TEXT
     blocking = report.decision.blocking
     if blocking:
         parts = []

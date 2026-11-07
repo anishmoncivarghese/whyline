@@ -5,6 +5,7 @@ lookup are injected, so nothing here needs git, the network or an installed tool
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -12,7 +13,7 @@ from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static, TabbedContent, TabPane
 
 from whyline.release import config as release_config
 from whyline.security import external, scan
@@ -32,6 +33,8 @@ _ORDER = {name: i for i, name in enumerate(BADGES)}
 BLOCK_LEVELS = (("block", "block"), ("warn", "warn"), ("off", "off"))
 DEP_LEVELS = (("block", "block"), ("block-high", "block-high"), ("warn", "warn"), ("off", "off"))
 AUDIT_LEVELS = tuple((v, v) for v in st.AUDIT)
+AUDIT_NOTICE = ("The deep audit uses your main agent, may take a long time and many tokens, "
+                "and a single run finds only part of what repeated runs do.")
 
 
 # -- pure helpers ---------------------------------------------------------------
@@ -85,6 +88,24 @@ def report_text(findings) -> str:
     return "\n".join(lines) if lines else "No findings."
 
 
+def elapsed_text(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes}m {secs:02d}s" if minutes else f"{secs}s"
+
+
+def audit_finding_text(finding: Finding) -> str:
+    place = where(finding)
+    head = f"{finding.rule} {badge(finding)} {finding.title}"
+    return "\n".join([head, *([f"    {place}"] if place else [])])
+
+
+def audit_run_text(run_: scan.AuditRun) -> str:
+    if not run_.valid:
+        return f"Run {run_.number}: findings.json is invalid"
+    return (f"Run {run_.number}: {run_.count('confirmed')} confirmed, "
+            f"{run_.count('needs_validation')} need validation, {run_.rejected} rejected")
+
+
 def progress_text(done: int, total: int) -> str:
     return f"commits {done} of {total}" if total else f"commits {done}"
 
@@ -127,10 +148,12 @@ class SecurityScreen(ModalScreen):
     SecurityScreen { align: center middle; }
     #sec-box { width: 90%; max-width: 110; height: 90%; border: round $accent; background: $surface; padding: 1 2; }
     #sec-list { height: 1fr; }
+    #aud-list { height: 1fr; }
     .sec-row { height: auto; margin-bottom: 1; }
     .sec-row Static { width: 1fr; }
     .sec-row Button { margin-left: 1; }
-    #sec-allow, #sec-actions { height: auto; }
+    #sec-allow, #sec-actions, #aud-confirm, #aud-actions { height: auto; }
+    #sec-tabs { height: 1fr; }
     #sec-allow { border: round $primary; padding: 0 1; }
     .-hidden { display: none; }
     """
@@ -143,6 +166,9 @@ class SecurityScreen(ModalScreen):
         scan_run: Callable[..., scan.ScanReport] | None = None,
         open_file: Callable[[Path, int], str] | None = None,
         scan_on_open: bool = True,
+        audit_run: Callable[..., object] | None = None,
+        audit_base: Path | None = None,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
@@ -153,6 +179,14 @@ class SecurityScreen(ModalScreen):
         self._findings: list[Finding] = []
         self._allowing: Finding | None = None
         self._cancel: threading.Event | None = None
+        self._audit_run = audit_run or scan.run_audit
+        self._audit_base = audit_base
+        self._clock = clock or time.monotonic
+        self._audit_cancel: threading.Event | None = None
+        self._audit_started = 0.0
+        self._audit_progress = ""
+        self._audit_runs: list[scan.AuditRun] = []
+        self._audit_shown: scan.AuditRun | None = None
 
     @property
     def findings(self) -> list[Finding]:
@@ -167,14 +201,29 @@ class SecurityScreen(ModalScreen):
         with Vertical(id="sec-box"):
             yield Label("Security", id="sec-title")
             yield Static("", id="sec-status", markup=False)
-            with VerticalScroll(id="sec-list"):
-                pass
-            with Vertical(id="sec-allow", classes="-hidden"):
-                yield Static("", id="sec-allow-what", markup=False)
-                yield Input(placeholder="Why is this safe?", id="sec-reason")
-                with Horizontal():
-                    yield Button("Allow", id="sec-allow-ok", variant="warning")
-                    yield Button("Cancel", id="sec-allow-cancel")
+            with TabbedContent(id="sec-tabs"):
+                with TabPane("Findings", id="sec-tab-findings"):
+                    with VerticalScroll(id="sec-list"):
+                        pass
+                    with Vertical(id="sec-allow", classes="-hidden"):
+                        yield Static("", id="sec-allow-what", markup=False)
+                        yield Input(placeholder="Why is this safe?", id="sec-reason")
+                        with Horizontal():
+                            yield Button("Allow", id="sec-allow-ok", variant="warning")
+                            yield Button("Cancel", id="sec-allow-cancel")
+                with TabPane("Audit", id="sec-tab-audit"):
+                    yield Static("", id="aud-status", markup=False)
+                    with Vertical(id="aud-confirm", classes="-hidden"):
+                        yield Static(AUDIT_NOTICE, id="aud-notice", markup=False)
+                        with Horizontal():
+                            yield Button("Start audit", id="aud-start", variant="warning")
+                            yield Button("Cancel", id="aud-cancel")
+                    with Horizontal(id="aud-actions"):
+                        yield Button("Run deep audit", id="aud-run")
+                        yield Button("Stop", id="aud-stop", disabled=True)
+                        yield Button("Open report", id="aud-open", disabled=True)
+                    with VerticalScroll(id="aud-list"):
+                        pass
             with Horizontal(id="sec-actions"):
                 yield Button("Scan again", id="sec-rescan")
                 yield Button("Scan history", id="sec-history")
@@ -183,8 +232,128 @@ class SecurityScreen(ModalScreen):
                 yield Button("Close", id="sec-close")
 
     async def on_mount(self) -> None:
+        self.set_interval(1.0, self._tick_audit)
+        await self._refresh_audit()
         if self._scan_on_open:
             self._start_scan("release")
+
+    # -- the Audit tab --------------------------------------------------------
+
+    def _audit_say(self, text: str) -> None:
+        self.query_one("#aud-status", Static).update(text)
+
+    def _audit_running(self) -> bool:
+        return self._audit_cancel is not None
+
+    def _tick_audit(self) -> None:
+        if self._audit_running():
+            self._audit_say(self._audit_line())
+
+    def _audit_line(self) -> str:
+        spent = elapsed_text(self._clock() - self._audit_started)
+        return f"Auditing… {spent} elapsed. {self._audit_progress}".strip()
+
+    async def _refresh_audit(self, show: scan.AuditRun | None = None) -> None:
+        self._audit_runs = scan.audit_runs(self.root, self._audit_base)
+        self._audit_shown = show or next((r for r in self._audit_runs if r.valid), None)
+        shown = self._audit_shown
+        self.query_one("#aud-open", Button).disabled = not (shown and shown.has_report)
+        box = self.query_one("#aud-list", VerticalScroll)
+        await box.remove_children()
+        widgets: list = []
+        if shown is None:
+            widgets.append(Static("No audit has been run yet.", id="aud-empty"))
+        else:
+            widgets.append(Label(f"Run {shown.number}", classes="sec-group"))
+            rows = scan.sort_audit_findings(shown.findings)
+            widgets.extend(Static(audit_finding_text(f), markup=False, classes="aud-finding")
+                           for f in rows)
+            if not rows:
+                widgets.append(Static("No findings in this run.", classes="aud-finding"))
+        if self._audit_runs:
+            widgets.append(Label("Past runs", classes="sec-group"))
+        for r in self._audit_runs:
+            widgets.append(Horizontal(
+                Static(audit_run_text(r), markup=False, classes="aud-run-text"),
+                Button("Show", id=f"aud-show-{r.number}", disabled=not r.valid),
+                Button("Open report", id=f"aud-report-{r.number}", disabled=not r.has_report),
+                classes="sec-row"))
+        await box.mount_all(widgets)
+
+    def _start_audit(self) -> None:
+        self.query_one("#aud-confirm").add_class("-hidden")
+        self._audit_cancel = threading.Event()
+        self._audit_started = self._clock()
+        self._audit_progress = ""
+        self.query_one("#aud-run", Button).disabled = True
+        self.query_one("#aud-stop", Button).disabled = False
+        self._audit_say(self._audit_line())
+        cancel = self._audit_cancel
+        self.run_worker(lambda: self._audit_in_thread(cancel), thread=True, exclusive=True,
+                        group="sec-audit", name="security-audit")
+
+    def _audit_in_thread(self, cancel: threading.Event) -> None:
+        def on_progress(message: str) -> None:
+            self.app.call_from_thread(self._set_audit_progress, message)
+
+        extra = {"out_dir": self._audit_base} if self._audit_base else {}
+        try:
+            report = self._audit_run(self.root, cancel_event=cancel, on_progress=on_progress, **extra)
+            error = ""
+        except Exception as exc:  # noqa: BLE001 - shown instead of crashing the popup
+            report, error = None, str(exc)
+        self.app.call_from_thread(self._audit_done, report, error)
+
+    def _set_audit_progress(self, message: str) -> None:
+        self._audit_progress = message
+
+    async def _audit_done(self, report, error: str) -> None:
+        self._audit_cancel = None
+        self.query_one("#aud-run", Button).disabled = False
+        self.query_one("#aud-stop", Button).disabled = True
+        if error:
+            self._audit_say(f"The audit could not run: {error}")
+        elif getattr(report, "cancelled", False):
+            self._audit_say("The audit was stopped.")
+        else:
+            self._audit_say(getattr(report, "summary", "") or "The audit finished.")
+        await self._refresh_audit()
+
+    def _open_report(self, run_: scan.AuditRun | None) -> None:
+        if run_ is None or not run_.has_report:
+            self._audit_say("This run has no REPORT.md.")
+            return
+        message = self._open_file(run_.report_path, 0)
+        self._audit_say(f"Could not open the report: {message}" if message
+                        else f"Opened {run_.report_path}.")
+
+    async def _show_run(self, number: int) -> None:
+        run_ = next((r for r in self._audit_runs if r.number == number), None)
+        if run_ is not None and run_.valid:
+            await self._refresh_audit(run_)
+
+    def _audit_button(self, bid: str) -> None:
+        if bid == "aud-run":
+            if not self._audit_running():
+                self.query_one("#aud-confirm").remove_class("-hidden")
+        elif bid == "aud-cancel":
+            self.query_one("#aud-confirm").add_class("-hidden")
+        elif bid == "aud-start":
+            if not self._audit_running():
+                self._start_audit()
+        elif bid == "aud-stop":
+            if self._audit_cancel is not None:
+                self._audit_cancel.set()
+            self._audit_say("Stopping…")
+        elif bid == "aud-open":
+            self._open_report(self._audit_shown)
+        else:
+            kind, _, number = bid[len("aud-"):].partition("-")
+            if number.isdigit() and kind == "show":
+                self.call_later(self._show_run, int(number))
+            elif number.isdigit() and kind == "report":
+                self._open_report(next((r for r in self._audit_runs
+                                        if r.number == int(number)), None))
 
     # -- scans ----------------------------------------------------------------
 
@@ -263,7 +432,9 @@ class SecurityScreen(ModalScreen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         bid = event.button.id or ""
-        if bid == "sec-close":
+        if bid.startswith("aud-"):
+            self._audit_button(bid)
+        elif bid == "sec-close":
             self.action_close()
         elif bid == "sec-rescan":
             self._start_scan("release")
@@ -338,8 +509,9 @@ class SecurityScreen(ModalScreen):
         self.call_later(self._remove, finding)
 
     def action_close(self) -> None:
-        if self._cancel is not None:
-            self._cancel.set()
+        for event in (self._cancel, self._audit_cancel):
+            if event is not None:
+                event.set()
         self.dismiss(None)
 
 

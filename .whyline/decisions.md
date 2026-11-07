@@ -37321,3 +37321,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 66191d275a4d4622bd1da75c54d067b2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-06T23:29:48.671Z"} -->
+
+## 2026-11-06 — Audit gate severity logic lives in scan.py, not settings.decide
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-13
+
+**Because:** settings.py is outside this task's files and its existing test expects any audit finding to block; block-confirmed must block only critical/high confirmed findings, so scan._gate_audit builds the audit part of the Decision itself
+
+**Rejected:**
+
+- change settings._level — out of scope and breaks test_decide_per_setting
+
+**Files:** src/whyline/security/scan.py
+
+<!-- whyline-event: 99df301d4a4c4d57a7a623679f8bebbf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-06T23:37:43.987Z"} -->
+
+## 2026-11-07 — Approve SEC-13 deep audit in console and release gate after full test pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-13
+
+**Because:** The Audit tab notice, worker, elapsed time, Stop, run listings, report opener, CLI command, and release gate settings (warn, block-confirmed, needs_validation non-blocking, missing audit block) meet all specifications and pass all 4015 suite tests and 195 targeted tests
+
+**Files:** src/whyline/console/security_screens.py, src/whyline/security/scan.py, src/whyline/security/cli.py
+
+<!-- whyline-event: 4781a1d489084fa7beeb3ea3870cc0db -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T00:03:08.504Z"} -->
+
+## 2026-11-07 — Reject SEC-13: production audit cannot start; _default_ask omits required log_path
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-13
+
+**Because:** whyline_relay.agents.run requires log_path with no default; scan._default_ask does not pass it, so a real console or CLI audit raises TypeError; tests mock ask_agent and run_audit and never hit this path
+
+**Rejected:**
+
+- approve after tester pass — the 4015-test green run does not exercise _default_ask
+
+**Files:** src/whyline/security/scan.py
+
+<!-- whyline-event: b303027385724b338ad901592bfb958c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T00:12:15.505Z"} -->
+
+## 2026-11-07 — Audit ask path writes agent log to a temp dir outside the repo
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SEC-13
+
+**Because:** agents.run requires log_path; matches relaychat/ask.py and keeps logs out of the repo
+
+**Rejected:**
+
+- log inside the audit out_dir — would pollute the run folder the validator reads
+
+**Files:** src/whyline/security/scan.py
+
+<!-- whyline-event: d11e7c070bca429c9c1de63250ad2032 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T00:13:07.778Z"} -->
+
+## 2026-11-07 — Approve SEC-13: verified log_path in _default_ask and #aud-list CSS
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SEC-13
+
+**Because:** scan._default_ask supplies log_path in tempdir outside repo and forwards cancel_event, #aud-list CSS is set to 1fr, and all targeted and security suites pass
+
+**Files:** src/whyline/security/scan.py
+
+<!-- whyline-event: b1ee9cad35d34b018082c2645abaa8b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T00:29:28.204Z"} -->
+
+## 2026-11-07 — Approve SEC-13: audit tab, CLI, and release gate match the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SEC-13
+
+**Because:** Audit tab notice, worker elapsed time, Stop, verdict/severity listing, Open report, past runs, CLI whyline security audit, and gate warn/block-confirmed/needs_validation/missing-audit all match; _default_ask now passes log_path in a temp dir and forwards cancel_event; uv run pytest -q exited 0
+
+**Rejected:**
+
+- reject again for untested _default_ask — test_default_ask_supplies_log_path_and_forwards_cancel now checks agents.run kwargs
+
+**Files:** src/whyline/security/scan.py
+
+<!-- whyline-event: 89a7902ccf1144808e33379ff8742286 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T00:49:12.922Z"} -->
