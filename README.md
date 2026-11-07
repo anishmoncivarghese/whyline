@@ -84,8 +84,10 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   before the relay continues. Bugs in whyline itself go to the Idea Inbox, and
   **Check** gives a read-only health note on a running relay. See
   [docs/resolve.md](docs/resolve.md).
-- **Release** checks, versions, notes, tags and publishes for you, and can run
-  from a plan's release task or after a plan finishes. See
+- **Release** checks, versions, notes, tags and publishes for you to GitHub and,
+  if you tick them, PyPI, npm, Docker, Homebrew or your own command, and can
+  run from a plan's release task or after a plan finishes. Per-target setup,
+  how to check each by hand and a troubleshooting list are in
   [docs/release.md](docs/release.md).
 - **Security checks** run in the Release gate with nothing to install: secrets
   in the commits about to be pushed, vulnerable dependencies (only public

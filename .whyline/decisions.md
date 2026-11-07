@@ -37846,3 +37846,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9ebf84473b4a4ac9a83a789bf78e8653 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:48:59.494Z"} -->
+
+## 2026-11-07 — End-to-end test uses real git and a bare origin, fakes only gh/brew/docker/registries; second-run refusal asserted through release_ready.check
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-19
+
+**Because:** plan's ready step is skipped once the version is bumped, so the tag-exists refusal comes from ready.check, not a second engine run
+
+**Rejected:**
+
+- Fake git too — would not prove tag/push/resume behaviour
+- Assert refusal via a second engine.run — that run passes ready as already done
+
+**Files:** tests/release/test_end_to_end.py
+
+<!-- whyline-event: 72486d9396684c7d897d2300c472e3f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:52:51.077Z"} -->
+
+## 2026-11-07 — Pass REL-19 Round 2 end-to-end tests and release documentation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-19
+
+**Because:** tests/release/test_end_to_end.py covers full run, tag-exists refusal, PyPI-failure resume without repeating release/tag, and unticked target exclusion; docs/release.md covers all targets and step-failure troubleshooting; all 240 release tests passed
+
+**Rejected:**
+
+- Fail — all requirements in test_end_to_end.py, docs/release.md, and README.md are completely satisfied
+
+**Files:** tests/release/test_end_to_end.py
+
+<!-- whyline-event: be6c4fca209f4da48385092de4cd96e3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T08:10:56.750Z"} -->
+
+## 2026-11-07 — Approve REL-19 end-to-end tests and release documentation
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-19
+
+**Because:** tests/release/test_end_to_end.py runs plan.build and the engine on a temp repo with a bare origin and fakes for gh, fetch, brew and docker in auto mode, covering full completion, tag-exists refusal via ready.check, PyPI-wait resume with gh release create once, and unticked-target exclusion; docs/release.md has a section per target plus troubleshooting from step failures; README points at that page; uv run pytest tests/release passed 240 tests
+
+**Rejected:**
+
+- Request changes — no correctness, coverage, scope or safety defect in the REL-19 files; the one uv run pytest -q failure is tests/console/test_tui_relay_run.py, outside this task and already listed as failing on committed code
+
+**Files:** tests/release/test_end_to_end.py
+
+<!-- whyline-event: 58391c7f51a640e2818a29b2b7a6e002 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T08:30:11.964Z"} -->
