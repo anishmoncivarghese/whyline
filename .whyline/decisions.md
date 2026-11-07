@@ -37562,3 +37562,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 492c4a5837fc40929a405aff916a8197 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T03:33:18.341Z"} -->
+
+## 2026-11-07 — npm target reuses pypi.http_status/_owner_repo; template installs npm@latest on Node 24 for trusted publishing
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-15
+
+**Because:** Trusted publishing needs npm >= 11.5.1; Node LTS ships older npm. Docs fetch was denied in this headless run, so the first-publish rule and version floors come from prior knowledge
+
+**Rejected:**
+
+- Pinning npm@11.5.1 — goes stale and blocks newer fixes
+
+**Files:** src/whyline/release/targets/npm.py
+
+<!-- whyline-event: a6ad5274d689497ba359af6cc50e45a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T03:35:35.546Z"} -->
+
+## 2026-11-07 — Pass REL-15: npm target, trusted publishing workflow template, and console setup panel verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-15
+
+**Because:** Targeted tests (40 passed in 14.1s) and release test suite (211 passed in 19.1s) verify ready items (scoped names URL-encoded, private packages refused, 404 check), workflow template generation/reuse, wait for tag run and verify retry up to 5min, and console panel with Add workflow, Open npmjs.com, and Ask agent.
+
+**Files:** src/whyline/release/targets/npm.py
+
+<!-- whyline-event: 96600d4f82dd4abe967a2b12a8a4166f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T03:54:49.793Z"} -->
+
+## 2026-11-07 — Approve REL-15: npm target, trusted-publishing template, and console panel meet the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-15
+
+**Because:** Ready items, workflow discovery, tag wait, 5-minute verify, setup_status including the specified first-publish rule, and console Add workflow / Open npmjs.com / Ask agent match the task and the PyPI target. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request changes for checkout@v6 and package-manager-cache — false: the task pins the publish command and npm upgrade; the PyPI template stays on actions v4
+- Request changes for Allowed actions defaulting to stage-only — the task lists owner, repository, and workflow file name as the form values
+
+**Files:** src/whyline/release/targets/npm.py
+
+<!-- whyline-event: af925061110445cfbd15c2bb984d54c7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T04:13:57.772Z"} -->

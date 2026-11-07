@@ -258,9 +258,9 @@ async def test_other_targets_say_part_2(tmp_path):
     app = Host(_setup_screen(tmp_path))
     async with app.run_test() as pilot:
         await pilot.pause()
-        _q(app, "#rs-setup-npm", Button).press()
+        _q(app, "#rs-setup-docker", Button).press()
         await pilot.pause()
-        assert _text(app, "#rs-s-npm") == "Comes with release part 2"
+        assert _text(app, "#rs-s-docker") == "Comes with release part 2"
 
 
 async def test_closing_without_changes_does_not_ask(tmp_path):
@@ -499,4 +499,51 @@ async def test_pypi_open_and_ask(tmp_path):
         _q(app, "#rs-pypi-ask", Button).press()
         await _until(pilot, lambda: "pending publisher" in _text(app, "#rs-pypi-reply"))
     assert opened == ["https://pypi.org/manage/account/publishing/"]
+    assert "Owner: octo" in prompts[0] and "do not run commands" in prompts[0]
+
+
+def _npm_screen(tmp_path, status, opened=None, **kwargs):
+    (tmp_path / "package.json").write_text('{"name": "@octo/demo", "version": "1.0.0"}')
+    return _setup_screen(
+        tmp_path, gh_run=_gh_run([], origin="git@github.com:octo/demo.git"),
+        npm_get=lambda url: status,
+        open_url=(opened.append if opened is not None else (lambda url: None)), **kwargs)
+
+
+async def test_npm_panel_lists_values_and_adds_workflow(tmp_path):
+    app = Host(_npm_screen(tmp_path, 404))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-npm", Button).press()
+        await _until(pilot, lambda: "Owner" in _text(app, "#rs-npm-status"))
+        text = _text(app, "#rs-npm-status")
+        assert "Workflow: none yet" in text and "Package @octo/demo: not on npm yet" in text
+        assert "Owner: octo" in text and "Repository: demo" in text
+        assert "Workflow file name: release-npm.yml" in text and "npm login" in text
+        assert _shown(app, "#rs-npm-add") and _shown(app, "#rs-npm-open")
+        _q(app, "#rs-npm-add", Button).press()
+        await _until(pilot, lambda: not _shown(app, "#rs-npm-add"))
+        assert "Workflow: .github/workflows/release-npm.yml" in _text(app, "#rs-npm-status")
+    assert (tmp_path / ".github" / "workflows" / "release-npm.yml").is_file()
+
+
+async def test_npm_open_and_ask(tmp_path):
+    opened, prompts = [], []
+
+    def chat(root, *, agent, prompt):
+        prompts.append(prompt)
+        return SimpleNamespace(kind="output", text="Add the trusted publisher.")
+
+    app = Host(_npm_screen(tmp_path, 200, opened, chat_turn=chat, agent="claude"))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-npm", Button).press()
+        await _until(pilot, lambda: "Owner" in _text(app, "#rs-npm-status"))
+        assert "Package @octo/demo: on npm" in _text(app, "#rs-npm-status")
+        assert "npm login" not in _text(app, "#rs-npm-status")
+        _q(app, "#rs-npm-open", Button).press()
+        await pilot.pause()
+        _q(app, "#rs-npm-ask", Button).press()
+        await _until(pilot, lambda: "trusted publisher" in _text(app, "#rs-npm-reply"))
+    assert opened == ["https://www.npmjs.com/"]
     assert "Owner: octo" in prompts[0] and "do not run commands" in prompts[0]

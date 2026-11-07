@@ -24,6 +24,7 @@ from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import version as release_version
+from whyline.release.targets import npm as npm_target
 from whyline.release.targets import pypi as pypi_target
 from whyline.security import hook
 
@@ -92,7 +93,7 @@ class ReleaseScreen(ModalScreen):
     .rs-row Static { width: 1fr; padding: 1 1; }
     #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
     #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
-    #rs-pypi { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
+    #rs-pypi, #rs-npm { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
     #rs-gh-code { text-style: bold; text-align: center; border: heavy $accent; padding: 1 2; }
     #rs-confirm { height: auto; }
     """
@@ -112,6 +113,7 @@ class ReleaseScreen(ModalScreen):
         agent: str | None = None,
         security_screen: Callable[[], ModalScreen] | None = None,
         pypi_get: Callable[[str], int] | None = None,
+        npm_get: Callable[[str], int] | None = None,
         open_url: Callable[[str], object] | None = None,
     ) -> None:
         super().__init__()
@@ -119,6 +121,7 @@ class ReleaseScreen(ModalScreen):
         self._security_screen = security_screen
         self._gh_run = gh_run
         self._pypi = pypi_target.PyPITarget(get=pypi_get)
+        self._npm = npm_target.NpmTarget(get=npm_get)
         self._open_url = open_url
         self._gh_run_streaming = gh_run_streaming
         self._chat_turn = chat_turn
@@ -127,6 +130,7 @@ class ReleaseScreen(ModalScreen):
         self._gh_error = ""
         self._gh_repo = ""
         self._pypi_lines: list[str] = []
+        self._npm_lines: list[str] = []
         self._suggested = False
         self._saved_form: release_config.ReleaseConfig | None = None
         self._setup_base = release_config.ReleaseConfig()
@@ -287,6 +291,12 @@ class ReleaseScreen(ModalScreen):
             self._open_pypi()
         elif button_id == "rs-pypi-ask":
             self._start_ask("rs-pypi", self._pypi_ask_prompt())
+        elif button_id == "rs-npm-add":
+            self._add_npm_workflow()
+        elif button_id == "rs-npm-open":
+            self._open_npm()
+        elif button_id == "rs-npm-ask":
+            self._start_ask("rs-npm", self._npm_ask_prompt())
         elif button_id.startswith("rs-gh-prot-on-"):
             self._start_protection(button_id[len("rs-gh-prot-on-"):])
 
@@ -373,6 +383,13 @@ class ReleaseScreen(ModalScreen):
                 yield Button("Open pypi.org", id="rs-pypi-open")
                 yield Button("Ask agent", id="rs-pypi-ask")
                 yield Static("", id="rs-pypi-reply", markup=False)
+            with Vertical(id="rs-npm", classes="-hidden"):
+                yield Label("npm")
+                yield Static("", id="rs-npm-status", markup=False)
+                yield Button("Add workflow", id="rs-npm-add", classes="-hidden")
+                yield Button("Open npmjs.com", id="rs-npm-open")
+                yield Button("Ask agent", id="rs-npm-ask")
+                yield Static("", id="rs-npm-reply", markup=False)
             yield from security_screens.compose_security_setup(cfg.security)
             yield Static("", id="rs-status", markup=False)
             yield Button("Save", id="rs-save", variant="success")
@@ -462,6 +479,10 @@ class ReleaseScreen(ModalScreen):
         if key == "pypi":
             self.query_one("#rs-pypi", Vertical).remove_class("-hidden")
             self._refresh_pypi()
+            return
+        if key == "npm":
+            self.query_one("#rs-npm", Vertical).remove_class("-hidden")
+            self._refresh_npm()
             return
         if key != "github":
             self.query_one(f"#rs-s-{key}", Static).update(PART_2)
@@ -708,6 +729,53 @@ class ReleaseScreen(ModalScreen):
             opener(pypi_target.PUBLISHING_URL)
         except OSError as exc:
             self.query_one("#rs-pypi-reply", Static).update(f"Could not open the page: {exc}")
+
+    # -- set up: npm --------------------------------------------------------
+
+    def _npm_ask_prompt(self) -> str:
+        lines = "\n".join(self._npm_lines) or "npm status has not been checked yet."
+        return ("I am setting up npm releases with a trusted publisher for this project. "
+                f"Current status:\n{lines}\nExplain what to do next on npmjs.com in plain "
+                "words. Answer in text only: do not run commands and do not change files.")
+
+    def _refresh_npm(self) -> None:
+        self.query_one("#rs-npm-status", Static).update("Checking npm…")
+        self.run_worker(self._npm_in_thread, thread=True, exclusive=True,
+                        group="rs-npm-status", name="release-npm-status")
+
+    def _npm_in_thread(self) -> None:
+        try:
+            lines = self._npm.setup_status(self.root, self._config(),
+                                           **self._run_kwargs_or_default())
+        except Exception as exc:  # noqa: BLE001 - shown in the panel
+            self.app.call_from_thread(self._show_npm, [f"Could not check npm: {exc}"], False)
+            return
+        has_workflow = npm_target.workflow_path(self.root) is not None
+        self.app.call_from_thread(self._show_npm, lines, has_workflow)
+
+    def _show_npm(self, lines: list[str], has_workflow: bool) -> None:
+        self._npm_lines = lines
+        self.query_one("#rs-npm-status", Static).update("\n".join(lines))
+        self.query_one("#rs-npm-add", Button).set_class(has_workflow, "-hidden")
+        self.query_one("#rs-s-npm", Static).update(
+            "Workflow found" if has_workflow else "No workflow yet")
+
+    def _add_npm_workflow(self) -> None:
+        try:
+            path = npm_target.add_workflow(self.root)
+        except OSError as exc:
+            self.query_one("#rs-npm-reply", Static).update(f"Could not add the workflow: {exc}")
+            return
+        self.query_one("#rs-npm-reply", Static).update(
+            f"Added {path.relative_to(self.root).as_posix()}. Commit it with the release.")
+        self._refresh_npm()
+
+    def _open_npm(self) -> None:
+        opener = self._open_url or (lambda url: subprocess.run(["open", url], check=False))
+        try:
+            opener(npm_target.PUBLISHING_URL)
+        except OSError as exc:
+            self.query_one("#rs-npm-reply", Static).update(f"Could not open the page: {exc}")
 
     # -- steps --------------------------------------------------------------
 
