@@ -24,6 +24,7 @@ from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import version as release_version
+from whyline.release.targets import custom as custom_target  # noqa: F401 - registers it
 from whyline.release.targets import docker as docker_target
 from whyline.release.targets import homebrew as homebrew_target
 from whyline.release.targets import npm as npm_target
@@ -56,6 +57,11 @@ PRIVATE, PUBLIC = "private", "public"
 
 def _lines(text: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in text.splitlines() if line.strip())
+
+
+def _custom_text(entries) -> str:
+    return "\n".join(f"{e.name}: {e.run}" + (f"  (verify: {e.verify})" if e.verify else "")
+                     for e in entries) or "No custom targets yet."
 
 
 @dataclass(frozen=True)
@@ -95,7 +101,7 @@ class ReleaseScreen(ModalScreen):
     .rs-row Static { width: 1fr; padding: 1 1; }
     #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
     #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
-    #rs-pypi, #rs-npm, #rs-docker, #rs-brew { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
+    #rs-pypi, #rs-npm, #rs-docker, #rs-brew, #rs-custom { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
     #rs-gh-code { text-style: bold; text-align: center; border: heavy $accent; padding: 1 2; }
     #rs-confirm { height: auto; }
     """
@@ -245,6 +251,9 @@ class ReleaseScreen(ModalScreen):
     # -- events -------------------------------------------------------------
 
     def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "rs-custom-pick":
+            self._fill_custom(str(event.value) if isinstance(event.value, str) else "")
+            return
         if event.select.id == "release-kind":
             self.query_one("#release-custom", Input).display = event.value == CUSTOM
             self._invalidate()
@@ -337,6 +346,8 @@ class ReleaseScreen(ModalScreen):
                 self.app.copy_to_clipboard(self._brew_install)
         elif button_id == "rs-brew-ask":
             self._start_ask("rs-brew", self._brew_ask_prompt())
+        elif button_id in ("rs-custom-add", "rs-custom-edit", "rs-custom-remove"):
+            self._change_custom(button_id[len("rs-custom-"):])
         elif button_id.startswith("rs-gh-prot-on-"):
             self._start_protection(button_id[len("rs-gh-prot-on-"):])
 
@@ -469,6 +480,18 @@ class ReleaseScreen(ModalScreen):
                 yield Button("Copy", id="rs-brew-copy", classes="-hidden")
                 yield Button("Ask agent", id="rs-brew-ask")
                 yield Static("", id="rs-brew-reply", markup=False)
+            with Vertical(id="rs-custom", classes="-hidden"):
+                yield Label("Custom")
+                yield Static(_custom_text(cfg.targets.custom), id="rs-custom-list", markup=False)
+                yield Select([(e.name, e.name) for e in cfg.targets.custom],
+                             prompt="Choose an entry to edit or remove", id="rs-custom-pick")
+                yield Input(placeholder="Name", id="rs-custom-name")
+                yield Input(placeholder="Command to run", id="rs-custom-run")
+                yield Input(placeholder="Verify command (optional)", id="rs-custom-verify")
+                yield Button("Add", id="rs-custom-add")
+                yield Button("Edit", id="rs-custom-edit")
+                yield Button("Remove", id="rs-custom-remove")
+                yield Static("", id="rs-custom-msg", markup=False)
             yield from security_screens.compose_security_setup(cfg.security)
             yield Static("", id="rs-status", markup=False)
             yield Button("Save", id="rs-save", variant="success")
@@ -592,11 +615,80 @@ class ReleaseScreen(ModalScreen):
             self.query_one("#rs-brew", Vertical).remove_class("-hidden")
             self._refresh_brew()
             return
+        if key == CUSTOM:
+            self.query_one("#rs-custom", Vertical).remove_class("-hidden")
+            return
         if key != "github":
             self.query_one(f"#rs-s-{key}", Static).update(PART_2)
             return
         self.query_one("#rs-gh", Vertical).remove_class("-hidden")
         self._refresh_github()
+
+    # -- set up: Custom -----------------------------------------------------
+
+    def _custom_message(self, text: str) -> None:
+        self.query_one("#rs-custom-msg", Static).update(text)
+
+    def _fill_custom(self, name: str) -> None:
+        entry = next((e for e in self._setup_base.targets.custom if e.name == name), None)
+        if entry is None:
+            return
+        self.query_one("#rs-custom-name", Input).value = entry.name
+        self.query_one("#rs-custom-run", Input).value = entry.run
+        self.query_one("#rs-custom-verify", Input).value = entry.verify
+
+    def _change_custom(self, action: str) -> None:
+        """Add, Edit or Remove one entry and save the list at once. Only the list is
+        written; the rest of the form stays as the last save left it."""
+        entries = list(self._setup_base.targets.custom)
+        picked = self.query_one("#rs-custom-pick", Select).value
+        picked = picked if isinstance(picked, str) else ""
+        name = self.query_one("#rs-custom-name", Input).value.strip()
+        command = self.query_one("#rs-custom-run", Input).value.strip()
+        verify = self.query_one("#rs-custom-verify", Input).value.strip()
+        names = [e.name for e in entries]
+        if action != "add" and picked not in names:
+            self._custom_message("Choose an entry first.")
+            return
+        if action == "remove":
+            entries = [e for e in entries if e.name != picked]
+        else:
+            if not name or not command:
+                self._custom_message("Enter a name and a command.")
+                return
+            if name in names and (action == "add" or name != picked):
+                self._custom_message(f"There is already an entry called {name}.")
+                return
+            entry = release_config.CustomTarget(name, command, verify)
+            if action == "add":
+                entries.append(entry)
+            else:
+                entries = [entry if e.name == picked else e for e in entries]
+        base = self._setup_base
+        cfg = release_config.normalise(replace(
+            base, targets=replace(base.targets, custom=tuple(entries))))
+        try:
+            release_config.save(self.root, cfg)
+        except (OSError, release_config.ConfigError) as exc:
+            self._custom_message(f"Could not save: {exc}")
+            return
+        self._setup_base = self._cfg = cfg
+        if self._saved_form is not None:
+            self._saved_form = replace(self._saved_form, targets=replace(
+                self._saved_form.targets, custom=cfg.targets.custom,
+                github=cfg.targets.github))
+        for key, value in ((CUSTOM, bool(cfg.targets.custom)), ("github", cfg.targets.github)):
+            box = self.query_one(f"#rs-t-{key}", Checkbox)
+            if box.value != value and (value or key == CUSTOM):
+                box.value = value
+        self.query_one("#rs-custom-list", Static).update(_custom_text(cfg.targets.custom))
+        self.query_one("#rs-custom-pick", Select).set_options(
+            [(e.name, e.name) for e in cfg.targets.custom])
+        for field_id in ("name", "run", "verify"):
+            self.query_one(f"#rs-custom-{field_id}", Input).value = ""
+        self._custom_message({"add": "Added.", "edit": "Saved.", "remove": "Removed."}[action])
+        self._invalidate()
+        self._show_steps()
 
     # -- set up: GitHub -----------------------------------------------------
 

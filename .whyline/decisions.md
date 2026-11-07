@@ -37798,3 +37798,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 93d8a80a07824915b53fedb1cdfa8a1b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:09:59.316Z"} -->
+
+## 2026-11-07 — Custom target streams lines through an on_line hook on the target, not plan wiring
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-18
+
+**Because:** targets receive no on_progress from plan.build and plan.py is outside REL-18's files; the shell is injectable and env is passed, which github.shell_runner cannot do
+
+**Rejected:**
+
+- reuse github.shell_runner — it takes no env, so the version vars could not reach the command
+- edit plan.py to pass on_progress — outside task scope
+
+**Files:** src/whyline/release/targets/custom.py
+
+<!-- whyline-event: 846286a203bf48b5a19bcf6b9050aa6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:12:27.518Z"} -->
+
+## 2026-11-07 — Pass REL-18: Custom release targets and console editor verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-18
+
+**Because:** Full test suite (4119 passed, 1 skipped) and targeted tests (271 passed) verify ready item checks, irreversible execution with env vars and output streaming, verify checks and done_check, and console editor Add/Edit/Remove round-tripping through config.save
+
+**Files:** src/whyline/release/targets/custom.py
+
+<!-- whyline-event: e42d2bc5125c4d0fb4e10a5c397b09be -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:29:13.330Z"} -->
+
+## 2026-11-07 — Approve REL-18: custom targets, ready/verify/steps, and console editor
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-18
+
+**Because:** Custom target matches REL-18: PATH or existing-path ready items, irreversible custom:<name> steps with shell=True and version env vars, last-20-line failures, verify as done_check, missing verify counts as verified, console Add/Edit/Remove saves through config.save. Tests cover those paths. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request changes for production streaming to plan on_progress — plan.py is outside REL-18 files; on_line on the target is the wiring in scope
+
+**Files:** src/whyline/release/targets/custom.py
+
+<!-- whyline-event: 9ebf84473b4a4ac9a83a789bf78e8653 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:48:59.494Z"} -->

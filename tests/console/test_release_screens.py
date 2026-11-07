@@ -255,13 +255,15 @@ async def test_ticking_a_target_ticks_github_and_says_why(tmp_path):
     assert targets.github and targets.pypi
 
 
-async def test_other_targets_say_part_2(tmp_path):
+async def test_custom_set_up_opens_its_panel(tmp_path):
     app = Host(_setup_screen(tmp_path))
     async with app.run_test() as pilot:
         await pilot.pause()
+        assert not _shown(app, "#rs-custom")
         _q(app, "#rs-setup-custom", Button).press()
         await pilot.pause()
-        assert _text(app, "#rs-s-custom") == "Comes with release part 2"
+        assert _shown(app, "#rs-custom")
+        assert "No custom targets yet" in _text(app, "#rs-custom-list")
 
 
 async def test_closing_without_changes_does_not_ask(tmp_path):
@@ -716,3 +718,60 @@ async def test_homebrew_ask_agent(tmp_path):
         _q(app, "#rs-brew-ask", Button).press()
         await _until(pilot, lambda: "Create the tap" in _text(app, "#rs-brew-reply"))
     assert "do not run commands" in prompts[0]
+
+
+async def _custom_add(pilot, app, name, command, verify=""):
+    _q(app, "#rs-custom-name", Input).value = name
+    _q(app, "#rs-custom-run", Input).value = command
+    _q(app, "#rs-custom-verify", Input).value = verify
+    await pilot.pause()
+    _q(app, "#rs-custom-add", Button).press()
+    await pilot.pause()
+
+
+async def test_custom_editor_round_trips_through_config_save(tmp_path):
+    release_config.save(tmp_path, ReleaseConfig())
+    app = Host(_setup_screen(tmp_path))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-custom", Button).press()
+        await pilot.pause()
+        assert _shown(app, "#rs-custom")
+        await _custom_add(pilot, app, "ship", "./ship.sh", "./check.sh")
+        await _custom_add(pilot, app, "other", "echo hi")
+        assert release_config.load(tmp_path).targets.custom == (
+            release_config.CustomTarget("ship", "./ship.sh", "./check.sh"),
+            release_config.CustomTarget("other", "echo hi", ""))
+        assert "ship: ./ship.sh" in _text(app, "#rs-custom-list")
+        assert _q(app, "#rs-t-custom", Checkbox).value
+
+        _q(app, "#rs-custom-pick", Select).value = "ship"
+        await pilot.pause()
+        assert _q(app, "#rs-custom-run", Input).value == "./ship.sh"
+        _q(app, "#rs-custom-run", Input).value = "./publish.sh"
+        _q(app, "#rs-custom-verify", Input).value = ""
+        await pilot.pause()
+        _q(app, "#rs-custom-edit", Button).press()
+        await pilot.pause()
+        assert release_config.load(tmp_path).targets.custom[0] == (
+            release_config.CustomTarget("ship", "./publish.sh", ""))
+
+        _q(app, "#rs-custom-pick", Select).value = "other"
+        await pilot.pause()
+        _q(app, "#rs-custom-remove", Button).press()
+        await pilot.pause()
+    assert [e.name for e in release_config.load(tmp_path).targets.custom] == ["ship"]
+
+
+async def test_custom_editor_refuses_a_duplicate_name(tmp_path):
+    release_config.save(tmp_path, ReleaseConfig())
+    app = Host(_setup_screen(tmp_path))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-custom", Button).press()
+        await pilot.pause()
+        await _custom_add(pilot, app, "ship", "a")
+        await _custom_add(pilot, app, "ship", "b")
+        assert "already an entry called ship" in _text(app, "#rs-custom-msg")
+    assert release_config.load(tmp_path).targets.custom == (
+        release_config.CustomTarget("ship", "a", ""),)
