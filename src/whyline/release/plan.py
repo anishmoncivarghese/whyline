@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from whyline.release import github, notes
+from whyline.release import github, notes, targets
 from whyline.release import ready as release_ready
 from whyline.release import version as release_version
 from whyline.release.config import ReleaseConfig
@@ -81,6 +81,7 @@ def build(
     ask_agent: Callable[[str], str] | None = None,
     confirm_notes: Callable[[Path], bool] = lambda path: True,
     ready_check: Callable[[], list[release_ready.ReadyItem]] | None = None,
+    fetch: release_ready.Fetch = release_ready.default_fetch,
     telegram_target: TelegramTarget = assistant_telegram,
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.monotonic,
@@ -90,9 +91,12 @@ def build(
     root = Path(root)
     path = notes_file(root, cfg, version)
     detail = on_progress or (lambda text: None)
+    chosen = targets.enabled(cfg)
 
     def check_ready(cancel: threading.Event) -> None:
         items = ready_check() if ready_check else release_ready.check(root, cfg, version)
+        for target in chosen:
+            items = [*items, *target.ready_items(root, cfg, version, run=run, fetch=fetch)]
         bad = [i for i in items if not i.ok]
         if bad:
             raise StepError("Not ready: " + "; ".join(
@@ -118,6 +122,18 @@ def build(
             say(f"Release notes written to {written}")
             if not confirm_notes(written):
                 raise StepError("You stopped to edit the release notes; resume when ready")
+
+    def verify(cancel: threading.Event) -> None:
+        failed: list[str] = []
+        for target in chosen:
+            try:
+                good, text = target.verify(root, cfg, version, run=run, fetch=fetch)
+            except Exception as error:  # a broken check counts as a failed one
+                good, text = False, str(error) or type(error).__name__
+            if not good:
+                failed.append(f"{target.title}: {text}" if text else target.title)
+        if failed:
+            raise StepError("Verify failed for " + "; ".join(failed))
 
     def after(cancel: threading.Event) -> None:
         for command in cfg.after:
@@ -147,6 +163,10 @@ def build(
             notes_path=path, run=run, run_shell=run_shell, sleep=sleep, now=now,
             on_progress=detail,
         ),
+        *[step for target in chosen
+          for step in target.steps(root, cfg, version, run=run, fetch=fetch)],
+        *([Step("verify", "Verify the release", False, lambda: False, verify)]
+          if chosen else []),
         Step("after", "Run after steps", False, lambda: False, after),
     ]
     return Plan(version, steps)

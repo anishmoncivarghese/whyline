@@ -37475,3 +37475,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6e46345431a04dd1b4ff1b9af691fd97 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:15:48.318Z"} -->
+
+## 2026-11-07 — Targets register in REGISTRY and the verify step is only added when a target is enabled
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-13
+
+**Because:** keeps the no-target plan step order unchanged (test_plan_step_order); gh_json helper shared by CI and tag-run polling
+
+**Rejected:**
+
+- always add verify — changes existing plan and does nothing without targets
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: d78010ccd0fb44c980dc5413cd385cc2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:17:30.594Z"} -->
+
+## 2026-11-07 — REL-13 release target registry, workflow helpers, and plan hook pass verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-13
+
+**Because:** Target protocol and registry order (pypi, npm, docker, homebrew, custom) match spec; workflows find tag publishing files, reject overwrites, and poll tag runs with timeout/failure reporting; plan.build hooks ready items, target steps, and verify step properly; all 159 release tests pass
+
+**Files:** src/whyline/release/targets/__init__.py
+
+<!-- whyline-event: fd6b1bd944a84234b9df6ab171bcdc3a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:34:17.025Z"} -->
+
+## 2026-11-07 — Approve REL-13 target registry, workflow helpers, and plan hook
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-13
+
+**Because:** Target protocol, REGISTRY, and enabled order (pypi, npm, docker, homebrew, custom) match the spec; find_publishing ignores branch-only workflows, write_template refuses overwrite, and wait_for_tag_run polls with job name, URL, 45-minute resumable timeout, and cancel; plan.build inserts enabled target steps after github_release then a done_check-false verify step then after; tests cover the required cases; uv run pytest -q exited 0
+
+**Files:** src/whyline/release/targets/__init__.py
+
+<!-- whyline-event: 818fdb6e5f764dcab0f5c5b54ae0a039 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:54:02.603Z"} -->

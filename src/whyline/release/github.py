@@ -65,6 +65,18 @@ def _head(root: Path, run: Run) -> str:
     return _out(proc)
 
 
+def gh_json(root: Path, run: Run, args: list[str]) -> object:
+    """Run a `gh ... --json` command and return its parsed output."""
+    proc = run(["gh", *args], cwd=root)
+    name = " ".join(args[:2])
+    if not _ok(proc):
+        raise StepError(f"gh {name} failed: {_fail_text(proc)}")
+    try:
+        return json.loads(_out(proc) or "[]")
+    except ValueError as exc:
+        raise StepError(f"gh {name} gave unreadable output: {exc}") from exc
+
+
 def shell_runner(command: str, root: Path, on_line: Callable[[str], None]) -> tuple[int, list[str]]:
     proc = subprocess.Popen(
         command, shell=True, cwd=root, text=True, stdout=subprocess.PIPE,
@@ -165,17 +177,8 @@ def build_steps(
         while True:
             if cancel.is_set():
                 return False
-            proc = run(
-                ["gh", "run", "list", "--commit", sha, "--json",
-                 "name,status,conclusion,url"],
-                cwd=root,
-            )
-            if not _ok(proc):
-                raise StepError(f"gh run list failed: {_fail_text(proc)}")
-            try:
-                runs = json.loads(_out(proc) or "[]")
-            except ValueError as exc:
-                raise StepError(f"gh run list gave unreadable output: {exc}") from exc
+            runs = gh_json(root, run, ["run", "list", "--commit", sha, "--json",
+                                       "name,status,conclusion,url"])
             runs = [r for r in runs if r.get("name") not in ignored]
             for item in runs:
                 if item.get("status") == "completed" and item.get("conclusion") in _FAILED:
