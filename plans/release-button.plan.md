@@ -349,7 +349,7 @@ Global constraints:
   - The Release gate with `audit = "warn"` shows confirmed findings from the latest audit as warnings. With `block-confirmed`, confirmed high or critical ones block. `needs_validation` never blocks. With no audit run yet, `block-confirmed` gives a ✗ "run a deep audit first".
   Tests: the tab lists runs and verdicts, Stop, each gate setting, and needs_validation never blocking.
 
-- [ ] SEC-14: Docs
+- [x] SEC-14: Docs
   Create `docs/security.md`; edit `docs/release.md` and `README.md` only.
   - What each check looks at, what leaves the Mac (only public package names and versions, to OSV.dev), the settings and their defaults, Allow versus Ignore once, and Scan history with why a pushed key must be rotated.
   - Check every commit, GitHub protection, the deep audit's cost and limits, and the optional tools.
