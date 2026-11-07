@@ -259,9 +259,9 @@ async def test_other_targets_say_part_2(tmp_path):
     app = Host(_setup_screen(tmp_path))
     async with app.run_test() as pilot:
         await pilot.pause()
-        _q(app, "#rs-setup-homebrew", Button).press()
+        _q(app, "#rs-setup-custom", Button).press()
         await pilot.pause()
-        assert _text(app, "#rs-s-homebrew") == "Comes with release part 2"
+        assert _text(app, "#rs-s-custom") == "Comes with release part 2"
 
 
 async def test_closing_without_changes_does_not_ask(tmp_path):
@@ -643,3 +643,76 @@ async def test_docker_ask_agent(tmp_path):
         _q(app, "#rs-docker-ask", Button).press()
         await _until(pilot, lambda: "Draft a Dockerfile" in _text(app, "#rs-docker-reply"))
     assert "Dockerfile: none yet" in prompts[0] and "do not run commands" in prompts[0]
+
+
+def _brew_screen(tmp_path, calls, **kwargs):
+    def run(args, **kw):
+        calls.append(list(args))
+        if args[:3] == ["git", "remote", "get-url"]:
+            return _proc(0, "git@github.com:Octo/Demo.git")
+        if args[:2] == ["gh", "api"] and ".permissions.push" in args:
+            return _proc(0, "true")
+        if args[:2] == ["gh", "api"]:
+            return _proc(1, "", "Not Found")
+        if args[:3] == ["gh", "repo", "clone"]:
+            (Path(args[4]) / ".git").mkdir(parents=True)
+        return _proc(0)
+    return _setup_screen(tmp_path, gh_run=run, **kwargs)
+
+
+async def test_homebrew_panel_create_tap_and_install_lines(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n')
+    calls, copied = [], []
+    app = Host(_brew_screen(tmp_path, calls))
+    app.copy_to_clipboard = copied.append
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-homebrew", Button).press()
+        await _until(pilot, lambda: "brew tap Octo/tap" in _text(app, "#rs-brew-install"))
+        assert "brew install demo" in _text(app, "#rs-brew-install")
+        _q(app, "#rs-brew-copy", Button).press()
+        await pilot.pause()
+        _q(app, "#rs-brew-create", Button).press()
+        await _until(pilot, lambda: "Created" in _text(app, "#rs-brew-reply"))
+    assert ["gh", "repo", "create", "Octo/homebrew-tap", "--public"] in calls
+    assert copied == ["brew tap Octo/tap\nbrew install demo"]
+
+
+async def test_homebrew_draft_is_pushed_only_on_push_to_tap(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n')
+    calls, prompts = [], []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        return "class Demo < Formula\nend"
+
+    app = Host(_brew_screen(tmp_path, calls, homebrew_ask=ask))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-homebrew", Button).press()
+        await pilot.pause()
+        _q(app, "#rs-brew-draft", Button).press()
+        await _until(pilot, lambda: _shown(app, "#rs-brew-push"))
+        assert "class Demo" in _q(app, "#rs-brew-draft-view", TextArea).text
+        assert not any(c[:2] == ["git", "push"] for c in calls)
+        _q(app, "#rs-brew-push", Button).press()
+        await _until(pilot, lambda: "Pushed" in _text(app, "#rs-brew-reply"))
+    assert ["git", "push", "-u", "origin", "HEAD"] in calls and ["git", "add", "Formula/demo.rb"] in calls
+    assert "Language::Python::Virtualenv" in prompts[0]
+
+
+async def test_homebrew_ask_agent(tmp_path):
+    prompts = []
+
+    def chat(root, *, agent, prompt):
+        prompts.append(prompt)
+        return SimpleNamespace(kind="output", text="Create the tap first.")
+
+    app = Host(_brew_screen(tmp_path, [], chat_turn=chat, agent="claude"))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-homebrew", Button).press()
+        await _until(pilot, lambda: "Tap:" in _text(app, "#rs-brew-status"))
+        _q(app, "#rs-brew-ask", Button).press()
+        await _until(pilot, lambda: "Create the tap" in _text(app, "#rs-brew-reply"))
+    assert "do not run commands" in prompts[0]

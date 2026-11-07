@@ -37708,3 +37708,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3910ae3ebbbe426fa275f213bc050bbf -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T05:50:33.848Z"} -->
+
+## 2026-11-07 — Homebrew tarball download goes through an injectable download callable, not the git-fetch Fetch; brew-missing warning is surfaced via verify detail
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-17
+
+**Because:** Fetch is git fetch(root, branch) and cannot download a URL; Step.run has no detail channel, verify's note is shown
+
+**Rejected:**
+
+- reuse Fetch — wrong signature
+
+**Files:** src/whyline/release/targets/homebrew.py
+
+<!-- whyline-event: 3056cb3d844a45d7814e2aab61d058f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T05:54:34.354Z"} -->
+
+## 2026-11-07 — Pass REL-17: Homebrew target, draft formula, scratch clone management, and console panel verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-17
+
+**Because:** Targeted tests (54 passed) and full test suite (passed, exit 0, 1 skipped) confirm Homebrew target creation, scratch clone and pull reuse, ready checks, irreversible step bump (url/sha256 update, brew update-python-resources or warning), remote verify, agent draft formula review before push, and console panel controls (create tap, draft, copy install lines, ask agent)
+
+**Files:** src/whyline/release/targets/homebrew.py
+
+<!-- whyline-event: 4602a335f2554e5b859ece382a77bd89 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T06:11:01.561Z"} -->
+
+## 2026-11-07 — Request changes: first push to a new empty tap has no upstream
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-17
+
+**Because:** create_tap runs gh repo create --public with no README, so the scratch clone is empty and has no tracking branch; _commit_and_push then runs git push and the panel's Create tap then Push to tap path fails. Tests mock push as always succeeding.
+
+**Rejected:**
+
+- Approve — the documented first-time console path is broken
+
+**Files:** src/whyline/release/targets/homebrew.py
+
+<!-- whyline-event: e23ce060c675490b9643efab42fd4258 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T06:31:17.239Z"} -->
+
+## 2026-11-07 — Homebrew tap clone is reset to upstream (recreated if it has none) before reuse; push uses -u origin HEAD
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-17
+
+**Because:** A new empty tap has no tracking branch so plain git push fails, and a failed run leaves the scratch clone dirty or ahead
+
+**Rejected:**
+
+- Always recreate the clone — spec says refresh with git pull on reuse
+
+**Files:** src/whyline/release/targets/homebrew.py
+
+<!-- whyline-event: 9ed93c07f08e437394c193a214a5481a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T06:32:06.391Z"} -->
+
+## 2026-11-07 — Pass REL-17: git push -u origin HEAD and upstream clone reset handling verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-17
+
+**Because:** Targeted tests (56 passed) and full test suite (4105 passed, 1 skipped) confirm empty tap push upstream tracking, clone upstream reset/recreate handling, and the complete Homebrew target release flow
+
+**Files:** src/whyline/release/targets/homebrew.py
+
+<!-- whyline-event: 708c3e37a5084a9c9ffa99f0d4a10764 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T06:48:37.645Z"} -->
+
+## 2026-11-07 — Approve REL-17: Homebrew target with empty-tap push tracking
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-17
+
+**Because:** Tap defaults, public create_tap, scratch clone reset or recreate, ready checks, irreversible url/sha256 bump, brew resource update or warning, done_check, remote verify, draft-then-push, and the console panel match the spec. git push -u origin HEAD covers the first push to an empty tap. uv run pytest -q exited 0.
+
+**Files:** src/whyline/release/targets/homebrew.py
+
+<!-- whyline-event: 93d8a80a07824915b53fedb1cdfa8a1b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T07:09:59.316Z"} -->

@@ -25,6 +25,7 @@ from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import version as release_version
 from whyline.release.targets import docker as docker_target
+from whyline.release.targets import homebrew as homebrew_target
 from whyline.release.targets import npm as npm_target
 from whyline.release.targets import pypi as pypi_target
 from whyline.security import hook
@@ -94,7 +95,7 @@ class ReleaseScreen(ModalScreen):
     .rs-row Static { width: 1fr; padding: 1 1; }
     #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
     #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
-    #rs-pypi, #rs-npm, #rs-docker { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
+    #rs-pypi, #rs-npm, #rs-docker, #rs-brew { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
     #rs-gh-code { text-style: bold; text-align: center; border: heavy $accent; padding: 1 2; }
     #rs-confirm { height: auto; }
     """
@@ -117,6 +118,8 @@ class ReleaseScreen(ModalScreen):
         npm_get: Callable[[str], int] | None = None,
         docker_ask: Callable[[str], str] | None = None,
         docker_run: Callable[..., object] | None = None,
+        homebrew_ask: Callable[[str], str] | None = None,
+        homebrew_download: Callable[[str], bytes] | None = None,
         open_url: Callable[[str], object] | None = None,
     ) -> None:
         super().__init__()
@@ -128,6 +131,11 @@ class ReleaseScreen(ModalScreen):
         self._docker_ask = docker_ask
         self._docker_run = docker_run
         self._docker_draft = ""
+        self._homebrew_ask = homebrew_ask
+        self._homebrew = homebrew_target.HomebrewTarget(download=homebrew_download)
+        self._brew_draft = ""
+        self._brew_lines: list[str] = []
+        self._brew_install = ""
         self._open_url = open_url
         self._gh_run_streaming = gh_run_streaming
         self._chat_turn = chat_turn
@@ -316,6 +324,19 @@ class ReleaseScreen(ModalScreen):
             self._store_docker_secrets()
         elif button_id == "rs-docker-ask":
             self._start_ask("rs-docker", self._docker_ask_prompt())
+        elif button_id == "rs-brew-create":
+            self._create_tap()
+        elif button_id == "rs-brew-draft":
+            self._start_brew_draft()
+        elif button_id == "rs-brew-push":
+            self._push_brew_draft()
+        elif button_id == "rs-brew-discard":
+            self._discard_brew_draft()
+        elif button_id == "rs-brew-copy":
+            if self._brew_install:
+                self.app.copy_to_clipboard(self._brew_install)
+        elif button_id == "rs-brew-ask":
+            self._start_ask("rs-brew", self._brew_ask_prompt())
         elif button_id.startswith("rs-gh-prot-on-"):
             self._start_protection(button_id[len("rs-gh-prot-on-"):])
 
@@ -430,6 +451,24 @@ class ReleaseScreen(ModalScreen):
                 yield Button("Store as GitHub secrets", id="rs-docker-store")
                 yield Button("Ask agent", id="rs-docker-ask")
                 yield Static("", id="rs-docker-reply", markup=False)
+            brew = cfg.targets.homebrew_options
+            with Vertical(id="rs-brew", classes="-hidden"):
+                yield Label("Homebrew")
+                yield Static("", id="rs-brew-status", markup=False)
+                yield Input(brew.tap, placeholder="Tap (default: owner/homebrew-tap)",
+                            id="rs-brew-tap")
+                yield Input(brew.formula, placeholder="Formula (default: project name)",
+                            id="rs-brew-formula")
+                yield Static(homebrew_target.PUBLIC_NOTE, markup=False)
+                yield Button("Create tap", id="rs-brew-create")
+                yield Button("Draft formula", id="rs-brew-draft")
+                yield TextArea("", read_only=True, id="rs-brew-draft-view", classes="-hidden")
+                yield Button("Push to tap", id="rs-brew-push", classes="-hidden")
+                yield Button("Discard", id="rs-brew-discard", classes="-hidden")
+                yield Static("", id="rs-brew-install", markup=False)
+                yield Button("Copy", id="rs-brew-copy", classes="-hidden")
+                yield Button("Ask agent", id="rs-brew-ask")
+                yield Static("", id="rs-brew-reply", markup=False)
             yield from security_screens.compose_security_setup(cfg.security)
             yield Static("", id="rs-status", markup=False)
             yield Button("Save", id="rs-save", variant="success")
@@ -446,6 +485,7 @@ class ReleaseScreen(ModalScreen):
             github=box("github"), pypi=box("pypi"), npm=box("npm"),
             docker=box("docker"), homebrew=box("homebrew"),
             docker_options=self._docker_options(base.targets.docker_options),
+            homebrew_options=self._homebrew_options(base.targets.homebrew_options),
             custom=base.targets.custom if box(CUSTOM) else (),
         )
         return replace(
@@ -470,6 +510,15 @@ class ReleaseScreen(ModalScreen):
         except NoMatches:
             return base
         return release_config.DockerTarget(registries=regs or ("ghcr",), image=image)
+
+    def _homebrew_options(self, base: release_config.HomebrewTarget
+                          ) -> release_config.HomebrewTarget:
+        try:
+            tap = self.query_one("#rs-brew-tap", Input).value.strip()
+            formula = self.query_one("#rs-brew-formula", Input).value.strip()
+        except NoMatches:
+            return base
+        return release_config.HomebrewTarget(tap=tap, formula=formula)
 
     def _has_unsaved(self) -> bool:
         if self._saved_form is None:
@@ -538,6 +587,10 @@ class ReleaseScreen(ModalScreen):
         if key == "docker":
             self.query_one("#rs-docker", Vertical).remove_class("-hidden")
             self._refresh_docker()
+            return
+        if key == "homebrew":
+            self.query_one("#rs-brew", Vertical).remove_class("-hidden")
+            self._refresh_brew()
             return
         if key != "github":
             self.query_one(f"#rs-s-{key}", Static).update(PART_2)
@@ -934,6 +987,99 @@ class ReleaseScreen(ModalScreen):
             token.value = ""
         self._docker_reply("Stored DOCKERHUB_USERNAME and DOCKERHUB_TOKEN as GitHub secrets.")
         self._refresh_docker()
+
+    # -- set up: Homebrew ---------------------------------------------------
+
+    def _brew_ask_prompt(self) -> str:
+        lines = "\n".join(self._brew_lines) or "Homebrew status has not been checked yet."
+        return ("I am setting up Homebrew releases through a tap repository for this project. "
+                f"Current status:\n{lines}\nExplain what to do next in plain words. "
+                "Answer in text only: do not run commands and do not change files.")
+
+    def _brew_reply(self, text: str) -> None:
+        self.query_one("#rs-brew-reply", Static).update(text)
+
+    def _brew_names(self) -> tuple[str, str]:
+        cfg, run = self._collect(), self._run_kwargs_or_default()["run"]
+        return (homebrew_target.tap_repo(self.root, cfg, run),
+                homebrew_target.formula_name(self.root, cfg, run))
+
+    def _refresh_brew(self) -> None:
+        self.query_one("#rs-brew-status", Static).update("Checking Homebrew…")
+        cfg = self._collect()
+        self.run_worker(lambda: self._brew_in_thread(cfg), thread=True, exclusive=True,
+                        group="rs-brew-status", name="release-brew-status")
+
+    def _brew_in_thread(self, cfg: release_config.ReleaseConfig) -> None:
+        run = self._run_kwargs_or_default()["run"]
+        try:
+            lines = self._homebrew.setup_status(self.root, cfg, run=run)
+            install = "\n".join(homebrew_target.install_lines(self.root, cfg, run))
+        except Exception as exc:  # noqa: BLE001 - shown in the panel
+            self.app.call_from_thread(self._show_brew, [f"Could not check Homebrew: {exc}"], "")
+            return
+        self.app.call_from_thread(self._show_brew, lines, install)
+
+    def _show_brew(self, lines: list[str], install: str) -> None:
+        self._brew_lines, self._brew_install = lines, install
+        self.query_one("#rs-brew-status", Static).update("\n".join(lines))
+        self.query_one("#rs-brew-install", Static).update(
+            f"Users will run:\n{install}" if install else "")
+        self.query_one("#rs-brew-copy", Button).set_class(not install, "-hidden")
+        self.query_one("#rs-s-homebrew", Static).update(
+            "Tap found" if any("(found)" in line for line in lines) else "No tap yet")
+
+    def _create_tap(self) -> None:
+        repo, _ = self._brew_names()
+        owner, _, name = repo.partition("/")
+        run = self._run_kwargs_or_default()["run"]
+        try:
+            made = homebrew_target.create_tap(owner, name, run=run)
+        except Exception as exc:  # noqa: BLE001
+            self._brew_reply(str(exc))
+            return
+        self._brew_reply(f"Created {made} (public).")
+        self._refresh_brew()
+
+    def _start_brew_draft(self) -> None:
+        self.query_one("#rs-brew-draft", Button).disabled = True
+        self._brew_reply("Drafting a formula…")
+        self.run_worker(self._brew_draft_in_thread, thread=True, exclusive=True,
+                        group="rs-brew-draft", name="release-brew-draft")
+
+    def _brew_draft_in_thread(self) -> None:
+        try:
+            ask = self._homebrew_ask or release_plan.default_ask_agent(self.root)
+            _, formula = self._brew_names()
+            text = homebrew_target.draft_formula(self.root, ask_agent=ask, formula=formula)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._show_brew_draft, "", f"Could not draft: {exc}")
+            return
+        self.app.call_from_thread(self._show_brew_draft, text, "")
+
+    def _show_brew_draft(self, text: str, error: str) -> None:
+        self.query_one("#rs-brew-draft", Button).disabled = False
+        self._brew_draft = text
+        self.query_one("#rs-brew-draft-view", TextArea).load_text(text)
+        for widget in ("#rs-brew-draft-view", "#rs-brew-push", "#rs-brew-discard"):
+            self.query_one(widget).set_class(not text, "-hidden")
+        self._brew_reply(error or "Review the draft, then push it to the tap or discard it.")
+
+    def _push_brew_draft(self) -> None:
+        repo, formula = self._brew_names()
+        run = self._run_kwargs_or_default()["run"]
+        try:
+            homebrew_target.push_draft(self.root, repo, formula, self._brew_draft, run=run)
+        except Exception as exc:  # noqa: BLE001
+            self._brew_reply(str(exc))
+            return
+        self._show_brew_draft("", "")
+        self._brew_reply(f"Pushed Formula/{formula}.rb to {repo}.")
+        self._refresh_brew()
+
+    def _discard_brew_draft(self) -> None:
+        self._show_brew_draft("", "")
+        self._brew_reply("Draft discarded.")
 
     # -- steps --------------------------------------------------------------
 
