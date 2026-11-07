@@ -134,6 +134,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # whyline's Release button creates the Release right after it pushes the
+          # tag, long before this job gets here. Attach the files to that one
+          # instead of failing on "already exists" after PyPI has the upload.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.whl dist/*.tar.gz --clobber
+            exit 0
+          fi
           NOTES="docs/releases/${GITHUB_REF_NAME}.md"
           if [ -f "$NOTES" ]; then
             gh release create "$GITHUB_REF_NAME" \

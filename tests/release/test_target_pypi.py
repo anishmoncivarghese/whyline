@@ -1,5 +1,6 @@
 import json
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -85,6 +86,30 @@ def test_reuses_existing_publishing_workflow(tmp_path):
         tmp_path, CFG, run=lambda *a, **k: SimpleNamespace(returncode=1, stdout=""))
     assert "Workflow: .github/workflows/publish.yml" in status
     assert "  Workflow file name: publish.yml" in status
+
+
+@pytest.mark.parametrize("publish", [
+    "      - run: uv publish --trusted-publishing always\n",
+    "      - run: twine upload dist/*\n",
+])
+def test_recognises_uv_publish_and_twine_workflows(tmp_path, publish):
+    project(tmp_path)
+    existing = workflow(tmp_path, "release.yml", TAGGED.split("      - uses:")[0] + publish)
+    assert pypi.workflow_path(tmp_path) == existing
+    items = {item.key: item for item in pypi.PyPITarget(get=getter(404)).ready_items(
+        tmp_path, CFG, "1.2.3", run=None, fetch=None)}
+    assert items["pypi-workflow"].ok
+
+
+def test_a_uv_publish_workflow_without_a_tag_trigger_is_not_used(tmp_path):
+    workflow(tmp_path, "ci.yml", "on:\n  push:\n    branches: [main]\njobs:\n  x:\n"
+             "    steps:\n      - run: uv publish\n")
+    assert pypi.workflow_path(tmp_path) is None
+
+
+def test_whylines_own_release_workflow_is_recognised():
+    root = Path(__file__).resolve().parents[2]
+    assert pypi.workflow_path(root) == root / ".github" / "workflows" / "release.yml"
 
 
 def test_add_workflow_writes_template_once_and_marks_pending(tmp_path):

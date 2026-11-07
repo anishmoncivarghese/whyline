@@ -44,8 +44,10 @@ def _runs_on_tags(text: str) -> bool:
     return False
 
 
-def find_publishing(root: Path | str, needle: str) -> Path | None:
-    """The first workflow that mentions `needle` and runs when a tag is pushed."""
+def find_publishing(root: Path | str, needle: str | tuple[str, ...]) -> Path | None:
+    """The first workflow that mentions `needle` (or any of several) and runs when a
+    tag is pushed."""
+    needles = (needle,) if isinstance(needle, str) else needle
     folder = Path(root) / ".github" / "workflows"
     if not folder.is_dir():
         return None
@@ -54,7 +56,7 @@ def find_publishing(root: Path | str, needle: str) -> Path | None:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if needle in text and _runs_on_tags(text):
+        if any(item in text for item in needles) and _runs_on_tags(text):
             return path
     return None
 

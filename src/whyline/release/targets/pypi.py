@@ -19,7 +19,9 @@ from whyline.release.github import POLL_SECONDS, StepError
 from whyline.release.ready import Fetch, ReadyItem, Run
 
 KEY = "pypi"
-NEEDLE = "pypa/gh-action-pypi-publish"
+# Any of these in a tag-triggered workflow means it already publishes to PyPI, so
+# Set up offers no second workflow (two would race to upload the same version).
+NEEDLE = ("pypa/gh-action-pypi-publish", "uv publish", "twine upload")
 TEMPLATE_NAME = "release-pypi.yml"
 ENVIRONMENT = "pypi"
 PUBLISHING_URL = "https://pypi.org/manage/account/publishing/"

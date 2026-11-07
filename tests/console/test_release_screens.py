@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from textual.app import App
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Checkbox, Input, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, Input, Select, Static, TabbedContent, TextArea
 
 from whyline.console import tui
 from whyline.console.release_screens import ReleaseChoice, ReleaseScreen, next_versions
@@ -775,3 +775,22 @@ async def test_custom_editor_refuses_a_duplicate_name(tmp_path):
         assert "already an entry called ship" in _text(app, "#rs-custom-msg")
     assert release_config.load(tmp_path).targets.custom == (
         release_config.CustomTarget("ship", "a", ""),)
+
+
+@pytest.mark.parametrize("size", [(120, 40), (80, 24)])
+async def test_close_and_start_stay_on_screen_on_the_set_up_tab(tmp_path, size):
+    """The Set up form is taller than the window; it scrolls, and the action row
+    (Check, Security…, Start, Close) stays visible below it."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "1"\n')
+    app = Host(_setup_screen(tmp_path))
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        app.screen.query_one(TabbedContent).active = "setup-tab"
+        await pilot.pause()
+        screen = app.screen.region
+        for button_id in ("#release-close", "#release-start", "#release-check"):
+            region = _q(app, button_id, Button).region
+            assert region.height > 0, button_id
+            assert screen.contains_region(region), (button_id, region, screen)
+        box = _q(app, "#release-box", Vertical).region
+        assert box.contains_region(_q(app, "#release-close", Button).region)

@@ -93,7 +93,10 @@ class ReleaseScreen(ModalScreen):
     DEFAULT_CSS = """
     ReleaseScreen { align: center middle; }
     #release-box { width: 90%; max-width: 100; height: 90%; border: round $accent; background: $surface; padding: 1 2; }
-    #release-body { height: 1fr; }
+    /* The tabs take the room left above the action row and scroll inside it, so
+       Check, Start and Close never fall below the box on a tall Set up form. */
+    #release-box TabbedContent, #release-box ContentSwitcher, #release-box TabPane { height: 1fr; }
+    #release-body, #rs-body { height: 1fr; }
     #release-custom { display: none; }
     #release-actions { height: auto; }
     .-hidden { display: none; }
