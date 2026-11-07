@@ -508,7 +508,7 @@ On 2026-11-06 the console also showed "⏸ Pausing — letting antigravity finis
   - Resume after a pause clears both flags before the process starts (fake process)
   - a real pending request (`pause_state` `pausing`) still shows Pausing with Pause now and Keep going
 
-- [ ] CHF-3: The button bar wraps into packed rows, not a wide 6-column grid
+- [x] CHF-3: The button bar wraps into packed rows, not a wide 6-column grid
   Edit `src/whyline/console/tui.py`, with tests in `tests/console/test_awake.py` and a new `tests/console/test_controls_rows.py`.
   1. `_fit_controls` keeps one row when the visible buttons fit. Otherwise it picks the fewest rows (2, then 3, …) where every row fits the bar's width, using the same width estimate as today (`max(6, len(label) + 2)` per button), with columns = ceil(visible / rows) and each grid column as wide as its widest button.
   2. It sets that on `#controls` as `styles.grid_size_columns` with `grid-columns: auto` in `#controls.wrap`, so no cell is wider than its button. Buttons keep their order, left to right then top to bottom.
