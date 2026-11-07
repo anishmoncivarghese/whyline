@@ -5,6 +5,7 @@ planned steps, and Start. Starting is handed to an injected `start_release`
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -23,6 +24,7 @@ from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import version as release_version
+from whyline.release.targets import pypi as pypi_target
 from whyline.security import hook
 
 CUSTOM = "custom"
@@ -90,6 +92,7 @@ class ReleaseScreen(ModalScreen):
     .rs-row Static { width: 1fr; padding: 1 1; }
     #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
     #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
+    #rs-pypi { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
     #rs-gh-code { text-style: bold; text-align: center; border: heavy $accent; padding: 1 2; }
     #rs-confirm { height: auto; }
     """
@@ -108,17 +111,22 @@ class ReleaseScreen(ModalScreen):
         chat_turn: Callable[..., object] | None = None,
         agent: str | None = None,
         security_screen: Callable[[], ModalScreen] | None = None,
+        pypi_get: Callable[[str], int] | None = None,
+        open_url: Callable[[str], object] | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
         self._security_screen = security_screen
         self._gh_run = gh_run
+        self._pypi = pypi_target.PyPITarget(get=pypi_get)
+        self._open_url = open_url
         self._gh_run_streaming = gh_run_streaming
         self._chat_turn = chat_turn
         self._agent = agent
         self._gh_status: setup_github.GitHubStatus | None = None
         self._gh_error = ""
         self._gh_repo = ""
+        self._pypi_lines: list[str] = []
         self._suggested = False
         self._saved_form: release_config.ReleaseConfig | None = None
         self._setup_base = release_config.ReleaseConfig()
@@ -273,6 +281,12 @@ class ReleaseScreen(ModalScreen):
             self._set_status("Copied.")
         elif button_id == "rs-gh-ask":
             self._start_ask()
+        elif button_id == "rs-pypi-add":
+            self._add_pypi_workflow()
+        elif button_id == "rs-pypi-open":
+            self._open_pypi()
+        elif button_id == "rs-pypi-ask":
+            self._start_ask("rs-pypi", self._pypi_ask_prompt())
         elif button_id.startswith("rs-gh-prot-on-"):
             self._start_protection(button_id[len("rs-gh-prot-on-"):])
 
@@ -352,6 +366,13 @@ class ReleaseScreen(ModalScreen):
                     yield Static("", id="rs-gh-prot-msg", markup=False)
                 yield Button("Ask agent", id="rs-gh-ask")
                 yield Static("", id="rs-gh-reply", markup=False)
+            with Vertical(id="rs-pypi", classes="-hidden"):
+                yield Label("PyPI")
+                yield Static("", id="rs-pypi-status", markup=False)
+                yield Button("Add workflow", id="rs-pypi-add", classes="-hidden")
+                yield Button("Open pypi.org", id="rs-pypi-open")
+                yield Button("Ask agent", id="rs-pypi-ask")
+                yield Static("", id="rs-pypi-reply", markup=False)
             yield from security_screens.compose_security_setup(cfg.security)
             yield Static("", id="rs-status", markup=False)
             yield Button("Save", id="rs-save", variant="success")
@@ -438,6 +459,10 @@ class ReleaseScreen(ModalScreen):
         return True
 
     def _setup_target(self, key: str) -> None:
+        if key == "pypi":
+            self.query_one("#rs-pypi", Vertical).remove_class("-hidden")
+            self._refresh_pypi()
+            return
         if key != "github":
             self.query_one(f"#rs-s-{key}", Static).update(PART_2)
             return
@@ -607,14 +632,14 @@ class ReleaseScreen(ModalScreen):
                 "Explain what to do next in plain words. Answer in text only: do not run "
                 "commands and do not change files.")
 
-    def _start_ask(self) -> None:
-        self.query_one("#rs-gh-ask", Button).disabled = True
-        self.query_one("#rs-gh-reply", Static).update("Asking…")
-        prompt = self._ask_prompt()
-        self.run_worker(lambda: self._ask_in_thread(prompt), thread=True, exclusive=True,
-                        group="rs-gh-ask", name="release-gh-ask")
+    def _start_ask(self, prefix: str = "rs-gh", prompt: str | None = None) -> None:
+        self.query_one(f"#{prefix}-ask", Button).disabled = True
+        self.query_one(f"#{prefix}-reply", Static).update("Asking…")
+        prompt = self._ask_prompt() if prompt is None else prompt
+        self.run_worker(lambda: self._ask_in_thread(prompt, prefix), thread=True,
+                        exclusive=True, group=f"{prefix}-ask", name=f"release-{prefix}-ask")
 
-    def _ask_in_thread(self, prompt: str) -> None:
+    def _ask_in_thread(self, prompt: str, prefix: str = "rs-gh") -> None:
         try:
             turn = self._chat_turn
             if turn is None:
@@ -628,11 +653,61 @@ class ReleaseScreen(ModalScreen):
             text = str(getattr(event, "text", event))
         except Exception as exc:  # noqa: BLE001
             text = f"Could not ask the agent: {exc}"
-        self.app.call_from_thread(self._show_reply, text)
+        self.app.call_from_thread(self._show_reply, text, prefix)
 
-    def _show_reply(self, text: str) -> None:
-        self.query_one("#rs-gh-ask", Button).disabled = False
-        self.query_one("#rs-gh-reply", Static).update(text)
+    def _show_reply(self, text: str, prefix: str = "rs-gh") -> None:
+        self.query_one(f"#{prefix}-ask", Button).disabled = False
+        self.query_one(f"#{prefix}-reply", Static).update(text)
+
+    # -- set up: PyPI -------------------------------------------------------
+
+    def _pypi_ask_prompt(self) -> str:
+        lines = "\n".join(self._pypi_lines) or "PyPI status has not been checked yet."
+        return ("I am setting up PyPI releases with a trusted publisher for this project. "
+                f"Current status:\n{lines}\nExplain what to do next on pypi.org in plain "
+                "words. Answer in text only: do not run commands and do not change files.")
+
+    def _refresh_pypi(self) -> None:
+        self.query_one("#rs-pypi-status", Static).update("Checking PyPI…")
+        self.run_worker(self._pypi_in_thread, thread=True, exclusive=True,
+                        group="rs-pypi-status", name="release-pypi-status")
+
+    def _pypi_in_thread(self) -> None:
+        try:
+            lines = self._pypi.setup_status(self.root, self._config(),
+                                            **self._run_kwargs_or_default())
+        except Exception as exc:  # noqa: BLE001 - shown in the panel
+            self.app.call_from_thread(self._show_pypi, [f"Could not check PyPI: {exc}"], False)
+            return
+        has_workflow = pypi_target.workflow_path(self.root) is not None
+        self.app.call_from_thread(self._show_pypi, lines, has_workflow)
+
+    def _run_kwargs_or_default(self) -> dict:
+        return {"run": self._gh_run or release_ready.default_run}
+
+    def _show_pypi(self, lines: list[str], has_workflow: bool) -> None:
+        self._pypi_lines = lines
+        self.query_one("#rs-pypi-status", Static).update("\n".join(lines))
+        self.query_one("#rs-pypi-add", Button).set_class(has_workflow, "-hidden")
+        self.query_one("#rs-s-pypi", Static).update(
+            "Workflow found" if has_workflow else "No workflow yet")
+
+    def _add_pypi_workflow(self) -> None:
+        try:
+            path = pypi_target.add_workflow(self.root)
+        except OSError as exc:
+            self.query_one("#rs-pypi-reply", Static).update(f"Could not add the workflow: {exc}")
+            return
+        self.query_one("#rs-pypi-reply", Static).update(
+            f"Added {path.relative_to(self.root).as_posix()}. Commit it with the release.")
+        self._refresh_pypi()
+
+    def _open_pypi(self) -> None:
+        opener = self._open_url or (lambda url: subprocess.run(["open", url], check=False))
+        try:
+            opener(pypi_target.PUBLISHING_URL)
+        except OSError as exc:
+            self.query_one("#rs-pypi-reply", Static).update(f"Could not open the page: {exc}")
 
     # -- steps --------------------------------------------------------------
 

@@ -258,9 +258,9 @@ async def test_other_targets_say_part_2(tmp_path):
     app = Host(_setup_screen(tmp_path))
     async with app.run_test() as pilot:
         await pilot.pause()
-        _q(app, "#rs-setup-pypi", Button).press()
+        _q(app, "#rs-setup-npm", Button).press()
         await pilot.pause()
-        assert _text(app, "#rs-s-pypi") == "Comes with release part 2"
+        assert _text(app, "#rs-s-npm") == "Comes with release part 2"
 
 
 async def test_closing_without_changes_does_not_ask(tmp_path):
@@ -447,3 +447,56 @@ async def test_protection_rows_and_turn_on(tmp_path):
         await _until(pilot, lambda: "Secret scanning: on" in
                      _text(app, "#rs-gh-prot-secret_scanning"))
     assert calls[-1][-1] == "security_and_analysis[secret_scanning][status]=enabled"
+
+
+def _pypi_screen(tmp_path, statuses, opened=None, **kwargs):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "1.0.0"\n')
+
+    def get(url):
+        return statuses["project"]
+
+    return _setup_screen(
+        tmp_path, gh_run=_gh_run([], origin="git@github.com:octo/demo.git"),
+        pypi_get=get, open_url=(opened.append if opened is not None else (lambda url: None)),
+        **kwargs)
+
+
+async def test_pypi_panel_lists_values_and_adds_workflow(tmp_path):
+    app = Host(_pypi_screen(tmp_path, {"project": 404}))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-pypi", Button).press()
+        await _until(pilot, lambda: "Owner" in _text(app, "#rs-pypi-status"))
+        text = _text(app, "#rs-pypi-status")
+        assert "Workflow: none yet" in text and "Project demo: not on PyPI yet" in text
+        assert "Owner: octo" in text and "Repository: demo" in text
+        assert "Workflow file name: release-pypi.yml" in text
+        assert "Environment: pypi" in text and "Add a pending publisher" in text
+        assert _shown(app, "#rs-pypi-add") and _shown(app, "#rs-pypi-open")
+        _q(app, "#rs-pypi-add", Button).press()
+        await _until(pilot, lambda: not _shown(app, "#rs-pypi-add"))
+        assert "Workflow: .github/workflows/release-pypi.yml" in _text(app, "#rs-pypi-status")
+        assert "Add a pending publisher" in _text(app, "#rs-pypi-status")
+    assert (tmp_path / ".github" / "workflows" / "release-pypi.yml").is_file()
+
+
+async def test_pypi_open_and_ask(tmp_path):
+    opened, prompts = [], []
+
+    def chat(root, *, agent, prompt):
+        prompts.append(prompt)
+        return SimpleNamespace(kind="output", text="Add a pending publisher.")
+
+    app = Host(_pypi_screen(tmp_path, {"project": 200}, opened, chat_turn=chat, agent="claude"))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#rs-setup-pypi", Button).press()
+        await _until(pilot, lambda: "Owner" in _text(app, "#rs-pypi-status"))
+        assert "Project demo: on PyPI" in _text(app, "#rs-pypi-status")
+        assert "pending publisher" not in _text(app, "#rs-pypi-status")
+        _q(app, "#rs-pypi-open", Button).press()
+        await pilot.pause()
+        _q(app, "#rs-pypi-ask", Button).press()
+        await _until(pilot, lambda: "pending publisher" in _text(app, "#rs-pypi-reply"))
+    assert opened == ["https://pypi.org/manage/account/publishing/"]
+    assert "Owner: octo" in prompts[0] and "do not run commands" in prompts[0]

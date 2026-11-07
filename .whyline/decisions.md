@@ -37518,3 +37518,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 818fdb6e5f764dcab0f5c5b54ae0a039 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:54:02.603Z"} -->
+
+## 2026-11-07 — PyPI target takes an injectable HTTP getter and sleep on PyPITarget; registered on import and imported by release_screens
+
+**Actor:** claude
+**Role:** implementer
+**Task:** REL-14
+
+**Because:** The Target protocol's fetch is git fetch, so HTTP status checks needed their own seam; verify counts injected sleeps (15s x 20) instead of a clock
+
+**Rejected:**
+
+- Reuse the fetch argument — it is git fetch, not HTTP
+- Import pypi in targets/__init__.py — outside this task's file list
+
+**Files:** src/whyline/release/targets/pypi.py
+
+<!-- whyline-event: fc83a71083ba4795a211da3d1a3346ef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T02:56:26.599Z"} -->
+
+## 2026-11-07 — Pass REL-14: PyPI release target, workflow template, and console setup panel verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** REL-14
+
+**Because:** Full test suite (4043 passed, 1 skipped) and targeted PyPI tests (36 passed) verify ready checks, verify retry up to 5min, workflow template generation/reuse, and console setup panel with Add workflow, Open pypi.org, and Ask agent.
+
+**Files:** src/whyline/release/targets/pypi.py
+
+<!-- whyline-event: 0e3876930a774c75aba3c34f6d28208b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T03:13:04.910Z"} -->
+
+## 2026-11-07 — Approve REL-14: PyPI target, workflow template, and console setup panel
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** REL-14
+
+**Because:** Template, ready items, tag-run wait, 5-minute verify retry, setup_status lines, and console buttons match the task; tests cover 404/200/network, workflow reuse, template-once, verify sleeps, and the panel; uv run pytest -q exited 0.
+
+**Files:** src/whyline/release/targets/pypi.py
+
+<!-- whyline-event: 492c4a5837fc40929a405aff916a8197 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T03:33:18.341Z"} -->
