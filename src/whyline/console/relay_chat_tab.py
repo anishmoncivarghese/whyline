@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 from rich.style import Style
@@ -177,6 +178,7 @@ class RelayChatPanel(Vertical):
         self._frame = 0
         self._agent = "agent"
         self._stopping = False
+        self._progress: str | None = None
 
     def _current_run_id(self) -> str | None:
         try:
@@ -254,14 +256,38 @@ class RelayChatPanel(Vertical):
         log = self.query_one("#chat-log", RichLog)
         log.clear()
         for item in history.load(self._repo, self._run_id):
-            self._write(item.get("role"), str(item.get("text", "")))
+            self._write(item.get("role"), str(item.get("text", "")), item.get("ts"))
 
-    def _write(self, role: object, text: str) -> None:
+    def _sync_run(self) -> None:
+        """Follow the relay: a new run id means a new history file."""
+        current = self._current_run_id()
+        if current != self._run_id:
+            self._run_id = current
+            self._load_log()
+
+    def on_show(self) -> None:
+        if self._cancel is None:
+            self._sync_run()
+
+    @staticmethod
+    def _day_label(ts: object) -> str:
+        """The date of an entry older than today, as '4 Nov', else ''."""
+        try:
+            when = datetime.fromisoformat(str(ts)).astimezone().date()
+        except (TypeError, ValueError):
+            return ""
+        if when >= datetime.now().astimezone().date():
+            return ""
+        return f"{when.day} {when:%b}"
+
+    def _write(self, role: object, text: str, ts: object = None) -> None:
         log = self.query_one("#chat-log", RichLog)
+        day = self._day_label(ts)
+        tag = f" ({day})" if day else ""
         if role == "user":
-            log.write(Text(f"You: {text}", style="bold cyan"))
+            log.write(Text(f"You{tag}: {text}", style="bold cyan"))
         else:
-            log.write(Text("Agent: ").append_text(render_answer(self._repo, text)))
+            log.write(Text(f"Agent{tag}: ").append_text(render_answer(self._repo, text)))
 
     @property
     def asking(self) -> bool:
@@ -304,6 +330,7 @@ class RelayChatPanel(Vertical):
             return
         if typed:
             box.value = ""
+        self._sync_run()
         self._write("user", question)
         cancel = threading.Event()
         self._cancel = cancel
@@ -313,7 +340,8 @@ class RelayChatPanel(Vertical):
 
     def _ask(self, question: str, cancel: threading.Event) -> None:
         try:
-            answer = ask.ask(self._repo, question, cancel_event=cancel)
+            answer = ask.ask(self._repo, question, cancel_event=cancel,
+                             on_progress=lambda line: self._progressed(line, cancel))
             text = answer.text
         except Exception as caught:
             text = f"Chat could not answer. {caught}"
@@ -321,6 +349,17 @@ class RelayChatPanel(Vertical):
             self.app.call_from_thread(self._answered, text, cancel)
         except Exception:
             pass  # the console closed while the question ran
+
+    def _progressed(self, line: str, cancel: threading.Event) -> None:
+        try:
+            self.app.call_from_thread(self._set_progress, line, cancel)
+        except Exception:
+            pass  # the console closed while the question ran
+
+    def _set_progress(self, line: str, cancel: threading.Event) -> None:
+        if self._cancel is cancel:
+            self._progress = line
+            self._tick(advance=False)
 
     def _answered(self, text: str, cancel: threading.Event) -> None:
         self._write("assistant", text)
@@ -338,6 +377,7 @@ class RelayChatPanel(Vertical):
         self._started = self._clock()
         self._frame = 0
         self._stopping = False
+        self._progress = None
         self.query_one("#chat-working", Static).display = True
         self._tick(advance=False)
         if self._timer is not None:
@@ -360,7 +400,8 @@ class RelayChatPanel(Vertical):
             text = "Stopping…"
         else:
             secs = int(self._clock() - self._started)
-            text = f"{_SPINNER[self._frame]} {self._agent} is working on your question… {secs}s"
+            what = self._progress or f"{self._agent} is working on your question…"
+            text = f"{_SPINNER[self._frame]} {what} {secs}s"
         self.query_one("#chat-working", Static).update(text)
 
     def _clear(self) -> None:

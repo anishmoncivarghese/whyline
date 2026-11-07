@@ -37898,3 +37898,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 58391c7f51a640e2818a29b2b7a6e002 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T08:30:11.964Z"} -->
+
+## 2026-11-07 — Chat retries a cancelled grok turn once (resume session, else fresh) and never returns the cancelled text
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CHF-1
+
+**Because:** grok's read-only mode cancels the turn on a refused shell command with exit 0, so its opening line was shown as the answer
+
+**Rejected:**
+
+- Return the cancelled text — it is only the agent's preamble
+
+**Files:** src/whyline/relaychat/ask.py
+
+<!-- whyline-event: 30bbac03341e4ce4b7c1e34d4214bad0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T08:32:30.250Z"} -->
+
+## 2026-11-07 — Approve CHF-1: Grok cancelled turn retry, working progress display, and date labels in chat log
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CHF-1
+
+**Because:** Full test suite passed (4135 passed) and all CHF-1 unit & console tests passed verifying one-shot resume/retry, refused command handling, progress indicator, run sync, and date labels
+
+**Files:** src/whyline/relaychat/ask.py
+
+<!-- whyline-event: ebae24d17dc24e50bce8cf903cde1fb8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T08:49:11.747Z"} -->
+
+## 2026-11-07 — Approve CHF-1: cancelled grok retry, progress line, run-following history, and date labels
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CHF-1
+
+**Because:** The working-tree changes match the spec: INSTRUCTIONS forbids shell, cancelled_turn is grok-only via the same JSON parse as grok denials, one retry resumes before the last -p or starts fresh, cancelled preamble is never saved, on_progress drives the working line, Stop still cancels, and history follows the run with date labels. uv run pytest -q exited 0 (100 percent, one skip).
+
+**Files:** src/whyline/relaychat/ask.py
+
+<!-- whyline-event: e78681d0029f4d939d3861d18284bf43 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T09:09:08.388Z"} -->

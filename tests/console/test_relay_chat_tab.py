@@ -413,6 +413,60 @@ def test_render_answer_path_in_backticks_is_link(tmp_path):
     assert text.plain == "see src/a.py:3 here"
 
 
+async def test_working_line_shows_retry_text(tmp_path, monkeypatch):
+    release = threading.Event()
+    told = threading.Event()
+
+    def fake(repo, question, on_progress=None, **kwargs):
+        on_progress("codex was stopped by its read-only rules, retrying…")
+        told.set()
+        release.wait(5)
+        return SimpleNamespace(text="Done.")
+
+    monkeypatch.setattr(relay_chat_tab.ask, "ask", fake)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        panel = app.query_one("#relay-chat-panel")
+        now = [100.0]
+        panel._clock = lambda: now[0]
+        app.query_one("#chat-input").value = "hello"
+        await pilot.click("#chat-send")
+        await _wait_for(pilot, lambda: "retrying" in _working(app)[1], "retry text")
+        now[0] = 107.0
+        await pilot.pause(0.5)
+        text = _working(app)[1]
+        assert text[0] in tui._SPINNER
+        assert text.endswith("codex was stopped by its read-only rules, retrying… 7s")
+        release.set()
+        await _wait_for(pilot, lambda: "Agent: Done." in _log_text(app), "answer")
+        assert _working(app)[0] is False
+
+
+async def test_new_run_id_reloads_log_and_old_entries_show_date(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    history.append(tmp_path, "run-2", "user", "new run question")
+    old = history.append(tmp_path, "run-1", "user", "old question")
+    path = history.path(tmp_path, "run-1")
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).replace(microsecond=0)
+    old["ts"] = yesterday.isoformat()
+    path.write_text(__import__("json").dumps(old) + "\n")
+    monkeypatch.setattr(relay_chat_tab.ask, "ask",
+                        lambda repo, question, **kw: SimpleNamespace(text="ok"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_chat(app, pilot)
+        label = f"{yesterday.astimezone().day} {yesterday.astimezone():%b}"
+        assert _log_text(app) == [f"You ({label}): old question"]
+        monkeypatch.setattr(relay_chat_tab.snapshot, "build",
+                            lambda repo, max_chars: SimpleNamespace(run_id="run-2"))
+        app.query_one("#chat-input").value = "next"
+        await pilot.click("#chat-send")
+        await _wait_for(pilot, lambda: "Agent: ok" in _log_text(app), "answer")
+        assert _log_text(app)[:2] == ["You: new run question", "You: next"]
+
+
 def test_render_answer_unmatched_markers_stay(tmp_path):
     text = relay_chat_tab.render_answer(tmp_path, "a **b and `c")
     assert text.plain == "a **b and `c"

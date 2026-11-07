@@ -132,3 +132,98 @@ def test_prompt_asks_for_final_answer_only():
 def test_final_message_returns_text_unchanged():
     assert ask.final_message("grok", '{"text": "a b"}', "a b") == "a b"
     assert ask.final_message("claude", "raw", "answer") == "answer"
+
+
+GROK = ["grok", "--mode", "dontAsk", "-p"]
+CANCELLED = (
+    "permission required: Execute `git -c x diff`\n"
+    '{"stopReason": "cancelled", "text": "I\'ll read the relay snapshot…", "sessionId": "sess-1"}'
+)
+
+
+@pytest.fixture
+def grok(env, monkeypatch):
+    monkeypatch.setattr(agent_choice, "pick",
+                        lambda repo, chosen=None: agent_choice.Pick("grok", False, "chosen"))
+    monkeypatch.setattr(ask, "_command", lambda repo, cli: list(GROK))
+    return env
+
+
+class Sequence(Runner):
+    def __init__(self, *outputs, on_call=None):
+        super().__init__()
+        self.outputs, self.on_call = list(outputs), on_call
+
+    def __call__(self, argv, prompt, **kwargs):
+        self.calls.append((argv, prompt, kwargs))
+        if self.on_call:
+            self.on_call()
+        return SimpleNamespace(exit_code=0, output=self.outputs[len(self.calls) - 1])
+
+
+def test_instructions_forbid_shell():
+    assert "never run shell commands" in ask.INSTRUCTIONS
+
+
+def test_cancelled_turn_only_for_grok():
+    assert ask.cancelled_turn("grok", CANCELLED)
+    assert not ask.cancelled_turn("grok", '{"stopReason": "end_turn"}')
+    assert not ask.cancelled_turn("codex", CANCELLED)
+    assert not ask.cancelled_turn("claude", '{"stopReason": "cancelled"}')
+    assert ask.refused_command(CANCELLED) == "git -c x diff"
+    assert ask.refused_command("nothing") is None
+
+
+def test_cancelled_turn_resumes_and_answers(grok):
+    runner = Sequence(CANCELLED, "It is on RCH-4.")
+    seen = []
+    answer = ask.ask(grok, "What now?", agent="grok", runner=runner, on_progress=seen.append)
+    _first, second = runner.calls
+    assert second[0] == ["grok", "--mode", "dontAsk", "--resume", "sess-1", "-p"]
+    assert "`git -c x diff`" in second[1] and "Don't run shell commands" in second[1]
+    assert seen == ["grok was stopped by its read-only rules, retrying…"]
+    assert answer.ok and answer.text == "It is on RCH-4."
+    saved = history.load(grok, "run1")
+    assert [r["text"] for r in saved] == ["What now?", "It is on RCH-4."]
+
+
+def test_cancelled_twice_is_a_failure_without_the_opening_line(grok):
+    runner = Sequence(CANCELLED, CANCELLED)
+    answer = ask.ask(grok, "What now?", agent="grok", runner=runner)
+    assert not answer.ok
+    assert answer.text.startswith("grok stopped before answering: its read-only mode refused `git -c x diff`.")
+    assert "pick another agent" in answer.text
+    assert not any("read the relay snapshot" in r["text"] for r in history.load(grok, "run1"))
+
+
+def test_cancelled_without_session_retries_fresh(grok):
+    raw = '{"stopReason": "cancelled", "text": "Let me look"}'
+    runner = Sequence(raw, "Fine.")
+    answer = ask.ask(grok, "Q?", agent="grok", runner=runner)
+    assert runner.calls[1][0] == GROK
+    assert "SNAPSHOT-TEXT" in runner.calls[1][1] and "Don't run shell commands" in runner.calls[1][1]
+    assert "Your last command" not in runner.calls[1][1]
+    assert answer.ok and answer.text == "Fine."
+
+
+def test_cancelled_without_command_has_plain_message(grok):
+    raw = '{"stopReason": "cancelled", "text": "x"}'
+    answer = ask.ask(grok, "Q?", agent="grok", runner=Sequence(raw, raw))
+    assert answer.text.startswith("grok stopped before answering (its read-only mode refused a command).")
+
+
+@pytest.mark.parametrize("cli", ["codex", "claude"])
+def test_other_clis_with_stop_reason_are_answers(env, monkeypatch, cli):
+    monkeypatch.setattr(agent_choice, "pick",
+                        lambda repo, chosen=None: agent_choice.Pick(cli, False, "chosen"))
+    runner = Sequence('{"stopReason": "cancelled"}')
+    answer = ask.ask(env, "Q?", agent=cli, runner=runner)
+    assert len(runner.calls) == 1 and answer.ok
+
+
+def test_stop_during_first_run_does_not_retry(grok):
+    stop = threading.Event()
+    runner = Sequence(CANCELLED, on_call=stop.set)
+    answer = ask.ask(grok, "Q?", agent="grok", runner=runner, cancel_event=stop)
+    assert len(runner.calls) == 1
+    assert answer.text == ask.STOPPED and not answer.ok
