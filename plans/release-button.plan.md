@@ -412,7 +412,7 @@ Global constraints:
   - Console: the npm panel, with **Add workflow**, **Open npmjs.com** and **Ask agent**.
   Tests: as for PyPI, plus a scoped package name and a private package refused in ready.
 
-- [ ] REL-16: Docker target
+- [x] REL-16: Docker target
   Create `src/whyline/release/targets/docker.py`, `src/whyline/release/templates/release-docker.yml` and `tests/release/test_target_docker.py`; edit `src/whyline/console/release_screens.py` and its test only.
   - The template runs on tag `v*` with `permissions: contents: read, packages: write`. It uses `docker/setup-buildx-action`, `docker/login-action` (GHCR through `GITHUB_TOKEN`; Docker Hub through `secrets.DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN`, written only when `dockerhub` is in `registries`), `docker/metadata-action` (tags `v<version>`, `<version>` and `latest`) and `docker/build-push-action` with `push: true`. The image name comes from config (default `<owner>/<repo>`, lowercased).
   - Ready items:
