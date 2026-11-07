@@ -371,7 +371,7 @@ Global constraints:
 - Workflow templates live as text in `src/whyline/release/templates/` and are written only when the user presses **Add workflow**. Each file Set up writes (workflow, Dockerfile) is recorded with `config.add_pending`, so the next release commit includes it (REL-5), never a separate commit mid-relay. Pin each action to its current major version. Before writing a template, the implementer checks the action's and registry's current docs, and records the source URL in a comment at the top of the template.
 - Verify every task with `uv run pytest -q tests/release tests/console` and then `uv run pytest -q`. Change nothing outside the files a task names.
 
-- [ ] REL-13: Target registry, workflow helpers and the plan hook
+- [x] REL-13: Target registry, workflow helpers and the plan hook
   Create `src/whyline/release/targets/__init__.py`, `src/whyline/release/workflows.py` and `tests/release/test_targets.py`; edit `src/whyline/release/plan.py` and `src/whyline/release/github.py` and their tests only.
   - A `Target` protocol: `key`, `title`, `ready_items(root, cfg, version, *, run, fetch) -> list[ReadyItem]`, `steps(root, cfg, version, *, run, fetch) -> list[Step]`, `verify(root, cfg, version, *, run, fetch) -> tuple[bool, str]`, and `setup_status(root, cfg, *, run) -> list[str]`. Plus `REGISTRY: dict[str, Target]` and `enabled(cfg) -> list[Target]` in this order: pypi, npm, docker, homebrew, custom.
   - `workflows.find_publishing(root, needle) -> Path | None`: the first `.github/workflows/*.yml` that contains `needle` and runs on tag pushes (`tags:` under `push:`). `workflows.write_template(root, name, text) -> Path` refuses to overwrite.
