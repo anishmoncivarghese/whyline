@@ -37984,3 +37984,58 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e60bd9efffad44bd96e170e45eca8d6a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T12:54:28.871Z"} -->
+
+## 2026-11-07 — Wrapped #controls buttons fill their grid column (width 100%) with grid-columns auto
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CHF-3
+
+**Because:** auto columns are as wide as the widest button; without filling, short buttons left gaps over 2 cells beside long ones
+
+**Rejected:**
+
+- fixed grid-size 6 — spreads buttons across wide windows
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d875d74ab52d491c81054b823d1dac02 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T13:08:12.748Z"} -->
+
+## 2026-11-07 — Pass CHF-3 testing: Controls bar wraps into packed rows without wide gaps
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CHF-3
+
+**Because:** Controls bar computes fewest rows fitting available width with columns = ceil(n/rows), auto column sizing with 100% button width eliminates gaps, single row retained when fitting; all tests in test_controls_rows, test_awake, and full pytest suite passed cleanly
+
+**Test:** uv run pytest tests/console/test_controls_rows.py: 4 passed
+**Test:** uv run pytest tests/console/test_awake.py: 21 passed
+**Test:** uv run pytest: 4144 passed, 1 skipped
+
+**Files:** src/whyline/console/tui.py, tests/console/test_controls_rows.py
+
+<!-- whyline-event: 19f5f7fc3b3f49e5aa44714972bd0697 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T13:25:35.567Z"} -->
+
+## 2026-11-07 — Approve CHF-3: packed auto-width control rows replace the 6-column wrap grid
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CHF-3
+
+**Because:** Diff matches the spec: _fit_controls keeps one row when the estimate fits, else the fewest rows with columns=ceil(n/rows); wrap uses grid-columns auto and grid_size_columns; buttons fill their column so neighbour gaps stay within 2 cells. Tests cover 16 buttons at 130 (2 rows, inside the bar), fewest rows at 80, neighbour gap, and a fitting bar without wrap. Full pytest had one unrelated flake in test_paused_clean_tree_is_unchanged which passed in isolation.
+
+**Rejected:**
+
+- request changes for the synthetic first-16-button fixture — the layout algorithm is generic and the four required assertions still hold
+- block on the full-suite flake — test_paused_clean_tree_is_unchanged failed then passed in isolation, same as CHF-2
+
+**Test:** uv run pytest -q: 1 failed (unrelated flake test_paused_clean_tree_is_unchanged)
+**Test:** uv run pytest tests/console/test_relay_setup_screen.py::test_paused_clean_tree_is_unchanged tests/console/test_controls_rows.py tests/console/test_awake.py -q: 26 passed
+
+**Files:** src/whyline/console/tui.py, tests/console/test_controls_rows.py
+
+<!-- whyline-event: 10a430b01699426ead2f3be4cd641690 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-07T13:47:22.236Z"} -->

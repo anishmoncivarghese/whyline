@@ -1105,8 +1105,10 @@ class WhylineConsoleApp(App):
        stays inside 80 columns. Chat and Relay still fit on one row. */
     #controls.wrap {
       layout: grid;
-      grid-size: 6;
+      grid-columns: auto;
     }
+    /* A button fills its column, so a short one leaves no gap beside a long one. */
+    #controls.wrap > Button { width: 100%; }
     /* Only a bar wider than the window wraps; see _fit_controls. */
     /* One row. A wrapped prompt would push Save onto a second line. */
     #context-bar { height: 1; text-wrap: nowrap; }
@@ -2484,20 +2486,35 @@ class WhylineConsoleApp(App):
         self.push_screen(ReleaseTaskScreen(message, "Mark released"), done)
 
     def _fit_controls(self) -> None:
-        """One row when the bar's buttons fit the window, a grid when not.
+        """One row when the bar's buttons fit the window, else packed rows.
 
-        A fixed grid spread the buttons across a wide window."""
+        Picks the fewest rows where every row fits; each grid column is as
+        wide as its widest button, so a wide window is not spread out."""
         try:
             controls = self._main("#controls")
         except (NoMatches, IndexError):
             return
-        needed = sum(
+        widths = [
             max(6, len(str(button.label)) + 2)  # label plus one cell each side
             for button in controls.query(Button)
             if button.display
-        )
+        ]
         available = controls.size.width or self.size.width
-        controls.set_class(needed > available, "wrap")
+        if sum(widths) <= available or len(widths) < 2:
+            controls.set_class(False, "wrap")
+            return
+        rows = len(widths)
+        for tries in range(2, len(widths) + 1):
+            columns = -(-len(widths) // tries)
+            total = sum(
+                max(widths[column::columns]) for column in range(columns)
+            )
+            if total <= available:
+                rows = tries
+                break
+        columns = -(-len(widths) // rows)
+        controls.set_class(True, "wrap")
+        controls.styles.grid_size_columns = columns
 
     def _task_outcomes(self) -> tuple[str, list]:
         """The current or paused task and its round outcomes; empty on any failure."""
