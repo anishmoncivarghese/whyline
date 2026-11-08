@@ -14,6 +14,8 @@ What the user gets:
 - A **Docs** screen (library and review screen in one), a **Docs** tab in the Files pane, and **Export pack** to Word and PDF for a senior developer or architect.
 - `whyline docs …` on the command line, calling the same functions.
 - **One product PRD** at `docs/product/prd.md`, versioned v1.0, v1.1, v1.2… A new project writes it. A Feature or Large run updates only the sections that feature changes, as the next version, or records `No PRD change: <reason>`. Small never touches it. Specs, designs and plans stay per feature (PRD-1..3).
+- Documents live on the default branch, in a docs checkout (WTD-1), never on a relay branch. You can write and review the next feature while a relay builds.
+- Every requirement can be traced to the tasks that build it, the tests that check it, and their results (TRC-1..2). Plan changes during a build are recorded as plan versions (LIFE-1). A finished feature is closed out: plan moved to `plans/done/`, set marked Released, and an optional pull request (LIFE-2..3).
 - Every document gets a **fresh-eyes review** before approval (GFR-1..6). Separate read-only reviewer agents, which never saw the drafting, check it through lenses such as "too much?", "clear to a newcomer?", "fits the code?" and "ready to build?". Findings are 🔴 Blocker, 🟡 Major or 🟢 Nit. Auto approves only with no Blockers, after at most 2 rounds of changes, and otherwise stops for you. The idea comes from Google's Elephant-Goldfish Model (github.com/google/elephant-goldfish-model, Apache-2.0).
 
 Rules every task keeps:
@@ -23,6 +25,7 @@ Rules every task keeps:
 - Edit only the files a task names, plus their tests. Each task ends with `uv run pytest -q` passing.
 - Tests never run a real agent, open a real picker or editor, start a relay, or contain "/Users/". Agents are stubbed at the `relay_ops` boundary.
 - Never commit on a relay branch while that relay runs. Every function that commits or drafts calls the SDLC-11 guard first.
+- Document functions take the docs checkout from `workspace.docs_root(root)` (WTD-1). Functions that read the build (git log, test plan ticks, the running plan) take the code checkout `root`.
 
 ## Part 1: Ready
 
@@ -65,6 +68,18 @@ Rules every task keeps:
   4. `load(root, slug)`, `save(root, docset)` (atomic, through `whyline.state.atomic_write_json`) and `all_sets(root)`.
   Tests: each size × prd_mode's documents, the prd_mode default with and without `docs/product/prd.md`, slug clashes, a save/load round trip, and a missing or corrupt `docset.json`, which gives a plain error and no crash.
 
+- [ ] WTD-1: Where documents live
+  Create `src/whyline/sdlc/workspace.py` and `tests/sdlc/test_workspace.py`. Edit `src/whyline/worktrees.py` and its tests only to add the helper in 1.
+  1. `worktrees.default_branch_worktree(root) -> Path | None` returns the path of any worktree of this repository that has the default branch checked out (`git worktree list --porcelain`), or None.
+  2. `docs_root(root) -> Path`:
+     - `root` itself when it is on the default branch
+     - otherwise the worktree from 1
+     - otherwise it creates one at `<worktrees base>/docs` with `git worktree add <path> <default branch>` (no new branch) and returns it
+  3. `docs_commit(docs, paths, message) -> bool` commits only `paths` (pathspec) in `docs`. It refuses with a plain message when any of those paths has uncommitted changes that whyline didn't write, and returns False when nothing changed. It never pushes. Pushing stays with the user.
+  4. `copy_plan_to(root, docs, slug) -> bool` copies `plans/<slug>.plan.md` and `plans/<slug>.tests.md` from `docs` into `root` and commits them there by pathspec. It is used before a relay launches from a checkout that is not the docs checkout.
+  Tests: each case in 2 with a temporary repository and worktrees, the dirty-path refusal, pathspec-only commits, and the copy.
+  Review focus (closed): 2 and the refusal in 3. Anything else goes in a follow-up note, not this task.
+
 - [ ] SDLC-5: Versions, history and the review log
   Edit `src/whyline/sdlc/docset.py` and its tests only.
   1. `add_version(root, docset, kind, text, *, author, note) -> int`:
@@ -79,7 +94,7 @@ Rules every task keeps:
      - It sets approved, `approved_by` and `approved_at`.
      - It records `upstream` as the sha256 of each approved document before this one in `documents_for` order.
      - It logs the review and saves.
-  4. `commit(root, docset, message)` stages only `docs/sdlc/<slug>/` (plus the plan and tests paths when they exist) and commits. It returns False and commits nothing when nothing changed.
+  4. `commit(root, docset, message)` calls `workspace.docs_commit` in `docs_root(root)` with `docs/sdlc/<slug>/`, `docs/product/` when the set touched it, and the plan and tests paths when they exist. It returns False and commits nothing when nothing changed.
   Tests: version numbers and history files, log entries, upstream hashes, and that a commit touches only the set's paths. Use a temporary git repository.
 
 - [ ] SDLC-6: Headers and index.md
@@ -97,7 +112,9 @@ Rules every task keeps:
   Edit `src/whyline/sdlc/docset.py` and its tests only.
   1. `refresh_out_of_date(root, docset) -> list[tuple[str, str]]`. When the file of a document named in an approved document's `upstream` now has a different sha256, that approved document becomes out_of_date. The reason reads `<Kind> changed (v<old> → v<new>) after this was approved`, or `<Kind> was edited on disk after this was approved` when the version is the same. Headers and index are not rewritten for the hash check itself, only on a status change.
   2. A document that is out_of_date goes back to approved when its upstream hashes match again.
-  Tests: a PRD re-approval marks the spec, an edit on disk marks it, and a revert clears it.
+  3. `content_hash(kind, text) -> str` is the sha256 used everywhere. For the plan and test plan it first turns every `- [x]` into `- [ ]`, so the relay ticking tasks never counts as a change.
+  4. A plan or test plan path is resolved through `plan_file(docs, slug)`, which looks in `plans/` and then `plans/done/`.
+  Tests: a PRD re-approval marks the spec, an edit on disk marks it, a revert clears it, ticked tasks giving the same hash, and a plan moved to `plans/done/` still found.
 
 - [ ] SDLC-8: Built-in templates
   Create `src/whyline/sdlc/templates/{prd,spec,short-spec,design,build-record}.md`, `src/whyline/sdlc/templates.py` and its tests.
@@ -142,16 +159,16 @@ Rules every task keeps:
      - The PRD stage is labelled `PRD` for new and `PRD update` for update. With none it is skipped, with the reason `no PRD change` (or `Small has no PRD`).
      - Each `Stage` has its kind, whether it is skipped, and the reason (for example "starting from a brainstorm").
      - Large adds a `design-review` stage after design.
-     - `build` adds implement, test, review and release (shown, run by the relay) and then build-record.
+     - `build` adds implement, test, review and release (shown, run by the relay), then build-record, then done (LIFE-2).
   2. `next_stage(docset) -> Stage | None` is the first stage that isn't skipped and isn't approved.
   3. `stages_line(stages, roles) -> str` returns the design's line, for example `PRD (claude, reviewed by codex) → Spec (claude) → …`, with `—` and the reason for each skipped stage.
   Tests: each size × start, each prd_mode, the Large design review, build on and off, and the exact line for the design's example.
 
-- [ ] SDLC-11: One drafter at a time, and nothing while a relay runs
+- [ ] SDLC-11: One drafter at a time, and no commits on a running relay's branch
   Create `src/whyline/sdlc/guard.py` and its tests.
-  1. `check(root) -> str | None` returns a plain refusal when a relay is running in the repository (`whyline_relay.running.live(root)`). When the relay's state shows it paused, the text says to finish or stop it first. It returns None otherwise.
-  2. `drafting(root)` is a context manager that holds `.whyline/sdlc/drafting.lock`, with the pid inside, and refuses with "Another document is being written (<set>, <kind>)". A lock whose pid is dead is taken over.
-  Tests: a running stub refuses, a held lock refuses, and a stale lock is taken.
+  1. `check(root) -> str | None` returns a plain refusal only when a relay is running in the docs checkout itself (`whyline_relay.running.live(docs_root(root))`). When the relay's state shows it paused, the text says to finish or stop it first. A relay running in another checkout of the repository does not refuse: documents are written and committed in the docs checkout, with its own handoff file.
+  2. `drafting(root)` is a context manager that holds `.whyline/sdlc/drafting.lock` in the docs checkout, with the pid inside, and refuses with "Another document is being written (<set>, <kind>)". A lock whose pid is dead is taken over.
+  Tests: a relay running in the docs checkout refuses, a relay running in another worktree does not, a held lock refuses, and a stale lock is taken.
 
 - [ ] SDLC-12: Document drafting through whyline-relay
   Edit `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
@@ -183,6 +200,23 @@ Rules every task keeps:
   3. Approving the plan writes `plans/<slug>.plan.md` and `plans/<slug>.tests.md` through the existing `relay_ops._approve_marked` path, with `spec:` in the marker pointing at the approved spec or design.
   Tests: the plan and tests versions, approval writing both files with a valid marker, and `testplan.validate` passing on the stubbed output.
 
+- [ ] TRC-1: Requirements in the plan and test plan
+  Create `src/whyline/sdlc/trace.py` and `tests/sdlc/test_trace.py`. Edit `src/whyline/sdlc/runner.py` and its tests only where 3 says.
+  1. Parsers:
+     - `requirements(text) -> list[str]` returns the R-numbers (R1, R2…) in a document's Requirements or Requirements covered section.
+     - `plan_covers(plan_text) -> dict[str, list[str]]` reads each task's `covers: R1, R3` detail line. `covers: none (<reason>)` gives [].
+     - `test_covers(tests_text) -> dict[str, list[str]]` does the same for test cases.
+  2. `coverage(docs, docset) -> Coverage` uses the requirements in scope (the approved spec's or design's Requirements covered, or the PRD's Requirements when there is no spec). It lists:
+     - requirements no task covers
+     - requirements no test covers
+     - tasks that cover an R-number not in scope
+     - tasks with no covers line
+     `Coverage.line()` is, for example, `Covers 7 of 8 requirements · R5 has no test`.
+  3. The plan stage's request (SDLC-14) adds: "Give every task a `covers: R<n>, …` detail line naming the requirements it builds, or `covers: none (<reason>)`. Give every test case the same line." Check that `testplan.validate` still passes with that line in a test case. If it doesn't, put the R-numbers in the test case's title as `[R3]` and make `test_covers` read that instead.
+  4. A PRD update never renumbers requirements. New ones take the next free number, and a removed one stays as `R4 — removed in v<version>`. Add this to the update feedback in SDLC-13's runner code.
+  Tests: each parser, coverage gaps of all four kinds, the line text, the plan request text, and the test plan staying valid.
+  Review focus (closed): 2 and 3. Anything else goes in a follow-up note, not this task.
+
 - [ ] SDLC-15: Review actions
   Create `src/whyline/sdlc/review.py` and its tests. Every action calls `guard.check` first.
   1. `approve(root, slug, kind, *, approver)` approves, commits (`docs: approve <Kind> v<N> for <name>`), runs `refresh_out_of_date`, and returns the next stage.
@@ -207,7 +241,7 @@ Rules every task keeps:
      - In human mode, it returns after the first finished stage, waiting for review.
      - Questions stop it in either mode.
   2. `set_mode(root, slug, mode)` saves the mode. **Run the rest on Auto** is approve, then set_mode auto, then run. **Pause after this stage** is set_mode human, which `run` reads between stages.
-  3. After the plan is approved and `build` is set, it runs Auto's final preflight and launcher. Move `_preflight_phase` and `_launch` out of `auto_run.py` into a small shared helper if they can't be called as they are, and keep `auto_run` working. It stores the launch commit as `build_base` in `docset.json`.
+  3. After the plan is approved and `build` is set, it calls `workspace.copy_plan_to(root, docs, slug)` when `root` is not the docs checkout, then runs Auto's final preflight and launcher. Move `_preflight_phase` and `_launch` out of `auto_run.py` into a small shared helper if they can't be called as they are, and keep `auto_run` working. It stores the launch commit as `build_base` in `docset.json`.
   Tests: a full auto run with stubs from description to launch, human mode stopping after one stage, switching mid-run, and a cancel between stages.
 
 - [ ] GFR-1: Review lenses
@@ -217,7 +251,7 @@ Rules every task keeps:
      - **comprehension**: could someone new to the project follow it? Are there undefined terms, missing steps, or two readings of one sentence?
      - **design-critic**: failure modes, data loss, security and privacy, and claims about behaviour or performance with no reason given
      - **codebase-fit**: do the files, functions and names it mentions exist, and does it match how the code works today?
-     - **readiness**: could an implementer start now without making a design decision? For a plan, each task names its files and tests, is small (at most about 5 numbered steps and 4 source files), and a guard or security task has a closed Review focus list.
+     - **readiness**: could an implementer start now without making a design decision? For a plan, each task names its files and tests, has a `covers:` line, is small (at most about 5 numbered steps and 4 source files), and a guard or security task has a closed Review focus list.
      Every lens tells the reviewer: you are read-only; you have not seen how this document was written; report only problems; and use exactly one line per finding, `- [blocker|major|nit] <section> — <problem> — <suggested fix>`, or the single line `No findings.`
   2. `ATTRIBUTION.md` names the source (github.com/google/elephant-goldfish-model, commit e9e1f06, Apache-2.0) and says the texts are adapted.
   3. `lenses_for(size, kind) -> list[str]`:
@@ -261,7 +295,8 @@ Rules every task keeps:
      Majors and Nits alone never block.
   4. In human mode, the review runs before `run` returns, so the findings are there when Docs opens. Approving with Blockers still works, and the review log records `approved with <n> blockers`.
   5. `review.review_again(root, slug, kind, *, progress)` runs `review_document` on the current version.
-  Tests: auto pass, a fix round that clears, two fix rounds that stop, a not-run stop, human mode returning with the review, the design-review stage using the architect agent, and approve-with-blockers logging.
+  6. For the plan, every gap in `trace.coverage` except tasks with `covers: none (<reason>)` is added to the review as a Blocker from the lens `coverage`.
+  Tests: coverage gaps becoming Blockers, auto pass, a fix round that clears, two fix rounds that stop, a not-run stop, human mode returning with the review, the design-review stage using the architect agent, and approve-with-blockers logging.
   Review focus (closed): the round limit and the three gate outcomes. Anything else goes in a follow-up note, not this task.
 
 - [ ] SDLC-17: The build record and decisions.md
@@ -285,6 +320,36 @@ Rules every task keeps:
   3. When the lens doesn't run, the build record still gets written, and its section says `Drift check didn't run: <reason>`.
   Tests: the prompt has the diff stat and the spec path, the attachment, and the not-run text.
   Review focus (closed): 3. Anything else goes in a follow-up note, not this task.
+
+- [ ] LIFE-1: Plan changes during a build
+  Edit `src/whyline/sdlc/record.py`, `src/whyline/sdlc/docset.py` and their tests, and `src/whyline/console/tui.py` only at the SDLC-17 hook.
+  1. `plan_amendments(root, docs, docset) -> Amendments` compares the approved plan and test plan (by `content_hash`) with the files in the code checkout `root`. It lists added, removed and changed task ids. Ticked boxes don't count.
+  2. When there are amendments, `record_amendments` adds the code checkout's plan as a new plan version with the note `amended during build: added GFR-1..6; changed SDLC-13`, logs `amended during build`, and keeps the status approved with `approved_by` `<git user> (during build)`.
+  3. `build_inputs` lists the amendments, and the build-record template gains `## Plan changes during the build`.
+  4. The SDLC-17 console hook calls `record_amendments` before the build-record stage. **Docs** shows the plan row as `Plan v2 (amended during build)`.
+  Tests: added, removed and changed tasks, ticks ignored, the version and log entry, and build inputs listing them.
+
+- [ ] TRC-2: Traceability in the build record
+  Edit `src/whyline/sdlc/record.py`, `src/whyline/sdlc/templates/build-record.md` and their tests only.
+  1. `trace_table(root, docs, docset) -> str` is a Markdown table with the columns Requirement, Tasks, Tests and Result. Result is passed, failed, not run or no test, from the test plan's ticks in the code checkout.
+  2. `build_inputs` includes the table. The template gains `## Requirements traceability`, and its Known gaps section must list every requirement whose result isn't passed.
+  Tests: the table for a full pass, a failed test, an untested requirement, and an amended plan.
+
+- [ ] LIFE-2: Close a feature, and open a pull request
+  Create `src/whyline/sdlc/close.py` and its tests. Edit `src/whyline/sdlc/runner.py` and its tests only to add the done stage.
+  1. `close(root, slug) -> CloseResult` runs as the **done** stage after the build record is approved, under `guard.check`:
+     - In the docs checkout, it `git mv`s the plan and test plan to `plans/done/` and updates their paths in `docset.json`.
+     - It sets the set's `state` to released, with the version and tag from `build_inputs` (or built, when there was no release), and releases any PRD claim.
+     - It commits `docs: close <name>` through `docs_commit`.
+     In auto mode `run` calls it. In human mode it waits for **Close**.
+  2. `pr_body(root, docs, docset) -> str`: the build record's What was built, the traceability table, Known gaps, and relative links to the set's documents.
+  3. `open_pr(root, docs, slug, *, gh_fn=None) -> str` runs only on an explicit user action, never in auto mode:
+     - It pushes the relay branch with `git push -u origin <branch>`.
+     - It runs `gh pr create --base <default> --head <branch> --title "<name>" --body <pr_body>` and returns the URL.
+     - It saves the URL in `docset.json` and logs `pull request opened`.
+     It refuses with a plain message when `gh` is missing or not signed in, or the branch has no remote. Merging stays with the user on GitHub.
+  Tests: close moving both files and updating paths, released versus built, no PRD claim left, pr_body content, open_pr with a stubbed gh, and each refusal.
+  Review focus (closed): `open_pr` never running in auto mode, and nothing pushed except the relay branch. Anything else goes in a follow-up note, not this task.
 
 ## Part 4: Library, export and CLI (no widgets)
 
@@ -370,7 +435,7 @@ Rules every task keeps:
      - **right**: the selected document rendered as Markdown
   2. Out-of-date documents show the reason under their row.
   3. The screen opens on a given set and document, which SDLC-23 uses.
-  4. While `guard.check` refuses, every action button except History and Export is disabled, and the reason shows at the top.
+  4. While `guard.check` refuses (a relay running in the docs checkout itself), every action button except History and Export is disabled, and the reason shows at the top.
   Tests: the listing, selecting a document, the out-of-date reason, and read-only while a relay runs.
 
 - [ ] SDLC-25: Review actions in Docs
@@ -398,6 +463,17 @@ Rules every task keeps:
   3. When another set holds the PRD claim, the set's PRD row says `Waiting: <set> is updating the PRD`.
   Tests: changed sections and the diff, the moved line disabling Approve, and the waiting line.
 
+- [ ] LIFE-3: Close, pull request and coverage in Docs and the CLI
+  Edit `src/whyline/console/docs_screen.py`, `src/whyline/sdlc/cli.py`, `src/whyline/sdlc/library.py` and their tests only.
+  1. Docs:
+     - **Close** shows on a set whose build record is approved, and calls `close.close`.
+     - **Open pull request** shows on a closed or built set with no PR yet. It first asks `Push <branch> to origin and open a pull request?`, then calls `close.open_pr` in a thread worker and shows the URL.
+     - The plan row shows `trace.coverage(...).line()`.
+     - The set summary shows `Released v<version>` or `Built`, and `PR open` when there is a URL.
+  2. CLI: `whyline docs close <slug>`, `whyline docs pr <slug>` (asks for confirmation unless `--yes`) and `whyline docs trace <slug>` (prints the coverage line and the traceability table).
+  3. Docs, the Files-pane Docs tab and `whyline docs list` show where documents are written: `Documents: <docs checkout path> (<default branch>)`.
+  Tests: each button's visibility, the PR confirmation, the coverage line, each subcommand with stubs, and the location line.
+
 - [ ] SDLC-26: History in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   **History** shows the document's versions and its `review-log.md` entries. Picking two versions shows a unified diff (difflib), and one version shows its text.
@@ -423,11 +499,14 @@ Rules every task keeps:
   - the document set and its templates
   - review at each stop, out of date, and the Docs screen
   - Export pack, the `whyline docs` commands, and template overrides
+  - where documents live (the docs checkout on the default branch) and why you can work on documents while a relay builds
+  - traceability: covers lines, the coverage line, and the build record's table
+  - plan changes during a build, closing a set, and opening a pull request
   - the product PRD: one per repository, its versions and changelog, new versus update versus no change, the one-update-at-a-time rule, and why built sets keep their PRD version
   - fresh-eyes review: the lenses, the Auto gate and its 2-round limit, lens overrides in `.whyline/sdlc/lenses/`, the drift check, and credit to the Elephant-Goldfish Model
   - that Test planner belongs to Plan, not Chat Brainstorm
   Verify with `uv run pytest -q`.
 
-- [ ] SDLC-30: Publish whyline with SDLC-1..29, PRD-1..2 and GFR-1..6
+- [ ] SDLC-30: Publish whyline with SDLC-1..29, WTD-1, PRD-1..2, TRC-1..2, LIFE-1..3 and GFR-1..6
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.

@@ -120,6 +120,12 @@ Questions from the writer (an `## Open questions` section, as today) stop the st
 - **Redo** sends the writer an Ask for changes: "Update this to match <document> v<N>. Change only what that change needs."
 - An out-of-date document never blocks a relay that is already running. Docs only shows it.
 
+### Traceability, plan changes and closing a feature (added 2026-11-08)
+
+- **Traceability.** The PRD numbers requirements R1, R2…, and a PRD update never renumbers them. The spec lists the ones it covers. Each plan task and test case has a `covers: R…` line. The plan review treats a requirement with no task or no test as a Blocker. The build record has a Requirements, Tasks, Tests and Result table, and Known gaps lists every requirement that didn't pass.
+- **Plan changes during a build.** Ticking tasks is not a change. Tasks added, removed or changed after approval are recorded as a new plan version, `amended during build`, and listed in the build record.
+- **Closing.** After the build record is approved, **Close** moves the plan and test plan to `plans/done/` and marks the set Released (with its version and tag) or Built. **Open pull request** pushes the relay branch and opens a PR whose body comes from the build record, only when you press it and confirm. It never happens in Auto. Merging stays with you.
+
 ### Docs
 
 1. **A Docs tab in the Files pane** (Relay mode), next to Plan. It shows the set of the plan the relay is running or has selected: each document, its status, and the selected one's text. It's read-only. **Open in Docs** goes to the full screen.
@@ -177,7 +183,7 @@ Questions from the writer (an `## Open questions` section, as today) stop the st
 - No new Python dependency.
 - A plan must stay a valid relay plan (marker line, `- [ ] ID: title`). A test plan must stay valid for `whyline_relay.testplan.validate`.
 - Writing and reviewing a document reuse whyline-relay's planner machinery (draft, review, revise, answer, resume, failover). The console doesn't run its own draft/review loop.
-- Nothing commits on a relay branch while that relay runs.
+- Nothing commits on a relay branch while that relay runs. Documents are committed in the docs checkout on the default branch, never on a relay branch.
 - Tests never run a real agent, open a real picker or editor, or contain "/Users/".
 
 ## How it fits the code today
@@ -194,7 +200,7 @@ Questions from the writer (an `## Open questions` section, as today) stop the st
 - **No checkpoint is held while waiting for a person.** When a stage finishes, its text is copied into the set as the new version and the relay's checkpoint for that kind is discarded. Every later revision goes through `revise_text` from the set's current version. So several sets can be In review at once, and today's spec flow is never blocked by a set waiting for review.
   - Only one stage drafts at a time in a repository, under a lock at `.whyline/sdlc/drafting.lock`, because the writer shares the repository's handoff file.
   - A second **Start** or revision while one is drafting is refused with a plain message.
-- **While any relay is running in the repository**, Docs is read-only (History and Export still work). Plan's **Start** and `whyline docs start` refuse too. Drafting shares the relay's handoff file, and approvals would commit on the relay's branch.
+- **Documents live on the default branch** (changed 2026-11-08). Every document, the product PRD and the plan are written and committed in a docs checkout: the repository itself when it is on the default branch, an existing worktree of the default branch, or a new one at `<worktrees base>/docs`. Commits are pathspec-only, and whyline never pushes them. That checkout has its own handoff file, so you can draft and review while a relay builds in another checkout. Docs is read-only only when a relay runs in the docs checkout itself. Before a relay launches from another checkout, the plan and test plan are copied there and committed.
 - **Earlier documents reach the writer as attachments.** The approved PRD and spec are files in `docs/sdlc/<slug>/`, inside the repository, so the existing `attachments` rule (files inside the repository only) holds. A brainstorm file or document chosen from outside the repository is first converted and copied into the set:
   - `.md` and `.txt` as they are
   - `.pdf` through `pypdf`, already a dependency
