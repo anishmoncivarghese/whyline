@@ -163,6 +163,14 @@ def _error_text(screen):
     return str(screen.query_one("#rp-error", tui.Static).renderable)
 
 
+async def test_plan_dialog_still_has_the_brainstorm_test_planner(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 40)) as pilot:
+        screen, _results = await _open(app, pilot)
+        assert screen.query("#bs-test-planner")
+        assert screen.query("#bs-test-planner-tip")
+
+
 async def test_paste_saves_a_valid_plan(tmp_path, monkeypatch):
     saved = []
     monkeypatch.setattr(

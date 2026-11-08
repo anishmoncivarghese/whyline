@@ -38267,3 +38267,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4006f9cc92474f458767013f477d8fe0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T11:30:14.143Z"} -->
+
+## 2026-11-08 — Removed BrainstormScreen._save_test_planner entirely rather than leaving it uncalled
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-3
+
+**Because:** Chat Brainstorm no longer has the field, so the method was dead code and could only overwrite saved planner agents
+
+**Rejected:**
+
+- keep method unused — dead code that could silently re-save planners if re-wired
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 539f2706a9174c89a89d8c7186c0eb7b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T11:33:42.552Z"} -->
+
+## 2026-11-08 — Pass SDLC-3: Chat Brainstorm has no Test planner; Plan dialog still does; saved planners unchanged
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-3
+
+**Because:** Keyword with_test_planner is required; Chat BrainstormScreen passes False so the Test planner row and tip are omitted and _save_test_planner is gone; Plan dialog passes True and still has the field; write-up note sits under Final write-up. Targeted tests and both console files passed. Full pytest had one unrelated flake in test_review_back_reopens_the_form_with_the_delivery which passed in isolation.
+
+**Rejected:**
+
+- fail for the full-suite flake — unrelated New Agent SelectCurrent #label, passed in isolation
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py, tests/console/test_tui.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 7168194142694bba929f455334810412 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T11:54:38.827Z"} -->
+
+## 2026-11-08 — Approve SDLC-3: Chat Brainstorm omits Test planner without changing saved planner agents
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-3
+
+**Because:** The required keyword cleanly separates Chat from Relay Plan, the save path was removed from Chat, the conditional UI and explanatory note match the request, integration tests cover absence, persistence, and Plan presence, and uv run pytest -q completed at 100% with no failures
+
+**Files:** src/whyline/console/tui.py, src/whyline/console/relay_screens.py, tests/console/test_tui.py, tests/console/test_relay_plan_screen.py
+
+<!-- whyline-event: 0d98a6ed533b4178b358a80743a7d454 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:11:00.443Z"} -->

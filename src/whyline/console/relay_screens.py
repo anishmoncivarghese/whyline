@@ -338,7 +338,8 @@ class RelayPlanScreen(ModalScreen):
         default = self._research_default()
         self._final_writer = default
         return brainstorm_field_widgets(
-            self._status, default, self.app.session.root, self.app._attach_session
+            self._status, default, self.app.session.root, self.app._attach_session,
+            with_test_planner=True,
         )
 
     def _load_execution_defaults(self) -> None:

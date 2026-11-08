@@ -580,12 +580,19 @@ class _BrainstormChoice(dict):
     test_planner: str = ""
 
 
+_WRITE_UP_NOTE = (
+    "The test plan and test cases are written when you make a plan from this "
+    "brainstorm (Relay → Plan)."
+)
+
+
 def brainstorm_field_widgets(
     status: dict,
     default_final: str,
     root: Path | None = None,
     session: str | None = None,
     *,
+    with_test_planner: bool,
     keep_disabled_ids: bool = True,
 ) -> list:
     """Topic, models, passes, final writer, timeout, and attachments -- shared by the
@@ -647,18 +654,22 @@ def brainstorm_field_widgets(
                 Select([(a, a) for a in enabled], value=final_value,
                        allow_blank=False, id="bs-final"),
             ),
-            Horizontal(
-                Label("Test planner:", classes="field-label"),
-                Select(
-                    test_options,
-                    value=default_test if any(v == default_test for _, v in test_options) else "",
-                    allow_blank=False,
-                    id="bs-test-planner",
-                ),
-                id="bs-test-planner-row",
-            ),
-            Static(_TEST_PLANNER_TIP, id="bs-test-planner-tip", markup=False),
+            Static(_WRITE_UP_NOTE, id="bs-write-up-note", markup=False),
         ])
+        if with_test_planner:
+            fields.extend([
+                Horizontal(
+                    Label("Test planner:", classes="field-label"),
+                    Select(
+                        test_options,
+                        value=default_test if any(v == default_test for _, v in test_options) else "",
+                        allow_blank=False,
+                        id="bs-test-planner",
+                    ),
+                    id="bs-test-planner-row",
+                ),
+                Static(_TEST_PLANNER_TIP, id="bs-test-planner-tip", markup=False),
+            ])
     fields.extend([
         Horizontal(
             Label("Per-agent timeout:", classes="field-label"),
@@ -824,6 +835,7 @@ class BrainstormScreen(ModalScreen):
                 self._default_final,
                 self.app.session.root,
                 self.app._attach_session,
+                with_test_planner=False,
                 keep_disabled_ids=False,
             ),
             id="bs-fields",
@@ -862,32 +874,6 @@ class BrainstormScreen(ModalScreen):
             except Exception:
                 drafter = "codex"
         tip.display = bool(test_val) and test_val == drafter
-
-    def _save_test_planner(self, chosen: dict) -> None:
-        test_val = getattr(chosen, "test_planner", "")
-        try:
-            raw_val = self.query_one("#bs-test-planner", Select).value
-            if isinstance(raw_val, str):
-                test_val = raw_val
-        except Exception:
-            pass
-        if getattr(self, "app", None) is None or getattr(self.app, "session", None) is None:
-            return
-        root = self.app.session.root
-        try:
-            planner_cfg = relay_ops.planner_agents(root)
-            draft, review = planner_cfg[0], planner_cfg[1]
-        except Exception:
-            draft, review = "codex", "claude"
-        try:
-            relay_ops.save_planner(root, draft, review, test_val)
-        except TypeError:
-            try:
-                relay_ops.save_planner(root, draft, review)
-            except Exception:
-                pass
-        except Exception:
-            pass
 
     def _sync_attachment_agents(self) -> None:
         try:
@@ -938,7 +924,6 @@ class BrainstormScreen(ModalScreen):
         if risky:
             def answered(ok: bool) -> None:
                 if ok:
-                    self._save_test_planner(chosen)
                     self.dismiss(chosen)
 
             self.app.push_screen(
@@ -949,7 +934,6 @@ class BrainstormScreen(ModalScreen):
                 answered,
             )
             return
-        self._save_test_planner(chosen)
         self.dismiss(chosen)
 
     def collect(self) -> "dict | str":

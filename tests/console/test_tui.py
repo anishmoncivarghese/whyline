@@ -3258,7 +3258,7 @@ async def test_approved_plan_with_test_plan_prints_both_paths(tmp_path):
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_brainstorm_screen_saves_and_restores_test_planner_and_shows_tip(
+async def test_chat_brainstorm_has_no_test_planner_and_leaves_saved_planners_alone(
     tmp_path, monkeypatch
 ):
     from whyline.console import adapters, relay_ops
@@ -3273,6 +3273,8 @@ async def test_brainstorm_screen_saves_and_restores_test_planner_and_shows_tip(
             kind="output", text="done"
         ),
     )
+    relay_ops.save_planner(tmp_path, "codex", "claude", "claude")
+    before = relay_ops.planner_agents(tmp_path)
 
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
@@ -3280,29 +3282,21 @@ async def test_brainstorm_screen_saves_and_restores_test_planner_and_shows_tip(
         await pilot.pause()
         form = app.screen
         assert isinstance(form, tui.BrainstormScreen)
-        select = form.query_one("#bs-test-planner", tui.Select)
-        tip = form.query_one("#bs-test-planner-tip", tui.Static)
-        assert select.value == ""
-        assert not tip.display
-
-        select.value = "codex"
-        await pilot.pause()
-        assert tip.display
-        assert str(tip.renderable) == "Tip: a different agent from the Drafter catches more."
+        assert not form.query("#bs-test-planner")
+        assert not form.query("#bs-test-planner-row")
+        assert not form.query("#bs-test-planner-tip")
+        note = form.query_one("#bs-write-up-note", tui.Static)
+        assert str(note.renderable) == (
+            "The test plan and test cases are written when you make a plan "
+            "from this brainstorm (Relay → Plan)."
+        )
 
         form.query_one("#bs-topic", tui.Input).value = "retry policy"
         await pilot.click("#bs-start")
         await app.workers.wait_for_complete()
         await pilot.pause()
 
-        assert relay_ops.planner_agents(tmp_path) == ("codex", "claude", "codex")
-
-        await pilot.click("#brainstorm")
-        await pilot.pause()
-        reopened = app.screen
-        assert isinstance(reopened, tui.BrainstormScreen)
-        assert reopened.query_one("#bs-test-planner", tui.Select).value == "codex"
-        assert reopened.query_one("#bs-test-planner-tip", tui.Static).display
+        assert relay_ops.planner_agents(tmp_path) == before
 
 
 MANUAL_PAUSE_TWO_CHECKS = (
@@ -4151,7 +4145,7 @@ async def test_all_off_never_launches_claude(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
 @pytest.mark.asyncio
-async def test_brainstorm_final_and_test_selects_cannot_name_a_disabled_provider(
+async def test_brainstorm_final_select_cannot_name_a_disabled_provider(
     tmp_path, monkeypatch
 ):
     _stub_status(monkeypatch, available={"claude", "codex"}, enabled={"claude", "codex"})
@@ -4164,9 +4158,7 @@ async def test_brainstorm_final_and_test_selects_cannot_name_a_disabled_provider
         assert not form.query("#bs-grok")
         assert not form.query("#bs-antigravity")
         final = _select_values(form.query_one("#bs-final", tui.Select))
-        test = _select_values(form.query_one("#bs-test-planner", tui.Select))
         assert "grok" not in final and "antigravity" not in final
-        assert "grok" not in test and "antigravity" not in test
         assert "claude" in final and "codex" in final
 
 
