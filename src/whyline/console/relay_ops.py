@@ -400,6 +400,96 @@ def spec_questions_error():
     return specs.SpecQuestions
 
 
+_DOC_KIND_NAMES = {
+    "prd": "PRD_KIND",
+    "design": "DESIGN_KIND",
+    "spec": "SPEC_KIND",
+    "build-record": "BUILD_RECORD_KIND",
+}
+
+
+def _doc_kind(kind_name: str):
+    from whyline_relay import documents
+
+    try:
+        return getattr(documents, _DOC_KIND_NAMES[kind_name])
+    except KeyError:
+        raise ValueError(f"unknown document kind: {kind_name}") from None
+
+
+def _document_draft(root: Path, path: Path, kind_name: str) -> Draft:
+    cfg = _settings(root).planner
+    return Draft(
+        path=path,
+        text=path.read_text(encoding="utf-8"),
+        drafted_by=f"{cfg.draft} (reviewed by {cfg.review})",
+        source=kind_name,
+    )
+
+
+def draft_document(
+    root: Path,
+    kind_name: str,
+    request: str,
+    *,
+    template: str = "",
+    attachments: Sequence[Path] = (),
+    progress,
+) -> Draft:
+    """Open questions raise the relay's DocumentQuestions (the planner's
+    PlanQuestions), which plan_job turns into Outcome("questions", ...)."""
+    from whyline_relay import documents
+
+    path = documents.draft(
+        root,
+        _settings(root),
+        _doc_kind(kind_name),
+        request,
+        template=template,
+        attachments=attachments,
+        print_fn=progress,
+    )
+    return _document_draft(root, path, kind_name)
+
+
+def revise_document_text(
+    root: Path,
+    kind_name: str,
+    text: str,
+    feedback: str,
+    *,
+    template: str = "",
+    attachments: Sequence[Path] = (),
+    progress,
+) -> Draft:
+    from whyline_relay import documents
+
+    path = documents.revise_text(
+        root,
+        _settings(root),
+        _doc_kind(kind_name),
+        text,
+        feedback,
+        description=f"Revise the {kind_name}",
+        template=template,
+        attachments=attachments,
+        print_fn=progress,
+    )
+    return _document_draft(root, path, kind_name)
+
+
+def discard_document(root: Path, kind_name: str) -> None:
+    from whyline_relay import documents
+
+    documents.discard(root, _doc_kind(kind_name))
+
+
+def document_questions_error():
+    from whyline_relay import documents
+
+    return documents.DocumentQuestions
+
+
 
 def _models(agent: str) -> list[tuple[str, str]]:
     return [(agent, BRAINSTORM_LABELS[agent])]

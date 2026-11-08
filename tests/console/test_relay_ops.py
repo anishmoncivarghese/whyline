@@ -2261,3 +2261,80 @@ def test_pause_now_with_nothing_running(tmp_path, monkeypatch):
     monkeypatch.setattr(loop, "request_pause", lambda root, **kw: None)
     monkeypatch.setattr(running, "live", lambda root: None)
     assert relay_ops.pause_now(tmp_path) is False
+
+
+@pytest.fixture
+def stub_documents(repo, monkeypatch):
+    from whyline_relay import documents
+
+    calls = {}
+    out = repo / "doc.md"
+    out.write_text("# Doc\n")
+
+    def draft(root, settings, kind, request, *, template="", attachments=(), print_fn=None):
+        calls["draft"] = (kind, request, template, tuple(attachments))
+        return out
+
+    def revise_text(root, settings, kind, text, feedback, *, description, template="",
+                    attachments=(), print_fn=None):
+        calls["revise"] = (kind, text, feedback, template, tuple(attachments))
+        return out
+
+    monkeypatch.setattr(documents, "draft", draft)
+    monkeypatch.setattr(documents, "revise_text", revise_text)
+    monkeypatch.setattr(documents, "discard", lambda root, kind: calls.setdefault("discard", []).append(kind))
+    return calls
+
+
+@pytest.mark.parametrize("name,const", [
+    ("prd", "PRD_KIND"), ("design", "DESIGN_KIND"),
+    ("spec", "SPEC_KIND"), ("build-record", "BUILD_RECORD_KIND"),
+])
+def test_draft_document_maps_each_kind_and_passes_template_and_attachments(
+    repo, stub_documents, name, const
+):
+    from whyline_relay import documents
+
+    shown = repo / "a.txt"
+    draft = relay_ops.draft_document(
+        repo, name, "ask", template="T", attachments=[shown], progress=lambda line: None
+    )
+    assert stub_documents["draft"] == (getattr(documents, const), "ask", "T", (shown,))
+    assert draft.text == "# Doc\n"
+    assert draft.source == name
+
+
+@pytest.mark.parametrize("name,const", [
+    ("prd", "PRD_KIND"), ("design", "DESIGN_KIND"),
+    ("spec", "SPEC_KIND"), ("build-record", "BUILD_RECORD_KIND"),
+])
+def test_revise_document_text_and_discard_use_the_kind(repo, stub_documents, name, const):
+    from whyline_relay import documents
+
+    kind = getattr(documents, const)
+    shown = repo / "a.txt"
+    relay_ops.revise_document_text(
+        repo, name, "old", "fb", template="T", attachments=[shown], progress=lambda line: None
+    )
+    assert stub_documents["revise"] == (kind, "old", "fb", "T", (shown,))
+    relay_ops.discard_document(repo, name)
+    assert stub_documents["discard"] == [kind]
+
+
+def test_unknown_document_kind_is_refused(repo, stub_documents):
+    with pytest.raises(ValueError):
+        relay_ops.discard_document(repo, "memo")
+
+
+def test_document_questions_become_a_questions_outcome(repo, monkeypatch):
+    from whyline.console import plan_job
+    from whyline_relay import documents
+
+    asked = documents.DocumentQuestions
+    assert relay_ops.document_questions_error() is asked
+
+    def boom():
+        raise asked("asked", "log", questions=["Which db?"], stage="draft", agent="claude")
+
+    out = plan_job._guarded(boom, stage="prd")
+    assert (out.kind, out.questions, out.asker, out.stage) == ("questions", ("Which db?",), "claude", "prd")

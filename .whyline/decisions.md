@@ -39007,3 +39007,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 44717176db64435ab96dd894d8784abe -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T20:58:50.126Z"} -->
+
+## 2026-11-08 — Document questions reuse planner.PlanQuestions raised through; no new Outcome plumbing
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-12
+
+**Because:** documents.DocumentQuestions is PlanQuestions, which plan_job._guarded already maps to Outcome('questions')
+
+**Rejected:**
+
+- wrapping into Outcome inside relay_ops — plan_job imports relay_ops, so it would be circular
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 2907232fdcaf49f2bd7adea4c06013f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T21:00:26.598Z"} -->
+
+## 2026-11-08 — Pass SDLC-12: document wrappers map kinds, pass template/attachments, and raise questions as Outcome
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-12
+
+**Because:** prd/design/spec/build-record map to documents.PRD_KIND, DESIGN_KIND, SPEC_KIND, BUILD_RECORD_KIND; draft/revise_text/discard receive template and attachments; DocumentQuestions is PlanQuestions so plan_job._guarded yields Outcome('questions'). SDLC-12 relay_ops tests: 10 passed. uv run pytest -q: 4311 passed, 1 skipped, 0 failed.
+
+**Rejected:**
+
+- fail because _guarded omits document_questions_error — DocumentQuestions is PlanQuestions, and the questions test produces Outcome('questions')
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 68f00e1a63754d4fa0436c4384f286d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T21:18:41.245Z"} -->
+
+## 2026-11-08 — Approve SDLC-12: document adapters satisfy kind mapping, argument forwarding, discard, and question outcomes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-12
+
+**Because:** The wrappers use the matching whyline_relay.documents constants for all four kinds, forward template and attachments to draft and revise_text, route discard correctly, and DocumentQuestions aliases the planner exception handled as Outcome('questions'); the independent full uv run pytest -q exited 0 and git diff --check passed.
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 67218bbccff54a63a259916c3b8cbe08 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T21:35:07.744Z"} -->
