@@ -13,6 +13,7 @@ What the user gets:
 - In Human in the loop, the pipeline stops after every document with **Approve**, **Ask for changes**, **Edit**, **Stop here** and **Run the rest on Auto**.
 - A **Docs** screen (library and review screen in one), a **Docs** tab in the Files pane, and **Export pack** to Word and PDF for a senior developer or architect.
 - `whyline docs …` on the command line, calling the same functions.
+- Every document gets a **fresh-eyes review** before approval (GFR-1..6). Separate read-only reviewer agents, which never saw the drafting, check it through lenses such as "too much?", "clear to a newcomer?", "fits the code?" and "ready to build?". Findings are 🔴 Blocker, 🟡 Major or 🟢 Nit. Auto approves only with no Blockers, after at most 2 rounds of changes, and otherwise stops for you. The idea comes from Google's Elephant-Goldfish Model (github.com/google/elephant-goldfish-model, Apache-2.0).
 
 Rules every task keeps:
 - Console first: every console action saves through the same function the CLI calls.
@@ -149,7 +150,7 @@ Rules every task keeps:
   1. `run_stage(root, docset, stage, *, progress) -> StageResult` (done, questions or error), under `guard.check` and `guard.drafting`:
      - **brainstorm**: `adapters.run_brainstorm` with the set's brainstorm roles. The final synthesis is added as a version.
      - **prd, spec, design, build-record**: `relay_ops.draft_document`. The request is the set's description. The template comes from `template_for`. Attachments are the approved documents before it, plus the brainstorm when there is one. The draft is added as a version, and the relay checkpoint is discarded.
-     - **design-review**: `revise_document_text` on the approved design, with the architect reviewer as reviewer and the feedback "Review this design as an architect. Change only what must change; list the rest under Open questions for the architect."
+     - **design-review**: GFR-3 runs this stage as a fresh-eyes review by the architect reviewer. Until GFR-3, `run_stage` returns done for it and changes nothing.
   2. `StageResult.questions` carries open questions. The set's status for that document becomes in_review, with the questions saved in `docset.json` under `pending_questions`.
   3. The set records `stage` and `started_at` in `docset.json` while running, so a crash leaves it resumable.
   Tests: each stage kind with stubs, questions, the guard refusing, and the checkpoint being discarded after a draft.
@@ -186,6 +187,59 @@ Rules every task keeps:
   3. After the plan is approved and `build` is set, it runs Auto's final preflight and launcher. Move `_preflight_phase` and `_launch` out of `auto_run.py` into a small shared helper if they can't be called as they are, and keep `auto_run` working. It stores the launch commit as `build_base` in `docset.json`.
   Tests: a full auto run with stubs from description to launch, human mode stopping after one stage, switching mid-run, and a cancel between stages.
 
+- [ ] GFR-1: Review lenses
+  Create `src/whyline/sdlc/lenses.py`, `src/whyline/sdlc/lenses/{zoom-out,comprehension,design-critic,codebase-fit,readiness}.md`, `src/whyline/sdlc/lenses/ATTRIBUTION.md` and `tests/sdlc/test_lenses.py`.
+  1. Each lens file is a short reviewer brief in plain words, adapted from the Elephant-Goldfish Model reviewer personas (not copied verbatim):
+     - **zoom-out**: is anything here not needed now? Does existing code in this repository already do it? Is it over-built?
+     - **comprehension**: could someone new to the project follow it? Are there undefined terms, missing steps, or two readings of one sentence?
+     - **design-critic**: failure modes, data loss, security and privacy, and claims about behaviour or performance with no reason given
+     - **codebase-fit**: do the files, functions and names it mentions exist, and does it match how the code works today?
+     - **readiness**: could an implementer start now without making a design decision? For a plan, each task names its files and tests, is small (at most about 5 numbered steps and 4 source files), and a guard or security task has a closed Review focus list.
+     Every lens tells the reviewer: you are read-only; you have not seen how this document was written; report only problems; and use exactly one line per finding, `- [blocker|major|nit] <section> — <problem> — <suggested fix>`, or the single line `No findings.`
+  2. `ATTRIBUTION.md` names the source (github.com/google/elephant-goldfish-model, commit e9e1f06, Apache-2.0) and says the texts are adapted.
+  3. `lenses_for(size, kind) -> list[str]`:
+     - small: spec gets zoom-out and readiness; plan gets readiness
+     - feature: brainstorm gets zoom-out; prd gets zoom-out and comprehension; spec gets comprehension, codebase-fit and design-critic; plan gets readiness and zoom-out
+     - large: brainstorm gets zoom-out; prd gets zoom-out and comprehension; design gets all five; plan gets readiness, zoom-out and codebase-fit
+     - build-record gets none (GFR-4 covers it)
+  4. `lens_text(root, name) -> str` reads `.whyline/sdlc/lenses/<name>.md` when it exists, or else the built-in one, like `template_for`.
+  5. `Finding(lens, severity, section, problem, fix)` and `parse_findings(lens, text) -> list[Finding] | None`. It returns None when the text has neither a finding line nor `No findings.` It ignores other lines and lines inside fenced code.
+  Tests: each size × kind, an override winning, the built-ins in the wheel (`importlib.resources`), parsing all three severities, `No findings.` giving [], and chatter-only text giving None.
+  Review focus (closed): the table in 3 and the parser in 5. Anything else goes in a follow-up note, not this task.
+
+- [ ] GFR-2: Run a fresh-eyes review
+  Create `src/whyline/sdlc/goldfish.py` and `tests/sdlc/test_goldfish.py`. Make the helpers it needs in `src/whyline/relaychat/ask.py` public (keep the old names as aliases). Do not copy them.
+  1. `review_document(root, docset, kind, *, agent, progress, cancel_event=None, run_fn=None) -> Review` runs every lens in `lenses_for(docset.size, kind)` under `guard.check` and `guard.drafting`.
+  2. Each lens is its own new agent process, run the way `relaychat.ask.ask` runs one: the read-only command from `whyline.agents.capabilities.read_only_command`, `whyline_relay.agents.run`, a new temporary folder, and no `--resume`. The prompt holds only:
+     - the lens text
+     - the document's path and version
+     - the paths of the approved documents before it
+     - the line "Read code in this repository when the document names it."
+     It never holds the set's request, the drafting conversation, the review log or earlier reviews.
+  3. `agent` must have a read-only mode (`relaychat.agent_choice.choices`). When it is the document's writer and another read-only agent is installed, use that other agent instead. When none is installed, the report says `Reviewed by the writer (no other read-only agent installed).`
+  4. A lens that fails, times out, is cancelled by its read-only rules twice, or returns text `parse_findings` can't read is retried once. After that it is listed as not run. It never counts as zero findings.
+  5. The function writes `docs/sdlc/<slug>/reviews/<kind>-v<N>.md`:
+     - a first line `Blockers: <n> · Major: <n> · Nits: <n> · Not run: <lenses or none> · Reviewer: <agent>`
+     - the findings grouped by severity, with exact duplicates (same section and problem, ignoring case) merged and their lens names joined
+     It then calls `log_review` with action `fresh review` and that first line as the comment.
+  6. `Review(path, findings, not_run, agent)`, and `latest_review(root, docset, kind) -> Review | None` reads the newest report back.
+  Tests with a stubbed `run_fn`: the prompt has the document path and no request text or earlier review, one process per lens, the retry then not run, the report's first line and grouping, the writer swap, and `guard.check` refusing.
+  Review focus (closed): prompt isolation in 2 and the not-run rule in 4. Anything else goes in a follow-up note, not this task.
+
+- [ ] GFR-3: Review gate in the pipeline
+  Edit `src/whyline/sdlc/runner.py`, `src/whyline/sdlc/review.py` and their tests only.
+  1. After each document stage finishes (brainstorm, prd, spec, design, plan), `run` calls `goldfish.review_document` with the set's Reviewer agent. The **design-review** stage is a review of the approved design with the Architect reviewer agent, using all five lenses.
+  2. `gate(review) -> str` returns `pass` (no Blocker and nothing not run), `fix` (one or more Blockers) or `stop` (a lens not run).
+  3. In auto mode:
+     - `pass` approves with `approver="<agent> (Auto, fresh review)"`.
+     - `fix` calls `ask_for_changes` with each Blocker and Major as `<section>: <problem> — <fix>`, then reviews again. `MAX_FIX_ROUNDS = 2`. After that it stops waiting for review, with `Still has blockers after 2 rounds of changes`.
+     - `stop` stops waiting for review, with `A reviewer didn't run: <lenses>`.
+     Majors and Nits alone never block.
+  4. In human mode, the review runs before `run` returns, so the findings are there when Docs opens. Approving with Blockers still works, and the review log records `approved with <n> blockers`.
+  5. `review.review_again(root, slug, kind, *, progress)` runs `review_document` on the current version.
+  Tests: auto pass, a fix round that clears, two fix rounds that stop, a not-run stop, human mode returning with the review, the design-review stage using the architect agent, and approve-with-blockers logging.
+  Review focus (closed): the round limit and the three gate outcomes. Anything else goes in a follow-up note, not this task.
+
 - [ ] SDLC-17: The build record and decisions.md
   Create `src/whyline/sdlc/record.py` and its tests. Edit `src/whyline/console/tui.py` only where the console notices the relay finishing a plan.
   1. `build_inputs(root, docset) -> Path` writes `docs/sdlc/<slug>/build-inputs.md`:
@@ -199,6 +253,14 @@ Rules every task keeps:
      It is regenerated on every approval and after the build.
   3. When the relay finishes a plan that belongs to a set, the console runs the build-record stage, with `build-inputs.md` attached. In auto mode it is approved by the reviewer agent. In human mode it waits in Docs.
   Tests: inputs from a temporary repository, decisions content, and the console hook calling the stage once.
+
+- [ ] GFR-4: Drift check in the build record
+  Edit `src/whyline/sdlc/record.py`, `src/whyline/sdlc/templates/build-record.md` and their tests only.
+  1. `drift_review(root, docset, *, agent, progress, run_fn=None) -> Path` runs the codebase-fit lens once, the GFR-2 way, on the approved spec or design. It adds `git diff --stat <build_base>..HEAD` and the line "Compare what the document promised with what was built. A finding is something promised and not built, or built and not in the document." It writes `docs/sdlc/<slug>/reviews/drift.md`.
+  2. The build-record stage attaches `drift.md` next to `build-inputs.md`. The template gains a `## Drift from the spec` section.
+  3. When the lens doesn't run, the build record still gets written, and its section says `Drift check didn't run: <reason>`.
+  Tests: the prompt has the diff stat and the spec path, the attachment, and the not-run text.
+  Review focus (closed): 3. Anything else goes in a follow-up note, not this task.
 
 ## Part 4: Library, export and CLI (no widgets)
 
@@ -232,6 +294,13 @@ Rules every task keeps:
   - `export <slug> [--out DIR]`
   Each prints plain lines and exits non-zero with the guard's message when refused.
   Tests: each subcommand with stubs.
+
+- [ ] GFR-5: Review in the CLI and the export pack
+  Edit `src/whyline/sdlc/cli.py`, `src/whyline/sdlc/export.py` and their tests only. The console counterpart is GFR-6.
+  1. `whyline docs review <slug> <doc>` calls `review.review_again` and prints the report's first line and its path.
+  2. `whyline docs findings <slug> <doc>` prints `latest_review`, one finding per line with its severity and lens, and the not-run lenses.
+  3. The export pack adds an appendix "Fresh-eyes reviews" after the review log, with the latest review of each document.
+  Tests: both subcommands with stubs, the guard refusal exiting non-zero, and the appendix order.
 
 ## Part 5: Console
 
@@ -286,6 +355,14 @@ Rules every task keeps:
   6. **Approve** on a human-mode set continues the pipeline with `runner.run`.
   Tests: each action with stubs, the section list, and the Also changed line.
 
+- [ ] GFR-6: Findings in Docs
+  Edit `src/whyline/console/docs_screen.py` and its tests only.
+  1. Under the selected document, a **Findings** panel shows `latest_review`: the first line, then the findings grouped 🔴 Blocker, 🟡 Major, 🟢 Nit, each with its section and lens, and any not-run lenses. With no review, it says `Not reviewed yet.`
+  2. **Review again** calls `review.review_again` in a thread worker. It is disabled while `guard.check` refuses, like the other actions.
+  3. The **Ask for changes** form gets a findings checklist, with Blockers and Majors ticked by default. Ticked findings are added to the comments as `<section>: <problem> — <fix>`.
+  4. The middle list shows the counts after each document's status, for example `Spec v3 · In review · 🔴 1 🟡 2`.
+  Tests: the panel with and without a review, the checklist adding ticked findings, the counts, and Review again with a stub.
+
 - [ ] SDLC-26: History in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   **History** shows the document's versions and its `review-log.md` entries. Picking two versions shows a unified diff (difflib), and one version shows its text.
@@ -311,9 +388,10 @@ Rules every task keeps:
   - the document set and its templates
   - review at each stop, out of date, and the Docs screen
   - Export pack, the `whyline docs` commands, and template overrides
+  - fresh-eyes review: the lenses, the Auto gate and its 2-round limit, lens overrides in `.whyline/sdlc/lenses/`, the drift check, and credit to the Elephant-Goldfish Model
   - that Test planner belongs to Plan, not Chat Brainstorm
   Verify with `uv run pytest -q`.
 
-- [ ] SDLC-30: Publish whyline with SDLC-1..29
+- [ ] SDLC-30: Publish whyline with SDLC-1..29 and GFR-1..6
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
