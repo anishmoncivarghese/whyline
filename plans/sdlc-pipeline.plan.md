@@ -68,7 +68,7 @@ Rules every task keeps:
   4. `load(root, slug)`, `save(root, docset)` (atomic, through `whyline.state.atomic_write_json`) and `all_sets(root)`.
   Tests: each size × prd_mode's documents, the prd_mode default with and without `docs/product/prd.md`, slug clashes, a save/load round trip, and a missing or corrupt `docset.json`, which gives a plain error and no crash.
 
-- [ ] WTD-1: Where documents live
+- [x] WTD-1: Where documents live
   Create `src/whyline/sdlc/workspace.py` and `tests/sdlc/test_workspace.py`. Edit `src/whyline/worktrees.py` and its tests only to add the helper in 1.
   1. `worktrees.default_branch_worktree(root) -> Path | None` returns the path of any worktree of this repository that has the default branch checked out (`git worktree list --porcelain`), or None.
   2. `docs_root(root) -> Path`:
