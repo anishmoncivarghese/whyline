@@ -1,5 +1,5 @@
 # whyline-relay configuration. Every key is optional.
-plan = "plans/release-button.plan.md"
+plan = "plans/sdlc-pipeline.plan.md"
 max_rounds = 24
 timeout_minutes = 60
 branch_prefix = "relay/"
