@@ -38365,3 +38365,109 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 10630c94b9474fc8bde67e88850037f1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:57:40.409Z"} -->
+
+## 2026-11-08 — docs_commit takes optional written={path: text}; a dirty path is accepted only if its content equals what whyline wrote, else WorktreeError
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WTD-1
+
+**Because:** spec says refuse changes whyline didn't write, but gives no way to tell; content equality needs no extra state
+
+**Rejected:**
+
+- refuse any dirty path — would block committing the files whyline just wrote
+
+**Files:** src/whyline/sdlc/workspace.py
+
+<!-- whyline-event: fc21549c32d942c2b0f793622ea3068b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:59:01.350Z"} -->
+
+## 2026-11-08 — Pass WTD-1: docs_root, pathspec commits, dirty-path refusal, and copy behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** WTD-1
+
+**Because:** Focused tests 16 passed. Independent probes covered default-branch root, existing main worktree, created docs worktree with no new branch, matching written accepted, foreign and mismatched written refused without committing, untracked without written refused, pathspec-only commits, no push, copy_plan_to, and master as default. Full uv run pytest -q finished at 100 percent with exit 0.
+
+**Rejected:**
+
+- fail over extra written arg — spec gives no other way to tell whyline writes from foreign dirt
+- fail because docs_root from a plan worktree creates under that folder name — spec says worktrees base which is _base(root); the three required docs_root cases pass
+
+**Test:** uv run pytest -q tests/sdlc/test_workspace.py tests/test_worktrees.py: 16 passed
+**Test:** uv run pytest -q: 100 percent, exit 0, 1 skipped
+
+**Files:** src/whyline/sdlc/workspace.py, src/whyline/worktrees.py, tests/sdlc/test_workspace.py, tests/test_worktrees.py
+
+<!-- whyline-event: df464337fcb74a28ac950493eda4066c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T13:18:34.406Z"} -->
+
+## 2026-11-08 — Reject WTD-1 because docs_commit can overwrite staged foreign edits
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WTD-1
+
+**Because:** src/whyline/sdlc/workspace.py:51-67 validates only the working-tree text against written; if a user has staged different content and Whyline then writes the expected text, git add replaces the staged edit and commits without refusing, contrary to the closed dirty-path safety requirement. Add an index-dirty check and regression test. The independent uv run pytest -q passed with one skip.
+
+**Files:** src/whyline/sdlc/workspace.py
+
+<!-- whyline-event: b770cd4816d143c29c0c1120813176ef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T13:35:38.591Z"} -->
+
+## 2026-11-08 — docs_commit refuses any pre-staged change on its paths before git add
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WTD-1
+
+**Because:** git add would replace foreign staged content when the working text matches what whyline wrote
+
+**Rejected:**
+
+- compare index content to written — staged content is by definition not whyline's, simpler to refuse
+
+**Files:** src/whyline/sdlc/workspace.py
+
+<!-- whyline-event: be43c68d898a4243a392f129213d4c4b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T13:36:21.415Z"} -->
+
+## 2026-11-08 — Pass WTD-1: docs_root, dirty-path refusal including staged index, pathspec commits, and copy_plan_to all match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** WTD-1
+
+**Because:** Focused 17 tests passed; an independent probe of the three docs_root cases, foreign working-tree refusal, staged-index refusal, pathspec-only commit, no-push, and copy succeeded; full uv run pytest -q exited 0 at 100 percent with one skip
+
+**Rejected:**
+
+- fail for copy_plan_to overwriting dest before the staged check — that is item 4, follow-up not this task
+
+**Test:** uv run pytest -q tests/sdlc/test_workspace.py tests/test_worktrees.py: 17 passed
+**Test:** uv run pytest -q: exit 0, 100%, 1 skip
+**Test:** independent spec probe: PROBE_OK
+
+**Files:** src/whyline/sdlc/workspace.py, tests/sdlc/test_workspace.py, src/whyline/worktrees.py, tests/test_worktrees.py
+
+<!-- whyline-event: 3ba1b52311764325b5eae219885a17c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T13:55:12.481Z"} -->
+
+## 2026-11-08 — Approve WTD-1: default-branch document placement and foreign-change refusal satisfy the closed review focus
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WTD-1
+
+**Because:** The diff implements all three docs_root cases, rejects pre-staged target-path content before git add, preserves pathspec-only commits, and uv run pytest -q completed at 100 percent with exit 0 and one skip
+
+**Rejected:**
+
+- request changes for copy_plan_to overwriting a destination before refusal — item 4 is explicitly outside the closed review focus and should remain follow-up work
+
+**Files:** src/whyline/sdlc/workspace.py, src/whyline/worktrees.py, tests/sdlc/test_workspace.py, tests/test_worktrees.py
+
+<!-- whyline-event: 2dacf7519a9e42518097d0d40f78c0b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:12:05.382Z"} -->

@@ -144,3 +144,15 @@ def remove(root: Path, path: Path) -> None:
             )
         _git(root, "worktree", "remove", str(target))
     _git(root, "worktree", "prune")
+
+
+def default_branch_worktree(root: Path) -> Path | None:
+    """Path of any worktree of this repo with the default branch checked out."""
+    branch = _default_branch(root).removeprefix("origin/")
+    wanted = f"refs/heads/{branch}"
+    for entry in _entries(root):
+        if entry.get("branch") == wanted and "worktree" in entry:
+            path = Path(entry["worktree"])
+            if path.exists():
+                return path
+    return None

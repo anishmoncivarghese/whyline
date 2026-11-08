@@ -36,6 +36,15 @@ def test_make_creates_worktree_on_new_branch(repo, tmp_path):
     assert _git(path, "rev-parse", "--abbrev-ref", "HEAD").strip() == "brainstorm/my-idea"
 
 
+def test_default_branch_worktree_finds_root_other_worktree_or_none(repo):
+    assert worktrees.default_branch_worktree(repo).resolve() == repo.resolve()
+    work = worktrees.make(repo, "plan", "x")
+    _git(repo, "checkout", "-b", "side")
+    assert worktrees.default_branch_worktree(work) is None
+    _git(repo, "checkout", "main")
+    assert worktrees.default_branch_worktree(work).resolve() == repo.resolve()
+
+
 def test_name_is_limited_and_kind_checked(repo):
     path = worktrees.make(repo, "plan", "x" * 100)
     assert path.name == "plan-" + "x" * 40
