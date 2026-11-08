@@ -24,7 +24,7 @@ command = ["grok", "--output-format", "json", "--permission-mode", "dontAsk", "-
 implementer = "claude"
 tester = "grok"
 reviewer = "codex"
-release = "codex"
+release = "claude"
 
 [pipeline]
 default_profile = "full"
