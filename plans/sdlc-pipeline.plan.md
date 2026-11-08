@@ -13,6 +13,7 @@ What the user gets:
 - In Human in the loop, the pipeline stops after every document with **Approve**, **Ask for changes**, **Edit**, **Stop here** and **Run the rest on Auto**.
 - A **Docs** screen (library and review screen in one), a **Docs** tab in the Files pane, and **Export pack** to Word and PDF for a senior developer or architect.
 - `whyline docs …` on the command line, calling the same functions.
+- **One product PRD** at `docs/product/prd.md`, versioned v1.0, v1.1, v1.2… A new project writes it. A Feature or Large run updates only the sections that feature changes, as the next version, or records `No PRD change: <reason>`. Small never touches it. Specs, designs and plans stay per feature (PRD-1..3).
 - Every document gets a **fresh-eyes review** before approval (GFR-1..6). Separate read-only reviewer agents, which never saw the drafting, check it through lenses such as "too much?", "clear to a newcomer?", "fits the code?" and "ready to build?". Findings are 🔴 Blocker, 🟡 Major or 🟢 Nit. Auto approves only with no Blockers, after at most 2 rounds of changes, and otherwise stops for you. The idea comes from Google's Elephant-Goldfish Model (github.com/google/elephant-goldfish-model, Apache-2.0).
 
 Rules every task keeps:
@@ -50,17 +51,19 @@ Rules every task keeps:
 - [ ] SDLC-4: The document set manifest
   Create `src/whyline/sdlc/__init__.py`, `src/whyline/sdlc/docset.py` and `tests/sdlc/test_docset.py`.
   1. `Size` is small, feature or large. `Mode` is human or auto. `Status` is draft, in_review, changes_requested, approved, out_of_date or superseded. Each has a display label, for example "Human in the loop", "In review" and "Out of date".
-  2. `documents_for(size, brainstorm_first: bool) -> list[str]`, with kinds from the design's table:
-     - small: `spec`, `plan`, `build-record`. Small's spec uses the short-spec template.
+  2. `PrdMode` is new, update or none, with the labels "New project: write the PRD", "Update the product PRD" and "No PRD change". `documents_for(size, brainstorm_first: bool, prd_mode: str) -> list[str]`, with kinds from the design's table:
+     - small: `spec`, `plan`, `build-record`. Small's spec uses the short-spec template. Small has no PRD, whatever `prd_mode` says.
      - feature: `prd`, `spec`, `plan`, `build-record`, with `brainstorm` first when `brainstorm_first` is set
      - large: `brainstorm`, `prd`, `design`, `plan`, `build-record`
+     - `prd` is left out when `prd_mode` is none. In update mode the `prd` document is this feature's update of the product PRD, not a new PRD (PRD-1 and PRD-2).
      - `plan` stands for the plan and its test plan together.
-  3. `create(root, name, size, mode, *, brainstorm_first=False, build=True, roles: dict) -> DocSet`:
+  3. `create(root, name, size, mode, *, brainstorm_first=False, prd_mode=None, prd_major=False, build=True, roles: dict) -> DocSet`:
+     - `prd_mode=None` means update when `docs/product/prd.md` exists, and new otherwise. Small always stores none.
      - It writes `docs/sdlc/<slug>/docset.json`. The slug comes from the existing slug helper used for plans. When the folder exists, it adds `-2`, `-3` and so on.
-     - Fields: schema 1, name, slug, size, mode, build, roles, created, and `documents`, a list of `{kind, path, status, version, written_by, reviewed_by, approved_by, approved_at, upstream: {kind: sha256}}`.
+     - Fields: schema 1, name, slug, size, mode, prd_mode, prd_major, build, roles, created, and `documents`, a list of `{kind, path, status, version, written_by, reviewed_by, approved_by, approved_at, upstream: {kind: sha256}}`.
      - A plan's path is `plans/<slug>.plan.md`. Every other kind's path is `docs/sdlc/<slug>/<kind>.md`.
   4. `load(root, slug)`, `save(root, docset)` (atomic, through `whyline.state.atomic_write_json`) and `all_sets(root)`.
-  Tests: each size's documents, slug clashes, a save/load round trip, and a missing or corrupt `docset.json`, which gives a plain error and no crash.
+  Tests: each size × prd_mode's documents, the prd_mode default with and without `docs/product/prd.md`, slug clashes, a save/load round trip, and a missing or corrupt `docset.json`, which gives a plain error and no crash.
 
 - [ ] SDLC-5: Versions, history and the review log
   Edit `src/whyline/sdlc/docset.py` and its tests only.
@@ -115,18 +118,34 @@ Rules every task keeps:
   3. `import_brainstorm(root, docset, path)` is the same for the `brainstorm` kind. A file already in `docs/brainstorm/` keeps its place and is copied into the set.
   Tests: each file type (small fixtures), each refusal, and the log entry.
 
+- [ ] PRD-1: The product PRD
+  Create `src/whyline/sdlc/product.py` and `tests/sdlc/test_product.py`. Edit `src/whyline/sdlc/docset.py` and its tests only where 4 and 5 say.
+  1. `docs/product/` holds `prd.md`, `product.json` (schema 1, version, approved_by, approved_at, sha256, update_claim), `changelog.md` and `history/prd-v<version>.md`.
+  2. `current(root) -> ProductPrd | None` returns the version (for example "1.2"), path, text and sha256. It returns None when there is no `prd.md`.
+  3. Each version step:
+     - `next_version(version: str | None, *, major=False) -> str` gives "1.0" first, then "1.1", "1.2", and "2.0" when major.
+     - `publish(root, text, *, set_name, slug, approver, major=False) -> str` writes `prd.md` with the first line `<!-- product-prd v<version> -->`, the history copy and `product.json`, and appends a changelog line `v<version> · <date> · <set name> · changed: <sections> · approved by <approver>`. The sections come from `changed_sections`, or `all (new PRD)` for v1.0. It returns the version.
+     - `changed_sections(old, new) -> list[str]` compares section text by `templates.sections` headings, in order.
+     - `claim_update(root, slug)`, `release_update(root, slug)` and `claim_holder(root) -> str | None` store the one open update in `product.json`. A claim whose set no longer exists or is approved is taken over.
+     - `moved(root, docset) -> bool` compares the PRD document's `based_on` with `current`.
+  4. In `docset.py`, the `prd` document's upstream for later documents is `docs/product/prd.md` and its version label, not the set's draft file. Later documents record `based_on_prd`. `refresh_out_of_date` gives the reason `PRD changed (v1.2 → v1.3) after this was approved`, but only for sets with no `build_base` yet. A set that has been built keeps the PRD version it was built on and is never marked by later PRD changes.
+  5. `render_header` and `render_index` show the PRD as `Product PRD v1.3 (draft 2)` while in review and `Product PRD v1.3` once approved.
+  Tests: version steps, publish writing all four files, the changelog line, changed_sections ignoring untouched sections, a claim, a refusal and a stale-claim takeover, `moved`, out of date for an unbuilt set and not for a built one, and the header label.
+  Review focus (closed): 3 and the built-set rule in 4. Anything else goes in a follow-up note, not this task.
+
 ## Part 3: Running the pipeline (no widgets)
 
 - [ ] SDLC-10: Stages for a set
   Create `src/whyline/sdlc/stages.py` and its tests.
   1. `plan_stages(size, start, *, brainstorm_first, build) -> list[Stage]`:
      - `start` is description, brainstorm, prd or spec.
+     - The PRD stage is labelled `PRD` for new and `PRD update` for update. With none it is skipped, with the reason `no PRD change` (or `Small has no PRD`).
      - Each `Stage` has its kind, whether it is skipped, and the reason (for example "starting from a brainstorm").
      - Large adds a `design-review` stage after design.
      - `build` adds implement, test, review and release (shown, run by the relay) and then build-record.
   2. `next_stage(docset) -> Stage | None` is the first stage that isn't skipped and isn't approved.
   3. `stages_line(stages, roles) -> str` returns the design's line, for example `PRD (claude, reviewed by codex) → Spec (claude) → …`, with `—` and the reason for each skipped stage.
-  Tests: each size × start, the Large design review, build on and off, and the exact line for the design's example.
+  Tests: each size × start, each prd_mode, the Large design review, build on and off, and the exact line for the design's example.
 
 - [ ] SDLC-11: One drafter at a time, and nothing while a relay runs
   Create `src/whyline/sdlc/guard.py` and its tests.
@@ -149,11 +168,13 @@ Rules every task keeps:
   Create `src/whyline/sdlc/runner.py` and its tests.
   1. `run_stage(root, docset, stage, *, progress) -> StageResult` (done, questions or error), under `guard.check` and `guard.drafting`:
      - **brainstorm**: `adapters.run_brainstorm` with the set's brainstorm roles. The final synthesis is added as a version.
-     - **prd, spec, design, build-record**: `relay_ops.draft_document`. The request is the set's description. The template comes from `template_for`. Attachments are the approved documents before it, plus the brainstorm when there is one. The draft is added as a version, and the relay checkpoint is discarded.
+     - **prd, new mode**: `relay_ops.draft_document` as below. When the repository has no product PRD yet but already has code, `README.md` is attached too, and the request starts "Write the product PRD for this existing project from its README and code, then cover the feature below."
+     - **prd, update mode** (needs PRD-1): `product.claim_update` first. When another set holds the claim, refuse with `Another feature is updating the PRD (<set>)`. Then `relay_ops.revise_document_text` on the current product PRD text, with the feedback "Update this PRD for the feature below. Change only the sections this feature affects, and keep every other section word for word. If no section needs to change, reply with only `No PRD change: <reason>`." That reply marks the stage skipped with the reason and releases the claim. Otherwise the result is added as a version with the note `based on PRD v<current>`, and `based_on` is saved in the document entry.
+     - **spec, design, build-record**: `relay_ops.draft_document`. The request is the set's description. The template comes from `template_for`. Attachments are the approved documents before it, plus the brainstorm when there is one. The draft is added as a version, and the relay checkpoint is discarded.
      - **design-review**: GFR-3 runs this stage as a fresh-eyes review by the architect reviewer. Until GFR-3, `run_stage` returns done for it and changes nothing.
   2. `StageResult.questions` carries open questions. The set's status for that document becomes in_review, with the questions saved in `docset.json` under `pending_questions`.
   3. The set records `stage` and `started_at` in `docset.json` while running, so a crash leaves it resumable.
-  Tests: each stage kind with stubs, questions, the guard refusing, and the checkpoint being discarded after a draft.
+  Tests: each stage kind with stubs, a PRD update, `No PRD change`, the claim refusing, new mode attaching README, questions, the guard refusing, and the checkpoint being discarded after a draft.
 
 - [ ] SDLC-14: Run the plan and test plan stage
   Edit `src/whyline/sdlc/runner.py` and its tests only.
@@ -165,6 +186,8 @@ Rules every task keeps:
 - [ ] SDLC-15: Review actions
   Create `src/whyline/sdlc/review.py` and its tests. Every action calls `guard.check` first.
   1. `approve(root, slug, kind, *, approver)` approves, commits (`docs: approve <Kind> v<N> for <name>`), runs `refresh_out_of_date`, and returns the next stage.
+     - For `prd` it also calls `product.publish`, which makes v1.0 in new mode, or the next minor version (the next major when `prd_major`) in update mode. The commit message names that version: `docs: PRD v1.3 for <name>`.
+     - In update mode it first checks `product.moved(root, docset)`. When the product PRD changed after this draft was based on it, it refuses with `The PRD is now v<new>. Redo this update first.` and approves nothing.
   2. `ask_for_changes(root, slug, kind, comments, *, section="", progress)`:
      - It logs `changes requested`.
      - It calls `revise_document_text` with the current version. With a section, it adds "Change only the section '<section>' unless the comments say otherwise."
@@ -174,8 +197,8 @@ Rules every task keeps:
   3. `edited(root, slug, kind, *, editor_name)`: when the file differs from the last version, it adds it as a version with the note `edited by <name>`.
   4. `redo(root, slug, kind, *, progress)` is ask_for_changes with "Update this to match <upstream> v<N>. Change only what that change needs."
   5. `answer_questions(root, slug, kind, answers, *, progress)` reuses `relay_ops.question_feedback` and ask_for_changes.
-  6. `stop(root, slug)` clears `stage` and leaves everything else.
-  Tests: each action, including "Also changed" and the guard refusing.
+  6. `stop(root, slug)` clears `stage`, releases the set's PRD claim, and leaves everything else.
+  Tests: each action, including "Also changed", the guard refusing, PRD approval publishing the right version, the moved-PRD refusal, and stop releasing the claim.
 
 - [ ] SDLC-16: Auto mode and switching modes
   Edit `src/whyline/sdlc/runner.py`, `src/whyline/sdlc/review.py` and their tests only.
@@ -215,6 +238,7 @@ Rules every task keeps:
      - the document's path and version
      - the paths of the approved documents before it
      - the line "Read code in this repository when the document names it."
+     - for a PRD update, a unified diff against the current product PRD, and the line "Judge the changed sections, and whether the rest of the PRD still agrees with them."
      It never holds the set's request, the drafting conversation, the review log or earlier reviews.
   3. `agent` must have a read-only mode (`relaychat.agent_choice.choices`). When it is the document's writer and another read-only agent is installed, use that other agent instead. When none is installed, the report says `Reviewed by the writer (no other read-only agent installed).`
   4. A lens that fails, times out, is cancelled by its read-only rules twice, or returns text `parse_findings` can't read is retried once. After that it is listed as not run. It never counts as zero findings.
@@ -267,7 +291,8 @@ Rules every task keeps:
 - [ ] SDLC-18: The library
   Create `src/whyline/sdlc/library.py` and its tests.
   1. `sets(root) -> list[SetSummary]`, newest first, each with a one-line summary such as `Job search 5 · Feature · PRD ✓ · Spec ✓ · Plan ✓ · Built ⏳`.
-  2. `earlier_plans(root) -> list[EarlierPlan]`: every plan in `plans/` and `plans/done/` that no set owns. Each comes with its test plan, and with the spec or brainstorm its marker line names when that file exists.
+  2. `product(root) -> ProductSummary | None`: the product PRD's version, approval and its last 10 changelog lines, listed above the sets.
+  3. `earlier_plans(root) -> list[EarlierPlan]`: every plan in `plans/` and `plans/done/` that no set owns. Each comes with its test plan, and with the spec or brainstorm its marker line names when that file exists.
   Tests: mixed sets and earlier plans, a plan in `plans/done/`, and a marker whose spec is missing.
 
 - [ ] SDLC-19: Export pack
@@ -276,7 +301,8 @@ Rules every task keeps:
      - It builds one Markdown: a cover from `index.md`, each document in order without its header block, the plan, the test plan, and `review-log.md` as an appendix titled "Review log".
      - It writes `<slug>-docs.docx` through `whyline.agents.convert.to_docx`, and `<slug>-docs.pdf` through the PDF path in `whyline.ideas.documents`.
      - `ExportResult` lists the files and any notes (for example, PDF not available).
-  2. The default `out_dir` is `~/Downloads`.
+  2. The pack includes the product PRD at the version the set was based on (from `history/`), titled `Product PRD v<version>`, followed by that set's changed sections, when it made a PRD update.
+  3. The default `out_dir` is `~/Downloads`.
   Tests: content order, header blocks stripped, the PDF fallback note, and that a missing document is skipped with a note.
 
 - [ ] SDLC-20: `whyline docs` CLI
@@ -284,7 +310,8 @@ Rules every task keeps:
   Subcommands, each calling the Part 2 to 4 functions:
   - `list`
   - `show <slug> [<doc>]`
-  - `start --from-description TEXT | --from-file PATH [--as brainstorm|prd|spec] [--size] [--auto] [--name]`
+  - `start --from-description TEXT | --from-file PATH [--as brainstorm|prd|spec] [--size] [--prd new|update|none] [--major] [--auto] [--name]`
+  - `prd [--history]`, which prints the product PRD's version and approval and, with `--history`, the changelog
   - `resume <slug>`
   - `approve <slug> <doc>`
   - `change <slug> <doc> "<comments>" [--section]`
@@ -313,11 +340,12 @@ Rules every task keeps:
      - **Name**
      - **Size**: Small, Feature or Large, default Feature, each with a one-line hint
      - **Brainstorm first**, for Feature only
+     - **PRD**, for Feature and Large: **Update the product PRD** (the default when `docs/product/prd.md` exists, showing `current v1.2`), **New project: write the PRD** (the default when it doesn't), or **No PRD change**. With update, a **Major version (v2.0)** checkbox, off by default. Small shows `Small has no PRD.`
      - **Mode**: Human in the loop or Auto
      - **Build when the plan is approved**, default on, always on in Auto
      - roles: Writer, Reviewer, Test planner, plus Architect reviewer for Large, plus the execution roles when building
   3. An Auto checkpoint saved before this release still shows **Resume** through the existing auto_run path. The form no longer starts the old Auto.
-  Tests: each field's visibility by size, start and mode, the picker stub selecting a file, and the old Auto checkpoint still offering Resume.
+  Tests: each field's visibility by size, start and mode, the PRD choice defaults with and without a product PRD, the picker stub selecting a file, and the old Auto checkpoint still offering Resume.
 
 - [ ] SDLC-22: The Stages line
   Edit `src/whyline/console/relay_screens.py` and its tests only.
@@ -337,7 +365,7 @@ Rules every task keeps:
 - [ ] SDLC-24: The Docs screen
   Create `src/whyline/console/docs_screen.py` and its tests. Edit `src/whyline/console/tui.py` to add a **Docs** button in Relay mode.
   1. The layout follows the design:
-     - **left**: sets and Earlier plans from `library`
+     - **left**: **Product PRD v<version>** first (from `library.product`, opening the PRD and its changelog), then sets and Earlier plans from `library`
      - **middle**: the selected set's documents with status, version and approval
      - **right**: the selected document rendered as Markdown
   2. Out-of-date documents show the reason under their row.
@@ -362,6 +390,13 @@ Rules every task keeps:
   3. The **Ask for changes** form gets a findings checklist, with Blockers and Majors ticked by default. Ticked findings are added to the comments as `<section>: <problem> — <fix>`.
   4. The middle list shows the counts after each document's status, for example `Spec v3 · In review · 🔴 1 🟡 2`.
   Tests: the panel with and without a review, the checklist adding ticked findings, the counts, and Review again with a stub.
+
+- [ ] PRD-2: PRD update in Docs
+  Edit `src/whyline/console/docs_screen.py` and its tests only.
+  1. For a PRD update, the right pane opens on `Changed sections: <list>` with **Show diff** (a unified diff against the current product PRD) and **Show whole PRD**.
+  2. When `product.moved` is true, a line reads `The PRD is now v<new>. Redo this update first.`, and Approve is disabled until **Redo** runs.
+  3. When another set holds the PRD claim, the set's PRD row says `Waiting: <set> is updating the PRD`.
+  Tests: changed sections and the diff, the moved line disabling Approve, and the waiting line.
 
 - [ ] SDLC-26: History in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
@@ -388,10 +423,11 @@ Rules every task keeps:
   - the document set and its templates
   - review at each stop, out of date, and the Docs screen
   - Export pack, the `whyline docs` commands, and template overrides
+  - the product PRD: one per repository, its versions and changelog, new versus update versus no change, the one-update-at-a-time rule, and why built sets keep their PRD version
   - fresh-eyes review: the lenses, the Auto gate and its 2-round limit, lens overrides in `.whyline/sdlc/lenses/`, the drift check, and credit to the Elephant-Goldfish Model
   - that Test planner belongs to Plan, not Chat Brainstorm
   Verify with `uv run pytest -q`.
 
-- [ ] SDLC-30: Publish whyline with SDLC-1..29 and GFR-1..6
+- [ ] SDLC-30: Publish whyline with SDLC-1..29, PRD-1..2 and GFR-1..6
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.

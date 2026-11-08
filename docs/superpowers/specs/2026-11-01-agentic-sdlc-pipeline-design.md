@@ -26,10 +26,16 @@ The Plan dialog keeps **I have a plan already**. The other three sources become 
   | Size | For | Documents |
   |---|---|---|
   | **Small** | a bug fix, or a tweak to one screen | short spec, plan with test plan |
-  | **Feature** (default) | a feature like job-search-5 or round cap | PRD, spec, plan with test plan |
-  | **Large** | a new subsystem, an architecture change | brainstorm, PRD, full design doc with decision records, design review, plan with test plan |
+  | **Feature** (default) | a feature like job-search-5 or round cap | PRD update, spec, plan with test plan |
+  | **Large** | a new subsystem, an architecture change | brainstorm, PRD update, full design doc with decision records, design review, plan with test plan |
 
   Every size ends with a **build record** once the relay has built it. Feature has a **Brainstorm first** checkbox, off by default. Large always brainstorms unless it starts from a brainstorm or a later document.
+- **PRD** (Feature and Large; changed 2026-11-08): there is **one product PRD** per repository, at `docs/product/prd.md`, not one per feature.
+  - **New project: write the PRD** writes v1.0. This is the default when there is no product PRD.
+  - **Update the product PRD** (default otherwise) starts from the current PRD and changes only the sections this feature affects. Approval makes the next version (v1.1, v1.2…, or v2.0 with **Major version**). The writer may answer `No PRD change: <reason>`, and the stage is skipped.
+  - **No PRD change** skips the stage.
+  - Small never has a PRD. Specs, designs, plans and build records stay per feature, and each records the PRD version it was based on.
+  - Only one PRD update is open at a time. An update whose base version has since changed must be redone before approval. `docs/product/changelog.md` records which feature changed which sections in each version.
 - **Mode**:
   - **Human in the loop** (default). The pipeline stops after every document and waits for you.
   - **Auto**. It runs from the start to the end of the build with no stops. It stops only when an agent is stuck, an agent has a question it can't answer from the request, or preflight fails, as Auto does today.
@@ -110,7 +116,7 @@ Questions from the writer (an `## Open questions` section, as today) stop the st
 ### Out of date
 
 - When a document is approved, `docset.json` stores the sha256 of each approved document before it.
-- If one of those changes later (a re-approved PRD, or an edit on disk), the later documents show **Out of date**, with the reason: `PRD changed (v3 → v4) after this was approved`.
+- If one of those changes later (a re-approved PRD, or an edit on disk), the later documents show **Out of date**, with the reason: `PRD changed (v1.2 → v1.3) after this was approved`. A set that has already been built keeps the PRD version it was built on and is never marked by later PRD changes.
 - **Redo** sends the writer an Ask for changes: "Update this to match <document> v<N>. Change only what that change needs."
 - An out-of-date document never blocks a relay that is already running. Docs only shows it.
 
