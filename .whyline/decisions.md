@@ -38111,3 +38111,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a786bc326fb5439d9aa2e47680f38adf -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T05:10:44.670Z"} -->
+
+## 2026-11-08 — Fixed the flaky test_see_files repo_name_path test in the test, not the console
+
+**Actor:** claude
+**Role:** implementer
+**Task:** flaky-see-files
+
+**Because:** the console behaves correctly: its follow worker and the 1 s external-relay check legitimately reopen the newest file; the test raced both by applying a manual update while they were still live
+
+**Rejected:**
+
+- add a retry or a longer pause — hides the race and still fails on a slower runner
+- change the console so the external-relay check never re-arms the follow — that re-arm is what shows files when a relay starts elsewhere
+
+**Files:** tests/console/test_see_files.py
+
+<!-- whyline-event: 7dc686331c344eaf8f29972e19dd7b6c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T05:26:11.286Z"} -->
