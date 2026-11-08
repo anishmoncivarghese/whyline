@@ -362,6 +362,17 @@ async def test_fake_relay_state_adds_relay_repo_and_shows_file_as_repo_name_path
         watched = [r.resolve() for r in app._watched_repos()]
         assert task_repo.resolve() in watched
 
+        # Opening Files starts the follow, whose first tick opens the newest
+        # existing file (plan.md here) on a worker thread, and the 1 s
+        # external-relay check re-arms it once it sees the fake running relay.
+        # Let that check run now, then stop the follow and let any tick in
+        # flight land, or on a slow machine either one overwrites the update
+        # below.
+        app._watch_external_relay()
+        app._disarm_follow()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
         # File in task repo shown as repo-name:path
         expected_display = f"{task_repo.name}:feature.py"
         app._apply_follow(
