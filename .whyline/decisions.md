@@ -38182,3 +38182,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b3a51d5960134bdf88bcece51630b628 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T07:05:43.932Z"} -->
+
+## 2026-11-08 — Released whyline 0.3.68 with the gitleaks-compatible secret group, version-stable sdist fingerprints and pbcopy-first Copy
+
+**Actor:** claude
+**Role:** releaser
+**Task:** release-0.3.68
+
+**Because:** the false Generic API Key findings blocked every Release Check for every user, and Copy report silently did nothing on macOS Terminal
+
+**Rejected:**
+
+- ship with the SDLC plan's release — Release would stay unusable until then
+
+**Files:** docs/releases/v0.3.68.md
+
+<!-- whyline-event: 4cbdcf894e0e416aa090fc68e1496510 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T07:49:16.801Z"} -->
