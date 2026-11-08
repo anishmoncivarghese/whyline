@@ -17,6 +17,11 @@ What the user gets:
 - Documents live on the default branch, in a docs checkout (WTD-1), never on a relay branch. You can write and review the next feature while a relay builds.
 - Every requirement can be traced to the tasks that build it, the tests that check it, and their results (TRC-1..2). Plan changes during a build are recorded as plan versions (LIFE-1). A finished feature is closed out: plan moved to `plans/done/`, set marked Released, and an optional pull request (LIFE-2..3).
 - Every document gets a **fresh-eyes review** before approval (GFR-1..6). Separate read-only reviewer agents, which never saw the drafting, check it through lenses such as "too much?", "clear to a newcomer?", "fits the code?" and "ready to build?". Findings are 🔴 Blocker, 🟡 Major or 🟢 Nit. Auto approves only with no Blockers, after at most 2 rounds of changes, and otherwise stops for you. The idea comes from Google's Elephant-Goldfish Model (github.com/google/elephant-goldfish-model, Apache-2.0).
+- **Project home** for a new project (HOME-1..6, added 2026-11-08). After the brainstorm, the pipeline stops once in both modes and asks where the project lives:
+  - **Create a new folder**: the agent suggests 2 or 3 names, you pick one or type your own, and choose the parent folder. Whyline creates the folder, runs `git init`, sets up whyline, adds a README and `.gitignore`, moves the document set there and makes the first commits.
+  - **Use this repository**: the default when the current repository has no code yet.
+  - Optionally, **Create GitHub repository**: private by default, with Public as a choice. It runs only after you confirm what it will create and push.
+  - The console then switches to the new project, and the rest of the pipeline (PRD, design, plan, build) runs there.
 
 Rules every task keeps:
 - Console first: every console action saves through the same function the CLI calls.
@@ -244,6 +249,58 @@ Rules every task keeps:
   3. After the plan is approved and `build` is set, it calls `workspace.copy_plan_to(root, docs, slug)` when `root` is not the docs checkout, then runs Auto's final preflight and launcher. Move `_preflight_phase` and `_launch` out of `auto_run.py` into a small shared helper if they can't be called as they are, and keep `auto_run` working. It stores the launch commit as `build_base` in `docset.json`.
   Tests: a full auto run with stubs from description to launch, human mode stopping after one stage, switching mid-run, and a cancel between stages.
 
+- [ ] HOME-1: Project names and where it goes
+  Create `src/whyline/sdlc/home.py` and `tests/sdlc/test_home.py`.
+  1. `folder_name(name: str) -> str`: lowercase, every run of characters other than a-z and 0-9 becomes one `-`, no `-` at either end, at most 40 characters. An empty result is `project`. "Trade Journal!" gives `trade-journal`.
+  2. `suggest_names(root, docset, *, agent, run_fn=None) -> list[NameIdea]`, with `NameIdea(name, folder, reason)`:
+     - It runs the set's Writer agent once, read-only, in a fresh temporary folder, through `capabilities.read_only_command` and `whyline_relay.agents.run`, the way `relaychat.ask.ask` does, with the cancelled-turn retry.
+     - The prompt holds only the brainstorm's final synthesis (or the set's description when there is no brainstorm) and: `Suggest 3 short names for this project. Reply with one line each: <Name> — <why, in under 12 words>. Nothing else.`
+     - It keeps the first 3 lines that parse, and at least 2. When fewer than 2 parse or the agent fails, it returns one idea from the set's name with the reason `from the plan's name`. It never raises for an agent failure.
+  3. `is_fresh(root) -> bool` is True when every tracked file (`git ls-files`) is `README*`, `LICENSE*`, `.gitignore`, `.gitattributes`, or under `.whyline/`, `.claude/`, `docs/` or `plans/`. That is a repository with no code yet.
+  4. `check_target(root, parent: Path, folder: str) -> str | None` returns a plain refusal, or None:
+     - `<parent> doesn't exist.`
+     - `<path> already exists and isn't empty. Pick another name or folder.`
+     - `<path> is inside the repository <outer>. Pick a folder outside it.` (from `repo_setup.inspect`, kind nested, which also covers a folder inside `root`)
+     - the home folder itself is refused with the console's existing home refusal text
+  5. `last_parent() -> Path` reads `last_parent` from `paths.global_whyline_dir() / "sdlc-home.json"`. With none saved, it returns `~/projects` when that exists, else the home folder. `save_parent(path)` writes it.
+  Tests: folder_name cases (punctuation, spaces, empty, a 60-character name), suggest_names parsing 3 lines, a bad reply falling back, an agent error falling back, the prompt holding only the synthesis, is_fresh with only docs and with a `src/` file, each refusal, and last_parent with and without a saved value.
+  Review focus (closed): the refusals in 4 and the fallback in 2. Anything else goes in a follow-up note, not this task.
+
+- [ ] HOME-2: Create the project home
+  Edit `src/whyline/sdlc/home.py` and its tests only.
+  1. `create_home(root, slug, parent: Path, folder: str, *, name: str, agents: list[str], progress) -> Path`, under `guard.check(root)`:
+     - It raises `HomeError` with the `check_target` refusal when there is one.
+     - It runs `repo_setup.setup(repo_setup.inspect(target), agents=agents, progress=progress)`. That creates the folder, runs `git init -b main`, runs whyline init, writes the agent settings and makes the first commit, as the console's repository setup does today. A `repo_setup.SetupError` becomes a `HomeError` with the same text.
+     - It writes `README.md` (`# <name>`, a blank line, then the first paragraph of the brainstorm's synthesis, or the set's description) and a `.gitignore` with `.DS_Store`, `.env`, `.venv/`, `__pycache__/` and `node_modules/`, each only when the file doesn't exist yet.
+     - It copies `docs/sdlc/<slug>/` from `workspace.docs_root(root)` into the target, sets `home` in the copy's `docset.json` to `{"created_from": "<root>", "at": "<now>"}`, and commits README, `.gitignore` and the set by pathspec with `docs: start <name>` through `workspace.docs_commit`.
+     - In the old docs checkout it sets the set's `state` to `moved` and `moved_to` to the target path, and commits `docs: <name> moved to <target>` through `docs_commit`. It never deletes the old set.
+     - It calls `save_parent(parent)` and returns the target.
+  2. `use_here(root, slug) -> Path` sets `home` to `{"here": true, "at": "<now>"}`, commits through `docs_commit`, and returns `root`.
+  3. Nothing here pushes, and nothing creates a remote.
+  Tests with temporary folders and a stubbed `repo_setup.setup`: the files written, README text with and without a brainstorm, an existing README kept, the set copied with `home` set, the old set marked moved and still present, both commits by pathspec, a refusal raising `HomeError` with nothing created, a setup error, and use_here.
+  Review focus (closed): nothing created when a refusal applies, and the old set never deleted. Anything else goes in a follow-up note, not this task.
+
+- [ ] HOME-3: A GitHub repository for the project
+  Create `src/whyline/sdlc/github_repo.py` and `tests/sdlc/test_github_repo.py`.
+  1. `gh_ready(root, *, run=None) -> str | None` reuses `release.ready`'s gh installed and signed-in checks and returns their fix text (for example `Run: gh auth login`) or None.
+  2. `default_owner(root, *, run=None) -> str | None` is `gh api user --jq .login`.
+  3. `describe(owner, name, private: bool) -> str` returns `Create github.com/<owner>/<name> (private), add it as origin, and push main?`, with `(public)` when not private. The console and CLI show this exact text before anything runs.
+  4. `create_repo(root, *, owner, name, private=True, run=None) -> str`:
+     - It refuses with a plain message when `gh_ready` fails, when `origin` already exists (`This project already has a remote: <url>`), or when the name is empty.
+     - It runs `gh repo create <owner>/<name> --private|--public --source <root> --remote origin --push` and returns the repository URL.
+     - It saves `github` (URL and visibility) in the set's `docset.json` and adds `GitHub repository created: <url>` to `review-log.md`, committed through `docs_commit`.
+  5. It is never called by `runner.run`, in either mode. Only a user action calls it.
+  Tests with a stubbed `run`: private and public arguments, the describe text, each refusal, the URL saved, and that `runner.run` never calls it (patch it to raise).
+  Review focus (closed): 5, and private as the default. Anything else goes in a follow-up note, not this task.
+
+- [ ] HOME-4: The home stage in the pipeline
+  Edit `src/whyline/sdlc/stages.py`, `src/whyline/sdlc/runner.py` and their tests only.
+  1. `plan_stages` adds a `home` stage, labelled `Project home`, right after `brainstorm` (or first, when there is no brainstorm stage) when the PRD mode is new. Otherwise it is skipped with the reason `existing project`. In the Stages line it shows as `Project home (you choose)`.
+  2. `run` stops at `home` in both modes, with the result `waiting_for_home`. Auto mode stops here too, because only the user picks the name and folder.
+  3. `choose_home(root, slug, *, choice, parent=None, folder=None, name=None, agents, progress) -> Path`, with `choice` `new` or `here`, calls `home.create_home` or `home.use_here`, marks the stage approved by the user, and returns the root the pipeline continues in.
+  4. `run(target, slug, …)` then continues from the next stage in that root, in the set's saved mode.
+  Tests: the stage present for new and skipped for update and none, both modes stopping at home, choose_home with `new` returning the target and `here` returning root, and run continuing in the target.
+
 - [ ] GFR-1: Review lenses
   Create `src/whyline/sdlc/lenses.py`, `src/whyline/sdlc/lenses/{zoom-out,comprehension,design-critic,codebase-fit,readiness}.md`, `src/whyline/sdlc/lenses/ATTRIBUTION.md` and `tests/sdlc/test_lenses.py`.
   1. Each lens file is a short reviewer brief in plain words, adapted from the Elephant-Goldfish Model reviewer personas (not copied verbatim):
@@ -394,6 +451,13 @@ Rules every task keeps:
   3. The export pack adds an appendix "Fresh-eyes reviews" after the review log, with the latest review of each document.
   Tests: both subcommands with stubs, the guard refusal exiting non-zero, and the appendix order.
 
+- [ ] HOME-5: Project home in the CLI
+  Edit `src/whyline/sdlc/cli.py` and its tests only. The console counterpart is HOME-6.
+  1. `whyline docs names <slug>` prints each suggestion as `<Name> (<folder>) — <reason>`.
+  2. `whyline docs home <slug> --here | --new [--name NAME] [--folder FOLDER] [--parent DIR]` calls `runner.choose_home`. `--name` defaults to the first suggestion, `--folder` to `folder_name(name)`, and `--parent` to `last_parent()`. It prints the root and `Next: whyline docs resume <slug>` with `cd <path>` when the root changed.
+  3. `whyline docs github <slug> [--public] [--owner OWNER] [--name NAME]` prints `github_repo.describe` and asks for confirmation unless `--yes`, then calls `create_repo` and prints the URL. Owner defaults to `default_owner`, name to the folder name.
+  Tests: each subcommand with stubs, a refusal exiting non-zero, and github without `--yes` doing nothing when the answer is no.
+
 ## Part 5: Console
 
 - [ ] SDLC-21: The Plan form
@@ -474,6 +538,18 @@ Rules every task keeps:
   3. Docs, the Files-pane Docs tab and `whyline docs list` show where documents are written: `Documents: <docs checkout path> (<default branch>)`.
   Tests: each button's visibility, the PR confirmation, the coverage line, each subcommand with stubs, and the location line.
 
+- [ ] HOME-6: Project home in the console
+  Edit `src/whyline/console/docs_screen.py`, `src/whyline/console/tui.py`, `src/whyline/sdlc/library.py` and their tests only.
+  1. When `run` returns `waiting_for_home`, the console opens a **Project home** screen in Docs:
+     - **Where should this project live?**: **Create a new folder** or **Use this repository** (`<repo name>`). The default is Use this repository when `home.is_fresh(root)` is true, otherwise Create a new folder.
+     - For a new folder: the 2 or 3 suggested names as choices (loaded by `home.suggest_names` in a thread worker, with `Suggesting names…` while it runs), then **My own name** with a text field. **Folder name** fills in from `folder_name` and can be edited. **Save in** shows `last_parent()`, with **Choose folder…** through the existing picker and an injectable `pick_folder_fn`. A line under them shows the full path, or the `check_target` refusal, which disables Continue.
+     - **Create GitHub repository** checkbox, off by default. When ticked: **Private** (default) or **Public**, and **Owner**, defaulting to `default_owner`. When `gh_ready` fails, the checkbox is disabled with its fix text.
+     - **Continue** calls `runner.choose_home` in a thread worker with progress in the busy line (`home · run git init`, and so on).
+  2. When the root changed, the console switches to it through the existing `_switch_repo` path, with no extra confirmation (the user just chose it), then reopens Docs on the set there. The set continues with `runner.run` in the new root.
+  3. When the GitHub box was ticked, after the switch it shows `github_repo.describe(...)` in a ConfirmScreen and calls `create_repo` only on Yes. On No, or on a refusal, the set carries on without a remote, and Docs offers **Create GitHub repository** on that set later. A failure is shown and never stops the pipeline.
+  4. `library.py` shows a set whose state is `moved` as `Moved to <path>`, with **Switch to it**.
+  Tests with stubs: the default choice for a fresh and a non-fresh repository, the suggestions filling the choices, the folder name following the chosen name, a refusal disabling Continue, the switch to the new root, the GitHub confirmation (Yes calls create_repo, No does not), the disabled checkbox when gh is not ready, and the moved row.
+
 - [ ] SDLC-26: History in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   **History** shows the document's versions and its `review-log.md` entries. Picking two versions shows a unified diff (difflib), and one version shows its text.
@@ -505,8 +581,9 @@ Rules every task keeps:
   - the product PRD: one per repository, its versions and changelog, new versus update versus no change, the one-update-at-a-time rule, and why built sets keep their PRD version
   - fresh-eyes review: the lenses, the Auto gate and its 2-round limit, lens overrides in `.whyline/sdlc/lenses/`, the drift check, and credit to the Elephant-Goldfish Model
   - that Test planner belongs to Plan, not Chat Brainstorm
+  - Project home for a new project: the name suggestions, a new folder or this repository, what gets created and committed, the optional GitHub repository (private by default, only after you confirm), and the `whyline docs names`, `home` and `github` commands
   Verify with `uv run pytest -q`.
 
-- [ ] SDLC-30: Publish whyline with SDLC-1..29, WTD-1, PRD-1..2, TRC-1..2, LIFE-1..3 and GFR-1..6
+- [ ] SDLC-30: Publish whyline with SDLC-1..29, WTD-1, PRD-1..2, TRC-1..2, LIFE-1..3, GFR-1..6 and HOME-1..6
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
