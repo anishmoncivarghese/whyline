@@ -38093,3 +38093,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8959e559e64147e3a77ea5fba746cdda -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-07T16:33:07.674Z"} -->
+
+## 2026-11-08 — Released whyline 0.3.66 so every whyline user gets the uv-publish PyPI detection and the visible Close button, not just this repo
+
+**Actor:** claude
+**Role:** releaser
+**Task:** release-0.3.66
+
+**Because:** any project publishing with uv publish or twine saw 'No workflow yet' and an Add workflow button that would create a second, racing PyPI workflow
+
+**Rejected:**
+
+- wait to ship with the SDLC plan — leaves a misleading Add workflow button in everyone's Release Set up for days
+- treat the test_see_files failure on the tag run as a blocker — it failed once under CI load, passed on the branch and on rerun, and is unrelated to the release
+
+**Files:** docs/releases/v0.3.66.md
+
+<!-- whyline-event: a786bc326fb5439d9aa2e47680f38adf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T05:10:44.670Z"} -->
