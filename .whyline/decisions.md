@@ -38679,3 +38679,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b680a4eea1fe4c24867faf40af79f63e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:39:50.864Z"} -->
+
+## 2026-11-08 — Importer converts ProfileError to DocSetError; import_brainstorm only reads the source so docs/brainstorm files stay put
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-9
+
+**Because:** one error type for the console, and no move means the original is never lost
+
+**Rejected:**
+
+- moving the brainstorm file into the set — destroys the user's original
+
+**Files:** src/whyline/sdlc/importer.py
+
+<!-- whyline-event: 1f0ae4942e4d47c2a3fafd77834c5df5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:41:14.657Z"} -->
+
+## 2026-11-08 — Pass SDLC-9: importer reads md/txt/pdf/docx, refuses bad input, writes v1 with an imported log, and leaves docs/brainstorm files in place
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-9
+
+**Because:** read_source handles each type including a real PDF fixture, public profile aliases work, refusals for other types, empty text, over 2 MB, missing files, and ProfileError all surface as DocSetError, import_as stores text with note imported from <file> then logs imported, and import_brainstorm copies text into the set without moving the original. tests/sdlc/test_importer.py: 11 passed. uv run pytest -q exited 0 with one skip. Independent probe of the spec paths also passed.
+
+**Rejected:**
+
+- Fail SDLC-9 — no incorrect behavior or missing required coverage was observed
+
+**Files:** src/whyline/sdlc/importer.py, src/whyline/jobs/profile.py, tests/sdlc/test_importer.py
+
+<!-- whyline-event: e357bfe39ee94e1da92df3b048141b2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:59:18.832Z"} -->
+
+## 2026-11-08 — Approve SDLC-9 file importer
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-9
+
+**Because:** The importer reads md/txt directly and pdf/docx through public profile readers, enforces supported-type, non-empty, and 2 MB text checks, writes version 1 with the required note and imported review log, and preserves brainstorm sources; the 11 targeted tests passed, a real PDF fixture probe passed, and a second full uv run pytest -q passed after one unrelated console timing test failed once then passed alone and in the rerun.
+
+**Rejected:**
+
+- Request changes — no material correctness, safety, or coverage defect remains; the mocked importer PDF dispatch is complemented by existing real-reader tests and the successful real-fixture probe.
+
+**Files:** src/whyline/sdlc/importer.py, src/whyline/jobs/profile.py, tests/sdlc/test_importer.py
+
+<!-- whyline-event: 4a05d470274d4eeea84f3fe9ad7e6f3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T17:32:02.106Z"} -->

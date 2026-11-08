@@ -299,6 +299,11 @@ def _read_pdf_text(source: Path) -> str:
     return text
 
 
+# Public names for the document readers; the underscore names stay as aliases.
+read_docx_text = _read_docx_text
+read_pdf_text = _read_pdf_text
+
+
 def _read_plain_cv(source: Path) -> str:
     max_raw_bytes = MAX_CV_BYTES * 2 + 3  # CRLF -> LF + optional 3-byte UTF-8 BOM
     try:
