@@ -38730,3 +38730,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4a05d470274d4eeea84f3fe9ad7e6f3e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T17:32:02.106Z"} -->
+
+## 2026-11-08 — Published PRD is the upstream only when its body equals the set's approved PRD draft; built sets skip PRD staleness via DocSet.build_base
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PRD-1
+
+**Because:** an approved-but-unpublished update would otherwise record the old product version and be marked stale the moment it is published
+
+**Rejected:**
+
+- always use docs/product/prd.md — false stale marks on publish
+
+**Files:** src/whyline/sdlc/docset.py
+
+<!-- whyline-event: b4d6fc6ccae54540bcbb08fd3c9d4c41 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T17:34:13.303Z"} -->
+
+## 2026-11-08 — Pass PRD-1: version steps, publish, claims, moved, and built-set PRD skip match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** PRD-1
+
+**Because:** Task tests 93 passed (16 in test_product.py). Independent probe covered next_version 1.0/1.1/1.10/2.0, current None, publish of prd.md history product.json changelog, changelog all (new PRD) then Goals then none then Users on major, header stripping, changed_sections order and fences, claim hold/refuse/release, stale takeover after approve and after delete, moved, unbuilt spec and plan PRD-changed (v1.0 to v1.1) reasons, disk-edit reason, built set skip after reload, built set still stales plan on spec change, and header/index Product PRD labels. Full pytest had one unrelated TUI flake that passed on re-run.
+
+**Rejected:**
+
+- fail because full pytest had 1 failure — that failure is test_relay_setup_screen resume-dismiss timing, unrelated to product.py, and passed on re-run
+
+**Files:** src/whyline/sdlc/product.py, tests/sdlc/test_product.py, src/whyline/sdlc/docset.py
+
+<!-- whyline-event: 267a377782854adcb952c7e7d83d13d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T17:53:31.377Z"} -->
+
+## 2026-11-08 — Approve PRD-1 publish behavior and built-set PRD rule
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PRD-1
+
+**Because:** The diff implements versioned publication with all required artifacts and changelog semantics, records the published PRD hash and version for downstream documents, persists build_base, and skips only later PRD staleness for built sets; focused tests cover these behaviors and the plain full pytest suite exited 0 with one skip.
+
+**Rejected:**
+
+- Request changes — no in-scope correctness, coverage, or safety defect was found
+
+**Files:** src/whyline/sdlc/product.py, src/whyline/sdlc/docset.py, tests/sdlc/test_product.py
+
+<!-- whyline-event: 0443b52ebc684212ac1814b613fde769 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T18:10:15.358Z"} -->

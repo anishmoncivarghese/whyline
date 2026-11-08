@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 
 from whyline.console.relay_ops import PLANS_DIR, plan_slug
-from whyline.sdlc import workspace
+from whyline.sdlc import product, workspace
 from whyline.state import atomic_write_json
 
 SCHEMA = 1
@@ -110,6 +110,7 @@ class DocSet:
     prd_mode: str
     prd_major: bool = False
     build: bool = True
+    build_base: str | None = None
     roles: dict = field(default_factory=dict)
     created: str = ""
     documents: list[dict] = field(default_factory=list)
@@ -125,6 +126,7 @@ class DocSet:
             "prd_mode": self.prd_mode,
             "prd_major": self.prd_major,
             "build": self.build,
+            "build_base": self.build_base,
             "roles": self.roles,
             "created": self.created,
             "documents": self.documents,
@@ -224,6 +226,7 @@ def load(root: Path, slug: str) -> DocSet:
             prd_mode=raw["prd_mode"],
             prd_major=bool(raw.get("prd_major", False)),
             build=bool(raw.get("build", True)),
+            build_base=raw.get("build_base"),
             roles=dict(raw.get("roles", {})),
             created=raw.get("created", ""),
             documents=list(raw["documents"]),
@@ -354,15 +357,33 @@ def _current_text(root: Path, docset: DocSet, doc: dict) -> str:
     return copy.read_text(encoding="utf-8") if copy.is_file() else ""
 
 
+def _published_prd(root: Path, docset: DocSet) -> product.ProductPrd | None:
+    """The product PRD when it is this set's PRD text, published; else None."""
+    prd = docset.document("prd")
+    now = product.current(root)
+    if prd is None or now is None:
+        return None
+    if product.body(now.text) != _current_text(root, docset, prd):
+        return None
+    return now
+
+
 def approve(root: Path, docset: DocSet, kind: str, *, approver: str) -> None:
     root = Path(root)
     doc = _doc(docset, kind)
+    doc.pop("based_on_prd", None)
     upstream: dict[str, str] = {}
     versions: dict[str, int] = {}
     for other in docset.documents:
         if other["kind"] == kind:
             break
         if other["status"] == Status.APPROVED.value:
+            published = _published_prd(root, docset) if other["kind"] == "prd" else None
+            if published is not None:
+                upstream["prd"] = published.sha256
+                versions["prd"] = published.version
+                doc["based_on_prd"] = published.version
+                continue
             upstream[other["kind"]] = content_hash(
                 other["kind"], _current_text(root, docset, other)
             )
@@ -419,7 +440,23 @@ def _neighbours(docset: DocSet, kind: str) -> tuple[dict | None, dict | None]:
     return before, after
 
 
-def render_header(docset: DocSet, kind: str) -> str:
+def version_label(docset: DocSet, doc: dict, root: Path | None = None) -> str:
+    """`v2` for most documents; the PRD reads `Product PRD v1.3 (draft 2)` in review."""
+    plain = f"v{doc['version']}"
+    if doc["kind"] != "prd" or root is None:
+        return plain
+    if doc["status"] == Status.APPROVED.value:
+        published = _published_prd(root, docset)
+        if published is not None:
+            return f"Product PRD v{published.version}"
+    old = product.current(root)
+    target = product.next_version(old.version if old else None, major=docset.prd_major)
+    if doc["status"] == Status.APPROVED.value:
+        return f"Product PRD v{target}"
+    return f"Product PRD v{target} (draft {doc['version']})"
+
+
+def render_header(docset: DocSet, kind: str, root: Path | None = None) -> str:
     """The block shown at the top of a document; plan files never get one."""
     doc = _doc(docset, kind)
     folder = os.path.dirname(doc["path"])
@@ -437,7 +474,7 @@ def render_header(docset: DocSet, kind: str) -> str:
             approved += f" on {doc['approved_at']}"
     lines = [
         HEADER_START,
-        f"**Status:** {Status(doc['status']).label} · **Version:** v{doc['version']}",
+        f"**Status:** {Status(doc['status']).label} · **Version:** {version_label(docset, doc, root)}",
         f"**Written by:** {doc.get('written_by') or 'nobody yet'}"
         f" · **Reviewed by:** {doc.get('reviewed_by') or 'nobody yet'}",
         f"**Approved by:** {approved}",
@@ -479,7 +516,7 @@ def strip_header(text: str) -> str:
     return text[: span[0]] + rest
 
 
-def render_index(docset: DocSet) -> str:
+def render_index(docset: DocSet, root: Path | None = None) -> str:
     """The set's index.md: name, size, mode, every document, and the plan links."""
     folder = f"{SDLC_DIR}/{docset.slug}"
     lines = [
@@ -497,7 +534,7 @@ def render_index(docset: DocSet) -> str:
             approval = f"{doc['approved_by']} on {doc.get('approved_at') or '?'}"
         lines.append(
             f"| [{_kind_title(doc['kind'])}]({_link(folder, doc['path'])})"
-            f" | {Status(doc['status']).label} | v{doc['version']} | {approval} |"
+            f" | {Status(doc['status']).label} | {version_label(docset, doc, root)} | {approval} |"
         )
     if docset.document("plan") is not None:
         lines += [
@@ -518,10 +555,10 @@ def refresh(root: Path, docset: DocSet) -> None:
         if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
-        updated = apply_header(text, render_header(docset, doc["kind"]))
+        updated = apply_header(text, render_header(docset, doc["kind"], root))
         if updated != text:
             path.write_text(updated, encoding="utf-8")
-    _write(_folder(root, docset.slug) / INDEX, render_index(docset))
+    _write(_folder(root, docset.slug) / INDEX, render_index(docset, root))
 
 
 def _upstream_label(kind: str) -> str:
@@ -535,6 +572,16 @@ def _stale_reason(root: Path, docset: DocSet, doc: dict) -> str | None:
         other = docset.document(kind)
         if other is None:
             continue
+        if kind == "prd" and docset.build_base:
+            continue  # a built set keeps the PRD version it was built on
+        if kind == "prd" and doc.get("based_on_prd"):
+            now = product.current(root)
+            if now is None or now.sha256 == old_hash:
+                continue
+            old = doc["based_on_prd"]
+            if old == now.version:
+                return "PRD was edited on disk after this was approved"
+            return f"PRD changed (v{old} → v{now.version}) after this was approved"
         if content_hash(kind, _current_text(root, docset, other)) == old_hash:
             continue
         label = _upstream_label(kind)
