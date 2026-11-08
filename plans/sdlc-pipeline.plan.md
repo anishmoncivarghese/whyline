@@ -24,7 +24,7 @@ Rules every task keeps:
 
 ## Part 1: Ready
 
-- [ ] SDLC-1: Install whyline-relay with RDOC-1..3
+- [x] SDLC-1: Install whyline-relay with RDOC-1..3
   relay-profile: release
   In `~/whyline-relay`, `plans/documents.plan.md` (RDOC-1..3) is implemented and released as 0.2.41 or later, and `uv tool upgrade whyline-relay` shows it. If not, stop here and do that first.
 
