@@ -85,7 +85,7 @@ Rules every task keeps:
   Tests: each case in 2 with a temporary repository and worktrees, the dirty-path refusal, pathspec-only commits, and the copy.
   Review focus (closed): 2 and the refusal in 3. Anything else goes in a follow-up note, not this task.
 
-- [ ] SDLC-5: Versions, history and the review log
+- [x] SDLC-5: Versions, history and the review log
   Edit `src/whyline/sdlc/docset.py` and its tests only.
   1. `add_version(root, docset, kind, text, *, author, note) -> int`:
      - It writes the document's file.
