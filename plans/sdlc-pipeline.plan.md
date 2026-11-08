@@ -113,7 +113,7 @@ Rules every task keeps:
   4. Every function in docset.py that changes a status rewrites the affected headers and `index.md`.
   Tests: a header round trip that leaves the body byte-identical, the plan getting no header, and index content.
 
-- [ ] SDLC-7: Out of date
+- [x] SDLC-7: Out of date
   Edit `src/whyline/sdlc/docset.py` and its tests only.
   1. `refresh_out_of_date(root, docset) -> list[tuple[str, str]]`. When the file of a document named in an approved document's `upstream` now has a different sha256, that approved document becomes out_of_date. The reason reads `<Kind> changed (v<old> → v<new>) after this was approved`, or `<Kind> was edited on disk after this was approved` when the version is the same. Headers and index are not rewritten for the hash check itself, only on a status change.
   2. A document that is out_of_date goes back to approved when its upstream hashes match again.
