@@ -121,7 +121,7 @@ Rules every task keeps:
   4. A plan or test plan path is resolved through `plan_file(docs, slug)`, which looks in `plans/` and then `plans/done/`.
   Tests: a PRD re-approval marks the spec, an edit on disk marks it, a revert clears it, ticked tasks giving the same hash, and a plan moved to `plans/done/` still found.
 
-- [ ] SDLC-8: Built-in templates
+- [x] SDLC-8: Built-in templates
   Create `src/whyline/sdlc/templates/{prd,spec,short-spec,design,build-record}.md`, `src/whyline/sdlc/templates.py` and its tests.
   1. Each template is the section list from the design, as `##` headings, each with one line saying what goes there. Each starts with the rule: `Fill every section. Write "Not applicable — <reason>" rather than dropping one. No filler.`
   2. `template_for(root, kind, size) -> str`:
