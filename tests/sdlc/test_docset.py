@@ -175,7 +175,7 @@ def test_versions_and_history(tmp_path):
     made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
     assert docset.add_version(tmp_path, made, "spec", "one", author="claude", note="first") == 1
     assert docset.add_version(tmp_path, made, "spec", "two", author="claude", note="again") == 2
-    assert (tmp_path / "docs/sdlc/login/spec.md").read_text() == "two"
+    assert docset.strip_header((tmp_path / "docs/sdlc/login/spec.md").read_text()) == "two"
     assert (tmp_path / "docs/sdlc/login/history/spec-v1.md").read_text() == "one"
     assert (tmp_path / "docs/sdlc/login/history/spec-v2.md").read_text() == "two"
     loaded = docset.load(tmp_path, "login")
@@ -235,3 +235,51 @@ def test_commit_touches_only_the_sets_paths(repo):
     assert "docs/sdlc/login/spec.md" in files
     assert "unrelated.txt" in _git(repo, "status", "--porcelain")
     assert docset.commit(repo, made, "docs: again") is False
+
+
+def test_header_round_trip_leaves_body_untouched(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    body = "# Spec\n\nline  with trailing  \n\n\nend"
+    docset.add_version(tmp_path, made, "spec", body, author="claude", note="n")
+    path = tmp_path / "docs/sdlc/login/spec.md"
+    first = path.read_text()
+    assert first.startswith(docset.HEADER_START)
+    assert first.endswith(body) and docset.strip_header(first) == body
+    assert "In review" in first and "v1" in first and "claude" in first
+    assert "[Plan](../../../plans/login.plan.md)" in first
+    docset.approve(tmp_path, made, "spec", approver="anish")
+    second = path.read_text()
+    assert "Approved by:** anish on" in second
+    assert second.count(docset.HEADER_START) == 1
+    assert docset.strip_header(second) == body
+    assert second.endswith(body)
+
+
+def test_apply_header_keeps_text_around_the_block():
+    header = "<!-- docset-header -->\nnew\n<!-- /docset-header -->\n"
+    old = "before\n<!-- docset-header -->\nold\n<!-- /docset-header -->\nafter"
+    assert docset.apply_header(old, header) == "before\n" + header + "after"
+    assert docset.apply_header("body", header) == header + "\nbody"
+
+
+def test_plan_gets_no_header(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    plan = tmp_path / "plans/login.plan.md"
+    plan.parent.mkdir()
+    plan.write_text("# plan\n")
+    docset.add_version(tmp_path, made, "plan", "the plan", author="claude", note="n")
+    docset.approve(tmp_path, made, "plan", approver="anish")
+    assert plan.read_text() == "# plan\n"
+
+
+def test_index_content(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    docset.add_version(tmp_path, made, "spec", "s", author="claude", note="n")
+    docset.approve(tmp_path, made, "spec", approver="anish")
+    text = (tmp_path / "docs/sdlc/login/index.md").read_text()
+    assert text.startswith("# Login")
+    assert "Small" in text and "Human in the loop" in text
+    assert "| [Spec](spec.md) | Approved | v1 | anish on 20" in text
+    assert "| [Plan](../../../plans/login.plan.md) | Draft | v1 | — |" in text
+    assert "- [Plan](../../../plans/login.plan.md)" in text
+    assert "- [Test plan](../../../plans/login.tests.md)" in text

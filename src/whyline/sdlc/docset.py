@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -294,6 +295,7 @@ def add_version(root: Path, docset: DocSet, kind: str, text: str, *, author: str
     doc["written_by"] = author
     doc["note"] = note
     save(root, docset)
+    refresh(root, docset)
     return number
 
 
@@ -329,7 +331,7 @@ def _current_text(root: Path, docset: DocSet, doc: dict) -> str:
     """A document's text: its file, or for an unapproved plan its history copy."""
     path = Path(root) / doc["path"]
     if path.is_file():
-        return path.read_text(encoding="utf-8")
+        return strip_header(path.read_text(encoding="utf-8"))
     copy = _history_path(root, docset.slug, doc["kind"], int(doc["version"]))
     return copy.read_text(encoding="utf-8") if copy.is_file() else ""
 
@@ -349,6 +351,7 @@ def approve(root: Path, docset: DocSet, kind: str, *, approver: str) -> None:
     doc["upstream"] = upstream
     log_review(root, docset, kind, actor=approver, action="approved")
     save(root, docset)
+    refresh(root, docset)
 
 
 def commit(root: Path, docset: DocSet, message: str) -> bool:
@@ -369,3 +372,129 @@ def commit(root: Path, docset: DocSet, message: str) -> bool:
     rels += [rel for rel in extra if (docs / rel).is_file()]
     written = {rel: (docs / rel).read_text() for rel in rels}
     return workspace.docs_commit(docs, rels, message, written)
+
+
+HEADER_START = "<!-- docset-header -->"
+HEADER_END = "<!-- /docset-header -->"
+INDEX = "index.md"
+
+
+def _kind_title(kind: str) -> str:
+    return kind.replace("-", " ").capitalize()
+
+
+def _link(from_dir: str, target: str) -> str:
+    return os.path.relpath(target, from_dir or ".").replace(os.sep, "/")
+
+
+def _neighbours(docset: DocSet, kind: str) -> tuple[dict | None, dict | None]:
+    kinds = [d["kind"] for d in docset.documents]
+    at = kinds.index(kind)
+    before = docset.documents[at - 1] if at > 0 else None
+    after = docset.documents[at + 1] if at + 1 < len(kinds) else None
+    return before, after
+
+
+def render_header(docset: DocSet, kind: str) -> str:
+    """The block shown at the top of a document; plan files never get one."""
+    doc = _doc(docset, kind)
+    folder = os.path.dirname(doc["path"])
+    before, after = _neighbours(docset, kind)
+
+    def nav(other: dict | None) -> str:
+        if other is None:
+            return "none"
+        return f"[{_kind_title(other['kind'])}]({_link(folder, other['path'])})"
+
+    approved = "not yet"
+    if doc.get("approved_by"):
+        approved = doc["approved_by"]
+        if doc.get("approved_at"):
+            approved += f" on {doc['approved_at']}"
+    lines = [
+        HEADER_START,
+        f"**Status:** {Status(doc['status']).label} · **Version:** v{doc['version']}",
+        f"**Written by:** {doc.get('written_by') or 'nobody yet'}"
+        f" · **Reviewed by:** {doc.get('reviewed_by') or 'nobody yet'}",
+        f"**Approved by:** {approved}",
+        f"**Before:** {nav(before)} · **After:** {nav(after)}",
+        HEADER_END,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _block_span(text: str) -> tuple[int, int] | None:
+    start = text.find(HEADER_START)
+    if start < 0:
+        return None
+    end = text.find(HEADER_END, start)
+    if end < 0:
+        return None
+    end += len(HEADER_END)
+    if text.startswith("\n", end):
+        end += 1
+    return start, end
+
+
+def apply_header(text: str, header: str) -> str:
+    """Replace the header block, or put one at the top; nothing else changes."""
+    span = _block_span(text)
+    if span is None:
+        return header + "\n" + text
+    return text[: span[0]] + header + text[span[1] :]
+
+
+def strip_header(text: str) -> str:
+    """The text as apply_header found it: the block and its blank line removed."""
+    span = _block_span(text)
+    if span is None:
+        return text
+    rest = text[span[1] :]
+    if text[: span[0]] == "" and rest.startswith("\n"):
+        rest = rest[1:]
+    return text[: span[0]] + rest
+
+
+def render_index(docset: DocSet) -> str:
+    """The set's index.md: name, size, mode, every document, and the plan links."""
+    folder = f"{SDLC_DIR}/{docset.slug}"
+    lines = [
+        f"# {docset.name}",
+        "",
+        f"- **Size:** {Size(docset.size).label}",
+        f"- **Mode:** {Mode(docset.mode).label}",
+        "",
+        "| Document | Status | Version | Approval |",
+        "| --- | --- | --- | --- |",
+    ]
+    for doc in docset.documents:
+        approval = "—"
+        if doc.get("approved_by"):
+            approval = f"{doc['approved_by']} on {doc.get('approved_at') or '?'}"
+        lines.append(
+            f"| [{_kind_title(doc['kind'])}]({_link(folder, doc['path'])})"
+            f" | {Status(doc['status']).label} | v{doc['version']} | {approval} |"
+        )
+    if docset.document("plan") is not None:
+        lines += [
+            "",
+            f"- [Plan]({_link(folder, _document_path(docset.slug, 'plan'))})",
+            f"- [Test plan]({_link(folder, f'{PLANS_DIR}/{docset.slug}.tests.md')})",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def refresh(root: Path, docset: DocSet) -> None:
+    """Rewrite every written document's header and the set's index.md."""
+    root = Path(root)
+    for doc in docset.documents:
+        if doc["kind"] == "plan":
+            continue
+        path = root / doc["path"]
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        updated = apply_header(text, render_header(docset, doc["kind"]))
+        if updated != text:
+            path.write_text(updated, encoding="utf-8")
+    _write(_folder(root, docset.slug) / INDEX, render_index(docset))

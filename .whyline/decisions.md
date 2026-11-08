@@ -38523,3 +38523,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ad3326e6b5264a52a408646790b708f5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:47:06.907Z"} -->
+
+## 2026-11-08 — Hash and strip the header off document text when computing upstream hashes
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-6
+
+**Because:** headers change with status, so hashing the file would make approvals look stale
+
+**Rejected:**
+
+- hash the raw file — every status change would invalidate downstream approvals
+
+**Files:** src/whyline/sdlc/docset.py
+
+<!-- whyline-event: 46965b7ddee14384b08d66da3cfa69ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:48:02.411Z"} -->
+
+## 2026-11-08 — Pass SDLC-6: headers, index.md, and status-change refresh match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-6
+
+**Because:** Task tests 41 passed. Independent probe covered header round-trip body identity, apply_header leaving surrounding text, plan and test plan files untouched, index name/size/mode/table/plan links, relative before/after links including first and last docs, add_version and approve rewriting headers and index, history staying header-free, and upstream hashes of the stripped body. Full uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- fail because create() does not write index.md — create only initializes draft status with no document files; add_version and approve both call refresh
+
+**Test:** uv run pytest -q tests/sdlc: 41 passed
+**Test:** uv run pytest -q: exit 0, 1 skipped
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: 82b3160e64a841768e61856bdeb888fa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T15:08:14.346Z"} -->
+
+## 2026-11-08 — Approve SDLC-6 headers and index refresh
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-6
+
+**Because:** The diff implements relative document headers, byte-stable body preservation, plan exclusion, index rendering, refreshes both status mutations, and the plain full pytest suite exited 0 with one skip.
+
+**Rejected:**
+
+- Request changes — no unsafe or task-breaking defect was found in the implementation or coverage
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: c79fadcfbc5d48a58751f6a4f2938931 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T15:24:51.804Z"} -->
