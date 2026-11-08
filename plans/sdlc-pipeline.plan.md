@@ -39,7 +39,7 @@ Rules every task keeps:
   2. Add a test that imports `whyline_relay.documents` and checks it has `draft`, `revise_text`, `discard` and `DocKind`.
   Change nothing else.
 
-- [ ] SDLC-3: Remove Test planner from Chat Brainstorm
+- [x] SDLC-3: Remove Test planner from Chat Brainstorm
   Edit `src/whyline/console/tui.py`, `src/whyline/console/relay_screens.py` and `tests/console/` only.
   1. `brainstorm_field_widgets` gets a keyword `with_test_planner: bool`. The Chat `BrainstormScreen` passes False, and the Plan dialog passes True.
   2. With False, the Test planner row and its tip aren't composed and `_save_test_planner` is never called. The sync with `#rp-test-planner` (relay_screens.py, near the `bs-test-planner` handler) only runs when the field exists.
