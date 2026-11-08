@@ -140,7 +140,7 @@ Rules every task keeps:
   3. `import_brainstorm(root, docset, path)` is the same for the `brainstorm` kind. A file already in `docs/brainstorm/` keeps its place and is copied into the set.
   Tests: each file type (small fixtures), each refusal, and the log entry.
 
-- [ ] PRD-1: The product PRD
+- [x] PRD-1: The product PRD
   Create `src/whyline/sdlc/product.py` and `tests/sdlc/test_product.py`. Edit `src/whyline/sdlc/docset.py` and its tests only where 4 and 5 say.
   1. `docs/product/` holds `prd.md`, `product.json` (schema 1, version, approved_by, approved_at, sha256, update_claim), `changelog.md` and `history/prd-v<version>.md`.
   2. `current(root) -> ProductPrd | None` returns the version (for example "1.2"), path, text and sha256. It returns None when there is no `prd.md`.
