@@ -38164,3 +38164,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a7e8f89a2741497095e61f7c7e51de65 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T06:42:11.336Z"} -->
+
+## 2026-11-08 — Secret scan takes the first capture group as the secret when a rule sets no secretGroup, matching gitleaks
+
+**Actor:** claude
+**Role:** implementer
+**Task:** security-false-positives
+
+**Because:** measuring entropy on the whole match flagged names like ALLOW_KEY = "telegram_allow" and ordinary prose; 26 of 27 findings here were false and would block every release
+
+**Rejected:**
+
+- raise the generic-api-key entropy threshold — diverges from gitleaks and still judges the wrong text
+- allowlist each false positive — hides a scanner bug and every user would have to repeat it
+
+**Files:** src/whyline/security/secrets.py, src/whyline/security/contents.py
+
+<!-- whyline-event: b3a51d5960134bdf88bcece51630b628 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T07:05:43.932Z"} -->
