@@ -186,7 +186,7 @@ Rules every task keeps:
   4. Questions surface as the existing `Outcome("questions", …)` shape that plan_job uses.
   Tests with a stubbed `whyline_relay.documents`: each kind maps to the right DocKind, and the template and attachments are passed.
 
-- [ ] SDLC-13: Run a document stage
+- [x] SDLC-13: Run a document stage
   Create `src/whyline/sdlc/runner.py` and its tests.
   1. `run_stage(root, docset, stage, *, progress) -> StageResult` (done, questions or error), under `guard.check` and `guard.drafting`:
      - **brainstorm**: `adapters.run_brainstorm` with the set's brainstorm roles. The final synthesis is added as a version.
