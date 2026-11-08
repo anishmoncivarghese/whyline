@@ -28,7 +28,7 @@ Rules every task keeps:
   relay-profile: release
   In `~/whyline-relay`, `plans/documents.plan.md` (RDOC-1..3) is implemented and released as 0.2.41 or later, and `uv tool upgrade whyline-relay` shows it. If not, stop here and do that first.
 
-- [ ] SDLC-2: Raise the whyline-relay floor to 0.2.41
+- [x] SDLC-2: Raise the whyline-relay floor to 0.2.41
   Edit `pyproject.toml`, `uv.lock` and `tests/test_dependencies.py` (create it if it is missing) only.
   1. Set `whyline-relay>=0.2.41,<0.3` and run `uv lock`.
   2. Add a test that imports `whyline_relay.documents` and checks it has `draft`, `revise_text`, `discard` and `DocKind`.
