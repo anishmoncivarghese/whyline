@@ -38129,3 +38129,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7dc686331c344eaf8f29972e19dd7b6c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T05:26:11.286Z"} -->
+
+## 2026-11-08 — ci_ignore entries match job names inside a run as well as whole workflow names
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ci-ignore-jobs
+
+**Because:** the Set up box says 'CI jobs to ignore' and most projects run one workflow with many jobs; matching only workflow runs meant the only way past one bad job was ignoring all of CI
+
+**Rejected:**
+
+- only document that ci_ignore takes workflow names — leaves users no safe way to skip one job
+- ask users to mark such jobs continue-on-error in their own workflows — needs edits many users can't make; whyline's own ci.yml already does this, so it isn't needed here
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: e831c53bd63145d29ff82c8db84fc512 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T05:45:14.183Z"} -->
