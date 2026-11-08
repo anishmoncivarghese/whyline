@@ -1,0 +1,32 @@
+[release]
+mode = "ask"
+branch = "main"
+start_after_plan = true
+checks = ["uv run pytest -q"]
+ci_ignore = ["test (windows-latest, 3.11)", "test (windows-latest, 3.13)"]
+notes = "docs/releases/v{version}.md"
+version_files = []
+after = []
+
+[targets]
+github = true
+pypi = true
+npm = false
+docker = false
+homebrew = false
+
+[docker]
+registries = ["ghcr"]
+image = ""
+
+[homebrew]
+tap = ""
+formula = ""
+
+[security]
+secrets = "block"
+dependencies = "block-high"
+contents = "block"
+history_scanned = ""
+pre_commit = false
+audit = "off"
