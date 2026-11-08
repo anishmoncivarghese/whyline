@@ -283,3 +283,67 @@ def test_index_content(tmp_path):
     assert "| [Plan](../../../plans/login.plan.md) | Draft | v1 | — |" in text
     assert "- [Plan](../../../plans/login.plan.md)" in text
     assert "- [Test plan](../../../plans/login.tests.md)" in text
+
+
+def _approved_feature(tmp_path):
+    made = docset.create(tmp_path, "Login", "feature", "human", prd_mode="new", roles=ROLES)
+    docset.add_version(tmp_path, made, "prd", "prd text", author="claude", note="n")
+    docset.approve(tmp_path, made, "prd", approver="anish")
+    docset.add_version(tmp_path, made, "spec", "spec text", author="claude", note="n")
+    docset.approve(tmp_path, made, "spec", approver="anish")
+    return made
+
+
+def test_prd_reapproval_marks_the_spec(tmp_path):
+    made = _approved_feature(tmp_path)
+    assert docset.refresh_out_of_date(tmp_path, made) == []
+    docset.add_version(tmp_path, made, "prd", "prd text v2", author="claude", note="n")
+    docset.approve(tmp_path, made, "prd", approver="anish")
+    marked = docset.refresh_out_of_date(tmp_path, made)
+    assert marked == [("spec", "PRD changed (v1 \u2192 v2) after this was approved")]
+    assert docset.load(tmp_path, "login").document("spec")["status"] == "out_of_date"
+    assert "Out of date" in (tmp_path / "docs/sdlc/login/spec.md").read_text()
+
+
+def test_edit_on_disk_marks_and_revert_clears(tmp_path):
+    made = _approved_feature(tmp_path)
+    prd = tmp_path / made.document("prd")["path"]
+    original = prd.read_text()
+    prd.write_text(original + "extra")
+    marked = docset.refresh_out_of_date(tmp_path, made)
+    assert marked == [("spec", "PRD was edited on disk after this was approved")]
+    assert docset.refresh_out_of_date(tmp_path, made) == []
+    prd.write_text(original)
+    assert docset.refresh_out_of_date(tmp_path, made) == []
+    assert made.document("spec")["status"] == "approved"
+    assert "out_of_date_reason" not in made.document("spec")
+
+
+def test_ticked_tasks_hash_the_same():
+    open_ = "- [ ] SDLC-1: a\n- [ ] SDLC-2: b\n"
+    ticked = "- [x] SDLC-1: a\n- [ ] SDLC-2: b\n"
+    assert docset.content_hash("plan", open_) == docset.content_hash("plan", ticked)
+    assert docset.content_hash("spec", open_) != docset.content_hash("spec", ticked)
+
+
+def test_plan_moved_to_done_is_still_found(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    docset.add_version(tmp_path, made, "spec", "spec text", author="claude", note="n")
+    docset.approve(tmp_path, made, "spec", approver="anish")
+    plans = tmp_path / "plans"
+    plans.mkdir()
+    (plans / "login.plan.md").write_text("- [ ] T-1: a\n")
+    docset.add_version(tmp_path, made, "plan", "- [ ] T-1: a\n", author="claude", note="n")
+    docset.approve(tmp_path, made, "plan", approver="anish")
+    build = made.document("build-record")
+    build["status"] = "approved"
+    build["upstream"] = {"plan": docset.content_hash("plan", "- [ ] T-1: a\n")}
+    assert docset.plan_file(tmp_path, "login") == plans / "login.plan.md"
+    (plans / "done").mkdir()
+    (plans / "login.plan.md").rename(plans / "done" / "login.plan.md")
+    assert docset.plan_file(tmp_path, "login") == plans / "done" / "login.plan.md"
+    assert docset.plan_file(tmp_path, "other") is None
+    (plans / "done" / "login.plan.md").write_text("- [x] T-1: a\n")
+    assert docset.refresh_out_of_date(tmp_path, made) == []
+    (plans / "done" / "login.plan.md").write_text("- [x] T-1: changed\n")
+    assert [k for k, _ in docset.refresh_out_of_date(tmp_path, made)] == ["build-record"]

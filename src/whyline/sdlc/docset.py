@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -256,8 +257,23 @@ HISTORY_DIR = "history"
 REVIEW_LOG = "review-log.md"
 
 
-def _sha(text: str) -> str:
+_TICKED = re.compile(r"- \[[xX]\]")
+
+
+def content_hash(kind: str, text: str) -> str:
+    """The sha256 of a document's text; ticked plan tasks hash as unticked."""
+    if kind == "plan":
+        text = _TICKED.sub("- [ ]", text)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def plan_file(docs: Path, slug: str, *, tests: bool = False) -> Path | None:
+    """A set's plan (or test plan) file, in plans/ then plans/done/; None if absent."""
+    name = f"{slug}.{'tests' if tests else 'plan'}.md"
+    for folder in (Path(docs) / PLANS_DIR, Path(docs) / PLANS_DIR / "done"):
+        if (folder / name).is_file():
+            return folder / name
+    return None
 
 
 def _doc(docset: DocSet, kind: str) -> dict:
@@ -330,6 +346,8 @@ def log_review(
 def _current_text(root: Path, docset: DocSet, doc: dict) -> str:
     """A document's text: its file, or for an unapproved plan its history copy."""
     path = Path(root) / doc["path"]
+    if doc["kind"] == "plan":
+        path = plan_file(root, docset.slug) or path
     if path.is_file():
         return strip_header(path.read_text(encoding="utf-8"))
     copy = _history_path(root, docset.slug, doc["kind"], int(doc["version"]))
@@ -340,12 +358,18 @@ def approve(root: Path, docset: DocSet, kind: str, *, approver: str) -> None:
     root = Path(root)
     doc = _doc(docset, kind)
     upstream: dict[str, str] = {}
+    versions: dict[str, int] = {}
     for other in docset.documents:
         if other["kind"] == kind:
             break
         if other["status"] == Status.APPROVED.value:
-            upstream[other["kind"]] = _sha(_current_text(root, docset, other))
+            upstream[other["kind"]] = content_hash(
+                other["kind"], _current_text(root, docset, other)
+            )
+            versions[other["kind"]] = int(other["version"])
     doc["status"] = Status.APPROVED.value
+    doc.pop("out_of_date_reason", None)
+    doc["upstream_versions"] = versions
     doc["approved_by"] = approver
     doc["approved_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     doc["upstream"] = upstream
@@ -498,3 +522,52 @@ def refresh(root: Path, docset: DocSet) -> None:
         if updated != text:
             path.write_text(updated, encoding="utf-8")
     _write(_folder(root, docset.slug) / INDEX, render_index(docset))
+
+
+def _upstream_label(kind: str) -> str:
+    return "PRD" if kind == "prd" else _kind_title(kind)
+
+
+def _stale_reason(root: Path, docset: DocSet, doc: dict) -> str | None:
+    """Why an approved document no longer matches what it was approved against."""
+    recorded = doc.get("upstream_versions") or {}
+    for kind, old_hash in (doc.get("upstream") or {}).items():
+        other = docset.document(kind)
+        if other is None:
+            continue
+        if content_hash(kind, _current_text(root, docset, other)) == old_hash:
+            continue
+        label = _upstream_label(kind)
+        old, new = recorded.get(kind), int(other["version"])
+        if old is None or int(old) == new:
+            return f"{label} was edited on disk after this was approved"
+        return f"{label} changed (v{old} \u2192 v{new}) after this was approved"
+    return None
+
+
+def refresh_out_of_date(root: Path, docset: DocSet) -> list[tuple[str, str]]:
+    """Mark approved documents whose upstream changed; restore them when it matches again.
+
+    Returns (kind, reason) for each document newly marked out of date. Headers and
+    the index are rewritten only when a status changed.
+    """
+    root = Path(root)
+    marked: list[tuple[str, str]] = []
+    changed = False
+    for doc in docset.documents:
+        if doc["status"] not in (Status.APPROVED.value, Status.OUT_OF_DATE.value):
+            continue
+        reason = _stale_reason(root, docset, doc)
+        if reason and doc["status"] == Status.APPROVED.value:
+            doc["status"] = Status.OUT_OF_DATE.value
+            doc["out_of_date_reason"] = reason
+            marked.append((doc["kind"], reason))
+            changed = True
+        elif reason is None and doc["status"] == Status.OUT_OF_DATE.value:
+            doc["status"] = Status.APPROVED.value
+            doc.pop("out_of_date_reason", None)
+            changed = True
+    if changed:
+        save(root, docset)
+        refresh(root, docset)
+    return marked

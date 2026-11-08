@@ -38577,3 +38577,58 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c79fadcfbc5d48a58751f6a4f2938931 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T15:24:51.804Z"} -->
+
+## 2026-11-08 — Record upstream_versions at approval so out-of-date reasons can show v<old> → v<new>
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-7
+
+**Because:** upstream holds only hashes, so the old version number was otherwise lost
+
+**Rejected:**
+
+- Parse history files — version at approval is not derivable from them
+
+**Files:** src/whyline/sdlc/docset.py
+
+<!-- whyline-event: b7df653d320c4de2bf689f078e633803 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T15:25:58.779Z"} -->
+
+## 2026-11-08 — Pass SDLC-7: out-of-date refresh, restore, content_hash ticks, and plan_file lookup match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-7
+
+**Because:** Task tests 45 passed. Independent probe covered PRD re-approval (v1 to v2), disk-edit reason, revert restoring approved with headers and index rewritten only on status change, header-only upstream edits ignored, in_review skipped, Spec kind labels, ticked plan and test-plan hashing, and plan_file in plans then plans/done including tests=True. Full pytest had one unrelated TUI flake that passed on re-run.
+
+**Rejected:**
+
+- fail because full pytest had 1 failure — that failure is test_relay_setup_screen popup-close timing, unrelated to docset.py, and passed on re-run
+
+**Test:** uv run pytest -q tests/sdlc: 45 passed
+**Test:** uv run pytest -q: 1 failed (unrelated TUI flake), 1 skipped; flake re-run passed
+**Test:** independent probe: all checks passed
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: 9d00a0865b224987b70b0695e9574cfa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T15:45:57.351Z"} -->
+
+## 2026-11-08 — Approve SDLC-7 out-of-date tracking
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-7
+
+**Because:** The diff records upstream versions and normalized hashes, marks and restores stale approvals with the required reasons, resolves plans from active or done directories, covers the named scenarios, and the plain full pytest suite exited 0 with one skip.
+
+**Rejected:**
+
+- Request changes — no unsafe or task-breaking defect was found in the implementation or tests
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: 9e5dbf71571a4d3f92474fd5c254d62c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:02:32.649Z"} -->
