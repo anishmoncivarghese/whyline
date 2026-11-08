@@ -130,7 +130,7 @@ Rules every task keeps:
   3. `sections(text) -> list[str]` returns the `##` headings, used by the section picker and by "Also changed".
   Tests: every kind resolves, an override wins, the built-ins are included in the wheel (check `importlib.resources`), and `sections` ignores headings inside fenced code.
 
-- [ ] SDLC-9: Import a file as version 1
+- [x] SDLC-9: Import a file as version 1
   Create `src/whyline/sdlc/importer.py` and its tests.
   1. `read_source(path) -> str`:
      - `.md` and `.txt` as text
