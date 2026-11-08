@@ -38229,3 +38229,41 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 253fc8dccaec471693640d71df1884e0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T10:54:59.214Z"} -->
+
+## 2026-11-08 — Pass SDLC-2: whyline-relay floor is 0.2.41 and documents API is present
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-2
+
+**Because:** pyproject.toml and uv.lock both specify whyline-relay>=0.2.41,<0.3; the locked 0.2.42 wheel imports whyline_relay.documents with draft, revise_text, discard, and DocKind; tests/test_dependencies.py asserts those names; focused and full pytest both exit 0
+
+**Rejected:**
+
+- Fail because uv.lock resolved 0.2.42 rather than 0.2.41 — 0.2.42 is within >=0.2.41,<0.3 and exposes the documents API
+- Fail because the floor was lowered from 0.2.42 — the task explicitly requires whyline-relay>=0.2.41,<0.3
+
+**Test:** uv run pytest -q tests/test_dependencies.py: 1 passed
+**Test:** uv run pytest -q: exit 0, 1 skipped, no failures
+
+**Files:** pyproject.toml, tests/test_dependencies.py, uv.lock
+
+<!-- whyline-event: ae5f072d455c42088a4b19a12459497b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T11:12:47.495Z"} -->
+
+## 2026-11-08 — Approve SDLC-2 Round 3 dependency floor and documents API coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-2
+
+**Because:** The only task changes set whyline-relay>=0.2.41,<0.3 in both pyproject declarations and both uv.lock metadata specifiers; the lock remains valid at 0.2.42; the new test imports whyline_relay.documents and checks draft, revise_text, discard, and DocKind; git diff --check and the independent plain uv run pytest -q completed successfully with one skip and no failures
+
+**Rejected:**
+
+- Request changes for the locked 0.2.42 artifact — it satisfies the requested >=0.2.41,<0.3 constraint and uv lock correctly retains the newest compatible version
+
+**Files:** pyproject.toml, uv.lock, tests/test_dependencies.py
+
+<!-- whyline-event: 4006f9cc92474f458767013f477d8fe0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T11:30:14.143Z"} -->

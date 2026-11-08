@@ -255,7 +255,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0,<4.0" },
     { name = "pypdf", specifier = ">=5,<7" },
     { name = "textual", specifier = ">=2.1.2,<3.0" },
-    { name = "whyline-relay", specifier = ">=0.2.42,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.41,<0.3" },
 ]
 provides-extras = ["relay", "console", "ui", "all"]
 
@@ -263,7 +263,7 @@ provides-extras = ["relay", "console", "ui", "all"]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "whyline-relay", specifier = ">=0.2.42,<0.3" },
+    { name = "whyline-relay", specifier = ">=0.2.41,<0.3" },
 ]
 
 [[package]]
