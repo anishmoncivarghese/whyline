@@ -38632,3 +38632,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9e5dbf71571a4d3f92474fd5c254d62c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:02:32.649Z"} -->
+
+## 2026-11-08 — Template overrides are read from the given root, whole-file, keyed by template name (short-spec separate from spec)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-8
+
+**Because:** so a repo can override the short spec without touching the feature spec; matches the design's per-type override path
+
+**Rejected:**
+
+- Merging override sections with built-ins — the design says override replaces the template
+
+**Files:** src/whyline/sdlc/templates.py
+
+<!-- whyline-event: 4bf62177a1dd44549901b20f2645fa53 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:03:49.755Z"} -->
+
+## 2026-11-08 — Pass SDLC-8: templates, spec size routing, overrides, packaging, and fence-aware sections match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-8
+
+**Because:** All five templates start with the fill-every-section rule and use the design section lists as ## headings with one-line descriptions. template_for maps spec+small to short-spec, reads a whole-file override at .whyline/sdlc/templates/<name>.md, and otherwise loads the builtin via importlib.resources. Probe confirmed short-spec override is independent of spec, sections ignores fenced and ### headings, and hatch already ships this templates.py plus templates/ layout. tests/sdlc/test_templates.py: 21 passed. uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- fail for not building a wheel here — the task says check importlib.resources, which finds all five files
+
+**Files:** src/whyline/sdlc/templates.py, tests/sdlc/test_templates.py
+
+<!-- whyline-event: 7609295cad574f5986734a89b8e55bda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:23:06.033Z"} -->
+
+## 2026-11-08 — Approve SDLC-8 built-in templates
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-8
+
+**Because:** All five templates exactly follow the design section lists and fill-every-section rule; template_for selects short-spec for small work, repository overrides win, sections excludes fenced headings, importlib.resources finds every packaged template, and the full test suite exits 0.
+
+**Files:** src/whyline/sdlc/templates.py, tests/sdlc/test_templates.py
+
+<!-- whyline-event: b680a4eea1fe4c24867faf40af79f63e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T16:39:50.864Z"} -->
