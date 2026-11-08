@@ -6,3 +6,13 @@ chat.json
 chat-history.jsonl
 chat-active-agents.json
 agent-limits.json
+# added by whyline-relay
+brainstorm-tmp/
+PAUSE
+skipped-tasks.json
+antigravity-declined
+brainstorm-plan-draft.md
+recovery.json
+resolve-mode.json
+model-overrides.json
+cache/
