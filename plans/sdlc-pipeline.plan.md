@@ -157,7 +157,7 @@ Rules every task keeps:
 
 ## Part 3: Running the pipeline (no widgets)
 
-- [ ] SDLC-10: Stages for a set
+- [x] SDLC-10: Stages for a set
   Create `src/whyline/sdlc/stages.py` and its tests.
   1. `plan_stages(size, start, *, brainstorm_first, build) -> list[Stage]`:
      - `start` is description, brainstorm, prd or spec.
