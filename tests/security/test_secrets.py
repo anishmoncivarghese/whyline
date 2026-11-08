@@ -142,6 +142,36 @@ def test_low_entropy_is_ignored(rules):
     assert len(aws(scan_text(f"k = '{KEY}'\n", "a.py", rules))) == 1
 
 
+def generic(findings):
+    return [f for f in findings if f.rule == "generic-api-key"]
+
+
+@pytest.mark.parametrize("line", [
+    'ALLOW_KEY = "telegram_allow"\n',
+    'if key == "salary_min":\n',
+    "states = {key: UNAVAILABLE for key in PROTECTIONS}\n",
+    "Whyline checks a release for leaked secrets, vulnerable dependencies and\n",
+])
+def test_generic_rule_judges_the_captured_value_not_the_whole_match(rules, line):
+    """With no secretGroup, gitleaks uses the first non-empty capture group as
+    the secret, so its entropy cut-off sees `telegram_allow`, not the whole
+    `ALLOW_KEY = "telegram_allow"`."""
+    assert generic(scan_text(line, "src/a.py", rules)) == []
+
+
+def test_generic_rule_still_finds_a_random_looking_value(rules):
+    token = "q8Zr" + "Tn3vX7pLw2Kc9Hs4Yb6Md1Fj"
+    found = generic(scan_text(f'api_key = "{token}"\n', "src/a.py", rules))
+    assert len(found) == 1
+    assert token not in repr(found)
+
+
+def test_rule_with_no_capture_group_still_uses_the_whole_match():
+    rule = Rule(id="whole", description="whole", regex=re.compile(r"ZZ[0-9]{6}"))
+    only = RuleSet((rule,), Allowlist())
+    assert len(scan_text("x ZZ123456 y\n", "a.txt", only)) == 1
+
+
 def test_allowlisted_paths_are_skipped(rules):
     allowing = dataclasses.replace(rules, allowlist=Allowlist(paths=(re.compile(r"(^|/)vendor/"),)))
     text = f"k = '{KEY}'\n"

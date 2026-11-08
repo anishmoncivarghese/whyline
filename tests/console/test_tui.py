@@ -4797,3 +4797,24 @@ async def test_brainstorm_uses_the_console_root_without_a_relay(tmp_path, monkey
     assert seen == [root]
     assert made == []
     assert not any("A relay is running" in line for line in lines)
+
+
+@pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed -- skip the real smoke test")
+@pytest.mark.asyncio
+async def test_every_copy_uses_the_system_clipboard_first(tmp_path, monkeypatch):
+    """Screens such as Security's Copy report call app.copy_to_clipboard. It must
+    reach pbcopy (macOS Terminal ignores OSC 52), and send OSC 52 only when no
+    system clipboard command worked."""
+    from textual.app import App
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        system, osc = [], []
+        monkeypatch.setattr(App, "copy_to_clipboard", lambda self, text: osc.append(text))
+        monkeypatch.setattr(tui, "_system_copy", lambda text: system.append(text) or True)
+        app.copy_to_clipboard("report")
+        assert system == ["report"] and osc == []
+        monkeypatch.setattr(tui, "_system_copy", lambda text: False)
+        app.copy_to_clipboard("again")
+        assert osc == ["again"]
+        await pilot.pause()

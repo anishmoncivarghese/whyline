@@ -4667,6 +4667,14 @@ class WhylineConsoleApp(App):
             text, done = result
             self.render_event(SessionEvent(kind="output", text=self._put_on_clipboard(text, done)))
 
+    def copy_to_clipboard(self, text: str) -> None:
+        """Every Copy button in every screen lands here. Try the system clipboard
+        (pbcopy and friends) first: Textual's OSC 52 is ignored by macOS Terminal,
+        so Security's Copy report said "Copied" while nothing arrived."""
+        if _system_copy(text):
+            return
+        super().copy_to_clipboard(text)
+
     def _put_on_clipboard(self, text: str, done: str = "Transcript copied to clipboard.") -> str:
         """Copies `text` and returns the message to show: `done` when the
         system clipboard took it, else the honest OSC 52 caveat."""

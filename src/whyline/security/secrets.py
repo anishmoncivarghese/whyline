@@ -131,15 +131,13 @@ def scan_text(
                 found.append(_secret_finding(rule, path, 0, commit, ""))
             continue
         for match in rule.regex.finditer(text):
-            try:
-                secret = match.group(rule.secret_group) if rule.secret_group else match.group(0)
-            except IndexError:
-                secret = match.group(0)
+            group = _secret_group(rule, match)
+            secret = match.group(group)
             if not secret:
                 continue
             if rule.entropy is not None and entropy(secret) < rule.entropy:
                 continue
-            start = match.start(rule.secret_group) if rule.secret_group and secret else match.start()
+            start = match.start(group)
             line_text = _line_at(text, match.start(), match.end())
             whole = match.group(0)
             lists = (*rule.allowlists, rules.allowlist)
@@ -148,6 +146,23 @@ def scan_text(
             line = first_line + text.count("\n", 0, start)
             found.append(_secret_finding(rule, path, line, commit, secret))
     return found
+
+
+def _secret_group(rule: Rule, match: re.Match[str]) -> int:
+    """The group that holds the secret, as gitleaks picks it: `secretGroup` when
+    the rule sets one, else the first capture group that matched, else the whole
+    match. Measuring entropy on the whole match (`key = "telegram_allow"`)
+    instead of the value made ordinary names look like keys."""
+    if rule.secret_group:
+        try:
+            match.group(rule.secret_group)
+            return rule.secret_group
+        except IndexError:
+            return 0
+    for index in range(1, (match.re.groups or 0) + 1):
+        if match.group(index):
+            return index
+    return 0
 
 
 def _rule_allows_path(rule: Rule, path: str) -> bool:

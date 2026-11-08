@@ -53,13 +53,19 @@ def check(root: Path, *, run: Callable = subprocess.run, rules: RuleSet | None =
 # --- shared -------------------------------------------------------------------
 
 
-def _scan_member(artifact: str, member: str, data: bytes, rules: RuleSet) -> list[Finding]:
-    """Name check always; the text scan only for non-binary files under the size cap."""
+def _scan_member(
+    artifact: str, member: str, data: bytes, rules: RuleSet, inner: str | None = None
+) -> list[Finding]:
+    """Findings for one packaged file, shown as `<artifact>:<member>`: the name
+    check always, the text scan only for non-binary files under the size cap.
+    Rules and fingerprints see `inner` (the path inside the project) when given,
+    so an Allow is not tied to one version's folder name."""
+    scanned = inner if inner is not None else member
     binary = b"\0" in data[:_BINARY_PROBE]
     text = "" if binary or len(data) > MAX_FILE_BYTES else data.decode("utf-8", errors="replace")
-    found = check_deny(member, text)
+    found = check_deny(scanned, text)
     if text:
-        found.extend(scan_text(text, member, rules))
+        found.extend(scan_text(text, scanned, rules))
     return [dataclasses.replace(f, path=f"{artifact}:{member}") for f in found]
 
 
@@ -150,7 +156,10 @@ def _scan_sdist(path: Path, rules: RuleSet) -> list[Finding]:
                 continue
             handle = archive.extractfile(member)
             data = b"" if handle is None or member.size > MAX_FILE_BYTES else handle.read()
-            found.extend(_scan_member(path.name, member.name, data, rules))
+            # An sdist keeps everything under `<name>-<version>/`; drop that folder
+            # for rules and fingerprints, keep it in the path shown.
+            top, _, rest = member.name.partition("/")
+            found.extend(_scan_member(path.name, member.name, data, rules, rest or top))
     return found
 
 

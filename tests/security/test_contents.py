@@ -18,6 +18,7 @@ import pytest
 
 from whyline.security.contents import check, dockerignored, parse_dockerignore
 from whyline.security.rules import load_rules
+from whyline.security.secrets import scan_text
 
 KEY = "AKIA" + "QYLPMN5HHQKB3XZT"
 
@@ -80,6 +81,27 @@ def test_sdist_with_key_in_text_file(tmp_path, rules):
     assert found[0].kind == "secret"
     assert found[0].path == "pkg-1.0.tar.gz:pkg-1.0/notes.txt"
     assert KEY not in found[0].preview
+
+
+def test_sdist_fingerprint_ignores_the_versioned_top_folder(tmp_path, rules):
+    """An Allow must survive the next version: the sdist's `pkg-1.0/` folder is
+    not part of the fingerprint, which matches the same file in the tree."""
+    root = python_root(tmp_path)
+    first = check(root, run=uv_runner(sdist={"pkg-1.0/notes.txt": f"aws = {KEY}\n"}), rules=rules)
+
+    def later(args, **kwargs):
+        out = Path(args[args.index("--out-dir") + 1])
+        with tarfile.open(out / "pkg-1.1.tar.gz", "w:gz") as archive:
+            data = f"aws = {KEY}\n".encode()
+            info = tarfile.TarInfo("pkg-1.1/notes.txt")
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        return done()
+
+    second = check(root, run=later, rules=rules)
+    in_tree = scan_text(f"aws = {KEY}\n", "notes.txt", rules)
+    assert first[0].fingerprint == second[0].fingerprint == in_tree[0].fingerprint
+    assert second[0].path == "pkg-1.1.tar.gz:pkg-1.1/notes.txt"
 
 
 def test_build_dir_is_cleaned_up(tmp_path, rules):
