@@ -38147,3 +38147,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e831c53bd63145d29ff82c8db84fc512 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T05:45:14.183Z"} -->
+
+## 2026-11-08 — Released whyline 0.3.67 with job-level CI ignore and the test_see_files fix
+
+**Actor:** claude
+**Role:** releaser
+**Task:** release-0.3.67
+
+**Because:** ci_ignore could not match job names for any user, so a single known-bad job could only be skipped by ignoring its whole workflow
+
+**Rejected:**
+
+- hold it for the SDLC plan's release — days of a Set up box that silently does nothing
+
+**Files:** docs/releases/v0.3.67.md
+
+<!-- whyline-event: a7e8f89a2741497095e61f7c7e51de65 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T06:42:11.336Z"} -->
