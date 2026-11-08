@@ -77,6 +77,38 @@ def gh_json(root: Path, run: Run, args: list[str]) -> object:
         raise StepError(f"gh {name} gave unreadable output: {exc}") from exc
 
 
+_PASSED_RUN = {"success", "skipped", "neutral"}
+
+
+def _run_outcome(root: Path, run: Run, item: dict, ignored: set[str]) -> int | StepError:
+    """1 when the run has passed, 0 while it is still going, a StepError when it failed.
+
+    With nothing to ignore, or once a run has passed, the run's own result is
+    used. Otherwise its jobs are read: jobs named in ci_ignore are left out, a
+    failed job that is not ignored fails the release, and the run counts as
+    passed once every other job has passed, even while an ignored one runs on.
+    """
+    name = item.get("name", "")
+    done = item.get("status") == "completed"
+    failed = done and item.get("conclusion") in _FAILED
+    if not ignored or (done and not failed):
+        if failed:
+            return StepError(f"CI failed: {name} {item.get('url', '')}".strip())
+        return 1 if done else 0
+    data = gh_json(root, run, ["run", "view", str(item.get("databaseId", "")), "--json", "jobs"])
+    jobs = data.get("jobs", []) if isinstance(data, dict) else []
+    kept = [j for j in jobs if j.get("name") not in ignored]
+    for job in kept:
+        if job.get("status") == "completed" and job.get("conclusion") in _FAILED:
+            return StepError(
+                f"CI failed: {name} / {job.get('name')} {job.get('url', '')}".strip())
+    if not jobs:
+        if failed:
+            return StepError(f"CI failed: {name} {item.get('url', '')}".strip())
+        return 1 if done else 0
+    return 1 if all(j.get("status") == "completed" for j in kept) else 0
+
+
 def shell_runner(command: str, root: Path, on_line: Callable[[str], None]) -> tuple[int, list[str]]:
     proc = subprocess.Popen(
         command, shell=True, cwd=root, text=True, stdout=subprocess.PIPE,
@@ -178,14 +210,15 @@ def build_steps(
             if cancel.is_set():
                 return False
             runs = gh_json(root, run, ["run", "list", "--commit", sha, "--json",
-                                       "name,status,conclusion,url"])
+                                       "databaseId,name,status,conclusion,url"])
+            # A name in ci_ignore is a whole workflow or one job inside one.
             runs = [r for r in runs if r.get("name") not in ignored]
+            finished = 0
             for item in runs:
-                if item.get("status") == "completed" and item.get("conclusion") in _FAILED:
-                    raise StepError(
-                        f"CI failed: {item.get('name')} {item.get('url', '')}".strip()
-                    )
-            finished = sum(1 for r in runs if r.get("status") == "completed")
+                outcome = _run_outcome(root, run, item, ignored)
+                if isinstance(outcome, StepError):
+                    raise outcome
+                finished += outcome
             elapsed = now() - started
             if runs and finished == len(runs):
                 detail(f"{finished} of {len(runs)} checks")

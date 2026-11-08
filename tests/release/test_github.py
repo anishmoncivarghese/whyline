@@ -218,6 +218,103 @@ def test_ci_ignores_named_runs(repo):
     assert step.run(EVENT) is None
 
 
+# -- ignoring single jobs inside a workflow run --------------------------------
+
+
+WIN = "test (windows-latest, 3.13)"
+LINUX = "test (ubuntu-latest, 3.13)"
+
+
+def wf(run_id, name="ci", status="completed", conclusion="failure"):
+    return {"databaseId": run_id, "name": name, "status": status,
+            "conclusion": conclusion, "url": f"u/{name}"}
+
+
+def job(name, status="completed", conclusion="success"):
+    return {"name": name, "status": status, "conclusion": conclusion, "url": f"j/{name}"}
+
+
+def jobs_step(repo, run_seq, jobs_seq, cfg):
+    """ci step whose `gh run list` and `gh run view <id> --json jobs` answer from
+    sequences, one item per poll; the last item repeats."""
+    gh = FakeGh()
+    clock = Clock()
+    seen = []
+    calls = []
+    lists, views = list(run_seq), list(jobs_seq)
+
+    def answer(items):
+        return items.pop(0) if len(items) > 1 else items[0]
+
+    def run(args, cwd=None, **kw):
+        if args[:3] == ["gh", "run", "list"]:
+            calls.append(args)
+            return SimpleNamespace(returncode=0, stdout=json.dumps(answer(lists)), stderr="")
+        if args[:3] == ["gh", "run", "view"]:
+            calls.append(args)
+            return SimpleNamespace(returncode=0, stdout=json.dumps({"jobs": answer(views)}),
+                                   stderr="")
+        return gh(args, cwd=cwd, **kw)
+
+    s = steps(repo, run, cfg, sleep=clock.sleep, now=clock.now, on_progress=seen.append)
+    return s["ci"], clock, seen, calls
+
+
+def test_ci_passes_when_only_an_ignored_job_failed(repo):
+    cfg = ReleaseConfig(ci_ignore=(WIN,))
+    step, _, seen, calls = jobs_step(
+        repo, [[wf(7)]], [[job(LINUX), job(WIN, conclusion="failure")]], cfg)
+    assert step.run(EVENT) is None
+    assert ["gh", "run", "view", "7", "--json", "jobs"] in calls
+    assert seen[-1] == "1 of 1 checks"
+
+
+def test_ci_fails_on_a_job_that_is_not_ignored_and_names_it(repo):
+    cfg = ReleaseConfig(ci_ignore=(WIN,))
+    step, _, _, _ = jobs_step(
+        repo, [[wf(7)]],
+        [[job(LINUX, conclusion="failure"), job(WIN, conclusion="failure")]], cfg)
+    with pytest.raises(StepError) as exc:
+        step.run(EVENT)
+    assert f"CI failed: ci / {LINUX}" in str(exc.value)
+    assert f"j/{LINUX}" in str(exc.value)
+    assert WIN not in str(exc.value)
+
+
+def test_ci_waits_for_jobs_still_running_but_not_for_ignored_ones(repo):
+    cfg = ReleaseConfig(ci_ignore=(WIN,))
+    step, clock, _, _ = jobs_step(
+        repo,
+        [[wf(7, status="in_progress", conclusion="")]],
+        [[job(LINUX, "in_progress", ""), job(WIN, "in_progress", "")],
+         [job(LINUX), job(WIN, "in_progress", "")]],
+        cfg)
+    assert step.run(EVENT) is None
+    assert clock.sleeps == [15]
+
+
+def test_ci_whole_workflow_name_still_ignores_the_run(repo):
+    cfg = ReleaseConfig(ci_ignore=("nightly",))
+    step, _, _, calls = jobs_step(
+        repo, [[wf(7, "nightly"), wf(8, "ci", conclusion="success")]], [[]], cfg)
+    assert step.run(EVENT) is None
+    assert not any(c[:3] == ["gh", "run", "view"] for c in calls)
+
+
+def test_ci_without_ignores_never_reads_jobs(repo):
+    step, _, _, calls = jobs_step(repo, [[wf(7, conclusion="success")]], [[]], ReleaseConfig())
+    assert step.run(EVENT) is None
+    assert not any(c[:3] == ["gh", "run", "view"] for c in calls)
+
+
+def test_ci_failed_run_with_no_jobs_still_fails(repo):
+    cfg = ReleaseConfig(ci_ignore=(WIN,))
+    step, _, _, _ = jobs_step(repo, [[wf(7, conclusion="startup_failure")]], [[]], cfg)
+    with pytest.raises(StepError) as exc:
+        step.run(EVENT)
+    assert "CI failed: ci" in str(exc.value)
+
+
 def test_ci_no_runs_counts_as_passed_after_two_minutes(repo):
     step, clock, seen = ci_step(repo, [])
     step.run(EVENT)

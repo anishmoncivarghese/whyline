@@ -399,7 +399,7 @@ class ReleaseScreen(ModalScreen):
                            id="rs-after-plan")
             yield Label("Checks (one per line)")
             yield TextArea("\n".join(cfg.checks), id="rs-checks")
-            yield Label("CI jobs to ignore (one per line)")
+            yield Label("CI jobs to ignore (one per line): a job name as GitHub shows it, such as test (windows-latest, 3.13), or a whole workflow name")
             yield TextArea("\n".join(cfg.ci_ignore), id="rs-ci-ignore")
             yield Label("Notes path")
             yield Input(cfg.notes, id="rs-notes")

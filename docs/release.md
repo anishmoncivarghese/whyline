@@ -120,7 +120,14 @@ whyline keeps only your choices in `.whyline/release.toml`; see
 **Branch**, **Checks** (one command per line, run before the push), **CI jobs
 to ignore**, **Notes path** (default `docs/releases/v{version}.md`) and
 **After-commands** are on the same Set up tab. Save asks before you close
-with unsaved changes. With no file yet, Set up shows what detection suggests;
+with unsaved changes.
+
+**CI jobs to ignore** takes one name per line: either a job's name as GitHub
+shows it, such as `test (windows-latest, 3.13)`, or a whole workflow's name,
+such as `nightly`. Wait for CI leaves those out. A workflow run that failed
+only because of an ignored job counts as passed, and the release does not wait
+for an ignored job that is still running. Any other failed job stops the
+release and is named, as `CI failed: ci / test (ubuntu-latest, 3.13)`. With no file yet, Set up shows what detection suggests;
 it is only kept when you press **Save**.
 
 ## Running a release
@@ -195,9 +202,10 @@ is never made twice.
 - **git push failed**, **git tag failed**, **git push of vX.Y.Z failed**,
   **gh release create failed** Git or `gh` printed the reason after the colon;
   usually sign-in (`gh auth login`) or network.
-- **CI failed: `<job>` `<url>`** Open the link, fix the failure, push the fix
-  as a new commit if needed, then resume. Add flaky jobs to **CI jobs to
-  ignore**.
+- **CI failed: `<workflow>` / `<job>` `<url>`** Open the link, fix the
+  failure, push the fix as a new commit if needed, then resume. To stop a job
+  that is known to fail from blocking releases, add its name (the part after
+  the `/`) to **CI jobs to ignore**.
 - **CI is still running after 60 minutes.** Resume to keep waiting.
 
 **PyPI, npm and Docker**
