@@ -51,7 +51,7 @@ Rules every task keeps:
 
 ## Part 2: The document set (no widgets)
 
-- [ ] SDLC-4: The document set manifest
+- [x] SDLC-4: The document set manifest
   Create `src/whyline/sdlc/__init__.py`, `src/whyline/sdlc/docset.py` and `tests/sdlc/test_docset.py`.
   1. `Size` is small, feature or large. `Mode` is human or auto. `Status` is draft, in_review, changes_requested, approved, out_of_date or superseded. Each has a display label, for example "Human in the loop", "In review" and "Out of date".
   2. `PrdMode` is new, update or none, with the labels "New project: write the PRD", "Update the product PRD" and "No PRD change". `documents_for(size, brainstorm_first: bool, prd_mode: str) -> list[str]`, with kinds from the design's table:
