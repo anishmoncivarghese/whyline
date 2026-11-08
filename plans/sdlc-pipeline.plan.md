@@ -169,7 +169,7 @@ Rules every task keeps:
   3. `stages_line(stages, roles) -> str` returns the design's line, for example `PRD (claude, reviewed by codex) → Spec (claude) → …`, with `—` and the reason for each skipped stage.
   Tests: each size × start, each prd_mode, the Large design review, build on and off, and the exact line for the design's example.
 
-- [ ] SDLC-11: One drafter at a time, and no commits on a running relay's branch
+- [x] SDLC-11: One drafter at a time, and no commits on a running relay's branch
   Create `src/whyline/sdlc/guard.py` and its tests.
   1. `check(root) -> str | None` returns a plain refusal only when a relay is running in the docs checkout itself (`whyline_relay.running.live(docs_root(root))`). When the relay's state shows it paused, the text says to finish or stop it first. A relay running in another checkout of the repository does not refuse: documents are written and committed in the docs checkout, with its own handoff file.
   2. `drafting(root)` is a context manager that holds `.whyline/sdlc/drafting.lock` in the docs checkout, with the pid inside, and refuses with "Another document is being written (<set>, <kind>)". A lock whose pid is dead is taken over.
