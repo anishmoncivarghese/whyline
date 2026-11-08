@@ -38199,3 +38199,33 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4cbdcf894e0e416aa090fc68e1496510 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T07:49:16.801Z"} -->
+
+## 2026-11-08 — SDLC-1 passes: whyline-relay 0.2.43 ships RDOC-1..3 and is the installed tool
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-1
+
+**Because:** uv tool list and uv tool upgrade show 0.2.43 with nothing to upgrade; PyPI latest is 0.2.43 and 0.2.41 exists; installed documents has DocKind, draft, revise_text, discard, PRD/design/build-record kinds and prompts; documents.plan.md has RDOC-1..3 checked; whyline-relay pytest and agentdock pytest both exited 0
+
+**Files:** plans/sdlc-pipeline.plan.md
+
+<!-- whyline-event: 859d5bd5655444278aa8e49c9117ccca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T10:33:49.554Z"} -->
+
+## 2026-11-08 — Approve SDLC-1: whyline-relay 0.2.43 satisfies the RDOC release gate
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-1
+
+**Because:** RDOC-1..3 are complete in the relay plan; the installed whyline-relay executable reports 0.2.43; the plain full pytest suites in whyline-relay and agentdock both exited 0; and the agentdock working diff is limited to append-only decision history
+
+**Rejected:**
+
+- Request changes — no defect or missing release evidence remains
+
+**Files:** plans/sdlc-pipeline.plan.md
+
+<!-- whyline-event: 253fc8dccaec471693640d71df1884e0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T10:54:59.214Z"} -->
