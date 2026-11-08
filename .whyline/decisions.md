@@ -38314,3 +38314,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0d98a6ed533b4178b358a80743a7d454 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:11:00.443Z"} -->
+
+## 2026-11-08 — Docset slug reuses relay_ops.plan_slug; load/all_sets raise or skip a plain DocSetError on bad manifests
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-4
+
+**Because:** Spec says to reuse the plan slug helper so a plan and its docs share a slug; corrupt files must not crash callers
+
+**Rejected:**
+
+- new slug helper — would drift from plan names
+
+**Files:** src/whyline/sdlc/docset.py
+
+<!-- whyline-event: ecadc2ab01fa4afc9ddcf62b642dba15 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:21:13.055Z"} -->
+
+## 2026-11-08 — Pass SDLC-4: document-set manifest matches the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-4
+
+**Because:** Task tests 24 passed. An independent probe covered every size and prd_mode, slug helper reuse, field shape, defaults, folder clashes, atomic save, and missing or corrupt manifests. Full uv run pytest -q finished at 100 percent with exit 0.
+
+**Rejected:**
+
+- fail over Automatic vs Auto for Mode.AUTO — the task only requires Human in the loop, In review, and Out of date
+
+**Files:** src/whyline/sdlc/docset.py
+
+<!-- whyline-event: 85b3292b13ff4094b8865b9e4d1852ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:40:52.804Z"} -->
+
+## 2026-11-08 — Approve SDLC-4 document-set manifest implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-4
+
+**Because:** The implementation matches the requested enums, labels, document matrices, manifest fields and paths, PRD defaults, plan-slug reuse, collision suffixes, atomic persistence, and plain missing/corrupt-manifest errors; the focused tests cover the required cases and the independently run full uv run pytest -q completed at 100 percent with exit code 0 and one skip.
+
+**Rejected:**
+
+- Request changes for Mode.AUTO label Automatic instead of Auto — the task specifies examples rather than an exact label for auto, and Automatic is a clear display label for the required auto value.
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: 10630c94b9474fc8bde67e88850037f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T12:57:40.409Z"} -->
