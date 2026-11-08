@@ -102,7 +102,7 @@ Rules every task keeps:
   4. `commit(root, docset, message)` calls `workspace.docs_commit` in `docs_root(root)` with `docs/sdlc/<slug>/`, `docs/product/` when the set touched it, and the plan and tests paths when they exist. It returns False and commits nothing when nothing changed.
   Tests: version numbers and history files, log entries, upstream hashes, and that a commit touches only the set's paths. Use a temporary git repository.
 
-- [ ] SDLC-6: Headers and index.md
+- [x] SDLC-6: Headers and index.md
   Edit `src/whyline/sdlc/docset.py` and its tests only.
   1. `render_header(docset, kind) -> str` builds the block between `<!-- docset-header -->` and `<!-- /docset-header -->`. It shows status, version, written by, reviewed by, approved by and when, and links to the documents before and after it (relative paths).
   2. `apply_header(text, header) -> str` replaces an existing block or puts one at the top. Text outside the block is never touched. Plan and test plan files never get a header.
