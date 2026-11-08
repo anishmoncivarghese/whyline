@@ -115,6 +115,11 @@ class DocSet:
     created: str = ""
     documents: list[dict] = field(default_factory=list)
     schema: int = SCHEMA
+    description: str = ""
+    stage: str = ""
+    started_at: str = ""
+    pending_questions: dict = field(default_factory=dict)
+    skipped: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -130,6 +135,11 @@ class DocSet:
             "roles": self.roles,
             "created": self.created,
             "documents": self.documents,
+            "description": self.description,
+            "stage": self.stage,
+            "started_at": self.started_at,
+            "pending_questions": self.pending_questions,
+            "skipped": self.skipped,
         }
 
     def document(self, kind: str) -> dict | None:
@@ -231,6 +241,11 @@ def load(root: Path, slug: str) -> DocSet:
             created=raw.get("created", ""),
             documents=list(raw["documents"]),
             schema=raw["schema"],
+            description=str(raw.get("description") or ""),
+            stage=str(raw.get("stage") or ""),
+            started_at=str(raw.get("started_at") or ""),
+            pending_questions=dict(raw.get("pending_questions") or {}),
+            skipped=dict(raw.get("skipped") or {}),
         )
     except DocSetError:
         raise
