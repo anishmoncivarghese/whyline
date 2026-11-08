@@ -38471,3 +38471,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2dacf7519a9e42518097d0d40f78c0b5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:12:05.382Z"} -->
+
+## 2026-11-08 — add_version: first text is v1 (fresh doc starts at version 1), later texts bump; commit lists files individually
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-5
+
+**Because:** a new doc is created at version 1 with no text, so bumping would start history at v2; docs_commit refuses a collapsed untracked directory because it only accepts files named in written
+
+**Rejected:**
+
+- always bump — history would begin at v2
+- pass docs/sdlc/<slug>/ as a directory — docs_commit reports it as foreign
+
+**Files:** src/whyline/sdlc/docset.py
+
+<!-- whyline-event: efd0590a1b7847d0b75d62888b27b8aa -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:13:27.708Z"} -->
+
+## 2026-11-08 — Pass SDLC-5: versions, history, review log, approve upstream, and scoped commit match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-5
+
+**Because:** Task tests 29 passed. Independent probe covered v1-then-bump, plan history-only writes, log heading and fields, upstream hashes in documents_for order, skip of unapproved earlier docs, plan hashed from history, commit of set/plan/tests/product paths, docs_root on a feature branch, and False when clean. Full uv run pytest -q had one unrelated TUI timing flake that passed on isolated re-run.
+
+**Rejected:**
+
+- fail the task for test_a_clean_check_saves_roles_and_enables_start — that file does not import docset; isolated re-run passed
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: 6ca9ee26cce74c20b0b56c145e68e73b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:30:26.823Z"} -->
+
+## 2026-11-08 — Approve SDLC-5 versions, history, review log, approval hashes, and scoped commits
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-5
+
+**Because:** The diff implements versioned document/history writes including plan history-only behavior, structured review-log appends, ordered approved-upstream SHA-256 capture, and path-scoped no-op-aware commits; the tests exercise each requested behavior and the full plain uv run pytest -q completed at 100 percent with exit code 0 and one skip.
+
+**Rejected:**
+
+- Request changes — no unsafe or task-breaking behavior was found in the implementation or its coverage
+
+**Files:** src/whyline/sdlc/docset.py, tests/sdlc/test_docset.py
+
+<!-- whyline-event: ad3326e6b5264a52a408646790b708f5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T14:47:06.907Z"} -->

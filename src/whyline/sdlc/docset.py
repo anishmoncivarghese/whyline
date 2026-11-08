@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 
 from whyline.console.relay_ops import PLANS_DIR, plan_slug
+from whyline.sdlc import workspace
 from whyline.state import atomic_write_json
 
 SCHEMA = 1
@@ -247,3 +249,123 @@ def all_sets(root: Path) -> list[DocSet]:
             except DocSetError:
                 continue
     return found
+
+
+HISTORY_DIR = "history"
+REVIEW_LOG = "review-log.md"
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _doc(docset: DocSet, kind: str) -> dict:
+    doc = docset.document(kind)
+    if doc is None:
+        raise DocSetError(f"The document set {docset.slug!r} has no {kind!r} document.")
+    return doc
+
+
+def _history_path(root: Path, slug: str, kind: str, number: int) -> Path:
+    return _folder(root, slug) / HISTORY_DIR / f"{kind}-v{number}.md"
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def add_version(root: Path, docset: DocSet, kind: str, text: str, *, author: str, note: str) -> int:
+    """Store a new version of a document and put it in review; returns its number.
+
+    A fresh document is already at version 1 with nothing written, so its first
+    text is v1; every later text is the next number.
+    """
+    root = Path(root)
+    doc = _doc(docset, kind)
+    number = int(doc["version"])
+    if _history_path(root, docset.slug, kind, number).exists():
+        number += 1
+    if kind != "plan":
+        _write(root / doc["path"], text)
+    _write(_history_path(root, docset.slug, kind, number), text)
+    doc["version"] = number
+    doc["status"] = Status.IN_REVIEW.value
+    doc["written_by"] = author
+    doc["note"] = note
+    save(root, docset)
+    return number
+
+
+def log_review(
+    root: Path,
+    docset: DocSet,
+    kind: str,
+    *,
+    actor: str,
+    action: str,
+    comment: str = "",
+    section: str = "",
+    changed_sections=(),
+) -> None:
+    """Append one entry to the set's review-log.md."""
+    doc = _doc(docset, kind)
+    today = datetime.now(timezone.utc).date().isoformat()
+    lines = [f"### {today} · {kind} v{doc['version']} · {action} · {actor}", ""]
+    if comment:
+        lines += [comment, ""]
+    if section:
+        lines += [f"Section: {section}", ""]
+    if changed_sections:
+        lines += ["Changed: " + ", ".join(changed_sections), ""]
+    path = _folder(root, docset.slug) / REVIEW_LOG
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    _write(path, existing + "\n".join(lines) + "\n")
+
+
+def _current_text(root: Path, docset: DocSet, doc: dict) -> str:
+    """A document's text: its file, or for an unapproved plan its history copy."""
+    path = Path(root) / doc["path"]
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    copy = _history_path(root, docset.slug, doc["kind"], int(doc["version"]))
+    return copy.read_text(encoding="utf-8") if copy.is_file() else ""
+
+
+def approve(root: Path, docset: DocSet, kind: str, *, approver: str) -> None:
+    root = Path(root)
+    doc = _doc(docset, kind)
+    upstream: dict[str, str] = {}
+    for other in docset.documents:
+        if other["kind"] == kind:
+            break
+        if other["status"] == Status.APPROVED.value:
+            upstream[other["kind"]] = _sha(_current_text(root, docset, other))
+    doc["status"] = Status.APPROVED.value
+    doc["approved_by"] = approver
+    doc["approved_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    doc["upstream"] = upstream
+    log_review(root, docset, kind, actor=approver, action="approved")
+    save(root, docset)
+
+
+def commit(root: Path, docset: DocSet, message: str) -> bool:
+    """Commit the set's own files in the docs checkout; False when nothing changed.
+
+    docs_commit only accepts a dirty path when it is a file whyline wrote, so
+    the set's folder is listed file by file.
+    """
+    docs = workspace.docs_root(Path(root))
+    rels = [
+        str(p.relative_to(docs))
+        for p in sorted(_folder(docs, docset.slug).rglob("*"))
+        if p.is_file()
+    ]
+    extra = [f"{PLANS_DIR}/{docset.slug}.plan.md", f"{PLANS_DIR}/{docset.slug}.tests.md"]
+    if docset.prd_mode != PrdMode.NONE.value:
+        extra.insert(0, PRODUCT_PRD)
+    rels += [rel for rel in extra if (docs / rel).is_file()]
+    written = {rel: (docs / rel).read_text() for rel in rels}
+    return workspace.docs_commit(docs, rels, message, written)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
 
 import pytest
 
@@ -147,3 +149,89 @@ def test_corrupt_docset_is_a_plain_error(tmp_path, text):
     with pytest.raises(DocSetError):
         docset.load(tmp_path, "bad")
     assert docset.all_sets(tmp_path) == []
+
+
+def _git(cwd, *args):
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = tmp_path / "proj"
+    root.mkdir()
+    _git(root, "init", "-b", "main")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    (root / "other.txt").write_text("x")
+    _git(root, "add", "other.txt")
+    _git(root, "commit", "-m", "init")
+    return root
+
+
+def test_versions_and_history(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    assert docset.add_version(tmp_path, made, "spec", "one", author="claude", note="first") == 1
+    assert docset.add_version(tmp_path, made, "spec", "two", author="claude", note="again") == 2
+    assert (tmp_path / "docs/sdlc/login/spec.md").read_text() == "two"
+    assert (tmp_path / "docs/sdlc/login/history/spec-v1.md").read_text() == "one"
+    assert (tmp_path / "docs/sdlc/login/history/spec-v2.md").read_text() == "two"
+    loaded = docset.load(tmp_path, "login")
+    assert loaded.document("spec")["version"] == 2
+    assert loaded.document("spec")["status"] == "in_review"
+
+
+def test_plan_version_writes_no_plans_file(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    docset.add_version(tmp_path, made, "plan", "the plan", author="claude", note="n")
+    assert not (tmp_path / "plans").exists()
+    assert (tmp_path / "docs/sdlc/login/history/plan-v1.md").read_text() == "the plan"
+
+
+def test_review_log_entries(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    docset.add_version(tmp_path, made, "spec", "one", author="claude", note="n")
+    docset.log_review(
+        tmp_path,
+        made,
+        "spec",
+        actor="codex",
+        action="changes requested",
+        comment="Too vague",
+        section="Goals",
+        changed_sections=["Goals", "Scope"],
+    )
+    docset.log_review(tmp_path, made, "spec", actor="codex", action="comment")
+    text = (tmp_path / "docs/sdlc/login/review-log.md").read_text()
+    assert " · spec v1 · changes requested · codex\n" in text
+    assert text.startswith("### 20")
+    assert "Too vague" in text and "Goals" in text and "Changed: Goals, Scope" in text
+    assert text.count("### ") == 2
+
+
+def test_approve_records_upstream_hashes(tmp_path):
+    made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
+    docset.add_version(tmp_path, made, "spec", "spec text", author="claude", note="n")
+    docset.approve(tmp_path, made, "spec", approver="anish")
+    docset.add_version(tmp_path, made, "plan", "plan text", author="claude", note="n")
+    docset.approve(tmp_path, made, "plan", approver="anish")
+    loaded = docset.load(tmp_path, "login")
+    spec, plan = loaded.document("spec"), loaded.document("plan")
+    assert spec["status"] == "approved" and spec["approved_by"] == "anish"
+    assert spec["approved_at"] and spec["upstream"] == {}
+    assert plan["upstream"] == {"spec": hashlib.sha256(b"spec text").hexdigest()}
+    assert "approved · anish" in (tmp_path / "docs/sdlc/login/review-log.md").read_text()
+
+
+def test_commit_touches_only_the_sets_paths(repo):
+    made = docset.create(repo, "Login", "small", "human", roles=ROLES)
+    docset.add_version(repo, made, "spec", "spec text", author="claude", note="n")
+    (repo / "unrelated.txt").write_text("keep out")
+    assert docset.commit(repo, made, "docs: login") is True
+    files = _git(repo, "show", "--name-only", "--format=", "HEAD").split()
+    assert files and all(f.startswith("docs/sdlc/login/") for f in files)
+    assert "docs/sdlc/login/spec.md" in files
+    assert "unrelated.txt" in _git(repo, "status", "--porcelain")
+    assert docset.commit(repo, made, "docs: again") is False
