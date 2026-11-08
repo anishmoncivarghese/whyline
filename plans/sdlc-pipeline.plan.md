@@ -175,7 +175,7 @@ Rules every task keeps:
   2. `drafting(root)` is a context manager that holds `.whyline/sdlc/drafting.lock` in the docs checkout, with the pid inside, and refuses with "Another document is being written (<set>, <kind>)". A lock whose pid is dead is taken over.
   Tests: a relay running in the docs checkout refuses, a relay running in another worktree does not, a held lock refuses, and a stale lock is taken.
 
-- [ ] SDLC-12: Document drafting through whyline-relay
+- [x] SDLC-12: Document drafting through whyline-relay
   Edit `src/whyline/console/relay_ops.py` and `tests/console/test_relay_ops.py` only.
   1. `draft_document(root, kind_name, request, *, template, attachments, progress) -> Draft` calls `whyline_relay.documents.draft` with the matching `DocKind`:
      - `prd` and `design` use the RDOC kinds.
