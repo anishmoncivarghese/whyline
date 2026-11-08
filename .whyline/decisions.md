@@ -38870,3 +38870,140 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 16330da253854d2490667e58ead21f9e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T19:09:12.305Z"} -->
+
+## 2026-11-08 — Lock file stores pid, set and kind as JSON; drafting(root, set_name, kind) raises DraftingBusy
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-11
+
+**Because:** refusal text must name the set and kind of the holder, so the pid alone is not enough
+
+**Rejected:**
+
+- pid-only lock — cannot build the 'Another document is being written (<set>, <kind>)' message
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: 5bbac98ae7ab4b1bba70e80501f06fd3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T19:10:06.045Z"} -->
+
+## 2026-11-08 — Fail SDLC-11: paused docs-checkout relay is not refused
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-11
+
+**Because:** whyline-relay pause writes paused_reason then running.clear(), so check() sees live() is None and returns None; drafting could then commit on the paused relay branch. The paused text currently fires only while live() is set, which is a resumed run with leftover state.json
+
+**Rejected:**
+
+- pass because the six unit tests are green — the paused test keeps the live marker, which is not how pause works
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: 3a4cb10b37cf44099828a9f673ec6ae9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T19:29:27.613Z"} -->
+
+## 2026-11-08 — check() tests live first, then saved paused_reason; paused with no live marker refuses
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-11
+
+**Because:** whyline-relay pause clears the live marker after writing state.json, so only state shows a pause
+
+**Rejected:**
+
+- require live() for the paused text — a paused relay has no live marker, so drafting could commit on its branch
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: a45b9526411942b9bee1a27934f95f9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T19:30:20.208Z"} -->
+
+## 2026-11-08 — Pass SDLC-11: paused docs-checkout relay is refused; live, worktree, and lock cases hold
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-11
+
+**Because:** check() returns the paused text when state has paused_reason and live() is None, matching whyline-relay pause (save then running.clear). Seven guard tests pass, including the previous-fail case with no live marker. uv run pytest -q: 4299 passed, 1 skipped, 0 failed.
+
+**Rejected:**
+
+- fail for missing extra paused-in-other-worktree coverage — check() loads state from docs_root only, so that case allows drafting as specified
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: 65ad81c0b44c4808a6de2d78f47d7d24 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T19:49:07.441Z"} -->
+
+## 2026-11-08 — Reject SDLC-11: drafting lock acquisition is not race-safe
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-11
+
+**Because:** src/whyline/sdlc/guard.py:63 creates an empty visible lock before writing JSON, while lines 65-73 treat unreadable content as stale and unlink by pathname; a contender can delete an in-progress or newly replaced live lock, allowing two drafting contexts at once. The full uv run pytest -q suite exited 0, but the serial tests do not exercise contention.
+
+**Rejected:**
+
+- approve based on the green suite — the core one-drafter guarantee fails under a valid concurrent interleaving
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: 0eb4fac6325844f1943766b1d50d6fa5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T20:05:39.236Z"} -->
+
+## 2026-11-08 — Drafting lock: flock mutex around acquire/takeover/release, record published atomically via os.link
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-11
+
+**Because:** link of a fully written temp file never exposes an empty lock, and the mutex stops a contender unlinking a replacement live lock
+
+**Rejected:**
+
+- O_EXCL create then write — exposes an empty lock that a contender treats as stale
+- rename-based takeover without mutex — still races with replacement lock
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: a494dfbfd23b4962a6c7287e38a2336f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T20:16:49.227Z"} -->
+
+## 2026-11-08 — Pass SDLC-11: one drafter under contention; paused, live, worktree, and lock cases hold
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-11
+
+**Because:** check() refuses a live or paused relay in the docs checkout and allows another worktree; drafting.lock stores pid and refuses with the specified text; a dead pid is taken over. Eight processes racing a stale lock had exactly one winner in 20/20 rounds. tests/sdlc/test_guard.py: 9 passed. uv run pytest -q: 4301 passed, 1 skipped, 0 failed.
+
+**Rejected:**
+
+- fail because serial tests omit contention — 8 processes x 20 stale-takeover rounds never produced two winners
+
+**Files:** src/whyline/sdlc/guard.py
+
+<!-- whyline-event: 7826a00eae9148158c775e140b25b5ea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T20:42:06.488Z"} -->
+
+## 2026-11-08 — Approve SDLC-11: docs-checkout relay guard and race-safe drafting lock meet the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-11
+
+**Because:** check() scopes live and paused relay state to docs_root(root), another worktree remains allowed, and drafting() atomically publishes a pid/set/kind record while one flock mutex serializes acquisition, stale takeover, and owned release; the required cases plus concurrent regression coverage pass, and uv run pytest -q exited 0.
+
+**Rejected:**
+
+- request more lock changes — the prior half-written publication and replacement-unlink races are closed by staged hard-link publication under the shared mutex
+
+**Files:** src/whyline/sdlc/guard.py, tests/sdlc/test_guard.py
+
+<!-- whyline-event: 44717176db64435ab96dd894d8784abe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T20:58:50.126Z"} -->
