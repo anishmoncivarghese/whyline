@@ -38781,3 +38781,92 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0443b52ebc684212ac1814b613fde769 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-08T18:10:15.358Z"} -->
+
+## 2026-11-08 — Stage line role keys: <kind>_reviewer falls back to reviewer; execution review uses code_reviewer; prd_mode added as a keyword to plan_stages
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-10
+
+**Because:** The design's example shows PRD reviewed by codex but Spec not, so doc review must be settable per stage; the task signature omitted prd_mode though the tests need it; 'reviewer' would clash between doc and code review
+
+**Rejected:**
+
+- one reviewer key for every stage — cannot reproduce the design's exact example line
+
+**Files:** src/whyline/sdlc/stages.py
+
+<!-- whyline-event: 13c4f4b6c820444ea68fbf6eccee1707 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T18:11:56.121Z"} -->
+
+## 2026-11-08 — Fail: next_stage never returns Large design-review after the design is approved
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-10
+
+**Because:** Large adds design-review as its own stage after design, and next_stage is the first stage that is not skipped and not approved. _approved remaps design-review to design, so an approved design makes the pipeline jump to plan. SDLC-13 and SDLC-16 run design-review as a separate stage of the approved design. The existing next_stage test encodes this bug.
+
+**Rejected:**
+
+- pass on a green suite — the implementer tests never assert next_stage returns design-review, so they cannot catch it
+
+**Files:** src/whyline/sdlc/stages.py
+
+<!-- whyline-event: 2e2af40c70fa41d389f1e8778375b3bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T18:32:50.020Z"} -->
+
+## 2026-11-08 — design-review completion is a separate design_reviewed marker read via getattr, not aliased to design approval
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-10
+
+**Because:** design-review is its own architect review of the approved design (SDLC-13/16); aliasing made next_stage skip it. getattr avoids editing docset.py in this task
+
+**Rejected:**
+
+- alias to design — skips the stage
+- add field to DocSet now — out of SDLC-10 scope
+
+**Files:** src/whyline/sdlc/stages.py
+
+<!-- whyline-event: fb0026b3498e4d55b08a55178eae2e55 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T18:33:32.145Z"} -->
+
+## 2026-11-08 — Pass: next_stage returns Large design-review after design approval; full suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-10
+
+**Because:** plan_stages covers size x start, prd_mode labels and skips, Large design-review after design, and build on/off through done. next_stage walks approvals, skips missing documents, and treats design-review as its own design_reviewed marker so an approved design no longer jumps to plan. stages_line matches the design example plus Done. uv run pytest -q tests/sdlc/test_stages.py: 32 passed. uv run pytest -q: exit 0 with one skip. Independent probe of the round-3 fail now returns design-review then plan.
+
+**Rejected:**
+
+- fail on design_reviewed not persisting — adding a DocSet field is out of SDLC-10 scope
+
+**Test:** uv run pytest -q tests/sdlc/test_stages.py: 32 passed
+**Test:** uv run pytest -q: exit 0, one skip
+
+**Files:** src/whyline/sdlc/stages.py, tests/sdlc/test_stages.py
+
+<!-- whyline-event: 8b889f93cd9c45a9a653f0849a647f6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T18:52:17.321Z"} -->
+
+## 2026-11-08 — Approve SDLC-10 stages planning and progression
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-10
+
+**Because:** The new stages module covers every requested size/start and PRD mode, orders Large design-review after design, appends the complete build lifecycle, advances to the first unskipped unapproved stage, and renders the design line with role and skip annotations. The 32 task tests pass. The full suite produced one unrelated timing failure in tests/console/test_relay_setup_screen.py::test_setup_button_starts_the_relay, which passed immediately when rerun alone.
+
+**Rejected:**
+
+- request changes for the console failure — it is outside the changed surface and was not reproducible in an isolated rerun
+
+**Files:** src/whyline/sdlc/stages.py, tests/sdlc/test_stages.py
+
+<!-- whyline-event: 16330da253854d2490667e58ead21f9e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-08T19:09:12.305Z"} -->
