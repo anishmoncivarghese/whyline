@@ -239,7 +239,7 @@ Rules every task keeps:
   6. `stop(root, slug)` clears `stage`, releases the set's PRD claim, and leaves everything else.
   Tests: each action, including "Also changed", the guard refusing, PRD approval publishing the right version, the moved-PRD refusal, and stop releasing the claim.
 
-- [ ] SDLC-16: Auto mode and switching modes
+- [x] SDLC-16: Auto mode and switching modes
   Edit `src/whyline/sdlc/runner.py`, `src/whyline/sdlc/review.py` and their tests only.
   1. `run(root, slug, *, progress, cancel_event, launcher)` loops over `next_stage`:
      - In auto mode, each finished document is approved by its reviewer agent (`approver="<agent> (Auto)"`), with the reviewer's last review text logged.
