@@ -357,7 +357,7 @@ Rules every task keeps:
   Tests: coverage gaps becoming Blockers, auto pass, a fix round that clears, two fix rounds that stop, a not-run stop, human mode returning with the review, the design-review stage using the architect agent, and approve-with-blockers logging.
   Review focus (closed): the round limit and the three gate outcomes. Anything else goes in a follow-up note, not this task.
 
-- [ ] SDLC-17: The build record and decisions.md
+- [x] SDLC-17: The build record and decisions.md
   Create `src/whyline/sdlc/record.py` and its tests. Edit `src/whyline/console/tui.py` only where the console notices the relay finishing a plan.
   1. `build_inputs(root, docset) -> Path` writes `docs/sdlc/<slug>/build-inputs.md`:
      - `git log --oneline <build_base>..HEAD`
