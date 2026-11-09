@@ -411,7 +411,7 @@ Rules every task keeps:
 
 ## Part 4: Library, export and CLI (no widgets)
 
-- [ ] SDLC-18: The library
+- [x] SDLC-18: The library
   Create `src/whyline/sdlc/library.py` and its tests.
   1. `sets(root) -> list[SetSummary]`, newest first, each with a one-line summary such as `Job search 5 · Feature · PRD ✓ · Spec ✓ · Plan ✓ · Built ⏳`.
   2. `product(root) -> ProductSummary | None`: the product PRD's version, approval and its last 10 changelog lines, listed above the sets.
