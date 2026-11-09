@@ -428,7 +428,7 @@ Rules every task keeps:
   3. The default `out_dir` is `~/Downloads`.
   Tests: content order, header blocks stripped, the PDF fallback note, and that a missing document is skipped with a note.
 
-- [ ] SDLC-20: `whyline docs` CLI
+- [x] SDLC-20: `whyline docs` CLI
   Create `src/whyline/sdlc/cli.py` and edit `src/whyline/cli.py` to register it. Add tests.
   Subcommands, each calling the Part 2 to 4 functions:
   - `list`
