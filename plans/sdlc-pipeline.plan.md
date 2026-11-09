@@ -281,7 +281,7 @@ Rules every task keeps:
   Tests with temporary folders and a stubbed `repo_setup.setup`: the files written, README text with and without a brainstorm, an existing README kept, the set copied with `home` set, the old set marked moved and still present, both commits by pathspec, a refusal raising `HomeError` with nothing created, a setup error, and use_here.
   Review focus (closed): nothing created when a refusal applies, and the old set never deleted. Anything else goes in a follow-up note, not this task.
 
-- [ ] HOME-3: A GitHub repository for the project
+- [x] HOME-3: A GitHub repository for the project
   Create `src/whyline/sdlc/github_repo.py` and `tests/sdlc/test_github_repo.py`.
   1. `gh_ready(root, *, run=None) -> str | None` reuses `release.ready`'s gh installed and signed-in checks and returns their fix text (for example `Run: gh auth login`) or None.
   2. `default_owner(root, *, run=None) -> str | None` is `gh api user --jq .login`.
