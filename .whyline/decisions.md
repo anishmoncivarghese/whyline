@@ -40516,3 +40516,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7915f928020b4a958760d53eb014cddd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:20:08.788Z"} -->
+
+## 2026-11-09 — Library names the product summary function product() and imports the product module as prd
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-18
+
+**Because:** the task fixes the public name product(root); aliasing avoids shadowing
+
+**Rejected:**
+
+- product_summary — differs from the task's stated API
+
+**Files:** src/whyline/sdlc/library.py
+
+<!-- whyline-event: f9457cdb4e534c52b3647610175fa30e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:21:34.258Z"} -->
+
+## 2026-11-09 — Pass SDLC-18 library: sets, product, and unowned earlier plans behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-18
+
+**Because:** Full suite uv run pytest -q exited 0; 6 library tests cover mixed sets, a plan in plans/done/, and a missing spec; an independent probe also confirmed newest-first summaries, last 10 changelog lines, test-plan siblings, and spec/brainstorm naming when the named file exists
+
+**Rejected:**
+
+- fail for untested out-of-date and superseded marks — the probe confirmed PRD ⚠ and Spec – and the task example only requires the approved/pending form
+
+**Files:** src/whyline/sdlc/library.py, tests/sdlc/test_library.py
+
+<!-- whyline-event: 7573e45ca7ec4ac6970008d4a7dd86f6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:41:07.040Z"} -->
+
+## 2026-11-09 — Approve SDLC-18 library summaries and earlier-plan discovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-18
+
+**Because:** The implementation satisfies all three library APIs, the six focused tests cover every requested scenario, and the plain full suite uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness, safety, or coverage defect was found
+
+**Files:** src/whyline/sdlc/library.py, tests/sdlc/test_library.py
+
+<!-- whyline-event: 46cc5b3fff5142d4bedd0ada087a375e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:58:25.901Z"} -->
