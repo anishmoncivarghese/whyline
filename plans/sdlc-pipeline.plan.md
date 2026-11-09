@@ -266,7 +266,7 @@ Rules every task keeps:
   Tests: folder_name cases (punctuation, spaces, empty, a 60-character name), suggest_names parsing 3 lines, a bad reply falling back, an agent error falling back, the prompt holding only the synthesis, is_fresh with only docs and with a `src/` file, each refusal, and last_parent with and without a saved value.
   Review focus (closed): the refusals in 4 and the fallback in 2. Anything else goes in a follow-up note, not this task.
 
-- [ ] HOME-2: Create the project home
+- [x] HOME-2: Create the project home
   Edit `src/whyline/sdlc/home.py` and its tests only.
   1. `create_home(root, slug, parent: Path, folder: str, *, name: str, agents: list[str], progress) -> Path`, under `guard.check(root)`:
      - It raises `HomeError` with the `check_target` refusal when there is one.
