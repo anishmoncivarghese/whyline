@@ -322,7 +322,7 @@ Rules every task keeps:
   Tests: each size × kind, an override winning, the built-ins in the wheel (`importlib.resources`), parsing all three severities, `No findings.` giving [], and chatter-only text giving None.
   Review focus (closed): the table in 3 and the parser in 5. Anything else goes in a follow-up note, not this task.
 
-- [ ] GFR-2: Run a fresh-eyes review
+- [x] GFR-2: Run a fresh-eyes review
   Create `src/whyline/sdlc/goldfish.py` and `tests/sdlc/test_goldfish.py`. Make the helpers it needs in `src/whyline/relaychat/ask.py` public (keep the old names as aliases). Do not copy them.
   1. `review_document(root, docset, kind, *, agent, progress, cancel_event=None, run_fn=None) -> Review` runs every lens in `lenses_for(docset.size, kind)` under `guard.check` and `guard.drafting`.
   2. Each lens is its own new agent process, run the way `relaychat.ask.ask` runs one: the read-only command from `whyline.agents.capabilities.read_only_command`, `whyline_relay.agents.run`, a new temporary folder, and no `--resume`. The prompt holds only:
