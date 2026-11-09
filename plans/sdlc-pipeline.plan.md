@@ -222,7 +222,7 @@ Rules every task keeps:
   Tests: each parser, coverage gaps of all four kinds, the line text, the plan request text, and the test plan staying valid.
   Review focus (closed): 2 and 3. Anything else goes in a follow-up note, not this task.
 
-- [ ] SDLC-15: Review actions
+- [x] SDLC-15: Review actions
   Create `src/whyline/sdlc/review.py` and its tests. Every action calls `guard.check` first.
   1. `approve(root, slug, kind, *, approver)` approves, commits (`docs: approve <Kind> v<N> for <name>`), runs `refresh_out_of_date`, and returns the next stage.
      - For `prd` it also calls `product.publish`, which makes v1.0 in new mode, or the next minor version (the next major when `prd_major`) in update mode. The commit message names that version: `docs: PRD v1.3 for <name>`.
