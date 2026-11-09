@@ -418,7 +418,7 @@ Rules every task keeps:
   3. `earlier_plans(root) -> list[EarlierPlan]`: every plan in `plans/` and `plans/done/` that no set owns. Each comes with its test plan, and with the spec or brainstorm its marker line names when that file exists.
   Tests: mixed sets and earlier plans, a plan in `plans/done/`, and a marker whose spec is missing.
 
-- [ ] SDLC-19: Export pack
+- [x] SDLC-19: Export pack
   Create `src/whyline/sdlc/export.py` and its tests.
   1. `export_pack(root, slug, out_dir) -> ExportResult`:
      - It builds one Markdown: a cover from `index.md`, each document in order without its header block, the plan, the test plan, and `review-log.md` as an appendix titled "Review log".
