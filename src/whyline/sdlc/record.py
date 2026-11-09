@@ -12,6 +12,11 @@ from whyline.sdlc.docset import DocSet, Status
 
 INPUTS = "build-inputs.md"
 DECISIONS = "decisions.md"
+DRIFT = "drift.md"
+DRIFT_LINE = (
+    "Compare what the document promised with what was built. A finding is something "
+    "promised and not built, or built and not in the document."
+)
 _HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t#]*$")
 
 
@@ -133,6 +138,81 @@ def build_inputs(root: Path, docset: DocSet) -> Path:
     return path
 
 
+def _diff_stat(root: Path, base: str | None) -> str:
+    if not base:
+        raise docset_mod.DocSetError("no build base was recorded")
+    try:
+        out = worktrees._git(root, "diff", "--stat", f"{base}..HEAD").strip()
+    except Exception as error:
+        raise docset_mod.DocSetError(f"the diff could not be read: {error}") from error
+    return out or "No files changed since the build base."
+
+
+def drift_review(root: Path, docset: DocSet, *, agent: str, progress=None, run_fn=None) -> Path:
+    """Run the codebase-fit lens once on the approved design (else spec) against the build's diff.
+
+    Writes `reviews/drift.md` and returns its path; raises DocSetError when the lens didn't run.
+    """
+    from whyline.relaychat import ask
+    from whyline.sdlc import goldfish, guard, lenses
+
+    root = Path(root)
+    refusal = guard.check(root)
+    if refusal:
+        raise docset_mod.DocSetError(refusal)
+    docs = workspace.docs_root(root)
+    doc = next((d for d in (docset.document("design"), docset.document("spec")) if d), None)
+    if doc is None:
+        raise docset_mod.DocSetError("the set has no spec or design")
+    stat = _diff_stat(root, docset.build_base)
+    chosen, _ = goldfish._reviewer(root, agent, runner._author(docset))
+    argv = ask.command(root, chosen)
+    if argv is None:
+        raise docset_mod.DocSetError(f"{chosen} has no verified read-only mode, so it can't review.")
+    argv = goldfish._without_resume(argv)
+    if run_fn is None:
+        from whyline_relay import agents
+
+        run_fn = agents.run
+    prompt = "\n\n".join(
+        [
+            goldfish.build_prompt(
+                lenses.lens_text(root, "codebase-fit"), doc, goldfish._approved_before(docset, doc["kind"])
+            ),
+            f"git diff --stat {docset.build_base}..HEAD:\n\n{stat}",
+            DRIFT_LINE,
+        ]
+    )
+    found = None
+    with guard.drafting(root, docset.slug, doc["kind"]):
+        for _ in range(goldfish.ATTEMPTS):
+            if progress is not None:
+                progress(f"drift check · {chosen} compares the {doc['kind']} with the build")
+            found = goldfish._attempt(root, docs, chosen, argv, "codebase-fit", prompt, run_fn, None)
+            if found is not None:
+                break
+    if found is None:
+        raise docset_mod.DocSetError(f"{chosen} gave no usable answer")
+    lines = [f"- [{f.severity}] {f.section} — {f.problem} — {f.fix}" for f in found]
+    path = goldfish._reviews_dir(docs, docset.slug) / DRIFT
+    docset_mod._write(path, "\n".join(["# Drift from the spec", "", *(lines or ["No findings."])]) + "\n")
+    return path
+
+
+def _drift(root: Path, found: DocSet, *, progress, cancel_event) -> Path:
+    """`drift.md` for the build record: the findings, or why the check didn't run."""
+    from whyline.sdlc import goldfish, review
+
+    try:
+        return drift_review(root, found, agent=review.reviewer_for(found, "build-record"), progress=progress)
+    except Exception as error:
+        if cancel_event is not None and cancel_event.is_set():
+            raise
+        path = goldfish._reviews_dir(workspace.docs_root(root), found.slug) / DRIFT
+        docset_mod._write(path, f"Drift check didn't run: {error}\n")
+        return path
+
+
 def render_decisions(root: Path, docset: DocSet) -> str:
     """The text of `decisions.md`: the design's Decision records, then every recorded decision."""
     root = Path(root)
@@ -189,7 +269,8 @@ def run_build_record(root: Path, slug: str, *, progress=None, cancel_event=None)
     docs = workspace.docs_root(root)
     found = docset_mod.load(docs, slug)
     inputs = build_inputs(root, found)
-    attachments = [*runner._attachments(docs, found, "build-record"), inputs]
+    drift = _drift(root, found, progress=progress, cancel_event=cancel_event)
+    attachments = [*runner._attachments(docs, found, "build-record"), inputs, drift]
     draft = relay_ops.draft_document(
         docs,
         "build-record",

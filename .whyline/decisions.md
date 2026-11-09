@@ -40253,3 +40253,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 65bd8967088f4768bda4ac4a363a2c00 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T16:43:48.139Z"} -->
+
+## 2026-11-09 — Drift check reuses goldfish helpers; not-run writes drift.md with the reason
+
+**Actor:** claude
+**Role:** implementer
+**Task:** GFR-4
+
+**Because:** record.py-only scope; the record stage still attaches a file and the template section can quote the reason
+
+**Rejected:**
+
+- Add a single-lens function to goldfish.py — outside the task's files
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: 252c76f0589440a19a503daa92c20e07 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T16:45:26.341Z"} -->
+
+## 2026-11-09 — Pass GFR-4: drift check runs, attaches, and records not-run without blocking the build record
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-4
+
+**Because:** drift_review runs the codebase-fit lens once on the design else spec with git diff --stat and the promised/built line, writes reviews/drift.md, and run_build_record attaches it after build-inputs.md. When the lens fails, the record is still drafted and drift.md starts with Drift check didn't run: <reason>, matching the template section.
+
+**Rejected:**
+
+- Fail the task — the three required behaviors hold and both the record tests and the full suite are green
+
+**Test:** uv run pytest -q tests/sdlc/test_record.py: 12 passed
+**Test:** uv run pytest -q: exit 0, 100 percent collected, 1 skipped, no failures
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/templates/build-record.md, tests/sdlc/test_record.py
+
+<!-- whyline-event: cb9acbd250254f64a7dad2d89de74423 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T17:03:53.281Z"} -->
+
+## 2026-11-09 — Approve GFR-4 Round 3: drift review is attached and degrades safely when unavailable
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-4
+
+**Because:** drift_review uses the codebase-fit prompt on design else spec with the build-base diff stat and promised-versus-built instruction, run_build_record attaches drift.md beside build-inputs.md, the template directs the not-run wording, and both the 12-test focused suite and plain full suite passed
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness, safety, or coverage defect remains
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/templates/build-record.md, tests/sdlc/test_record.py
+
+<!-- whyline-event: 1a1ceb0ffe5749bfa912b11c84e3b774 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T17:20:39.813Z"} -->

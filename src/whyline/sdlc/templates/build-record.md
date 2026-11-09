@@ -15,6 +15,9 @@ Where the build departed from the approved document, and the reason.
 ## Decisions recorded during the build
 Decisions made while building that a later reader would wonder about.
 
+## Drift from the spec
+What drift.md reports: things promised and not built, or built and not in the document. If it says the drift check didn't run, write "Drift check didn't run: <reason>".
+
 ## Known gaps
 What is missing, unfinished or untested.
 

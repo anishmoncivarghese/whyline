@@ -174,3 +174,69 @@ def test_approval_regenerates_and_commits_decisions(repo, monkeypatch):
     )
     review.approve(root, "login", "design", approver="anish")
     assert "Use sessions" in committed["text"] and "Other plan" not in committed["text"]
+
+
+@pytest.fixture
+def lens_env(repo, monkeypatch):
+    from whyline.relaychat import agent_choice, ask
+    from whyline.sdlc import guard
+
+    monkeypatch.setattr(guard, "check", lambda r: None)
+    monkeypatch.setattr(agent_choice, "choices", lambda r: ["claude", "codex"])
+    monkeypatch.setattr(ask, "command", lambda r, cli: [cli, "--read-only"])
+    monkeypatch.setattr(ask, "extract", lambda r, cli, raw, f: raw)
+    monkeypatch.setattr("whyline.agents.runner._adapter", lambda defn, cli: None)
+    return repo
+
+
+def test_drift_review_prompt_has_the_diff_stat_and_the_document_path(lens_env):
+    root, made = lens_env
+    seen = []
+
+    def run(command, text, **kwargs):
+        seen.append(text)
+        return SimpleNamespace(exit_code=0, output="- [major] Login — promised, not built — build it")
+
+    path = record.drift_review(root, made, agent="codex", run_fn=run)
+    assert path == root / "docs/sdlc/login/reviews/drift.md"
+    assert "docs/sdlc/login/design.md" in seen[0]
+    assert f"git diff --stat {made.build_base}..HEAD" in seen[0] and "b.py" in seen[0]
+    assert record.DRIFT_LINE in seen[0]
+    assert "promised, not built" in path.read_text()
+
+
+def test_build_record_attaches_drift_next_to_the_inputs(lens_env, monkeypatch):
+    root, made = lens_env
+    got = {}
+    monkeypatch.setattr(
+        record, "drift_review",
+        lambda r, found, **kw: (root / "docs/sdlc/login/reviews/drift.md"),
+    )
+    monkeypatch.setattr(
+        relay_ops, "draft_document",
+        lambda docs, kind, request, **kw: got.update(kw) or SimpleNamespace(text="# Record\n"),
+    )
+    monkeypatch.setattr(relay_ops, "discard_document", lambda *a, **k: None)
+    monkeypatch.setattr(docset, "commit", lambda *a, **k: True)
+    record.run_build_record(root, "login")
+    names = [p.name for p in got["attachments"]]
+    assert names[-2:] == ["build-inputs.md", "drift.md"]
+
+
+def test_drift_that_does_not_run_still_gets_a_record(lens_env, monkeypatch):
+    root, made = lens_env
+    got = {}
+    monkeypatch.setattr(
+        relay_ops, "draft_document",
+        lambda docs, kind, request, **kw: got.update(kw) or SimpleNamespace(text="# Record\n"),
+    )
+    monkeypatch.setattr(relay_ops, "discard_document", lambda *a, **k: None)
+    monkeypatch.setattr(docset, "commit", lambda *a, **k: True)
+    monkeypatch.setattr(
+        "whyline_relay.agents.run",
+        lambda *a, **k: SimpleNamespace(exit_code=1, output=""),
+    )
+    record.run_build_record(root, "login")
+    drift = got["attachments"][-1]
+    assert drift.name == "drift.md"
+    assert drift.read_text().startswith("Drift check didn't run: ")
