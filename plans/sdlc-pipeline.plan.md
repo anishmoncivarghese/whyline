@@ -393,7 +393,7 @@ Rules every task keeps:
   2. `build_inputs` includes the table. The template gains `## Requirements traceability`, and its Known gaps section must list every requirement whose result isn't passed.
   Tests: the table for a full pass, a failed test, an untested requirement, and an amended plan.
 
-- [ ] LIFE-2: Close a feature, and open a pull request
+- [x] LIFE-2: Close a feature, and open a pull request
   Create `src/whyline/sdlc/close.py` and its tests. Edit `src/whyline/sdlc/runner.py` and its tests only to add the done stage.
   1. `close(root, slug) -> CloseResult` runs as the **done** stage after the build record is approved, under `guard.check`:
      - In the docs checkout, it `git mv`s the plan and test plan to `plans/done/` and updates their paths in `docset.json`.
