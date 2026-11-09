@@ -198,7 +198,7 @@ Rules every task keeps:
   3. The set records `stage` and `started_at` in `docset.json` while running, so a crash leaves it resumable.
   Tests: each stage kind with stubs, a PRD update, `No PRD change`, the claim refusing, new mode attaching README, questions, the guard refusing, and the checkpoint being discarded after a draft.
 
-- [ ] SDLC-14: Run the plan and test plan stage
+- [x] SDLC-14: Run the plan and test plan stage
   Edit `src/whyline/sdlc/runner.py` and its tests only.
   1. The plan stage calls `relay_ops.draft_plan(..., spec=<approved spec or design path>)` with the Test planner set from the set's roles. The plan draft and its test plan draft are added as one version. The plan text goes in `history/plan-v<N>.md` and the tests in `history/plan-v<N>.tests.md`.
   2. A revision of the plan uses `revise_document_text` with the plan kind, and keeps the test plan in step (RDOC-2 runs the tests stage on revise_text).
