@@ -39315,3 +39315,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a10620dcb4014597a32d8f9e8bd51cdc -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T00:42:53.674Z"} -->
+
+## 2026-11-09 — Review actions raise DocSetError for guard and moved-PRD refusals; plan kind routes through runner.revise_plan/approve_plan
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-15
+
+**Because:** plans carry a test plan and a plans/ file that generic revise_document_text/docset.approve would skip
+
+**Rejected:**
+
+- return error strings — callers need one failure path across actions
+
+**Files:** src/whyline/sdlc/review.py
+
+<!-- whyline-event: 30e20a067033482992caeec3d60473e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T00:44:30.998Z"} -->
+
+## 2026-11-09 — Pass SDLC-15: every review action matches the spec, including Also changed, PRD publish versions, moved-PRD refusal, and stop releasing the claim
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-15
+
+**Because:** Task tests 18 passed. Independent probes confirmed guard-first DocSetError on all six actions, spec/plan/PRD approve commit messages, v1.0/v1.2/v2.0 publishing, moved refusal with no commit, section-only also-changed, edited-by note, redo upstream and moved-PRD rebase, question_feedback plus pending clear, stop leaving documents and other claims. tests/sdlc 179 passed. Full uv run pytest -q exited 0 with one unrelated skip.
+
+**Rejected:**
+
+- fail because revise_document_text questions are not saved to pending_questions — the spec does not require that, and SDLC-16 is the run loop that stops on questions
+
+**Files:** src/whyline/sdlc/review.py, tests/sdlc/test_review.py
+
+<!-- whyline-event: cca569d4a9db434a9fa32a83720286c2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T01:04:38.929Z"} -->
+
+## 2026-11-09 — Approve SDLC-15 review actions and coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-15
+
+**Because:** All six actions call the guard first and match the requested approval, revision, edit, redo, question, stop, PRD publishing, moved-PRD refusal, and Also changed behavior; the focused tests exercise real persistence and the full uv run pytest -q suite exited 0 with one skip and no failures.
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found in the implementation or tests.
+
+**Files:** src/whyline/sdlc/review.py, tests/sdlc/test_review.py
+
+<!-- whyline-event: 16271a20ed464b5d9eb8c5cf920cfc26 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T01:21:18.819Z"} -->
