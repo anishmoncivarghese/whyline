@@ -205,7 +205,7 @@ Rules every task keeps:
   3. Approving the plan writes `plans/<slug>.plan.md` and `plans/<slug>.tests.md` through the existing `relay_ops._approve_marked` path, with `spec:` in the marker pointing at the approved spec or design.
   Tests: the plan and tests versions, approval writing both files with a valid marker, and `testplan.validate` passing on the stubbed output.
 
-- [ ] TRC-1: Requirements in the plan and test plan
+- [x] TRC-1: Requirements in the plan and test plan
   Create `src/whyline/sdlc/trace.py` and `tests/sdlc/test_trace.py`. Edit `src/whyline/sdlc/runner.py` and its tests only where 3 says.
   1. Parsers:
      - `requirements(text) -> list[str]` returns the R-numbers (R1, R2…) in a document's Requirements or Requirements covered section.
