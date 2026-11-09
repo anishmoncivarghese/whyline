@@ -379,7 +379,7 @@ Rules every task keeps:
   Tests: the prompt has the diff stat and the spec path, the attachment, and the not-run text.
   Review focus (closed): 3. Anything else goes in a follow-up note, not this task.
 
-- [ ] LIFE-1: Plan changes during a build
+- [x] LIFE-1: Plan changes during a build
   Edit `src/whyline/sdlc/record.py`, `src/whyline/sdlc/docset.py` and their tests, and `src/whyline/console/tui.py` only at the SDLC-17 hook.
   1. `plan_amendments(root, docs, docset) -> Amendments` compares the approved plan and test plan (by `content_hash`) with the files in the code checkout `root`. It lists added, removed and changed task ids. Ticked boxes don't count.
   2. When there are amendments, `record_amendments` adds the code checkout's plan as a new plan version with the note `amended during build: added GFR-1..6; changed SDLC-13`, logs `amended during build`, and keeps the status approved with `approved_by` `<git user> (during build)`.
