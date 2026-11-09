@@ -40652,3 +40652,56 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f3d89a564b9049bbaca28dd1fe4b148f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:13:51.514Z"} -->
+
+## 2026-11-09 — whyline docs start runs runner.run after creating the set; --from-file without --as becomes the description
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-20
+
+**Because:** start needs a first action and the console flow also runs the stages; a file with no --as has no document kind to land in
+
+**Rejected:**
+
+- start only creates the set — user would need a second resume command
+
+**Files:** src/whyline/sdlc/cli.py
+
+<!-- whyline-event: ce39a9fbcf294c1d854eaf94b7583326 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:16:20.910Z"} -->
+
+## 2026-11-09 — Pass whyline docs CLI: all 11 subcommands, refusals exit 1 with the message
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-20
+
+**Because:** tests/sdlc/test_cli.py 19 passed; independent probes of --prd/--major/--as/usage/list-order/export-default matched the spec; uv run pytest -q had one unrelated console flake that passed on rerun
+
+**Rejected:**
+
+- fail for leftover set on --as prd --prd none — contradictory flags already exit 1 with a message
+- fail for no console Docs screen — that is SDLC-23..27
+- fail for test_paused_owned_changes_show_ok_and_resume_allows_dirty — unrelated console flake, rerun passed
+
+**Files:** src/whyline/sdlc/cli.py, src/whyline/cli.py, tests/sdlc/test_cli.py
+
+<!-- whyline-event: 2af18715facf4a6197ea54efbbb8aded -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:37:51.653Z"} -->
+
+## 2026-11-09 — Approve SDLC-20 whyline docs CLI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-20
+
+**Because:** All 11 requested subcommands call the Part 2-4 APIs, print plain output, and convert refusals to exit 1; tests/sdlc/test_cli.py passed 19/19, and the full suite's sole unrelated relay-setup UI timeout passed on immediate isolated rerun
+
+**Rejected:**
+
+- Request changes — no task-scoped defect was found in implementation or coverage
+
+**Files:** src/whyline/sdlc/cli.py, src/whyline/cli.py, tests/sdlc/test_cli.py
+
+<!-- whyline-event: 29f1e118589845c9b5201ac1631def8e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:55:16.753Z"} -->

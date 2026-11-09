@@ -570,6 +570,12 @@ def _add_ask(subparsers: "argparse._SubParsersAction") -> None:
     add_parser(subparsers)
 
 
+def _add_docs(subparsers: "argparse._SubParsersAction") -> None:
+    from whyline.sdlc.cli import add_parser
+
+    add_parser(subparsers)
+
+
 def _add_relay_safety(subparsers: "argparse._SubParsersAction") -> None:
     parser = subparsers.add_parser(
         "relay-safety", help="Show or change the relay's safeguards on this Mac"
@@ -636,6 +642,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_workflow(subparsers)
     _add_security(subparsers)
     _add_ask(subparsers)
+    _add_docs(subparsers)
     _add_relay_safety(subparsers)
     return parser
 
@@ -1833,6 +1840,12 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return run(args)
 
 
+def cmd_docs(args: argparse.Namespace) -> int:
+    from whyline.sdlc.cli import run
+
+    return run(args)
+
+
 def cmd_jobs(args: argparse.Namespace) -> int:
     from whyline.jobs.cli import run
 
@@ -2016,6 +2029,7 @@ COMMANDS = {
     "workflow": cmd_workflow,
     "security": cmd_security,
     "ask": cmd_ask,
+    "docs": cmd_docs,
     "relay-safety": cmd_relay_safety,
 }
 
