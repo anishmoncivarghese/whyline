@@ -458,6 +458,8 @@ def _neighbours(docset: DocSet, kind: str) -> tuple[dict | None, dict | None]:
 def version_label(docset: DocSet, doc: dict, root: Path | None = None) -> str:
     """`v2` for most documents; the PRD reads `Product PRD v1.3 (draft 2)` in review."""
     plain = f"v{doc['version']}"
+    if doc["kind"] == "plan" and doc.get("amended_during_build"):
+        return f"Plan {plain} (amended during build)"
     if doc["kind"] != "prd" or root is None:
         return plain
     if doc["status"] == Status.APPROVED.value:

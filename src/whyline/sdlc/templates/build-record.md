@@ -12,6 +12,9 @@ Results from the test plan's ticked scenarios.
 ## Changes from the design and why
 Where the build departed from the approved document, and the reason.
 
+## Plan changes during the build
+The plan changes listed in build-inputs.md: tasks added, removed or changed after approval, and why. Write "Not applicable — the plan did not change" when it listed none.
+
 ## Decisions recorded during the build
 Decisions made while building that a later reader would wonder about.
 

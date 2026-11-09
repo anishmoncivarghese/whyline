@@ -6145,6 +6145,10 @@ class WhylineConsoleApp(App):
 
         def work() -> None:
             try:
+                from whyline.sdlc import docset as docset_mod, workspace
+
+                docs = workspace.docs_root(root)
+                record.record_amendments(root, docs, docset_mod.load(docs, slug))
                 outcome = record.run_build_record(
                     root, slug,
                     progress=lambda text: self.call_from_thread(

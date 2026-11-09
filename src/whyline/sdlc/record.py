@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from whyline import decisions, worktrees
@@ -104,6 +106,165 @@ def _section(text: str, title: str) -> str:
     return ""
 
 
+@dataclass
+class Amendments:
+    """Task and scenario ids the code checkout's plan files changed since approval."""
+
+    added: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    changed: list[str] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.added or self.removed or self.changed)
+
+    def summary(self) -> str:
+        return "; ".join(
+            f"{label} {_ranges(ids)}"
+            for label, ids in (("added", self.added), ("removed", self.removed), ("changed", self.changed))
+            if ids
+        )
+
+
+_NUMBERED = re.compile(r"(.*?)(\d+)")
+
+
+def _ranges(ids: list[str]) -> str:
+    """`GFR-1..6` for three or more consecutive numbers under one prefix; other ids as listed."""
+    parts = [_NUMBERED.fullmatch(i) for i in ids]
+    out: list[str] = []
+    at = 0
+    while at < len(ids):
+        end = at
+        while (
+            parts[at] is not None
+            and end + 1 < len(ids)
+            and parts[end + 1] is not None
+            and parts[end + 1].group(1) == parts[at].group(1)
+            and int(parts[end + 1].group(2)) == int(parts[end].group(2)) + 1
+        ):
+            end += 1
+        if end - at >= 2:
+            out.append(f"{ids[at]}..{parts[end].group(2)}")
+            at = end + 1
+        else:
+            out.append(ids[at])
+            at += 1
+    return ", ".join(out)
+
+
+def _approved_plan_text(docs: Path, docset: DocSet) -> str | None:
+    """The approved plan: its newest stored version, else the plan file in the docs checkout."""
+    doc = docset.document("plan")
+    if doc is None:
+        return None
+    stored = docset_mod._history_path(docs, docset.slug, "plan", int(doc["version"]))
+    if stored.is_file():
+        return stored.read_text(encoding="utf-8")
+    return _read(docs, docset.slug, tests=False)
+
+
+def _read(folder: Path, slug: str, *, tests: bool) -> str | None:
+    path = docset_mod.plan_file(folder, slug, tests=tests)
+    return path.read_text(encoding="utf-8") if path else None
+
+
+def _compare(before: dict, after: dict, found: Amendments) -> None:
+    found.added += [i for i in after if i not in before]
+    found.removed += [i for i in before if i not in after]
+    found.changed += [i for i in after if i in before and after[i] != before[i]]
+
+
+def _plan_tasks(text: str | None) -> dict[str, str]:
+    from whyline_relay import plan
+
+    if not text:
+        return {}
+    try:
+        return {task.task_id: task.text for task in plan.parse(text)}
+    except plan.PlanError:
+        return {}
+
+
+def _scenario_map(text: str | None) -> dict[str, tuple]:
+    from whyline_relay import testplan
+
+    if not text:
+        return {}
+    return {s.id: (s.title, s.covers, s.kind, s.steps, s.expected) for s in testplan.parse(text)}
+
+
+def plan_amendments(root: Path, docs: Path, docset: DocSet) -> Amendments:
+    """Compare the approved plan and test plan with the files in the code checkout `root`.
+
+    Ticked boxes and scenario notes don't count. Ids are plan tasks, then test scenarios.
+    """
+    root, docs = Path(root), Path(docs)
+    found = Amendments()
+    approved, built = _approved_plan_text(docs, docset), _read(root, docset.slug, tests=False)
+    if approved is not None and built is not None and (
+        docset_mod.content_hash("plan", approved) != docset_mod.content_hash("plan", built)
+    ):
+        _compare(_plan_tasks(approved), _plan_tasks(built), found)
+    approved_tests, built_tests = _read(docs, docset.slug, tests=True), _read(root, docset.slug, tests=True)
+    if approved_tests is not None and built_tests is not None:
+        _compare(_scenario_map(approved_tests), _scenario_map(built_tests), found)
+    return found
+
+
+def _git_user(root: Path) -> str:
+    try:
+        return worktrees._git(root, "config", "user.name").strip() or "whyline"
+    except Exception:
+        return "whyline"
+
+
+def record_amendments(root: Path, docs: Path, docset: DocSet) -> Amendments:
+    """Store the code checkout's plan as a new approved version when the build changed it."""
+    root, docs = Path(root), Path(docs)
+    found = plan_amendments(root, docs, docset)
+    if not found:
+        return found
+    who = f"{_git_user(root)} (during build)"
+    note = f"amended during build: {found.summary()}"
+    built = _read(root, docset.slug, tests=False)
+    approved = _approved_plan_text(docs, docset)
+    if built is not None:
+        old = int(docset_mod._doc(docset, "plan")["version"])
+        stored = docset_mod._history_path(docs, docset.slug, "plan", old)
+        if approved is not None and not stored.is_file():
+            docset_mod._write(stored, approved)  # keep the approved text as its own version
+        approved_tests = _read(docs, docset.slug, tests=True)
+        old_tests = stored.with_name(f"plan-v{old}.tests.md")
+        if approved_tests is not None and not old_tests.is_file():
+            docset_mod._write(old_tests, approved_tests)
+        number = docset_mod.add_version(docs, docset, "plan", built, author=who, note=note)
+        built_tests = _read(root, docset.slug, tests=True)
+        if built_tests is not None:
+            docset_mod._write(stored.with_name(f"plan-v{number}.tests.md"), built_tests)
+    doc = docset_mod._doc(docset, "plan")
+    doc["status"] = Status.APPROVED.value
+    doc["approved_by"] = who
+    doc["approved_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    doc["amended_during_build"] = True
+    doc["amendments"] = {"added": found.added, "removed": found.removed, "changed": found.changed}
+    doc["note"] = note
+    doc.pop("out_of_date_reason", None)
+    docset_mod.log_review(docs, docset, "plan", actor=who, action="amended during build", comment=note)
+    docset_mod.save(docs, docset)
+    docset_mod.refresh(docs, docset)
+    for tests in (False, True):
+        text = _read(root, docset.slug, tests=tests)
+        target = docset_mod.plan_file(docs, docset.slug, tests=tests)
+        if text is not None and target is not None and target.read_text(encoding="utf-8") != text:
+            target.write_text(text, encoding="utf-8")
+    return found
+
+
+def _recorded_amendments(docset: DocSet) -> Amendments:
+    doc = docset.document("plan") or {}
+    return Amendments(**{k: list(v) for k, v in (doc.get("amendments") or {}).items()})
+
+
 def build_inputs(root: Path, docset: DocSet) -> Path:
     """Write `build-inputs.md` beside the set's documents and return its path."""
     root = Path(root)
@@ -129,6 +290,12 @@ def build_inputs(root: Path, docset: DocSet) -> Path:
         if entries
         else "No decisions were recorded for the plan's tasks."
     )
+    amended = plan_amendments(root, docs, docset) or _recorded_amendments(docset)
+    if amended:
+        parts += ["", "## Plan changes during the build", ""]
+        for label, ids in (("Added", amended.added), ("Removed", amended.removed), ("Changed", amended.changed)):
+            if ids:
+                parts.append(f"- {label}: {', '.join(ids)}")
     tag = _release_tag(root, docset.build_base)
     if tag:
         parts += ["", "## Release", "", f"Tagged {tag}."]

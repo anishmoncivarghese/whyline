@@ -40307,3 +40307,105 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1a1ceb0ffe5749bfa912b11c84e3b774 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T17:20:39.813Z"} -->
+
+## 2026-11-09 — Amendments compare against the newest stored plan version, and the amended plan/test files are copied into the docs checkout
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIFE-1
+
+**Because:** so a second run finds no changes; the recorded ids are kept on the plan doc so build-inputs still lists them
+
+**Rejected:**
+
+- compare to the docs plan file only — it stays stale after an amendment and would re-report the same changes
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: 537273dea95b40e9ab92bca4e091c2be -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T17:25:24.591Z"} -->
+
+## 2026-11-09 — Pass LIFE-1: plan amendments detect add/remove/change, ignore ticks, version and log, and list in build inputs
+
+**Actor:** grok
+**Role:** tester
+**Task:** LIFE-1
+
+**Because:** plan_amendments compares the approved plan by content_hash and parsed task text, and test scenarios by title/covers/kind/steps/expected, so ticks and notes do not count. record_amendments stores the checkout plan as v2 with note amended during build, logs that action, keeps status approved with approved_by git user (during build), and version_label is Plan v2 (amended during build). The SDLC-17 hook calls record_amendments before the build-record stage, build_inputs lists the ids, and the template has the Plan changes section. Focused record tests 18 passed; full suite exit 0, 100 percent collected, 1 skipped, no failures.
+
+**Rejected:**
+
+- Fail the task — every required behavior holds and both the record tests and the full suite are green
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/docset.py, src/whyline/console/tui.py, src/whyline/sdlc/templates/build-record.md, tests/sdlc/test_record.py
+
+<!-- whyline-event: b1966b5a972642c09bd3fd55578eea61 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T17:54:39.658Z"} -->
+
+## 2026-11-09 — Reject LIFE-1 because test-plan-only amendments do not create a plan version
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIFE-1
+
+**Because:** record_amendments detects scenario-only changes but gates add_version on plan task-map differences, so Docs remains on the old version; it also never writes the amended test plan to the paired plan-vN.tests.md history required for plan versions
+
+**Rejected:**
+
+- Approve — the full suite passes, but it does not cover the missing test-only versioning path
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: 4d9693fbd3cb4c3084d39e92529c9d91 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T18:11:25.698Z"} -->
+
+## 2026-11-09 — Every detected amendment creates a plan version, test-only included; tests stored as plan-vN.tests.md
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIFE-1
+
+**Because:** Amendments covers scenarios too, so gating add_version on task differences left Docs on v1; the paired tests history keeps the amended test plan per version
+
+**Rejected:**
+
+- Keep gating on plan task differences — a scenario-only change would be marked amended without a new version
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: eb6cf0d621944e32af0dab2aa3d06018 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T18:12:31.788Z"} -->
+
+## 2026-11-09 — Pass LIFE-1: every amendment including test-only creates a plan version with Docs Plan v2 label
+
+**Actor:** grok
+**Role:** tester
+**Task:** LIFE-1
+
+**Because:** Full suite passed; record_amendments adds a version whenever Amendments is non-empty, writes plan-vN.tests.md, and the console hook records before the build-record stage
+
+**Rejected:**
+
+- Fail on the prior test-only gap — extra probes created v2 then v3 with paired tests history and the Docs index shows Plan v2 (amended during build)
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: ce06c351416b4f92818e2dca7c89b48b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T18:31:23.022Z"} -->
+
+## 2026-11-09 — Approve LIFE-1 round 6 plan-amendment lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIFE-1
+
+**Because:** The working-tree diff implements added, removed, and changed plan/test ids with tick-insensitive comparison, versions and logs every amendment including test-only changes, preserves approved status and git-user attribution, exposes amendments to build inputs and the build-record template, invokes recording before SDLC-17 build-record generation, renders the amended Docs label, and uv run pytest -q passed with exit 0
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found in the implementation or coverage
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/docset.py, src/whyline/console/tui.py, src/whyline/sdlc/templates/build-record.md, tests/sdlc/test_record.py
+
+<!-- whyline-event: 740b22c3aace4b199ecfcbaf62bde292 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T18:48:46.401Z"} -->

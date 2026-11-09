@@ -240,3 +240,79 @@ def test_drift_that_does_not_run_still_gets_a_record(lens_env, monkeypatch):
     drift = got["attachments"][-1]
     assert drift.name == "drift.md"
     assert drift.read_text().startswith("Drift check didn't run: ")
+
+
+def _build(root, plan=PLAN, tests=TESTS):
+    build = root / "build"
+    (build / "plans").mkdir(parents=True, exist_ok=True)
+    (build / "plans" / "login.plan.md").write_text(plan)
+    (build / "plans" / "login.tests.md").write_text(tests)
+    return build
+
+
+def test_amendments_list_added_removed_and_changed_tasks(repo):
+    root, made = repo
+    plan = "# Plan\n\n- [ ] T-1: Login now with SSO\n  Edit `a.py`.\n- [ ] T-3: Audit\n  Edit `c.py`.\n"
+    amended = record.plan_amendments(_build(root, plan), root, made)
+    assert (amended.added, amended.removed, amended.changed) == (["T-3"], ["T-2"], ["T-1"])
+    assert amended.summary() == "added T-3; removed T-2; changed T-1"
+
+
+def test_amendments_ignore_ticks_and_summarise_ranges(repo):
+    root, made = repo
+    ticked = PLAN.replace("- [ ] T-1", "- [x] T-1")
+    assert not record.plan_amendments(_build(root, ticked), root, made)
+    many = record.Amendments(added=[f"GFR-{n}" for n in range(1, 7)], changed=["SDLC-13"])
+    assert many.summary() == "added GFR-1..6; changed SDLC-13"
+
+
+def test_amendments_see_test_plan_scenarios(repo):
+    root, made = repo
+    tests = TESTS + "- [ ] S-3: New\n  covers: T-1\n  kind: auto\n  steps:\n    - Run.\n  expected:\n    - Ok.\n"
+    assert record.plan_amendments(_build(root, tests=tests), root, made).added == ["S-3"]
+
+
+def test_record_amendments_adds_a_version_and_logs_it(repo):
+    root, made = repo
+    plan = PLAN + "- [ ] T-3: Audit\n  Edit `c.py`.\n"
+    build = _build(root, plan)
+    made = docset.load(root, "login")
+    record.record_amendments(build, root, made)
+    made = docset.load(root, "login")
+    doc = made.document("plan")
+    assert doc["version"] == 2 and doc["status"] == "approved"
+    assert doc["approved_by"].endswith(" (during build)")
+    assert doc["note"] == "amended during build: added T-3"
+    assert docset.version_label(made, doc) == "Plan v2 (amended during build)"
+    assert "amended during build" in (root / "docs/sdlc/login/review-log.md").read_text()
+    assert not record.plan_amendments(build, root, made)
+    assert "T-3" in record.build_inputs(build, made).read_text()
+
+
+def test_record_amendments_versions_a_test_plan_only_change(repo):
+    root, made = repo
+    tests = TESTS + "- [ ] S-3: New\n  covers: T-1\n  kind: auto\n  steps:\n    - Run.\n  expected:\n    - Ok.\n"
+    build = _build(root, tests=tests)
+    made = docset.load(root, "login")
+    record.record_amendments(build, root, made)
+    made = docset.load(root, "login")
+    doc = made.document("plan")
+    assert doc["version"] == 2 and doc["status"] == "approved"
+    assert doc["note"] == "amended during build: added S-3"
+    history = docset._history_path(root, "login", "plan", 2).parent
+    assert (history / "plan-v2.tests.md").read_text() == tests
+    assert (history / "plan-v1.tests.md").read_text() == TESTS
+    assert not record.plan_amendments(build, root, made)
+
+
+def test_record_amendments_does_nothing_without_changes(repo):
+    root, made = repo
+    assert not record.record_amendments(_build(root), root, made)
+    assert docset.load(root, "login").document("plan")["version"] == 1
+
+
+def test_build_inputs_lists_plan_changes(repo):
+    root, made = repo
+    build = _build(root, PLAN + "- [ ] T-3: Audit\n  Edit `c.py`.\n")
+    text = record.build_inputs(build, made).read_text()
+    assert "## Plan changes during the build" in text and "- Added: T-3" in text
