@@ -363,7 +363,7 @@ def _dispatch(docs: Path, docset: DocSet, kind: str, progress) -> StageResult:
 
 @dataclass
 class RunOutcome:
-    """Why `run` returned: waiting, questions, paused, launched, cancelled, error or done."""
+    """Why `run` returned: waiting, waiting_for_home, questions, paused, launched, cancelled, error or done."""
 
     state: str
     stage: str = ""
@@ -392,6 +392,42 @@ def _launch_build(root: Path, docs: Path, found: DocSet, *, progress, launcher) 
     found.build_base = base
     docset_mod.save(docs, found)
     return RunOutcome("launched", "implement", build_base=base)
+
+
+def choose_home(root, slug: str, *, choice: str, parent=None, folder=None, name=None,
+                agents, progress) -> Path:
+    """Apply the user's project home choice, mark the stage approved, return the root to continue in."""
+    from whyline.sdlc import home
+
+    root = Path(root)
+    if choice not in ("new", "here"):
+        raise ValueError(f"Unknown home choice {choice!r}: expected new or here.")
+    docs = workspace.docs_root(root)
+    found = docset_mod.load(docs, slug)
+    # Saved first: the helper copies and commits the manifest, so it carries both records.
+    # A helper failure rolls the record back so the home stage stays pending.
+    had = "home" in found.skipped
+    previous = found.skipped.get("home")
+    found.skipped["home"] = f"chosen by the user: {choice}"
+    docset_mod.save(docs, found)
+    try:
+        if choice == "new":
+            target = home.create_home(
+                root, slug, Path(parent) if parent else home.last_parent(),
+                folder or home.folder_name(name or found.name), name=name or found.name,
+                agents=agents, progress=progress,
+            )
+        else:
+            target = home.use_here(root, slug)
+    except BaseException:
+        reverted = docset_mod.load(docs, slug)
+        if had:
+            reverted.skipped["home"] = previous
+        else:
+            reverted.skipped.pop("home", None)
+        docset_mod.save(docs, reverted)
+        raise
+    return Path(target)
 
 
 def run(root: Path, slug: str, *, progress=None, cancel_event=None, launcher=None) -> RunOutcome:
@@ -432,6 +468,8 @@ def run(root: Path, slug: str, *, progress=None, cancel_event=None, launcher=Non
             return result
         if kind in ("build-record", "done"):
             return outcome("launched", kind, build_base=found.build_base or "")
+        if kind == "home":
+            return outcome("waiting_for_home", kind)  # only the user picks the name and folder
         if found.pending_questions.get(kind):
             return outcome("questions", kind, questions=tuple(found.pending_questions[kind]))
         if kind == "design-review":

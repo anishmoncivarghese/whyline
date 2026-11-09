@@ -27,9 +27,9 @@ def stages(size, start="description", *, brainstorm_first=False, build=False, pr
 @pytest.mark.parametrize(
     ("size", "expected"),
     [
-        ("small", ["spec", "plan"]),
-        ("feature", ["prd", "spec", "plan"]),
-        ("large", ["brainstorm", "prd", "design", "design-review", "plan"]),
+        ("small", ["home", "spec", "plan"]),
+        ("feature", ["home", "prd", "spec", "plan"]),
+        ("large", ["brainstorm", "home", "prd", "design", "design-review", "plan"]),
     ],
 )
 def test_each_size_from_a_description(size, expected):
@@ -101,7 +101,7 @@ def test_large_design_review_follows_design():
 def test_build_on_and_off():
     off = kinds(stages("feature", build=False))
     on = kinds(stages("feature", build=True))
-    assert off == ["prd", "spec", "plan"]
+    assert off == ["home", "prd", "spec", "plan"]
     assert on == off + BUILD
     assert on[-2:] == ["build-record", "done"]
 
@@ -119,14 +119,16 @@ def test_the_designs_example_line():
     roles = {"writer": "claude", "prd_reviewer": "codex", "test_planner": "codex"}
     line = stages_line(stages("feature", build=True), roles)
     assert line == (
-        "PRD (claude, reviewed by codex) → Spec (claude) → Plan + test plan (claude, tests by codex)"
+        "Project home (you choose) → PRD (claude, reviewed by codex) → Spec (claude) → Plan + test plan (claude, tests by codex)"
         " → Implement → Test → Review → Release → Build record → Done"
     )
 
 
 def test_line_shows_skipped_stages_with_reason():
     line = stages_line(stages("large", "brainstorm", prd_mode="none"), {"writer": "claude"})
-    assert line.startswith("Brainstorm — (starting from a brainstorm) → PRD — (no PRD change) → Design (claude)")
+    assert line.startswith(
+        "Brainstorm — (starting from a brainstorm) → Project home — (existing project) → PRD — (no PRD change) → Design (claude)"
+    )
 
 
 def test_line_agents_for_large_and_build():
@@ -160,6 +162,8 @@ def approve_all(made, *kinds_):
 
 def test_next_stage_walks_the_set(tmp_path):
     made = make(tmp_path, prd_mode="new")
+    assert next_stage(made).kind == "home"
+    made.skipped["home"] = "chosen by the user: here"
     assert next_stage(made).kind == "prd"
     approve_all(made, "prd")
     assert next_stage(made).kind == "spec"
@@ -191,3 +195,15 @@ def test_next_stage_large_includes_design_review(tmp_path):
     assert next_stage(made).kind == "design-review"
     made.design_reviewed = True
     assert next_stage(made).kind == "plan"
+
+
+@pytest.mark.parametrize("prd_mode", ["update", "none"])
+def test_home_is_skipped_for_an_existing_project(prd_mode):
+    home = by_kind(stages("feature", prd_mode=prd_mode), "home")
+    assert (home.label, home.skipped, home.reason) == ("Project home", True, "existing project")
+
+
+def test_home_follows_brainstorm_and_leads_without_one():
+    assert kinds(stages("large"))[:2] == ["brainstorm", "home"]
+    assert kinds(stages("feature"))[0] == "home"
+    assert not by_kind(stages("feature"), "home").skipped

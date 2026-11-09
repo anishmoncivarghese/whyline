@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -176,3 +177,145 @@ def test_large_human_waits_at_plan_after_design_approved(auto):
     outcome = runner.run(auto.project, made.slug)
     assert outcome.state == "waiting" and outcome.stage == "plan"
     assert auto.staged == ["brainstorm", "design", "plan"]
+
+
+def make_new_set(log, mode):
+    made = docset.create(log.root, "Login", "feature", mode, roles=ROLES, prd_mode="new")
+    made.description = "Let people log in."
+    docset.save(log.root, made)
+    return made
+
+
+@pytest.mark.parametrize("mode", ["auto", "human"])
+def test_run_stops_at_home_in_both_modes(auto, mode):
+    made = make_new_set(auto, mode)
+    outcome = runner.run(auto.project, made.slug, launcher=lambda argv: None)
+    assert (outcome.state, outcome.stage) == ("waiting_for_home", "home")
+    assert auto.staged == []
+
+
+def test_choose_home_new_returns_the_target_and_run_continues_there(auto, monkeypatch):
+    from whyline.sdlc import home
+
+    made = make_new_set(auto, "auto")
+    target = auto.root / "newproj"
+    calls = []
+
+    def create_home(root, slug, parent, folder, *, name, agents, progress):
+        calls.append((parent, folder, name, agents))
+        return target
+
+    roots = {}
+
+    def docs_root(root):
+        roots[str(root)] = True
+        return auto.root
+
+    monkeypatch.setattr(home, "create_home", create_home)
+    monkeypatch.setattr(workspace, "docs_root", docs_root)
+    got = runner.choose_home(
+        auto.project, made.slug, choice="new", parent=auto.root, folder="newproj",
+        name="Login", agents=["claude"], progress=None,
+    )
+    assert got == target
+    assert calls == [(auto.root, "newproj", "Login", ["claude"])]
+    assert docset.load(auto.root, made.slug).skipped["home"]
+    outcome = runner.run(got, made.slug, launcher=lambda argv: auto.launches.append(argv))
+    assert outcome.state == "launched"
+    assert auto.staged == ["prd", "spec", "plan"]
+
+
+def test_choose_home_here_returns_root(auto, monkeypatch):
+    from whyline.sdlc import home
+
+    made = make_new_set(auto, "human")
+    monkeypatch.setattr(home, "use_here", lambda root, slug: Path(root))
+    got = runner.choose_home(auto.project, made.slug, choice="here", agents=[], progress=None)
+    assert got == auto.project
+    outcome = runner.run(got, made.slug)
+    assert (outcome.state, outcome.stage) == ("waiting", "prd")
+    assert auto.staged == ["prd"]
+
+
+@pytest.mark.parametrize("choice", ["new", "here"])
+def test_choose_home_helper_failure_leaves_the_home_stage_pending(auto, monkeypatch, choice):
+    from whyline.sdlc import home
+
+    made = make_new_set(auto, "human")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("helper failed")
+
+    monkeypatch.setattr(home, "create_home", boom)
+    monkeypatch.setattr(home, "use_here", boom)
+    with pytest.raises(RuntimeError, match="helper failed"):
+        runner.choose_home(auto.project, made.slug, choice=choice, parent=auto.root,
+                           folder="x", name="Login", agents=[], progress=None)
+    assert "home" not in docset.load(auto.root, made.slug).skipped
+
+
+def test_choose_home_refuses_an_unknown_choice(auto):
+    made = make_new_set(auto, "human")
+    with pytest.raises(ValueError, match="Unknown home choice"):
+        runner.choose_home(auto.project, made.slug, choice="elsewhere", agents=[], progress=None)
+
+
+def _real_project(tmp_path):
+    import json
+    import subprocess
+
+    def git(path, *args):
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True, encoding="utf-8")
+
+    root = tmp_path / "old"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "user.email", "a@b.c")
+    git(root, "config", "user.name", "a")
+    made = docset.create(root, "Login", "feature", "human", roles=ROLES, prd_mode="new")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "init")
+    manifest = root / "docs" / "sdlc" / made.slug / "docset.json"
+    return root, made, manifest, git, json
+
+
+def _status(path):
+    import subprocess
+
+    return subprocess.run(["git", "status", "--porcelain"], cwd=path, capture_output=True,
+                          encoding="utf-8", check=True).stdout
+
+
+def test_choose_home_here_keeps_the_home_record_and_git_clean(tmp_path, monkeypatch):
+    monkeypatch.setattr(guard, "check", lambda root: None)
+    root, made, manifest, _git, json = _real_project(tmp_path)
+    got = runner.choose_home(root, made.slug, choice="here", agents=[], progress=None)
+    data = json.loads(manifest.read_text())
+    assert got == root
+    assert data["home"]["here"] is True and data["skipped"]["home"]
+    assert _status(root) == ""
+
+
+def test_choose_home_new_keeps_the_home_record_and_git_clean(tmp_path, monkeypatch):
+    from whyline.console import repo_setup
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "homedir")
+    monkeypatch.setattr(guard, "check", lambda root: None)
+    root, made, manifest, git, json = _real_project(tmp_path)
+
+    def setup(inspection, *, agents, progress):
+        inspection.path.mkdir(parents=True, exist_ok=True)
+        git(inspection.path, "init", "-q", "-b", "main")
+        git(inspection.path, "config", "user.email", "a@b.c")
+        git(inspection.path, "config", "user.name", "a")
+        git(inspection.path, "commit", "-q", "--allow-empty", "-m", "first")
+        return inspection.path
+
+    monkeypatch.setattr(repo_setup, "setup", setup)
+    parent = tmp_path / "out"
+    parent.mkdir()
+    target = runner.choose_home(root, made.slug, choice="new", parent=parent, folder="login",
+                                name="Login", agents=["claude"], progress=None)
+    copied = json.loads((target / "docs" / "sdlc" / made.slug / "docset.json").read_text())
+    assert copied["home"]["created_from"] == str(root) and copied["skipped"]["home"]
+    assert _status(target) == "" and _status(root) == ""

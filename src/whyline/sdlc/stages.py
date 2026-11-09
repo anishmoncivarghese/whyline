@@ -10,6 +10,7 @@ STARTS = ("description", "brainstorm", "prd", "spec")
 
 _LABELS = {
     "brainstorm": "Brainstorm",
+    "home": "Project home",
     "prd": "PRD",
     "spec": "Spec",
     "design": "Design",
@@ -71,6 +72,7 @@ def plan_stages(
     kinds: list[str] = []
     if size is Size.LARGE or brainstorm_first or start == "brainstorm":
         kinds.append("brainstorm")
+    kinds.append("home")
     kinds.append("prd")
     kinds.append("design" if size is Size.LARGE else "spec")
     if size is Size.LARGE:
@@ -83,6 +85,8 @@ def plan_stages(
     for kind in kinds:
         label = _LABELS[kind]
         reason = ""
+        if kind == "home" and prd is not PrdMode.NEW:
+            reason = "existing project"
         if kind == "prd":
             if prd is PrdMode.UPDATE:
                 label = "PRD update"
@@ -97,6 +101,9 @@ def plan_stages(
 
 
 def _approved(docset: DocSet, kind: str) -> bool:
+    if kind == "home":
+        # Not a document: choose_home records the user's choice on the set.
+        return "home" in (getattr(docset, "skipped", None) or {})
     if kind == "design-review":
         # A separate architect review of the approved design, with its own marker.
         return bool(getattr(docset, "design_reviewed", False))
@@ -133,7 +140,9 @@ def next_stage(docset: DocSet) -> Stage | None:
 def _agents(stage: Stage, roles: dict) -> str:
     kind = stage.kind
     parts: list[str] = []
-    if kind == "design-review":
+    if kind == "home":
+        parts.append("you choose")
+    elif kind == "design-review":
         parts.append(str(roles.get("architect_reviewer") or ""))
     elif kind in _DRAFTED:
         parts.append(str(roles.get("writer") or ""))
