@@ -473,7 +473,26 @@ def run(root: Path, slug: str, *, progress=None, cancel_event=None, launcher=Non
         if found.pending_questions.get(kind):
             return outcome("questions", kind, questions=tuple(found.pending_questions[kind]))
         if kind == "design-review":
-            # a no-op until GFR-3: nothing to run or approve, move on to the plan
+            # the approved design, read by the Architect reviewer through all five lenses
+            architect = str(found.roles.get("architect_reviewer") or "")
+            try:
+                if found.mode == docset_mod.Mode.AUTO.value:
+                    text, stopped = review.auto_review(
+                        root, slug, "design", agent=architect, progress=progress,
+                        cancel_event=cancel_event,
+                    )
+                    reviews.append(text)
+                    if stopped:
+                        return outcome("waiting", kind, message=stopped)
+                else:
+                    review.review_again(
+                        root, slug, "design", progress=progress, cancel_event=cancel_event,
+                        agent=architect,
+                    )
+            except docset_mod.DocSetError as error:
+                if cancelled():
+                    return outcome("cancelled", kind)
+                return outcome("error", kind, message=str(error))
             design_reviewed = True
             continue
         doc = found.document(kind)
@@ -491,12 +510,27 @@ def run(root: Path, slug: str, *, progress=None, cancel_event=None, launcher=Non
                 return outcome("questions", kind, questions=result.questions)
             if result.skipped:
                 continue
-        if docset_mod.load(docs, slug).mode != docset_mod.Mode.AUTO.value:
-            return outcome("waiting", kind)
+        fresh = review.has_lenses(found, kind)
+        auto = docset_mod.load(docs, slug).mode == docset_mod.Mode.AUTO.value
         try:
-            text, _ = review.auto_approve(
-                root, slug, kind, progress=progress, cancel_event=cancel_event
-            )
+            if not auto:
+                if fresh and not finished:
+                    # run before returning, so the findings are there when Docs opens
+                    review.review_again(
+                        root, slug, kind, progress=progress, cancel_event=cancel_event
+                    )
+                return outcome("waiting", kind)
+            if fresh:
+                text, stopped = review.auto_review(
+                    root, slug, kind, progress=progress, cancel_event=cancel_event
+                )
+                if stopped:
+                    reviews.append(text)
+                    return outcome("waiting", kind, message=stopped)
+            else:
+                text, _ = review.auto_approve(
+                    root, slug, kind, progress=progress, cancel_event=cancel_event
+                )
         except docset_mod.DocSetError as error:
             if cancelled():
                 return outcome("cancelled", kind)

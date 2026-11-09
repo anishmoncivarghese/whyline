@@ -9,7 +9,7 @@ import pytest
 from whyline import worktrees
 from whyline.console import adapters, auto_run
 from whyline.console.session import SessionEvent
-from whyline.sdlc import docset, guard, review, runner, workspace
+from whyline.sdlc import docset, goldfish, guard, lenses, review, runner, workspace
 
 ROLES = {"writer": "claude", "reviewer": "codex"}
 
@@ -18,7 +18,7 @@ ROLES = {"writer": "claude", "reviewer": "codex"}
 def auto(tmp_path, monkeypatch):
     """Stubs for run(): stage drafting, the reviewer agent, approval commits and Auto's launch."""
     log = SimpleNamespace(
-        staged=[], reviewers=[], launches=[], copies=[], preflights=[],
+        staged=[], reviewers=[], launches=[], copies=[], preflights=[], fresh=[], findings=[], not_run=[],
         cancel=threading.Event(), after_stage=None, root=tmp_path, project=tmp_path / "app",
     )
     log.project.mkdir()
@@ -44,6 +44,15 @@ def auto(tmp_path, monkeypatch):
         log.preflights.append(current["plan"]["path"])
         return current
 
+    def review_document(root, found, kind, *, agent, progress=None, cancel_event=None, run_fn=None):
+        log.fresh.append((kind, agent))
+        items = log.findings.pop(0) if log.findings else []
+        missing = log.not_run.pop(0) if log.not_run else []
+        path = tmp_path / f"{kind}-report.md"
+        path.write_text(f"Blockers: 0 · Major: 0 · Nits: 0 · Not run: none · Reviewer: {agent}\n")
+        return goldfish.Review(path, items, missing, agent)
+
+    monkeypatch.setattr(goldfish, "review_document", review_document)
     monkeypatch.setattr(runner, "run_stage", run_stage)
     monkeypatch.setattr(runner, "approve_plan", approve_plan)
     monkeypatch.setattr(adapters, "run_chat_turn", chat)
@@ -66,17 +75,15 @@ def test_run_auto_goes_from_description_to_launch(auto):
     outcome = runner.run(auto.project, made.slug, launcher=lambda argv: auto.launches.append(argv))
     assert outcome.state == "launched" and outcome.build_base == "abc123"
     assert auto.staged == ["spec", "plan"]
-    assert auto.reviewers == ["codex", "codex"]
-    assert outcome.reviews == ("Looks fine.", "Looks fine.")
+    assert auto.fresh == [("spec", "codex"), ("plan", "codex")]
+    assert len(outcome.reviews) == 2 and "codex reviewed the spec" in outcome.reviews[0]
     assert auto.launches == [["start"]]
     assert auto.copies == [(auto.project, made.slug)]
     assert auto.preflights == [str(auto.project / "plans" / (made.slug + ".plan.md"))]
     saved = docset.load(auto.root, made.slug)
     assert saved.build_base == "abc123"
-    assert saved.document("spec")["approved_by"] == "codex (Auto)"
-    assert saved.document("plan")["approved_by"] == "codex (Auto)"
-    log_text = (auto.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text()
-    assert "Looks fine." in log_text
+    assert saved.document("spec")["approved_by"] == "codex (Auto, fresh review)"
+    assert saved.document("plan")["approved_by"] == "codex (Auto, fresh review)"
 
 
 def test_build_base_is_sampled_before_the_launcher_runs(auto, monkeypatch):
@@ -131,7 +138,7 @@ def test_run_the_rest_on_auto(auto):
     outcome = runner.run(auto.project, made.slug, launcher=lambda argv: auto.launches.append(argv))
     assert outcome.state == "launched"
     assert auto.staged == ["spec", "plan"]
-    assert auto.reviewers == ["codex"]
+    assert auto.fresh[-1] == ("plan", "codex")
 
 
 def test_cancel_between_stages(auto):
@@ -165,7 +172,7 @@ def test_large_auto_goes_from_description_to_launch(auto):
     assert auto.staged == ["brainstorm", "design", "plan"]
     assert auto.launches == [["start"]]
     saved = docset.load(auto.root, made.slug)
-    assert saved.document("design")["approved_by"] == "codex (Auto)"
+    assert saved.document("design")["approved_by"] == "codex (Auto, fresh review)"
 
 
 def test_large_human_waits_at_plan_after_design_approved(auto):
@@ -319,3 +326,86 @@ def test_choose_home_new_keeps_the_home_record_and_git_clean(tmp_path, monkeypat
     copied = json.loads((target / "docs" / "sdlc" / made.slug / "docset.json").read_text())
     assert copied["home"]["created_from"] == str(root) and copied["skipped"]["home"]
     assert _status(target) == "" and _status(root) == ""
+
+
+def blocker(section="Scope", problem="Vague", fix="Say what"):
+    return lenses.Finding("readiness", "blocker", section, problem, fix)
+
+
+def test_gate_outcomes():
+    path = Path("x")
+    assert review.gate(goldfish.Review(path, [], [], "codex")) == "pass"
+    major = lenses.Finding("zoom-out", "major", "A", "b", "c")
+    assert review.gate(goldfish.Review(path, [major], [], "codex")) == "pass"
+    assert review.gate(goldfish.Review(path, [blocker()], [], "codex")) == "fix"
+    assert review.gate(goldfish.Review(path, [], ["readiness"], "codex")) == "stop"
+
+
+def test_auto_fix_round_clears(auto, monkeypatch):
+    made = make_set(auto)
+    asked = []
+    monkeypatch.setattr(review, "ask_for_changes", lambda root, slug, kind, comments, **k: asked.append((kind, comments)))
+    auto.findings += [[blocker(), lenses.Finding("zoom-out", "major", "Goal", "Fuzzy", "Sharpen"),
+                       lenses.Finding("zoom-out", "nit", "Tone", "Dry", "Warm")]]
+    outcome = runner.run(auto.project, made.slug, launcher=lambda argv: auto.launches.append(argv))
+    assert outcome.state == "launched"
+    assert asked == [("spec", "Scope: Vague — Say what\nGoal: Fuzzy — Sharpen")]
+    assert [kind for kind, _ in auto.fresh] == ["spec", "spec", "plan"]
+
+
+def test_auto_stops_after_two_fix_rounds(auto, monkeypatch):
+    made = make_set(auto)
+    asked = []
+    monkeypatch.setattr(review, "ask_for_changes", lambda *a, **k: asked.append(1))
+    auto.findings += [[blocker()], [blocker()], [blocker()]]
+    outcome = runner.run(auto.project, made.slug)
+    assert outcome.state == "waiting" and outcome.stage == "spec"
+    assert outcome.message == "Still has blockers after 2 rounds of changes"
+    assert len(asked) == review.MAX_FIX_ROUNDS == 2 and len(auto.fresh) == 3
+    assert docset.load(auto.root, made.slug).document("spec")["status"] != "approved"
+
+
+def test_auto_stops_when_a_lens_did_not_run(auto):
+    made = make_set(auto)
+    auto.not_run += [["readiness", "zoom-out"]]
+    outcome = runner.run(auto.project, made.slug)
+    assert outcome.state == "waiting"
+    assert outcome.message == "A reviewer didn't run: readiness, zoom-out"
+    assert len(auto.fresh) == 1
+
+
+def test_human_mode_reviews_before_returning(auto):
+    made = make_set(auto, "human")
+    outcome = runner.run(auto.project, made.slug)
+    assert outcome.state == "waiting" and outcome.stage == "spec"
+    assert auto.fresh == [("spec", "codex")]
+
+
+def test_design_review_uses_the_architect_with_five_lenses(auto, monkeypatch):
+    made = make_large(auto)
+    made.roles = {**ROLES, "architect_reviewer": "gemini"}
+    docset.save(auto.root, made)
+    seen = []
+    real = goldfish.review_document
+    monkeypatch.setattr(goldfish, "review_document",
+                        lambda root, found, kind, **k: (seen.append(lenses.lenses_for(found.size, kind)), real(root, found, kind, **k))[1])
+    outcome = runner.run(auto.project, made.slug, launcher=lambda argv: auto.launches.append(argv))
+    assert outcome.state == "launched"
+    assert ("design", "gemini") in auto.fresh
+    assert list(lenses.LENSES) in seen
+
+
+def test_approving_with_blockers_is_logged(auto):
+    made = make_set(auto, "human")
+    runner.run(auto.project, made.slug)
+    found = docset.load(auto.root, made.slug)
+    version = found.document("spec")["version"]
+    report = goldfish._reviews_dir(auto.root, made.slug) / f"spec-v{version}.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        "Blockers: 1 · Major: 0 · Nits: 0 · Not run: none · Reviewer: codex\n\n## Blockers\n\n"
+        "- Scope — Vague — Say what (lenses: readiness)\n"
+    )
+    review.approve(auto.project, made.slug, "spec", approver="anish")
+    log_text = (auto.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text()
+    assert "approved with 1 blockers" in log_text

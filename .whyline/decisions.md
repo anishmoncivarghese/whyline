@@ -39990,3 +39990,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cf21cf76608449a59e5d96b3caaa9af9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T12:26:37.802Z"} -->
+
+## 2026-11-09 — Fix rounds stop with a stop-wins gate; design-review re-approves the design only if a fix round unapproved it
+
+**Actor:** claude
+**Role:** implementer
+**Task:** GFR-3
+
+**Because:** A lens not run means the reviewer can't judge, so stop beats fix; ask_for_changes puts an approved design back in review
+
+**Rejected:**
+
+- persisting design_reviewed — needs docset.py, out of scope
+
+**Files:** src/whyline/sdlc/review.py
+
+<!-- whyline-event: 68d785759ca34bf7833f40863d3ae3f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T12:29:46.915Z"} -->
+
+## 2026-11-09 — GFR-3 passed: gate outcomes, two fix rounds, coverage blockers, auto/human review, design-review architect, approve-with-blockers
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-3
+
+**Because:** Required GFR-3 tests 10 passed. gate returns pass with no blockers (majors/nits alone pass), fix with blockers, stop when a lens did not run. Auto pass approves as '<agent> (Auto, fresh review)'. One fix round sends blockers and majors as '<section>: <problem> — <fix>' then clears and launches; two rounds (MAX_FIX_ROUNDS=2, three reviews) stop waiting with 'Still has blockers after 2 rounds of changes'. A not-run lens stops with 'A reviewer didn't run: <lenses>'. Human mode runs review_again before returning. Large design-review uses architect_reviewer through all five lenses. Plan coverage gaps become coverage-lens blockers except covers: none (<reason>). Approving with blockers logs 'approved with n blockers'. Related SDLC files 143 passed. Full uv run pytest -q had one skip and one unrelated console flake (test_paused_clean_tree_is_unchanged); that test passed on rerun.
+
+**Rejected:**
+
+- fail for the console resume-launch timeout — unrelated TUI flake, rerun passed
+- fail because design_reviewed is in-memory only — out of scope, needs docset.py, closed review focus is gate and round limit
+
+**Files:** src/whyline/sdlc/review.py, src/whyline/sdlc/runner.py, tests/sdlc/test_review_gate.py, tests/sdlc/test_run_loop.py
+
+<!-- whyline-event: ccd4426416bf45cf92f495a19870eda8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T12:49:49.594Z"} -->
+
+## 2026-11-09 — GFR-3 approved: pass, fix, stop, and the two-round limit are correct
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-3
+
+**Because:** The gate gives stop precedence for any not-run lens, fixes only blockers, passes majors and nits, and allows exactly two change requests followed by a final review; 27 changed SDLC tests passed, while the sole full-suite console timing failure passed on immediate rerun.
+
+**Rejected:**
+
+- Request changes for test_paused_clean_tree_is_unchanged — unrelated console timing flake outside the closed review scope and it passed on immediate plain rerun
+
+**Files:** src/whyline/sdlc/review.py, src/whyline/sdlc/runner.py, tests/sdlc/test_review_gate.py, tests/sdlc/test_run_loop.py
+
+<!-- whyline-event: f0e5322401a24a48995a4f53bb127a5e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T13:06:46.672Z"} -->

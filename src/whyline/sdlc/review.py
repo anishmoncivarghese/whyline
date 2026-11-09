@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from whyline.console import relay_ops
-from whyline.sdlc import docset as docset_mod, guard, product, runner, templates, workspace
-from whyline.sdlc.docset import DocSet, DocSetError
+from whyline.sdlc import (
+    docset as docset_mod, goldfish, guard, lenses, product, runner, templates, workspace,
+)
+from whyline.sdlc.docset import DocSet, DocSetError, Status
 from whyline.sdlc.stages import Stage, next_stage
 
 SECTION_ONLY = "Change only the section '{section}' unless the comments say otherwise."
@@ -28,6 +31,18 @@ def _load(root: Path, slug: str, kind: str) -> tuple[Path, DocSet, dict]:
     return docs, found, doc
 
 
+def _log_blockers(root: Path, docs: Path, found: DocSet, kind: str, doc: dict, approver: str) -> None:
+    """Record approving a version whose fresh review still lists Blockers."""
+    latest = goldfish.latest_review(root, found, kind)
+    if latest is None or latest.path.name != f"{kind}-v{doc['version']}.md":
+        return
+    count = sum(1 for item in latest.findings if item.severity == "blocker")
+    if count:
+        docset_mod.log_review(
+            docs, found, kind, actor=approver, action=f"approved with {count} blockers"
+        )
+
+
 def approve(root: Path, slug: str, kind: str, *, approver: str) -> Stage | None:
     """Approve a document, commit it, and return the stage that comes next."""
     _check(root)
@@ -36,6 +51,7 @@ def approve(root: Path, slug: str, kind: str, *, approver: str) -> Stage | None:
     if kind == "prd" and update and product.moved(docs, found):
         now = product.current(docs)
         raise DocSetError(f"The PRD is now v{now.version}. Redo this update first.")
+    _log_blockers(root, docs, found, kind, doc, approver)
     title = "PRD" if kind == "prd" else docset_mod._kind_title(kind)
     label = f"v{doc['version']}"
     if kind == "prd":
@@ -237,3 +253,123 @@ def auto_approve(
     review = event.text.removeprefix(f"[{agent}] ").strip()
     docset_mod.log_review(docs, found, kind, actor=agent, action="reviewed", comment=review)
     return review, approve(root, slug, kind, approver=f"{agent} (Auto)")
+
+
+MAX_FIX_ROUNDS = 2
+STILL_BLOCKED = f"Still has blockers after {MAX_FIX_ROUNDS} rounds of changes"
+COVERAGE_LENS = "coverage"
+
+
+def gate(review: goldfish.Review) -> str:
+    """`pass` with no Blocker and nothing not run, `fix` with Blockers, `stop` when a lens did not run."""
+    if review.not_run:
+        return "stop"
+    if any(item.severity == "blocker" for item in review.findings):
+        return "fix"
+    return "pass"
+
+
+def _coverage_findings(docs: Path, found: DocSet) -> list[lenses.Finding]:
+    from whyline.sdlc import trace
+
+    gaps = trace.coverage(docs, found)
+
+    def blocker(section: str, problem: str, fix: str) -> lenses.Finding:
+        return lenses.Finding(COVERAGE_LENS, "blocker", section, problem, fix)
+
+    out = [
+        blocker(n, f"{n} has no task", f"Add a task with `covers: {n}`")
+        for n in gaps.unbuilt
+    ]
+    out += [
+        blocker(n, f"{n} has no test", f"Add a test case titled `[{n}]`") for n in gaps.untested
+    ]
+    for item in gaps.out_of_scope:
+        task, _, number = item.partition(":")
+        out.append(blocker(
+            task, f"{task} covers {number}, not in scope",
+            f"Remove {number} from its covers line, or add it to the requirements",
+        ))
+    out += [
+        blocker(task, f"{task} has no covers line",
+                "Add `covers: R<n>, …` or `covers: none (<reason>)`")
+        for task in gaps.uncovered_tasks
+    ]
+    return out
+
+
+def _with_coverage(docs: Path, found: DocSet, result: goldfish.Review) -> goldfish.Review:
+    """Add the plan's coverage gaps to the report as Blockers from the coverage lens."""
+    extra = _coverage_findings(docs, found)
+    if not extra:
+        return result
+    try:
+        writer_only = goldfish.WRITER_NOTE in result.path.read_text(encoding="utf-8")
+    except OSError:
+        writer_only = False
+    merged = goldfish._merge([*result.findings, *extra])
+    _, body = goldfish._render(merged, result.not_run, result.agent, writer_only)
+    docset_mod._write(result.path, body)
+    return replace(result, findings=[item for item, _ in merged])
+
+
+def review_again(
+    root: Path, slug: str, kind: str, *, progress=None, cancel_event=None, agent: str = "",
+    run_fn=None,
+) -> goldfish.Review:
+    """Run the fresh-eyes review on the document's current version."""
+    docs, found, _ = _load(root, slug, kind)
+    result = goldfish.review_document(
+        root, found, kind, agent=agent or reviewer_for(found, kind), progress=progress,
+        cancel_event=cancel_event, run_fn=run_fn,
+    )
+    if kind == "plan":
+        result = _with_coverage(docs, found, result)
+    return result
+
+
+def has_lenses(found: DocSet, kind: str) -> bool:
+    return bool(lenses.lenses_for(found.size, kind))
+
+
+def summary(result: goldfish.Review, kind: str) -> str:
+    try:
+        first = result.path.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, IndexError):
+        first = ""
+    return f"{result.agent} reviewed the {kind} with fresh eyes. {first}".strip()
+
+
+def _fix_comments(result: goldfish.Review) -> str:
+    return "\n".join(
+        f"{item.section}: {item.problem} — {item.fix}"
+        for item in result.findings
+        if item.severity in ("blocker", "major")
+    )
+
+
+def auto_review(
+    root: Path, slug: str, kind: str, *, agent: str = "", progress=None, cancel_event=None,
+    run_fn=None,
+) -> tuple[str, str]:
+    """Review, ask for changes on Blockers (at most MAX_FIX_ROUNDS times), approve on a pass.
+
+    Returns (summary, stop message); the stop message is empty when the document was approved.
+    """
+    rounds = 0
+    while True:
+        result = review_again(root, slug, kind, progress=progress, cancel_event=cancel_event,
+                              agent=agent, run_fn=run_fn)
+        text = summary(result, kind)
+        verdict = gate(result)
+        if verdict == "stop":
+            return text, f"A reviewer didn't run: {', '.join(result.not_run)}"
+        if verdict == "pass":
+            doc = _load(root, slug, kind)[2]
+            if doc["status"] != Status.APPROVED.value:
+                approve(root, slug, kind, approver=f"{result.agent} (Auto, fresh review)")
+            return text, ""
+        if rounds >= MAX_FIX_ROUNDS:
+            return text, STILL_BLOCKED
+        ask_for_changes(root, slug, kind, _fix_comments(result), progress=progress)
+        rounds += 1
