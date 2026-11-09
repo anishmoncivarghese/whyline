@@ -66,6 +66,14 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     mode.add_argument("slug")
     mode.add_argument("mode", choices=("human", "auto"))
 
+    for name, text in (
+        ("review", "Run a fresh-eyes review of a document"),
+        ("findings", "The latest fresh-eyes review of a document"),
+    ):
+        item = sub.add_parser(name, help=text)
+        item.add_argument("slug")
+        item.add_argument("doc", choices=_DOC_KINDS)
+
     export = sub.add_parser("export", help="Write the set as a Word file and a PDF")
     export.add_argument("slug")
     export.add_argument("--out", default=None, metavar="DIR", help="Folder (default: ~/Downloads)")
@@ -255,6 +263,37 @@ def _mode(root: Path, args) -> int:
     return EXIT_OK
 
 
+def _review(root: Path, args) -> int:
+    from whyline.sdlc import review
+
+    result = review.review_again(root, args.slug, args.doc, progress=_progress)
+    try:
+        first = result.path.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, IndexError):
+        first = ""
+    print(first)
+    print(result.path)
+    return EXIT_OK
+
+
+def _findings(root: Path, args) -> int:
+    from whyline.sdlc import docset, goldfish
+
+    found = docset.load(_docs(root), args.slug)
+    if found.document(args.doc) is None:
+        return _fail(f"The document set {args.slug!r} has no {args.doc!r} document.")
+    latest = goldfish.latest_review(root, found, args.doc)
+    if latest is None:
+        print(f"No fresh-eyes review of the {args.doc} yet.")
+        return EXIT_OK
+    for item in latest.findings:
+        print(f"{item.severity}: {item.section} — {item.problem} — {item.fix} (lenses: {item.lens})")
+    if not latest.findings:
+        print("No findings.")
+    print("Not run: " + (", ".join(latest.not_run) if latest.not_run else "none"))
+    return EXIT_OK
+
+
 def _export(root: Path, args) -> int:
     from whyline.sdlc import export
 
@@ -269,7 +308,7 @@ def _export(root: Path, args) -> int:
 _COMMANDS = {
     "list": _list, "show": _show, "start": _start, "prd": _prd, "resume": _resume,
     "approve": _approve, "change": _change, "redo": _redo, "answer": _answer,
-    "mode": _mode, "export": _export,
+    "mode": _mode, "review": _review, "findings": _findings, "export": _export,
 }
 
 

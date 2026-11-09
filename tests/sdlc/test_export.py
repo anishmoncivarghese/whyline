@@ -111,3 +111,22 @@ def test_prd_update_uses_history_version(tmp_path, monkeypatch):
 def test_default_out_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     assert export.default_out_dir() == tmp_path / "Downloads"
+
+
+def test_fresh_eyes_appendix_follows_review_log(tmp_path, monkeypatch):
+    from whyline.sdlc import goldfish, workspace
+
+    monkeypatch.setattr(workspace, "docs_root", lambda root: root)
+    made = make_set(tmp_path)
+    folder = docset._folder(tmp_path, made.slug) / goldfish.REVIEWS_DIR
+    folder.mkdir(parents=True)
+    (folder / "spec-v1.md").write_text(
+        "Blockers: 0 · Major: 0 · Nits: 0 · Not run: none · Reviewer: codex\n", encoding="utf-8"
+    )
+    seen = capture_md(monkeypatch)
+    fake_pdf(monkeypatch)
+    export.export_pack(tmp_path, "login", tmp_path / "out")
+    md = seen["md"]
+    assert md.index("# Review log") < md.index("# Fresh-eyes reviews") < md.index("## Spec")
+    assert "Reviewer: codex" in md
+    assert md.rstrip().endswith("Reviewer: codex")

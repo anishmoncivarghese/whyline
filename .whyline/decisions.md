@@ -40705,3 +40705,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 29f1e118589845c9b5201ac1631def8e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:55:16.753Z"} -->
+
+## 2026-11-09 — Export appendix 'Fresh-eyes reviews' skips silently when the docs root has no git worktree
+
+**Actor:** claude
+**Role:** implementer
+**Task:** GFR-5
+
+**Because:** export tests run in non-git tmp dirs; latest_review calls docs_root which raises WorktreeError
+
+**Rejected:**
+
+- Reading reviews dir directly — duplicates goldfish report-parsing/lookup
+
+**Files:** src/whyline/sdlc/export.py
+
+<!-- whyline-event: d3b56e8e628d4e2eb3f7afc7ffd6b6f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:56:50.875Z"} -->
+
+## 2026-11-09 — Pass GFR-5: review/findings CLI and export appendix match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-5
+
+**Because:** tests/sdlc passed; uv run pytest -q exited 0; independent probes showed review_again called with slug/kind/progress, first line plus path, guard refusal exit 1; findings prints severity/lens per finding then Not run; export appendix follows the review log in document order with the latest version, omitted when none, present in a real git repo without patching docs_root
+
+**Rejected:**
+
+- fail for progress lines before the report first line — other docs commands print progress the same way
+- fail for silent WorktreeError skip in non-git tmp dirs — a real git repo included the appendix
+
+**Files:** src/whyline/sdlc/cli.py, src/whyline/sdlc/export.py, tests/sdlc/test_cli.py, tests/sdlc/test_export.py
+
+<!-- whyline-event: 7c2bbb0353314d268af43468bd07ad67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T23:17:26.621Z"} -->
+
+## 2026-11-09 — Approve GFR-5 review CLI, findings CLI, and export appendix
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-5
+
+**Because:** The diff calls review_again, reports parsed latest findings and not-run lenses, appends each document's latest review after the review log, covers success/refusal/order behavior, and uv run pytest -q passed fully with one skip
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly wrong task-scoped behavior was found
+
+**Files:** src/whyline/sdlc/cli.py, src/whyline/sdlc/export.py, tests/sdlc/test_cli.py, tests/sdlc/test_export.py
+
+<!-- whyline-event: 7c967f0ca79b46919bdee2ca770c62db -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T23:34:25.520Z"} -->

@@ -56,6 +56,23 @@ def _prd_section(root: Path, found: docset_mod.DocSet, doc: dict, notes: list[st
     return "\n".join(parts)
 
 
+def _fresh_reviews(root: Path, found: docset_mod.DocSet) -> str | None:
+    """The latest fresh-eyes report of each document, in document order, or None when none exist."""
+    from whyline import worktrees
+    from whyline.sdlc import goldfish
+
+    parts: list[str] = []
+    for doc in found.documents:
+        try:
+            latest = goldfish.latest_review(root, found, doc["kind"])
+        except (worktrees.WorktreeError, OSError):
+            return None
+        text = _read(latest.path) if latest is not None else None
+        if text:
+            parts.append(f"## {doc['kind'].replace('-', ' ').capitalize()}\n\n{text}")
+    return "# Fresh-eyes reviews\n\n" + "\n\n".join(parts) if parts else None
+
+
 def build_markdown(root: Path, found: docset_mod.DocSet, notes: list[str]) -> str:
     root = Path(root)
     sections: list[str] = []
@@ -89,6 +106,9 @@ def build_markdown(root: Path, found: docset_mod.DocSet, notes: list[str]) -> st
         notes.append("Review log is missing; skipped.")
     else:
         sections.append("# Review log\n\n" + log)
+    fresh = _fresh_reviews(root, found)
+    if fresh is not None:
+        sections.append(fresh)
     return _RULE.join(sections) + "\n"
 
 

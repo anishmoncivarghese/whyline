@@ -7,7 +7,7 @@ import pytest
 
 from whyline import cli
 from whyline.console import relay_ops
-from whyline.sdlc import cli as docs_cli, docset, export, library, product, review, runner, workspace
+from whyline.sdlc import cli as docs_cli, docset, export, goldfish, lenses, library, product, review, runner, workspace
 from whyline.sdlc.docset import DocSetError
 from whyline.sdlc.stages import Stage
 
@@ -231,6 +231,53 @@ def test_export_prints_files_and_notes(env, monkeypatch, capsys):
 def test_export_with_no_files_exits_non_zero(env, monkeypatch, capsys):
     monkeypatch.setattr(export, "export_pack", lambda root, slug, out=None: export.ExportResult([], ["Word could not be written."]))
     assert docs("export", "login") == 1
+
+
+def write_report(root, made, kind="spec", version=1):
+    folder = docset._folder(root, made.slug) / goldfish.REVIEWS_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{kind}-v{version}.md"
+    path.write_text(
+        "Blockers: 1 · Major: 0 · Nits: 0 · Not run: security · Reviewer: codex\n\n"
+        "## Blockers\n\n- Goal — Too vague — Name the user (lenses: clarity)\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_review_prints_first_line_and_path(env, monkeypatch, capsys):
+    made = make(env)
+    path = write_report(env, made)
+    monkeypatch.setattr(
+        review, "review_again", lambda root, slug, kind, *, progress=None: goldfish.Review(path=path)
+    )
+    assert docs("review", made.slug, "spec") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith("Blockers: 1") and out[1] == str(path)
+
+
+def test_review_guard_refusal_exits_non_zero(env, monkeypatch, capsys):
+    def refuse(root, slug, kind, *, progress=None):
+        raise DocSetError("A relay is running.")
+
+    monkeypatch.setattr(review, "review_again", refuse)
+    assert docs("review", "login", "spec") == 1
+    assert "A relay is running." in capsys.readouterr().err
+
+
+def test_findings_lists_each_finding_and_not_run(env, capsys):
+    made = make(env)
+    write_report(env, made)
+    assert docs("findings", made.slug, "spec") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "blocker: Goal — Too vague — Name the user (lenses: clarity)"
+    assert out[-1] == "Not run: security"
+
+
+def test_findings_without_a_review(env, capsys):
+    made = make(env)
+    assert docs("findings", made.slug, "spec") == 0
+    assert "No fresh-eyes review" in capsys.readouterr().out
 
 
 def test_outside_a_repository_exits_non_zero(monkeypatch, capsys):
