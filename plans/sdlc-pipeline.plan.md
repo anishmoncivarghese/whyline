@@ -302,7 +302,7 @@ Rules every task keeps:
   4. `run(target, slug, …)` then continues from the next stage in that root, in the set's saved mode.
   Tests: the stage present for new and skipped for update and none, both modes stopping at home, choose_home with `new` returning the target and `here` returning root, and run continuing in the target.
 
-- [ ] GFR-1: Review lenses
+- [x] GFR-1: Review lenses
   Create `src/whyline/sdlc/lenses.py`, `src/whyline/sdlc/lenses/{zoom-out,comprehension,design-critic,codebase-fit,readiness}.md`, `src/whyline/sdlc/lenses/ATTRIBUTION.md` and `tests/sdlc/test_lenses.py`.
   1. Each lens file is a short reviewer brief in plain words, adapted from the Elephant-Goldfish Model reviewer personas (not copied verbatim):
      - **zoom-out**: is anything here not needed now? Does existing code in this repository already do it? Is it over-built?
