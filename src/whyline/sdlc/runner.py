@@ -199,6 +199,126 @@ def _run_draft(docs: Path, docset: DocSet, kind: str, progress) -> StageResult:
     return _finish(docs, docset, kind, draft.text, note=f"drafted by {_author(docset)}")
 
 
+def _spec_source(docs: Path, docset: DocSet) -> Path | None:
+    """The approved spec, or for a large set the approved design."""
+    for kind in ("spec", "design"):
+        doc = docset.document(kind)
+        if doc is not None and doc["status"] == Status.APPROVED.value:
+            path = docs / doc["path"]
+            if path.is_file():
+                return path
+    return None
+
+
+def _sync_test_planner(docs: Path, docset: DocSet) -> str:
+    """Make the config's Test planner the set's; returns the agent, empty for none."""
+    test = str(docset.roles.get("test_planner") or "")
+    draft, review, current = relay_ops.planner_agents(docs)
+    if test != current:
+        relay_ops.save_planner(docs, draft, review, test)
+    return test
+
+
+def _tests_history(docs: Path, docset: DocSet, number: int) -> Path:
+    path = docset_mod._history_path(docs, docset.slug, "plan", number)
+    return path.with_name(f"plan-v{number}.tests.md")
+
+
+def _finish_plan(
+    docs: Path, docset: DocSet, draft, tests: str, *, note: str
+) -> StageResult:
+    result = _finish(docs, docset, "plan", draft.text, note=note)
+    if tests:
+        docset_mod._write(_tests_history(docs, docset, result.version), tests)
+    return result
+
+
+def _draft_tests(draft, test_planner: str) -> str:
+    from whyline_relay import testplan
+
+    path = testplan.path_for(draft.path)
+    if test_planner and path.is_file():
+        return path.read_text(encoding="utf-8")
+    return ""
+
+
+def _run_plan(docs: Path, docset: DocSet, progress) -> StageResult:
+    test_planner = _sync_test_planner(docs, docset)
+    draft = relay_ops.draft_plan(
+        docs,
+        _request(docset),
+        _attachments(docs, docset, "plan"),
+        progress=progress,
+        spec=_spec_source(docs, docset),
+    )
+    tests = _draft_tests(draft, test_planner)
+    relay_ops.discard_draft(docs, draft)
+    return _finish_plan(
+        docs, docset, draft, tests, note=f"drafted by {_author(docset)}"
+    )
+
+
+def revise_plan(
+    root: Path, docset: DocSet, feedback: str, *, progress
+) -> StageResult:
+    """Revise the current plan text; the tests stage keeps the test plan in step."""
+    docs = workspace.docs_root(root)
+    doc = docset.document("plan")
+    if doc is None:
+        return _error("This set has no plan to revise.")
+    test_planner = _sync_test_planner(docs, docset)
+    text = docset_mod._current_text(docs, docset, doc)
+    # relay_ops only maps the document kinds it ships; the plan kind is the relay's own.
+    relay_ops._DOC_KIND_NAMES.setdefault("plan", "PLAN_KIND")
+    draft = relay_ops.revise_document_text(
+        docs,
+        "plan",
+        text,
+        feedback,
+        attachments=_attachments(docs, docset, "plan"),
+        progress=progress,
+    )
+    tests = _draft_tests(draft, test_planner)
+    relay_ops.discard_document(docs, "plan")
+    return _finish_plan(docs, docset, draft, tests, note="revised from feedback")
+
+
+def approve_plan(root: Path, docset: DocSet, *, approver: str) -> Path:
+    """Write plans/<slug>.plan.md and .tests.md from the current version and approve it."""
+    from whyline_relay import config, testplan
+
+    docs = workspace.docs_root(root)
+    doc = docset.document("plan")
+    number = int(doc["version"])
+    staged = config.relay_dir(docs) / "sdlc-plan-draft.md"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text(
+        docset_mod._history_path(docs, docset.slug, "plan", number).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    tests = _tests_history(docs, docset, number)
+    tests_staged = testplan.path_for(staged)
+    if tests.is_file():
+        tests_staged.write_text(tests.read_text(encoding="utf-8"), encoding="utf-8")
+    source = _spec_source(docs, docset)
+    try:
+        target = relay_ops._approve_marked(
+            docs,
+            staged.read_text(encoding="utf-8"),
+            name=docset.slug,
+            source="draft",
+            drafted_by=str(doc.get("written_by") or _author(docset)),
+            replace=True,
+            spec=source.relative_to(docs).as_posix() if source else "",
+            draft_path=staged,
+        )
+    finally:
+        staged.unlink(missing_ok=True)
+        tests_staged.unlink(missing_ok=True)
+    docset_mod.approve(docs, docset, "plan", approver=approver)
+    return target
+
+
 def run_stage(root: Path, docset: DocSet, stage, *, progress) -> StageResult:
     """Run one stage. Open questions come back in the result and are saved on the set."""
     kind = getattr(stage, "kind", stage)
@@ -227,6 +347,8 @@ def _dispatch(docs: Path, docset: DocSet, kind: str, progress) -> StageResult:
         return _run_brainstorm(docs, docset, progress)
     if kind == "prd" and docset.prd_mode == docset_mod.PrdMode.UPDATE.value:
         return _run_prd_update(docs, docset, progress)
+    if kind == "plan":
+        return _run_plan(docs, docset, progress)
     if kind in ("prd", "spec", "design", "build-record"):
         return _run_draft(docs, docset, kind, progress)
     return _error(f"Stage {kind!r} is not a document stage.")

@@ -14,6 +14,9 @@ ROLES = {"writer": "claude", "brainstorm": ["claude", "codex"]}
 PRD = "# Product\n\n## Goals\n\nShip it.\n\n## Users\n\nEveryone.\n"
 
 
+_REAL_REVISE_DOCUMENT_TEXT = relay_ops.revise_document_text
+_REAL_DISCARD_DOCUMENT = relay_ops.discard_document
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     calls = SimpleNamespace(drafts=[], revises=[], discards=[], brainstorms=[], text="# Draft\n")
@@ -200,3 +203,136 @@ def test_brainstorm_error(env, monkeypatch):
     made = make(env.root, brainstorm_first=True)
     result = runner.run_stage(env.root, made, Stage("brainstorm", "B"), progress=print)
     assert result.error == "No models."
+
+
+PLAN = """# Plan
+
+## Tasks
+
+### T-1: Add login
+- [ ] T-1: Add login
+Edit `src/login.py` only.
+Tests: login works.
+"""
+TESTS = """# Test plan
+
+- [ ] S-1: Login works
+  covers: T-1
+  kind: auto
+  steps:
+    - Run the login test.
+  expected:
+    - It passes.
+"""
+
+
+@pytest.fixture
+def plan_env(env, monkeypatch):
+    import subprocess
+
+    from whyline_relay import config, testplan
+
+    for args in (["init", "-q"], ["config", "user.email", "a@b.c"], ["config", "user.name", "a"]):
+        subprocess.run(["git", *args], cwd=env.root, check=True)
+    seen = SimpleNamespace(planner=[], spec=[], test="codex")
+    monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "claude", seen.test))
+
+    def save(root, draft, review, test=""):
+        seen.planner.append(test)
+        seen.test = test
+
+    monkeypatch.setattr(relay_ops, "save_planner", save)
+    monkeypatch.setattr(relay_ops, "commit_planning_decisions", lambda root: None)
+    monkeypatch.setattr(
+        relay_ops,
+        "_settings",
+        lambda root: SimpleNamespace(
+            planner=SimpleNamespace(test=seen.test, draft="codex", review="claude")
+        ),
+    )
+
+    def draft_plan(root, description, attachments=(), *, progress, spec=None):
+        seen.spec.append(spec)
+        path = config.relay_dir(root) / "plan-draft.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(PLAN)
+        testplan.path_for(path).write_text(TESTS)
+        return SimpleNamespace(path=path, text=PLAN)
+
+    def revise(root, kind, text, feedback, *, template="", attachments=(), progress):
+        env.revises.append((kind, text, feedback, list(attachments)))
+        path = config.relay_dir(root) / "plan-draft.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(env.text)
+        testplan.path_for(path).write_text(TESTS)
+        return SimpleNamespace(path=path, text=env.text)
+
+    monkeypatch.setattr(relay_ops, "revise_document_text", revise)
+    monkeypatch.setattr(relay_ops, "draft_plan", draft_plan)
+    monkeypatch.setattr(relay_ops, "discard_draft", lambda root, draft: None)
+    return seen
+
+
+def _approved_spec_set(env):
+    made = make(env.root, "small")
+    made.roles["test_planner"] = "codex"
+    docset.add_version(env.root, made, "spec", "# Spec\n", author="claude", note="")
+    docset.approve(env.root, made, "spec", approver="anish")
+    return made
+
+
+def test_plan_stage_adds_plan_and_tests_versions(env, plan_env):
+    made = _approved_spec_set(env)
+    result = runner.run_stage(env.root, made, Stage("plan", "Plan"), progress=print)
+    assert result.done and result.version == 1
+    base = docset._history_path(env.root, made.slug, "plan", 1)
+    assert base.read_text() == PLAN
+    assert base.with_name("plan-v1.tests.md").read_text() == TESTS
+    assert plan_env.spec == [env.root / made.document("spec")["path"]]
+
+
+def test_approve_plan_writes_both_files_with_spec_marker(env, plan_env):
+    from whyline_relay import testplan
+
+    made = _approved_spec_set(env)
+    runner.run_stage(env.root, made, Stage("plan", "Plan"), progress=print)
+    target = runner.approve_plan(env.root, made, approver="anish")
+    assert target == env.root / "plans" / f"{made.slug}.plan.md"
+    text = target.read_text()
+    assert f"spec: {made.document('spec')['path']}" in text.splitlines()[0]
+    tests = testplan.path_for(target)
+    assert tests.read_text() == TESTS
+    assert testplan.validate(tests.read_text(), text) == []
+    assert made.document("plan")["status"] == "approved"
+
+
+def test_revise_plan_uses_plan_kind_and_keeps_tests(env, plan_env):
+    made = _approved_spec_set(env)
+    runner.run_stage(env.root, made, Stage("plan", "Plan"), progress=print)
+    env.text = PLAN + "\nMore.\n"
+    result = runner.revise_plan(env.root, made, "add more", progress=print)
+    assert result.done and result.version == 2
+    assert env.revises[0][0] == "plan" and env.revises[0][1] == PLAN
+
+
+def test_revise_plan_reaches_the_relay_with_the_plan_kind(env, plan_env, monkeypatch):
+    from whyline_relay import config, documents, testplan
+
+    made = _approved_spec_set(env)
+    runner.run_stage(env.root, made, Stage("plan", "Plan"), progress=print)
+    kinds = []
+
+    def revise_text(root, settings, kind, text, feedback, **kwargs):
+        kinds.append(kind)
+        path = config.relay_dir(root) / "plan-draft.md"
+        path.write_text(PLAN + "\nMore.\n")
+        testplan.path_for(path).write_text(TESTS)
+        return path
+
+    monkeypatch.setattr(relay_ops, "revise_document_text", _REAL_REVISE_DOCUMENT_TEXT)
+    monkeypatch.setattr(relay_ops, "discard_document", _REAL_DISCARD_DOCUMENT)
+    monkeypatch.setattr(documents, "revise_text", revise_text)
+    monkeypatch.setattr(documents, "discard", lambda root, kind: kinds.append(kind))
+    result = runner.revise_plan(env.root, made, "add more", progress=print)
+    assert result.done and result.version == 2
+    assert kinds == [documents.PLAN_KIND, documents.PLAN_KIND]
