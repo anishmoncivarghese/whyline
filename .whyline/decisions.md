@@ -39261,3 +39261,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b7b8be9c92c64768830e21445b187393 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T00:03:41.420Z"} -->
+
+## 2026-11-09 — Test cases carry R-numbers as [R3] after the id colon, not a covers: line
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TRC-1
+
+**Because:** testplan.validate reads a test case's covers: line as task ids, so R3 there fails as not in the plan; the id is split at the first colon so the tag must follow it
+
+**Rejected:**
+
+- covers — R3 on test cases: validate reports it as a task not in the plan
+
+**Files:** src/whyline/sdlc/trace.py
+
+<!-- whyline-event: 9a4b48a124ed43dbb47f4cec107628d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T00:05:22.023Z"} -->
+
+## 2026-11-09 — TRC-1 parsers, coverage, plan request and PRD-update feedback behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** TRC-1
+
+**Because:** Independent probes confirmed requirements, plan_covers, test_covers, all four coverage gaps, Coverage.line text, testplan.validate rejecting covers R-numbers and accepting [R3] title tags, scope from approved spec or design and from PRD when spec is unapproved, PLAN_COVERS_REQUEST on the plan stage, and PRD_UPDATE_FEEDBACK used by _run_prd_update. tests/sdlc/test_trace.py and test_runner.py passed 27. Full suite had one unrelated console flake that passed on retry.
+
+**Rejected:**
+
+- Fail for the full-suite console flake — the test is outside TRC-1 files and passed on retry
+
+**Test:** uv run pytest -q tests/sdlc/test_trace.py tests/sdlc/test_runner.py: 27 passed
+**Test:** uv run pytest -q: 1 unrelated flake in test_paused_owned_changes_show_ok_and_resume_allows_dirty; retry passed
+
+**Files:** src/whyline/sdlc/trace.py, src/whyline/sdlc/runner.py, tests/sdlc/test_trace.py, tests/sdlc/test_runner.py
+
+<!-- whyline-event: ef0a039733d547deae8860f18dd7cf0f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T00:26:07.289Z"} -->
+
+## 2026-11-09 — TRC-1 coverage and plan-request changes satisfy review focus 2 and 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TRC-1
+
+**Because:** Coverage derives in-scope requirements from approved spec or design with PRD fallback, reports all four requested gaps and the specified summary text; the plan request requires task mappings and title tags for tests, which preserve testplan validation; the full suite passed.
+
+**Rejected:**
+
+- Request changes — no correctness, safety, or test-coverage defect was found in review focus 2 or 3
+
+**Files:** src/whyline/sdlc/trace.py, src/whyline/sdlc/runner.py, tests/sdlc/test_trace.py, tests/sdlc/test_runner.py
+
+<!-- whyline-event: a10620dcb4014597a32d8f9e8bd51cdc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T00:42:53.674Z"} -->

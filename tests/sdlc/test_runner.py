@@ -234,7 +234,7 @@ def plan_env(env, monkeypatch):
 
     for args in (["init", "-q"], ["config", "user.email", "a@b.c"], ["config", "user.name", "a"]):
         subprocess.run(["git", *args], cwd=env.root, check=True)
-    seen = SimpleNamespace(planner=[], spec=[], test="codex")
+    seen = SimpleNamespace(planner=[], spec=[], descriptions=[], test="codex")
     monkeypatch.setattr(relay_ops, "planner_agents", lambda root: ("codex", "claude", seen.test))
 
     def save(root, draft, review, test=""):
@@ -253,6 +253,7 @@ def plan_env(env, monkeypatch):
 
     def draft_plan(root, description, attachments=(), *, progress, spec=None):
         seen.spec.append(spec)
+        seen.descriptions.append(description)
         path = config.relay_dir(root) / "plan-draft.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(PLAN)
@@ -289,6 +290,15 @@ def test_plan_stage_adds_plan_and_tests_versions(env, plan_env):
     assert base.read_text() == PLAN
     assert base.with_name("plan-v1.tests.md").read_text() == TESTS
     assert plan_env.spec == [env.root / made.document("spec")["path"]]
+    assert plan_env.descriptions == [f"Let people log in.\n\n{runner.PLAN_COVERS_REQUEST}"]
+    assert "covers: R<n>" in runner.PLAN_COVERS_REQUEST
+    assert "covers: none (<reason>)" in runner.PLAN_COVERS_REQUEST
+
+
+def test_prd_update_feedback_never_renumbers():
+    assert "Never renumber requirements" in runner.PRD_UPDATE_FEEDBACK
+    assert "next free R-number" in runner.PRD_UPDATE_FEEDBACK
+    assert "removed in v<version>" in runner.PRD_UPDATE_FEEDBACK
 
 
 def test_approve_plan_writes_both_files_with_spec_marker(env, plan_env):

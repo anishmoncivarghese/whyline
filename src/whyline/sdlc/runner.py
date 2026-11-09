@@ -14,7 +14,14 @@ NO_PRD_CHANGE = "No PRD change:"
 PRD_UPDATE_FEEDBACK = (
     "Update this PRD for the feature below. Change only the sections this feature "
     "affects, and keep every other section word for word. If no section needs to "
-    "change, reply with only `No PRD change: <reason>`."
+    "change, reply with only `No PRD change: <reason>`. Never renumber requirements: "
+    "a new one takes the next free R-number, and a removed one stays as "
+    "`R<n> — removed in v<version>`."
+)
+PLAN_COVERS_REQUEST = (
+    "Give every task a `covers: R<n>, …` detail line naming the requirements it builds, "
+    "or `covers: none (<reason>)`. Give every test case the same requirements in its "
+    "title as `[R<n>]`, for example `TP-1: [R3] Login works`."
 )
 EXISTING_PROJECT_REQUEST = (
     "Write the product PRD for this existing project from its README and code, "
@@ -246,7 +253,7 @@ def _run_plan(docs: Path, docset: DocSet, progress) -> StageResult:
     test_planner = _sync_test_planner(docs, docset)
     draft = relay_ops.draft_plan(
         docs,
-        _request(docset),
+        f"{_request(docset)}\n\n{PLAN_COVERS_REQUEST}",
         _attachments(docs, docset, "plan"),
         progress=progress,
         spec=_spec_source(docs, docset),
