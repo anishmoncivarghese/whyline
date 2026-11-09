@@ -249,7 +249,7 @@ Rules every task keeps:
   3. After the plan is approved and `build` is set, it calls `workspace.copy_plan_to(root, docs, slug)` when `root` is not the docs checkout, then runs Auto's final preflight and launcher. Move `_preflight_phase` and `_launch` out of `auto_run.py` into a small shared helper if they can't be called as they are, and keep `auto_run` working. It stores the launch commit as `build_base` in `docset.json`.
   Tests: a full auto run with stubs from description to launch, human mode stopping after one stage, switching mid-run, and a cancel between stages.
 
-- [ ] HOME-1: Project names and where it goes
+- [x] HOME-1: Project names and where it goes
   Create `src/whyline/sdlc/home.py` and `tests/sdlc/test_home.py`.
   1. `folder_name(name: str) -> str`: lowercase, every run of characters other than a-z and 0-9 becomes one `-`, no `-` at either end, at most 40 characters. An empty result is `project`. "Trade Journal!" gives `trade-journal`.
   2. `suggest_names(root, docset, *, agent, run_fn=None) -> list[NameIdea]`, with `NameIdea(name, folder, reason)`:
