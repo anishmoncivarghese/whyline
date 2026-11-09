@@ -6124,7 +6124,48 @@ class WhylineConsoleApp(App):
         except Exception:
             return False
 
+    def _build_record_after_plan(self) -> None:
+        """When the finished plan belongs to a document set, run its build-record stage once."""
+        from whyline.sdlc import record
+
+        if getattr(self, "_build_record_running", False):
+            return
+        try:
+            plan = relay_ops.configured_plan(self.session.root)
+            found = record.set_for_plan(self.session.root, plan)
+            if found is None or not any(
+                info.total and info.done >= info.total and info.path == plan
+                for info in relay_ops.list_plans(self.session.root)
+            ):
+                return
+        except Exception:
+            return
+        self._build_record_running = True
+        root, slug = self.session.root, found.slug
+
+        def work() -> None:
+            try:
+                outcome = record.run_build_record(
+                    root, slug,
+                    progress=lambda text: self.call_from_thread(
+                        self.render_event, SessionEvent(kind="output", text=text)
+                    ),
+                )
+                text = (
+                    f"Build record for {slug} approved."
+                    if outcome == "approved"
+                    else f"Build record for {slug} is waiting in Docs."
+                )
+            except Exception as error:
+                text = f"Build record for {slug} failed: {error}"
+            finally:
+                self._build_record_running = False
+            self.call_from_thread(self.render_event, SessionEvent(kind="output", text=text))
+
+        self.run_worker(work, thread=True)
+
     def _release_after_plan(self) -> None:
+        self._build_record_after_plan()
         if self._release_running() or not self._plan_release_due():
             return
         self._release_for_task = None

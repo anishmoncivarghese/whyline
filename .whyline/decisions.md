@@ -40042,3 +40042,214 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f0e5322401a24a48995a4f53bb127a5e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T13:06:46.672Z"} -->
+
+## 2026-11-09 — Build record runs from record.run_build_record, called by a console hook in _release_after_plan's path
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-17
+
+**Because:** keeps tui.py edits to one small hook; the drafting, attachment of build-inputs.md and Auto approval live in record.py where they can be tested
+
+**Rejected:**
+
+- Add a build-record branch to runner.run — runner.run returns at build-record as launched and the task limits edits to record.py and tui.py
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 143507cfbbb14a22a70df6390e38a8e2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T13:09:20.578Z"} -->
+
+## 2026-11-09 — Pass SDLC-17: build inputs, decisions after build, console hook once
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-17
+
+**Because:** build_inputs writes commits, scenarios as passed or failed, plan-task decisions, and a post-base tag; write_decisions puts design Decision records then slug or task decisions newest last; the tui hook on _release_after_plan runs run_build_record once, Auto auto-approves, Human leaves the record in review for Docs with build-inputs.md attached. tests/sdlc/test_record.py 5 passed; full uv run pytest -q exited 0 at 100 percent with one skip and no failures.
+
+**Rejected:**
+
+- fail for missing on-every-approval regeneration — write_decisions exists but approve lives in docset.py and review.py, which this task forbids editing
+
+**Test:** uv run pytest -q: exit 0, 100%, 1 skipped, no failures
+**Test:** uv run pytest -q tests/sdlc/test_record.py: 5 passed
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/console/tui.py, tests/sdlc/test_record.py
+
+<!-- whyline-event: ce73e755e92d4f388d450e782831c0ca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T13:31:00.135Z"} -->
+
+## 2026-11-09 — Reject SDLC-17 round 3: approval regeneration and exact decision selection are incomplete
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-17
+
+**Because:** The full test suite passes, but decisions.md is written only after the build record rather than on every review.approve path, and record._entries includes unrelated-task decisions based solely on file paths despite the slug-or-task-id rule.
+
+**Rejected:**
+
+- approve — the implementation misses two explicit acceptance criteria and lacks approval-path coverage
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/review.py, tests/sdlc/test_record.py
+
+<!-- whyline-event: e1cf6eac5c504b8cb0ba8682eeaf06a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T13:48:04.878Z"} -->
+
+## 2026-11-09 — Regenerate decisions.md inside review.approve before the docs commit; _entries matches task only
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-17
+
+**Because:** Reviewer round 3: every approval must regenerate decisions.md, and the slug-or-task-id rule excludes file-path matches
+
+**Rejected:**
+
+- Keep file-path matching — pulls in unrelated-task decisions
+
+**Files:** src/whyline/sdlc/review.py, src/whyline/sdlc/record.py
+
+<!-- whyline-event: f1bf186a05564c5f922a99efe2ac7d80 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T14:04:52.171Z"} -->
+
+## 2026-11-09 — Pass SDLC-17: build inputs, decisions on every approval, console hook once
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-17
+
+**Because:** build_inputs writes commits, passed or failed scenarios, plan-task decisions, and a post-base tag; render_decisions puts design Decision records then slug or task decisions newest last; review.approve regenerates decisions.md before the docs commit; run_build_record writes it after the build; Auto auto-approves and Human leaves the record in review for Docs with build-inputs.md attached; _entries matches only task equal to the slug or a plan task id. tests/sdlc/test_record.py 7 passed; full uv run pytest -q exited 0 at 100 percent with one skip and no failures.
+
+**Rejected:**
+
+- fail for missing on-every-approval regeneration — review.approve now calls write_decisions before commit
+- fail for file-path matching — _entries keeps only task equal to the slug or a plan task id
+
+**Test:** uv run pytest -q: exit 0, 100%, 1 skipped, no failures
+**Test:** uv run pytest -q tests/sdlc/test_record.py: 7 passed
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/review.py, src/whyline/console/tui.py, tests/sdlc/test_record.py
+
+<!-- whyline-event: 714b2be600c8443db6261050258c641a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T14:28:19.583Z"} -->
+
+## 2026-11-09 — Reject SDLC-17 round 6: build inputs read stale test results from the docs checkout
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-17
+
+**Because:** record.build_inputs reads git history from the build checkout but passes the default-branch docs checkout to _scenarios, even though workspace.copy_plan_to puts the test plan used and updated by relay in the build checkout; tests/sdlc/test_record.py masks the defect by monkeypatching docs_root to the same temporary directory. The plain uv run pytest -q completed at 100 percent with one skip and no failures.
+
+**Rejected:**
+
+- Approve — the full suite passes, but it does not exercise separate build and docs roots, so a real build record can report stale scenario statuses
+
+**Files:** src/whyline/sdlc/record.py, tests/sdlc/test_record.py
+
+<!-- whyline-event: ba2e61f810484cecb96ccc722e8686f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T14:45:25.780Z"} -->
+
+## 2026-11-09 — build_inputs reads scenario ticks from the build checkout
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-17
+
+**Because:** relay updates the test plan in the build checkout (copy_plan_to), so the docs checkout holds stale statuses
+
+**Rejected:**
+
+- keep reading docs_root — stale passed/failed in the record
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: d817b8b537fa45b8b56d746231c69bda -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T15:01:43.875Z"} -->
+
+## 2026-11-09 — Pass SDLC-17: build record, decisions.md, and the console hook behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-17
+
+**Because:** Task tests 8/8 and the full suite (exit 0, one skip) passed. Independent checks confirmed scenario ticks come from the build checkout while the file is written to the docs checkout, slug-only decisions stay out of build-inputs, human mode waits in review with build-inputs.md attached, auto mode calls the reviewer, and the console hook runs the stage once.
+
+**Rejected:**
+
+- fail on missing guard.drafting in run_build_record — the spec puts this stage in record.py, and runner.run is required to return at build-record
+
+**Files:** src/whyline/sdlc/record.py, tests/sdlc/test_record.py, src/whyline/console/tui.py, src/whyline/sdlc/review.py
+
+<!-- whyline-event: 47f83e5c5b0f462ea1d9d6adf6473215 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T15:26:15.236Z"} -->
+
+## 2026-11-09 — Reject SDLC-17 round 9: release tags must belong to the build history
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-17
+
+**Because:** The plain uv run pytest -q suite passed with one skip, and the main record, decisions, approval, and console paths are sound. However, _release_tag uses git tag --contains build_base without constraining tags to HEAD, so a tag on a sibling branch descending from the same base is written into this build's record; an independent divergent-branch repository reproduced v-side being reported from main. The build record must only report a release tag reachable in the build_base..HEAD history, with a regression test.
+
+**Rejected:**
+
+- Approve — passing tests do not cover the divergent-branch tag case, and the generated build record can attribute another branch's release to this build
+
+**Files:** src/whyline/sdlc/record.py, tests/sdlc/test_record.py
+
+<!-- whyline-event: 1c66c3a0d9a6475887e24e53bf9b31e9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T15:43:40.113Z"} -->
+
+## 2026-11-09 — Release tag must be reachable from HEAD as well as contain build_base
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-17
+
+**Because:** git tag --contains build_base alone also matched tags on sibling branches, attributing another branch's release to this build
+
+**Rejected:**
+
+- filter with merge-base in Python — git tag --merged HEAD does it in one call
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: 7e038ed2e2ab4389bbf9f6e7d1b174bb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T16:00:14.617Z"} -->
+
+## 2026-11-09 — Pass SDLC-17: build record, decisions.md, console hook, and release-tag ancestry behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-17
+
+**Because:** Task tests 9/9 and the full suite (exit 0, one skip) passed. Independent checks confirmed commits, scenarios, task-id decisions and the release tag in build-inputs; scenario ticks come from the build checkout while the file is written to the docs checkout; slug-only decisions stay out of build-inputs; a sibling-branch tag is omitted while this branch's tag is kept; a tag at build_base is omitted; human mode waits in Docs with build-inputs.md attached; auto mode calls the reviewer; the console hook runs the stage once; approval regenerates decisions.md.
+
+**Rejected:**
+
+- fail the divergent-branch unit test for git add . committing untracked docs onto the side branch — that is test hygiene, and an independent repo that added only c.py still omitted v-side from this build and kept v1.0.0
+
+**Files:** src/whyline/sdlc/record.py, tests/sdlc/test_record.py, src/whyline/console/tui.py, src/whyline/sdlc/review.py
+
+<!-- whyline-event: 7b7026afa8344c2887568ce8e460fe5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T16:26:00.345Z"} -->
+
+## 2026-11-09 — Approve SDLC-17 round 12: build record and decisions pipeline satisfy the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-17
+
+**Because:** The diff implements build-inputs.md from build history, current scenario results, task decisions and reachable post-base tags; regenerates decisions.md after builds and every approval; and runs the build-record stage once from the console with Human and Auto behavior. SDLC tests pass 9/9. The plain full suite had one unrelated Relay Setup async timing failure that passed immediately in isolation.
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness or coverage defect remains
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/review.py, src/whyline/console/tui.py, tests/sdlc/test_record.py
+
+<!-- whyline-event: 65bd8967088f4768bda4ac4a363a2c00 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T16:43:48.139Z"} -->

@@ -71,6 +71,9 @@ def approve(root: Path, slug: str, kind: str, *, approver: str) -> Stage | None:
         else:
             docset_mod.approve(docs, found, kind, approver=approver)
         message = f"docs: approve {title} {label} for {found.name}"
+    from whyline.sdlc import record
+
+    record.write_decisions(root, docset_mod.load(docs, slug))
     docset_mod.commit(docs, found, message)
     docset_mod.refresh_out_of_date(docs, found)
     return next_stage(found)
