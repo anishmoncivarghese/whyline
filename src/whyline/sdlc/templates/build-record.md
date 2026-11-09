@@ -21,8 +21,11 @@ Decisions made while building that a later reader would wonder about.
 ## Drift from the spec
 What drift.md reports: things promised and not built, or built and not in the document. If it says the drift check didn't run, write "Drift check didn't run: <reason>".
 
+## Requirements traceability
+The table from build-inputs.md: each requirement with its tasks, tests and result. Copy it unchanged. Write "Not applicable — <reason>" when it says no requirements are in scope.
+
 ## Known gaps
-What is missing, unfinished or untested.
+What is missing, unfinished or untested. List every requirement whose result in the traceability table isn't passed (failed, not run or no test), each with its result.
 
 ## Release
 Version, tag and a link to the release notes.

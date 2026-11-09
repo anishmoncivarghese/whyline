@@ -62,6 +62,47 @@ def _scenarios(docs: Path, docset: DocSet) -> str:
     )
 
 
+def _result(cases: list) -> str:
+    if not cases:
+        return "no test"
+    if any((s.note or "").upper().startswith("FAILED") for s in cases):
+        return "failed"
+    return "passed" if all(s.checked for s in cases) else "not run"
+
+
+def trace_table(root: Path, docs: Path, docset: DocSet) -> str:
+    """Requirements with their tasks, tests and result, from the code checkout's plan and test plan."""
+    from whyline_relay import plan, testplan
+
+    from whyline.sdlc import trace
+
+    root, docs = Path(root), Path(docs)
+    wanted = trace.scope(docs, docset)
+    if not wanted:
+        return "No requirements are in scope."
+    plan_text = _read(root, docset.slug, tests=False)
+    if plan_text is None:
+        plan_text = _approved_plan_text(docs, docset)
+    tests_text = _read(root, docset.slug, tests=True)
+    if tests_text is None:
+        tests_text = trace._tests_text(docs, docset)
+    try:
+        by_task = trace.plan_covers(plan_text) if plan_text else {}
+    except plan.PlanError:
+        by_task = {}
+    scenarios = testplan.parse(tests_text)
+    by_test = trace.test_covers(tests_text)
+    rows = ["| Requirement | Tasks | Tests | Result |", "| --- | --- | --- | --- |"]
+    for number in wanted:
+        tasks = [t for t, numbers in by_task.items() if number in numbers]
+        cases = [s for s in scenarios if number in by_test.get(s.id, [])]
+        rows.append(
+            f"| {number} | {', '.join(tasks) or '—'} | {', '.join(s.id for s in cases) or '—'} "
+            f"| {_result(cases)} |"
+        )
+    return "\n".join(rows)
+
+
 def _release_tag(root: Path, base: str | None) -> str:
     if not base:
         return ""
@@ -296,6 +337,7 @@ def build_inputs(root: Path, docset: DocSet) -> Path:
         for label, ids in (("Added", amended.added), ("Removed", amended.removed), ("Changed", amended.changed)):
             if ids:
                 parts.append(f"- {label}: {', '.join(ids)}")
+    parts += ["", "## Requirements traceability", "", trace_table(root, docs, docset)]
     tag = _release_tag(root, docset.build_base)
     if tag:
         parts += ["", "## Release", "", f"Tagged {tag}."]

@@ -40409,3 +40409,56 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 740b22c3aace4b199ecfcbaf62bde292 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T18:48:46.401Z"} -->
+
+## 2026-11-09 — Traceability result comes from the code checkout's test plan; FAILED note means failed, unticked without it means not run
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TRC-2
+
+**Because:** Matches testplan.mark_failed, which leaves the box unticked with a FAILED note
+
+**Rejected:**
+
+- Treat every unticked test as failed — the existing scenarios list does, but it can't tell a failure from a test never run
+
+**Files:** src/whyline/sdlc/record.py
+
+<!-- whyline-event: 81439563124a422f917965b22fcf2411 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T18:49:52.661Z"} -->
+
+## 2026-11-09 — Pass TRC-2: trace_table results match code-checkout ticks, and build-inputs plus the template carry the table
+
+**Actor:** grok
+**Role:** tester
+**Task:** TRC-2
+
+**Because:** Full suite uv run pytest -q exited 0; extra probes confirmed passed/failed/not-run/no-test, checkout ticks over docs, mark_failed vs unticked, amended-plan tasks, real approved-spec scope, and Known gaps naming every non-passed result
+
+**Rejected:**
+
+- Fail because Known gaps is a template instruction — the build record is drafted from the template, same as the other sections
+
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/templates/build-record.md, tests/sdlc/test_record.py
+
+<!-- whyline-event: 192669d346d64ae0a67b1ce65efc605e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T19:10:16.254Z"} -->
+
+## 2026-11-09 — Approve TRC-2 traceability in the build record
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** TRC-2
+
+**Because:** The build inputs render Requirement/Tasks/Tests/Result from build-checkout plan and test-plan state, distinguish passed, failed, not run, and no test using canonical failure notes, expose amended-plan coverage, and instruct Known gaps to enumerate every non-passed requirement; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found, and the required cases are genuinely covered
+
+**Files:** src/whyline/sdlc/record.py, src/whyline/sdlc/templates/build-record.md, tests/sdlc/test_record.py
+
+<!-- whyline-event: c0bddf48d037453387c0d744da25189a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T19:27:19.333Z"} -->

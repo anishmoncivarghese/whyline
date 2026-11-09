@@ -316,3 +316,58 @@ def test_build_inputs_lists_plan_changes(repo):
     build = _build(root, PLAN + "- [ ] T-3: Audit\n  Edit `c.py`.\n")
     text = record.build_inputs(build, made).read_text()
     assert "## Plan changes during the build" in text and "- Added: T-3" in text
+
+
+TRACE_PLAN = (
+    "# Plan\n\n- [ ] T-1: Login\n  Edit `a.py`.\n  covers: R1\n"
+    "- [ ] T-2: Logout\n  Edit `b.py`.\n  covers: R2, R3\n"
+)
+
+
+def _case(sid, title, mark=" ", note=""):
+    extra = f"  note: {note}\n" if note else ""
+    return (
+        f"- [{mark}] {sid}: {title}\n  covers: T-1\n  kind: auto\n  steps:\n    - Run.\n"
+        f"  expected:\n    - Ok.\n{extra}"
+    )
+
+
+def _traced(repo, monkeypatch, plan, tests):
+    root, made = repo
+    monkeypatch.setattr("whyline.sdlc.trace.scope", lambda docs, found: ["R1", "R2", "R3"])
+    return record.trace_table(_build(root, plan, "# Tests\n\n" + tests), root, made)
+
+
+def test_trace_table_full_pass(repo, monkeypatch):
+    tests = _case("S-1", "Login [R1]", "x") + _case("S-2", "Logout [R2, R3]", "x")
+    table = _traced(repo, monkeypatch, TRACE_PLAN, tests)
+    assert table.splitlines()[0] == "| Requirement | Tasks | Tests | Result |"
+    assert "| R1 | T-1 | S-1 | passed |" in table
+    assert "| R2 | T-2 | S-2 | passed |" in table and "| R3 | T-2 | S-2 | passed |" in table
+
+
+def test_trace_table_failed_test(repo, monkeypatch):
+    tests = _case("S-1", "Login [R1]", "x") + _case("S-2", "Logout [R2]", " ", "FAILED 500")
+    tests += _case("S-3", "Third [R3]")
+    table = _traced(repo, monkeypatch, TRACE_PLAN, tests)
+    assert "| R2 | T-2 | S-2 | failed |" in table
+    assert "| R3 | T-2 | S-3 | not run |" in table
+
+
+def test_trace_table_untested_requirement(repo, monkeypatch):
+    table = _traced(repo, monkeypatch, TRACE_PLAN, _case("S-1", "Login [R1]", "x"))
+    assert "| R2 | T-2 | — | no test |" in table
+
+
+def test_trace_table_follows_the_amended_plan(repo, monkeypatch):
+    plan = TRACE_PLAN + "- [ ] T-3: Audit\n  Edit `c.py`.\n  covers: R3\n"
+    tests = _case("S-1", "Login [R1]", "x") + _case("S-4", "Audit [R3]", "x")
+    table = _traced(repo, monkeypatch, plan, tests)
+    assert "| R3 | T-2, T-3 | S-4 | passed |" in table
+
+
+def test_build_inputs_has_the_traceability_table(repo, monkeypatch):
+    root, made = repo
+    monkeypatch.setattr("whyline.sdlc.trace.scope", lambda docs, found: ["R1"])
+    text = record.build_inputs(root, made).read_text()
+    assert "## Requirements traceability" in text and "| R1 |" in text
