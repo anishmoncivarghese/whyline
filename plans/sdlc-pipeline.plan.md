@@ -371,7 +371,7 @@ Rules every task keeps:
   3. When the relay finishes a plan that belongs to a set, the console runs the build-record stage, with `build-inputs.md` attached. In auto mode it is approved by the reviewer agent. In human mode it waits in Docs.
   Tests: inputs from a temporary repository, decisions content, and the console hook calling the stage once.
 
-- [ ] GFR-4: Drift check in the build record
+- [x] GFR-4: Drift check in the build record
   Edit `src/whyline/sdlc/record.py`, `src/whyline/sdlc/templates/build-record.md` and their tests only.
   1. `drift_review(root, docset, *, agent, progress, run_fn=None) -> Path` runs the codebase-fit lens once, the GFR-2 way, on the approved spec or design. It adds `git diff --stat <build_base>..HEAD` and the line "Compare what the document promised with what was built. A finding is something promised and not built, or built and not in the document." It writes `docs/sdlc/<slug>/reviews/drift.md`.
   2. The build-record stage attaches `drift.md` next to `build-inputs.md`. The template gains a `## Drift from the spec` section.
