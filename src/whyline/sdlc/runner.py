@@ -394,6 +394,11 @@ def _launch_build(root: Path, docs: Path, found: DocSet, *, progress, launcher) 
     return RunOutcome("launched", "implement", build_base=base)
 
 
+def _record_approved(found: DocSet) -> bool:
+    built = found.document("build-record")
+    return built is not None and built["status"] == Status.APPROVED.value
+
+
 def choose_home(root, slug: str, *, choice: str, parent=None, folder=None, name=None,
                 agents, progress) -> Path:
     """Apply the user's project home choice, mark the stage approved, return the root to continue in."""
@@ -466,6 +471,15 @@ def run(root: Path, slug: str, *, progress=None, cancel_event=None, launcher=Non
             result = _launch_build(root, docs, found, progress=progress, launcher=launcher)
             result.reviews = tuple(reviews)
             return result
+        if kind == "done" and found.build_base and _record_approved(found):
+            if found.mode != docset_mod.Mode.AUTO.value:
+                return outcome("waiting", kind)  # the user presses Close
+            from whyline.sdlc import close as close_mod
+
+            closed = close_mod.close(root, slug)
+            if closed.error:
+                return outcome("error", kind, message=closed.error)
+            continue
         if kind in ("build-record", "done"):
             return outcome("launched", kind, build_base=found.build_base or "")
         if kind == "home":

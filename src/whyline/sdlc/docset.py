@@ -120,6 +120,10 @@ class DocSet:
     started_at: str = ""
     pending_questions: dict = field(default_factory=dict)
     skipped: dict = field(default_factory=dict)
+    state: str = ""
+    version: str = ""
+    tag: str = ""
+    pr_url: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -140,6 +144,13 @@ class DocSet:
             "started_at": self.started_at,
             "pending_questions": self.pending_questions,
             "skipped": self.skipped,
+        } | {
+            key: value
+            for key, value in (
+                ("state", self.state), ("version", self.version),
+                ("tag", self.tag), ("pr_url", self.pr_url),
+            )
+            if value
         }
 
     def document(self, kind: str) -> dict | None:
@@ -246,6 +257,10 @@ def load(root: Path, slug: str) -> DocSet:
             started_at=str(raw.get("started_at") or ""),
             pending_questions=dict(raw.get("pending_questions") or {}),
             skipped=dict(raw.get("skipped") or {}),
+            state=str(raw.get("state") or ""),
+            version=str(raw.get("version") or ""),
+            tag=str(raw.get("tag") or ""),
+            pr_url=str(raw.get("pr_url") or ""),
         )
     except DocSetError:
         raise

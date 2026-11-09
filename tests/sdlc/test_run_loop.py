@@ -409,3 +409,48 @@ def test_approving_with_blockers_is_logged(auto):
     review.approve(auto.project, made.slug, "spec", approver="anish")
     log_text = (auto.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text()
     assert "approved with 1 blockers" in log_text
+
+
+def built_set(log, mode):
+    made = make_set(log, mode)
+    made.build_base = "abc123"
+    for doc in made.documents:
+        doc["status"] = "approved"
+    docset.save(log.root, made)
+    return made
+
+
+def test_run_closes_a_built_set_in_auto_mode(auto, monkeypatch):
+    from whyline.sdlc import close
+
+    made = built_set(auto, "auto")
+    closed = []
+
+    def fake_close(root, slug):
+        closed.append(slug)
+        found = docset.load(auto.root, slug)
+        found.state = "built"
+        docset.save(auto.root, found)
+        return close.CloseResult(done=True, state="built")
+
+    monkeypatch.setattr(close, "close", fake_close)
+    outcome = runner.run(auto.project, made.slug)
+    assert closed == ["login"] and outcome.state == "done"
+
+
+def test_run_waits_for_close_in_human_mode(auto, monkeypatch):
+    from whyline.sdlc import close
+
+    made = built_set(auto, "human")
+    monkeypatch.setattr(close, "close", lambda *a: pytest.fail("close must wait for the user"))
+    outcome = runner.run(auto.project, made.slug)
+    assert (outcome.state, outcome.stage) == ("waiting", "done")
+
+
+def test_run_never_opens_a_pull_request(auto, monkeypatch):
+    from whyline.sdlc import close
+
+    made = built_set(auto, "auto")
+    monkeypatch.setattr(close, "close", lambda root, slug: close.CloseResult(error="stop"))
+    monkeypatch.setattr(close, "open_pr", lambda *a, **k: pytest.fail("open_pr is a user action"))
+    assert runner.run(auto.project, made.slug).state == "error"

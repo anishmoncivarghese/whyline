@@ -40462,3 +40462,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c0bddf48d037453387c0d744da25189a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T19:27:19.333Z"} -->
+
+## 2026-11-09 — close() uses git mv then a pathspec commit instead of docs_commit; DocSet gains state/version/tag/pr_url
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIFE-2
+
+**Because:** docs_commit refuses staged changes and dirty paths that no longer exist, which git mv produces; new fields are omitted from docset.json when empty so existing manifests are unchanged
+
+**Rejected:**
+
+- plain rename + docs_commit — docs_commit rejects the deleted source path as foreign
+
+**Files:** src/whyline/sdlc/close.py, src/whyline/sdlc/docset.py
+
+<!-- whyline-event: 26425a3953524ec2898f89c447d35df4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T19:33:14.531Z"} -->
+
+## 2026-11-09 — Pass LIFE-2: close, pr_body, and open_pr behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** LIFE-2
+
+**Because:** close git-mvs both plans into plans/done, updates the plan path, sets released or built from the same tag as build_inputs, drops the PRD claim, and commits docs: close <name>; run closes in auto and waits in human; open_pr never runs from run, pushes only the relay branch, and refuses gh missing, unsigned-in, no remote, and the default branch; uv run pytest -q exited 0
+
+**Rejected:**
+
+- fail — no specified behavior is broken; the docs_commit deviation is required because docs_commit rejects git mv
+
+**Verdict:** passed
+**Test:** uv run pytest -q: exit 0, 4506 passed, 1 skipped
+
+**Files:** src/whyline/sdlc/close.py, src/whyline/sdlc/runner.py, tests/sdlc/test_close.py
+
+<!-- whyline-event: f2021f76d2984f48a0689a781f5ec1f2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:02:59.172Z"} -->
+
+## 2026-11-09 — Approve LIFE-2 close and pull-request lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIFE-2
+
+**Because:** The implementation closes approved builds in auto mode while human mode waits for Close; open_pr is never called by run, and its tests inspect a bare remote to prove only the current non-default relay branch is pushed; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes — no defect exists within the task's closed review focus, and the required behavior is genuinely covered
+
+**Files:** src/whyline/sdlc/close.py, src/whyline/sdlc/runner.py, tests/sdlc/test_close.py, tests/sdlc/test_run_loop.py
+
+<!-- whyline-event: 7915f928020b4a958760d53eb014cddd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:20:08.788Z"} -->
