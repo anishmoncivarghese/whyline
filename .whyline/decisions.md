@@ -39587,3 +39587,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a8444b295ba94e0e95ee4ff08441ebd6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T06:31:35.477Z"} -->
+
+## 2026-11-09 — create_home copies each set file individually into docs_commit's written map; old/new manifests edited as raw JSON
+
+**Actor:** claude
+**Role:** implementer
+**Task:** HOME-2
+
+**Because:** docs_commit refuses dirty paths not in written, and untracked dirs collapse to one entry; DocSet has no home/state fields so save() would drop them
+
+**Rejected:**
+
+- add home field to DocSet — task limits edits to home.py
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: d1f5fbea2006458a8e3ac36bf1fbd45a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T06:32:44.144Z"} -->
+
+## 2026-11-09 — Pass HOME-2: create_home, use_here, refusals and in-place move match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-2
+
+**Because:** uv run pytest -q exited 0 with 1 skipped; tests/sdlc/test_home.py (33) plus extra probes confirmed README with and without brainstorm, existing README kept, set copied with home set, old set marked moved and still present, both commits by pathspec, HomeError on refusal with setup uncalled, SetupError wrapped, use_here, no remotes, and check_target uses Pick a folder other than your home folder without importing repl
+
+**Rejected:**
+
+- fail because a probe saw the patched home dir after a successful create_home — that was save_parent writing sdlc-home.json, and the refused call did not invoke setup or rewrite the old set
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: 0358901a9a2a459eb9c7481e89cc86a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T06:52:55.602Z"} -->
+
+## 2026-11-09 — Approve HOME-2: project-home creation and move safeguards satisfy the scoped review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-2
+
+**Because:** The diff checks guard and target refusals before setup, never deletes the source set, commits only explicit paths, and implements create_home/use_here as specified; tests/sdlc/test_home.py passed 33 tests. The full suite had one unrelated async console timing failure, and that exact test passed on immediate rerun.
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: 5938c548a000436ba4e41afb495effb5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T07:10:04.686Z"} -->

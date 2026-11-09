@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
 
 from whyline import paths
-from whyline.console import repl, repo_setup
+from whyline.console import repo_setup
 from whyline.sdlc import docset as docset_mod
+from whyline.sdlc import guard, workspace
+from whyline.worktrees import WorktreeError
+
+HOME_REFUSAL = "Pick a folder other than your home folder."
+_IGNORED = (".DS_Store", ".env", ".venv/", "__pycache__/", "node_modules/")
 
 MAX_FOLDER = 40
 WANTED = 3
@@ -175,12 +182,124 @@ def check_target(root, parent: Path, folder: str) -> str | None:
     target = parent / folder
     inspection = repo_setup.inspect(target)
     if inspection.kind == "home":
-        return repl._HOME_REFUSAL
+        return HOME_REFUSAL
     if target.exists() and (not target.is_dir() or any(target.iterdir())):
         return f"{target} already exists and isn't empty. Pick another name or folder."
     if inspection.kind == "nested":
         return f"{target} is inside the repository {inspection.outer}. Pick a folder outside it."
     return None
+
+
+class HomeError(RuntimeError):
+    """A project home that could not be created, in words for the user."""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _first_paragraph(text: str) -> str:
+    for block in re.split(r"\n\s*\n", text.strip()):
+        if block.strip():
+            return block.strip()
+    return ""
+
+
+def _write_new(path: Path, text: str) -> str | None:
+    if path.exists():
+        return None
+    path.write_text(text, encoding="utf-8")
+    return path.name
+
+
+def _read_manifest(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise HomeError(f"The document set could not be read: {error}") from None
+    if not isinstance(data, dict):
+        raise HomeError("The document set could not be read: not a JSON object.")
+    return data
+
+
+def _write_manifest(path: Path, data: dict) -> str:
+    text = json.dumps(data, indent=2) + "\n"
+    path.write_text(text, encoding="utf-8")
+    return text
+
+
+def create_home(root, slug: str, parent: Path, folder: str, *, name: str,
+                agents: list[str], progress) -> Path:
+    """Make a new git project at parent/folder and move the document set into it.
+    The old set stays where it was, marked moved. Nothing is pushed."""
+    root = Path(root)
+    busy = guard.check(root)
+    if busy:
+        raise HomeError(busy)
+    refusal = check_target(root, parent, folder)
+    if refusal:
+        raise HomeError(refusal)
+    docs = workspace.docs_root(root)
+    try:
+        docset = docset_mod.load(docs, slug)
+    except docset_mod.DocSetError as error:
+        raise HomeError(str(error)) from None
+    old_manifest = docset_mod._folder(docs, slug) / docset_mod.MANIFEST
+    old_data = _read_manifest(old_manifest)
+    summary = _first_paragraph(_brief(docs, docset))
+    target = Path(parent).expanduser() / folder
+    try:
+        target = repo_setup.setup(repo_setup.inspect(target), agents=agents,
+                                  progress=progress)
+    except repo_setup.SetupError as error:
+        raise HomeError(str(error)) from None
+    target = Path(target)
+    written: dict[str, str] = {}
+    readme = f"# {name}\n\n{summary}\n" if summary else f"# {name}\n"
+    if _write_new(target / "README.md", readme):
+        written["README.md"] = readme
+    ignore = "\n".join(_IGNORED) + "\n"
+    if _write_new(target / ".gitignore", ignore):
+        written[".gitignore"] = ignore
+    rel_set = f"{docset_mod.SDLC_DIR}/{slug}"
+    source = docset_mod._folder(docs, slug)
+    copy = target / rel_set
+    shutil.copytree(source, copy, dirs_exist_ok=True)
+    manifest = copy / docset_mod.MANIFEST
+    data = _read_manifest(manifest)
+    data["home"] = {"created_from": str(root), "at": _now()}
+    _write_manifest(manifest, data)
+    for file in sorted(copy.rglob("*")):
+        if file.is_file():
+            written[file.relative_to(target).as_posix()] = file.read_text(encoding="utf-8")
+    try:
+        workspace.docs_commit(target, list(written), f"docs: start {name}", written)
+        old_data["state"] = "moved"
+        old_data["moved_to"] = str(target)
+        old_text = _write_manifest(old_manifest, old_data)
+        rel_old = old_manifest.relative_to(docs).as_posix()
+        workspace.docs_commit(docs, [rel_old], f"docs: {name} moved to {target}",
+                              {rel_old: old_text})
+    except WorktreeError as error:
+        raise HomeError(str(error)) from None
+    save_parent(parent)
+    return target
+
+
+def use_here(root, slug: str) -> Path:
+    """Keep the project in this repository: record that and commit it."""
+    root = Path(root)
+    docs = workspace.docs_root(root)
+    manifest = docset_mod._folder(docs, slug) / docset_mod.MANIFEST
+    data = _read_manifest(manifest)
+    data["home"] = {"here": True, "at": _now()}
+    text = _write_manifest(manifest, data)
+    rel = manifest.relative_to(docs).as_posix()
+    try:
+        workspace.docs_commit(docs, [rel], f"docs: {slug} stays here", {rel: text})
+    except WorktreeError as error:
+        raise HomeError(str(error)) from None
+    return root
 
 
 def _settings_path() -> Path:
