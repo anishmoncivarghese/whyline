@@ -342,7 +342,7 @@ Rules every task keeps:
   Tests with a stubbed `run_fn`: the prompt has the document path and no request text or earlier review, one process per lens, the retry then not run, the report's first line and grouping, the writer swap, and `guard.check` refusing.
   Review focus (closed): prompt isolation in 2 and the not-run rule in 4. Anything else goes in a follow-up note, not this task.
 
-- [ ] GFR-3: Review gate in the pipeline
+- [x] GFR-3: Review gate in the pipeline
   Edit `src/whyline/sdlc/runner.py`, `src/whyline/sdlc/review.py` and their tests only.
   1. After each document stage finishes (brainstorm, prd, spec, design, plan), `run` calls `goldfish.review_document` with the set's Reviewer agent. The **design-review** stage is a review of the approved design with the Architect reviewer agent, using all five lenses.
   2. `gate(review) -> str` returns `pass` (no Blocker and nothing not run), `fix` (one or more Blockers) or `stop` (a lens not run).
