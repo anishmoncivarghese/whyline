@@ -39502,3 +39502,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6aa46cf74ce843ec9864cce9dfaa441c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T05:17:37.240Z"} -->
+
+## 2026-11-09 — Name suggestions reuse relaychat.ask helpers (_command, _extract, RETRY_NOTE) and retry a cancelled turn once with a fresh prompt, not a resume
+
+**Actor:** claude
+**Role:** implementer
+**Task:** HOME-1
+
+**Because:** keeps one read-only agent path; a name list is cheap to re-ask so resume plumbing isn't worth it
+
+**Rejected:**
+
+- copy ask's resume logic — more code for a one-shot reply
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: 108999471d7b46e288d504e3301cdd1d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T05:18:52.488Z"} -->
+
+## 2026-11-09 — Pass HOME-1: names, folder, fresh-repo, refusals and fallback match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-1
+
+**Because:** uv run pytest -q exited 0 with 4391 passed and 1 skipped; tests/sdlc/test_home.py (25) plus extra probes confirmed each specified refusal, never-raise fallback to the plan's name, parse-2-or-3, and last_parent
+
+**Rejected:**
+
+- fail because home text is not repl._HOME_REFUSAL — that copy is about the console already running in ~; check_target is refusing to set ~ up, so the capitalised repo_setup OSError is the existing setup refusal
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: f158f703cb124a9cb9880796e8cc09d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T05:39:27.062Z"} -->
+
+## 2026-11-09 — Reject HOME-1 because the home-target refusal does not reuse the console text
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-1
+
+**Because:** The full suite passes with 4391 passed and 1 skipped, and fallback behavior is correct, but check_target returns a new short sentence while the task explicitly requires the existing console _HOME_REFUSAL safety message; the test asserts the replacement instead of the shared text
+
+**Rejected:**
+
+- Approve because tests pass — the test encodes the same wording drift and does not satisfy the explicit refusal requirement
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: 93701496e2464939b404ac2c888d5808 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T05:56:00.305Z"} -->
+
+## 2026-11-09 — Pass HOME-1: names, folder, fresh-repo, refusals and fallback match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-1
+
+**Because:** uv run pytest -q exited 0 with 4391 passed and 1 skipped; tests/sdlc/test_home.py (25) plus extra probes confirmed each specified refusal including exact repl._HOME_REFUSAL, never-raise fallback to the plan's name, parse-2-or-3, and last_parent
+
+**Rejected:**
+
+- fail because _HOME_REFUSAL is about running agents in ~ — the task requires that existing console text, which the last review asked for
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: 090c90be32894c389a055f3cafbd0919 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T06:14:59.119Z"} -->
+
+## 2026-11-09 — Approve HOME-1: scoped refusals and fallback satisfy the specification
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-1
+
+**Because:** check_target reuses repl._HOME_REFUSAL exactly for the home directory; suggest_names returns one plan-name idea with the required reason after agent failures or fewer than two parsed lines; uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes — the previously divergent home refusal has been replaced with the shared console text and is asserted directly
+
+**Files:** src/whyline/sdlc/home.py
+
+<!-- whyline-event: a8444b295ba94e0e95ee4ff08441ebd6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T06:31:35.477Z"} -->
