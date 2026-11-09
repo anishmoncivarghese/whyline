@@ -445,7 +445,7 @@ Rules every task keeps:
   Each prints plain lines and exits non-zero with the guard's message when refused.
   Tests: each subcommand with stubs.
 
-- [ ] GFR-5: Review in the CLI and the export pack
+- [x] GFR-5: Review in the CLI and the export pack
   Edit `src/whyline/sdlc/cli.py`, `src/whyline/sdlc/export.py` and their tests only. The console counterpart is GFR-6.
   1. `whyline docs review <slug> <doc>` calls `review.review_again` and prints the report's first line and its path.
   2. `whyline docs findings <slug> <doc>` prints `latest_review`, one finding per line with its severity and lens, and the not-run lenses.
