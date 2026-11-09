@@ -40567,3 +40567,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 46cc5b3fff5142d4bedd0ada087a375e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:58:25.901Z"} -->
+
+## 2026-11-09 — Export pack replaces the PRD document with base-version history text plus changed sections when based_on_prd is set
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-19
+
+**Because:** Matches the task: Product PRD v<version> from history/ followed by this set's changed sections
+
+**Rejected:**
+
+- Always include the set's own PRD — loses the base version the set was built on
+
+**Files:** src/whyline/sdlc/export.py
+
+<!-- whyline-event: a000d879d5a842ceb5bb0ddf56a6ffc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T20:59:28.778Z"} -->
+
+## 2026-11-09 — Pass SDLC-19 export pack: order, stripped headers, PDF fallback, missing-doc skip, history PRD
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-19
+
+**Because:** Focused tests/sdlc/test_export.py 5 passed; uv run pytest -q exited 0 with one skip; an independent probe confirmed cover/prd/spec/plan/tests/build-record/review-log order, header stripping, default ~/Downloads, and Product PRD v<version> from history plus changed sections when the PRD has based_on
+
+**Rejected:**
+
+- fail because the PRD-update test sets based_on_prd — the runner stores based_on, and the implementation reads both; the probe confirmed based_on
+
+**Files:** src/whyline/sdlc/export.py, tests/sdlc/test_export.py
+
+<!-- whyline-event: ec113caea6534ee999023f2adae9175c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T21:20:23.387Z"} -->
+
+## 2026-11-09 — Request SDLC-19 changes because the content-order test does not verify the full sequence
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-19
+
+**Because:** tests/sdlc/test_export.py checks only cover through Plan and that Review log is last, so reversing Test plan and Build record would still pass despite the explicit content-order requirement
+
+**Rejected:**
+
+- Approve based on the implementation's current behavior — the required regression test would not protect the full ordering contract
+
+**Files:** tests/sdlc/test_export.py
+
+<!-- whyline-event: c0839d6d69df4152bb91db6094f1f6ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T21:37:54.318Z"} -->
+
+## 2026-11-09 — Pass SDLC-19 export pack: full order, stripped headers, PDF fallback, missing-doc skip, history PRD
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-19
+
+**Because:** uv run pytest -q exited 0 with one skip; tests/sdlc/test_export.py 5 passed including cover/prd/spec/plan/tests/build-record/review-log; independent probe confirmed header stripping, PDF fallback, missing-doc skip, default ~/Downloads, and Product PRD v<version> from history plus changed sections for both based_on and based_on_prd
+
+**Rejected:**
+
+- fail because the PRD-update test sets based_on_prd — the runner stores based_on, and the probe confirmed based_on produces the history title and changed sections
+
+**Files:** src/whyline/sdlc/export.py, tests/sdlc/test_export.py
+
+<!-- whyline-event: 60808530fab141d594b17a58afd26875 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T21:56:28.621Z"} -->
+
+## 2026-11-09 — Approve SDLC-19 export pack implementation and regression coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-19
+
+**Because:** The implementation builds the complete ordered pack with stripped headers, historical PRD context and changed sections, Word/PDF output with fallbacks, missing-document notes, and default Downloads output; the tests protect each required behavior and uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- Request changes — no concrete correctness, safety, or coverage defect remained after independent diff review and full-suite verification
+
+**Files:** src/whyline/sdlc/export.py, tests/sdlc/test_export.py
+
+<!-- whyline-event: f3d89a564b9049bbaca28dd1fe4b148f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T22:13:51.514Z"} -->
