@@ -39891,3 +39891,102 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f137d5a3e3f94659bc96fe4b4547c8e8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T11:10:04.616Z"} -->
+
+## 2026-11-09 — Fresh review gives each lens 2 attempts with the identical prompt; any failure, timeout, read-only cancel or unparseable reply counts as an attempt
+
+**Actor:** claude
+**Role:** implementer
+**Task:** GFR-2
+
+**Because:** Prompt isolation: a retry note or resume would add content beyond the allowed parts; not-run must never read as zero findings
+
+**Rejected:**
+
+- ask()-style resume with RETRY_NOTE — adds text and session state to the prompt
+- run in the temp folder as cwd — agent could not read the docs or code it is told to read
+
+**Files:** src/whyline/sdlc/goldfish.py
+
+<!-- whyline-event: 85d8524d411649c093f6ab003945b4e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T11:12:55.055Z"} -->
+
+## 2026-11-09 — Pass GFR-2: prompt isolation and not-run hold; full suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-2
+
+**Because:** Each lens is a new read-only process with only the allowed prompt parts and an identical retry; fail, timeout, read-only cancel or unparseable text after two attempts is listed as not-run and never as zero findings. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Fail over cwd=docs_root — already decided so the agent can read the docs and code
+
+**Files:** src/whyline/sdlc/goldfish.py
+
+<!-- whyline-event: 7fd00992ab3e487aaebea98c03645fd5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T11:33:00.407Z"} -->
+
+## 2026-11-09 — Request GFR-2 changes: enforce no-resume review commands
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-2
+
+**Because:** review_document forwards the configured read-only argv unchanged; a configured --resume attaches prior session context and violates fresh-process prompt isolation, while the test only supplies an argv that already lacks it. Full uv run pytest -q passed.
+
+**Rejected:**
+
+- Approve because generated prompts are clean — hidden resumed-session context still violates the closed prompt-isolation requirement
+
+**Files:** src/whyline/sdlc/goldfish.py
+
+<!-- whyline-event: 2f6ff5290b53444f81764ec60e585a2d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T11:50:25.915Z"} -->
+
+## 2026-11-09 — Strip --resume/--continue/resume from the review argv in goldfish
+
+**Actor:** claude
+**Role:** implementer
+**Task:** GFR-2
+
+**Because:** A configured resume option would attach earlier session context and break fresh-process prompt isolation
+
+**Rejected:**
+
+- Trust ask.command output — a configured resume command would pass through unchanged
+
+**Files:** src/whyline/sdlc/goldfish.py
+
+<!-- whyline-event: c0c36189030844518c74d6555bb9dbd1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T11:51:10.786Z"} -->
+
+## 2026-11-09 — Pass GFR-2: prompt isolation and not-run hold after resume strip; full suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-2
+
+**Because:** Each lens is a new read-only process whose argv has --resume/--continue/resume stripped, with only the allowed prompt parts and an identical retry; fail, timeout, read-only cancel or unparseable text after two attempts is listed as not-run and never as zero findings. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Fail because a leftover id after a bare resume token could remain — the closed requirement is stripping --resume/--continue/resume so no session is attached, and --resume already drops its following token
+
+**Files:** src/whyline/sdlc/goldfish.py
+
+<!-- whyline-event: 0c169b8a4a7e4b2d94690d62c3101141 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T12:09:52.091Z"} -->
+
+## 2026-11-09 — Approve GFR-2: prompt isolation and retry-to-not-run behavior satisfy the closed review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-2
+
+**Because:** Every lens uses a fresh temporary process context with resume options removed and a prompt limited to the allowed inputs; failed, empty, cancelled, and unparseable attempts retry once then become not-run, while valid No findings remains a successful zero-finding result. The plain uv run pytest -q completed at 100% with one skip and no failures.
+
+**Files:** src/whyline/sdlc/goldfish.py
+
+<!-- whyline-event: cf21cf76608449a59e5d96b3caaa9af9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T12:26:37.802Z"} -->

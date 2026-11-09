@@ -42,7 +42,7 @@ class Answer:
     ok: bool
 
 
-def _base_command(repo: Path, cli: str) -> list[str] | None:
+def base_command(repo: Path, cli: str) -> list[str] | None:
     from whyline_relay import chat, config
 
     try:
@@ -51,16 +51,20 @@ def _base_command(repo: Path, cli: str) -> list[str] | None:
         return None
 
 
-def _command(repo: Path, cli: str) -> list[str] | None:
+def command(repo: Path, cli: str) -> list[str] | None:
     from whyline.agents import runner
 
-    base = _base_command(repo, cli)
+    base = base_command(repo, cli)
     if base is None:
         return None
-    command = capabilities.read_only_command(cli, base)
-    if command is None:
+    argv = capabilities.read_only_command(cli, base)
+    if argv is None:
         return None
-    return runner._without_missing_settings(command, repo)
+    return runner._without_missing_settings(argv, repo)
+
+
+_base_command = base_command
+_command = command
 
 
 def build_prompt(snap_text: str, exchanges: list[dict], question: str) -> str:
@@ -73,10 +77,13 @@ def build_prompt(snap_text: str, exchanges: list[dict], question: str) -> str:
     return "\n\n".join(parts)
 
 
-def _extract(repo: Path, cli: str, raw: str, answer_file: Path | None) -> str:
+def extract(repo: Path, cli: str, raw: str, answer_file: Path | None) -> str:
     from whyline.agents import runner
 
     return runner._answer(SimpleNamespace(root=repo), cli, raw, answer_file)
+
+
+_extract = extract
 
 
 def final_message(cli: str, raw: str, text: str) -> str:
