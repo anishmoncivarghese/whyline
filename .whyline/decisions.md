@@ -39634,3 +39634,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5938c548a000436ba4e41afb495effb5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T07:10:04.686Z"} -->
+
+## 2026-11-09 — create_repo takes an optional slug; without one it saves to the only document set, else skips saving
+
+**Actor:** claude
+**Role:** implementer
+**Task:** HOME-3
+
+**Because:** spec signature has no slug but github must land in a set's docset.json; raw manifest edit keeps the field since DocSet drops unknown keys
+
+**Rejected:**
+
+- add github field to DocSet — wider change than HOME-3 allows
+
+**Files:** src/whyline/sdlc/github_repo.py
+
+<!-- whyline-event: 88a9db04c1474ef5a1907b035a5c781d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T07:11:44.544Z"} -->
+
+## 2026-11-09 — Pass HOME-3: github_repo create/describe/refusals, private default, and runner.run isolation match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-3
+
+**Because:** tests/sdlc/test_github_repo.py 12 passed; uv run pytest -q exited 0 with 1 skipped; extra probes confirmed exact describe text, ready fix texts, private default argv and saved JSON, each refusal message with no gh create, URL and review-log committed, and runner.py has no github_repo or create_repo
+
+**Rejected:**
+
+- fail because create_repo takes an extra optional slug — spec keyword callers still work; saving without a slug uses the only document set
+- fail because DocSet.save drops github — implementer recorded this as out of HOME-3 scope; the raw manifest write and review-log commit match the spec
+
+**Files:** src/whyline/sdlc/github_repo.py
+
+<!-- whyline-event: cae1e70ce7e54b6da9f68e202d98798c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T07:31:37.624Z"} -->
+
+## 2026-11-09 — Approve HOME-3: repository creation remains user-triggered and private by default
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-3
+
+**Because:** The implementation gives create_repo private=True, emits --private unless public is explicitly requested, runner.run has no github_repo dependency, both modes are exercised with create_repo patched to raise, and uv run pytest -q exited 0 with one skip
+
+**Files:** src/whyline/sdlc/github_repo.py
+
+<!-- whyline-event: 80b1293ea76447fa9f3a161ab7de5b93 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T07:48:09.973Z"} -->
