@@ -294,7 +294,7 @@ Rules every task keeps:
   Tests with a stubbed `run`: private and public arguments, the describe text, each refusal, the URL saved, and that `runner.run` never calls it (patch it to raise).
   Review focus (closed): 5, and private as the default. Anything else goes in a follow-up note, not this task.
 
-- [ ] HOME-4: The home stage in the pipeline
+- [x] HOME-4: The home stage in the pipeline
   Edit `src/whyline/sdlc/stages.py`, `src/whyline/sdlc/runner.py` and their tests only.
   1. `plan_stages` adds a `home` stage, labelled `Project home`, right after `brainstorm` (or first, when there is no brainstorm stage) when the PRD mode is new. Otherwise it is skipped with the reason `existing project`. In the Stages line it shows as `Project home (you choose)`.
   2. `run` stops at `home` in both modes, with the result `waiting_for_home`. Auto mode stops here too, because only the user picks the name and folder.
