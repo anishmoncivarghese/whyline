@@ -359,3 +359,110 @@ def _dispatch(docs: Path, docset: DocSet, kind: str, progress) -> StageResult:
     if kind in ("prd", "spec", "design", "build-record"):
         return _run_draft(docs, docset, kind, progress)
     return _error(f"Stage {kind!r} is not a document stage.")
+
+
+@dataclass
+class RunOutcome:
+    """Why `run` returned: waiting, questions, paused, launched, cancelled, error or done."""
+
+    state: str
+    stage: str = ""
+    questions: tuple[str, ...] = ()
+    message: str = ""
+    reviews: tuple[str, ...] = ()
+    build_base: str = ""
+
+
+def _launch_build(root: Path, docs: Path, found: DocSet, *, progress, launcher) -> RunOutcome:
+    """Copy the plan to the project, run Auto's final preflight and launcher, store build_base."""
+    from whyline import worktrees
+    from whyline.console import auto_run
+
+    if root.resolve() != docs.resolve():
+        workspace.copy_plan_to(root, docs, found.slug)
+    plan = root / "plans" / f"{found.slug}.plan.md"
+    current = {"name": found.slug, "plan": {"path": str(plan)}}
+    current = auto_run._preflight_phase(root, current, progress=progress)
+    if "pause" in current:
+        return RunOutcome("paused", "implement", message=current["pause"]["reason"])
+    # sampled before the launcher: a fast relay may commit while it starts
+    base = worktrees._git(root, "rev-parse", "HEAD").strip()
+    auto_run._launch(current, launcher=launcher, saved_phase=None)
+    found = docset_mod.load(docs, found.slug)
+    found.build_base = base
+    docset_mod.save(docs, found)
+    return RunOutcome("launched", "implement", build_base=base)
+
+
+def run(root: Path, slug: str, *, progress=None, cancel_event=None, launcher=None) -> RunOutcome:
+    """Run the set's stages in turn; the mode is read again before each one.
+
+    Auto approves each finished document through its reviewer. Human stops after
+    the first finished stage. Questions stop either. A set whose plan is approved
+    is launched through Auto's preflight and launcher.
+    """
+    from whyline.sdlc import review
+    from whyline.sdlc.stages import next_stage
+
+    docs = workspace.docs_root(root)
+    reviews: list[str] = []
+    design_reviewed = False
+    ran = False
+
+    def outcome(state: str, stage: str = "", **kw) -> RunOutcome:
+        return RunOutcome(state, stage, reviews=tuple(reviews), **kw)
+
+    def cancelled() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    while True:
+        if cancelled():
+            return outcome("cancelled")
+        found = docset_mod.load(docs, slug)
+        found.design_reviewed = design_reviewed  # not stored: GFR-3 owns this marker
+        stage = next_stage(found)
+        if stage is None:
+            return outcome("done")
+        kind = stage.kind
+        if kind in ("implement", "test", "review", "release"):
+            if not found.build:
+                return outcome("done")
+            result = _launch_build(root, docs, found, progress=progress, launcher=launcher)
+            result.reviews = tuple(reviews)
+            return result
+        if kind in ("build-record", "done"):
+            return outcome("launched", kind, build_base=found.build_base or "")
+        if found.pending_questions.get(kind):
+            return outcome("questions", kind, questions=tuple(found.pending_questions[kind]))
+        if kind == "design-review":
+            # a no-op until GFR-3: nothing to run or approve, move on to the plan
+            design_reviewed = True
+            continue
+        doc = found.document(kind)
+        finished = doc is not None and doc["status"] == Status.IN_REVIEW.value
+        if not finished:
+            if ran and found.mode == docset_mod.Mode.HUMAN.value:
+                return outcome("waiting", kind)
+            result = run_stage(root, found, stage, progress=progress)
+            ran = True
+            if cancelled():
+                return outcome("cancelled", kind)
+            if result.error:
+                return outcome("error", kind, message=result.error)
+            if result.questions:
+                return outcome("questions", kind, questions=result.questions)
+            if result.skipped:
+                continue
+        if docset_mod.load(docs, slug).mode != docset_mod.Mode.AUTO.value:
+            return outcome("waiting", kind)
+        try:
+            text, _ = review.auto_approve(
+                root, slug, kind, progress=progress, cancel_event=cancel_event
+            )
+        except docset_mod.DocSetError as error:
+            if cancelled():
+                return outcome("cancelled", kind)
+            return outcome("error", kind, message=str(error))
+        reviews.append(text)
+        if progress is not None:
+            progress(text)

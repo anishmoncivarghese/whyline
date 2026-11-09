@@ -191,3 +191,49 @@ def stop(root: Path, slug: str) -> None:
     found.started_at = ""
     docset_mod.save(docs, found)
     product.release_update(docs, slug)
+
+
+def set_mode(root: Path, slug: str, mode: str) -> DocSet:
+    """Save the set's mode; `runner.run` reads it again between stages."""
+    docs = workspace.docs_root(root)
+    found = docset_mod.load(docs, slug)
+    found.mode = docset_mod.Mode(mode).value
+    docset_mod.save(docs, found)
+    docset_mod.refresh(docs, found)
+    return found
+
+
+def reviewer_for(found: DocSet, kind: str) -> str:
+    roles = found.roles
+    return str(
+        roles.get(f"{kind}_reviewer") or roles.get("reviewer") or roles.get("writer") or "claude"
+    )
+
+
+def auto_approve(
+    root: Path, slug: str, kind: str, *, progress=None, cancel_event=None
+) -> tuple[str, Stage | None]:
+    """Have the reviewer agent review a finished document, log it, and approve it.
+
+    Returns the reviewer's review text and the stage that comes next.
+    """
+    from whyline.console import adapters
+
+    _check(root)
+    docs, found, doc = _load(root, slug, kind)
+    agent = reviewer_for(found, kind)
+    text = docset_mod._current_text(docs, found, doc)
+    prompt = (
+        f"Review this {docset_mod._kind_title(kind)} for {found.name}. "
+        "Say briefly what is good and what is weak.\n\n" + text
+    )
+    if progress is not None:
+        progress(f"auto · {agent} reviews the {kind}")
+    event = adapters.run_chat_turn(
+        root, agent=agent, prompt=prompt, timeout_seconds="none", cancel_event=cancel_event
+    )
+    if event.kind == "error":
+        raise DocSetError(event.text)
+    review = event.text.removeprefix(f"[{agent}] ").strip()
+    docset_mod.log_review(docs, found, kind, actor=agent, action="reviewed", comment=review)
+    return review, approve(root, slug, kind, approver=f"{agent} (Auto)")

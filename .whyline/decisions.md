@@ -39366,3 +39366,139 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 16271a20ed464b5d9eb8c5cf920cfc26 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T01:21:18.819Z"} -->
+
+## 2026-11-09 — Auto mode reuses auto_run._preflight_phase/_launch as-is; run() launches in either mode; build-record stage returns launched
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-16
+
+**Because:** both helpers only need a dict with plan.path, so no shared helper was needed; build-record is left to a later task since the relay may still be running
+
+**Rejected:**
+
+- move helpers to a shared module — not needed, callable unchanged
+
+**Files:** src/whyline/sdlc/runner.py, src/whyline/sdlc/review.py
+
+<!-- whyline-event: b5a9efe9c133403a9d5cd6581fcb1442 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T01:23:48.685Z"} -->
+
+## 2026-11-09 — Fail SDLC-16: large auto errors on design-review and human sticks there
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-16
+
+**Because:** run() treats design-review as finished, so the design_reviewed=True; continue branch never runs. Auto then auto_approve('design-review') and raises DocSetError; human returns waiting/design-review forever. SDLC-13 makes that stage a no-op until GFR-3, so the loop must skip it and continue to plan. Feature-size auto/human/switch/cancel paths work, and uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- pass because the listed tests and full suite are green — those tests only cover feature size, and next_stage already returns design-review for large
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: 914380449c304c91afcc8d0fe9f7534c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T03:54:36.438Z"} -->
+
+## 2026-11-09 — run() skips design-review as a no-op and continues to plan
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-16
+
+**Because:** SDLC-13 makes design-review a no-op until GFR-3; treating it as a finished document made auto call auto_approve and fail, and human wait forever
+
+**Rejected:**
+
+- special-case auto_approve for design-review — still leaves human stuck waiting
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: 024e23af33944538b0d834f6bd487d89 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T03:55:43.819Z"} -->
+
+## 2026-11-09 — Pass SDLC-16: auto, human, switch, cancel, and large design-review skip all work
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-16
+
+**Because:** run() now skips design-review as a no-op before auto_approve or human wait, so large auto launches and large human waits at plan. Feature-size auto/human/switch/cancel paths still work. uv run pytest -q tests/sdlc/test_run_loop.py tests/sdlc/test_review.py tests/sdlc/test_runner.py exited 0 (47 passed); uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- fail because large switch/cancel lack their own tests — the skip is the same loop path the large auto and human tests already run
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: 96b36d55bad24ee19de4d8a4978b6c35 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T04:13:31.925Z"} -->
+
+## 2026-11-09 — Reject SDLC-16: build_base is sampled after implementation launch
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-16
+
+**Because:** runner._launch_build calls the asynchronous launcher before rev-parse HEAD, so a fast relay can commit implementation work before the baseline is captured and later build_base..HEAD drift or release comparisons can omit those commits; uv run pytest -q passed with one skip, but the launch test stubs a constant HEAD and does not verify ordering
+
+**Rejected:**
+
+- approve because the full suite passes — the suite does not exercise a launcher that advances HEAD
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: ac5c817740a34a38a462b99c551bc17f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T04:30:30.502Z"} -->
+
+## 2026-11-09 — build_base sampled before the launcher, saved only after launch succeeds
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-16
+
+**Because:** a fast relay can commit as soon as it starts, so sampling after launch could skip those commits in build_base..HEAD
+
+**Rejected:**
+
+- sample after launch — races the relay's first commits
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: 3cfd40f202b942c99b3989026bfc92ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T04:43:21.156Z"} -->
+
+## 2026-11-09 — Pass SDLC-16: auto/human/switch/cancel work, and build_base is the pre-launch HEAD
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-16
+
+**Because:** run() auto-approves with the reviewer as '<agent> (Auto)', waits in human, stops on questions, honors set_mode between stages, and launches after plan approval. _launch_build copies the plan when root is not the docs checkout, runs Auto preflight, samples HEAD, then launches, and writes that SHA as build_base only after launch returns. A launcher that advances HEAD still records the earlier commit. uv run pytest -q tests/sdlc/test_run_loop.py tests/sdlc/test_review.py tests/sdlc/test_runner.py exited 0 (48 passed); uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- fail because the last review found sample-after-launch — _launch_build now rev-parses HEAD after preflight and before auto_run._launch, and test_build_base_is_sampled_before_the_launcher_runs advances HEAD inside the launcher and still stores the earlier SHA
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: 1aac150e67754ce8babf7a01e759e92c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T05:00:47.338Z"} -->
+
+## 2026-11-09 — Approve SDLC-16: auto/human mode orchestration and launch baseline are correct
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-16
+
+**Because:** run loops through stages, auto reviews and approves with the configured reviewer, human mode waits, questions and cancellation stop progress, mode changes are re-read between stages, and launch copies the plan, runs preflight, samples HEAD before the launcher, then persists build_base only after launch succeeds; uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- request changes for the prior build_base race — the new launcher-mutates-HEAD test proves the stored baseline is sampled before launch
+
+**Files:** src/whyline/sdlc/runner.py
+
+<!-- whyline-event: 6aa46cf74ce843ec9864cce9dfaa441c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T05:17:37.240Z"} -->
