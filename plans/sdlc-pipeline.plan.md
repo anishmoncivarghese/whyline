@@ -277,6 +277,7 @@ Rules every task keeps:
      - It calls `save_parent(parent)` and returns the target.
   2. `use_here(root, slug) -> Path` sets `home` to `{"here": true, "at": "<now>"}`, commits through `docs_commit`, and returns `root`.
   3. Nothing here pushes, and nothing creates a remote.
+  4. `check_target` refuses the home folder with `Pick a folder other than your home folder.` and no longer uses the console's `_HOME_REFUSAL` text, which is about running agents in the home repository. `home.py` imports nothing from `whyline.console.repl` for it. Update its HOME-1 test to this text.
   Tests with temporary folders and a stubbed `repo_setup.setup`: the files written, README text with and without a brainstorm, an existing README kept, the set copied with `home` set, the old set marked moved and still present, both commits by pathspec, a refusal raising `HomeError` with nothing created, a setup error, and use_here.
   Review focus (closed): nothing created when a refusal applies, and the old set never deleted. Anything else goes in a follow-up note, not this task.
 
