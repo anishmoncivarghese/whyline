@@ -39820,3 +39820,74 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d0ec791c7397452db1cbba85dbedd777 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T09:57:17.572Z"} -->
+
+## 2026-11-09 — GFR-1 lenses table and parser match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-1
+
+**Because:** lenses_for returns the listed lenses for every size x kind cell, [] for build-record and unlisted pairs, and a copy of the row. parse_findings reads blocker/major/nit lines, returns [] for No findings., None for chatter or empty text, and skips other lines and fenced code. lens_text prefers .whyline/sdlc/lenses override then the packaged brief. uv run pytest -q tests/sdlc/test_lenses.py 22 passed; uv run pytest -q exit 0.
+
+**Rejected:**
+
+- fail back to implementer — no table or parser mismatch found
+
+**Test:** uv run pytest -q tests/sdlc/test_lenses.py: 22 passed
+**Test:** uv run pytest -q: exit 0, 1 skipped, no failures
+
+**Files:** src/whyline/sdlc/lenses.py, tests/sdlc/test_lenses.py
+
+<!-- whyline-event: 83501dd5862b4ed4a51753da9e9abef8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T10:19:05.404Z"} -->
+
+## 2026-11-09 — Request GFR-1 test coverage changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-1
+
+**Because:** The implementation matches the closed-focus table and parser requirements and uv run pytest -q exits 0, but tests/sdlc/test_lenses.py omits small/design and large/spec, so the required each size x kind matrix is not fully tested.
+
+**Rejected:**
+
+- Approve despite the two missing rows — that would accept incomplete explicitly required coverage.
+
+**Files:** tests/sdlc/test_lenses.py
+
+<!-- whyline-event: 2895b43a657a461ea4afa0b45a31a98e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T10:36:06.229Z"} -->
+
+## 2026-11-09 — GFR-1 lenses table and parser match the spec, including every size x kind cell
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-1
+
+**Because:** lenses_for returns the listed lenses for every size x kind cell, [] for build-record and unlisted pairs including the previously missing small/design and large/spec rows, and a copy of the row. parse_findings reads blocker/major/nit lines, returns [] for No findings., None for chatter or empty text, and skips other lines and fenced code. lens_text prefers .whyline/sdlc/lenses override then the packaged brief. uv run pytest -q tests/sdlc/test_lenses.py 24 passed; uv run pytest -q exit 0.
+
+**Rejected:**
+
+- fail back to implementer — no table or parser mismatch found, and the size x kind matrix is fully tested
+
+**Files:** src/whyline/sdlc/lenses.py, tests/sdlc/test_lenses.py
+
+<!-- whyline-event: ccc91075e94e49cea3c639cb0ddd6439 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T10:53:24.053Z"} -->
+
+## 2026-11-09 — Approve GFR-1 lens table and parser
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-1
+
+**Because:** lenses_for matches every specified size and kind cell, tests cover the complete 18-cell matrix, parse_findings implements findings, No findings, chatter, and fenced-code behavior, and uv run pytest -q completed successfully
+
+**Rejected:**
+
+- Request further changes — no table or parser defect remains after the missing empty-row coverage was added
+
+**Files:** src/whyline/sdlc/lenses.py, tests/sdlc/test_lenses.py
+
+<!-- whyline-event: f137d5a3e3f94659bc96fe4b4547c8e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T11:10:04.616Z"} -->
