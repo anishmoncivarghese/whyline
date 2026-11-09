@@ -387,7 +387,7 @@ Rules every task keeps:
   4. The SDLC-17 console hook calls `record_amendments` before the build-record stage. **Docs** shows the plan row as `Plan v2 (amended during build)`.
   Tests: added, removed and changed tasks, ticks ignored, the version and log entry, and build inputs listing them.
 
-- [ ] TRC-2: Traceability in the build record
+- [x] TRC-2: Traceability in the build record
   Edit `src/whyline/sdlc/record.py`, `src/whyline/sdlc/templates/build-record.md` and their tests only.
   1. `trace_table(root, docs, docset) -> str` is a Markdown table with the columns Requirement, Tasks, Tests and Result. Result is passed, failed, not run or no test, from the test plan's ticks in the code checkout.
   2. `build_inputs` includes the table. The template gains `## Requirements traceability`, and its Known gaps section must list every requirement whose result isn't passed.
