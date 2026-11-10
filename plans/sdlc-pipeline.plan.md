@@ -551,7 +551,7 @@ Rules every task keeps:
   4. `library.py` shows a set whose state is `moved` as `Moved to <path>`, with **Switch to it**.
   Tests with stubs: the default choice for a fresh and a non-fresh repository, the suggestions filling the choices, the folder name following the chosen name, a refusal disabling Continue, the switch to the new root, the GitHub confirmation (Yes calls create_repo, No does not), the disabled checkbox when gh is not ready, and the moved row.
 
-- [ ] SDLC-26: History in Docs
+- [x] SDLC-26: History in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   **History** shows the document's versions and its `review-log.md` entries. Picking two versions shows a unified diff (difflib), and one version shows its text.
   Tests: versions listed and a diff between v1 and v2.
