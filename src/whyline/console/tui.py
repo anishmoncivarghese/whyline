@@ -4796,6 +4796,13 @@ class WhylineConsoleApp(App):
                 f"{secs // 60}:{secs % 60:02d}"
             )
             return
+        docs_run = getattr(self, "_docs_run", None)
+        if docs_run is not None and self._busy_text:
+            thinking.update(
+                f"{_SPINNER[self._spin]} docs: {docs_run['name']} · {docs_run['what']} · "
+                f"{docs_run['agent']} · {relay_ops._elapsed(elapsed)}{note}"
+            )
+            return
         thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s{note}")
 
     def _record_live_switch(self, role: str, agent: str, *, keep: bool) -> str:
@@ -5486,6 +5493,7 @@ class WhylineConsoleApp(App):
                 self.session.root,
                 account.agent_status(self.session.root),
                 self.session.agent or "claude",
+                sdlc=True,
             ),
             self._plan_chosen,
         )
@@ -5493,6 +5501,11 @@ class WhylineConsoleApp(App):
     def _plan_chosen(self, result) -> None:
         if result is None:
             self._end_run_flow("Run cancelled.")
+            return
+        from whyline.console.relay_screens import DocsStart
+
+        if isinstance(result, DocsStart):
+            self._run_docs_set(result)
             return
         if isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], plan_job.AutoRunRequest):
             request, fingerprint = result
@@ -5502,6 +5515,77 @@ class WhylineConsoleApp(App):
             self._start_plan_job(result)
         else:
             self._plan_saved(result)
+
+    def _run_docs_set(self, start) -> None:
+        """Run a started document set in a thread, then open Docs where it stopped."""
+        import threading
+
+        from whyline.sdlc import runner
+
+        cancel_event = threading.Event()
+        self._auto_cancel_event = cancel_event
+        token = object()
+        self._dispatch_token = token
+        root = self.session.root
+        writer = self.session.agent or "claude"
+        try:
+            from whyline.sdlc import docset as docset_mod, workspace
+
+            writer = str(
+                docset_mod.load(workspace.docs_root(root), start.slug).roles.get("writer") or writer
+            )
+        except Exception:
+            pass
+        self._docs_run = {"name": start.name, "what": "starting", "agent": writer}
+        self._set_busy(True, f"docs: {start.name}")
+
+        def in_thread() -> None:
+            def progress(line: str) -> None:
+                self.call_from_thread(self._docs_progress, line, token)
+
+            outcome, error = None, None
+            try:
+                outcome = runner.run(root, start.slug, progress=progress, cancel_event=cancel_event)
+            except Exception as caught:
+                error = caught
+            self.call_from_thread(self._docs_done, start, outcome, error, token)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _docs_progress(self, line: str, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self.render_event(SessionEvent(kind="output", text=f"docs · {line}"))
+        run = getattr(self, "_docs_run", None)
+        if run is not None:
+            what, _, last = line.rpartition(" · ")
+            run["what"] = what if what and last == run["agent"] else line
+            self._busy_text = f"docs: {run['name']} · {run['what']}"
+
+    def _docs_done(self, start, outcome, error, token: object) -> None:
+        if token is not self._dispatch_token:
+            return
+        self._docs_run = None
+        self._set_busy(False)
+        self._auto_cancel_event = None
+        if error is not None or outcome is None or outcome.state == "error":
+            reason = str(error or (outcome.message if outcome else "")) or "stopped"
+            self.render_event(SessionEvent(kind="error", text=f"Docs for {start.name}: {reason}"))
+            return
+        if outcome.state in ("waiting", "questions", "waiting_for_home"):
+            self._open_docs(start.slug, outcome.stage)
+            return
+        self.render_event(SessionEvent(kind="output", text=f"Docs for {start.name}: {outcome.state}."))
+
+    def _open_docs(self, slug: str, kind: str) -> None:
+        """Open the Docs screen on a set and document."""
+        try:
+            from whyline.console.docs_screen import DocsScreen
+        except ImportError:
+            self.render_event(SessionEvent(
+                kind="output", text=f"{slug} is waiting for review at {kind}."))
+            return
+        self.push_screen(DocsScreen(self.session.root, slug=slug, kind=kind))
 
     def _start_auto_job(self, request: plan_job.AutoRunRequest, fingerprint: str) -> None:
         import threading

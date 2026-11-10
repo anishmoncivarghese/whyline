@@ -7,7 +7,7 @@ uses for chat replies)."""
 from __future__ import annotations
 
 import re
-from dataclasses import replace as dc_replace
+from dataclasses import dataclass, replace as dc_replace
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -162,6 +162,19 @@ class _AntigravityTrustScreen(ConfirmScreen):
     BINDINGS = [("escape", "dismiss(None)", "Dismiss")]
 
 
+def _first_line(text: str) -> str:
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return first.lstrip("#").strip()[:60] or "Untitled"
+
+
+@dataclass(frozen=True)
+class DocsStart:
+    """A document set the form created; the console runs it and opens Docs."""
+
+    slug: str
+    name: str
+
+
 class RelayPlanScreen(ModalScreen):
     """Collects what to plan, then dismisses with a PlanRequest; the main
     window runs it, shows progress and the draft, and asks the questions.
@@ -215,8 +228,10 @@ class RelayPlanScreen(ModalScreen):
         *,
         pick_files_fn=None,
         legacy_auto: bool | None = None,
+        sdlc: bool = False,
     ) -> None:
         super().__init__()
+        self._sdlc = sdlc
         self._pick_files_fn = pick_files_fn
         self._picked: dict[str, Path | None] = {"brainstorm": None, "document": None}
         # The old sources fold into New plan, each with its own Start from.
@@ -741,7 +756,9 @@ class RelayPlanScreen(ModalScreen):
         if not self._agents:
             go.disabled = True
         elif not auto:
-            go.label = "Save" if source == "paste" else "Make the plan"
+            go.label = (
+                "Save" if source == "paste" else "Start" if self._sdlc and new else "Make the plan"
+            )
         self.query_one("#rp-check", Button).display = auto
         self.query_one("#rp-run", Button).display = auto
 
@@ -1480,6 +1497,9 @@ class RelayPlanScreen(ModalScreen):
             return
         if source != "new":
             return
+        if self._sdlc:
+            self._start_set()
+            return
         start = self._value("#rp-start", "description")
         if start == "document":
             self._error(_PICKED_FILE_PENDING)
@@ -1487,6 +1507,70 @@ class RelayPlanScreen(ModalScreen):
         request = self._draft_request() if start == "description" else self._brainstorm_request()
         if request is not None:
             self._submit(request)
+
+    def _start_set(self) -> None:
+        """Start: refuse while a relay runs in the docs checkout, create the set, close."""
+        from whyline.sdlc import docset, guard, importer, workspace
+
+        refusal = guard.check(self._root)
+        if refusal:
+            self._error(refusal)
+            return
+        options = self.new_plan_options()
+        start, size = options["start"], options["size"]
+        description, source, kind = "", None, ""
+        if start == "description":
+            description = self.query_one("#rp-description", TextArea).text.strip()
+            if not description:
+                self._error("Describe what the plan should build.")
+                return
+        elif start == "brainstorm":
+            kind = "brainstorm"
+            source = options["file"]
+            if source is None and options.get("brainstorm"):
+                source = self._root / "docs" / "brainstorm" / f"{options['brainstorm']}.md"
+            if source is None:
+                self._error("Choose a brainstorm to start from.")
+                return
+        else:
+            kind = options["document_kind"]
+            source = options["file"]
+            if source is None:
+                self._error("Choose a file to start from.")
+                return
+        brainstorm_first = options["brainstorm_first"] or kind == "brainstorm"
+        if kind and kind not in docset.documents_for(size, brainstorm_first, options["prd_mode"]):
+            self._error(f"A {size} plan has no {kind} to start from.")
+            return
+        roles = {key: value for key, value in options["roles"].items() if value}
+        roles["code_reviewer"] = roles.pop("exec_reviewer", "")
+        if "architect" in roles:
+            roles["architect_reviewer"] = roles.pop("architect")
+        if options["build"] and self._value("#rp-release"):
+            roles["release"] = self._value("#rp-release")
+        roles = {key: value for key, value in roles.items() if value}
+        try:
+            docs = workspace.docs_root(self._root)
+            created = docset.create(
+                docs,
+                options["name"] or _first_line(description or Path(source).stem),
+                size,
+                options["mode"],
+                brainstorm_first=brainstorm_first,
+                prd_mode=options["prd_mode"],
+                prd_major=options["prd_major"],
+                build=options["build"],
+                roles=roles,
+            )
+            if description:
+                created.description = description
+                docset.save(docs, created)
+            if source is not None:
+                importer.import_as(docs, created, kind, source, actor="user")
+        except Exception as error:
+            self._error(str(error) or error.__class__.__name__)
+            return
+        self.dismiss(DocsStart(created.slug, created.name))
 
     def _draft_request(self) -> PlanRequest | None:
         description = self.query_one("#rp-description", TextArea).text.strip()

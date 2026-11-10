@@ -40934,3 +40934,89 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f1e8cae590ef4577bff59ead8d74e01a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:43:27.217Z"} -->
+
+## 2026-11-10 — Start uses a sdlc=True flag on RelayPlanScreen; tui passes it, old PlanRequest path stays for direct constructions
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-23
+
+**Because:** about 20 existing tests click #rp-go and expect a PlanRequest; the flag keeps them valid while the console gets the new Start
+
+**Rejected:**
+
+- replace the PlanRequest path outright — rewrites many unrelated tests
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: e8b6b5ddef764fa5abd3f8ba14a6d7dc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:47:55.889Z"} -->
+
+## 2026-11-10 — Fail Start: Large sets store architect, not architect_reviewer
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-23
+
+**Because:** An independent Large Start with Architect reviewer grok saved roles['architect']=grok and no architect_reviewer. runner.run and stages.stages_line read architect_reviewer, so the form field is dropped. _start_set already remaps exec_reviewer to code_reviewer; architect needs the same remap. Numbered Start behavior otherwise held: guard.check in #rp-error, create+import, close, runner.run in a thread, busy line, Docs on waiting/questions.
+
+**Rejected:**
+
+- fail for test_resume_in_setup_saves_and_then_resumes — flake, failed in the full run then passed on rerun and on the pre-SDLC-23 tree
+- fail because DocsScreen is missing — SDLC-24 owns that screen; Start already calls _open_docs(slug, kind)
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: cd8c272e6b0d42e38f049599ff35002c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T06:13:29.917Z"} -->
+
+## 2026-11-10 — Start remaps form role architect to architect_reviewer
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-23
+
+**Because:** runner.run and stages_line read architect_reviewer; the form option key was dropped for Large sets
+
+**Rejected:**
+
+- rename the key in the options builder — other PlanRequest tests rely on architect
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: db43d7ebfccf4e37a10c5194a9b5379a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T06:15:41.012Z"} -->
+
+## 2026-11-10 — Pass Start: guard, create+import, close, threaded runner, busy line, Docs on waiting/questions, Large architect_reviewer remap
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-23
+
+**Because:** Independent Large Start with Architect reviewer grok stored roles['architect_reviewer']=grok and dropped architect; runner.run saw the remapped key. Numbered Start held: guard.check in #rp-error, create+import, close, runner.run in a thread, busy line 'docs: Job search 5 · writing PRD · … · 0s', Docs on waiting/questions. uv run pytest -q exited 0 with one skip and no failures; tests/console/test_relay_start.py 6 passed.
+
+**Rejected:**
+
+- fail because DocsScreen is missing — SDLC-24 owns that screen; Start already calls _open_docs(slug, kind)
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: e73d853b06544d34be32f4075024ae24 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T06:35:16.192Z"} -->
+
+## 2026-11-10 — Approve Start implementation and coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-23
+
+**Because:** Start checks guard refusal, creates and imports document sets, closes into a threaded runner with live progress, opens the correct Docs stage for waiting or questions, preserves the Large architect reviewer role, and uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Request changes — no unsafe behavior, functional mismatch, or material coverage gap was found.
+
+**Files:** src/whyline/console/relay_screens.py, src/whyline/console/tui.py, tests/console/test_relay_start.py
+
+<!-- whyline-event: b03bb46ce8cb493eb0fed6f4fb9eab54 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T06:53:19.751Z"} -->
