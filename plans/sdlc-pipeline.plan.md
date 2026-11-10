@@ -513,7 +513,7 @@ Rules every task keeps:
   6. **Approve** on a human-mode set continues the pipeline with `runner.run`.
   Tests: each action with stubs, the section list, and the Also changed line.
 
-- [ ] GFR-6: Findings in Docs
+- [x] GFR-6: Findings in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   1. Under the selected document, a **Findings** panel shows `latest_review`: the first line, then the findings grouped 🔴 Blocker, 🟡 Major, 🟢 Nit, each with its section and lens, and any not-run lenses. With no review, it says `Not reviewed yet.`
   2. **Review again** calls `review.review_again` in a thread worker. It is disabled while `guard.check` refuses, like the other actions.
