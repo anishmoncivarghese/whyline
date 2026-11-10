@@ -276,3 +276,34 @@ async def test_an_old_auto_checkpoint_still_offers_resume(tmp_path):
         assert str(run.label) == "Resume"
         assert screen.query_one("#rp-name", tui.Input).value == "old-plan"
         assert not screen.query_one("#rp-go").display
+
+
+async def test_stages_line_for_each_size(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = await _open(app, pilot)
+        size = screen.query_one("#rp-size", tui.Select)
+        line = _text(screen, "#rp-stages")
+        assert "PRD (codex" in line and "Spec (codex" in line and "Design" not in line
+        size.value = "small"
+        await pilot.pause()
+        assert "PRD — (Small has no PRD)" in _text(screen, "#rp-stages")
+        size.value = "large"
+        await pilot.pause()
+        line = _text(screen, "#rp-stages")
+        assert line.startswith("Brainstorm") and "Design (" in line and "Design review (" in line
+        assert "test cases for each task" in _text(screen, "#rp-test-plan-note")
+        assert "manual checks the relay pauses for." in _text(screen, "#rp-test-plan-note")
+
+
+async def test_stages_line_updates_when_a_role_changes(tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = await _open(app, pilot)
+        assert "PRD (codex, reviewed by claude)" in _text(screen, "#rp-stages")
+        screen.query_one("#rp-drafter", tui.Select).value = "grok"
+        await pilot.pause()
+        assert "PRD (grok, reviewed by claude)" in _text(screen, "#rp-stages")
+        screen.query_one("#rp-reviewer", tui.Select).value = "codex"
+        await pilot.pause()
+        assert "PRD (grok, reviewed by codex)" in _text(screen, "#rp-stages")

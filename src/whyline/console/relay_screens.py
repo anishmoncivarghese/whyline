@@ -69,6 +69,10 @@ _AUTO_SELECTS = frozenset({
 })
 _AUTO_INPUTS = frozenset({"rp-name", "bs-topic", "bs-passes"})
 _AUTO_BOXES = frozenset({"rp-replace", "rp-continue-paths"})
+_TEST_PLAN_NOTE = (
+    "The test plan lists test cases for each task: automatic ones the tester runs, "
+    "and manual checks the relay pauses for."
+)
 _TEST_PLANNER_TIP = "Tip: a different agent from the Writer catches more."
 
 
@@ -381,6 +385,8 @@ class RelayPlanScreen(ModalScreen):
             Vertical(*self._research_widgets(), id="rp-new-group"),
             self._options_group(),
             roles_row,
+            Static("", id="rp-stages", markup=False),
+            Static(_TEST_PLAN_NOTE, id="rp-test-plan-note", markup=False),
             self._auto_group(),
             id="rp-form",
         )
@@ -729,6 +735,7 @@ class RelayPlanScreen(ModalScreen):
         self._show("#rp-auto-group", auto or (new and building))
         self._show("#rp-legacy-rest", auto)
         self._sync_test_planner_tip()
+        self._sync_stages()
         go = self.query_one("#rp-go", Button)
         go.display = not auto
         if not self._agents:
@@ -737,6 +744,46 @@ class RelayPlanScreen(ModalScreen):
             go.label = "Save" if source == "paste" else "Make the plan"
         self.query_one("#rp-check", Button).display = auto
         self.query_one("#rp-run", Button).display = auto
+
+    def _sync_stages(self) -> None:
+        """Redraw the Stages line from the start, size, brainstorm, build, mode and roles."""
+        from whyline.sdlc import stages
+
+        start = self._value("#rp-start", "description")
+        if start == "document":
+            kind = self._value("#rp-document-kind", "prd")
+            start = kind if kind in ("prd", "spec") else "description"
+        size = self._value("#rp-size", "feature")
+        prd = "none" if size == "small" else self._value("#rp-prd", "new")
+        building = self._building()
+        roles = {
+            "writer": self._value("#rp-drafter"),
+            "reviewer": self._value("#rp-reviewer"),
+            "test_planner": self._selected_test_planner(),
+            "architect_reviewer": self._value("#rp-architect"),
+        }
+        if building:
+            roles.update(
+                implementer=self._value("#rp-implementer"),
+                tester=self._value("#rp-tester"),
+                code_reviewer=self._value("#rp-exec-reviewer"),
+                release=self._value("#rp-release"),
+            )
+        try:
+            plan = stages.plan_stages(
+                size,
+                start,
+                brainstorm_first=size == "feature" and self._checked("#rp-brainstorm-first"),
+                build=building,
+                prd_mode=prd,
+            )
+            text = stages.stages_line(plan, roles)
+        except ValueError:
+            text = ""
+        try:
+            self.query_one("#rp-stages", Static).update(text)
+        except NoMatches:
+            pass
 
     def _show_source(self, source: str) -> None:
         self._apply_layout()
@@ -843,6 +890,7 @@ class RelayPlanScreen(ModalScreen):
             self._refresh_auto_summary()
         if select_id in _AUTO_SELECTS:
             self._drop_stored_check()
+        self._sync_stages()
 
     def on_input_changed(self, event: "Input.Changed") -> None:
         if getattr(self, "_filling", False):
@@ -882,6 +930,7 @@ class RelayPlanScreen(ModalScreen):
             self._drop_stored_check()
         elif box_id in _AUTO_BOXES:
             self._drop_stored_check()
+        self._sync_stages()
 
     def _error(self, text: str) -> None:
         error = self.query_one("#rp-error", Static)

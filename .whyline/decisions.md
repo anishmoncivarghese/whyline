@@ -40895,3 +40895,42 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2695608983504a73962339a92385d329 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:03:29.760Z"} -->
+
+## 2026-11-10 — list
+
+**Task:** SDLC-22
+
+<!-- whyline-event: b9bbbfcf0323427aa29154be35ec9f81 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:05:55.758Z"} -->
+
+## 2026-11-10 — Plan form Stages line matches SDLC-22: sizes, live updates, test-plan sentence
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-22
+
+**Because:** Full uv run pytest -q exited 0 with one skip and no failures. Focused tests cover the line for small/feature/large and writer/reviewer updates. Independent checks confirmed the exact test-plan sentence sits under the roles, the line equals stages.stages_line, and it updates on start, brainstorm first, build, mode, test planner and architect.
+
+**Rejected:**
+
+- fail because Feature start=document/PRD matches description — plan_stages omits brainstorm unless large, brainstorm_first, or start=brainstorm; the form still recomputes stages_line
+
+**Test:** uv run pytest -q: exit 0, one skip, no failures
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_plan_form.py
+
+<!-- whyline-event: 2dc5baf0477f4c5f8582f32b959d6541 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:26:16.228Z"} -->
+
+## 2026-11-10 — Approve SDLC-22 Stages line
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-22
+
+**Because:** The form places the canonical stages.stages_line output and exact test-plan sentence beneath roles, refreshes for every requested start, size, brainstorm, build, mode and role change, and the added UI tests cover every size plus live role updates; uv run pytest -q exited 0 with one skip and no failures, and git diff --check passed.
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_plan_form.py
+
+<!-- whyline-event: f1e8cae590ef4577bff59ead8d74e01a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:43:27.217Z"} -->
