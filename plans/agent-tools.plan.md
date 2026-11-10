@@ -8,7 +8,7 @@ This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detai
 What the user gets:
 - A **Tools** library in Agents with **Connectors** (MCP servers: add, import from Claude and codex, test), **Skills** (whyline and Claude skills in one list), **Knowledge** (reusable packs of files, folders and web pages) and **Credentials** (in the Keychain).
 - **New agent** gets **Knowledge**, **Skills** and **Tools** sections. Each tool is **Allowed** or **Ask first** (the default for tools that write).
-- Skills and tools work the same whichever CLI runs the agent (claude, codex, grok), including a backup CLI. Whyline puts skills into the prompt and gives every CLI one whyline MCP server that forwards to the real ones, asks for approval and records every call.
+- Skills and tools work the same whichever CLI runs the agent (claude, codex, grok, and Antigravity once whyline can run agents on it), including a backup CLI. Whyline puts skills into the prompt and gives every CLI one whyline MCP server that forwards to the real ones, asks for approval and records every call.
 - **Ask first** calls wait for **Approve** or **Deny** in Agents → Runs, or `whyline agents approve|deny`, for up to 10 minutes.
 
 Rules every task keeps:
@@ -129,23 +129,26 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 - [ ] TLS-11: Pointing each CLI at whyline's server
   Edit `src/whyline/agents/runner.py`, `src/whyline/agents/capabilities.py`, `src/whyline/tools/cli.py` and their tests only.
-  1. `capabilities.tools_support(cli) -> str`: `per-run` for claude and codex, `saved` for grok, `none` for antigravity and any other.
+  1. `capabilities.tools_support(cli) -> str`: `per-run` for claude and codex, `saved` for grok and antigravity (`agy`), `none` for any other.
   2. When the agent has tools, `prepare_run` writes `<run>/tools.json`, sets `WHYLINE_TOOLS_RUN` in the CLI's environment, and adds to the command:
      - claude: `--mcp-config <run>/mcp.json` (one server `whyline`, command the current `whyline` executable, args `tools serve`), `--strict-mcp-config` and `--allowedTools mcp__whyline__*`
      - codex: `-c mcp_servers.whyline.command="<whyline>"` and `-c mcp_servers.whyline.args=["tools","serve"]`
-     - grok: nothing on the command line. It needs the saved entry from 3.
-  3. `grok_setup() -> str` runs `grok mcp add whyline -- <whyline> tools serve` after the user confirms, and `grok_ready() -> bool` checks `grok mcp list` for it. CLI `whyline tools setup-grok`.
-  4. `usable_clis(defn) -> list[str]` drops CLIs that can't run this agent's tools (`none`, or `saved` without the grok entry). The main CLI and backups are chosen from it. A run whose CLIs are all dropped fails with `No CLI can use this agent's tools: <reasons>`.
-  Tests: each CLI's command and environment, no change for an agent without tools, grok with and without the saved entry, antigravity dropped, the backup order kept, and the no-CLI error.
+     - grok and antigravity: nothing on the command line. They need the saved entry from 3.
+  3. `saved_setup(cli) -> str` adds the one saved entry after the user confirms, and `saved_ready(cli) -> bool` checks the CLI's list for it:
+     - grok: `grok mcp add whyline -- <whyline> tools serve`, checked with `grok mcp list`
+     - antigravity: `agy mcp add whyline -- <whyline> tools serve`, checked with `agy mcp list`
+     CLI `whyline tools setup-grok` and `whyline tools setup-antigravity`. Each refuses with a plain message when that CLI isn't installed.
+  4. `usable_clis(defn) -> list[str]` drops CLIs that can't run this agent's tools: `none`, `saved` without its entry, and any CLI `capabilities.can_run` refuses. Antigravity stays dropped until the read-only spike adds it to `READ_ONLY`, then it is offered once its entry is saved, with no change here. The main CLI and backups are chosen from it. A run whose CLIs are all dropped fails with `No CLI can use this agent's tools: <reasons>`.
+  Tests: each CLI's command and environment, no change for an agent without tools, grok and antigravity each with and without the saved entry, antigravity dropped while `can_run` refuses it and offered once it is allowed (patch `READ_ONLY` in the test), the backup order kept, and the no-CLI error.
 
 ## Part 4: Console
 
 - [ ] TLS-12: The Tools library: Connectors and Credentials
   Create `src/whyline/console/tools_screens.py` and `tests/console/test_tools_screens.py`. Edit `src/whyline/console/agents_screens.py` and `src/whyline/console/tui.py` only to add the **Tools** button to the Agents bar and open the screen.
   1. `ToolsScreen` with tabs **Connectors**, **Skills**, **Knowledge** and **Credentials**. This task fills Connectors and Credentials; the other two say `Coming in the next update` until TLS-13.
-  2. Connectors: the servers with their status and tool count, each expandable to its tools marked `reads` or `writes`. **Add** (name, command, arguments, environment variable → credential select), **Import…** (a checklist of `import_candidates`, with the needs-a-credential and refused notes), **Test** (in a thread worker), **Remove** (names users when refused), and **Set up grok** with `grok_ready()` shown.
+  2. Connectors: the servers with their status and tool count, each expandable to its tools marked `reads` or `writes`. **Add** (name, command, arguments, environment variable → credential select), **Import…** (a checklist of `import_candidates`, with the needs-a-credential and refused notes), **Test** (in a thread worker), **Remove** (names users when refused), and **Set up grok** and **Set up Antigravity**, each showing `saved_ready(cli)` and disabled with a reason when that CLI isn't installed. Antigravity's button also says `Agents can't run on Antigravity yet` while `can_run` refuses it; the entry can still be saved ahead.
   3. Credentials: the list, **Add** with a masked `Input(password=True)`, **Rotate** and **Remove**. A value never appears in the screen text afterwards.
-  Tests: each action through the same functions as the CLI, the import checklist adding only ticked servers, a refused removal, the masked field, and Set up grok asking first.
+  Tests: each action through the same functions as the CLI, the import checklist adding only ticked servers, a refused removal, the masked field, and both Set up buttons asking first.
 
 - [ ] TLS-13: The Tools library: Skills and Knowledge
   Edit `src/whyline/console/tools_screens.py` and its tests only.
@@ -173,7 +176,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 - [ ] TLS-16: Docs
   Edit `README.md` where it describes Agents, the console Help text for Agents, and create `docs/agent-tools.md`.
-  Cover: connectors and importing from Claude and codex, credentials and why values never leave the Keychain, skills (the four places, whyline versus Claude, why every CLI gets them), knowledge packs and web pages, Allowed versus Ask first, approvals and the 10-minute limit, which CLIs can use tools and the one-time grok setup, and the call log.
+  Cover: connectors and importing from Claude and codex, credentials and why values never leave the Keychain, skills (the four places, whyline versus Claude, why every CLI gets them), knowledge packs and web pages, Allowed versus Ask first, approvals and the 10-minute limit, which CLIs can use tools and the one-time grok and Antigravity setup, and the call log.
   Verify with `uv run pytest -q`.
 
 - [ ] TLS-17: Publish whyline with TLS-1..16

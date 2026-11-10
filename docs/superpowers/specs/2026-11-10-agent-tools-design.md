@@ -67,9 +67,9 @@ How each CLI is pointed at it:
 | claude | `--mcp-config <run file> --strict-mcp-config --allowedTools mcp__whyline__*` on each run | none |
 | codex | `-c mcp_servers.whyline.command=…` and `.args=…` on each run | none |
 | grok | grok has no per-run option, so one saved entry, `grok mcp add whyline -- whyline tools serve`, added once by **Set up grok** in the library. The server reads which run it serves from the environment. Outside a whyline run it offers no tools | once |
-| Antigravity (`agy`) | not supported until its MCP support is checked. An agent with tools doesn't offer it | — |
+| Antigravity (`agy`) | like grok: one saved entry, `agy mcp add whyline -- whyline tools serve`, added by **Set up Antigravity**. Usable only once whyline can run agents on Antigravity at all (the read-only `--mode` spike); until then it isn't offered | once |
 
-So the user's own Claude, codex and grok settings are never changed, except the single `whyline` entry for grok, which the user adds with a button.
+So the user's own Claude, codex and grok settings are never changed, except the single `whyline` entry for grok and Antigravity, which the user adds with a button.
 
 ### Approvals
 
@@ -97,7 +97,7 @@ So the user's own Claude, codex and grok settings are never changed, except the 
 
 - Add a connector, a skill or a knowledge pack once; use it from any agent and any CLI.
 - Agents can use tools that write, with **Ask first** as the default and every call recorded.
-- No change to the user's CLI settings beyond the one grok entry they choose to add.
+- No change to the user's CLI settings beyond the one grok and Antigravity entry they choose to add.
 
 ## Non-goals
 
@@ -135,5 +135,5 @@ So the user's own Claude, codex and grok settings are never changed, except the 
 - One whyline MCP server in front of all real servers, instead of handing each CLI the real servers. It is what makes approvals, recording and grok possible.
 - Skills are put into the prompt by whyline for every CLI, including Claude, rather than loaded by Claude natively. The same agent then behaves the same whichever CLI runs it.
 - Writing tools default to **Ask first**; scheduled runs wait up to 10 minutes for approval, then deny.
-- Antigravity gets no tools until its MCP support is checked.
+- Antigravity gets the same one-entry setup as grok (checked 2026-11-10: `agy` 1.5.4 has `agy mcp add`). It is offered only after the read-only spike lets whyline run agents on it.
 - The library is personal (`~/.whyline/`), not per repository, except whyline repository skills, which live in the repository so they travel with it.
