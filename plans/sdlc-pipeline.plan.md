@@ -569,7 +569,7 @@ Rules every task keeps:
 
 ## Part 6: Docs and release
 
-- [ ] SDLC-29: Docs
+- [x] SDLC-29: Docs
   Edit `README.md` where it describes Plan, Auto or Brainstorm, `docs/` pages that describe Plan and Brainstorm, and create `docs/sdlc.md`.
   Cover:
   - the pipeline, sizes and modes
