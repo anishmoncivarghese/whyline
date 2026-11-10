@@ -93,6 +93,16 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     github.add_argument("--name", default=None, help="Repository name (default: the folder name)")
     github.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
 
+    close = sub.add_parser("close", help="Close a built feature: archive its plans, mark it released or built")
+    close.add_argument("slug")
+
+    pr = sub.add_parser("pr", help="Push the relay branch and open its pull request")
+    pr.add_argument("slug")
+    pr.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+
+    trace = sub.add_parser("trace", help="Which requirements are built and tested")
+    trace.add_argument("slug")
+
     export = sub.add_parser("export", help="Write the set as a Word file and a PDF")
     export.add_argument("slug")
     export.add_argument("--out", default=None, metavar="DIR", help="Folder (default: ~/Downloads)")
@@ -129,6 +139,7 @@ def _list(root: Path, args) -> int:
         print("No document sets yet.")
     for item in found:
         print(f"{item.slug}: {item.summary}")
+    print(library.location_line(_docs(root), root))
     return EXIT_OK
 
 
@@ -324,6 +335,48 @@ def _export(root: Path, args) -> int:
     return EXIT_OK if result.files else EXIT_ERROR
 
 
+def _close(root: Path, args) -> int:
+    from whyline.sdlc import close
+
+    result = close.close(root, args.slug)
+    if result.error:
+        return _fail(result.error)
+    print(f"Closed {args.slug}: " + (f"released v{result.version}" if result.version else "built"))
+    return EXIT_OK
+
+
+def _pr(root: Path, args) -> int:
+    from whyline.sdlc import close, docset, workspace
+
+    docs = _docs(root)
+    docset.load(docs, args.slug)
+    if not args.yes:
+        branch = workspace._current_branch(root)
+        try:
+            answer = input(f"Push {branch} to origin and open a pull request? [y/N] ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Nothing pushed.")
+            return EXIT_ERROR
+    try:
+        url = close.open_pr(root, docs, args.slug)
+    except close.CloseError as error:
+        return _fail(str(error))
+    print(url)
+    return EXIT_OK
+
+
+def _trace(root: Path, args) -> int:
+    from whyline.sdlc import docset, record, trace
+
+    docs = _docs(root)
+    found = docset.load(docs, args.slug)
+    print(trace.coverage(docs, found).line())
+    print(record.trace_table(root, docs, found))
+    return EXIT_OK
+
+
 def _agents(found) -> list[str]:
     return sorted({str(a) for a in found.roles.values() if a}) or ["claude"]
 
@@ -392,6 +445,7 @@ _COMMANDS = {
     "names": _names, "home": _home, "github": _github,
     "list": _list, "show": _show, "start": _start, "prd": _prd, "resume": _resume,
     "approve": _approve, "change": _change, "redo": _redo, "answer": _answer,
+    "close": _close, "pr": _pr, "trace": _trace,
     "mode": _mode, "review": _review, "findings": _findings, "export": _export,
 }
 

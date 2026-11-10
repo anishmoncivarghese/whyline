@@ -8,6 +8,7 @@ import difflib
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import SimpleNamespace
 from pathlib import Path
 
 from rich.text import Text
@@ -17,7 +18,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Markdown, OptionList, Select, SelectionList, Static, TextArea
 from textual.widgets.option_list import Option
 
-from whyline.sdlc import docset, export, goldfish, guard, library, stages, templates, workspace
+from whyline.sdlc import close as close_mod
+from whyline.sdlc import docset, export, goldfish, guard, library, stages, templates, trace, workspace
 from whyline.sdlc import product as prd
 from whyline.sdlc import review as review_mod
 from whyline.sdlc import runner as runner_mod
@@ -30,6 +32,7 @@ CHANGELOG_DOC = "changelog"
 NOTHING = "Nothing to show yet."
 _ACTIONS = ("docs-check", "docs-open")
 _ALWAYS_ON = ("docs-history", "docs-export", "docs-close")
+_SET_ACTIONS = ("docs-close-set", "docs-pr")
 _REVIEW = (
     ("docs-approve", "Approve"),
     ("docs-changes", "Ask for changes"),
@@ -158,6 +161,9 @@ def middle_rows(docs: Path, entry: str, latest: Callable | None = None) -> list[
                 holder = prd.claim_holder(docs)
                 if holder and holder != found.slug:
                     reason = f"Waiting: {holder} is updating the PRD"
+            if doc["kind"] == "plan":
+                line = coverage_line(docs, found)
+                reason = f"{reason} · {line}" if reason and line else reason or line
             rows.append(Row(doc["kind"], label, reason))
         return rows
     if entry.startswith(PLAN_PREFIX):
@@ -171,6 +177,30 @@ def middle_rows(docs: Path, entry: str, latest: Callable | None = None) -> list[
                     rows.append(Row("source", plan.source_kind.capitalize() or "Source"))
                 return rows
     return []
+
+
+def coverage_line(docs: Path, found: object) -> str:
+    """`Covers 3 of 4 requirements · ...` for the plan row; empty when it can't be worked out."""
+    try:
+        return trace.coverage(docs, found).line()
+    except Exception:
+        return ""
+
+
+def set_actions(docs: Path, slug: str) -> set[str]:
+    """Close on a set whose build record is approved; Open pull request on a closed set with no PR."""
+    try:
+        found = docset.load(docs, slug)
+    except docset.DocSetError:
+        return set()
+    built = found.document("build-record")
+    closed = found.state in ("released", "built")
+    shown: set[str] = set()
+    if built is not None and built["status"] == docset.Status.APPROVED.value and not closed:
+        shown.add("docs-close-set")
+    if closed and not found.pr_url:
+        shown.add("docs-pr")
+    return shown
 
 
 def _prd_update(docs: Path, found: object, kind: str) -> bool:
@@ -304,6 +334,34 @@ def _outcome_text(result: object) -> str:
     return str(getattr(result, "message", "") or f"Run: {state}")
 
 
+class ConfirmForm(ModalScreen):
+    """A question with Yes and No. Dismisses with True or False."""
+
+    BINDINGS = [("escape", "no", "No")]
+    DEFAULT_CSS = """
+    ConfirmForm { align: center middle; }
+    #confirm-box { width: 70; height: auto; border: round $accent; background: $surface; padding: 1 2; }
+    """
+
+    def __init__(self, question: str) -> None:
+        super().__init__()
+        self._question = question
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(self._question, id="confirm-question"),
+            Horizontal(Button("Yes", id="confirm-yes"), Button("No", id="confirm-no")),
+            id="confirm-box",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(event.button.id == "confirm-yes")
+
+    def action_no(self) -> None:
+        self.dismiss(False)
+
+
 class ReviewForm(ModalScreen):
     """A comments box and, when `sections` is given, a section select. Dismisses with
     (comments, section), or None on Cancel."""
@@ -385,6 +443,7 @@ class DocsScreen(ModalScreen):
     #docs-left { width: 1fr; }
     #docs-middle { width: 1fr; }
     #docs-right { width: 2fr; height: 100%; border: round $primary; }
+    #docs-location { height: auto; color: $text-muted; }
     #docs-reason { height: auto; color: $warning; }
     #docs-findings { height: auto; padding: 1 0 0 0; }
     #docs-status { height: auto; }
@@ -408,8 +467,12 @@ class DocsScreen(ModalScreen):
         runner: object = runner_mod,
         approver: str = "human",
         latest: Callable | None = None,
+        closer: Callable[..., object] = close_mod.close,
+        pr_opener: Callable[..., str] = close_mod.open_pr,
     ) -> None:
         super().__init__()
+        self._closer = closer
+        self._pr_opener = pr_opener
         self.root = Path(root)
         self._docs = Path(docs) if docs is not None else None
         self._check = check
@@ -440,6 +503,7 @@ class DocsScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         yield Vertical(
             Static("Docs", id="docs-title"),
+            Static("", id="docs-location"),
             Static("", id="docs-reason"),
             Horizontal(
                 OptionList(id="docs-left"),
@@ -455,6 +519,8 @@ class DocsScreen(ModalScreen):
             Horizontal(
                 Button("Check", id="docs-check"),
                 Button("Open file", id="docs-open"),
+                Button("Close set", id="docs-close-set"),
+                Button("Open pull request", id="docs-pr"),
                 Button("History", id="docs-history"),
                 Button("Export", id="docs-export"),
                 Button("Close", id="docs-close"),
@@ -481,6 +547,7 @@ class DocsScreen(ModalScreen):
             self.refusal = None
             self.query_one("#docs-status", Static).update(f"Could not check for a running relay: {error}")
         self.query_one("#docs-reason", Static).update(self.refusal or "")
+        self.query_one("#docs-location", Static).update(library.location_line(self.docs, self.root))
         left = self.query_one("#docs-left", OptionList)
         left.clear_options()
         left.add_options([_option(r) for r in left_rows(self.docs)])
@@ -504,6 +571,11 @@ class DocsScreen(ModalScreen):
         for button_id, _ in _REVIEW:
             self.query_one(f"#{button_id}", Button).display = button_id in shown
         self.query_one("#docs-approve", Button).disabled = self._prd_moved()
+        wanted: set[str] = set()
+        if self.refusal is None and not self._busy and self.entry.startswith(SET_PREFIX):
+            wanted = set_actions(self.docs, self._slug())
+        for button_id in _SET_ACTIONS:
+            self.query_one(f"#{button_id}", Button).display = button_id in wanted
 
     def _prd_moved(self) -> bool:
         """True when the selected document is a PRD update the product PRD has moved past."""
@@ -597,6 +669,8 @@ class DocsScreen(ModalScreen):
             self.show(history_text(self.docs, self.entry, self.key))
         elif button_id == "docs-export":
             self._start_export()
+        elif button_id in _SET_ACTIONS:
+            self._set_action(button_id)
         elif button_id in _ACTIONS and self.refusal is not None:
             return
         elif button_id == "docs-check":
@@ -663,6 +737,36 @@ class DocsScreen(ModalScreen):
                 self._sync_buttons()
         elif button_id == "docs-finished":
             self.finish_editing()
+
+    def _set_action(self, button_id: str) -> None:
+        if not self.entry.startswith(SET_PREFIX) or self._busy or self.refusal is not None:
+            return
+        slug, root, docs = self._slug(), self.root, self.docs
+        if button_id == "docs-close-set":
+            self._work("Closing…", lambda progress: self._close(root, slug))
+            return
+        try:
+            branch = workspace._current_branch(root)
+        except Exception:
+            branch = "the branch"
+
+        def asked(yes) -> None:
+            if yes:
+                self._work("Opening the pull request…", lambda progress: self._open_pr(root, docs, slug))
+
+        self.app.push_screen(ConfirmForm(f"Push {branch} to origin and open a pull request?"), asked)
+
+    def _close(self, root: Path, slug: str) -> object:
+        result = self._closer(root, slug)
+        if getattr(result, "error", ""):
+            raise RuntimeError(result.error)
+        version = getattr(result, "version", "")
+        what = f"released v{version}" if version else "built"
+        return SimpleNamespace(state=getattr(result, "state", "") or "closed", message=f"Closed: {what}.")
+
+    def _open_pr(self, root: Path, docs: Path, slug: str) -> object:
+        url = self._pr_opener(root, docs, slug)
+        return SimpleNamespace(state="pr", message=f"Pull request: {url}")
 
     def _approve(self, root: Path, slug: str, kind: str, progress) -> object:
         self._review.approve(root, slug, kind, approver=self._approver)

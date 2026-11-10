@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from whyline import worktrees
 from whyline.console.relay_ops import PLANS_DIR, _marker_fields
 from whyline.sdlc import docset
 from whyline.sdlc import product as prd
@@ -61,7 +62,23 @@ def _summary(found: docset.DocSet) -> str:
         mark = _STATUS_MARKS.get(doc["status"], _MARK_PENDING)
         label = _KIND_LABELS.get(doc["kind"], doc["kind"].replace("-", " ").capitalize())
         parts.append(f"{label} {mark}")
+    if found.state == "released" and found.version:
+        parts.append(f"Released v{found.version}")
+    elif found.state in ("released", "built"):
+        parts.append("Built")
+    if found.pr_url:
+        parts.append("PR open")
     return " · ".join(parts)
+
+
+def location_line(docs: Path, root: Path | None = None) -> str:
+    """`Documents: <docs checkout> (<default branch>)`; the branch is left out when it can't be read."""
+    line = f"Documents: {docs}"
+    try:
+        branch = worktrees._default_branch(Path(root or docs)).removeprefix("origin/")
+    except Exception:
+        branch = ""
+    return f"{line} ({branch})" if branch else line
 
 
 def sets(root: Path) -> list[SetSummary]:

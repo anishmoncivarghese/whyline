@@ -388,3 +388,60 @@ def test_github_refusal_exits_non_zero(env, monkeypatch, capsys):
     monkeypatch.setattr(github_repo, "create_repo", refuse)
     assert docs("github", made.slug, "--yes") != 0
     assert "Already has a remote." in capsys.readouterr().err
+
+
+def test_list_prints_where_documents_are_written(env, capsys, monkeypatch):
+    monkeypatch.setattr(library, "location_line", lambda docs, root=None: "Documents: /d (main)")
+    assert docs("list") == 0
+    assert capsys.readouterr().out.rstrip().endswith("Documents: /d (main)")
+
+
+def test_close_prints_the_result_or_fails(env, capsys, monkeypatch):
+    from whyline.sdlc import close
+
+    monkeypatch.setattr(close, "close", lambda root, slug: close.CloseResult(done=True, version="1.2"))
+    assert docs("close", "login") == 0
+    assert "Closed login: released v1.2" in capsys.readouterr().out
+    monkeypatch.setattr(close, "close", lambda root, slug: close.CloseResult(error="Approve first."))
+    assert docs("close", "login") == 1
+    assert "Approve first." in capsys.readouterr().err
+
+
+def test_pr_asks_unless_yes(env, capsys, monkeypatch):
+    from whyline.sdlc import close
+
+    made = make(env)
+    seen = []
+
+    def opened(root, d, slug):
+        seen.append(slug)
+        return "https://x/pull/3"
+
+    def refused(root, d, slug):
+        raise close.CloseError("No remote.")
+
+    def ask(prompt=""):
+        print(prompt)
+        return "n"
+
+    monkeypatch.setattr(close, "open_pr", opened)
+    monkeypatch.setattr(workspace, "_current_branch", lambda path: "relay/login")
+    monkeypatch.setattr("builtins.input", ask)
+    assert docs("pr", made.slug) == 1
+    out = capsys.readouterr().out
+    assert "Push relay/login to origin and open a pull request?" in out and seen == []
+    assert docs("pr", made.slug, "--yes") == 0
+    assert "https://x/pull/3" in capsys.readouterr().out and seen == [made.slug]
+    monkeypatch.setattr(close, "open_pr", refused)
+    assert docs("pr", made.slug, "--yes") == 1
+    assert "No remote." in capsys.readouterr().err
+
+
+def test_trace_prints_coverage_then_the_table(env, capsys, monkeypatch):
+    from whyline.sdlc import record, trace
+
+    made = make(env)
+    monkeypatch.setattr(trace, "coverage", lambda d, found: SimpleNamespace(line=lambda: "Covers 1 of 1 requirements"))
+    monkeypatch.setattr(record, "trace_table", lambda root, d, found: "| R1 | T-1 |")
+    assert docs("trace", made.slug) == 0
+    assert capsys.readouterr().out.splitlines() == ["Covers 1 of 1 requirements", "| R1 | T-1 |"]

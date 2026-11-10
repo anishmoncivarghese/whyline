@@ -41329,3 +41329,56 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1a48309b8152440d9638ff3f9c307bb0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:56:31.680Z"} -->
+
+## 2026-11-10 — Set-level Close button is docs-close-set (label Close set); it hides once the set has a state
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LIFE-3
+
+**Because:** docs-close already dismisses the screen; a closed set must not offer Close again
+
+**Rejected:**
+
+- Reuse docs-close — it is the screen's own Close button
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: bd27a6ffa4914bcca444977aa27700ee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:59:50.350Z"} -->
+
+## 2026-11-10 — LIFE-3 behavior matches the task: Close, Open PR, coverage, CLI, and location line
+
+**Actor:** grok
+**Role:** tester
+**Task:** LIFE-3
+
+**Because:** Docs Close set appears on an approved unclosed build record and calls close.close; Open pull request appears on released/built with no URL, confirms Push <branch> to origin and open a pull request?, then close.open_pr in a worker and shows the URL; the plan row uses trace.coverage().line(); summaries add Released v<version> or Built and PR open; whyline docs close/pr/trace and list location line work; LIFE-3 tests passed
+
+**Rejected:**
+
+- Fail for missing Files-pane Docs tab — that tab is SDLC-27; LIFE-3 cannot edit file_pane.py; library.location_line is the shared hook
+- Fail the full-suite flake in test_setup_button_starts_the_relay — unrelated Textual timing flake, passed on rerun, outside LIFE-3 files
+- Fail because the set Close button is labelled Close set — docs-close already dismisses the screen; the set action still shows and calls close.close
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/sdlc/cli.py, src/whyline/sdlc/library.py
+
+<!-- whyline-event: f29fd7cf033540cfb944f7c93fd61599 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T11:23:56.115Z"} -->
+
+## 2026-11-10 — Approve LIFE-3 close, pull request, coverage, CLI and document-location changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LIFE-3
+
+**Because:** The implementation matches the scoped requirements, uses the existing worker and close APIs safely, the tests cover visibility, confirmation, output and failure paths, and the plain full suite uv run pytest -q passed
+
+**Rejected:**
+
+- Request changes for the absent Files-pane Docs tab consumer — that tab is outside LIFE-3's permitted files, while library.location_line provides the required shared hook for its owning task
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/sdlc/cli.py, src/whyline/sdlc/library.py
+
+<!-- whyline-event: 32394941699d41e69bdbba24c67119bd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T11:42:14.918Z"} -->

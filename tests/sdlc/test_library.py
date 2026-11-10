@@ -85,3 +85,27 @@ def test_marker_naming_a_missing_spec_gives_no_source(tmp_path):
     gone, escape = library.earlier_plans(tmp_path)
     assert gone.source is None and gone.source_kind == ""
     assert escape.source is None
+
+
+def test_summary_says_released_or_built_and_pr_open(tmp_path):
+    made = _make(tmp_path, "Login", "2026-01-01", size="small")
+    assert not library.sets(tmp_path)[0].summary.endswith(("Built", "PR open"))
+    made.state, made.version = "released", "1.2"
+    docset.save(tmp_path, made)
+    assert library.sets(tmp_path)[0].summary.endswith("Released v1.2")
+    made.state, made.pr_url = "built", "https://x/pull/1"
+    docset.save(tmp_path, made)
+    assert library.sets(tmp_path)[0].summary.endswith("Built · PR open")
+
+
+def test_location_line_names_the_checkout_and_default_branch(tmp_path, monkeypatch):
+    from whyline import worktrees
+
+    monkeypatch.setattr(worktrees, "_default_branch", lambda root: "origin/main")
+    assert library.location_line(tmp_path, tmp_path) == f"Documents: {tmp_path} (main)"
+
+    def broken(root):
+        raise RuntimeError("no git")
+
+    monkeypatch.setattr(worktrees, "_default_branch", broken)
+    assert library.location_line(tmp_path) == f"Documents: {tmp_path}"

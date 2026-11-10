@@ -417,3 +417,97 @@ async def test_prd_row_says_waiting_when_another_set_holds_the_claim(tmp_path, l
     async with _prd_screen(tmp_path, holder.slug).run_test() as pilot:
         labels = _labels(pilot.app.screen.query_one("#docs-middle", OptionList))
         assert not any("Waiting:" in text for text in labels)
+
+
+def _built(tmp_path, **fields):
+    found = docset.load(tmp_path, "job-search")
+    found.document("build-record")["status"] = "approved"
+    for name, value in fields.items():
+        setattr(found, name, value)
+    docset.save(tmp_path, found)
+
+
+def _set_buttons(screen):
+    return {b.id for b in screen.query("#docs-actions Button") if b.display}
+
+
+def _status(screen):
+    return str(screen.query_one("#docs-status", Static).render())
+
+
+class StubClose:
+    def __init__(self, error=""):
+        self.calls, self.error = [], error
+
+    def __call__(self, root, slug):
+        self.calls.append(slug)
+        return SimpleNamespace(error=self.error, state="released", version="1.2", tag="v1.2")
+
+
+async def test_close_shows_on_an_approved_build_record_and_calls_close(tmp_path, library):
+    closer = StubClose()
+    async with _on(tmp_path, closer=closer).run_test() as pilot:
+        assert "docs-close-set" not in _set_buttons(pilot.app.screen)
+    _built(tmp_path)
+    async with _on(tmp_path, closer=closer).run_test() as pilot:
+        assert "docs-close-set" in _set_buttons(pilot.app.screen)
+        assert "docs-pr" not in _set_buttons(pilot.app.screen)
+        await pilot.click("#docs-close-set")
+        await _settle(pilot)
+        assert closer.calls == ["job-search"]
+        assert "released v1.2" in _status(pilot.app.screen)
+
+
+async def test_close_shows_a_refusal(tmp_path, library):
+    _built(tmp_path)
+    closer = StubClose(error="Approve the build record before closing the feature.")
+    async with _on(tmp_path, closer=closer).run_test() as pilot:
+        await pilot.click("#docs-close-set")
+        await _settle(pilot)
+        assert "Approve the build record" in _status(pilot.app.screen)
+
+
+async def test_open_pull_request_asks_first_then_shows_the_url(tmp_path, library):
+    _built(tmp_path, state="built")
+    calls = []
+
+    def opener(root, docs, slug):
+        calls.append(slug)
+        return "https://github.com/a/b/pull/7"
+
+    async with _on(tmp_path, pr_opener=opener).run_test() as pilot:
+        screen = pilot.app.screen
+        shown = _set_buttons(screen)
+        assert "docs-pr" in shown and "docs-close-set" not in shown
+        await pilot.click("#docs-pr")
+        await pilot.pause()
+        question = str(pilot.app.screen.query_one("#confirm-question", Static).render())
+        assert question.startswith("Push ") and question.endswith(" to origin and open a pull request?")
+        await pilot.click("#confirm-no")
+        await _settle(pilot)
+        assert calls == []
+        await pilot.click("#docs-pr")
+        await pilot.pause()
+        await pilot.click("#confirm-yes")
+        await _settle(pilot)
+        assert calls == ["job-search"]
+        assert "https://github.com/a/b/pull/7" in _status(screen)
+
+
+async def test_open_pull_request_hides_once_a_pr_exists(tmp_path, library):
+    _built(tmp_path, state="released", version="1.2", pr_url="https://x/pull/1")
+    async with _on(tmp_path).run_test() as pilot:
+        assert _set_buttons(pilot.app.screen).isdisjoint({"docs-pr", "docs-close-set"})
+
+
+async def test_plan_row_shows_the_coverage_line_and_the_location_line(tmp_path, library, monkeypatch):
+    from whyline.sdlc import trace
+
+    monkeypatch.setattr(
+        trace, "coverage", lambda docs, found: SimpleNamespace(line=lambda: "Covers 2 of 3 requirements")
+    )
+    async with _on(tmp_path).run_test() as pilot:
+        screen = pilot.app.screen
+        labels = _labels(screen.query_one("#docs-middle", OptionList))
+        assert any("Covers 2 of 3 requirements" in label for label in labels)
+        assert str(screen.query_one("#docs-location", Static).render()).startswith(f"Documents: {tmp_path}")
