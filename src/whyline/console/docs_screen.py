@@ -4,6 +4,7 @@ relay runs in that checkout every action except History and Export is off."""
 
 from __future__ import annotations
 
+import difflib
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,6 +40,8 @@ _REVIEW = (
     ("docs-stop", "Stop here"),
     ("docs-auto", "Run the rest on Auto"),
     ("docs-resume", "Resume"),
+    ("docs-diff", "Show diff"),
+    ("docs-whole", "Show whole PRD"),
     ("docs-finished", "I've finished editing"),
 )
 WHOLE_DOCUMENT = "Whole document"
@@ -151,6 +154,10 @@ def middle_rows(docs: Path, entry: str, latest: Callable | None = None) -> list[
             reason = ""
             if status is docset.Status.OUT_OF_DATE:
                 reason = doc.get("out_of_date_reason") or "An earlier document changed."
+            if _prd_update(docs, found, doc["kind"]):
+                holder = prd.claim_holder(docs)
+                if holder and holder != found.slug:
+                    reason = f"Waiting: {holder} is updating the PRD"
             rows.append(Row(doc["kind"], label, reason))
         return rows
     if entry.startswith(PLAN_PREFIX):
@@ -164,6 +171,38 @@ def middle_rows(docs: Path, entry: str, latest: Callable | None = None) -> list[
                     rows.append(Row("source", plan.source_kind.capitalize() or "Source"))
                 return rows
     return []
+
+
+def _prd_update(docs: Path, found: object, kind: str) -> bool:
+    return kind == "prd" and found.prd_mode == docset.PrdMode.UPDATE.value
+
+
+def prd_moved_line(docs: Path, found: object) -> str:
+    """`The PRD is now v<new>. Redo this update first.` when the product PRD moved on, else empty."""
+    now = prd.current(docs)
+    if now is None or not prd.moved(docs, found):
+        return ""
+    return f"The PRD is now v{now.version}. Redo this update first."
+
+
+def prd_update_text(docs: Path, found: object, view: str = "summary") -> str:
+    """The right pane of a PRD update: changed sections, then the diff or the whole PRD."""
+    doc = found.document("prd")
+    mine = (docset._current_text(docs, found, doc) or "") if doc else ""
+    now = prd.current(docs)
+    base = prd.body(now.text) if now is not None else ""
+    if view == "whole":
+        return mine or NOTHING
+    changed = ", ".join(prd.changed_sections(base, mine)) or "none"
+    lines = [f"Changed sections: {changed}", ""]
+    moved = prd_moved_line(docs, found)
+    if moved:
+        lines += [moved, ""]
+    if view == "diff":
+        diff = "\n".join(difflib.unified_diff(
+            base.splitlines(), mine.splitlines(), "product PRD", "this update", lineterm=""))
+        lines += ["```diff", diff or "No differences.", "```"]
+    return "\n".join(lines)
 
 
 def _read(path: Path | None) -> str:
@@ -188,6 +227,8 @@ def document_text(docs: Path, entry: str, key: str) -> str:
         except docset.DocSetError as error:
             return str(error)
         doc = found.document(key)
+        if doc is not None and _prd_update(docs, found, key):
+            return prd_update_text(docs, found)
         return (docset._current_text(docs, found, doc) or NOTHING) if doc else NOTHING
     if entry.startswith(PLAN_PREFIX):
         slug = entry[len(PLAN_PREFIX):]
@@ -240,8 +281,11 @@ def available_actions(docs: Path, slug: str, kind: str, editing: bool = False) -
     out_of_date = doc["status"] == docset.Status.OUT_OF_DATE.value
     if in_review:
         shown |= {"docs-approve", "docs-changes", "docs-edit", "docs-review-again"}
-    if (in_review or out_of_date) and found.documents[0]["kind"] != kind:
+    updating = _prd_update(docs, found, kind)
+    if (in_review or out_of_date) and (found.documents[0]["kind"] != kind or updating):
         shown.add("docs-redo")
+    if updating:
+        shown |= {"docs-diff", "docs-whole"}
     if found.pending_questions.get(kind):
         shown.add("docs-answer")
     if found.stage:
@@ -459,6 +503,17 @@ class DocsScreen(ModalScreen):
             )
         for button_id, _ in _REVIEW:
             self.query_one(f"#{button_id}", Button).display = button_id in shown
+        self.query_one("#docs-approve", Button).disabled = self._prd_moved()
+
+    def _prd_moved(self) -> bool:
+        """True when the selected document is a PRD update the product PRD has moved past."""
+        if not (self.entry.startswith(SET_PREFIX) and self.key == "prd"):
+            return False
+        try:
+            found = docset.load(self.docs, self._slug())
+        except docset.DocSetError:
+            return False
+        return _prd_update(self.docs, found, "prd") and bool(prd_moved_line(self.docs, found))
 
     def select_entry(self, entry: str, kind: str | None = None) -> None:
         self.entry = entry
@@ -563,6 +618,10 @@ class DocsScreen(ModalScreen):
         review = self._review
         if button_id == "docs-approve":
             self._work("Approving…", lambda progress: self._approve(root, slug, kind, progress))
+        elif button_id in ("docs-diff", "docs-whole"):
+            found = docset.load(self.docs, slug)
+            view = "diff" if button_id == "docs-diff" else "whole"
+            self.show(prd_update_text(self.docs, found, view))
         elif button_id == "docs-redo":
             self._work("Redoing…", lambda progress: review.redo(root, slug, kind, progress=progress))
         elif button_id == "docs-review-again":

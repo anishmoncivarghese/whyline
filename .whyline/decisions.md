@@ -41279,3 +41279,53 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0ac22cb984714666838b3e46000641cf -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:16:18.805Z"} -->
+
+## 2026-11-10 — PRD update pane built in docs_screen from product.changed_sections/moved/claim_holder; Approve disabled (not hidden) when moved
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PRD-2
+
+**Because:** Reuses the same moved check review.approve enforces, so the UI and the guard agree; Redo is offered for a PRD update even though prd is the first document
+
+**Rejected:**
+
+- Hiding Approve when moved — the user would not see why it is missing
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: 4ed047928a6142e4a930f497ff8822bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:18:20.208Z"} -->
+
+## 2026-11-10 — Pass PRD-2: PRD update pane, moved line, and waiting row behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** PRD-2
+
+**Because:** Round 2 opens a PRD update on Changed sections with Show diff (unified vs current product PRD) and Show whole PRD. When product.moved, the pane shows The PRD is now v<new>. Redo this update first., Approve is disabled (still shown), and Redo is offered; catching based_on up re-enables Approve. A waiting set PRD row says Waiting: <set> is updating the PRD; the holder does not. Task tests 23 passed; uv run pytest -q exited 0.
+
+**Rejected:**
+
+- fail — moved test writes based_on instead of clicking Redo — real redo updates based_on and the UI keys off the same product.moved check review.approve uses
+
+**Test:** uv run pytest -q tests/console/test_docs_screen.py: 23 passed
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: e3f2541eebb342949f7a842e6540d853 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:38:45.610Z"} -->
+
+## 2026-11-10 — Approve PRD-2: PRD update review behavior matches the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PRD-2
+
+**Because:** The pane opens with changed sections and exposes unified diff and whole-PRD views; moved state shows the required version message and disables Approve until the backend Redo catches based_on up; claim contention appears on the waiting set's PRD row; focused tests exercise each behavior and uv run pytest -q exited 0.
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 1a48309b8152440d9638ff3f9c307bb0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:56:31.680Z"} -->

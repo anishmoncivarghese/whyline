@@ -359,3 +359,61 @@ async def test_review_again_runs_and_is_off_while_guard_refuses(tmp_path, librar
         assert rev.calls == [("again", "spec")]
     async with _on(tmp_path, check=lambda root: REFUSAL).run_test() as pilot:
         assert "docs-review-again" not in _visible(pilot.app.screen)
+
+
+def _update_set(tmp_path, name="Edit prd", body="# Product\n\n## Goals\n\nShip it faster.\n"):
+    found = docset.create(tmp_path, name, "feature", "human", prd_mode="update", roles=ROLES)
+    docset.add_version(tmp_path, found, "prd", body, author="claude", note="x")
+    found = docset.load(tmp_path, found.slug)
+    found.document("prd")["based_on"] = product.current(tmp_path).version
+    docset.save(tmp_path, found)
+    return found
+
+
+def _prd_screen(tmp_path, slug, **kwargs):
+    return Host(_screen(tmp_path, set_slug=slug, kind="prd", **kwargs))
+
+
+async def test_prd_update_shows_changed_sections_and_the_diff(tmp_path, library):
+    found = _update_set(tmp_path)
+    async with _prd_screen(tmp_path, found.slug).run_test() as pilot:
+        screen = pilot.app.screen
+        assert screen.shown_text.startswith("Changed sections: Goals")
+        assert {"docs-diff", "docs-whole"} <= _visible(screen)
+        screen.query_one("#docs-diff", Button).press()
+        await pilot.pause()
+        assert "-Ship it." in screen.shown_text and "+Ship it faster." in screen.shown_text
+        screen.query_one("#docs-whole", Button).press()
+        await pilot.pause()
+        assert "Ship it faster." in screen.shown_text
+        assert "Changed sections" not in screen.shown_text
+
+
+async def test_moved_prd_disables_approve_until_redo(tmp_path, library):
+    found = _update_set(tmp_path)
+    product.publish(tmp_path, "# Product\n\n## Goals\n\nElsewhere.\n", set_name="Other",
+                    slug="other", approver="anish")
+    now = product.current(tmp_path).version
+    async with _prd_screen(tmp_path, found.slug, review=StubReview()).run_test() as pilot:
+        screen = pilot.app.screen
+        assert f"The PRD is now v{now}. Redo this update first." in screen.shown_text
+        assert screen.query_one("#docs-approve", Button).disabled
+        assert "docs-redo" in _visible(screen)
+        again = docset.load(tmp_path, found.slug)
+        again.document("prd")["based_on"] = now
+        docset.save(tmp_path, again)
+        screen.select_entry("set:" + found.slug, "prd")
+        assert not screen.query_one("#docs-approve", Button).disabled
+        assert "Redo this update first" not in screen.shown_text
+
+
+async def test_prd_row_says_waiting_when_another_set_holds_the_claim(tmp_path, library):
+    holder = _update_set(tmp_path, "Holder")
+    waiting = _update_set(tmp_path, "Waiter")
+    assert product.claim_update(tmp_path, holder.slug)
+    async with _prd_screen(tmp_path, waiting.slug).run_test() as pilot:
+        labels = _labels(pilot.app.screen.query_one("#docs-middle", OptionList))
+        assert any(f"Waiting: {holder.slug} is updating the PRD" in text for text in labels)
+    async with _prd_screen(tmp_path, holder.slug).run_test() as pilot:
+        labels = _labels(pilot.app.screen.query_one("#docs-middle", OptionList))
+        assert not any("Waiting:" in text for text in labels)
