@@ -452,7 +452,7 @@ Rules every task keeps:
   3. The export pack adds an appendix "Fresh-eyes reviews" after the review log, with the latest review of each document.
   Tests: both subcommands with stubs, the guard refusal exiting non-zero, and the appendix order.
 
-- [ ] HOME-5: Project home in the CLI
+- [x] HOME-5: Project home in the CLI
   Edit `src/whyline/sdlc/cli.py` and its tests only. The console counterpart is HOME-6.
   1. `whyline docs names <slug>` prints each suggestion as `<Name> (<folder>) — <reason>`.
   2. `whyline docs home <slug> --here | --new [--name NAME] [--folder FOLDER] [--parent DIR]` calls `runner.choose_home`. `--name` defaults to the first suggestion, `--folder` to `folder_name(name)`, and `--parent` to `last_parent()`. It prints the root and `Next: whyline docs resume <slug>` with `cd <path>` when the root changed.
