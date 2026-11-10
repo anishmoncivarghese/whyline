@@ -539,7 +539,7 @@ Rules every task keeps:
   3. Docs, the Files-pane Docs tab and `whyline docs list` show where documents are written: `Documents: <docs checkout path> (<default branch>)`.
   Tests: each button's visibility, the PR confirmation, the coverage line, each subcommand with stubs, and the location line.
 
-- [ ] HOME-6: Project home in the console
+- [x] HOME-6: Project home in the console
   Edit `src/whyline/console/docs_screen.py`, `src/whyline/console/tui.py`, `src/whyline/sdlc/library.py` and their tests only.
   1. When `run` returns `waiting_for_home`, the console opens a **Project home** screen in Docs:
      - **Where should this project live?**: **Create a new folder** or **Use this repository** (`<repo name>`). The default is Use this repository when `home.is_fresh(root)` is true, otherwise Create a new folder.
