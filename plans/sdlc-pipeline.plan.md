@@ -477,7 +477,7 @@ Rules every task keeps:
   3. An Auto checkpoint saved before this release still shows **Resume** through the existing auto_run path. The form no longer starts the old Auto.
   Tests: each field's visibility by size, start and mode, the PRD choice defaults with and without a product PRD, the picker stub selecting a file, and the old Auto checkpoint still offering Resume.
 
-- [ ] SDLC-22: The Stages line
+- [x] SDLC-22: The Stages line
   Edit `src/whyline/console/relay_screens.py` and its tests only.
   `#rp-stages` under the roles shows `stages.stages_line(...)` and updates on every change to start, size, brainstorm first, build, mode or roles. Under it, one sentence: `The test plan lists test cases for each task: automatic ones the tester runs, and manual checks the relay pauses for.`
   Tests: the line for each size, and its update when a role changes.
