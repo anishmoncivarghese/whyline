@@ -1136,6 +1136,7 @@ class WhylineConsoleApp(App):
     #pause-actions { height: auto; display: none; }
     #pause-continue-0, #pause-continue-1, #pause-continue-2 { display: none; }
     #pause-add-backup { display: none; }
+    #docs-pause-after { display: none; }
     #pause-continue-note { display: none; width: auto; padding: 1 1; }
     #resolve-actions { height: auto; display: none; }
     #resolve-reply-row { height: auto; display: none; }
@@ -2251,7 +2252,7 @@ class WhylineConsoleApp(App):
         for button in controls.query(Button):
             if button.id in (
                 "relay-resolve", "relay-retry-stage", "relay-check-apply", "relay-check-stop", "update", "update-restart",
-                *_PAUSE_BUTTONS,
+                "docs-pause-after", *_PAUSE_BUTTONS,
             ):
                 continue
             button.display = button.id in wanted
@@ -4141,6 +4142,7 @@ class WhylineConsoleApp(App):
                 Button("Run", id="relay-run", disabled=True),
                 Button("Plan", id="relay-plan", disabled=True),
                 Button("Set up", id="relay-setup", disabled=True),
+                Button("Pause after this stage", id="docs-pause-after"),
                 Button("Pause", id="pause"),
                 Button("Pausing…", id="pausing", disabled=True),
                 Button("Pause now", id="pause-now"),
@@ -4386,6 +4388,8 @@ class WhylineConsoleApp(App):
             relay_ops.request_pause(self.session.root)
             self._pause_requested = True
             self._sync_pause_buttons()
+        elif button_id == "docs-pause-after":
+            self._docs_pause_after()
         elif button_id == "pause-cancel":
             relay_ops.cancel_pause(self.session.root)
             self._pause_requested = False
@@ -4838,9 +4842,10 @@ class WhylineConsoleApp(App):
             return
         docs_run = getattr(self, "_docs_run", None)
         if docs_run is not None and self._busy_text:
+            pausing = f" · will pause after {docs_run['pause_after']}" if docs_run.get("pause_after") else ""
             thinking.update(
                 f"{_SPINNER[self._spin]} docs: {docs_run['name']} · {docs_run['what']} · "
-                f"{docs_run['agent']} · {relay_ops._elapsed(elapsed)}{note}"
+                f"{docs_run['agent']} · {relay_ops._elapsed(elapsed)}{pausing}{note}"
             )
             return
         thinking.update(f"{_SPINNER[self._spin]} {label}… {elapsed}s{note}")
@@ -5568,16 +5573,19 @@ class WhylineConsoleApp(App):
         self._dispatch_token = token
         root = self.session.root
         writer = self.session.agent or "claude"
+        is_auto = False
         try:
             from whyline.sdlc import docset as docset_mod, workspace
 
-            writer = str(
-                docset_mod.load(workspace.docs_root(root), start.slug).roles.get("writer") or writer
-            )
+            started = docset_mod.load(workspace.docs_root(root), start.slug)
+            writer = str(started.roles.get("writer") or writer)
+            is_auto = started.mode == "auto"
         except Exception:
             pass
-        self._docs_run = {"name": start.name, "what": "starting", "agent": writer}
+        self._docs_run = {"name": start.name, "what": "starting", "agent": writer,
+                          "slug": start.slug, "pause_after": ""}
         self._set_busy(True, f"docs: {start.name}")
+        self._show_docs_pause(is_auto)
 
         def in_thread() -> None:
             def progress(line: str) -> None:
@@ -5591,6 +5599,31 @@ class WhylineConsoleApp(App):
             self.call_from_thread(self._docs_done, start, outcome, error, token)
 
         self.run_worker(in_thread, thread=True)
+
+    def _show_docs_pause(self, show: bool) -> None:
+        try:
+            self._main("#docs-pause-after", Button).display = show
+        except (NoMatches, IndexError):
+            return
+        self._fit_controls()
+
+    def _docs_pause_after(self) -> None:
+        """Switch the running set to Human in the loop; the runner reads the
+        mode again between stages, so it stops after the current one."""
+        run = getattr(self, "_docs_run", None)
+        if run is None:
+            return
+        from whyline.sdlc import review
+
+        try:
+            found = review.set_mode(self.session.root, run["slug"], "human")
+        except Exception as caught:
+            self.render_event(SessionEvent(kind="error", text=f"Could not pause after this stage: {caught}"))
+            return
+        kind = str(found.stage or "")
+        run["pause_after"] = {"prd": "PRD"}.get(kind, kind.capitalize() or "this stage")
+        self._main("#docs-pause-after", Button).display = False
+        self._fit_controls()
 
     def _docs_progress(self, line: str, token: object) -> None:
         if token is not self._dispatch_token:
@@ -5606,6 +5639,7 @@ class WhylineConsoleApp(App):
         if token is not self._dispatch_token:
             return
         self._docs_run = None
+        self._show_docs_pause(False)
         self._set_busy(False)
         self._auto_cancel_event = None
         if error is not None or outcome is None or outcome.state == "error":

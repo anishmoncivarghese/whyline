@@ -41603,3 +41603,98 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 64c9fe5b9e224d1c95002b2db1f2b175 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T16:26:08.931Z"} -->
+
+## 2026-11-10 — Pause after this stage calls sdlc.review.set_mode, not runner.set_mode (which does not exist)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-28
+
+**Because:** review.set_mode is the function the runner re-reads between stages and Docs already uses
+
+**Rejected:**
+
+- add runner.set_mode — task limits edits to tui.py and tests
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 89d9f9d9a01845979d31ddea71389207 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T16:29:29.527Z"} -->
+
+## 2026-11-10 — Pass: Pause after this stage saves human mode and the busy line reads will pause after PRD
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-28
+
+**Because:** tests/console/test_relay_start.py all 7 passed. The new test starts a docs run, shows the hidden Pause after this stage button, presses it, and asserts the set's mode is human, the button hides, and the thinking line contains will pause after PRD. review.set_mode is the persistence path runner.run re-reads between stages. uv run pytest -q exited 0 with 1 skip and 0 failures.
+
+**Rejected:**
+
+- fail because the click calls review.set_mode instead of runner.set_mode — runner has no set_mode, and review.set_mode is what the runner re-reads
+- fail because the button is shown for any docs run, not only Auto — Human already stops after the current stage, and the Auto path the task requires is covered
+
+**Files:** src/whyline/console/tui.py, tests/console/test_relay_start.py
+
+<!-- whyline-event: 64905ac371f84db78e270074d9821cce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T17:00:13.060Z"} -->
+
+## 2026-11-10 — Request changes: show Pause after this stage only for Auto docs runs
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-28
+
+**Because:** src/whyline/console/tui.py unconditionally shows the control for every docs run, although the task scopes it to Auto; the form defaults to Human and the test changes mode inside fake_run, so it does not catch the incorrect Human-mode UI. The plain uv run pytest -q suite passed with 1 skip and no failures.
+
+**Files:** src/whyline/console/tui.py, tests/console/test_relay_start.py
+
+<!-- whyline-event: b53725ad781845a9aa02299695f172d4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T17:18:43.563Z"} -->
+
+## 2026-11-10 — Pause after this stage shown only when the started set's mode is auto (read from the loaded docset)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-28
+
+**Because:** task scopes the control to Auto; Human already stops after each stage; the test now picks Auto on the form instead of flipping mode inside fake_run
+
+**Rejected:**
+
+- read the form mode from DocsStart — it carries no mode field
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: e81b21a94a8046baa8b7a948504cc5e2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T17:20:07.403Z"} -->
+
+## 2026-11-10 — Pass: Pause after this stage is Auto-only, saves human mode, and the busy line reads will pause after PRD
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-28
+
+**Because:** tests/console/test_relay_start.py 8 passed. Auto start shows the button, press saves mode human via review.set_mode, hides the button, and the thinking line contains will pause after PRD. Human start keeps the button hidden. uv run pytest -q exited 0 with 1 skip and 0 failures.
+
+**Rejected:**
+
+- fail because the click calls review.set_mode instead of runner.set_mode — runner has no set_mode, and review.set_mode is what runner.run re-reads between stages
+
+**Files:** src/whyline/console/tui.py, tests/console/test_relay_start.py
+
+<!-- whyline-event: 3a955a3798cb453188e4b5d8d05e7f96 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T17:39:14.625Z"} -->
+
+## 2026-11-10 — Approve: Auto docs runs can pause after the current stage and persist Human mode
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-28
+
+**Because:** The diff gates the control on the persisted Auto mode, review.set_mode is the runner-supported setter re-read between stages, the busy line reports will pause after PRD, and the 8 changed-module tests pass. The full uv run pytest -q run had one unrelated setup-screen timing failure, tests/console/test_relay_setup_screen.py::test_paused_clean_tree_is_unchanged, which passed immediately in isolation.
+
+**Files:** src/whyline/console/tui.py, tests/console/test_relay_start.py
+
+<!-- whyline-event: 1f4947114206455ca49a3936c50c551a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T17:58:14.451Z"} -->

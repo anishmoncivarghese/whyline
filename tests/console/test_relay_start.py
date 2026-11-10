@@ -172,3 +172,66 @@ async def test_without_the_flag_the_form_still_makes_a_plan_request(tmp_path):
         screen.query_one("#rp-go", tui.Button).press()
         await _wait_for(pilot, lambda: results, "the form closed")
     assert not isinstance(results[0], DocsStart)
+
+
+async def test_pause_after_this_stage_saves_human_mode_and_shows_on_the_line(
+    tmp_path, monkeypatch
+):
+    release = threading.Event()
+    progressed = threading.Event()
+
+    def fake_run(root, slug, *, progress=None, cancel_event=None, launcher=None):
+        found = docset.load(tmp_path, slug)
+        found.stage = "prd"
+        docset.save(tmp_path, found)
+        progress("writing PRD")
+        progressed.set()
+        release.wait(10)
+        return runner.RunOutcome("done")
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        assert not app._main("#docs-pause-after", tui.Button).display
+        screen = await _open(app, pilot)
+        _fill(screen)
+        screen.query_one("#rp-mode", tui.Select).value = "auto"
+        await pilot.pause()
+        screen.query_one("#rp-go", tui.Button).press()
+        await _wait_for(pilot, progressed.is_set, "the runner reported progress")
+        button = app._main("#docs-pause-after", tui.Button)
+        await _wait_for(pilot, lambda: button.display, "the button shown")
+        button.press()
+        await pilot.pause(0.2)
+        [found] = docset.all_sets(tmp_path)
+        assert found.mode == "human"
+        assert not button.display
+        app._tick()
+        line = str(app._main("#thinking", tui.Static).renderable)
+        assert "will pause after PRD" in line
+        release.set()
+        await pilot.pause(0.3)
+
+
+async def test_pause_after_this_stage_stays_hidden_for_a_human_mode_run(tmp_path, monkeypatch):
+    release = threading.Event()
+    progressed = threading.Event()
+
+    def fake_run(root, slug, *, progress=None, cancel_event=None, launcher=None):
+        progress("writing PRD")
+        progressed.set()
+        release.wait(10)
+        return runner.RunOutcome("done")
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen = await _open(app, pilot)
+        _fill(screen)
+        screen.query_one("#rp-go", tui.Button).press()
+        await _wait_for(pilot, progressed.is_set, "the runner reported progress")
+        [found] = docset.all_sets(tmp_path)
+        assert found.mode == "human"
+        assert not app._main("#docs-pause-after", tui.Button).display
+        release.set()
+        await pilot.pause(0.3)
