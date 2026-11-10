@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from textual.app import App
 from textual.widgets import Button, OptionList, Static
@@ -113,8 +115,6 @@ async def test_actions_are_on_when_nothing_refuses(tmp_path, library):
 
 
 async def test_open_docs_from_start_pushes_the_screen_on_that_set(tmp_path, library):
-    from types import SimpleNamespace
-
     pushed = []
     fake = SimpleNamespace(
         session=SimpleNamespace(root=tmp_path), push_screen=pushed.append,
@@ -123,3 +123,179 @@ async def test_open_docs_from_start_pushes_the_screen_on_that_set(tmp_path, libr
     assert len(pushed) == 1 and isinstance(pushed[0], DocsScreen)
     async with Host(pushed[0]).run_test() as pilot:
         assert (pilot.app.screen.entry, pilot.app.screen.key) == ("set:job-search", "spec")
+
+
+class StubReview:
+    def __init__(self):
+        self.calls = []
+
+    def approve(self, root, slug, kind, *, approver):
+        self.calls.append(("approve", slug, kind, approver))
+
+    def ask_for_changes(self, root, slug, kind, comments, *, section="", progress):
+        self.calls.append(("changes", kind, comments, section))
+        return ["Goals"]
+
+    def redo(self, root, slug, kind, *, progress):
+        self.calls.append(("redo", kind))
+        return []
+
+    def stop(self, root, slug):
+        self.calls.append(("stop", slug))
+
+    def set_mode(self, root, slug, mode):
+        self.calls.append(("mode", mode))
+
+    def edited(self, root, slug, kind, *, editor_name):
+        self.calls.append(("edited", kind))
+        return 2
+
+    def answer_questions(self, root, slug, kind, answers, *, progress):
+        self.calls.append(("answer", kind, answers))
+        return []
+
+
+class StubRunner:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, root, slug, *, progress=None, **kw):
+        self.calls.append(slug)
+        return SimpleNamespace(state="waiting", message="")
+
+
+def _on(tmp_path, **kwargs):
+    return Host(_screen(tmp_path, set_slug="job-search", kind="spec", **kwargs))
+
+
+async def _settle(pilot):
+    await pilot.app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+def _visible(screen):
+    return {b.id for b in screen.query("#docs-review Button") if b.display}
+
+
+async def test_buttons_show_only_when_they_apply(tmp_path, library):
+    async with _on(tmp_path).run_test() as pilot:
+        screen = pilot.app.screen
+        shown = _visible(screen)
+        assert {"docs-approve", "docs-changes", "docs-edit", "docs-redo", "docs-auto"} <= shown
+        assert not shown & {"docs-answer", "docs-stop", "docs-finished"}
+        screen.select_entry("product")
+        assert _visible(screen) == set()
+
+
+async def test_approve_on_a_human_set_runs_the_rest(tmp_path, library):
+    rev, run = StubReview(), StubRunner()
+    async with _on(tmp_path, review=rev, runner=run).run_test() as pilot:
+        await pilot.click("#docs-approve")
+        await _settle(pilot)
+        assert rev.calls == [("approve", "job-search", "spec", "human")]
+        assert run.calls == ["job-search"]
+
+
+async def test_auto_redo_and_stop(tmp_path, library):
+    rev, run = StubReview(), StubRunner()
+    async with _on(tmp_path, review=rev, runner=run).run_test() as pilot:
+        screen = pilot.app.screen
+        await pilot.click("#docs-auto")
+        await _settle(pilot)
+        await pilot.click("#docs-redo")
+        await _settle(pilot)
+        assert rev.calls == [
+            ("approve", "job-search", "spec", "human"), ("mode", "auto"), ("redo", "spec")]
+        assert run.calls == ["job-search"]
+        found = docset.load(tmp_path, "job-search")
+        found.stage = "spec"
+        docset.save(tmp_path, found)
+        screen.select_entry("set:job-search", "spec")
+        assert "docs-stop" in _visible(screen)
+        screen.query_one("#docs-stop", Button).press()
+        await _settle(pilot)
+        assert ("stop", "job-search") in rev.calls
+
+
+async def test_ask_for_changes_form_lists_sections_and_shows_also_changed(tmp_path, library):
+    from textual.widgets import Select, TextArea
+
+    rev = StubReview()
+    async with _on(tmp_path, review=rev).run_test() as pilot:
+        screen = pilot.app.screen
+        await pilot.click("#docs-changes")
+        await pilot.pause()
+        form = pilot.app.screen
+        labels = [label for label, _ in form.section_options]
+        assert labels[0] == "Whole document" and len(labels) > 1
+        form.query_one("#form-comments", TextArea).text = "Tighten this"
+        form.query_one("#form-section", Select).value = labels[1]
+        await pilot.click("#form-send")
+        await _settle(pilot)
+        assert rev.calls == [("changes", "spec", "Tighten this", labels[1])]
+        assert str(screen.query_one("#docs-also", Static).render()) == "Also changed: Goals"
+
+
+async def test_edit_opens_the_file_then_finished_calls_edited(tmp_path, library):
+    rev, opened = StubReview(), []
+    async with _on(tmp_path, review=rev, opener=opened.append).run_test() as pilot:
+        screen = pilot.app.screen
+        await pilot.click("#docs-edit")
+        assert len(opened) == 1
+        assert _visible(screen) == {"docs-finished"}
+        await pilot.click("#docs-finished")
+        await _settle(pilot)
+        assert rev.calls == [("edited", "spec")]
+
+
+async def test_regaining_focus_finishes_the_edit(tmp_path, library):
+    rev = StubReview()
+    async with _on(tmp_path, review=rev, opener=lambda path: None).run_test() as pilot:
+        screen = pilot.app.screen
+        await pilot.click("#docs-edit")
+        screen._focus_changed(True)
+        await _settle(pilot)
+        assert rev.calls == [("edited", "spec")]
+
+
+async def test_answer_questions_sends_the_answers(tmp_path, library):
+    from textual.widgets import TextArea
+
+    found = docset.load(tmp_path, "job-search")
+    found.pending_questions["spec"] = ["Who pays?"]
+    docset.save(tmp_path, found)
+    rev = StubReview()
+    async with _on(tmp_path, review=rev).run_test() as pilot:
+        await pilot.click("#docs-answer")
+        await pilot.pause()
+        pilot.app.screen.query_one("#form-comments", TextArea).text = "The user"
+        await pilot.click("#form-send")
+        await _settle(pilot)
+        assert rev.calls == [("answer", "spec", "The user")]
+
+
+async def test_out_of_date_document_offers_redo_not_resume(tmp_path, library):
+    found = docset.load(tmp_path, "job-search")
+    found.document("spec")["status"] = docset.Status.OUT_OF_DATE.value
+    docset.save(tmp_path, found)
+    rev = StubReview()
+    async with _on(tmp_path, review=rev).run_test() as pilot:
+        screen = pilot.app.screen
+        shown = _visible(screen)
+        assert "docs-redo" in shown and "docs-resume" not in shown
+        assert "docs-auto" not in shown
+        await pilot.click("#docs-redo")
+        await _settle(pilot)
+        assert rev.calls == [("redo", "spec")]
+
+
+async def test_resume_runs_the_pipeline(tmp_path, library):
+    found = docset.load(tmp_path, "job-search")
+    found.document("spec")["status"] = docset.Status.APPROVED.value
+    docset.save(tmp_path, found)
+    run = StubRunner()
+    async with _on(tmp_path, runner=run).run_test() as pilot:
+        assert "docs-resume" in _visible(pilot.app.screen)
+        await pilot.click("#docs-resume")
+        await _settle(pilot)
+        assert run.calls == ["job-search"]

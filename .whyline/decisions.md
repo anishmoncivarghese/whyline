@@ -41107,3 +41107,121 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 69d70e1cc8944403a5a201ae55c0f709 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T07:59:13.229Z"} -->
+
+## 2026-11-10 — Docs review buttons show from available_actions(); review/runner injected into DocsScreen for stubs
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-25
+
+**Because:** keeps visibility rules in one testable function and lets tests avoid real agents
+
+**Rejected:**
+
+- always-visible disabled buttons — spec says show only when they apply
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: a234385315754a14ad5d1221a5fb6e17 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T08:01:57.561Z"} -->
+
+## 2026-11-10 — Fail SDLC-25: Auto skips human approve; Redo hidden on out-of-date docs
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-25
+
+**Because:** Plan SDLC-16 and the design say Run the rest on Auto is approve, then set_mode auto, then runner.run; _auto only set_mode+run so the reviewer agent auto-approves. Redo is how an out-of-date document is updated, but available_actions shows Resume/Auto instead, and Resume would re-draft the stage. Task tests and uv run pytest -q exited 0; those tests match the incomplete wiring.
+
+**Rejected:**
+
+- pass — tests green — they do not cover Auto's approve step, Redo on out-of-date, or a Resume click
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 1bfde97ff7514a7697365aa19a0d90c8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T08:24:20.659Z"} -->
+
+## 2026-11-10 — Auto approves the in-review doc before set_mode/run; Redo and no-Resume for out-of-date docs
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-25
+
+**Because:** Matches SDLC-16 so the human is recorded as approver; Resume would re-draft an out-of-date stage
+
+**Rejected:**
+
+- leave Resume on out-of-date — would run_stage a new draft
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: 2a5b190a3edd47119170b27c5e11eba0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T08:35:07.898Z"} -->
+
+## 2026-11-10 — Fail SDLC-25: Auto still shown on out-of-date docs
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-25
+
+**Because:** Round 3 hid Resume and added Redo, but available_actions still adds docs-auto whenever mode is human and next_stage exists. An out-of-date spec shows Redo+Auto; an out-of-date first document shows only Auto. _auto skips approve, then set_mode+runner.run, and run_stage drafts a new version instead of redo — the same re-draft trap as Resume. Hide Auto when the selected document is out of date, matching Resume. Task tests 16 passed; full uv run pytest -q had one unrelated flake in test_new_agent_deliveries that passed on retry.
+
+**Rejected:**
+
+- pass — Auto/Redo/Resume tests green — they assert Redo present and Resume absent, not that Auto is hidden on out-of-date
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 0b98873b8e8547bbbdad36667e6450f4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T08:56:49.136Z"} -->
+
+## 2026-11-10 — Hide Auto on out-of-date documents, like Resume
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-25
+
+**Because:** Auto runs run_stage which drafts a new version instead of redo
+
+**Rejected:**
+
+- make Auto redo first — out of scope, Redo already exists
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: 99342ccf395c47699247396f4f8d6d79 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T08:57:24.920Z"} -->
+
+## 2026-11-10 — Pass SDLC-25: review actions apply, Auto hidden on out-of-date
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-25
+
+**Because:** Round 6 hid Auto on out-of-date documents with the same not-out-of-date predicate as Resume. An out-of-date spec shows only Redo; an out-of-date first document shows no Auto/Resume/Redo. Auto on in-review is approve then set_mode auto then runner.run; human Approve then runner.run; Redo, Resume, Edit, Ask for changes, Answer, and Stop match the plan. Task tests 16 passed; uv run pytest -q exited 0.
+
+**Rejected:**
+
+- fail — Auto still on in-review PRD while spec is out of date — Auto applies to the selected document; a later out-of-date stage is Redo there
+
+**Test:** uv run pytest -q tests/console/test_docs_screen.py: 16 passed
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 312ba908a94d4d3ea4914a6bfb413055 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T09:18:40.703Z"} -->
+
+## 2026-11-10 — Approve SDLC-25: Docs review actions are correctly scoped and wired
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-25
+
+**Because:** The diff limits each action to applicable document states, runs review and runner calls through thread workers, implements section-aware change requests and edit completion, shows secondary changed sections, and passes 16 focused tests plus the full uv run pytest -q suite with exit 0.
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 2034a020e8c54432b71c205a4662a07e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T09:36:50.148Z"} -->

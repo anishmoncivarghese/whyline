@@ -13,11 +13,13 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Markdown, OptionList, Static
+from textual.widgets import Button, Markdown, OptionList, Select, Static, TextArea
 from textual.widgets.option_list import Option
 
-from whyline.sdlc import docset, export, guard, library, workspace
+from whyline.sdlc import docset, export, guard, library, stages, templates, workspace
 from whyline.sdlc import product as prd
+from whyline.sdlc import review as review_mod
+from whyline.sdlc import runner as runner_mod
 
 PRODUCT = "product"
 SET_PREFIX = "set:"
@@ -27,6 +29,18 @@ CHANGELOG_DOC = "changelog"
 NOTHING = "Nothing to show yet."
 _ACTIONS = ("docs-check", "docs-open")
 _ALWAYS_ON = ("docs-history", "docs-export", "docs-close")
+_REVIEW = (
+    ("docs-approve", "Approve"),
+    ("docs-changes", "Ask for changes"),
+    ("docs-edit", "Edit"),
+    ("docs-redo", "Redo"),
+    ("docs-answer", "Answer questions"),
+    ("docs-stop", "Stop here"),
+    ("docs-auto", "Run the rest on Auto"),
+    ("docs-resume", "Resume"),
+    ("docs-finished", "I've finished editing"),
+)
+WHOLE_DOCUMENT = "Whole document"
 
 
 @dataclass(frozen=True)
@@ -151,6 +165,96 @@ def history_text(docs: Path, entry: str, key: str) -> str:
     return "# History\n\n" + "\n".join(f"- `{f.name}`" for f in files) + "\n"
 
 
+def section_choices(docs: Path, slug: str, kind: str) -> list[tuple[str, str]]:
+    """(label, value) pairs for the section select; "Whole document" (value "") first."""
+    try:
+        found = docset.load(docs, slug)
+        names = templates.sections(templates.template_for(docs, kind, found.size))
+    except Exception:
+        names = []
+    return [(WHOLE_DOCUMENT, "")] + [(name, name) for name in names]
+
+
+def available_actions(docs: Path, slug: str, kind: str, editing: bool = False) -> set[str]:
+    """The ids of the review buttons that apply to one document of a set."""
+    try:
+        found = docset.load(docs, slug)
+    except docset.DocSetError:
+        return set()
+    doc = found.document(kind)
+    if doc is None:
+        return set()
+    if editing:
+        return {"docs-finished"}
+    shown: set[str] = set()
+    in_review = doc["status"] == docset.Status.IN_REVIEW.value
+    upcoming = stages.next_stage(found)
+    out_of_date = doc["status"] == docset.Status.OUT_OF_DATE.value
+    if in_review:
+        shown |= {"docs-approve", "docs-changes", "docs-edit"}
+    if (in_review or out_of_date) and found.documents[0]["kind"] != kind:
+        shown.add("docs-redo")
+    if found.pending_questions.get(kind):
+        shown.add("docs-answer")
+    if found.stage:
+        shown.add("docs-stop")
+    elif upcoming is not None and not in_review and not out_of_date:
+        shown.add("docs-resume")
+    if found.mode == docset.Mode.HUMAN.value and upcoming is not None and not out_of_date:
+        shown.add("docs-auto")
+    return shown
+
+
+def _outcome_text(result: object) -> str:
+    state = getattr(result, "state", "")
+    if not state:
+        return ""
+    return str(getattr(result, "message", "") or f"Run: {state}")
+
+
+class ReviewForm(ModalScreen):
+    """A comments box and, when `sections` is given, a section select. Dismisses with
+    (comments, section), or None on Cancel."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    ReviewForm { align: center middle; }
+    #form-box { width: 70; height: auto; border: round $accent; background: $surface; padding: 1 2; }
+    #form-comments { height: 8; }
+    """
+
+    def __init__(self, title: str, sections: list[tuple[str, str]] | None = None) -> None:
+        super().__init__()
+        self._title = title
+        self.section_options = sections
+
+    def compose(self) -> ComposeResult:
+        children: list = [Static(self._title), TextArea(id="form-comments")]
+        if self.section_options is not None:
+            children.append(Select(self.section_options, allow_blank=False, id="form-section"))
+        children.append(
+            Horizontal(Button("Send", id="form-send"), Button("Cancel", id="form-cancel"))
+        )
+        yield Vertical(*children, id="form-box")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "form-cancel":
+            self.dismiss(None)
+            return
+        comments = self.query_one("#form-comments", TextArea).text.strip()
+        if not comments:
+            return
+        section = ""
+        if self.section_options is not None:
+            value = self.query_one("#form-section", Select).value
+            section = value if isinstance(value, str) else ""
+        self.dismiss((comments, section))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 def _option(row: Row) -> Option:
     text = Text(row.label)
     if row.reason:
@@ -172,6 +276,8 @@ class DocsScreen(ModalScreen):
     #docs-reason { height: auto; color: $warning; }
     #docs-status { height: auto; }
     #docs-actions { height: auto; }
+    #docs-review { height: auto; }
+    #docs-also { height: auto; color: $text-muted; }
     """
 
     def __init__(
@@ -184,6 +290,9 @@ class DocsScreen(ModalScreen):
         check: Callable[[Path], str | None] = guard.check,
         export_pack: Callable[..., object] = export.export_pack,
         opener: Callable[[Path], object] | None = None,
+        review: object = review_mod,
+        runner: object = runner_mod,
+        approver: str = "human",
     ) -> None:
         super().__init__()
         self.root = Path(root)
@@ -191,6 +300,11 @@ class DocsScreen(ModalScreen):
         self._check = check
         self._export = export_pack
         self._opener = opener or (lambda path: subprocess.run(["open", str(path)], check=False))
+        self._review = review
+        self._runner = runner
+        self._approver = approver
+        self._editing: tuple[str, str] | None = None
+        self._busy = False
         self._want_set, self._want_kind = set_slug, kind
         self.entry = ""
         self.key = ""
@@ -217,6 +331,8 @@ class DocsScreen(ModalScreen):
                 id="docs-columns",
             ),
             Static("", id="docs-status"),
+            Static("", id="docs-also"),
+            Horizontal(*[Button(label, id=bid) for bid, label in _REVIEW], id="docs-review"),
             Horizontal(
                 Button("Check", id="docs-check"),
                 Button("Open file", id="docs-open"),
@@ -229,6 +345,7 @@ class DocsScreen(ModalScreen):
         )
 
     def on_mount(self) -> None:
+        self.watch(self.app, "app_focus", self._focus_changed)
         self.refresh_all()
         if self._want_set:
             self.select_entry(SET_PREFIX + self._want_set, self._want_kind)
@@ -260,6 +377,13 @@ class DocsScreen(ModalScreen):
         if not (self.entry and self.key):
             for button_id in ("docs-history", "docs-export"):
                 self.query_one(f"#{button_id}", Button).disabled = True
+        shown: set[str] = set()
+        if self.refusal is None and not self._busy and self.entry.startswith(SET_PREFIX) and self.key:
+            shown = available_actions(
+                self.docs, self._slug(), self.key, self._editing is not None
+            )
+        for button_id, _ in _REVIEW:
+            self.query_one(f"#{button_id}", Button).display = button_id in shown
 
     def select_entry(self, entry: str, kind: str | None = None) -> None:
         self.entry = entry
@@ -336,6 +460,114 @@ class DocsScreen(ModalScreen):
             path = self._selected_path()
             if path is not None and path.is_file():
                 self._opener(path)
+        elif button_id in dict(_REVIEW):
+            self._review_action(button_id)
+
+    def _slug(self) -> str:
+        return self.entry[len(SET_PREFIX):]
+
+    def _review_action(self, button_id: str) -> None:
+        if not self.entry.startswith(SET_PREFIX) or not self.key or self._busy:
+            return
+        slug, kind, root = self._slug(), self.key, self.root
+        review = self._review
+        if button_id == "docs-approve":
+            self._work("Approving…", lambda progress: self._approve(root, slug, kind, progress))
+        elif button_id == "docs-redo":
+            self._work("Redoing…", lambda progress: review.redo(root, slug, kind, progress=progress))
+        elif button_id == "docs-stop":
+            self._work("Stopping…", lambda progress: review.stop(root, slug))
+        elif button_id == "docs-auto":
+            self._work("Running the rest on Auto…", lambda progress: self._auto(root, slug, kind, progress))
+        elif button_id == "docs-resume":
+            self._work("Resuming…", lambda progress: self._runner.run(root, slug, progress=progress))
+        elif button_id == "docs-changes":
+            form = ReviewForm("What should change?", section_choices(self.docs, slug, kind))
+
+            def asked(result) -> None:
+                if result:
+                    comments, section = result
+                    self._work("Asking for changes…", lambda progress: review.ask_for_changes(
+                        root, slug, kind, comments, section=section, progress=progress))
+
+            self.app.push_screen(form, asked)
+        elif button_id == "docs-answer":
+            def answered(result) -> None:
+                if result:
+                    self._work("Sending answers…", lambda progress: review.answer_questions(
+                        root, slug, kind, result[0], progress=progress))
+
+            self.app.push_screen(ReviewForm("Your answers"), answered)
+        elif button_id == "docs-edit":
+            path = self._selected_path()
+            if path is not None and path.is_file():
+                self._editing = (slug, kind)
+                self._opener(path)
+                self._sync_buttons()
+        elif button_id == "docs-finished":
+            self.finish_editing()
+
+    def _approve(self, root: Path, slug: str, kind: str, progress) -> object:
+        self._review.approve(root, slug, kind, approver=self._approver)
+        if docset.load(self.docs, slug).mode == docset.Mode.HUMAN.value:
+            return self._runner.run(root, slug, progress=progress)
+        return None
+
+    def _auto(self, root: Path, slug: str, kind: str, progress) -> object:
+        found = docset.load(self.docs, slug)
+        doc = found.document(kind)
+        if doc is not None and doc["status"] == docset.Status.IN_REVIEW.value:
+            self._review.approve(root, slug, kind, approver=self._approver)
+        self._review.set_mode(root, slug, docset.Mode.AUTO.value)
+        return self._runner.run(root, slug, progress=progress)
+
+    def _focus_changed(self, focused: bool) -> None:
+        if focused and self._editing is not None:
+            self.finish_editing()
+
+    def finish_editing(self) -> None:
+        """Add the hand-edited file as a new version, when it changed."""
+        if self._editing is None:
+            return
+        slug, kind = self._editing
+        self._editing = None
+        root = self.root
+        self._work("Saving your edit…", lambda progress: self._review.edited(
+            root, slug, kind, editor_name=self._approver))
+
+    def _work(self, label: str, call: Callable[[Callable[[str], None]], object]) -> None:
+        """Run `call(progress)` in a thread worker and show its outcome."""
+        status = self.query_one("#docs-status", Static)
+        also = self.query_one("#docs-also", Static)
+        status.update(label)
+        also.update("")
+        self._busy = True
+        self._sync_buttons()
+
+        def progress(text: str) -> None:
+            self.app.call_from_thread(status.update, str(text))
+
+        def done(result: object, error: str) -> None:
+            self._busy = False
+            keep = self.key
+            self.refresh_all()
+            self.select_entry(self.entry, keep)
+            if error:
+                status.update(error)
+                return
+            status.update(_outcome_text(result) or "Done.")
+            if isinstance(result, list) and result:
+                also.update("Also changed: " + ", ".join(result))
+
+        def run() -> None:
+            result, error = None, ""
+            try:
+                result = call(progress)
+            except Exception as exc:
+                error = str(exc) or type(exc).__name__
+            self.app.call_from_thread(done, result, error)
+
+        self.run_worker(run, thread=True, exclusive=True, group="docs-review")
 
     def _run_check(self) -> None:
         if not self.entry.startswith(SET_PREFIX):
