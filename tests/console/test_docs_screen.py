@@ -512,3 +512,34 @@ async def test_plan_row_shows_the_coverage_line_and_the_location_line(tmp_path, 
         labels = _labels(screen.query_one("#docs-middle", OptionList))
         assert any("Covers 2 of 3 requirements" in label for label in labels)
         assert str(screen.query_one("#docs-location", Static).render()).startswith(f"Documents: {tmp_path}")
+
+
+async def test_history_lists_versions_and_review_log_and_diffs_two(tmp_path, library):
+    found = docset.load(tmp_path, "job-search")
+    docset.add_version(tmp_path, found, "spec", "# Spec\n\nThe new spec text.\n", author="claude", note="y")
+    docset.log_review(tmp_path, found, "spec", actor="anish", action="comment", comment="Tighten it.")
+    async with Host(_screen(tmp_path, set_slug="job-search", kind="spec")).run_test() as pilot:
+        screen = pilot.app.screen
+        screen.query_one("#docs-history", Button).press()
+        await pilot.pause()
+        assert "v1" in screen.shown_text and "v2" in screen.shown_text
+        assert "Tighten it." in screen.shown_text
+        screen.pick_version("1")
+        assert "The spec text." in screen.shown_text
+        screen.pick_version("2")
+        assert "-The spec text." in screen.shown_text
+        assert "+The new spec text." in screen.shown_text
+
+
+async def test_history_on_product_lists_dotted_versions_and_diffs_them(tmp_path, library):
+    from whyline.console.docs_screen import PRODUCT, history_text, history_versions
+
+    folder = tmp_path / product.PRODUCT_DIR / product.HISTORY_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "prd-v1.0.md").write_text("# PRD\n\nOld.\n", encoding="utf-8")
+    (folder / "prd-v1.1.md").write_text("# PRD\n\nNew.\n", encoding="utf-8")
+    assert [label for label, _ in history_versions(tmp_path, PRODUCT, "")] == ["1.0", "1.1"]
+    listing = history_text(tmp_path, PRODUCT, "")
+    assert "v1.0" in listing and "v1.1" in listing
+    diff = history_text(tmp_path, PRODUCT, "", ("1.1", "1.0"))
+    assert "-Old." in diff and "+New." in diff

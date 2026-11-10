@@ -41485,3 +41485,74 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0fd056e4e12549dd81da8ec775fa66ff -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T14:15:43.537Z"} -->
+
+## 2026-11-10 — History in Docs: version picker (1 = text, 2 = difflib diff) plus review-log entries
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-26
+
+**Because:** reuses the unified_diff already used for PRD updates; picks live in an OptionList above the text so no new screen
+
+**Rejected:**
+
+- separate modal for compare — more code, loses context
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: 65f0be3538b54a1791daf0ebde5ef5b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T14:17:07.418Z"} -->
+
+## 2026-11-10 — Fail: History on Product PRD reports no versions though prd-v1.0.md exists
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-26
+
+**Because:** history_versions keeps only isdigit() tokens, so dotted product versions like 1.0 are dropped; pick_version and option ids then assume int. Set-document History lists v1/v2, shows review-log.md entries, one version's text and a difflib unified diff of two, the OptionList picker works when focused, and the full suite passed.
+
+**Rejected:**
+
+- pass the set-document path and leave product to review — History is enabled on Product PRD, the first Docs row, and the empty-state text is false
+
+**Test:** uv run pytest -q tests/console/test_docs_screen.py: 29 passed
+**Test:** uv run pytest -q: 4621 passed, 1 skipped, exit 0
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 8dfe669a221f48ccb027f1db47a523f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T14:39:46.818Z"} -->
+
+## 2026-11-10 — Pass: History lists dotted product versions and diffs them
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-26
+
+**Because:** history_versions keeps labels matching digit groups with optional dotted parts, so prd-v1.0.md is listed; DocsScreen History on Product PRD shows v1.0 and v1.1, one pick shows that version text, two picks show a difflib unified diff, and the OptionList ids v1.0/v1.1 select correctly. Set-document History still lists v1/v2, shows review-log.md entries, one version text and a unified diff of two.
+
+**Rejected:**
+
+- fail again on empty product History — the screen listed v1.0 and v1.1 and diffs them
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 9c3dea392bb24dbcbd774abafdd026d6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T15:20:07.886Z"} -->
+
+## 2026-11-10 — Approve: Docs History lists versions and review entries and compares selections
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-26
+
+**Because:** The scoped implementation lists numeric and dotted versions in order, renders review-log entries, shows one selected version, diffs two selected versions with difflib, and the full uv run pytest -q suite passed at 100% with one skip.
+
+**Rejected:**
+
+- Request changes for Product Changelog history — PRD-only product history behavior predates this change and the requested/tests scope is Product PRD plus set-document versions.
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: fab938d6a24241cc8ed4fd1fea9ec8c3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T15:38:23.919Z"} -->

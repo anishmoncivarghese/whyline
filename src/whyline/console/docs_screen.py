@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -287,19 +288,72 @@ def document_text(docs: Path, entry: str, key: str) -> str:
     return NOTHING
 
 
-def history_text(docs: Path, entry: str, key: str) -> str:
-    """The stored versions of the selected document, as Markdown."""
+def _version_order(label: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in label.split("."))
+
+
+def history_versions(docs: Path, entry: str, key: str) -> list[tuple[str, Path]]:
+    """(label, file) of each stored version of the selected document, oldest first."""
     if entry == PRODUCT:
-        folder, pattern = docs / prd.PRODUCT_DIR / prd.HISTORY_DIR, "prd-v*.md"
+        folder, stem = docs / prd.PRODUCT_DIR / prd.HISTORY_DIR, "prd"
     elif entry.startswith(SET_PREFIX):
         folder = docs / docset.SDLC_DIR / entry[len(SET_PREFIX):] / docset.HISTORY_DIR
-        pattern = f"{key}-v*.md"
+        stem = key
     else:
+        return []
+    found = []
+    for path in folder.glob(f"{stem}-v*.md") if folder.is_dir() and stem else []:
+        number = path.name[len(stem) + 2:-3]
+        if re.fullmatch(r"\d+(\.\d+)*", number):
+            found.append((number, path))
+    return sorted(found, key=lambda item: _version_order(item[0]))
+
+
+def review_log_entries(docs: Path, entry: str) -> list[str]:
+    """The entries of the set's review-log.md, each starting at its ### line."""
+    if not entry.startswith(SET_PREFIX):
+        return []
+    path = docs / docset.SDLC_DIR / entry[len(SET_PREFIX):] / docset.REVIEW_LOG
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    entries: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("### "):
+            entries.append(line)
+        elif entries:
+            entries[-1] += "\n" + line
+    return [e.strip() for e in entries]
+
+
+def history_text(docs: Path, entry: str, key: str, picks: tuple[str, ...] = ()) -> str:
+    """Versions and review-log entries of the selected document, as Markdown.
+
+    One pick shows that version's text; two picks show a unified diff.
+    """
+    if not entry == PRODUCT and not entry.startswith(SET_PREFIX):
         return "Earlier plans keep no version history."
-    files = sorted(folder.glob(pattern)) if folder.is_dir() else []
-    if not files:
+    versions = dict(history_versions(docs, entry, key))
+    chosen = [n for n in picks if n in versions][:2]
+    if len(chosen) == 1:
+        return f"# Version {chosen[0]}\n\n{_read(versions[chosen[0]])}\n"
+    if len(chosen) == 2:
+        old, new = sorted(chosen, key=_version_order)
+        diff = "\n".join(difflib.unified_diff(
+            _read(versions[old]).splitlines(), _read(versions[new]).splitlines(),
+            f"v{old}", f"v{new}", lineterm=""))
+        return f"# Version {old} → {new}\n\n```diff\n{diff or 'No differences.'}\n```\n"
+    logged = review_log_entries(docs, entry)
+    if not versions and not logged:
         return "No earlier versions are stored."
-    return "# History\n\n" + "\n".join(f"- `{f.name}`" for f in files) + "\n"
+    lines = ["# History", ""]
+    if versions:
+        lines += ["## Versions", ""] + [f"- v{n} · `{p.name}`" for n, p in sorted(versions.items(), key=lambda item: _version_order(item[0]))]
+        lines += ["", "Pick one version to read it, or two to compare them.", ""]
+    if logged:
+        lines += ["## Review log", ""] + [e + "\n" for e in logged]
+    return "\n".join(lines) + "\n"
 
 
 def section_choices(docs: Path, slug: str, kind: str) -> list[tuple[str, str]]:
@@ -463,6 +517,7 @@ class DocsScreen(ModalScreen):
     #docs-right { width: 2fr; height: 100%; border: round $primary; }
     #docs-location { height: auto; color: $text-muted; }
     #docs-reason { height: auto; color: $warning; }
+    #docs-versions { height: auto; max-height: 8; display: none; }
     #docs-findings { height: auto; padding: 1 0 0 0; }
     #docs-status { height: auto; }
     #docs-actions { height: auto; }
@@ -516,6 +571,7 @@ class DocsScreen(ModalScreen):
         self.refusal: str | None = None
         self.shown_text = ""
         self.findings_shown = ""
+        self.history_picks: list[str] = []
 
     @property
     def docs(self) -> Path:
@@ -535,6 +591,7 @@ class DocsScreen(ModalScreen):
                 OptionList(id="docs-left"),
                 OptionList(id="docs-middle"),
                 VerticalScroll(
+                    OptionList(id="docs-versions"),
                     Markdown("", id="docs-text"), Static("", id="docs-findings"), id="docs-right"
                 ),
                 id="docs-columns",
@@ -636,6 +693,7 @@ class DocsScreen(ModalScreen):
 
     def select_document(self, key: str) -> None:
         self.key = key
+        self._hide_history()
         middle = self.query_one("#docs-middle", OptionList)
         for index in range(middle.option_count):
             if middle.get_option_at_index(index).id == key:
@@ -643,6 +701,34 @@ class DocsScreen(ModalScreen):
                 break
         self.show(document_text(self.docs, self.entry, key) if key else NOTHING)
         self._show_findings()
+
+    def _hide_history(self) -> None:
+        self.history_picks = []
+        self.query_one("#docs-versions", OptionList).display = False
+
+    def show_history(self) -> None:
+        """Show versions and review log; the version list picks one or two to read or compare."""
+        self.history_picks = []
+        versions = self.query_one("#docs-versions", OptionList)
+        versions.clear_options()
+        found = history_versions(self.docs, self.entry, self.key)
+        for number, _path in found:
+            versions.add_option(Option(f"v{number}", id=f"v{number}"))
+        versions.display = bool(found)
+        self.show(history_text(self.docs, self.entry, self.key))
+
+    def pick_version(self, number: str) -> None:
+        """Toggle a version; a third pick drops the oldest pick."""
+        if number in self.history_picks:
+            self.history_picks.remove(number)
+        else:
+            self.history_picks = (self.history_picks + [number])[-2:]
+        versions = self.query_one("#docs-versions", OptionList)
+        for index in range(versions.option_count):
+            name = versions.get_option_at_index(index).id
+            mark = "● " if name[1:] in self.history_picks else ""
+            versions.replace_option_prompt_at_index(index, f"{mark}{name}")
+        self.show(history_text(self.docs, self.entry, self.key, tuple(self.history_picks)))
 
     def _show_findings(self) -> None:
         panel = self.query_one("#docs-findings", Static)
@@ -671,6 +757,8 @@ class DocsScreen(ModalScreen):
             self.select_entry(event.option_id)
         elif event.option_list.id == "docs-middle":
             self.select_document(event.option_id)
+        elif event.option_list.id == "docs-versions":
+            self.pick_version(event.option_id[1:])
 
     def _selected_path(self) -> Path | None:
         if self.entry == PRODUCT:
@@ -699,7 +787,7 @@ class DocsScreen(ModalScreen):
         if button_id == "docs-close":
             self.dismiss(None)
         elif button_id == "docs-history":
-            self.show(history_text(self.docs, self.entry, self.key))
+            self.show_history()
         elif button_id == "docs-export":
             self._start_export()
         elif button_id in _SET_ACTIONS:
