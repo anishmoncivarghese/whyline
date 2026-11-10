@@ -41698,3 +41698,106 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1f4947114206455ca49a3936c50c551a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T17:58:14.451Z"} -->
+
+## 2026-11-10 — Wrote docs/sdlc.md as the single SDLC page; README links to it; no separate Plan/Brainstorm docs pages exist
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-29
+
+**Because:** No docs/ page described Plan or Brainstorm, so the new page covers them
+
+**Rejected:**
+
+- Separate docs/plan.md and docs/brainstorm.md — would duplicate sdlc.md
+
+**Files:** docs/sdlc.md
+
+<!-- whyline-event: dc25480b2124499d93a49d0852221cb5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T18:19:45.256Z"} -->
+
+## 2026-11-10 — Approve SDLC-29 docs: README and docs/sdlc.md cover every required topic and tests pass
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-29
+
+**Because:** docs/sdlc.md and the README Plan/Auto/Brainstorm bullets cover the pipeline, sizes and modes, document set and templates, review at each stop, out of date, the Docs screen, Export pack, whyline docs commands, template overrides, the docs checkout, traceability, plan changes, close and PR, the product PRD, fresh-eyes review, Test planner, and project home. Spot-checks match the code (guard.docs checkout, MAX_FIX_ROUNDS=2, lenses_for large/design, home and github refusals). No existing docs/ page described Plan or Brainstorm, so creating docs/sdlc.md is the right destination. uv run pytest -q exited 0 at 100% with one skip. git diff --check is clean.
+
+**Rejected:**
+
+- Fail because the Chat /brainstorm README section was not edited — that section still describes Chat brainstorm correctly, and Test planner is covered in the Relay bullets and docs/sdlc.md
+- Fail because Learn more omits docs/sdlc.md — the Plan bullet already links to it, matching resolve, safe-pause and release
+
+**Test:** uv run pytest -q: exit 0, 100%, 1 skip, no failures
+**Test:** git diff --check README.md docs/sdlc.md: clean
+
+**Files:** README.md, docs/sdlc.md
+
+<!-- whyline-event: d2b623d2330744eb9113b4322337ac63 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T18:50:17.110Z"} -->
+
+## 2026-11-10 — Reject SDLC-29 docs until Auto home pauses and test trace syntax are accurate
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-29
+
+**Because:** README.md:76 and docs/sdlc.md:27 say Auto has no stops except agent or preflight problems, but runner.run returns waiting_for_home in both modes for a new project; docs/sdlc.md:128 says test cases use covers: R lines, but runner.PLAN_COVERS_REQUEST and trace.test_covers require [R...] tags in test-case titles. The full uv run pytest -q reached 100% with one unrelated failure in test_setup_button_starts_the_relay; its isolated rerun passed.
+
+**Rejected:**
+
+- Approve based on prior green runs — user-facing documentation still contradicts the implemented pipeline and trace parser
+
+**Files:** README.md, docs/sdlc.md
+
+<!-- whyline-event: a8e8ac967d2a42c48ec5d856c6d24862 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T19:09:38.826Z"} -->
+
+## 2026-11-10 — SDLC-29 docs: new-project Auto pauses for Project home; test cases use [R...] title tags
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-29
+
+**Because:** runner.run returns waiting_for_home in both modes for a new project; trace parser reads [R...] tags in test-case titles while plan tasks use covers: lines
+
+**Rejected:**
+
+- Leave Auto described as no stops — contradicts runner behaviour
+
+**Files:** README.md, docs/sdlc.md
+
+<!-- whyline-event: d2ee9ea5fe3f43c386cc6b6da303b71d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T19:21:35.999Z"} -->
+
+## 2026-11-10 — Pass SDLC-29 docs: Auto home pause and test-title tags match the pipeline; suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-29
+
+**Because:** README.md and docs/sdlc.md now say Auto drops review stops but both modes pause for Project home on a new project, matching runner.run waiting_for_home. Test cases are documented as [R...] title tags and plan tasks as covers: lines, matching PLAN_COVERS_REQUEST and trace.test_covers. The page still covers every required topic. uv run pytest -q exited 0 at 100% with one skip; git diff --check is clean.
+
+**Rejected:**
+
+- Fail on [R1][R2] vs comma-tag example — both parse via _TITLE_TAG
+- Fail on approved-by (Auto) vs (Auto, fresh review) — both strings exist; not a behavioral contradiction
+
+**Files:** README.md, docs/sdlc.md
+
+<!-- whyline-event: 2902cd5663b845308f69342ff57636f8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T19:47:53.951Z"} -->
+
+## 2026-11-10 — Approve SDLC-29 documentation in Round 6
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-29
+
+**Because:** README.md and docs/sdlc.md cover every requested SDLC topic and match the implemented pipeline, CLI, trace parser, Auto review gate, project-home flow, and safety constraints; git diff --check is clean and uv run pytest -q exited 0 at 100% with one skip and no failures.
+
+**Files:** README.md, docs/sdlc.md
+
+<!-- whyline-event: 896f04b155d448fab6880b7f29beefc6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T20:06:42.310Z"} -->

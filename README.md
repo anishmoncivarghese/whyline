@@ -68,9 +68,18 @@ idea → brainstorm → spec and plan → implement → test → review → veri
 
 - **A different agent and model for each role**, for example Grok writes the
   code, Grok runs the tests and Codex reviews.
-- **Auto** starts from a one-line request: it researches, drafts the spec and
-  plan, runs a full preflight check, and launches the run. Any pause stops it
-  for you rather than guessing.
+- **Plan** turns a description, a brainstorm or a document you already have
+  into a reviewed document set (PRD, spec or design, plan with test plan, and
+  a build record) at three sizes: Small, Feature and Large. You approve or ask
+  for changes at each stop, and **Docs** shows every set, its history and an
+  **Export pack** as Word and PDF. See [docs/sdlc.md](docs/sdlc.md).
+- **Auto** runs the same pipeline from a one-line request without the review
+  stops: it researches, drafts the documents, runs a full preflight check, and
+  launches the run. It still stops for a stuck agent, a question it can't
+  answer, a failed preflight and, for a new project, the required Project home
+  choice (in both modes).
+- **Brainstorm** (Chat `/brainstorm`) asks several models at once. Test planner
+  belongs to Plan, not Chat Brainstorm.
 - **It pauses instead of guessing** when it hits a question, a risky recovery
   step, a manual check, or a release.
 - **Pause safely** with **Pause** (waits for the current turn), **Pause now**
