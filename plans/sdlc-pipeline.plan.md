@@ -461,7 +461,7 @@ Rules every task keeps:
 
 ## Part 5: Console
 
-- [ ] SDLC-21: The Plan form
+- [x] SDLC-21: The Plan form
   Edit `src/whyline/console/relay_screens.py` and its tests only.
   1. Sources become two: **New plan** (default) and **I have a plan already**, which is unchanged.
   2. New plan shows:
