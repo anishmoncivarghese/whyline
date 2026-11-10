@@ -521,7 +521,7 @@ Rules every task keeps:
   4. The middle list shows the counts after each document's status, for example `Spec v3 · In review · 🔴 1 🟡 2`.
   Tests: the panel with and without a review, the checklist adding ticked findings, the counts, and Review again with a stub.
 
-- [ ] PRD-2: PRD update in Docs
+- [x] PRD-2: PRD update in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   1. For a PRD update, the right pane opens on `Changed sections: <list>` with **Show diff** (a unified diff against the current product PRD) and **Show whole PRD**.
   2. When `product.moved` is true, a line reads `The PRD is now v<new>. Redo this update first.`, and Approve is disabled until **Redo** runs.
