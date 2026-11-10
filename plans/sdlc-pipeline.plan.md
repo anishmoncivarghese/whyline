@@ -492,7 +492,7 @@ Rules every task keeps:
   When it returns waiting for review or with questions, the console opens Docs on that document.
   Tests with a stubbed runner: the busy line text, Docs opening on the right document, and a refusal.
 
-- [ ] SDLC-24: The Docs screen
+- [x] SDLC-24: The Docs screen
   Create `src/whyline/console/docs_screen.py` and its tests. Edit `src/whyline/console/tui.py` to add a **Docs** button in Relay mode.
   1. The layout follows the design:
      - **left**: **Product PRD v<version>** first (from `library.product`, opening the PRD and its changelog), then sets and Earlier plans from `library`
