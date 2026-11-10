@@ -528,7 +528,7 @@ Rules every task keeps:
   3. When another set holds the PRD claim, the set's PRD row says `Waiting: <set> is updating the PRD`.
   Tests: changed sections and the diff, the moved line disabling Approve, and the waiting line.
 
-- [ ] LIFE-3: Close, pull request and coverage in Docs and the CLI
+- [x] LIFE-3: Close, pull request and coverage in Docs and the CLI
   Edit `src/whyline/console/docs_screen.py`, `src/whyline/sdlc/cli.py`, `src/whyline/sdlc/library.py` and their tests only.
   1. Docs:
      - **Close** shows on a set whose build record is approved, and calls `close.close`.
