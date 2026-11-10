@@ -556,7 +556,7 @@ Rules every task keeps:
   **History** shows the document's versions and its `review-log.md` entries. Picking two versions shows a unified diff (difflib), and one version shows its text.
   Tests: versions listed and a diff between v1 and v2.
 
-- [ ] SDLC-27: Docs tab in the Files pane, and Export in Docs
+- [x] SDLC-27: Docs tab in the Files pane, and Export in Docs
   Edit `src/whyline/console/tui.py`, `src/whyline/console/file_pane.py`, `src/whyline/console/docs_screen.py` and their tests only.
   1. A **Docs** button sits in the Files pane next to **Plan**. It shows the set that owns the active plan (`file_pane.active_plan_file`): each document's status, and the selected one's text. It is read-only. **Open in Docs** opens the screen. With no owning set, it says `This plan has no document set.`
   2. **Export pack** in Docs calls `export.export_pack`, shows the files and notes, and offers **Reveal in Finder**.
