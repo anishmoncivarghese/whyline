@@ -40757,3 +40757,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7c967f0ca79b46919bdee2ca770c62db -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-09T23:34:25.520Z"} -->
+
+## 2026-11-09 — Home/github CLI: agents for choose_home = distinct set roles; github asks via input() and exits non-zero on a no
+
+**Actor:** claude
+**Role:** implementer
+**Task:** HOME-5
+
+**Because:** choose_home needs an agent list and the set's roles are the only per-set source; a declined confirmation is not a success for scripts
+
+**Rejected:**
+
+- Exit 0 on declined — scripts could not tell nothing was created
+
+**Files:** src/whyline/sdlc/cli.py
+
+<!-- whyline-event: 89d956416df0441a89f1db8bfa80cc5b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T23:35:23.006Z"} -->
+
+## 2026-11-09 — Pass HOME-5: names, home, and github CLI match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-5
+
+**Because:** tests/sdlc passed; test_cli.py 30 passed; independent probes showed names format, home --new defaults and cd when the root changes, --here with no cd, github describe prompt, --yes creating, declined confirmation doing nothing and exiting 1, refusals exiting 1
+
+**Rejected:**
+
+- fail for github default name folder_name(set name) — spec says name to the folder name
+- fail for uv run pytest -q agents/test_deliver FileExistsError — outside HOME-5 files, fixed-timestamp flake
+
+**Test:** uv run pytest -q tests/sdlc/test_cli.py: 30 passed
+**Test:** uv run pytest -q tests/sdlc: passed
+**Test:** uv run pytest -q: 1 failed tests/agents/test_deliver.py FileExistsError, unrelated
+
+**Files:** src/whyline/sdlc/cli.py, tests/sdlc/test_cli.py
+
+<!-- whyline-event: 3ff2756879d14220827b22c0cfa4f8cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-09T23:55:39.339Z"} -->
+
+## 2026-11-10 — Request HOME-5 changes: always print the GitHub repository description
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-5
+
+**Because:** The task separately requires printing github_repo.describe and only makes confirmation conditional on --yes; cli.py currently uses the description solely as the input prompt, so --yes suppresses it, and test_cli.py does not assert the required text. The plain uv run pytest -q suite passed with one skip.
+
+**Rejected:**
+
+- Approve — --yes omits required action-description output
+
+**Files:** src/whyline/sdlc/cli.py, tests/sdlc/test_cli.py
+
+<!-- whyline-event: 7e850ea4b6ca4972a46bbbc0cff1d321 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T00:12:46.014Z"} -->
+
+## 2026-11-10 — Pass HOME-5: names, home, and github CLI match the spec, including describe on --yes
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-5
+
+**Because:** test_cli.py 30 passed; tests/sdlc passed; full uv run pytest -q passed with 1 skip; independent probes showed names format, home --new defaults and cd when the root changes, --here with no cd, github_repo.describe printed before Continue? [y/N] and also under --yes, --yes creating without input(), declined confirmation doing nothing and exiting 1, refusals exiting 1, owner default_owner and name folder_name(set name)
+
+**Rejected:**
+
+- fail for describe ending in a question then Continue? [y/N] — spec requires both print(describe) and a confirmation unless --yes
+
+**Files:** src/whyline/sdlc/cli.py, tests/sdlc/test_cli.py
+
+<!-- whyline-event: eb9cce66e35946e7ad8871b4f14d2df2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T00:32:56.387Z"} -->
+
+## 2026-11-10 — Approve HOME-5 project-home CLI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-5
+
+**Because:** The diff implements names, home, and github exactly as specified; github describe is printed with and without --yes; all 30 focused CLI tests pass; the sole full-suite failure was an unrelated TUI timing test that passed immediately in isolation; git diff --check passes.
+
+**Rejected:**
+
+- Request changes for the full-suite TUI failure — it is outside HOME-5 and passed immediately when rerun alone, so it is not evidence of a regression in this change.
+
+**Files:** src/whyline/sdlc/cli.py, tests/sdlc/test_cli.py
+
+<!-- whyline-event: e58a2f195be94b4fbe7a2fe8328adfbb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T00:50:59.469Z"} -->

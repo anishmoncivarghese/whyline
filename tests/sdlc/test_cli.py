@@ -7,7 +7,7 @@ import pytest
 
 from whyline import cli
 from whyline.console import relay_ops
-from whyline.sdlc import cli as docs_cli, docset, export, goldfish, lenses, library, product, review, runner, workspace
+from whyline.sdlc import cli as docs_cli, github_repo, home, docset, export, goldfish, lenses, library, product, review, runner, workspace
 from whyline.sdlc.docset import DocSetError
 from whyline.sdlc.stages import Stage
 
@@ -284,3 +284,107 @@ def test_outside_a_repository_exits_non_zero(monkeypatch, capsys):
     monkeypatch.setattr(docs_cli, "_root", lambda: None)
     assert docs("list") == 1
     assert "not a git repository" in capsys.readouterr().err
+
+
+IDEAS = [home.NameIdea("Gatekeeper", "gatekeeper", "guards the door"),
+         home.NameIdea("Latch", "latch", "short")]
+
+
+def test_names_prints_each_suggestion(env, monkeypatch, capsys):
+    made = make(env)
+    monkeypatch.setattr(home, "suggest_names", lambda root, found, *, agent: IDEAS)
+    assert docs("names", made.slug) == 0
+    out = capsys.readouterr().out
+    assert "Gatekeeper (gatekeeper) — guards the door" in out
+    assert "Latch (latch) — short" in out
+
+
+def test_home_new_uses_defaults_and_prints_cd(env, monkeypatch, capsys):
+    made = make(env)
+    seen = {}
+
+    def choose(root, slug, **kw):
+        seen.update(kw)
+        return Path("/elsewhere/gatekeeper")
+
+    monkeypatch.setattr(home, "suggest_names", lambda root, found, *, agent: IDEAS)
+    monkeypatch.setattr(home, "last_parent", lambda: Path("/parents"))
+    monkeypatch.setattr(runner, "choose_home", choose)
+    assert docs("home", made.slug, "--new") == 0
+    assert (seen["choice"], seen["name"], seen["folder"], seen["parent"]) == (
+        "new", "Gatekeeper", "gatekeeper", Path("/parents"))
+    out = capsys.readouterr().out
+    assert "/elsewhere/gatekeeper" in out
+    assert f"cd /elsewhere/gatekeeper && whyline docs resume {made.slug}" in out
+
+
+def test_home_here_keeps_root_and_explicit_options(env, monkeypatch, capsys):
+    made = make(env)
+    seen = {}
+
+    def choose(root, slug, **kw):
+        seen.update(kw)
+        return env
+
+    monkeypatch.setattr(runner, "choose_home", choose)
+    assert docs("home", made.slug, "--here") == 0
+    assert seen["choice"] == "here"
+    out = capsys.readouterr().out
+    assert "cd " not in out and f"Next: whyline docs resume {made.slug}" in out
+    assert docs("home", made.slug, "--new", "--name", "Zed", "--folder", "z", "--parent", "/p") == 0
+    assert (seen["name"], seen["folder"], seen["parent"]) == ("Zed", "z", Path("/p"))
+
+
+def test_home_refusal_exits_non_zero(env, monkeypatch, capsys):
+    made = make(env)
+
+    def refuse(root, slug, **kw):
+        raise home.HomeError("Folder exists.")
+
+    monkeypatch.setattr(runner, "choose_home", refuse)
+    assert docs("home", made.slug, "--here") != 0
+    assert "Folder exists." in capsys.readouterr().err
+
+
+def test_github_yes_creates_and_prints_url(env, monkeypatch, capsys):
+    made = make(env)
+    seen = {}
+
+    def create(root, **kw):
+        seen.update(kw)
+        return "https://github.com/me/login"
+
+    monkeypatch.setattr(github_repo, "default_owner", lambda root: "me")
+    monkeypatch.setattr(github_repo, "create_repo", create)
+    assert docs("github", made.slug, "--yes") == 0
+    assert (seen["owner"], seen["name"], seen["private"]) == ("me", "login", True)
+    out = capsys.readouterr().out
+    assert "Create github.com/me/login (private)" in out
+    assert "https://github.com/me/login" in out
+    assert docs("github", made.slug, "--yes", "--public", "--owner", "org", "--name", "x") == 0
+    assert (seen["owner"], seen["name"], seen["private"]) == ("org", "x", False)
+
+
+def test_github_no_answer_does_nothing(env, monkeypatch, capsys):
+    made = make(env)
+    calls = []
+    monkeypatch.setattr(github_repo, "default_owner", lambda root: "me")
+    monkeypatch.setattr(github_repo, "create_repo", lambda root, **kw: calls.append(kw))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+    assert docs("github", made.slug) != 0
+    assert calls == []
+    out = capsys.readouterr().out
+    assert "Create github.com/me/login (private)" in out
+    assert "Nothing created." in out
+
+
+def test_github_refusal_exits_non_zero(env, monkeypatch, capsys):
+    made = make(env)
+
+    def refuse(root, **kw):
+        raise github_repo.GithubRepoError("Already has a remote.")
+
+    monkeypatch.setattr(github_repo, "default_owner", lambda root: "me")
+    monkeypatch.setattr(github_repo, "create_repo", refuse)
+    assert docs("github", made.slug, "--yes") != 0
+    assert "Already has a remote." in capsys.readouterr().err

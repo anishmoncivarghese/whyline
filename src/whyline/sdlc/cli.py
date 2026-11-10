@@ -74,6 +74,25 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         item.add_argument("slug")
         item.add_argument("doc", choices=_DOC_KINDS)
 
+    names = sub.add_parser("names", help="Suggest names for the project")
+    names.add_argument("slug")
+
+    home = sub.add_parser("home", help="Choose where the project lives")
+    place = home.add_mutually_exclusive_group(required=True)
+    place.add_argument("--here", action="store_true", help="Use this repository")
+    place.add_argument("--new", action="store_true", help="Create a new project folder")
+    home.add_argument("slug")
+    home.add_argument("--name", default=None, help="Project name (default: the first suggestion)")
+    home.add_argument("--folder", default=None, help="Folder name (default: from the name)")
+    home.add_argument("--parent", default=None, metavar="DIR", help="Where to create it (default: the last one used)")
+
+    github = sub.add_parser("github", help="Create a GitHub repository for the project")
+    github.add_argument("slug")
+    github.add_argument("--public", action="store_true", help="Make it public (default: private)")
+    github.add_argument("--owner", default=None, help="Account or organisation (default: your login)")
+    github.add_argument("--name", default=None, help="Repository name (default: the folder name)")
+    github.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+
     export = sub.add_parser("export", help="Write the set as a Word file and a PDF")
     export.add_argument("slug")
     export.add_argument("--out", default=None, metavar="DIR", help="Folder (default: ~/Downloads)")
@@ -305,7 +324,72 @@ def _export(root: Path, args) -> int:
     return EXIT_OK if result.files else EXIT_ERROR
 
 
+def _agents(found) -> list[str]:
+    return sorted({str(a) for a in found.roles.values() if a}) or ["claude"]
+
+
+def _names(root: Path, args) -> int:
+    from whyline.sdlc import docset, home
+
+    found = docset.load(_docs(root), args.slug)
+    agent = found.roles.get("writer") or "claude"
+    for idea in home.suggest_names(root, found, agent=agent):
+        print(f"{idea.name} ({idea.folder}) — {idea.reason}")
+    return EXIT_OK
+
+
+def _home(root: Path, args) -> int:
+    from whyline.sdlc import docset, home, runner
+
+    found = docset.load(_docs(root), args.slug)
+    name = folder = parent = None
+    if args.new:
+        name = args.name or home.suggest_names(
+            root, found, agent=found.roles.get("writer") or "claude")[0].name
+        folder = args.folder or home.folder_name(name)
+        parent = Path(args.parent).expanduser() if args.parent else home.last_parent()
+    try:
+        target = runner.choose_home(
+            root, args.slug, choice="new" if args.new else "here", parent=parent,
+            folder=folder, name=name, agents=_agents(found), progress=_progress)
+    except home.HomeError as error:
+        return _fail(str(error))
+    print(f"Project home: {target}")
+    if Path(target).resolve() != Path(root).resolve():
+        print(f"Next: cd {target} && whyline docs resume {args.slug}")
+    else:
+        print(f"Next: whyline docs resume {args.slug}")
+    return EXIT_OK
+
+
+def _github(root: Path, args) -> int:
+    from whyline.sdlc import docset, github_repo, home
+
+    found = docset.load(_docs(root), args.slug)
+    owner = args.owner or github_repo.default_owner(root)
+    if not owner:
+        return _fail("Could not find your GitHub login; pass --owner.")
+    name = args.name or home.folder_name(found.name)
+    private = not args.public
+    print(github_repo.describe(owner, name, private))
+    if not args.yes:
+        try:
+            answer = input("Continue? [y/N] ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Nothing created.")
+            return EXIT_ERROR
+    try:
+        url = github_repo.create_repo(root, owner=owner, name=name, private=private, slug=args.slug)
+    except github_repo.GithubRepoError as error:
+        return _fail(str(error))
+    print(url)
+    return EXIT_OK
+
+
 _COMMANDS = {
+    "names": _names, "home": _home, "github": _github,
     "list": _list, "show": _show, "start": _start, "prd": _prd, "resume": _resume,
     "approve": _approve, "change": _change, "redo": _redo, "answer": _answer,
     "mode": _mode, "review": _review, "findings": _findings, "export": _export,
