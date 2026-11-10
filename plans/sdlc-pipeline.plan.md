@@ -482,7 +482,7 @@ Rules every task keeps:
   `#rp-stages` under the roles shows `stages.stages_line(...)` and updates on every change to start, size, brainstorm first, build, mode or roles. Under it, one sentence: `The test plan lists test cases for each task: automatic ones the tester runs, and manual checks the relay pauses for.`
   Tests: the line for each size, and its update when a role changes.
 
-- [ ] SDLC-23: Start
+- [x] SDLC-23: Start
   Edit `src/whyline/console/relay_screens.py`, `src/whyline/console/tui.py` and their tests only.
   **Start**:
   1. calls `guard.check` and shows a refusal in `#rp-error`
