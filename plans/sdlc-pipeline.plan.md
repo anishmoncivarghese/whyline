@@ -562,7 +562,7 @@ Rules every task keeps:
   2. **Export pack** in Docs calls `export.export_pack`, shows the files and notes, and offers **Reveal in Finder**.
   Tests: the tab with and without a set, and export with a stub.
 
-- [ ] SDLC-28: Pause after this stage
+- [x] SDLC-28: Pause after this stage
   Edit `src/whyline/console/tui.py` and its tests only.
   While an Auto pipeline runs, the busy line shows **Pause after this stage**, which calls `runner.set_mode(..., "human")`. The line then reads `docs: … · will pause after PRD`.
   Tests: the button, and that the mode is saved.
