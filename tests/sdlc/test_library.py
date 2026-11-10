@@ -109,3 +109,17 @@ def test_location_line_names_the_checkout_and_default_branch(tmp_path, monkeypat
 
     monkeypatch.setattr(worktrees, "_default_branch", broken)
     assert library.location_line(tmp_path) == f"Documents: {tmp_path}"
+
+
+def test_a_moved_set_shows_where_it_went(tmp_path):
+    import json
+
+    made = _make(tmp_path, "Login", "2026-06-01T00:00:00+00:00")
+    manifest = tmp_path / docset.SDLC_DIR / made.slug / docset.MANIFEST
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["state"] = "moved"
+    data["moved_to"] = "/projects/login"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    (row,) = library.sets(tmp_path)
+    assert row.summary == "Login · Moved to /projects/login"
+    assert row.moved_to == "/projects/login"

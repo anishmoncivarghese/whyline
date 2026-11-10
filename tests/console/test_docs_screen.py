@@ -117,8 +117,9 @@ async def test_actions_are_on_when_nothing_refuses(tmp_path, library):
 async def test_open_docs_from_start_pushes_the_screen_on_that_set(tmp_path, library):
     pushed = []
     fake = SimpleNamespace(
-        session=SimpleNamespace(root=tmp_path), push_screen=pushed.append,
-        render_event=lambda event: None)
+        session=SimpleNamespace(root=tmp_path),
+        push_screen=lambda screen, callback=None: pushed.append(screen),
+        _docs_closed=None, render_event=lambda event: None)
     tui.WhylineConsoleApp._open_docs(fake, "job-search", "spec")
     assert len(pushed) == 1 and isinstance(pushed[0], DocsScreen)
     async with Host(pushed[0]).run_test() as pilot:

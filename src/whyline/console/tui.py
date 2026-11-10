@@ -5575,12 +5575,16 @@ class WhylineConsoleApp(App):
             reason = str(error or (outcome.message if outcome else "")) or "stopped"
             self.render_event(SessionEvent(kind="error", text=f"Docs for {start.name}: {reason}"))
             return
-        if outcome.state in ("waiting", "questions", "waiting_for_home"):
+        if outcome.state == "waiting_for_home":
+            self._open_docs(start.slug, "", open_home=True)
+            return
+        if outcome.state in ("waiting", "questions"):
             self._open_docs(start.slug, outcome.stage)
             return
         self.render_event(SessionEvent(kind="output", text=f"Docs for {start.name}: {outcome.state}."))
 
-    def _open_docs(self, slug: str, kind: str) -> None:
+    def _open_docs(self, slug: str, kind: str, *, open_home: bool = False,
+                   resume: bool = False) -> None:
         """Open the Docs screen on a set and document."""
         try:
             from whyline.console.docs_screen import DocsScreen
@@ -5588,7 +5592,63 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(
                 kind="output", text=f"{slug} is waiting for review at {kind}."))
             return
-        self.push_screen(DocsScreen(self.session.root, set_slug=slug, kind=kind))
+        self.push_screen(
+            DocsScreen(self.session.root, set_slug=slug, kind=kind or None,
+                       open_home=open_home, resume=resume),
+            self._docs_closed,
+        )
+
+    def _docs_closed(self, result: object) -> None:
+        """Docs closes with a HomeResult when the project home was chosen: switch to its
+        root, ask about GitHub there, then carry on with the set."""
+        from whyline.console.docs_screen import HomeResult
+
+        if not isinstance(result, HomeResult):
+            return
+        if result.changed:
+            self._switch_repo(result.root, True)  # the user just chose it: no extra confirmation
+        github = result.github
+        if github is None:
+            self._open_docs(result.slug, "", resume=True)
+            return
+        from whyline.sdlc import github_repo
+
+        question = github_repo.describe(github.owner, github.repo, github.private)
+
+        def answered(yes: bool) -> None:
+            if not yes:
+                self._open_docs(result.slug, "", resume=True)
+                return
+            self._create_github(result, github)
+
+        self.push_screen(ConfirmScreen(question, "Yes", "No"), answered)
+
+    def _create_github(self, result: object, github: object) -> None:
+        from whyline.sdlc import github_repo
+
+        root, slug = self.session.root, result.slug
+        self._set_busy(True, "home · creating the GitHub repository")
+
+        def in_thread() -> None:
+            url, error = "", ""
+            try:
+                url = github_repo.create_repo(root, owner=github.owner, name=github.repo,
+                             private=github.private, slug=slug)
+            except Exception as caught:  # never stops the pipeline
+                error = str(caught) or type(caught).__name__
+            self.call_from_thread(self._github_done, result, url, error)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _github_done(self, result: object, url: str, error: str) -> None:
+        self._set_busy(False)
+        if error:
+            self.render_event(SessionEvent(
+                kind="error", text=f"GitHub repository not created: {error}. "
+                                   "The set carries on without a remote."))
+        else:
+            self.render_event(SessionEvent(kind="output", text=f"GitHub repository created: {url}"))
+        self._open_docs(result.slug, "", resume=True)
 
     def _start_auto_job(self, request: plan_job.AutoRunRequest, fingerprint: str) -> None:
         import threading
@@ -6150,7 +6210,8 @@ class WhylineConsoleApp(App):
         """The Docs screen, optionally opened on a document set and document."""
         from whyline.console.docs_screen import DocsScreen
 
-        self.push_screen(DocsScreen(self.session.root, set_slug=set_slug, kind=kind))
+        self.push_screen(DocsScreen(self.session.root, set_slug=set_slug, kind=kind),
+                         self._docs_closed)
 
     def _open_release(self) -> None:
         if self._refuse_in_home():

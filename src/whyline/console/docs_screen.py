@@ -5,6 +5,7 @@ relay runs in that checkout every action except History and Export is off."""
 from __future__ import annotations
 
 import difflib
+import json
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,11 +16,15 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Markdown, OptionList, Select, SelectionList, Static, TextArea
+from textual.widgets import (
+    Button, Checkbox, Input, Markdown, OptionList, RadioButton, RadioSet, Select, SelectionList,
+    Static, TextArea,
+)
 from textual.widgets.option_list import Option
 
 from whyline.sdlc import close as close_mod
-from whyline.sdlc import docset, export, goldfish, guard, library, stages, templates, trace, workspace
+from whyline.sdlc import docset, export, github_repo, goldfish, guard, library, stages, templates, trace, workspace
+from whyline.sdlc import home as home_mod
 from whyline.sdlc import product as prd
 from whyline.sdlc import review as review_mod
 from whyline.sdlc import runner as runner_mod
@@ -32,7 +37,7 @@ CHANGELOG_DOC = "changelog"
 NOTHING = "Nothing to show yet."
 _ACTIONS = ("docs-check", "docs-open")
 _ALWAYS_ON = ("docs-history", "docs-export", "docs-close")
-_SET_ACTIONS = ("docs-close-set", "docs-pr")
+_SET_ACTIONS = ("docs-close-set", "docs-pr", "docs-switch", "docs-github")
 _REVIEW = (
     ("docs-approve", "Approve"),
     ("docs-changes", "Ask for changes"),
@@ -187,15 +192,28 @@ def coverage_line(docs: Path, found: object) -> str:
         return ""
 
 
+def _github_recorded(docs: Path, slug: str) -> bool:
+    """True when a GitHub repository was already created for the set."""
+    try:
+        data = json.loads((docset._folder(docs, slug) / docset.MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return bool(isinstance(data, dict) and data.get("github"))
+
+
 def set_actions(docs: Path, slug: str) -> set[str]:
     """Close on a set whose build record is approved; Open pull request on a closed set with no PR."""
     try:
         found = docset.load(docs, slug)
     except docset.DocSetError:
         return set()
+    shown: set[str] = set()
+    if found.state == "moved":
+        return {"docs-switch"} if library._moved_to(docs, slug) else shown
+    if not _github_recorded(docs, slug):
+        shown.add("docs-github")
     built = found.document("build-record")
     closed = found.state in ("released", "built")
-    shown: set[str] = set()
     if built is not None and built["status"] == docset.Status.APPROVED.value and not closed:
         shown.add("docs-close-set")
     if closed and not found.pr_url:
@@ -469,10 +487,18 @@ class DocsScreen(ModalScreen):
         latest: Callable | None = None,
         closer: Callable[..., object] = close_mod.close,
         pr_opener: Callable[..., str] = close_mod.open_pr,
+        repo_creator: object = github_repo,
+        open_home: bool = False,
+        resume: bool = False,
+        home_options: dict | None = None,
     ) -> None:
         super().__init__()
+        self._open_home_on_mount = open_home
+        self._resume_on_mount = resume
+        self._home_options = dict(home_options or {})
         self._closer = closer
         self._pr_opener = pr_opener
+        self._repo_creator = repo_creator
         self.root = Path(root)
         self._docs = Path(docs) if docs is not None else None
         self._check = check
@@ -521,6 +547,8 @@ class DocsScreen(ModalScreen):
                 Button("Open file", id="docs-open"),
                 Button("Close set", id="docs-close-set"),
                 Button("Open pull request", id="docs-pr"),
+                Button("Switch to it", id="docs-switch"),
+                Button("Create GitHub repository", id="docs-github"),
                 Button("History", id="docs-history"),
                 Button("Export", id="docs-export"),
                 Button("Close", id="docs-close"),
@@ -538,6 +566,11 @@ class DocsScreen(ModalScreen):
             first = next((r for r in left_rows(self.docs) if r.key), None)
             if first is not None:
                 self.select_entry(first.key)
+        if self._open_home_on_mount and self._want_set:
+            self.open_home(self._want_set)
+        elif self._resume_on_mount and self._want_set:
+            slug, root = self._want_set, self.root
+            self._work("Continuing…", lambda progress: self._runner.run(root, slug, progress=progress))
 
     def refresh_all(self) -> None:
         """Re-read the guard and the left column."""
@@ -739,11 +772,20 @@ class DocsScreen(ModalScreen):
             self.finish_editing()
 
     def _set_action(self, button_id: str) -> None:
+        if button_id == "docs-switch" and self.entry.startswith(SET_PREFIX):
+            slug = self._slug()
+            moved = library._moved_to(self.docs, slug)
+            if moved:
+                self.dismiss(HomeResult(slug, Path(moved), True))
+            return
         if not self.entry.startswith(SET_PREFIX) or self._busy or self.refusal is not None:
             return
         slug, root, docs = self._slug(), self.root, self.docs
         if button_id == "docs-close-set":
             self._work("Closing…", lambda progress: self._close(root, slug))
+            return
+        if button_id == "docs-github":
+            self._create_github(root, slug)
             return
         try:
             branch = workspace._current_branch(root)
@@ -755,6 +797,26 @@ class DocsScreen(ModalScreen):
                 self._work("Opening the pull request…", lambda progress: self._open_pr(root, docs, slug))
 
         self.app.push_screen(ConfirmForm(f"Push {branch} to origin and open a pull request?"), asked)
+
+    def _create_github(self, root: Path, slug: str) -> None:
+        """Ask, then create the repository for this set. A refusal is shown, never raised."""
+        creator = self._repo_creator
+        try:
+            owner = creator.default_owner(root) or ""
+        except Exception:
+            owner = ""
+        name = root.name
+
+        def asked(yes) -> None:
+            if yes:
+                self._work("Creating the GitHub repository…", lambda progress: self._make_repo(
+                    root, slug, owner, name))
+
+        self.app.push_screen(ConfirmForm(creator.describe(owner or "<owner>", name, True)), asked)
+
+    def _make_repo(self, root: Path, slug: str, owner: str, name: str) -> object:
+        url = self._repo_creator.create_repo(root, owner=owner, name=name, private=True, slug=slug)
+        return SimpleNamespace(state="github", message=f"GitHub repository created: {url}")
 
     def _close(self, root: Path, slug: str) -> object:
         result = self._closer(root, slug)
@@ -796,7 +858,48 @@ class DocsScreen(ModalScreen):
         self._work("Saving your edit…", lambda progress: self._review.edited(
             root, slug, kind, editor_name=self._approver))
 
-    def _work(self, label: str, call: Callable[[Callable[[str], None]], object]) -> None:
+    def open_home(self, slug: str) -> None:
+        """Ask where the project lives, then apply the choice and carry on."""
+        screen = ProjectHomeScreen(self.root, slug, docs=self.docs, **self._home_options)
+
+        def chosen(choice: HomeChoice | None) -> None:
+            if choice is None:
+                self.query_one("#docs-status", Static).update(
+                    "Choose where this project lives, then Resume.")
+                return
+            self._apply_home(slug, choice)
+
+        self.app.push_screen(screen, chosen)
+
+    def _apply_home(self, slug: str, choice: HomeChoice) -> None:
+        root = self.root
+        try:
+            agents = home_agents(docset.load(self.docs, slug))
+        except docset.DocSetError:
+            agents = ["claude"]
+
+        def apply(progress) -> object:
+            def say(line: str) -> None:
+                progress(f"home · {line}")
+
+            say("starting")
+            target = Path(self._runner.choose_home(
+                root, slug, choice=choice.choice,
+                parent=choice.parent, folder=choice.folder or None,
+                name=choice.name or None, agents=agents, progress=say))
+            changed = target.resolve() != root.resolve()
+            if not changed and not choice.github:
+                return self._runner.run(root, slug, progress=progress)
+            return HomeResult(slug, target, changed, choice if choice.github else None)
+
+        def then(result: object) -> None:
+            if isinstance(result, HomeResult):
+                self.dismiss(result)
+
+        self._work("home · starting", apply, then=then)
+
+    def _work(self, label: str, call: Callable[[Callable[[str], None]], object],
+              then: Callable[[object], None] | None = None) -> None:
         """Run `call(progress)` in a thread worker and show its outcome."""
         status = self.query_one("#docs-status", Static)
         also = self.query_one("#docs-also", Static)
@@ -816,7 +919,14 @@ class DocsScreen(ModalScreen):
             if error:
                 status.update(error)
                 return
-            status.update(_outcome_text(result) or "Done.")
+            if isinstance(result, HomeResult):
+                status.update("Project home ready.")
+            else:
+                status.update(_outcome_text(result) or "Done.")
+            if then is not None:
+                then(result)
+            if getattr(result, "state", "") == "waiting_for_home" and self.entry.startswith(SET_PREFIX):
+                self.open_home(self.entry[len(SET_PREFIX):])
             if isinstance(result, list) and result:
                 also.update("Also changed: " + ", ".join(result))
 
@@ -871,4 +981,349 @@ class DocsScreen(ModalScreen):
         self.run_worker(run, thread=True, exclusive=True, group="docs-export")
 
     def action_close(self) -> None:
+        self.dismiss(None)
+
+
+@dataclass(frozen=True)
+class HomeChoice:
+    """What the Project home screen collected."""
+
+    choice: str  # "new" or "here"
+    parent: Path | None = None
+    folder: str = ""
+    name: str = ""
+    github: bool = False
+    private: bool = True
+    owner: str = ""
+    repo: str = ""  # the GitHub repository name
+
+
+@dataclass(frozen=True)
+class HomeResult:
+    """Docs closes with this when the console must switch repository or ask about GitHub."""
+
+    slug: str
+    root: Path
+    changed: bool
+    github: HomeChoice | None = None
+
+
+def home_agents(found: object) -> list[str]:
+    names: set[str] = set()
+    for value in (getattr(found, "roles", None) or {}).values():
+        for item in value if isinstance(value, (list, tuple)) else [value]:
+            if item:
+                names.add(str(item))
+    return sorted(names) or ["claude"]
+
+
+def _pick_folder() -> Path | None:
+    from whyline.console import agents_screens, mac_input
+
+    return agents_screens._first_folder(mac_input.pick_files())
+
+
+SUGGESTING = "Suggesting names…"
+OWN_NAME = "My own name"
+
+
+class ProjectHomeScreen(ModalScreen):
+    """Where should this project live? Dismisses with a HomeChoice, or None on Cancel."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    ProjectHomeScreen { align: center middle; }
+    #home-box { width: 80%; height: 90%; border: round $accent; background: $surface; padding: 1 2; }
+    #home-names { height: auto; max-height: 8; }
+    #home-path { height: auto; }
+    #home-github-fix { height: auto; color: $warning; }
+    #home-buttons { height: auto; }
+    """
+
+    def __init__(
+        self,
+        root: Path | str,
+        slug: str,
+        *,
+        docs: Path | None = None,
+        home: object = home_mod,
+        github: object = github_repo,
+        pick_folder_fn: Callable[[], Path | None] | None = None,
+    ) -> None:
+        super().__init__()
+        self.root = Path(root)
+        self.slug = slug
+        self._docs = Path(docs) if docs is not None else self.root
+        self._home = home
+        self._github = github
+        self._pick = pick_folder_fn or _pick_folder
+        self.set_name = slug
+        self.agent = "claude"
+        self.choice = ""
+        self.ideas: list = []
+        self.suggesting = False
+        self._suggested = False
+        self.project = ""
+        self.folder = ""
+        self.save_in = Path.home()
+        self.refusal: str | None = None
+        self.path_shown = ""
+        self.github_fix: str | None = None
+        self.github_on = False
+        self.private = True
+        self.owner = ""
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("Project home", id="home-title"),
+            Static("Where should this project live?"),
+            RadioSet(
+                RadioButton("Create a new folder", id="home-new"),
+                RadioButton(f"Use this repository ({self.root.name})", id="home-here"),
+                id="home-where",
+            ),
+            VerticalScroll(
+                Vertical(
+                    OptionList(id="home-names"),
+                    Input(placeholder="Project name", id="home-own"),
+                    Input(placeholder="Folder name", id="home-folder"),
+                    Static("", id="home-parent"),
+                    Button("Choose folder…", id="home-choose"),
+                    id="home-newbox",
+                ),
+                Static("", id="home-path"),
+                Checkbox("Create GitHub repository", False, id="home-github"),
+                Static("", id="home-github-fix"),
+                Vertical(
+                    RadioSet(
+                        RadioButton("Private", True, id="home-private"),
+                        RadioButton("Public", id="home-public"),
+                        id="home-visibility",
+                    ),
+                    Input(placeholder="Owner", id="home-owner"),
+                    id="home-gh-options",
+                ),
+            ),
+            Horizontal(
+                Button("Continue", id="home-continue", variant="primary"),
+                Button("Cancel", id="home-cancel"),
+                id="home-buttons",
+            ),
+            id="home-box",
+        )
+
+    def on_mount(self) -> None:
+        try:
+            found = docset.load(self._docs, self.slug)
+            self.set_name = found.name
+            self.agent = str(found.roles.get("writer") or "claude")
+        except docset.DocSetError:
+            pass
+        try:
+            fresh = bool(self._home.is_fresh(self.root))
+        except Exception:
+            fresh = False
+        try:
+            self.save_in = Path(self._home.last_parent())
+        except Exception:
+            pass
+        self.project = self.set_name
+        self.folder = self._home.folder_name(self.project)
+        self._load_github()
+        self.choose_where("here" if fresh else "new")
+
+    def _load_github(self) -> None:
+        box = self.query_one("#home-github", Checkbox)
+        try:
+            self.github_fix = self._github.gh_ready(self.root)
+        except Exception as error:
+            self.github_fix = str(error) or "GitHub is not ready."
+        if self.github_fix:
+            box.disabled = True
+            self.query_one("#home-github-fix", Static).update(self.github_fix)
+            return
+
+        def find() -> None:
+            try:
+                owner = self._github.default_owner(self.root) or ""
+            except Exception:
+                owner = ""
+            self.app.call_from_thread(self._set_owner, owner)
+
+        self.run_worker(find, thread=True, group="home-owner")
+
+    def _set_owner(self, owner: str) -> None:
+        if not self.owner:
+            self.owner = owner
+            self.query_one("#home-owner", Input).value = owner
+        self._sync()
+
+    def choose_where(self, choice: str) -> None:
+        self.choice = choice
+        for button in self.query_one("#home-where", RadioSet).query(RadioButton):
+            want = button.id == ("home-new" if choice == "new" else "home-here")
+            if button.value != want:
+                button.value = want
+        self.query_one("#home-newbox").display = choice == "new"
+        if choice == "new" and not self._suggested:
+            self._suggested = True
+            self._start_suggesting()
+        self._fill_names()
+        self._sync()
+
+    def _start_suggesting(self) -> None:
+        self.suggesting = True
+        root = self.root
+
+        def work() -> None:
+            try:
+                found = docset.load(self._docs, self.slug)
+                ideas = list(self._home.suggest_names(root, found, agent=self.agent))
+            except Exception:
+                ideas = []
+            self.app.call_from_thread(self._suggested_names, ideas)
+
+        self.run_worker(work, thread=True, group="home-names")
+
+    def _suggested_names(self, ideas: list) -> None:
+        self.suggesting = False
+        self.ideas = ideas
+        self._fill_names()
+        if ideas:
+            self.choose_name(0)
+        else:
+            self._sync()
+
+    def _fill_names(self) -> None:
+        names = self.query_one("#home-names", OptionList)
+        names.clear_options()
+        if self.suggesting:
+            names.add_option(Option(SUGGESTING, id="wait", disabled=True))
+        for index, idea in enumerate(self.ideas):
+            names.add_option(Option(f"{idea.name} — {idea.reason}", id=f"idea:{index}"))
+        names.add_option(Option(OWN_NAME, id="own"))
+
+    def choose_name(self, index: int | None) -> None:
+        """Pick suggestion `index`, or My own name with None."""
+        own = self.query_one("#home-own", Input)
+        if index is None:
+            own.display = True
+            self._set_name(own.value.strip())
+            return
+        own.display = False
+        self._set_name(self.ideas[index].name, self.ideas[index].folder)
+
+    def _set_name(self, name: str, folder: str | None = None) -> None:
+        self.project = name
+        self.folder = folder if folder is not None else (
+            self._home.folder_name(name) if name else "")
+        self.query_one("#home-folder", Input).value = self.folder
+        self._sync()
+
+    def _repo_name(self) -> str:
+        return self.folder.strip() if self.choice == "new" else self.root.name
+
+    def _sync(self) -> None:
+        self.query_one("#home-parent", Static).update(f"Save in: {self.save_in}")
+        refusal: str | None = None
+        if self.choice == "new":
+            folder = self.folder.strip()
+            if not self.project:
+                refusal = "Give the project a name."
+            elif not folder:
+                refusal = "Give the folder a name."
+            else:
+                try:
+                    refusal = self._home.check_target(self.root, self.save_in, folder)
+                except Exception as error:
+                    refusal = str(error) or "That folder can't be used."
+            shown = refusal or str(self.save_in / folder)
+        else:
+            shown = f"The project stays in {self.root}."
+        self.refusal = refusal
+        self.path_shown = shown
+        self.query_one("#home-path", Static).update(shown)
+        self.query_one("#home-gh-options").display = self.github_on
+        self.query_one("#home-continue", Button).disabled = (
+            refusal is not None or (self.github_on and not self.owner.strip()))
+
+    def set_github(self, on: bool) -> None:
+        self.github_on = bool(on) and not self.github_fix
+        self._sync()
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        event.stop()
+        button_id = event.pressed.id
+        if button_id in ("home-new", "home-here"):
+            choice = "new" if button_id == "home-new" else "here"
+            if choice != self.choice:
+                self.choose_where(choice)
+        elif button_id in ("home-private", "home-public"):
+            self.private = button_id == "home-private"
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        option_id = event.option_id or ""
+        if option_id == "own":
+            self.choose_name(None)
+        elif option_id.startswith("idea:"):
+            self.choose_name(int(option_id.split(":", 1)[1]))
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        event.stop()
+        self.set_github(event.value)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        event.stop()
+        if event.input.id == "home-own":
+            self._set_name(event.value.strip())
+        elif event.input.id == "home-folder":
+            self.folder = event.value
+            self._sync()
+        elif event.input.id == "home-owner":
+            self.owner = event.value.strip()
+            self._sync()
+
+    def choose_parent(self, path: Path | str) -> None:
+        self.save_in = Path(path).expanduser()
+        self._sync()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "home-cancel":
+            self.dismiss(None)
+        elif event.button.id == "home-choose":
+            self._choose_folder()
+        elif event.button.id == "home-continue":
+            self.submit()
+
+    def _choose_folder(self) -> None:
+        def work() -> None:
+            try:
+                picked = self._pick()
+            except Exception as error:
+                self.app.call_from_thread(
+                    self.query_one("#home-path", Static).update, f"Could not open the picker: {error}")
+                return
+            if picked:
+                self.app.call_from_thread(self.choose_parent, picked)
+
+        self.run_worker(work, thread=True, group="home-pick")
+
+    def submit(self) -> None:
+        if self.query_one("#home-continue", Button).disabled:
+            return
+        new = self.choice == "new"
+        self.dismiss(HomeChoice(
+            choice=self.choice,
+            parent=self.save_in if new else None,
+            folder=self.folder.strip() if new else "",
+            name=self.project if new else self.set_name,
+            github=self.github_on,
+            private=self.private,
+            owner=self.owner.strip(),
+            repo=self._repo_name(),
+        ))
+
+    def action_cancel(self) -> None:
         self.dismiss(None)

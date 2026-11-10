@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +39,7 @@ class SetSummary:
     size: str
     created: str
     summary: str
+    moved_to: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,18 @@ class EarlierPlan:
     source_kind: str
 
 
-def _summary(found: docset.DocSet) -> str:
+def _moved_to(root: Path, slug: str) -> str:
+    """Where a moved set went, read from its manifest (the set object does not keep it)."""
+    try:
+        data = json.loads((docset._folder(root, slug) / docset.MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(data.get("moved_to") or "") if isinstance(data, dict) else ""
+
+
+def _summary(found: docset.DocSet, moved_to: str = "") -> str:
+    if found.state == "moved":
+        return f"{found.name} · Moved to {moved_to}" if moved_to else f"{found.name} · Moved"
     parts = [found.name, docset.Size(found.size).label]
     for doc in found.documents:
         mark = _STATUS_MARKS.get(doc["status"], _MARK_PENDING)
@@ -84,7 +97,11 @@ def location_line(docs: Path, root: Path | None = None) -> str:
 def sets(root: Path) -> list[SetSummary]:
     """Every document set, newest first."""
     found = sorted(docset.all_sets(root), key=lambda s: (s.created, s.slug), reverse=True)
-    return [SetSummary(s.slug, s.name, s.size, s.created, _summary(s)) for s in found]
+    out = []
+    for s in found:
+        moved = _moved_to(root, s.slug) if s.state == "moved" else ""
+        out.append(SetSummary(s.slug, s.name, s.size, s.created, _summary(s, moved), moved))
+    return out
 
 
 def product(root: Path) -> ProductSummary | None:

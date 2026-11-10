@@ -41382,3 +41382,106 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 32394941699d41e69bdbba24c67119bd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T11:42:14.918Z"} -->
+
+## 2026-11-10 — Project home dismisses Docs with a HomeResult; the console switches root, confirms GitHub, then reopens Docs with resume
+
+**Actor:** claude
+**Role:** implementer
+**Task:** HOME-6
+
+**Because:** _switch_repo and the busy line live in tui; Docs only runs choose_home in its worker. moved_to is read from the manifest because DocSet drops it
+
+**Rejected:**
+
+- Switching from inside DocsScreen — it has no access to the console session
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: aa9292f0b8b840ee98570f47d7bf1753 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T12:31:34.995Z"} -->
+
+## 2026-11-10 — Pass HOME-6: Project home, GitHub confirm, switch, and moved row behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-6
+
+**Because:** Docs opens ProjectHomeScreen on waiting_for_home; default is here when is_fresh else new; suggestions load in a worker with Suggesting names…; folder follows folder_name; Save in uses last_parent and pick_folder_fn; a check_target refusal disables Continue; GitHub is off by default, Private/Owner from default_owner, and the box is disabled with gh_ready fix text; Continue runs choose_home in a worker with home · progress; a new root goes through _switch_repo without extra confirmation then Docs resume; GitHub Yes calls create_repo, No/refusal continues without a remote and a failure is shown; library shows Moved to <path> with Switch to it. HOME-6 tests and uv run pytest -q exited 0.
+
+**Rejected:**
+
+- Fail for no later Create GitHub repository Docs button — listed tests do not require it; HOME-5 whyline docs github remains; the home-flow checkbox is the console counterpart of the initial create
+- Fail the suite for PytestWarnings in relay-chat and security tests — they are pre-existing and outside HOME-6 files
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/console/tui.py, src/whyline/sdlc/library.py
+
+<!-- whyline-event: 356b001930ef420ea2891279d22c9489 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T12:53:48.899Z"} -->
+
+## 2026-11-10 — Reject HOME-6 until Docs offers GitHub creation after decline or failure
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-6
+
+**Because:** The task explicitly requires a later Create GitHub repository action, but docs_screen.py has no such set action and the No/refusal tests only assert that Docs reopens
+
+**Rejected:**
+
+- Approve — the full suite passes, but it does not test or implement this explicit recovery path
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_home.py
+
+<!-- whyline-event: 8dcebfb3cbbf40aaa6d312a91c8def80 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T13:11:52.987Z"} -->
+
+## 2026-11-10 — Docs gets a set-level Create GitHub repository button (docs-github) as the retry path after No/refusal
+
+**Actor:** claude
+**Role:** implementer
+**Task:** HOME-6
+
+**Because:** Home-flow decline left no way to create the repo later; button uses default owner, folder name, private, behind a ConfirmForm, hidden once manifest records github
+
+**Rejected:**
+
+- Reopening the Project home screen — it would re-run choose_home
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: ae086a3539534e5bbb30a9519f0d3fd9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T13:33:54.352Z"} -->
+
+## 2026-11-10 — HOME-6 matches the spec, including the later GitHub retry
+
+**Actor:** grok
+**Role:** tester
+**Task:** HOME-6
+
+**Because:** Project home, switch, GitHub Yes/No/refusal, moved row, and the set-level Create GitHub repository button all behave as specified; the 56 HOME-6 tests passed; the one full-suite failure is an unrelated 5s dismiss timeout in test_release_select_saves_chosen_agent, which passed on rerun
+
+**Rejected:**
+
+- Fail over the relay-setup timeout — that test is outside HOME-6, already comments that dismiss needs extra frames, and passed in isolation
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/console/tui.py, src/whyline/sdlc/library.py, tests/console/test_docs_home.py
+
+<!-- whyline-event: 707326dd8b114a40be6896df1d02b3a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T13:57:49.891Z"} -->
+
+## 2026-11-10 — Approve HOME-6 project home console flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** HOME-6
+
+**Because:** The diff implements the Project home defaults and async suggestions, validates targets, switches through the existing repository path, confirms optional GitHub creation after switching, preserves a later GitHub retry action, renders moved sets with switching, and the full uv run pytest -q suite passed
+
+**Rejected:**
+
+- Request changes — no task-scoped correctness, safety, or test-coverage defect remained after the GitHub retry addition
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/console/tui.py, src/whyline/sdlc/library.py
+
+<!-- whyline-event: 0fd056e4e12549dd81da8ec775fa66ff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T14:15:43.537Z"} -->
