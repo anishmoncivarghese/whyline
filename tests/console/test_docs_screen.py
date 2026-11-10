@@ -299,3 +299,63 @@ async def test_resume_runs_the_pipeline(tmp_path, library):
         await pilot.click("#docs-resume")
         await _settle(pilot)
         assert run.calls == ["job-search"]
+
+
+def _review(tmp_path, *findings, not_run=()):
+    from whyline.sdlc import goldfish, lenses
+
+    path = tmp_path / "report.md"
+    path.write_text("Blockers: 1 · Major: 1 · Nits: 1 · Not run: none · Reviewer: codex\n", encoding="utf-8")
+    return goldfish.Review(path, [lenses.Finding("risk", *f) for f in findings], list(not_run), "codex")
+
+
+FINDINGS = (
+    ("nit", "Goals", "Vague word", "Name it"),
+    ("blocker", "Goals", "No owner", "Add one"),
+    ("major", "Scope", "Too wide", "Cut it"),
+)
+
+
+async def test_findings_panel_with_and_without_a_review(tmp_path, library):
+    async with _on(tmp_path, latest=lambda *a: None).run_test() as pilot:
+        assert pilot.app.screen.findings_shown == "Findings\nNot reviewed yet."
+    review = _review(tmp_path, *FINDINGS, not_run=["security"])
+    async with _on(tmp_path, latest=lambda *a: review).run_test() as pilot:
+        text = pilot.app.screen.findings_shown
+        assert text.index("🔴 Blocker · Goals · risk") < text.index("🟡 Major") < text.index("🟢 Nit")
+        assert text.startswith("Findings\nBlockers: 1") and text.endswith("Not run: security")
+
+
+async def test_middle_list_shows_counts_after_the_status(tmp_path, library):
+    review = _review(tmp_path, *FINDINGS)
+    async with _on(tmp_path, latest=lambda *a: review).run_test() as pilot:
+        labels = _labels(pilot.app.screen.query_one("#docs-middle", OptionList))
+        assert any("In review · 🔴 1 🟡 1 🟢 1 · " in label for label in labels)
+
+
+async def test_changes_form_adds_ticked_findings_to_the_comments(tmp_path, library):
+    from textual.widgets import SelectionList, TextArea
+
+    rev = StubReview()
+    review = _review(tmp_path, *FINDINGS)
+    async with _on(tmp_path, review=rev, latest=lambda *a: review).run_test() as pilot:
+        await pilot.click("#docs-changes")
+        await pilot.pause()
+        form = pilot.app.screen
+        assert form.query_one("#form-findings", SelectionList).selected == [1, 2]
+        form.query_one("#form-comments", TextArea).text = "Also this"
+        await pilot.click("#form-send")
+        await _settle(pilot)
+        comments = rev.calls[0][2]
+        assert comments == "Also this\nGoals: No owner — Add one\nScope: Too wide — Cut it"
+
+
+async def test_review_again_runs_and_is_off_while_guard_refuses(tmp_path, library):
+    rev = StubReview()
+    rev.review_again = lambda root, slug, kind, *, progress: rev.calls.append(("again", kind))
+    async with _on(tmp_path, review=rev).run_test() as pilot:
+        await pilot.click("#docs-review-again")
+        await _settle(pilot)
+        assert rev.calls == [("again", "spec")]
+    async with _on(tmp_path, check=lambda root: REFUSAL).run_test() as pilot:
+        assert "docs-review-again" not in _visible(pilot.app.screen)

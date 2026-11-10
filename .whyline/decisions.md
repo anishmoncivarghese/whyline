@@ -41225,3 +41225,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2034a020e8c54432b71c205a4662a07e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T09:36:50.148Z"} -->
+
+## 2026-11-10 — Findings read through an injectable latest callable; Review again shown with in-review actions
+
+**Actor:** claude
+**Role:** implementer
+**Task:** GFR-6
+
+**Because:** docs_root(root) may create a worktree, so tests and the screen pass docs and a stub; hidden buttons already model the guard refusal
+
+**Rejected:**
+
+- calling goldfish.latest_review with self.root — docs_root can add a git worktree on a read
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: 2875a75110d94b3b9d17690199ddc466 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T09:38:58.012Z"} -->
+
+## 2026-11-10 — Pass GFR-6: Findings panel, checklist, counts, and Review again behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** GFR-6
+
+**Because:** Round 2 shows Findings under the selected document (first line, 🔴/🟡/🟢 grouped with section and lens, not-run lenses, Not reviewed yet with none). Review again calls review.review_again in a thread worker and is off while the guard refuses. Ask for changes ticks blockers and majors and appends ticked findings as section: problem — fix. Middle list shows counts after status. Task tests 20 passed; uv run pytest -q exited 0.
+
+**Rejected:**
+
+- fail — Review again is hidden rather than disabled when the guard refuses — other review actions already hide on refusal
+
+**Test:** uv run pytest -q tests/console/test_docs_screen.py: 20 passed
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 6842d747461949c88c862a801f0a7a91 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T09:57:58.517Z"} -->
+
+## 2026-11-10 — Approve GFR-6: Docs findings and review-again behavior meet the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** GFR-6
+
+**Because:** The diff renders the latest review summary and grouped findings, shows severity counts, adds default-selected blocker and major findings to change requests, and runs review_again through the thread worker; the focused tests cover each requested behavior and the plain uv run pytest -q suite exited 0.
+
+**Rejected:**
+
+- Request changes for hidden rather than disabled review controls during guard refusal — hiding is the established off-state for all review actions on this screen and prevents interaction.
+
+**Files:** src/whyline/console/docs_screen.py, tests/console/test_docs_screen.py
+
+<!-- whyline-event: 0ac22cb984714666838b3e46000641cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T10:16:18.805Z"} -->

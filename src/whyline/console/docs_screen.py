@@ -13,10 +13,10 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Markdown, OptionList, Select, Static, TextArea
+from textual.widgets import Button, Markdown, OptionList, Select, SelectionList, Static, TextArea
 from textual.widgets.option_list import Option
 
-from whyline.sdlc import docset, export, guard, library, stages, templates, workspace
+from whyline.sdlc import docset, export, goldfish, guard, library, stages, templates, workspace
 from whyline.sdlc import product as prd
 from whyline.sdlc import review as review_mod
 from whyline.sdlc import runner as runner_mod
@@ -34,6 +34,7 @@ _REVIEW = (
     ("docs-changes", "Ask for changes"),
     ("docs-edit", "Edit"),
     ("docs-redo", "Redo"),
+    ("docs-review-again", "Review again"),
     ("docs-answer", "Answer questions"),
     ("docs-stop", "Stop here"),
     ("docs-auto", "Run the rest on Auto"),
@@ -41,6 +42,9 @@ _REVIEW = (
     ("docs-finished", "I've finished editing"),
 )
 WHOLE_DOCUMENT = "Whole document"
+NOT_REVIEWED = "Not reviewed yet."
+_SEVERITY_ICONS = (("blocker", "🔴", "Blocker"), ("major", "🟡", "Major"), ("nit", "🟢", "Nit"))
+_TICKED = ("blocker", "major")
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,49 @@ def _approval(doc: dict) -> str:
     return text
 
 
+def _latest(latest: Callable | None, docs: Path, found: object, kind: str) -> object:
+    """The latest review of one document, or None when there is none or it can't be read."""
+    try:
+        return (latest or goldfish.latest_review)(docs, found, kind)
+    except Exception:
+        return None
+
+
+def counts_text(review: object) -> str:
+    """`🔴 1 🟡 2` for the severities that have findings; empty with none."""
+    findings = getattr(review, "findings", None) or []
+    parts = []
+    for severity, icon, _ in _SEVERITY_ICONS:
+        number = sum(1 for f in findings if f.severity == severity)
+        if number:
+            parts.append(f"{icon} {number}")
+    return " ".join(parts)
+
+
+def findings_text(review: object) -> str:
+    """The Findings panel: first line, findings by severity, and any lenses that did not run."""
+    if review is None:
+        return NOT_REVIEWED
+    path = getattr(review, "path", None)
+    try:
+        first = Path(path).read_text(encoding="utf-8").splitlines()[0] if path else ""
+    except (OSError, IndexError, TypeError):
+        first = ""
+    lines = [first] if first else []
+    findings = list(getattr(review, "findings", None) or [])
+    for severity, icon, name in _SEVERITY_ICONS:
+        for f in (x for x in findings if x.severity == severity):
+            lines.append(f"{icon} {name} · {f.section} · {f.lens}: {f.problem} — {f.fix}")
+    not_run = list(getattr(review, "not_run", None) or [])
+    if not_run:
+        lines.append("Not run: " + ", ".join(not_run))
+    return "\n".join(lines) or NOT_REVIEWED
+
+
+def finding_comment(finding: object) -> str:
+    return f"{finding.section}: {finding.problem} — {finding.fix}"
+
+
 def left_rows(docs: Path) -> list[Row]:
     rows: list[Row] = []
     product = library.product(docs)
@@ -77,7 +124,7 @@ def left_rows(docs: Path) -> list[Row]:
     return rows
 
 
-def middle_rows(docs: Path, entry: str) -> list[Row]:
+def middle_rows(docs: Path, entry: str, latest: Callable | None = None) -> list[Row]:
     if entry == PRODUCT:
         product = library.product(docs)
         if product is None:
@@ -96,9 +143,10 @@ def middle_rows(docs: Path, entry: str) -> list[Row]:
         for doc in found.documents:
             status = docset.Status(doc["status"])
             title = doc["kind"].replace("-", " ").capitalize()
+            counts = counts_text(_latest(latest, docs, found, doc["kind"]))
             label = (
                 f"{title} · {docset.version_label(found, doc, docs)} · "
-                f"{status.label} · {_approval(doc)}"
+                f"{status.label} · {counts + ' · ' if counts else ''}{_approval(doc)}"
             )
             reason = ""
             if status is docset.Status.OUT_OF_DATE:
@@ -191,7 +239,7 @@ def available_actions(docs: Path, slug: str, kind: str, editing: bool = False) -
     upcoming = stages.next_stage(found)
     out_of_date = doc["status"] == docset.Status.OUT_OF_DATE.value
     if in_review:
-        shown |= {"docs-approve", "docs-changes", "docs-edit"}
+        shown |= {"docs-approve", "docs-changes", "docs-edit", "docs-review-again"}
     if (in_review or out_of_date) and found.documents[0]["kind"] != kind:
         shown.add("docs-redo")
     if found.pending_questions.get(kind):
@@ -221,15 +269,31 @@ class ReviewForm(ModalScreen):
     ReviewForm { align: center middle; }
     #form-box { width: 70; height: auto; border: round $accent; background: $surface; padding: 1 2; }
     #form-comments { height: 8; }
+    #form-findings { height: 8; }
     """
 
-    def __init__(self, title: str, sections: list[tuple[str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        title: str,
+        sections: list[tuple[str, str]] | None = None,
+        findings: list | None = None,
+    ) -> None:
         super().__init__()
         self._title = title
         self.section_options = sections
+        self.findings = list(findings or [])
 
     def compose(self) -> ComposeResult:
         children: list = [Static(self._title), TextArea(id="form-comments")]
+        if self.findings:
+            children.append(Static("Findings to include"))
+            children.append(SelectionList[int](
+                *[
+                    (f"{finding_comment(f)} ({f.severity})", index, f.severity in _TICKED)
+                    for index, f in enumerate(self.findings)
+                ],
+                id="form-findings",
+            ))
         if self.section_options is not None:
             children.append(Select(self.section_options, allow_blank=False, id="form-section"))
         children.append(
@@ -243,6 +307,10 @@ class ReviewForm(ModalScreen):
             self.dismiss(None)
             return
         comments = self.query_one("#form-comments", TextArea).text.strip()
+        if self.findings:
+            ticked = self.query_one("#form-findings", SelectionList).selected
+            lines = [finding_comment(f) for i, f in enumerate(self.findings) if i in ticked]
+            comments = "\n".join(([comments] if comments else []) + lines)
         if not comments:
             return
         section = ""
@@ -274,9 +342,11 @@ class DocsScreen(ModalScreen):
     #docs-middle { width: 1fr; }
     #docs-right { width: 2fr; height: 100%; border: round $primary; }
     #docs-reason { height: auto; color: $warning; }
+    #docs-findings { height: auto; padding: 1 0 0 0; }
     #docs-status { height: auto; }
     #docs-actions { height: auto; }
     #docs-review { height: auto; }
+    #docs-review Button { min-width: 6; padding: 0 1; }
     #docs-also { height: auto; color: $text-muted; }
     """
 
@@ -293,6 +363,7 @@ class DocsScreen(ModalScreen):
         review: object = review_mod,
         runner: object = runner_mod,
         approver: str = "human",
+        latest: Callable | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
@@ -303,6 +374,7 @@ class DocsScreen(ModalScreen):
         self._review = review
         self._runner = runner
         self._approver = approver
+        self._latest = latest
         self._editing: tuple[str, str] | None = None
         self._busy = False
         self._want_set, self._want_kind = set_slug, kind
@@ -310,6 +382,7 @@ class DocsScreen(ModalScreen):
         self.key = ""
         self.refusal: str | None = None
         self.shown_text = ""
+        self.findings_shown = ""
 
     @property
     def docs(self) -> Path:
@@ -327,7 +400,9 @@ class DocsScreen(ModalScreen):
             Horizontal(
                 OptionList(id="docs-left"),
                 OptionList(id="docs-middle"),
-                VerticalScroll(Markdown("", id="docs-text"), id="docs-right"),
+                VerticalScroll(
+                    Markdown("", id="docs-text"), Static("", id="docs-findings"), id="docs-right"
+                ),
                 id="docs-columns",
             ),
             Static("", id="docs-status"),
@@ -392,7 +467,7 @@ class DocsScreen(ModalScreen):
             if left.get_option_at_index(index).id == entry:
                 left.highlighted = index
                 break
-        rows = middle_rows(self.docs, entry)
+        rows = middle_rows(self.docs, entry, self._latest)
         middle = self.query_one("#docs-middle", OptionList)
         middle.clear_options()
         middle.add_options([_option(r) for r in rows])
@@ -407,6 +482,21 @@ class DocsScreen(ModalScreen):
                 middle.highlighted = index
                 break
         self.show(document_text(self.docs, self.entry, key) if key else NOTHING)
+        self._show_findings()
+
+    def _show_findings(self) -> None:
+        panel = self.query_one("#docs-findings", Static)
+        self.findings_shown = ""
+        if self.entry.startswith(SET_PREFIX) and self.key:
+            try:
+                found = docset.load(self.docs, self._slug())
+            except docset.DocSetError:
+                found = None
+            if found is not None and found.document(self.key) is not None:
+                self.findings_shown = "Findings\n" + findings_text(
+                    _latest(self._latest, self.docs, found, self.key))
+        panel.display = bool(self.findings_shown)
+        panel.update(Text(self.findings_shown))
 
     def show(self, text: str) -> None:
         self.shown_text = text
@@ -475,6 +565,9 @@ class DocsScreen(ModalScreen):
             self._work("Approving…", lambda progress: self._approve(root, slug, kind, progress))
         elif button_id == "docs-redo":
             self._work("Redoing…", lambda progress: review.redo(root, slug, kind, progress=progress))
+        elif button_id == "docs-review-again":
+            self._work("Reviewing again…", lambda progress: review.review_again(
+                root, slug, kind, progress=progress))
         elif button_id == "docs-stop":
             self._work("Stopping…", lambda progress: review.stop(root, slug))
         elif button_id == "docs-auto":
@@ -482,7 +575,12 @@ class DocsScreen(ModalScreen):
         elif button_id == "docs-resume":
             self._work("Resuming…", lambda progress: self._runner.run(root, slug, progress=progress))
         elif button_id == "docs-changes":
-            form = ReviewForm("What should change?", section_choices(self.docs, slug, kind))
+            latest = _latest(self._latest, self.docs, docset.load(self.docs, slug), kind)
+            form = ReviewForm(
+                "What should change?",
+                section_choices(self.docs, slug, kind),
+                list(getattr(latest, "findings", None) or []),
+            )
 
             def asked(result) -> None:
                 if result:
