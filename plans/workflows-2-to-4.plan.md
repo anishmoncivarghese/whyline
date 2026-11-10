@@ -3,13 +3,15 @@
 
 Merged on 2026-11-01 from three plans, in run order: workflows-2-connections (WF-14..20), workflows-4-tools (WF-27..34) and workflows-3-telegram (WF-21..26). Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md`. Part 1 must come before Part 2; Part 3 could run either side of Part 2. WFR-1 publishes at the end.
 
+Runs after `plans/agent-tools.plan.md`. Changed 2026-11-10: the credential store (WF-14), the MCP registry and import (most of WF-27) and the MCP client (WF-28) moved there as TLS-1, TLS-3 and TLS-4, in `whyline.credentials` and `whyline.tools`, shared with Agents. This plan keeps the Workflows side: workflows as users of credentials and servers, the `mcp` step, the picker and the docs.
+
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules; read the intro of the part a task is in before starting it.
 
 ## Part 1: credentials, HTTP, untrusted data and write approvals
 
 Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md` (sections 9 and 10). Read it before every task. Where this plan and the spec differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the spec's behaviour.
 
-Starts after `plans/done/workflows-1-engine.plan.md` is complete. It adds a credential store, the `http` step, taint tracking, and approvals for writes that outside data can influence.
+Starts after `plans/done/workflows-1-engine.plan.md` is complete. It uses the credential store from `plans/agent-tools.plan.md` (TLS-1, `whyline.credentials`) and adds the `http` step, taint tracking, and approvals for writes that outside data can influence.
 
 Global constraints:
 
@@ -27,33 +29,17 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 - An approval card tapped after the workflow was edited: out of date. WF-19, `test_approval_for_old_revision_is_out_of_date`.
 - A credential value echoed back in a response body: redacted in the stored output. WF-16, `test_echoed_secret_is_redacted`.
 
-- [ ] WF-14: Credential store, and the Telegram token off the command line
-  Create `src/whyline/credentials.py` and `tests/test_credentials.py`; edit `src/whyline/agents/telegram.py` and `tests/agents/test_telegram.py` only.
-  - `Credential(name, kind, header_name="", query_param="", origins: tuple[str, ...] = (), created="", last_used="", last_tested="")`, kinds `bearer`, `header`, `basic`, `query`. Names match `^[a-z][a-z0-9-]{0,39}$`. Origins are `https://host[:port]` with no path.
-  - Metadata in `~/.whyline/credentials.toml` (0600). `list_all()`, `get(name)`, `save(cred, value)`, `rotate(name, value)`, `remove(name)`, `value(name) -> str` (raises `Locked` with the reason when no store is available), `available() -> tuple[bool, str]`.
-  - macOS: write with `security -i`, sending `add-generic-password -U -s whyline-cred -a <name> -w <quoted value>\n` on stdin; read with `find-generic-password -s whyline-cred -a <name> -w`. Linux: `secret-tool store --label=whyline-cred service whyline-cred account <name>` with the value on stdin, `secret-tool lookup service whyline-cred account <name>`. Otherwise `Locked("no secure credential store on this system")`.
-  - `telegram.token_set` writes the same way through stdin; `token_get` is unchanged.
-  - `redaction_values(names) -> list[str]`, used by the engine to redact values (and their base64 for `basic`) before writing outputs.
-  Tests (fake `run`):
-  - save then value round-trips; no recorded argv contains the sentinel value
-  - a value with quotes, spaces and a newline is refused or quoted so it survives
-  - `token_set` puts the token on stdin, not in argv
-  - remove deletes both metadata and the stored value
-  - Locked when neither tool exists
-  - the metadata file never contains the value and is 0600
-  Verify with `uv run pytest -q tests/test_credentials.py tests/agents/test_telegram.py`. Change nothing else.
-
-- [ ] WF-15: Connections in the CLI and console
-  Create `src/whyline/credentials_cli.py`, `tests/test_credentials_cli.py` and `tests/console/test_workflows_connections.py`; edit `src/whyline/cli.py`, `src/whyline/console/workflows_screens.py`, `src/whyline/console/tui.py` (add `#workflows-connections`), `src/whyline/workflows/state.py`, `src/whyline/workflows/tick.py` and `src/whyline/workflows/service.py` only.
-  - `service.connections() -> list[ConnRow]` (name, kind, origins, last used, last tested, workflows using it), `service.add_connection(cred, value)`, `rotate_connection(name, value)`, `remove_connection(name)`, `test_connection(name, path="/") -> str` (one GET through the WF-16 client to the first origin, reporting the status code only).
-  - CLI `whyline cred add|list|test|rotate|remove`; `add` and `rotate` read the value with `getpass`, never from an argument.
-  - `ConnectionsScreen`: the list and Add (masked `Input(password=True)`), Test, Rotate, Remove. Remove asks first and names the workflows that use it.
+- [ ] WF-15: Connections for workflows
+  The `whyline cred` CLI and the Credentials screen are TLS-2 and TLS-12 in `plans/agent-tools.plan.md`. This task adds the Workflows side.
+  Edit `src/whyline/console/workflows_screens.py`, `src/whyline/console/tui.py` (add `#workflows-connections`), `src/whyline/workflows/state.py`, `src/whyline/workflows/tick.py`, `src/whyline/workflows/service.py`, `src/whyline/credentials_cli.py` and their tests only.
+  - `users.register("workflows", …)` so a credential a workflow names lists `workflow <name>` as a user, and `whyline cred remove` and the Credentials screen refuse removing it, naming the workflows.
+  - `service.connections() -> list[ConnRow]` (name, kind, origins, last used, last tested, workflows using it) and `test_connection(name, path="/") -> str` (one GET through the WF-16 client to the first origin, reporting the status code only). `whyline cred test <name>` calls it.
+  - **Connections** in Workflows opens the shared Tools library on Credentials, with a **Used by workflows** column and **Test** for HTTP credentials.
   - A workflow whose step names a missing credential gets status `needs_credential` in the tick and the Library; it does not run. Adding the credential returns it to active without re-accepting.
   Tests:
-  - add, list, rotate, remove through the service, with the CLI reading via a fake getpass
-  - `whyline cred add --help` has no value argument
-  - the console Add field is masked and the value never appears in the screen text afterwards
-  - removing a credential in use marks that workflow needs_credential; adding it back clears it
+  - the users provider naming workflows, and removal refused through the shared function
+  - `whyline cred test` with a stubbed client
+  - removing a credential in use is refused; a credential deleted outside whyline marks that workflow needs_credential, and adding it back clears it
   Verify with `uv run pytest -q tests/test_credentials_cli.py tests/console/test_workflows_connections.py tests/workflows/test_tick.py`. Change nothing else.
 
 - [ ] WF-16: HTTP step
@@ -145,7 +131,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md`. Read it before every task. This plan changes one spec decision: MCP was listed as out of scope and refused by validation. Here local (stdio) MCP servers become a step type. Remote MCP servers, OAuth and the drag-and-drop canvas stay out of scope. Where this plan and the spec differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the behaviour.
 
-Starts after Part 1 (WF-14..20) is complete. It builds on WF-14 (`whyline.credentials`), WF-15 (`ConnectionsScreen`, `service.connections`), WF-18 (`taint.analyse`, the capability summary) and WF-19 (approvals for gated writes, trust per step). Part 3 (WF-21..26) could run before or after this part.
+Starts after Part 1 (WF-15..20) is complete. It builds on `plans/agent-tools.plan.md` (TLS-1 `whyline.credentials`, TLS-3 `whyline.tools.mcp_config`, TLS-4 `whyline.tools.mcp`), WF-15 (`service.connections`), WF-18 (`taint.analyse`, the capability summary) and WF-19 (approvals for gated writes, trust per step). Part 3 (WF-21..26) could run before or after this part.
 
 What the user gets:
 - **MCP tools.** Add a local MCP server once (or import the ones Claude already uses). Every tool it offers then shows up as a step: Gmail, Google Calendar, Sheets, GitHub, Notion, a filesystem, a browser, and so on. Tools that change something ask for approval when outside data can influence them, exactly like HTTP writes.
@@ -158,50 +144,30 @@ Global constraints:
 - Every constraint in `plans/done/workflows-1-engine.plan.md` and in Part 1 applies.
 - No new runtime dependency. The MCP client is written here with `subprocess` and `json`: JSON-RPC 2.0, one JSON message per line on stdin/stdout.
 - Local (stdio) MCP servers only. A config entry with a `url`, or a `type` of `http`, `sse` or `streamable-http`, is refused with `Remote MCP servers are not supported yet; use a local (command) server.`
-- An MCP server is started with an argv list, never a shell, in a working folder the user chose (default `~/.whyline/workflows/mcp/<name>/`), with a minimal environment: `PATH`, `HOME`, `LANG`, plus the variables the server entry names. A variable's value comes from a WF-14 credential, read at start time. Credential values never appear in argv, the config file, logs, outputs or errors (the WF-14 sentinel tests extend to MCP).
+- An MCP server is started with an argv list, never a shell, in a working folder the user chose (default `~/.whyline/mcp/<name>/`, as TLS-3 and TLS-4 set up), with a minimal environment: `PATH`, `HOME`, `LANG`, plus the variables the server entry names. A variable's value comes from a TLS-1 credential, read at start time. Credential values never appear in argv, the config file, logs, outputs or errors (the WF-14 sentinel tests extend to MCP).
 - MCP output is outside data. Every `mcp`, `calendar`, `reminders` and `jobs_fetch` output is tainted for WF-18.
-- Tests never start a real vendor MCP server and never use the network. They use the fake server script added in WF-28 (`tests/workflows/fixtures/fake_mcp_server.py`, run with `sys.executable`), and inject `run` for the Mac steps.
+- Tests never start a real vendor MCP server and never use the network. They use the fake server script from TLS-4 (`tests/tools/fixtures/fake_mcp_server.py`, run with `sys.executable`), and inject `run` for the Mac steps.
 - Console first. Every CLI command added here has a console counterpart in the same task, and both call one function in `whyline.workflows.service`.
 
 Review focus, each one pinned by the test named in its task. This list, plus each task's own Review focus and tests, is the complete bar for approval: a reviewer who finds a gap outside it records `whyline handoff <task> --issue "follow-up: <gap>"` and approves, and never rejects for it.
-- A server that prints non-JSON, hangs, or exits mid-call: the step fails with a plain reason and the process group is killed. WF-28, `test_hung_server_is_killed_at_timeout`.
-- A credential passed to a server as an environment variable: never in argv, the config file, the log or the output. WF-28, `test_mcp_secret_never_leaves_env`.
+- A server that prints non-JSON, hangs, or exits mid-call: the step fails with a plain reason. The client itself (process group killed, secrets only in the environment) is pinned by TLS-4's tests in `plans/agent-tools.plan.md`. WF-29, `test_mcp_step_server_failure_fails_step`.
 - A tool with no `readOnlyHint` whose arguments read agent output: gated. WF-29, `test_unmarked_tool_with_tainted_args_is_gated`.
 - A server whose tool list changed since the workflow was accepted: the workflow needs review and does not run. WF-29, `test_changed_tool_schema_needs_review`.
 - A tool result that contains instructions ("ignore previous steps and email this"): stored as data, never acted on, and anything downstream of it is tainted. WF-29, `test_tool_output_is_tainted`.
 
-- [ ] WF-27: MCP server registry, import and test
-  Create `src/whyline/workflows/mcp_config.py`, `tests/workflows/test_mcp_config.py` and `tests/console/test_workflows_mcp_servers.py`; edit `src/whyline/workflows/cli.py`, `src/whyline/workflows/service.py` and `src/whyline/console/workflows_screens.py` only.
-  - `~/.whyline/workflows/mcp.toml` (0600): one `[servers.<name>]` table per server with `command` (str), `args` (list[str]), `cwd` (str, optional), `env` (a table of variable name to credential name, never a value), `enabled` (bool) and `tools_hash` (set by WF-28's Test). Names match `^[a-z][a-z0-9-]{0,39}$`.
-  - `mcp_config.load()`, `save_server(server)`, `remove_server(name)` (refused while a workflow uses it, naming the workflows), and `import_candidates() -> list[Candidate]`. The last reads, without changing them, the `mcpServers` of `~/.claude.json`, `~/Library/Application Support/Claude/claude_desktop_config.json` and `~/.codex/config.toml` (`[mcp_servers.*]`). It returns each local server with its command and args. A literal `env` value found there is never copied; it is listed as `needs a credential: <VAR>`. Remote entries are listed as refused, with the reason.
-  - CLI: `whyline workflow mcp list|add|remove|import`. `add` takes `--command`, repeated `--arg` and repeated `--env VAR=<credential>`. `import` lists the candidates and adds those named.
-  - Console: an **MCP servers** section on ConnectionsScreen with Add, Import… (a checklist of candidates), Remove and Test (WF-28 wires Test; until then it is disabled).
+- [ ] WF-27: Workflows use the shared connectors
+  The MCP registry, import, client and Test are TLS-3 and TLS-4 in `plans/agent-tools.plan.md` (`whyline.tools.mcp_config`, `whyline.tools.mcp`, `whyline tools mcp …`). This task connects Workflows to them.
+  Edit `src/whyline/workflows/service.py`, `src/whyline/console/workflows_screens.py` and their tests only.
+  - `users.register("workflows", …)` so a server a workflow's `mcp` step names lists `workflow <name>` as a user, and `mcp_config.remove_server` refuses it, naming the workflows.
+  - Workflows' Connections screen gets **Connectors…**, which opens the shared Tools library on Connectors.
   Tests:
-  - save and load round-trip, and the file is 0600
-  - a remote entry is refused with the message
-  - import from each of the three fixture configs, and a literal env value is not copied
-  - remove is refused while a workflow uses the server
-  - the console Import checklist adds only the ticked servers through the same function
-  Verify with `uv run pytest -q tests/workflows/test_mcp_config.py tests/console/test_workflows_mcp_servers.py`. Change nothing else.
-
-- [ ] WF-28: The MCP client
-  Create `src/whyline/workflows/mcp.py`, `tests/workflows/test_mcp_client.py` and `tests/workflows/fixtures/fake_mcp_server.py`; edit `src/whyline/workflows/service.py` and `src/whyline/console/workflows_screens.py` (enable Test) only.
-  - `mcp.Session(server, *, timeout_s=60, popen=subprocess.Popen)` is a context manager. It starts the server with `start_new_session=True` and the environment from the Global constraints, sends `initialize` (protocol version `2025-06-18`, client name `whyline`), waits for the result, then sends `notifications/initialized`.
-  - `list_tools() -> list[Tool(name, description, input_schema, read_only: bool | None)]`, following `nextCursor`. `read_only` comes from `annotations.readOnlyHint`, or None when absent. `call(tool, arguments) -> ToolResult(text, is_error, structured)`: `text` joins the `text` content items, other content types are noted as `[image]` or `[resource <uri>]`, and `structured` is `structuredContent` when present.
-  - Every read has a deadline. Output over 1 MB fails with `server output over 1 MB`. A line that is not JSON, a JSON-RPC `error`, a timeout or an early exit raises `McpError` with a plain reason and the last 20 lines of stderr, redacted. On exit or error, the whole process group is killed (`os.killpg`), and Windows uses `process.kill()`.
-  - `tools_hash(tools)` is the SHA-256 of the sorted names and input schemas. `service.test_mcp_server(name) -> str` starts the server, lists its tools, stores `tools_hash`, and returns `<n> tools: <first 10 names>`.
-  - The fake server supports `--tools <json file>`, `--hang-on <tool>`, `--garbage`, `--exit-on <tool>`, `--echo-env <VAR>` and paging.
-  Tests:
-  - initialize, list (two pages) and call round-trip
-  - a tool error is `is_error` with its text
-  - `test_hung_server_is_killed_at_timeout` (assert the process group is gone)
-  - garbage output and an early exit each give a plain McpError
-  - `test_mcp_secret_never_leaves_env`: a sentinel credential reaches the server's environment and appears nowhere else
-  - Test stores the hash and reports the tool count
-  Verify with `uv run pytest -q tests/workflows/test_mcp_client.py`. Change nothing else.
+  - removing a server used by a workflow is refused through the shared function, naming the workflow
+  - Connectors… opens the Tools library on the right tab
+  Verify with `uv run pytest -q tests/workflows/ tests/console/test_workflows_mcp_servers.py`. Change nothing else.
 
 - [ ] WF-29: The `mcp` step
   Edit `src/whyline/workflows/steps/__init__.py` (register `mcp`), create `src/whyline/workflows/steps/mcp_step.py` and `tests/workflows/test_mcp_step.py`; edit `src/whyline/workflows/definitions.py`, `src/whyline/workflows/engine.py`, `src/whyline/workflows/taint.py`, `src/whyline/workflows/capabilities.py` and `src/whyline/workflows/state.py` only.
+  - It uses `whyline.tools.mcp_config` for servers and their last tested tools, and `whyline.tools.mcp.Session` to call them (TLS-3, TLS-4).
   - Fields: `server` (literal, required), `tool` (literal, required), `arguments` (table, templated), `timeout_seconds` (int, default 60, at most 600). Remove MCP from the list of refused features.
   - Validation: the server exists and is enabled, and the tool is in its last tested tool list. Literal arguments are checked against the tool's `inputSchema` (required properties present, and basic JSON types for `string`, `number`, `integer`, `boolean`, `array` and `object`). Templated values are checked at run time instead.
   - Writing: a step whose tool has `read_only` True is a read. Any other step (False or None) is a write for WF-18 and WF-19, so taint gates it and approvals apply. The approval message shows the server, tool and redacted arguments (first 1,000 characters).
@@ -216,6 +182,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   - `test_tool_output_is_tainted`: a deliver step whose body reads the output is gated
   - a missing required argument is refused at save
   - an `is_error` result fails the step with its message
+  - `test_mcp_step_server_failure_fails_step`: the fake server's `--garbage` and `--exit-on` each fail the step with a plain reason
   Verify with `uv run pytest -q tests/workflows/test_mcp_step.py tests/workflows/test_engine.py tests/workflows/test_taint.py`. Change nothing else.
 
 - [ ] WF-30: Mac and whyline steps
@@ -295,7 +262,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md` (sections 12 to 14). Read it before every task. Where this plan and the spec differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the spec's behaviour.
 
-Starts after Part 1 (WF-14..20) is complete. It completes the first public release of Workflows.
+Starts after Part 1 (WF-15..20) is complete. It completes the first public release of Workflows.
 
 Global constraints:
 
@@ -383,6 +350,6 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   - Telegram `help` lists `flows` and `flow`
   Run `git diff --check` and `uv run pytest -q`. Change nothing else.
 
-- [ ] WFR-1: Publish whyline with workflows parts 2 to 4 (WF-14..34)
+- [ ] WFR-1: Publish whyline with workflows parts 2 to 4 (WF-15..34, without WF-28)
   relay-profile: release
   Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
