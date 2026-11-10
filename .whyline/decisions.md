@@ -40847,3 +40847,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e58a2f195be94b4fbe7a2fe8328adfbb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T00:50:59.469Z"} -->
+
+## 2026-11-10 — Plan form: Resume of an old Auto run is a third Source option shown only when a paused/stopped checkpoint exists
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-21
+
+**Because:** keeps the existing auto_run Resume path and its widgets while the form stops starting Auto; sources stay New plan and I have a plan already otherwise
+
+**Rejected:**
+
+- keep Auto as a permanent source — the task says the form no longer starts old Auto
+- rewrite the Auto widgets — out of scope, checkpoint fill depends on the bs-* ids
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: f6cbad0b7c93423c834a59df786628d7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T04:24:23.972Z"} -->
+
+## 2026-11-10 — Plan form matches SDLC-21: sources, visibility, PRD defaults, picker, Auto resume
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-21
+
+**Because:** Full uv run pytest -q exited 0 with one skip and no failures. Focused tests cover field visibility by size, start, and mode; PRD defaults with and without docs/product/prd.md; injected pick_files_fn in a thread worker; and a paused Auto checkpoint still offering Resume. New plan no longer starts the old Auto; Check/Run appear only on that resume source.
+
+**Rejected:**
+
+- fail for leftover Plan writer and Write a spec first — they keep Make the plan working for a description and an existing brainstorm until Start (SDLC-23)
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 8b0cf40b540c468d8768149610109192 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T04:45:58.888Z"} -->
+
+## 2026-11-10 — Approve SDLC-21 Plan form
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-21
+
+**Because:** The diff implements the requested New plan sources, size/start/mode visibility, PRD defaults and major control, threaded injectable file picker, role visibility, and legacy Auto resume; independent uv run pytest -q exited 0 with one skip and no failures.
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 2695608983504a73962339a92385d329 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T05:03:29.760Z"} -->

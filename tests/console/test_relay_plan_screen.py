@@ -50,7 +50,10 @@ NAMED = {
 
 async def _open(app, pilot, status=None):
     results = []
-    app.push_screen(RelayPlanScreen(app.session.root, status or STATUS, "claude"), results.append)
+    app.push_screen(
+        RelayPlanScreen(app.session.root, status or STATUS, "claude", legacy_auto=True),
+        results.append,
+    )
     await pilot.pause()
     return app.screen, results
 
@@ -238,58 +241,36 @@ async def test_only_the_chosen_sources_fields_show(tmp_path):
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
         source_select = screen.query_one("#rp-source", tui.Select)
-        assert source_select.value == "brainstorm"
-        expected_options = [
-            ("Brainstorm it", "brainstorm"),
-            ("I'll describe it", "draft"),
+        assert source_select.value == "new"
+        assert source_select._options == [
+            ("New plan", "new"),
             ("I have a plan already", "paste"),
-            ("Auto — brainstorm to implementation", "auto"),
+            ("Resume the earlier Auto run", "auto"),
         ]
-        assert source_select._options == expected_options
-        assert screen.query_one("#rp-brainstorm-group").display
-        assert screen.query_one("#rp-new-group").display
-        assert not screen.query_one("#rp-draft-group").display
+        assert screen.query_one("#rp-start", tui.Select).value == "description"
+        assert screen.query_one("#rp-draft-group").display
+        assert screen.query_one("#rp-options").display
+        assert not screen.query_one("#rp-brainstorm-group").display
         assert not screen.query_one("#rp-paste-group").display
-        assert not screen.query_one("#rp-auto-group").display
+        assert not screen.query_one("#rp-new-group").display
         assert screen.query_one("#rp-drafter").display
-        assert screen.query_one("#rp-test-planner").display
-        assert screen.query_one("#rp-reviewer").display
         assert screen.query_one("#rp-go").display
         assert not screen.query_one("#rp-check").display
-
-        source_select.value = "draft"
-        await pilot.pause()
-        assert screen.query_one("#rp-draft-group").display
-        assert not screen.query_one("#rp-brainstorm-group").display
-        assert not screen.query_one("#rp-new-group").display
-        assert not screen.query_one("#rp-paste-group").display
-        assert not screen.query_one("#rp-auto-group").display
-        assert screen.query_one("#rp-spec-first", tui.Checkbox).value is True
-        assert screen.query_one("#rp-drafter").display
-        assert screen.query_one("#rp-test-planner").display
-        assert screen.query_one("#rp-reviewer").display
 
         source_select.value = "paste"
         await pilot.pause()
         assert screen.query_one("#rp-paste-group").display
-        assert not screen.query_one("#rp-draft-group").display
-        assert not screen.query_one("#rp-brainstorm-group").display
-        assert not screen.query_one("#rp-new-group").display
-        assert not screen.query_one("#rp-auto-group").display
-        assert not screen.query_one("#rp-drafter").display
-        assert not screen.query_one("#rp-test-planner").display
-        assert not screen.query_one("#rp-reviewer").display
+        for hidden in ("#rp-draft-group", "#rp-options", "#rp-start-row", "#rp-auto-group",
+                       "#rp-drafter", "#rp-test-planner", "#rp-reviewer", "#rp-new-group"):
+            assert not screen.query_one(hidden).display, hidden
 
         source_select.value = "auto"
         await pilot.pause()
         assert screen.query_one("#rp-auto-group").display
+        assert screen.query_one("#rp-legacy-rest").display
         assert screen.query_one("#rp-new-group").display
-        assert not screen.query_one("#rp-brainstorm-group").display
+        assert not screen.query_one("#rp-options").display
         assert not screen.query_one("#rp-draft-group").display
-        assert not screen.query_one("#rp-paste-group").display
-        assert screen.query_one("#rp-drafter").display
-        assert screen.query_one("#rp-test-planner").display
-        assert screen.query_one("#rp-reviewer").display
         assert not screen.query_one("#rp-go").display
         assert screen.query_one("#rp-check").display
         assert str(screen.query_one("#rp-check", tui.Button).label) == "Check"
@@ -329,7 +310,7 @@ async def test_draft_needs_a_description(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         await pilot.click("#rp-go")
         await pilot.pause()
@@ -354,7 +335,7 @@ async def test_draft_dismisses_with_a_request_carrying_the_agents(tmp_path, monk
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         screen.query_one("#rp-name", tui.Input).value = "Trading v1"
         screen.query_one("#rp-description").load_text("Build the PRD")
@@ -372,7 +353,7 @@ async def test_draft_spec_first_checkbox_controls_request(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         checkbox = screen.query_one("#rp-spec-first", tui.Checkbox)
         assert checkbox.value is True
@@ -392,7 +373,7 @@ async def test_an_empty_name_comes_from_the_description(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         screen.query_one("#rp-description").load_text("Build the trading platform")
         await pilot.click("#rp-go")
@@ -406,7 +387,7 @@ async def test_an_existing_plan_name_asks_before_replacing(tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         screen.query_one("#rp-name", tui.Input).value = "p"
         screen.query_one("#rp-description").load_text("x")
@@ -423,7 +404,7 @@ async def test_an_existing_brainstorm_becomes_a_request(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        screen.query_one("#rp-start", tui.Select).value = "brainstorm"
         await pilot.pause()
         screen.query_one("#rp-from", tui.Select).value = "topic-a"
         await pilot.pause()
@@ -432,33 +413,6 @@ async def test_an_existing_brainstorm_becomes_a_request(tmp_path, monkeypatch):
         await pilot.pause()
     assert results == [
         plan_job.PlanRequest("existing", "topic-a", topic="topic-a", writer="claude", drafter="grok", reviewer="claude")
-    ]
-
-
-async def test_new_brainstorm_request_carries_drafter_and_reviewer(tmp_path, monkeypatch):
-    from whyline.console import tui as console_tui
-
-    choice = {
-        "topic": "Search indexing",
-        "models": ["claude"],
-        "writer": "claude",
-        "passes": 1,
-        "timeout": 30,
-        "attachments": (),
-    }
-    monkeypatch.setattr(console_tui, "collect_brainstorm", lambda query_fn: choice)
-    app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test(size=(110, 50)) as pilot:
-        screen, results = await _open(app, pilot)
-        assert screen.query_one("#rp-source", tui.Select).value == "brainstorm"
-        screen.query_one("#rp-drafter", tui.Select).value = "grok"
-        screen.query_one("#rp-reviewer", tui.Select).value = "codex"
-        await pilot.click("#rp-go")
-        await pilot.pause()
-    assert results == [
-        plan_job.PlanRequest(
-            "brainstorm", "Search indexing", brainstorm=choice, drafter="grok", reviewer="codex"
-        )
     ]
 
 
@@ -516,10 +470,10 @@ async def test_other_sources_do_not_show_auto_execution_fields(tmp_path):
         ]
         assert not screen.query_one("#rp-run").display
         assert not screen.query("#cb-timeout")
-        for source in ("brainstorm", "draft", "paste"):
+        for source in ("new", "paste"):
             screen.query_one("#rp-source", tui.Select).value = source
             await pilot.pause()
-            assert not screen.query_one("#rp-auto-group").display
+            assert not screen.query_one("#rp-legacy-rest").display
             for group in ("#rp-brainstorm-group", "#rp-draft-group", "#rp-paste-group"):
                 assert not screen.query_one(group).query("#rp-replace")
                 assert not screen.query_one(group).query("#rp-continue-paths")
@@ -531,7 +485,7 @@ async def test_pending_spec_keeps_resume_on_every_source(tmp_path, monkeypatch):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, _ = await _open(app, pilot)
-        for source in ("brainstorm", "draft", "paste", "auto"):
+        for source in ("new", "paste", "auto"):
             screen.query_one("#rp-source", tui.Select).value = source
             await pilot.pause()
             assert screen.query_one("#rp-resume-draft").display
@@ -619,7 +573,7 @@ async def test_drafter_follows_the_final_writer_only_while_it_still_matches(tmp_
 
         drafter.value = "grok"
         await pilot.pause()
-        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         final.value = "claude"
         await pilot.pause()
@@ -1174,7 +1128,7 @@ async def test_auto_edits_drop_the_stored_fingerprint(tmp_path, monkeypatch):
             assert screen._check_fingerprint
 
         await passed()
-        screen.query_one("#rp-source", tui.Select).value = "brainstorm"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         assert _checks_text(screen) == ""
         assert screen._check_fingerprint is None
@@ -1633,7 +1587,7 @@ async def test_test_planner_none_is_default_and_saves_empty_string(tmp_path):
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         test_select = screen.query_one("#rp-test-planner", tui.Select)
         assert test_select.value == ""
@@ -1660,7 +1614,7 @@ async def test_choosing_codex_saves_test_planner_and_reopening_shows_it(tmp_path
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         screen.query_one("#rp-drafter", tui.Select).value = "claude"
         screen.query_one("#rp-test-planner", tui.Select).value = "codex"
@@ -1685,7 +1639,7 @@ async def test_same_agent_as_drafter_shows_tip_and_still_saves(tmp_path):
     app = tui.WhylineConsoleApp(root=repo)
     async with app.run_test(size=(110, 50)) as pilot:
         screen, results = await _open(app, pilot)
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
         assert screen.query_one("#rp-drafter", tui.Select).value == "codex"
         tip = screen.query_one("#rp-test-planner-tip", tui.Static)
@@ -1694,7 +1648,7 @@ async def test_same_agent_as_drafter_shows_tip_and_still_saves(tmp_path):
         screen.query_one("#rp-test-planner", tui.Select).value = "codex"
         await pilot.pause()
         assert tip.display
-        assert str(tip.renderable) == "Tip: a different agent from the Drafter catches more."
+        assert str(tip.renderable) == "Tip: a different agent from the Writer catches more."
 
         screen.query_one("#rp-name", tui.Input).value = "Same Agent Plan"
         screen.query_one("#rp-description").load_text("Build it")
@@ -1706,14 +1660,11 @@ async def test_same_agent_as_drafter_shows_tip_and_still_saves(tmp_path):
     assert relay_ops.planner_agents(repo) == ("codex", "claude", "codex")
 
 
-async def test_brainstorm_and_auto_forms_carry_test_planner_into_planner_call(
-    tmp_path, monkeypatch
-):
+async def test_auto_form_carries_test_planner_into_planner_call(tmp_path, monkeypatch):
     from whyline.console import adapters
     from whyline.console.session import SessionEvent
 
     repo = _repo(tmp_path / "repo")
-    seen_brainstorm_planner: list[tuple[str, str, str]] = []
     seen_auto_planner: list[tuple[str, str, str]] = []
 
     monkeypatch.setattr(
@@ -1730,42 +1681,6 @@ async def test_brainstorm_and_auto_forms_carry_test_planner_into_planner_call(
     draft_file.parent.mkdir(parents=True, exist_ok=True)
     draft_file.write_text("- [ ] T-1: task\n", encoding="utf-8")
 
-    def fake_brainstorm_draft_plan(root, _description, _attachments=(), *, progress, spec=None):
-        seen_brainstorm_planner.append(relay_ops.planner_agents(root))
-        return relay_ops.Draft(
-            path=draft_file,
-            text="- [ ] T-1: task\n",
-            drafted_by="codex",
-            source="planner",
-        )
-
-    monkeypatch.setattr(relay_ops, "draft_plan", fake_brainstorm_draft_plan)
-
-    app = tui.WhylineConsoleApp(root=repo)
-    async with app.run_test(size=(110, 50)) as pilot:
-        screen, results = await _open(app, pilot)
-        assert screen.query_one("#rp-source", tui.Select).value == "brainstorm"
-        screen.query_one("#bs-topic", tui.Input).value = "Search indexing"
-        screen.query_one("#bs-test-planner", tui.Select).value = "codex"
-        await pilot.pause()
-        assert screen.query_one("#rp-test-planner", tui.Select).value == "codex"
-        await pilot.click("#rp-go")
-        await pilot.pause()
-
-    assert len(results) == 1
-    synth_outcome = plan_job.run_request(repo, results[0], progress=lambda line: None)
-    assert synth_outcome.stage == "synthesis"
-    # Clear the saved planner before run_plan_from_spec to prove the request carries test_planner into the planner call.
-    relay_ops.save_planner(repo, "claude", "codex", "")
-    plan_job.run_plan_from_spec(
-        repo,
-        results[0],
-        repo / "docs" / "specs" / "search-indexing.md",
-        progress=lambda line: None,
-    )
-    assert seen_brainstorm_planner == [("codex", "claude", "codex")]
-
-    # Reset planner config and test the Auto form carrying the selected test planner.
     relay_ops.save_planner(repo, "claude", "codex", "")
     assert relay_ops.planner_agents(repo) == ("claude", "codex", "")
 

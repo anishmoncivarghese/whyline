@@ -22,13 +22,27 @@ from whyline.console.chain_editor import OrderedChain, _ChainCheck
 from whyline.console.plan_job import PlanRequest
 from whyline.console.repl import NO_SUBSCRIPTIONS, provider_enabled
 from whyline.console.tui import ConfirmScreen
+from whyline.sdlc.docset import PrdMode
 
 _SOURCES = [
-    ("Brainstorm it", "brainstorm"),
-    ("I'll describe it", "draft"),
+    ("New plan", "new"),
     ("I have a plan already", "paste"),
-    ("Auto — brainstorm to implementation", "auto"),
 ]
+_RESUME_AUTO = ("Resume the earlier Auto run", "auto")
+_STARTS = [
+    ("A description", "description"),
+    ("A brainstorm", "brainstorm"),
+    ("A document (PRD or spec)", "document"),
+]
+_SIZES = [("Small", "small"), ("Feature", "feature"), ("Large", "large")]
+_SIZE_HINTS = {
+    "small": "A small change: spec, plan and build record, no PRD.",
+    "feature": "A feature: PRD, spec and plan, with a brainstorm if you want one.",
+    "large": "A large piece of work: brainstorm, PRD, design and plan.",
+}
+_MODES = [("Human in the loop", "human"), ("Auto", "auto")]
+_DOCUMENT_KINDS = [("PRD", "prd"), ("Spec", "spec")]
+_PICKED_FILE_PENDING = "Starting from a chosen file comes with Start."
 NO_AGENTS_SETUP = (
     "No agent is installed here, so the relay has nobody to run. "
     "Install one of claude, codex, antigravity or grok, log in, then press Set up again."
@@ -55,7 +69,7 @@ _AUTO_SELECTS = frozenset({
 })
 _AUTO_INPUTS = frozenset({"rp-name", "bs-topic", "bs-passes"})
 _AUTO_BOXES = frozenset({"rp-replace", "rp-continue-paths"})
-_TEST_PLANNER_TIP = "Tip: a different agent from the Drafter catches more."
+_TEST_PLANNER_TIP = "Tip: a different agent from the Writer catches more."
 
 
 class _PlannerStr(str):
@@ -162,7 +176,17 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen #rp-source, RelayPlanScreen #rp-drafter, RelayPlanScreen #rp-test-planner,
     RelayPlanScreen #rp-reviewer, RelayPlanScreen #rp-implementer, RelayPlanScreen #rp-tester,
     RelayPlanScreen #rp-exec-reviewer, RelayPlanScreen #rp-release,
-    RelayPlanScreen #bs-test-planner { width: 40; }
+    RelayPlanScreen #bs-test-planner, RelayPlanScreen #rp-architect, RelayPlanScreen #rp-start,
+    RelayPlanScreen #rp-size, RelayPlanScreen #rp-prd, RelayPlanScreen #rp-mode,
+    RelayPlanScreen #rp-from, RelayPlanScreen #rp-document-kind { width: 40; }
+    RelayPlanScreen #rp-size-hint, RelayPlanScreen #rp-prd-current, RelayPlanScreen #rp-no-prd,
+    RelayPlanScreen #rp-brainstorm-file, RelayPlanScreen #rp-document-file {
+        color: $text-muted; height: auto;
+    }
+    RelayPlanScreen #rp-prd-current { padding: 1 1 0 1; width: auto; }
+    RelayPlanScreen #rp-options, RelayPlanScreen #rp-prd-group, RelayPlanScreen #rp-start-row,
+    RelayPlanScreen #rp-document-group, RelayPlanScreen #rp-exec-roles,
+    RelayPlanScreen #rp-legacy-rest { height: auto; }
     RelayPlanScreen #rp-test-planner-tip,
     RelayPlanScreen #bs-test-planner-tip { color: $text-muted; height: auto; display: none; }
     RelayPlanScreen #rp-name { width: 1fr; }
@@ -178,8 +202,28 @@ class RelayPlanScreen(ModalScreen):
     RelayPlanScreen #rp-buttons Button { margin-right: 1; }
     """
 
-    def __init__(self, root: Path, status: dict, active: str, source: str = "brainstorm") -> None:
+    def __init__(
+        self,
+        root: Path,
+        status: dict,
+        active: str,
+        source: str = "new",
+        *,
+        pick_files_fn=None,
+        legacy_auto: bool | None = None,
+    ) -> None:
         super().__init__()
+        self._pick_files_fn = pick_files_fn
+        self._picked: dict[str, Path | None] = {"brainstorm": None, "document": None}
+        # The old sources fold into New plan, each with its own Start from.
+        self._initial_start = {"brainstorm": "brainstorm", "draft": "description"}.get(
+            source, "description"
+        )
+        if source in ("brainstorm", "draft"):
+            source = "new"
+        self._legacy_auto = (
+            self._auto_checkpoint_saved(root) if legacy_auto is None else legacy_auto
+        ) or source == "auto"
         self._root = root
         self._status = status
         self._active = active
@@ -197,6 +241,42 @@ class RelayPlanScreen(ModalScreen):
         self._checkpoint_loaded = False
         self._filling = False
         self._load_execution_defaults()
+        from whyline.sdlc import product
+
+        found = product.current(root)
+        self._product_version = found.version if found else ""
+
+    @staticmethod
+    def _auto_checkpoint_saved(root: Path) -> bool:
+        """An Auto run from before this release that can still be resumed."""
+        from whyline.console import auto_run
+        from whyline.state import load_object
+
+        path = auto_run.checkpoint_path(root)
+        if not path.is_file():
+            return False
+        try:
+            saved = load_object(path)
+        except Exception:
+            return False
+        return (
+            isinstance(saved, dict)
+            and saved.get("schema") == auto_run.SCHEMA
+            and (saved.get("phase") in ("paused", "stopped") or "pause" in saved)
+            and isinstance(saved.get("request"), dict)
+        )
+
+    def _brainstorm_choices(self) -> list[str]:
+        """docs/brainstorm/ names, newest first."""
+        folder = self._root / "docs" / "brainstorm"
+
+        def modified(name: str) -> float:
+            try:
+                return (folder / f"{name}.md").stat().st_mtime
+            except OSError:
+                return 0.0
+
+        return sorted(relay_ops.brainstorm_docs(self._root), key=lambda n: (modified(n), n), reverse=True)
 
     def _agent_select(self, wanted: str, select_id: str) -> Select | Label:
         if not self._agents:
@@ -223,7 +303,7 @@ class RelayPlanScreen(ModalScreen):
         if self._agents:
             roles_row = Vertical(
                 Horizontal(
-                    Label("Drafter:", classes="field-label"),
+                    Label("Writer:", classes="field-label"),
                     self._agent_select(drafter, "rp-drafter"),
                     id="rp-drafter-row",
                 ),
@@ -242,6 +322,11 @@ class RelayPlanScreen(ModalScreen):
                     self._agent_select(reviewer, "rp-reviewer"),
                     id="rp-reviewer-row",
                 ),
+                Horizontal(
+                    Label("Architect reviewer:", classes="field-label"),
+                    self._agent_select(reviewer, "rp-architect"),
+                    id="rp-architect-row",
+                ),
                 id="rp-roles-row",
             )
         else:
@@ -252,17 +337,27 @@ class RelayPlanScreen(ModalScreen):
         form = VerticalScroll(
             Label("Plan: make a plan the relay works through, saved under plans/."),
             Horizontal(
-                Label("Plan name:", classes="field-label"),
+                Label("Name:", classes="field-label"),
                 Input(placeholder="leave empty to name it from the description", id="rp-name"),
             ),
             Horizontal(
                 Label("Source:", classes="field-label"),
-                Select(_SOURCES, value=self._initial_source, allow_blank=False, id="rp-source"),
+                Select(
+                    [*_SOURCES, *([_RESUME_AUTO] if self._legacy_auto else [])],
+                    value=self._initial_source,
+                    allow_blank=False,
+                    id="rp-source",
+                ),
             ),
             Vertical(
                 Label("Paste the plan (each task as `- [ ] ID: title`):"),
                 TextArea(id="rp-paste"),
                 id="rp-paste-group",
+            ),
+            Horizontal(
+                Label("Start from:", classes="field-label"),
+                Select(_STARTS, value=self._initial_start, allow_blank=False, id="rp-start"),
+                id="rp-start-row",
             ),
             Vertical(
                 Label("What should the plan build?"),
@@ -272,9 +367,19 @@ class RelayPlanScreen(ModalScreen):
                 id="rp-draft-group",
             ),
             Vertical(*self._brainstorm_widgets(), id="rp-brainstorm-group"),
-            # brainstorm_field_widgets hard-codes #bs-* ids, so Auto and a new
-            # brainstorm share this one mount instead of composing a second copy.
+            Vertical(
+                Horizontal(
+                    Label("Kind:", classes="field-label"),
+                    Select(_DOCUMENT_KINDS, value="prd", allow_blank=False, id="rp-document-kind"),
+                    Button("Choose file…", id="rp-pick-document"),
+                ),
+                Static("No file chosen.", id="rp-document-file", markup=False),
+                id="rp-document-group",
+            ),
+            # brainstorm_field_widgets hard-codes #bs-* ids; the earlier Auto run
+            # keeps this one mount so its checkpoint can still fill them.
             Vertical(*self._research_widgets(), id="rp-new-group"),
+            self._options_group(),
             roles_row,
             self._auto_group(),
             id="rp-form",
@@ -305,21 +410,24 @@ class RelayPlanScreen(ModalScreen):
         return self._active if self._active in usable else (usable or ["claude"])[0]
 
     def _brainstorm_widgets(self) -> list:
-        docs = relay_ops.brainstorm_docs(self._root)
+        docs = self._brainstorm_choices()
         default = self._research_default()
         from whyline.console.repl import BRAINSTORM_AGENTS
 
         usable = [a for a in BRAINSTORM_AGENTS if self._status.get(a, {}).get("available")]
         return [
             Horizontal(
-                Label("From:", classes="field-label"),
+                Label("Brainstorm:", classes="field-label"),
                 Select(
-                    [("New brainstorm", "new"), *((doc, doc) for doc in docs)],
-                    value="new",
-                    allow_blank=False,
+                    [(doc, doc) for doc in docs],
+                    value=docs[0] if docs else Select.BLANK,
+                    allow_blank=not docs,
+                    prompt="No brainstorms in docs/brainstorm/",
                     id="rp-from",
                 ),
+                Button("Choose file…", id="rp-pick-brainstorm"),
             ),
+            Static("", id="rp-brainstorm-file", markup=False),
             Horizontal(
                 Label("Plan writer:", classes="field-label"),
                 Select(
@@ -331,6 +439,52 @@ class RelayPlanScreen(ModalScreen):
                 id="rp-writer-row",
             ),
         ]
+
+    def _options_group(self) -> Vertical:
+        """Size, Brainstorm first, PRD, Mode and Build for a new plan."""
+        has_product = bool(self._product_version)
+        major = self._next_major()
+        return Vertical(
+            Horizontal(
+                Label("Size:", classes="field-label"),
+                Select(_SIZES, value="feature", allow_blank=False, id="rp-size"),
+            ),
+            Static(_SIZE_HINTS["feature"], id="rp-size-hint", markup=False),
+            Checkbox("Brainstorm first", value=False, id="rp-brainstorm-first"),
+            Vertical(
+                Horizontal(
+                    Label("PRD:", classes="field-label"),
+                    Select(
+                        [(mode.label, mode.value) for mode in PrdMode],
+                        value=(PrdMode.UPDATE if has_product else PrdMode.NEW).value,
+                        allow_blank=False,
+                        id="rp-prd",
+                    ),
+                    Static(
+                        f"current v{self._product_version}" if has_product else "",
+                        id="rp-prd-current",
+                        markup=False,
+                    ),
+                ),
+                Checkbox(f"Major version (v{major})", value=False, id="rp-prd-major"),
+                id="rp-prd-group",
+            ),
+            Static("Small has no PRD.", id="rp-no-prd", markup=False),
+            Horizontal(
+                Label("Mode:", classes="field-label"),
+                Select(_MODES, value="human", allow_blank=False, id="rp-mode"),
+            ),
+            Checkbox("Build when the plan is approved", value=True, id="rp-build"),
+            id="rp-options",
+        )
+
+    def _next_major(self) -> str:
+        from whyline.sdlc import product
+
+        try:
+            return product.next_version(self._product_version or None, major=True)
+        except ValueError:
+            return "2.0"
 
     def _research_widgets(self) -> list:
         from whyline.console.tui import brainstorm_field_widgets
@@ -392,8 +546,11 @@ class RelayPlanScreen(ModalScreen):
         release_values = [value for _label, value in release_options]
         release = self._release if self._release in release_values else "human"
         chain = _PlanChain(self._agents, self._fill_backup, id="rp-chain")
-        rows.extend(
-            [
+        # The three roles show for a new plan that builds; the rest is only for
+        # resuming an Auto run saved before this release.
+        return [
+            Vertical(*rows, id="rp-exec-roles"),
+            Vertical(
                 Horizontal(
                     Label("Release:", classes="field-label"),
                     Select(release_options, value=release, allow_blank=False, id="rp-release"),
@@ -412,9 +569,9 @@ class RelayPlanScreen(ModalScreen):
                     id="rp-continue-paths",
                 ),
                 Static("", id="rp-auto-summary", markup=False),
-            ]
-        )
-        return rows
+                id="rp-legacy-rest",
+            ),
+        ]
 
     def _fill_backup(self) -> list[str]:
         """Names for an empty Auto chain. Automatic is not a stored value."""
@@ -481,7 +638,7 @@ class RelayPlanScreen(ModalScreen):
         except Exception:
             drafter = self._planner[0]
         test_planner = self._selected_test_planner()
-        roles_shown = self._source() in ("draft", "brainstorm", "auto")
+        roles_shown = self._source() != "paste"
         show_tip = roles_shown and bool(test_planner) and test_planner == drafter
         for tip_id in ("#rp-test-planner-tip", "#bs-test-planner-tip"):
             try:
@@ -513,39 +670,144 @@ class RelayPlanScreen(ModalScreen):
     def _source(self) -> str:
         return self.query_one("#rp-source", Select).value
 
-    def _show_source(self, source: str) -> None:
-        for name in ("paste", "draft", "brainstorm", "auto"):
-            self.query_one(f"#rp-{name}-group").display = name == source
-        self._sync_from(source)
-        roles_shown = source in ("draft", "brainstorm", "auto")
-        self.query_one("#rp-roles-row").display = roles_shown
+    def _value(self, selector: str, default: str = "") -> str:
+        try:
+            value = self.query_one(selector, Select).value
+        except Exception:  # missing, or a Label when no agent is installed
+            return default
+        return value if isinstance(value, str) else default
+
+    def _checked(self, selector: str) -> bool:
+        try:
+            return bool(self.query_one(selector, Checkbox).value)
+        except Exception:
+            return False
+
+    def _show(self, selector: str, shown: bool) -> None:
+        for widget in self.query(selector):
+            widget.display = shown
+
+    def _building(self) -> bool:
+        return self._value("#rp-mode", "human") == "auto" or self._checked("#rp-build")
+
+    def _apply_layout(self) -> None:
+        """Show the fields that apply to the source, start, size, mode and build."""
+        source = self._source()
+        new = source == "new"
+        auto = source == "auto"
+        start = self._value("#rp-start", "description")
+        size = self._value("#rp-size", "feature")
+        prd = self._value("#rp-prd", "new")
+        if self._value("#rp-mode", "human") == "auto":
+            build = self.query_one("#rp-build", Checkbox)
+            if not build.value:
+                build.value = True
+            build.disabled = True
+        else:
+            self.query_one("#rp-build", Checkbox).disabled = False
+        building = self._building()
+        self._show("#rp-paste-group", source == "paste")
+        self._show("#rp-start-row", new)
+        self._show("#rp-draft-group", new and start == "description")
+        self._show("#rp-brainstorm-group", new and start == "brainstorm")
+        self._show("#rp-document-group", new and start == "document")
+        self._show("#rp-new-group", auto)
+        self._show("#rp-options", new)
+        self._show("#rp-brainstorm-first", size == "feature")
+        self._show("#rp-prd-group", size != "small")
+        self._show("#rp-prd-major", size != "small" and prd == "update")
+        self._show("#rp-no-prd", size == "small")
+        self.query_one("#rp-size-hint", Static).update(_SIZE_HINTS.get(size, ""))
+        roles_shown = source != "paste"
+        self._show("#rp-roles-row", roles_shown)
         if self._agents:
-            self.query_one("#rp-drafter-row").display = roles_shown
-            self.query_one("#rp-test-planner-row").display = roles_shown
-            self.query_one("#rp-reviewer-row").display = roles_shown
-            self.query_one("#rp-drafter").display = roles_shown
-            self.query_one("#rp-test-planner").display = roles_shown
-            self.query_one("#rp-reviewer").display = roles_shown
+            for name in ("drafter", "test-planner", "reviewer"):
+                self._show(f"#rp-{name}-row", roles_shown)
+                self._show(f"#rp-{name}", roles_shown)
+            self._show("#rp-architect-row", new and size == "large")
+            self._show("#rp-architect", new and size == "large")
+        self._show("#rp-auto-group", auto or (new and building))
+        self._show("#rp-legacy-rest", auto)
         self._sync_test_planner_tip()
         go = self.query_one("#rp-go", Button)
-        go.display = source != "auto"
+        go.display = not auto
         if not self._agents:
             go.disabled = True
-        elif source != "auto":
+        elif not auto:
             go.label = "Save" if source == "paste" else "Make the plan"
-        self.query_one("#rp-check", Button).display = source == "auto"
-        self.query_one("#rp-run", Button).display = source == "auto"
+        self.query_one("#rp-check", Button).display = auto
+        self.query_one("#rp-run", Button).display = auto
+
+    def _show_source(self, source: str) -> None:
+        self._apply_layout()
         self._drop_stored_check()
         if source == "auto":
             self._load_auto_checkpoint()
 
-    def _sync_from(self, source: str | None = None) -> None:
-        source = self._source() if source is None else source
-        new = self.query_one("#rp-from", Select).value == "new"
-        self.query_one("#rp-new-group").display = source == "auto" or (
-            source == "brainstorm" and new
-        )
-        self.query_one("#rp-writer-row").display = source == "brainstorm" and not new
+    def _pick_file(self, target: str) -> None:
+        """Choose file…: the picker blocks, so it runs in a thread worker."""
+        from whyline.console import mac_input
+
+        pick = self._pick_files_fn or mac_input.pick_files
+
+        def in_thread() -> None:
+            try:
+                files = list(pick())
+            except Exception as error:
+                self.app.call_from_thread(self._picked_file, target, [], str(error))
+                return
+            self.app.call_from_thread(self._picked_file, target, files, "")
+
+        self.run_worker(in_thread, thread=True)
+
+    def _picked_file(self, target: str, files: list, problem: str) -> None:
+        if not self.is_attached:
+            return
+        if problem:
+            self._error(problem)
+            return
+        if not files:
+            return
+        path = Path(files[0])
+        self._picked[target] = path
+        self._error("")
+        shown = self.query_one(f"#rp-{target}-file", Static)
+        shown.update(path.name)
+
+    def new_plan_options(self) -> dict:
+        """What the New plan form holds now, for Start to read."""
+        start = self._value("#rp-start", "description")
+        size = self._value("#rp-size", "feature")
+        mode = self._value("#rp-mode", "human")
+        prd = "none" if size == "small" else self._value("#rp-prd", "new")
+        options = {
+            "start": start,
+            "name": self.query_one("#rp-name", Input).value.strip(),
+            "size": size,
+            "brainstorm_first": size == "feature" and self._checked("#rp-brainstorm-first"),
+            "prd_mode": prd,
+            "prd_major": prd == "update" and self._checked("#rp-prd-major"),
+            "mode": mode,
+            "build": self._building(),
+            "roles": {
+                "writer": self._value("#rp-drafter"),
+                "reviewer": self._value("#rp-reviewer"),
+                "test_planner": self._selected_test_planner(),
+            },
+            "file": self._picked.get(start) if start != "description" else None,
+            "document_kind": self._value("#rp-document-kind", "prd"),
+        }
+        if start == "brainstorm":
+            options["brainstorm"] = self._value("#rp-from")
+        if size == "large":
+            options["roles"]["architect"] = self._value("#rp-architect")
+        if options["build"]:
+            options["roles"].update(
+                implementer=self._value("#rp-implementer"),
+                tester=self._value("#rp-tester"),
+                exec_reviewer=self._value("#rp-exec-reviewer"),
+            )
+        return options
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         if getattr(self, "_filling", False):
@@ -553,8 +815,8 @@ class RelayPlanScreen(ModalScreen):
         select_id = event.select.id
         if select_id == "rp-source":
             self._show_source(event.value)
-        elif select_id == "rp-from":
-            self._sync_from()
+        elif select_id in ("rp-start", "rp-size", "rp-mode", "rp-prd"):
+            self._apply_layout()
         elif select_id == "bs-final":
             self._follow_drafter(event.value)
             self._refresh_auto_summary()
@@ -612,7 +874,9 @@ class RelayPlanScreen(ModalScreen):
         if getattr(self, "_filling", False):
             return
         box_id = event.checkbox.id or ""
-        if box_id.startswith("bs-"):
+        if box_id == "rp-build":
+            self._apply_layout()
+        elif box_id.startswith("bs-"):
             self._sync_brainstorm_agents()
             self._refresh_auto_summary()
             self._drop_stored_check()
@@ -662,12 +926,8 @@ class RelayPlanScreen(ModalScreen):
             pass
 
     def _submit(self, request: PlanRequest) -> None:
-        source = self._source()
-        if source == "draft":
+        if self._source() == "new" and self._value("#rp-start", "description") == "description":
             field = self.query_one("#rp-attachments", AttachmentsField)
-            risky = field.needs_confirmation()
-        elif source == "brainstorm" and self.query_one("#rp-from", Select).value == "new":
-            field = self.query_one("#bs-attachments", AttachmentsField)
             risky = field.needs_confirmation()
         else:
             risky = []
@@ -1169,7 +1429,13 @@ class RelayPlanScreen(ModalScreen):
         if source == "paste":
             self._save_paste()
             return
-        request = self._draft_request() if source == "draft" else self._brainstorm_request()
+        if source != "new":
+            return
+        start = self._value("#rp-start", "description")
+        if start == "document":
+            self._error(_PICKED_FILE_PENDING)
+            return
+        request = self._draft_request() if start == "description" else self._brainstorm_request()
         if request is not None:
             self._submit(request)
 
@@ -1192,38 +1458,28 @@ class RelayPlanScreen(ModalScreen):
         return _attach_test_planner(req, self._selected_test_planner())
 
     def _brainstorm_request(self) -> PlanRequest | None:
-        from whyline.console.tui import collect_brainstorm
-
-        chosen = self.query_one("#rp-from", Select).value
-        drafter = self.query_one("#rp-drafter", Select).value
-        reviewer = self.query_one("#rp-reviewer", Select).value
-        test_planner = self._selected_test_planner()
-        if chosen != "new":
-            req = PlanRequest(
-                "existing",
-                self._plan_name(chosen),
-                topic=chosen,
-                writer=self.query_one("#rp-writer", Select).value,
-                drafter=drafter,
-                reviewer=reviewer,
-            )
-            return _attach_test_planner(req, test_planner)
-        choice = collect_brainstorm(self.query_one)
-        if isinstance(choice, str):
-            self._error(choice)
+        chosen = self._value("#rp-from")
+        if self._picked["brainstorm"]:
+            self._error(_PICKED_FILE_PENDING)
             return None
-        if not test_planner and isinstance(choice, dict):
-            test_planner = str(
-                getattr(choice, "test_planner", "") or choice.get("test_planner") or ""
-            )
+        if not chosen:
+            self._error("Choose a brainstorm to start from.")
+            return None
         req = PlanRequest(
-            "brainstorm",
-            self._plan_name(choice["topic"]),
-            brainstorm=choice,
-            drafter=drafter,
-            reviewer=reviewer,
+            "existing",
+            self._plan_name(chosen),
+            topic=chosen,
+            writer=self.query_one("#rp-writer", Select).value,
+            drafter=self.query_one("#rp-drafter", Select).value,
+            reviewer=self.query_one("#rp-reviewer", Select).value,
         )
-        return _attach_test_planner(req, test_planner)
+        return _attach_test_planner(req, self._selected_test_planner())
+
+    def _on_rp_pick_brainstorm(self) -> None:
+        self._pick_file("brainstorm")
+
+    def _on_rp_pick_document(self) -> None:
+        self._pick_file("document")
 
     def _on_rp_resume_draft(self) -> None:
         pending = relay_ops.pending_draft(self._root) or "plan"

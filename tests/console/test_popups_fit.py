@@ -51,7 +51,7 @@ async def test_brainstorm_start_fits():
     assert await _visible(lambda: tui.BrainstormScreen(STATUS, "claude"), "#bs-start")
 
 
-@pytest.mark.parametrize("source", ["brainstorm", "draft", "paste"])
+@pytest.mark.parametrize("source", ["new", "paste"])
 async def test_plan_go_fits(source):
     assert await _visible(lambda: RelayPlanScreen(Path.cwd(), STATUS, "claude"), "#rp-go", source)
 

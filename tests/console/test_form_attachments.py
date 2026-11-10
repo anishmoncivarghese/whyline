@@ -120,7 +120,7 @@ async def test_relay_plan_screen_attaches_files_and_omits_refs(repo, monkeypatch
         with pytest.raises(NoMatches):
             screen.query_one("#rp-refs")
 
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
 
         screen.query_one("#att-pick", tui.Button).press()  # by widget, not screen position
@@ -160,7 +160,7 @@ async def test_relay_plan_screen_warns_on_unverified_attachments(
         app.push_screen(screen, results.append)
         await pilot.pause()
 
-        screen.query_one("#rp-source", tui.Select).value = "draft"
+        screen.query_one("#rp-source", tui.Select).value = "new"
         await pilot.pause()
 
         screen.query_one("#att-pick", tui.Button).press()  # by widget, not screen position
