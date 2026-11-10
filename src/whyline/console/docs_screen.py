@@ -536,6 +536,7 @@ class DocsScreen(ModalScreen):
         check: Callable[[Path], str | None] = guard.check,
         export_pack: Callable[..., object] = export.export_pack,
         opener: Callable[[Path], object] | None = None,
+        revealer: Callable[[Path], object] | None = None,
         review: object = review_mod,
         runner: object = runner_mod,
         approver: str = "human",
@@ -559,6 +560,8 @@ class DocsScreen(ModalScreen):
         self._check = check
         self._export = export_pack
         self._opener = opener or (lambda path: subprocess.run(["open", str(path)], check=False))
+        self._revealer = revealer or (lambda path: subprocess.run(["open", "-R", str(path)], check=False))
+        self._exported: list[Path] = []
         self._review = review
         self._runner = runner
         self._approver = approver
@@ -607,7 +610,8 @@ class DocsScreen(ModalScreen):
                 Button("Switch to it", id="docs-switch"),
                 Button("Create GitHub repository", id="docs-github"),
                 Button("History", id="docs-history"),
-                Button("Export", id="docs-export"),
+                Button("Export pack", id="docs-export"),
+                Button("Reveal in Finder", id="docs-reveal"),
                 Button("Close", id="docs-close"),
                 id="docs-actions",
             ),
@@ -644,6 +648,7 @@ class DocsScreen(ModalScreen):
         self._sync_buttons()
 
     def _sync_buttons(self) -> None:
+        self.query_one("#docs-reveal", Button).display = bool(self._exported)
         for button_id in _ACTIONS:
             self.query_one(f"#{button_id}", Button).disabled = self.refusal is not None or not (
                 self.entry and self.key
@@ -790,6 +795,9 @@ class DocsScreen(ModalScreen):
             self.show_history()
         elif button_id == "docs-export":
             self._start_export()
+        elif button_id == "docs-reveal":
+            if self._exported:
+                self._revealer(self._exported[0])
         elif button_id in _SET_ACTIONS:
             self._set_action(button_id)
         elif button_id in _ACTIONS and self.refusal is not None:
@@ -1051,17 +1059,24 @@ class DocsScreen(ModalScreen):
         slug = self.entry[len(SET_PREFIX):]
         status = self.query_one("#docs-status", Static)
         status.update("Exporting…")
+        self._exported = []
+        self.query_one("#docs-reveal", Button).display = False
 
-        def work() -> str:
+        def work() -> tuple[str, list[Path]]:
             try:
                 result = self._export(self.docs, slug)
             except Exception as error:
-                return f"Export failed: {error}"
-            files = ", ".join(str(f) for f in getattr(result, "files", []))
-            return "Exported: " + files if files else "Nothing was exported."
+                return f"Export failed: {error}", []
+            files = [Path(f) for f in getattr(result, "files", [])]
+            notes = [str(n) for n in getattr(result, "notes", [])]
+            head = "Exported: " + ", ".join(str(f) for f in files) if files else "Nothing was exported."
+            return "\n".join([head, *notes]), files
 
-        def done(text: str) -> None:
-            status.update(text)
+        def done(outcome: tuple[str, list[Path]]) -> None:
+            text, files = outcome
+            status.update(Text(text))
+            self._exported = files
+            self.query_one("#docs-reveal", Button).display = bool(files)
 
         def run() -> None:
             self.app.call_from_thread(done, work())
@@ -1415,3 +1430,66 @@ class ProjectHomeScreen(ModalScreen):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+class DocsTab(Vertical):
+    """Read-only view of the document set that owns the active plan, for the Files pane."""
+
+    NO_SET = "This plan has no document set."
+    DEFAULT_CSS = """
+    DocsTab { height: 1fr; min-height: 0; }
+    DocsTab OptionList { height: auto; max-height: 8; }
+    DocsTab VerticalScroll { height: 1fr; min-height: 0; }
+    DocsTab Button { height: 1; min-height: 1; border: none; padding: 0 1; }
+    """
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id)
+        self.docs: Path | None = None
+        self.slug = ""
+        self.key = ""
+        self.shown_text = ""
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="file-docs-status", markup=False)
+        yield OptionList(id="file-docs-list")
+        yield VerticalScroll(Static("", id="file-docs-text", markup=False))
+        yield Button("Open in Docs", id="file-docs-open")
+
+    def show_set(self, owner: tuple[Path, str] | None) -> None:
+        """Show the set at (docs checkout, slug), or the no-set message."""
+        options = self.query_one("#file-docs-list", OptionList)
+        options.clear_options()
+        self.key = ""
+        opener = self.query_one("#file-docs-open", Button)
+        status = self.query_one("#file-docs-status", Static)
+        if owner is None:
+            self.docs, self.slug = None, ""
+            status.update(self.NO_SET)
+            self._show_text("")
+            opener.display = False
+            return
+        self.docs, self.slug = owner
+        rows = middle_rows(self.docs, SET_PREFIX + self.slug)
+        status.update(self.slug)
+        opener.display = True
+        options.add_options([_option(r) for r in rows])
+        if rows:
+            self.select_document(rows[0].key)
+        else:
+            self._show_text(NOTHING)
+
+    def select_document(self, key: str) -> None:
+        if self.docs is None:
+            return
+        self.key = key
+        self._show_text(document_text(self.docs, SET_PREFIX + self.slug, key))
+
+    def _show_text(self, text: str) -> None:
+        self.shown_text = text
+        self.query_one("#file-docs-text", Static).update(text)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        if event.option.id:
+            self.select_document(str(event.option.id))

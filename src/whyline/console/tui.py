@@ -1156,7 +1156,8 @@ class WhylineConsoleApp(App):
     #file-choices { width: 1fr; height: auto; }
     /* One row at 80x24: default 3-row buttons would push #file-view off. */
     #file-choices Button { height: 1; min-height: 1; border: none; padding: 0 1; }
-    #file-working, #file-plan, #file-all, #file-chat { display: none; }
+    #file-working, #file-plan, #file-docs, #file-all, #file-chat { display: none; }
+    #file-docs-panel { height: 1fr; min-height: 0; display: none; }
     #relay-chat-panel { height: 1fr; min-height: 0; display: none; }
     """
 
@@ -1321,7 +1322,7 @@ class WhylineConsoleApp(App):
             self._file_choice = "working"
             self._hide_file_tree()
             self._show_newest_working_file()
-        for name in ("working", "plan", "all", "chat"):
+        for name in ("working", "plan", "docs", "all", "chat"):
             button = self._main_widget(f"#file-{name}", Button)
             if button is None:
                 continue
@@ -1334,9 +1335,35 @@ class WhylineConsoleApp(App):
                 button.display = show_nav
 
     def _set_chat_panel(self, shown: bool) -> None:
+        self._set_docs_panel(False)
         panel = self._main_widget("#relay-chat-panel")
         if panel is not None:
             panel.display = shown
+
+    def _set_docs_panel(self, shown: bool) -> None:
+        panel = self._main_widget("#file-docs-panel")
+        if panel is not None:
+            panel.display = shown
+
+    def _show_docs_panel(self) -> None:
+        for selector in ("#file-view", "#file-tree"):
+            widget = self._main_widget(selector)
+            if widget is not None:
+                widget.display = False
+        self._set_chat_panel(False)
+        from whyline.console.docs_screen import DocsTab
+        from whyline.console.file_pane import owning_set
+
+        panel = self._main_widget("#file-docs-panel")
+        if panel is None:
+            pane = self._main_widget("#file-pane")
+            if pane is None:
+                return
+            panel = DocsTab(id="file-docs-panel")
+            pane.mount(panel)
+        panel.display = True
+        owner = owning_set(self.session.root)
+        self.call_after_refresh(panel.show_set, owner)
 
     def _show_chat_panel(self) -> None:
         for selector in ("#file-view", "#file-tree"):
@@ -1371,6 +1398,11 @@ class WhylineConsoleApp(App):
             view.display = False
 
     def _select_file_choice(self, choice: str) -> None:
+        if choice == "docs":
+            self._file_choice = "docs"
+            self._sync_file_choice_widgets()
+            self._show_docs_panel()
+            return
         if choice == "chat":
             self._file_choice = "chat"
             self._sync_file_choice_widgets()
@@ -4150,6 +4182,7 @@ class WhylineConsoleApp(App):
             Horizontal(
                 Button("Working file", id="file-working", variant="success"),
                 Button("Plan", id="file-plan"),
+                Button("Docs", id="file-docs"),
                 Button("All files", id="file-all"),
                 Button("Chat", id="file-chat"),
                 id="file-choices",
@@ -4230,8 +4263,12 @@ class WhylineConsoleApp(App):
             self._sync_split()
             self._cb_fit()
             self.call_after_refresh(self._cb_fit)
-        elif button_id in ("file-working", "file-plan", "file-all", "file-chat"):
+        elif button_id in ("file-working", "file-plan", "file-docs", "file-all", "file-chat"):
             self._select_file_choice(button_id.removeprefix("file-"))
+        elif button_id == "file-docs-open":
+            panel = self._main_widget("#file-docs-panel")
+            if panel is not None and panel.slug:
+                self.open_docs(panel.slug, panel.key or None)
         elif button_id == "file-earlier":
             self._on_file_earlier()
         elif button_id == "file-later":

@@ -41556,3 +41556,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fab938d6a24241cc8ed4fd1fea9ec8c3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T15:38:23.919Z"} -->
+
+## 2026-11-10 — Docs tab finds its set from the plan file name and never creates the docs worktree
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-27
+
+**Because:** workspace.docs_root adds a git worktree as a side effect; a read-only tab must not
+
+**Rejected:**
+
+- workspace.docs_root — creates a worktree just by opening a tab
+
+**Files:** src/whyline/console/file_pane.py
+
+<!-- whyline-event: cbb8a98581a8447d8169360f0e864312 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T15:46:01.549Z"} -->
+
+## 2026-11-10 — Pass: Docs tab shows the owning set or the no-set line; Export pack shows files, notes, and Reveal
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-27
+
+**Because:** tests/console/test_docs_tab.py all 5 passed. With a set the Files-pane Docs tab lists Spec (status via middle_rows) and the spec text, and Open in Docs pushes DocsScreen on job-search. With no set it shows This plan has no document set. and hides Open in Docs. Leaving the tab restores the file view. Export pack calls the stub with the slug, status shows the file path and PDF skipped, and Reveal in Finder appears and reveals that file. owning_set uses the active plan file name and never creates a docs worktree. Full uv run pytest -q had one skip and one unrelated flake in test_paused_owned_changes_show_ok_and_resume_allows_dirty (resume launch wait under suite load) that passed twice in isolation.
+
+**Rejected:**
+
+- fail on the full-suite resume-launch timeout — that test is Relay setup, not this task, and it passed on rerun
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/console/file_pane.py, src/whyline/console/tui.py, tests/console/test_docs_tab.py
+
+<!-- whyline-event: 5c6c3b841ea24d4b970cfd53852481fe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T16:06:59.334Z"} -->
+
+## 2026-11-10 — Approve Docs tab and export-pack UI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-27
+
+**Because:** The diff resolves the active plan's owning set without creating a worktree, renders document statuses and text read-only, opens Docs, surfaces export files and notes with Finder reveal, and the full uv run pytest -q suite passed.
+
+**Files:** src/whyline/console/file_pane.py, src/whyline/console/docs_screen.py, src/whyline/console/tui.py, tests/console/test_docs_tab.py
+
+<!-- whyline-event: 64c9fe5b9e224d1c95002b2db1f2b175 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T16:26:08.931Z"} -->

@@ -34,6 +34,36 @@ def active_plan_file(root: Path) -> Path | None:
     return _repo_file(root, configured)
 
 
+def owning_set(root: Path, docs: Path | None = None) -> tuple[Path, str] | None:
+    """The (docs checkout, slug) of the document set that owns the active plan, if any.
+
+    Looks in `docs` when given, else in the repository and its default-branch
+    worktree; never creates a worktree."""
+    plan = active_plan_file(root)
+    if plan is None or not plan.name.endswith(".plan.md"):
+        return None
+    slug = plan.name.removesuffix(".plan.md")
+    candidates: list[Path] = [docs] if docs is not None else [root]
+    if docs is None:
+        try:
+            from whyline import worktrees
+
+            extra = worktrees.default_branch_worktree(root)
+        except Exception:
+            extra = None
+        if extra is not None:
+            candidates.append(extra)
+    from whyline.sdlc import docset
+
+    for candidate in candidates:
+        try:
+            docset.load(candidate, slug)
+        except docset.DocSetError:
+            continue
+        return candidate, slug
+    return None
+
+
 def _repo_file(root: Path, candidate: str | Path) -> Path | None:
     try:
         path = Path(candidate)
