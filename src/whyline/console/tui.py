@@ -101,7 +101,7 @@ _MODES = ("chat", "relay", "agents", "assistant", "workflows")
 _MODE_BUTTONS = {
     "chat": ("model", "brainstorm", "history"),
     "relay": ("relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues", "relay-check",
-              "relay-release"),
+              "relay-release", "relay-docs"),
     "agents": (
         "agents-new",
         "agents-list",
@@ -4121,6 +4121,7 @@ class WhylineConsoleApp(App):
                 Button("Retry stage", id="relay-retry-stage", disabled=True),
                 Button("Resolve", id="relay-resolve", disabled=True),
                 Button("Release", id="relay-release", disabled=True),
+                Button("Docs", id="relay-docs"),
                 Button("New", id="agents-new"),
                 Button("Agents", id="agents-list"),
                 Button("Runs", id="agents-runs"),
@@ -4388,6 +4389,8 @@ class WhylineConsoleApp(App):
             self._launch_relay(retry_args)
         elif button_id == "relay-release":
             self._open_release()
+        elif button_id == "relay-docs":
+            self.open_docs()
         elif button_id == "relay-resolve":
             self._start_resolve_flow(source="resume")
         elif button_id == "reply-send":
@@ -5585,7 +5588,7 @@ class WhylineConsoleApp(App):
             self.render_event(SessionEvent(
                 kind="output", text=f"{slug} is waiting for review at {kind}."))
             return
-        self.push_screen(DocsScreen(self.session.root, slug=slug, kind=kind))
+        self.push_screen(DocsScreen(self.session.root, set_slug=slug, kind=kind))
 
     def _start_auto_job(self, request: plan_job.AutoRunRequest, fingerprint: str) -> None:
         import threading
@@ -6142,6 +6145,12 @@ class WhylineConsoleApp(App):
             return bool([p for p in dirty if p != ".whyline/decisions.md"])
         except Exception:
             return False
+
+    def open_docs(self, set_slug: str | None = None, kind: str | None = None) -> None:
+        """The Docs screen, optionally opened on a document set and document."""
+        from whyline.console.docs_screen import DocsScreen
+
+        self.push_screen(DocsScreen(self.session.root, set_slug=set_slug, kind=kind))
 
     def _open_release(self) -> None:
         if self._refuse_in_home():

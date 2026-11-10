@@ -41020,3 +41020,90 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b03bb46ce8cb493eb0fed6f4fb9eab54 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T06:53:19.751Z"} -->
+
+## 2026-11-10 — Docs screen takes docs root, guard check and export as injectable args; actions are Check (refresh_out_of_date, writes) and Open file
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-24
+
+**Because:** Check is the only write action that exists without the review flow; Approve stays in sdlc.review so stage rules are not duplicated; injection keeps tests off git worktrees
+
+**Rejected:**
+
+- Approve button — would bypass review.approve stage handling
+
+**Files:** src/whyline/console/docs_screen.py
+
+<!-- whyline-event: 6feb926ae2e54b2facc91ecd187b52b3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T06:57:14.096Z"} -->
+
+## 2026-11-10 — Fail SDLC-24: _open_docs still passes slug= so Start cannot open Docs
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-24
+
+**Because:** Requirement 3 says the screen opens on a given set and document, which SDLC-23 uses. tui._open_docs still does DocsScreen(root, slug=slug, kind=kind). DocsScreen.__init__ is keyword-only set_slug, so a live _open_docs('job-search', 'prd') raises TypeError: unexpected keyword argument 'slug' and never shows the document. The Docs button and open_docs(set_slug=...) work; listing, selection, out-of-date reason, and read-only-while-relay-runs hold. The listed tests pass because they use set_slug or monkeypatch _open_docs.
+
+**Rejected:**
+
+- pass — listed tests never construct DocsScreen through _open_docs
+- fail extra Check/Open buttons — later tasks own review actions; History and Export stay on while a relay runs
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: ef6809bc689c453299838443a4cb54f0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T07:17:58.661Z"} -->
+
+## 2026-11-10 — _open_docs passes set_slug= to DocsScreen
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-24
+
+**Because:** DocsScreen takes keyword set_slug; slug= raised TypeError on a waiting Start
+
+**Rejected:**
+
+- accept slug= on DocsScreen — two names for one argument
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 91274e67908545829a3eed071d66f472 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T07:19:08.928Z"} -->
+
+## 2026-11-10 — Pass SDLC-24: Docs lists, opens on a set, shows out-of-date reasons, and is read-only while a relay runs
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-24
+
+**Because:** The slug= TypeError is gone: _open_docs builds DocsScreen(set_slug=slug, kind=kind). Listing, selection, Markdown, out-of-date reason, Docs button, and guard read-only (Check/Open off, History/Export on) all hold. Task tests and uv run pytest -q exited 0.
+
+**Rejected:**
+
+- fail — extra Check/Open buttons exist: SDLC-25 owns review actions; they disable when a relay runs
+- fail — listed tests skip the Docs button click: a live Relay-mode click opens DocsScreen on the product and _open_docs opens the given set
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 741f9b06d8ec4e6cb37c792304bf3590 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T07:41:20.429Z"} -->
+
+## 2026-11-10 — Approve SDLC-24 Docs screen in round 5
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-24
+
+**Because:** The three-column library and Markdown view, product PRD and changelog, document metadata, out-of-date reason, initial set/document targeting, Relay button, and guarded read-only behavior match the task; mounted-screen tests cover the required cases and uv run pytest -q exited 0.
+
+**Rejected:**
+
+- request changes — no actionable defect was found in the diff or test coverage
+
+**Files:** src/whyline/console/docs_screen.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 69d70e1cc8944403a5a201ae55c0f709 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T07:59:13.229Z"} -->

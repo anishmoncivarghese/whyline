@@ -8,7 +8,7 @@ pytestmark = [pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not inst
 
 @pytest.mark.parametrize("mode, visible", [
     ("chat", {"model", "brainstorm", "history", "see-files", "stop", "help", "copy", "settings"}),
-    ("relay", {"relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues", "relay-check", "relay-release", "see-files", "stop", "help", "copy", "settings"}),
+    ("relay", {"relay-run", "relay-plan", "relay-setup", "relay-resume", "relay-issues", "relay-check", "relay-release", "relay-docs", "see-files", "stop", "help", "copy", "settings"}),
     ("assistant", {"assistant-inbox", "assistant-ideas", "assistant-open", "assistant-check", "stop", "help", "copy", "settings"}),
     ("workflows", {"workflows-library", "workflows-new", "workflows-runs", "stop", "help", "copy", "settings"}),
 ])
