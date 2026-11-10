@@ -503,7 +503,7 @@ Rules every task keeps:
   4. While `guard.check` refuses (a relay running in the docs checkout itself), every action button except History and Export is disabled, and the reason shows at the top.
   Tests: the listing, selecting a document, the out-of-date reason, and read-only while a relay runs.
 
-- [ ] SDLC-25: Review actions in Docs
+- [x] SDLC-25: Review actions in Docs
   Edit `src/whyline/console/docs_screen.py` and its tests only.
   1. **Approve**, **Ask for changes**, **Edit**, **Redo**, **Answer questions**, **Stop here**, **Run the rest on Auto** and **Resume** show only when they apply.
   2. Each calls the matching `review` or `runner` function in a thread worker.
