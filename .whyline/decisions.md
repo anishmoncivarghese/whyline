@@ -42205,3 +42205,201 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f92fe504d14b46d68c11e73689d9002d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-11T11:42:07.217Z"} -->
+
+## 2026-11-11 — Target status is saved per repo in .git/whyline-release/targets.json and checked when the Set up tab opens
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-5
+
+**Because:** keeps it beside the release state, survives reopening, and the tab-activation hook matches 'opening Set up'; github uses gh/gh-auth/origin items, other targets their ready_items
+
+**Rejected:**
+
+- Check at popup mount — runs network checks even if Set up is never opened
+
+**Files:** src/whyline/release/state.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 0923578b708447a1ab690bd7802bb1b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T11:58:04.811Z"} -->
+
+## 2026-11-11 — Pass RFB-5: saved status, Not checked yet, background check, empty unticked rows, and one-line blank rows all behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-5
+
+**Because:** The five named tests pass. uv run pytest -q -p no:warnings tests/console/test_release_screens.py tests/console/test_security_screens.py was 56 passed. uv run pytest -q exited 0 with 1 skipped. Saved per-repo status shows on reopen, a ticked never-checked target says Not checked yet, opening Set up checks ticked targets and updates rows, unticked rows have no status, and blank rows are height 1 with the Release tab bar flush to the pane.
+
+**Rejected:**
+
+- Fail for Security tab-bar spacing — the task forbids editing security_screens.py; named tests cover Release
+- Fail because Check does not write targets.json — Check does not run per-target ready_items; opening Set up re-checks and saves; no named test requires Check to persist
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 6d9bf0773cdf49e1a387d8de256c83ba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T12:19:49.898Z"} -->
+
+## 2026-11-11 — Reject RFB-5: Check does not refresh target status and Security spacing is untouched
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-5
+
+**Because:** Release Check renders only the general ready-check items and never runs/saves each ticked target's ready_items, so targets.json can remain older than the last Check; the added TabPane padding and geometry test cover #release-box only, not Security's #sec-box. The plain uv run pytest -q suite passed with one skip.
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_screens.py
+
+<!-- whyline-event: 05927bee0df0458a943f439b09d4c1f7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T21:16:18.781Z"} -->
+
+## 2026-11-11 — Main Check also runs and saves ticked targets' ready_items; Security gets a ReleaseSecurityScreen subclass for the tab-gap rule
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-5
+
+**Because:** security_screens.py is off limits for this task, so the CSS lives in a subclass used by Release; Check skips target checks when only a stand-in ready_check is injected so tests never hit the network
+
+**Rejected:**
+
+- Edit security_screens.py CSS — task forbids it
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: b4b44a353d9a4f26b6658d992d4922e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T21:41:22.395Z"} -->
+
+## 2026-11-11 — Pass RFB-5: Set up rows persist and refresh target ready status
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-5
+
+**Because:** Required behaviors hold: saved Check/Set-up results reopen as Ready or first failure, a never-checked ticked target says Not checked yet, opening Set up runs ticked ready_items in the background and updates rows, unticked rows stay empty and one line high, and Release/Security tab content sits under the tab bar. uv run pytest -q tests/console/test_release_screens.py tests/console/test_security_screens.py passed; uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- Fail because Set up panels write a short live line into the same widget — a later ready-items check restores the saved row, and the required tests all pass
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/release/state.py, tests/console/test_release_screens.py
+
+<!-- whyline-event: dc8a6ec06ff045999f02283c4e9adc81 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T22:06:51.984Z"} -->
+
+## 2026-11-11 — Reject RFB-5: concurrent target checks can lose saved statuses
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-5
+
+**Because:** Set up and main Check run in separate thread-worker groups, but save_target performs an unlocked read-modify-write through one PID-only temp path; a two-thread reproduction failed 20/20 times with FileNotFoundError and missing target entries, so the required per-target saved result is not reliable despite the full pytest suite passing.
+
+**Rejected:**
+
+- Approve based on the passing suite — the tests do not exercise overlapping Set up and Check persistence.
+
+**Files:** src/whyline/release/state.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 8aa60df6675740dc96ca1629cd45d98f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T22:25:56.364Z"} -->
+
+## 2026-11-11 — Serialize save_target with a process lock and unique mkstemp temp files
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-5
+
+**Because:** Set up and Check run in separate threads; unlocked read-modify-write with PID-only temp lost entries and raised FileNotFoundError
+
+**Rejected:**
+
+- fcntl file lock — threads in one process are the real overlap, a lock is simpler and portable
+
+**Files:** src/whyline/release/state.py
+
+<!-- whyline-event: fe5fb844a3484f09b41422e02a788cb2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T22:26:50.758Z"} -->
+
+## 2026-11-11 — Pass RFB-5: target status persists through overlapping Check and Set up
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-5
+
+**Because:** Required Set up behaviors hold: saved Ready or first-failure reopens, never-checked ticked rows say Not checked yet, opening Set up runs ticked ready_items and updates rows, unticked rows stay empty and one line high, and Release/Security tab content sits under the tab bar. save_target serializes with a process lock and unique temps; 20 of 20 two-thread and Check-plus-Set-up overlap trials kept every key with no leftover temps. uv run pytest -q tests/console/test_release_screens.py tests/console/test_security_screens.py passed.
+
+**Rejected:**
+
+- Fail on two full-suite relay_setup_screen click failures — they pass in isolation, they do not cover target status, and this task cannot edit those tests
+- Fail because Set up GitHub panel writes a short live line into the same widget — a later ready-items check restores the saved row
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/release/state.py, tests/console/test_release_screens.py
+
+<!-- whyline-event: 45f263ba7094462c9419c7fa6ae5b10c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T22:50:29.690Z"} -->
+
+## 2026-11-11 — Reject RFB-5: setup panel refreshes overwrite persisted readiness rows
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-5
+
+**Because:** The new status cell must always show the last ready_items result, but _show_github, _show_pypi, _show_npm, _show_docker, and _show_brew replace it with setup diagnostics after a target panel opens; the new tests do not cover this interaction. The plain uv run pytest -q suite exited 0 with one skip.
+
+**Rejected:**
+
+- Approve from the green suite — the behavior defect is visible in direct writes to the readiness-owned rs-s widgets and lacks regression coverage
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_screens.py
+
+<!-- whyline-event: 42c4339a6cdd487eabfa1817fa21c3ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T23:09:12.322Z"} -->
+
+## 2026-11-11 — Set up target rows are written only from saved ready_items results
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-5
+
+**Because:** Setup panel refreshes (_show_github/pypi/npm/docker/brew) used to overwrite the row with a live diagnostic; the panels already show that text in their own status widget
+
+**Rejected:**
+
+- Keep short diagnostics in the row — a later Check would flip it back, so the row would disagree with saved state
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 2b8059b57fed4ae4b5312809b8af9e0b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T23:11:43.086Z"} -->
+
+## 2026-11-11 — Pass RFB-5: target rows show last ready_items result through reopen, Check, and setup-panel refresh
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-5
+
+**Because:** All five required cases pass; the five _show_* setup-panel writes no longer touch #rs-s-*; uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- Fail on leftover PART_2 write in _setup_target — every TARGETS key is handled first so it never runs
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 9c47bcd982104c0bbd318748cbff7491 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T23:31:56.856Z"} -->
+
+## 2026-11-11 — Approve RFB-5: target rows persist and refresh readiness results without setup-panel overwrites
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-5
+
+**Because:** The diff satisfies saved, unchecked, unticked, background-update, row-height, and tab-spacing requirements; regression coverage exercises Check and Set up paths; uv run pytest -q exited 0 with one skip
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/release/state.py, tests/console/test_release_screens.py
+
+<!-- whyline-event: e1c2b326232641ff9f9eaed399250b27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T23:50:49.402Z"} -->

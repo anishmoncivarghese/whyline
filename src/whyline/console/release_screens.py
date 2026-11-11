@@ -8,6 +8,7 @@ import re
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -23,6 +24,8 @@ from whyline.release import config as release_config
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
+from whyline.release import state as release_state
+from whyline.release import targets as release_targets
 from whyline.release import version as release_version
 from whyline.release.targets import custom as custom_target  # noqa: F401 - registers it
 from whyline.release.targets import docker as docker_target
@@ -86,6 +89,13 @@ def _default_steps(root: Path, cfg, version: str) -> list[tuple[str, bool]]:
     return [(step.title, step.irreversible) for step in plan.steps]
 
 
+class ReleaseSecurityScreen(security_screens.SecurityScreen):
+    """Security as opened from Release: its tab content sits right under the tab bar."""
+    DEFAULT_CSS = """
+    #sec-box TabPane { padding: 0; }
+    """
+
+
 class ReleaseScreen(ModalScreen):
     """Closes with None on Close, or after calling start_release(choice) on Start."""
 
@@ -100,8 +110,11 @@ class ReleaseScreen(ModalScreen):
     #release-custom { display: none; }
     #release-actions { height: auto; }
     .-hidden { display: none; }
+    /* The tab content sits right under the tab bar, and a row with no status is one line. */
+    #release-box TabPane { padding: 0; }
     .rs-row { height: auto; }
-    .rs-row Static { width: 1fr; padding: 1 1; }
+    .rs-row Static { width: 1fr; padding: 0 1; height: auto; }
+    .rs-row Checkbox, .rs-row Button { height: 1; border: none; min-width: 0; padding: 0 1; }
     #rs-checks, #rs-ci-ignore, #rs-after { height: 5; }
     #rs-gh { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
     #rs-pypi, #rs-npm, #rs-docker, #rs-brew, #rs-custom { height: auto; border: round $primary; padding: 0 1; margin-top: 1; }
@@ -131,9 +144,13 @@ class ReleaseScreen(ModalScreen):
         homebrew_ask: Callable[[str], str] | None = None,
         homebrew_download: Callable[[str], bytes] | None = None,
         open_url: Callable[[str], object] | None = None,
+        target_check: Callable[[str, release_config.ReleaseConfig, str],
+                               list[release_ready.ReadyItem]] | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
+        self._target_check = target_check
+        self._target_results = release_state.load_targets(self.root)
         self._security_screen = security_screen
         self._gh_run = gh_run
         self._pypi = pypi_target.PyPITarget(get=pypi_get)
@@ -407,7 +424,7 @@ class ReleaseScreen(ModalScreen):
             for key, label in TARGETS:
                 with Horizontal(classes="rs-row"):
                     yield Checkbox(label, ticked[key], id=f"rs-t-{key}")
-                    yield Static("Not checked" if key == "github" else "", id=f"rs-s-{key}",
+                    yield Static(self._target_text(key, ticked[key]), id=f"rs-s-{key}",
                                  markup=False)
                     yield Button("Set up…", id=f"rs-setup-{key}")
             yield Static("", id="rs-why", markup=False)
@@ -584,9 +601,78 @@ class ReleaseScreen(ModalScreen):
     def _set_status(self, text: str) -> None:
         self.query_one("#rs-status", Static).update(text)
 
+    # -- set up: target status ----------------------------------------------
+
+    def _target_text(self, key: str, ticked: bool) -> str:
+        """Nothing for an unticked target; else the saved result of its last check."""
+        if not ticked:
+            return ""
+        return release_state.target_line(self._target_results.get(key))
+
+    def _show_target_rows(self) -> None:
+        for key, _ in TARGETS:
+            ticked = self.query_one(f"#rs-t-{key}", Checkbox).value
+            self.query_one(f"#rs-s-{key}", Static).update(self._target_text(key, ticked))
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if event.pane.id == "setup-tab":
+            self._start_target_check()
+
+    def _start_target_check(self) -> None:
+        cfg = self._collect()
+        keys = [key for key, _ in TARGETS if self.query_one(f"#rs-t-{key}", Checkbox).value]
+        if not keys:
+            return
+        try:
+            version = self.current_version()
+        except Exception:  # noqa: BLE001 - the items say what they could not read
+            version = ""
+        self.run_worker(lambda: self._targets_in_thread(keys, cfg, version), thread=True,
+                        exclusive=True, group="release-targets", name="release-targets")
+
+    def _default_target_items(self, key: str, cfg: release_config.ReleaseConfig,
+                              version: str) -> list[release_ready.ReadyItem]:
+        run = release_ready.default_run
+        if key == "github":
+            items = [release_ready._gh_installed(self.root, cfg, version, run),
+                     release_ready._gh_auth(self.root, cfg, version, run),
+                     release_ready._origin(self.root, cfg, version, run)]
+            return [item for item in items if item is not None]
+        target = release_targets.REGISTRY.get(key)
+        if target is None:
+            return []
+        return target.ready_items(self.root, cfg, version, run=run,
+                                  fetch=release_ready.default_fetch)
+
+    def _targets_in_thread(self, keys: list[str], cfg: release_config.ReleaseConfig,
+                           version: str) -> None:
+        check = self._target_check or self._default_target_items
+        for key in keys:
+            try:
+                items = check(key, cfg, version)
+            except Exception as exc:  # noqa: BLE001
+                items = [release_ready.ReadyItem(key, False, f"could not check: {exc}")]
+            failed = next((item for item in items if not item.ok), None)
+            status = release_state.TargetStatus(
+                failed is None, failed.text if failed else "",
+                datetime.now().astimezone().isoformat(timespec="seconds"))
+            try:
+                release_state.save_target(self.root, key, status)
+            except OSError:
+                pass  # shown for now; just not remembered
+            self.app.call_from_thread(self._show_target, key, status)
+
+    def _show_target(self, key: str, status: release_state.TargetStatus) -> None:
+        self._target_results[key] = status
+        try:
+            self._show_target_rows()
+        except NoMatches:
+            pass  # the popup closed while the check ran
+
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if not (event.checkbox.id or "").startswith("rs-t-"):
             return
+        self._show_target_rows()
         others = any(self.query_one(f"#rs-t-{key}", Checkbox).value
                      for key, _ in TARGETS if key != "github")
         github = self.query_one("#rs-t-github", Checkbox)
@@ -742,15 +828,14 @@ class ReleaseScreen(ModalScreen):
     def _show_github(self, found: setup_github.GitHubStatus) -> None:
         self._gh_status = found
         if not found.gh_installed:
-            line, short = "gh is not installed.", "gh is not installed"
+            line = "gh is not installed."
         elif not found.signed_in:
-            line, short = "gh is installed; not signed in.", "Not signed in"
+            line = "gh is installed; not signed in."
         else:
             who = found.user or "unknown user"
-            line, short = f"Signed in as {who}.", f"Signed in as {who}"
+            line = f"Signed in as {who}."
         origin = found.origin_url or "none"
         self.query_one("#rs-gh-status", Static).update(f"{line}\nOrigin: {origin}")
-        self.query_one("#rs-s-github", Static).update(short)
 
         def show(widget_id: str, visible: bool) -> None:
             self.query_one(widget_id).set_class(not visible, "-hidden")
@@ -937,8 +1022,6 @@ class ReleaseScreen(ModalScreen):
         self._pypi_lines = lines
         self.query_one("#rs-pypi-status", Static).update("\n".join(lines))
         self.query_one("#rs-pypi-add", Button).set_class(has_workflow, "-hidden")
-        self.query_one("#rs-s-pypi", Static).update(
-            "Workflow found" if has_workflow else "No workflow yet")
 
     def _add_pypi_workflow(self) -> None:
         try:
@@ -984,8 +1067,6 @@ class ReleaseScreen(ModalScreen):
         self._npm_lines = lines
         self.query_one("#rs-npm-status", Static).update("\n".join(lines))
         self.query_one("#rs-npm-add", Button).set_class(has_workflow, "-hidden")
-        self.query_one("#rs-s-npm", Static).update(
-            "Workflow found" if has_workflow else "No workflow yet")
 
     def _add_npm_workflow(self) -> None:
         try:
@@ -1036,8 +1117,6 @@ class ReleaseScreen(ModalScreen):
         self._docker_lines = lines
         self.query_one("#rs-docker-status", Static).update("\n".join(lines))
         self.query_one("#rs-docker-add", Button).set_class(has_workflow, "-hidden")
-        self.query_one("#rs-s-docker", Static).update(
-            "Workflow found" if has_workflow else "No workflow yet")
 
     def _add_docker_workflow(self) -> None:
         try:
@@ -1145,8 +1224,6 @@ class ReleaseScreen(ModalScreen):
         self.query_one("#rs-brew-install", Static).update(
             f"Users will run:\n{install}" if install else "")
         self.query_one("#rs-brew-copy", Button).set_class(not install, "-hidden")
-        self.query_one("#rs-s-homebrew", Static).update(
-            "Tap found" if any("(found)" in line for line in lines) else "No tap yet")
 
     def _create_tap(self) -> None:
         repo, _ = self._brew_names()
@@ -1240,6 +1317,16 @@ class ReleaseScreen(ModalScreen):
         except Exception as exc:  # noqa: BLE001
             items = [release_ready.ReadyItem("check", False, f"could not check: {exc}")]
         self.app.call_from_thread(self._show_check, version, items)
+        if self._target_check is None and self._ready_check is not None:
+            return  # a stand-in Check: do not run the real target checks beside it
+        try:
+            self._targets_in_thread(self._ticked_targets(), self._config(), version)
+        except Exception:  # noqa: BLE001 - the Check result is already shown
+            pass
+
+    def _ticked_targets(self) -> list[str]:
+        cfg = self._config()
+        return [key for key, _ in TARGETS if getattr(cfg.targets, key, False)]
 
     def _show_check(self, version: str, items: list[release_ready.ReadyItem]) -> None:
         self.query_one("#release-check", Button).disabled = False
@@ -1261,7 +1348,7 @@ class ReleaseScreen(ModalScreen):
 
     def _open_security(self) -> None:
         screen = (self._security_screen() if self._security_screen is not None
-                  else security_screens.SecurityScreen(self.root, config=self._cfg))
+                  else ReleaseSecurityScreen(self.root, config=self._cfg))
         self.app.push_screen(screen)
 
     # -- start --------------------------------------------------------------

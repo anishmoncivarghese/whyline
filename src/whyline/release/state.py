@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -56,3 +58,56 @@ def clear(root: Path) -> None:
         path(root).unlink()
     except FileNotFoundError:
         pass
+
+
+@dataclass(frozen=True)
+class TargetStatus:
+    """What the last run of a target's ready items found."""
+    ok: bool
+    text: str = ""
+    at: str = ""  # ISO time of that run
+
+
+_targets_lock = threading.Lock()  # Set up and Check workers save from threads
+
+
+def targets_path(root: Path) -> Path:
+    return Path(root) / ".git" / "whyline-release" / "targets.json"
+
+
+def load_targets(root: Path) -> dict[str, TargetStatus]:
+    try:
+        data = json.loads(targets_path(root).read_text(encoding="utf-8"))
+        return {str(key): TargetStatus(bool(v["ok"]), str(v.get("text", "")),
+                                       str(v.get("at", "")))
+                for key, v in data.items()}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return {}
+
+
+def save_target(root: Path, key: str, status: TargetStatus) -> None:
+    """Record one target's result, keeping the others."""
+    target = targets_path(root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with _targets_lock:
+        saved = load_targets(root)
+        saved[key] = status
+        fd, name = tempfile.mkstemp(dir=target.parent, prefix=f"{target.name}.",
+                                    suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({k: asdict(v) for k, v in saved.items()},
+                                        indent=2))
+            os.replace(name, target)
+        except BaseException:
+            Path(name).unlink(missing_ok=True)
+            raise
+
+
+def target_line(status: TargetStatus | None) -> str:
+    """The Set up row text for a ticked target."""
+    if status is None:
+        return "Not checked yet"
+    if status.ok:
+        return f"✓ Ready · checked {status.at[:10]}".rstrip()
+    return f"✗ {status.text}"

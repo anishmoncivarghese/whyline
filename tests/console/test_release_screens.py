@@ -195,6 +195,141 @@ def _shown(app, selector):
     return not app.screen.query_one(selector).has_class("-hidden")
 
 
+def _targets_cfg(**ticked):
+    return release_config.Targets(**{"github": False, **ticked})
+
+
+def _open_set_up(app):
+    app.screen.query_one(TabbedContent).active = "setup-tab"
+
+
+async def test_saved_target_result_shows_after_reopening(tmp_path):
+    from whyline.release import state
+    release_config.save(tmp_path, ReleaseConfig(targets=_targets_cfg(pypi=True, npm=True)))
+    state.save_target(tmp_path, "pypi", state.TargetStatus(True, "", "2026-11-10T09:00:00+00:00"))
+    state.save_target(tmp_path, "npm", state.TargetStatus(False, "No npm publishing workflow", "x"))
+    app = Host(_setup_screen(tmp_path, target_check=lambda key, cfg, version: []))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _text(app, "#rs-s-pypi") == "✓ Ready · checked 2026-11-10"
+        assert _text(app, "#rs-s-npm") == "✗ No npm publishing workflow"
+
+
+async def test_ticked_target_never_checked_says_so(tmp_path):
+    release_config.save(tmp_path, ReleaseConfig(targets=_targets_cfg(pypi=True)))
+    app = Host(_setup_screen(tmp_path, target_check=lambda key, cfg, version: []))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _text(app, "#rs-s-pypi") == "Not checked yet"
+
+
+async def test_unticked_target_has_no_status(tmp_path):
+    from whyline.release import state
+    release_config.save(tmp_path, ReleaseConfig(targets=_targets_cfg(pypi=True)))
+    state.save_target(tmp_path, "npm", state.TargetStatus(True, "", "2026-11-10T09:00:00+00:00"))
+    app = Host(_setup_screen(tmp_path, target_check=lambda key, cfg, version: []))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _text(app, "#rs-s-npm") == ""
+        assert _text(app, "#rs-s-docker") == ""
+
+
+async def test_opening_set_up_checks_ticked_targets_and_updates_rows(tmp_path):
+    from whyline.release import state
+    release_config.save(tmp_path, ReleaseConfig(targets=_targets_cfg(pypi=True, npm=True)))
+    asked = []
+
+    def check(key, cfg, version):
+        asked.append(key)
+        if key == "pypi":
+            return [ReadyItem("pypi-workflow", True, "PyPI workflow found")]
+        return [ReadyItem("npm-workflow", True, "fine"),
+                ReadyItem("npm-name", False, "npm package name is private"),
+                ReadyItem("npm-version", False, "later failure")]
+
+    app = Host(_setup_screen(tmp_path, target_check=check))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert asked == []
+        _open_set_up(app)
+        await _until(pilot, lambda: _text(app, "#rs-s-npm").startswith("✗"))
+        await _until(pilot, lambda: _text(app, "#rs-s-pypi").startswith("✓ Ready · checked "))
+        assert _text(app, "#rs-s-npm") == "✗ npm package name is private"
+        assert sorted(asked) == ["npm", "pypi"]
+        assert _text(app, "#rs-s-docker") == ""
+    saved = state.load_targets(tmp_path)
+    assert saved["pypi"].ok and not saved["npm"].ok
+    assert saved["npm"].text == "npm package name is private"
+
+
+async def test_rows_without_a_status_are_one_line_high(tmp_path):
+    release_config.save(tmp_path, ReleaseConfig(targets=_targets_cfg(pypi=True)))
+    app = Host(_setup_screen(tmp_path, target_check=lambda key, cfg, version: []))
+    async with app.run_test(size=(120, 50)) as pilot:
+        await pilot.pause()
+        _open_set_up(app)
+        await pilot.pause()
+        rows = list(app.screen.query(".rs-row"))
+        assert len(rows) == 6
+        blank = [row for row in rows
+                 if not _text(app, "#" + next(s.id for s in row.query(Static)
+                                              if (s.id or "").startswith("rs-s-")))]
+        assert len(blank) == 5
+        assert all(row.region.height == 1 for row in blank)
+        tabs = app.screen.query_one(TabbedContent).query_one("Tabs")
+        pane = app.screen.query_one("#setup-tab")
+        assert pane.content_region.y <= tabs.region.bottom
+
+
+async def test_target_setup_panels_leave_the_saved_rows_unchanged(tmp_path):
+    from whyline.release import state
+    from whyline.release.setup_github import GitHubStatus
+    release_config.save(tmp_path, ReleaseConfig(
+        targets=_targets_cfg(pypi=True, npm=True, docker=True, homebrew=True, github=True)))
+    state.save_target(tmp_path, "pypi", state.TargetStatus(True, "", "2026-11-10T09:00:00+00:00"))
+    state.save_target(tmp_path, "npm", state.TargetStatus(False, "No npm workflow", "x"))
+    app = Host(_setup_screen(tmp_path, target_check=lambda key, cfg, version: []))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        keys = ("pypi", "npm", "docker", "homebrew", "github")
+        before = {k: _text(app, f"#rs-s-{k}") for k in keys}
+        screen._show_pypi(["x"], True)
+        screen._show_npm(["x"], False)
+        screen._show_docker(["x"], True)
+        screen._show_brew(["tap (found)"], "brew install x")
+        screen._show_github(GitHubStatus(True, True, "me", "git@x", True))
+        await pilot.pause()
+        assert {k: _text(app, f"#rs-s-{k}") for k in keys} == before
+        assert before["pypi"] == "✓ Ready · checked 2026-11-10"
+        assert before["npm"] == "✗ No npm workflow"
+
+
+async def test_main_check_replaces_the_saved_target_result(tmp_path):
+    from whyline.release import state
+    release_config.save(tmp_path, ReleaseConfig(targets=_targets_cfg(pypi=True)))
+    state.save_target(tmp_path, "pypi", state.TargetStatus(True, "", "2020-01-01T00:00:00+00:00"))
+    screen = _setup_screen(tmp_path, target_check=lambda key, cfg, version: [
+        ReadyItem("pypi-name", False, "PyPI name is taken")])
+    app = Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#release-check")
+        await _until(pilot, lambda: not state.load_targets(tmp_path)["pypi"].ok)
+        assert state.load_targets(tmp_path)["pypi"].text == "PyPI name is taken"
+        assert _text(app, "#rs-s-pypi") == "✗ PyPI name is taken"
+
+
+async def test_security_tab_content_sits_under_the_tab_bar(tmp_path):
+    from whyline.console.release_screens import ReleaseSecurityScreen
+    app = Host(ReleaseSecurityScreen(tmp_path, config=ReleaseConfig(), scan_on_open=False))
+    async with app.run_test(size=(120, 50)) as pilot:
+        await pilot.pause()
+        tabs = app.screen.query_one(TabbedContent).query_one("Tabs")
+        pane = app.screen.query_one("#sec-tab-findings")
+        assert pane.content_region.y <= tabs.region.bottom
+
+
 async def test_set_up_prefills_from_detection_when_no_file(tmp_path):
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "1"\n')
     (tmp_path / "uv.lock").write_text("")
@@ -835,3 +970,28 @@ async def test_bring_in_checkbox_round_trips(tmp_path):
     async with app.run_test() as pilot:
         await pilot.pause()
         assert _q(app, "#rs-bring-in", Checkbox).value is False
+
+
+def test_overlapping_target_saves_keep_every_entry(tmp_path):
+    import threading
+
+    from whyline.release import state
+
+    (tmp_path / ".git").mkdir()
+    keys = [f"t{i}" for i in range(40)]
+    errors = []
+
+    def save(key):
+        try:
+            state.save_target(tmp_path, key, state.TargetStatus(True, "", "2026-11-10"))
+        except Exception as exc:  # pragma: no cover - the failure being guarded
+            errors.append(exc)
+
+    threads = [threading.Thread(target=save, args=(k,)) for k in keys]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert set(state.load_targets(tmp_path)) == set(keys)
+    assert not list(state.targets_path(tmp_path).parent.glob("*.tmp"))
