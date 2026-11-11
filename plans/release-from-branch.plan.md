@@ -46,7 +46,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. `relay_running` defaults to `whyline_relay.running.live(root)`.
   Tests in a temporary repository: a clean merge with tests running after it (a fake check sees the merged file), `test_conflict_aborts_and_names_files` with a clean tree afterwards, `test_refused_while_relay_runs`, the dirty-tree refusal, plans moved and committed, `test_unfinished_plan_stays`, the step absent on the release branch and when the setting is off, and `done` skipping a resumed run.
 
-- [ ] RFB-3: Update the other main checkout after the push
+- [x] RFB-3: Update the other main checkout after the push
   Edit `src/whyline/release/github.py` and its tests only.
   After a successful push in `build_steps`, when `worktrees.default_branch_worktree(root)` returns a checkout other than `root`:
   - with no changes there (`git status --porcelain` empty), run `git -C <it> merge --ff-only origin/<branch>` after a fetch, and report `Updated <path> to v<version>`
