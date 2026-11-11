@@ -41801,3 +41801,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 896f04b155d448fab6880b7f29beefc6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-10T20:06:42.310Z"} -->
+
+## 2026-11-10 — Release 0.3.69 prepared; push, CI wait, tag and PyPI left to the later release steps
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SDLC-30
+
+**Because:** implementer must not commit or push, and the env-prefixed pytest and 3.11 runs were refused or not attempted here
+
+**Rejected:**
+
+- pushing and tagging from the implementer turn — the relay commits after all stages approve
+
+**Files:** pyproject.toml, docs/releases/v0.3.69.md
+
+<!-- whyline-event: b0ae17f5dc2c4a62a67401d11c74744b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T20:27:55.625Z"} -->
+
+## 2026-11-10 — Pass SDLC-30: 0.3.69 bump and notes are in place; isolated and 3.11 pytest both exit 0
+
+**Actor:** grok
+**Role:** tester
+**Task:** SDLC-30
+
+**Because:** pyproject.toml, src/whyline/__init__.py and uv.lock are 0.3.69, the next patch after v0.3.68; docs/releases/v0.3.69.md covers SDLC-1..29, WTD-1, PRD-1..2, TRC-1..2, LIFE-1..3, GFR-1..6 and HOME-1..6 from git log v0.3.68..HEAD; pytest with GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 via python3 env exited 0 at 100% with one skip, and the same run on Python 3.11 did too; push, tag and PyPI belong to the later release stage
+
+**Rejected:**
+
+- Fail because push, tag and PyPI are still outstanding — those are the later release-profile steps and tester must not push
+- Fail because the shell-prefixed GIT_CONFIG pytest was refused — isolation via python3 env and the 3.11 run both exited 0
+
+**Files:** pyproject.toml, src/whyline/__init__.py, uv.lock, docs/releases/v0.3.69.md
+
+<!-- whyline-event: c80f599abc2644fe898fefd39cd30fdd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-10T21:06:50.511Z"} -->
+
+## 2026-11-11 — Approve SDLC-30 Round 3 release preparation for whyline 0.3.69
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SDLC-30
+
+**Because:** The working-tree diff cleanly bumps pyproject.toml, src/whyline/__init__.py and uv.lock from 0.3.68 to the next patch 0.3.69; docs/releases/v0.3.69.md summarizes every requested task family from git log v0.3.68..HEAD in user terms; git diff --check passes; and the independent plain uv run pytest -q completed at 100% with exit code 0 and one skip
+
+**Rejected:**
+
+- Request changes for missing push, CI, tag, PyPI publication or installed-version confirmation — those are later release-profile actions after relay approval, not safe reviewer actions before the approved work is committed
+
+**Files:** pyproject.toml, src/whyline/__init__.py, uv.lock, docs/releases/v0.3.69.md
+
+<!-- whyline-event: c27e56fe7ee947d0ac5c5c2bd29cc9db -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T03:19:26.962Z"} -->
