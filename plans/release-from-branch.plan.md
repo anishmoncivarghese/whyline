@@ -27,7 +27,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 - A relay running in the checkout: refused before anything changes. RFB-2, `test_refused_while_relay_runs`.
 - A plan with one unticked task: not moved. RFB-2, `test_unfinished_plan_stays`.
 
-- [ ] RFB-1: Where the release comes from
+- [x] RFB-1: Where the release comes from
   Create `src/whyline/release/source.py` and `tests/release/test_source.py`. Edit `src/whyline/release/config.py` and its tests to add `bring_in_main: bool = True` (key `release.bring_in_main`), written by `config.save`.
   1. `source(root, cfg, *, run, fetch) -> Source(branch, on_release_branch, ahead, behind, finished_plans)`:
      - `branch` from `git rev-parse --abbrev-ref HEAD`; `on_release_branch` when it equals `cfg.branch`
