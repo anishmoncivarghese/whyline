@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from whyline.release import github, notes, targets
+from whyline.release import source as source_mod
 from whyline.release import ready as release_ready
 from whyline.release import version as release_version
 from whyline.release.config import ReleaseConfig
@@ -71,6 +72,15 @@ def notes_file(root: Path, cfg: ReleaseConfig, version: str) -> Path | None:
     return notes._notes_path(root, cfg, version)
 
 
+def bring_confirmation(
+    root: Path, cfg: ReleaseConfig, *,
+    run: Callable[..., object] = release_ready.default_run,
+    fetch: release_ready.Fetch = release_ready.default_fetch,
+) -> str:
+    """The text ask mode shows before the irreversible Bring in main step."""
+    return source_mod.confirmation(source_mod.source(root, cfg, run=run, fetch=fetch), root)
+
+
 def build(
     root: Path,
     cfg: ReleaseConfig,
@@ -82,6 +92,7 @@ def build(
     confirm_notes: Callable[[Path], bool] = lambda path: True,
     ready_check: Callable[[], list[release_ready.ReadyItem]] | None = None,
     fetch: release_ready.Fetch = release_ready.default_fetch,
+    relay_running: Callable[[Path], bool] = source_mod._relay_running,
     telegram_target: TelegramTarget = assistant_telegram,
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.monotonic,
@@ -152,7 +163,34 @@ def build(
             say(f"Warning: could not send the Telegram message: "
                 f"{str(error).replace(token, '•••')}")
 
+    def current_source() -> source_mod.Source:
+        return source_mod.source(root, cfg, run=run, fetch=fetch)
+
+    def bring_done() -> bool:
+        try:
+            src = current_source()
+        except RuntimeError:
+            return False
+        return src.behind == 0 and not src.finished_plans
+
+    def bring(cancel: threading.Event) -> None:
+        say(source_mod.bring_in_main(root, cfg, version, run=run, fetch=fetch,
+                                     relay_running=relay_running))
+
+    bring_step: list[Step] = []
+    if cfg.bring_in_main:
+        # HEAD is read on its own: a failed fetch or rev-list must not hide the step
+        try:
+            head = source_mod._out(root, run, "rev-parse", "--abbrev-ref", "HEAD")
+        except RuntimeError as error:
+            if "not a git repository" not in str(error):
+                raise  # cannot tell where HEAD is: stop rather than skip the merge
+            head = cfg.branch  # no repository at all: nothing to bring in
+        if head != cfg.branch:
+            bring_step.append(Step("bring-in-main", "Bring in main", True, bring_done, bring))
+
     steps = [
+        *bring_step,
         # a bumped version means an earlier run passed Ready; the tree is dirty by design now
         Step("ready", "Check ready", False, version_done, check_ready),
         Step("version", f"Set version {version}", False, version_done, bump),

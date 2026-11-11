@@ -41908,3 +41908,111 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4a8345f43a3640a7987ce799b30b7243 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-11T06:15:02.835Z"} -->
+
+## 2026-11-11 — Bring in main confirmation text exposed as plan.bring_confirmation(), not on Step
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-2
+
+**Because:** Step has no confirmation field and the task limits edits to source.py/plan.py
+
+**Rejected:**
+
+- add Step.text field — engine.py is out of scope
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: ed45ae95cb2b4e079920f28e729c6ebf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T06:16:26.376Z"} -->
+
+## 2026-11-11 — RFB-2 passes round-2 testing
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-2
+
+**Because:** bring_in_main refuses a live relay and a dirty tree, fetches then merges origin/<branch> with --no-ff, aborts conflicts naming the files with a clean tree, git-mvs finished plans and .tests.md into plans/done and commits when anything moved; plan.build prepends irreversible Bring in main when the setting is on and HEAD is not the release branch, done when behind==0 and finished_plans is empty, confirmation is Source.line() plus Moves to plans/done names; relay_running defaults to whyline_relay.running.live. Task tests 15 passed; tests/release 266 passed; extra checks confirmed combined merge+move, MERGE_HEAD gone after abort, fetch before merge, and git mv.
+
+**Rejected:**
+
+- Fail for tests/console/test_relay_setup_screen.py — :test_paused_owned_changes_show_ok_and_resume_allows_dirty: RelaySetupScreen flake, does not import whyline.release, passed on rerun
+
+**Test:** uv run pytest -q tests/release/test_source.py: 15 passed
+**Test:** uv run pytest -q tests/release: 266 passed
+**Test:** uv run pytest -q: 1 skipped; 1 flake (test_paused_owned_changes_show_ok_and_resume_allows_dirty) passed on rerun
+
+**Files:** src/whyline/release/source.py, src/whyline/release/plan.py, tests/release/test_source.py
+
+<!-- whyline-event: c567f36abefe4dd5b243c054faa33210 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T06:39:56.571Z"} -->
+
+## 2026-11-11 — RFB-2 round-3 review requests safety fixes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-2
+
+**Because:** The merge and archive behavior passes the full suite, but relay detection swallows all errors and plan construction treats source-probe failure as being on the release branch, so both paths can bypass the required Bring in main safety behavior
+
+**Rejected:**
+
+- Approve as-is — fail-open relay detection can permit a merge when relay state cannot be read
+- Silently omit the step when source probing fails — HEAD branch identity must not be inferred from a failed fetch or rev-list
+
+**Files:** src/whyline/release/source.py, src/whyline/release/plan.py
+
+<!-- whyline-event: d02f302d4bdb42d68f7d57f62149a40b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T06:59:28.480Z"} -->
+
+## 2026-11-11 — Bring in main fails closed: relay check errors propagate, HEAD read independently of fetch
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-2
+
+**Because:** A swallowed relay-state error could allow a merge during a live relay, and a failed fetch/rev-list must not hide the required first step; only 'not a git repository' omits the step
+
+**Rejected:**
+
+- Treat probe failure as on-branch — silently drops the safety step
+- Return False on relay errors — fails open before a merge
+
+**Files:** src/whyline/release/source.py, src/whyline/release/plan.py
+
+<!-- whyline-event: c41140ea863047eb902d8a1b1c90bfe4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T07:01:35.815Z"} -->
+
+## 2026-11-11 — RFB-2 passes round-5 testing
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-2
+
+**Because:** bring_in_main refuses a live relay with errors propagating and a dirty tree, fetches then no-ff merges origin/branch, aborts conflicts naming the files with a clean tree, git-mvs finished plans and their .tests.md into plans/done and commits when anything moved; plan.build prepends irreversible Bring in main when the setting is on and HEAD is off the release branch, with HEAD read independently of fetch so a probe failure keeps the step, done when behind==0 and finished_plans is empty, confirmation is Source.line() plus Moves to plans/done names; relay_running defaults to whyline_relay.running.live
+
+**Rejected:**
+
+- Fail because confirmation text is on plan.bring_confirmation — engine.py is out of scope and irreversible already triggers ask-mode confirm
+
+**Files:** src/whyline/release/source.py, src/whyline/release/plan.py, tests/release/test_source.py
+
+<!-- whyline-event: c05fc7b00a524fbcac55066009d9f4f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T07:23:24.005Z"} -->
+
+## 2026-11-11 — RFB-2 approved after round-6 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-2
+
+**Because:** The implementation matches the task's merge, refusal, conflict-abort, plan-archive, first-step, done-check, confirmation-helper, and relay-default requirements; task tests are substantive and the plain full suite passed on rerun after one unrelated console timing flake passed in isolation
+
+**Rejected:**
+
+- Request changes — no in-scope correctness or safety defect was found
+
+**Files:** src/whyline/release/source.py, src/whyline/release/plan.py, tests/release/test_source.py
+
+<!-- whyline-event: 03d81f4366c14129809d8740e86e3b48 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T08:56:42.777Z"} -->
