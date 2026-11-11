@@ -36,7 +36,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   2. `Source.line() -> str`: `Releasing <branch> · <ahead> commits · main has <behind> commits this branch doesn't`, leaving out the last part when `behind` is 0, and just `Releasing <branch>` on the release branch.
   Tests with a temporary repository and a fake fetch: on main, on a branch ahead only, ahead and behind, the finished plans list ignoring `plans/done/` and unfinished ones, the line text, and the config key round trip.
 
-- [ ] RFB-2: The Bring in main step
+- [x] RFB-2: The Bring in main step
   Edit `src/whyline/release/source.py`, `src/whyline/release/plan.py` and their tests only.
   1. `bring_in_main(root, cfg, version, *, run, fetch, relay_running) -> str` (a summary):
      - refuses with `A relay is running here; release when it finishes` when `relay_running(root)` (`test_refused_while_relay_runs`), and with `Commit or stash these first: <files>` when `git status --porcelain` is not empty
