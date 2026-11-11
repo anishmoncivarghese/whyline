@@ -14,6 +14,8 @@ What the user gets:
 - When the current version has never been released, Release offers it first, so a version a plan already set isn't skipped (RFB-6).
 - The security scan stops warning about its own test fixtures, and a secret found in a test file says how to allow a fake value (RFB-7).
 
+- Release notes are written by an agent that can't change or commit anything, only the notes themselves are kept, and you see them before confirming (RFB-8, added 2026-11-11 after 0.3.70 went out with the agent's own narration at the top, a version commit named "chat: grok turn", and 0.3.69 skipped).
+
 There is no publish task. When the relay finishes, press **Release**: it sets the version, writes the notes, runs the checks, pushes, waits for CI, tags and publishes. (This repository's relay has no `release` profile, so a `relay-profile: release` task would only bump the version.)
 
 Rules every task keeps:
@@ -26,6 +28,8 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 - A conflict: the merge is aborted, the tree is clean, and the step stops naming the files. RFB-2, `test_conflict_aborts_and_names_files`.
 - A relay running in the checkout: refused before anything changes. RFB-2, `test_refused_while_relay_runs`.
 - A plan with one unticked task: not moved. RFB-2, `test_unfinished_plan_stays`.
+- An agent reply with text before or after the notes: only the notes are published. RFB-8, `test_notes_keep_only_the_marked_part`.
+- Writing the notes during a release: no commit appears and no file outside the notes changes. RFB-8, `test_notes_agent_cannot_commit`.
 
 - [ ] RFB-1: Where the release comes from
   Create `src/whyline/release/source.py` and `tests/release/test_source.py`. Edit `src/whyline/release/config.py` and its tests to add `bring_in_main: bool = True` (key `release.bring_in_main`), written by `config.save`.
@@ -83,7 +87,15 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   4. `settings.allow` marks `.whyline/security-allow.toml` with `release_config.add_pending`, so Release's clean-tree check accepts it and the release commit includes it, instead of failing with `Uncommitted changes: .whyline/security-allow.toml`.
   Tests: a vulnerable lockfile under `tests/security/fixtures/` skipped and one elsewhere still reported, the setting round trip, a secret in a test still blocking with the extra line, the prefilled reason, a secret outside `tests/` with no extra line, Release's clean check passing right after an Allow, and an Allow made on a 0.3.69 sdist finding still applying to the 0.3.70 sdist.
 
-- [ ] RFB-8: Docs
+- [ ] RFB-8: Safe release notes
+  Edit `src/whyline/release/plan.py`, `src/whyline/release/notes.py`, `src/whyline/release/cli.py`, `src/whyline/console/tui.py` (the release `confirm_notes`), `src/whyline/console/release_screens.py` and their tests only.
+  1. `default_ask_agent` stops using `whyline_relay.chat.run_turn`, which can edit files and commits the tree as `chat: <agent> turn`. It runs the agent once, read-only, in a fresh temporary folder, through `capabilities.read_only_command` and `whyline_relay.agents.run`, the way `relaychat.ask.ask` does, with the commit subjects and the style example in the prompt (`test_notes_agent_cannot_commit`: HEAD and `git status` are unchanged after drafting).
+  2. `build_prompt` ends with `Put the notes between a line <notes> and a line </notes>. Write nothing else.` `notes.extract(text) -> str | None` returns what is between the last such pair, stripped. With no pair, or an empty one, `draft` uses `fallback(version, commits)` and the release log says `The agent's notes were not usable; using the commit list` (`test_notes_keep_only_the_marked_part`).
+  3. In ask mode the notes confirmation shows the notes text (scrollable) with **Use these notes**, **Edit** (opens the file in the editor, then shows it again) and **Stop**. `whyline release run` prints the first 40 lines and asks `Use these notes? [y/N/e]`. `--yes` skips the question, as today.
+  4. When the version chosen is a bump but `docs/releases/v<current>.md` exists and `v<current>` isn't released (`version.released` from RFB-6), Release asks `v<current> has notes and was never released. Release v<current> instead?` before starting, defaulting to Yes.
+  Tests: the read-only command used and no commit made, extract with text before and after, a missing or empty pair falling back, the confirmation showing the text and each button, the CLI prompt, and the unreleased-version question.
+
+- [ ] RFB-9: Docs
   Edit `README.md` where it describes the Release button, and `docs/` pages on releasing.
-  Cover: releasing right after a relay, what Bring in main does and when it stops, conflicts, plans moved to `plans/done/`, the other main checkout, the setting, target status in Set up, an unreleased current version, and `skip_paths` and allowing fake test secrets.
+  Cover: releasing right after a relay, what Bring in main does and when it stops, conflicts, plans moved to `plans/done/`, the other main checkout, the setting, target status in Set up, an unreleased current version, `skip_paths` and allowing fake test secrets, and how release notes are written and checked.
   Verify with `uv run pytest -q`.

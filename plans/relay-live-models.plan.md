@@ -5,6 +5,8 @@ Needs whyline-relay with RLY-18 (`roles model`, `.whyline/relay/model-overrides.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
+There is no publish task (removed 2026-11-11). When the relay finishes, press **Release**: it sets the version, writes the notes, runs the checks and the security scan, pushes, waits for CI, tags and publishes. This repository's relay has no `release` profile, so a publish task would only bump the version.
+
 Why: on 2026-11-07, while release-button ran, the user opened Set up ("Agents for this run · CHF-3") and wanted to move claude from `sonnet` to `opus`. The screen can switch a role's agent (LIVE-1..4) but only lists models read-only in its summary ("Models: antigravity gemini-3.8-flash-high, claude sonnet, grok grok-4.6").
 
 What the user gets:
@@ -49,7 +51,3 @@ Rules every task keeps:
   - the screen fits 80x24 with three rows of two dropdowns
 
 ## Release
-
-- [ ] LMD-3: Publish whyline with live model switching (LMD-1..2)
-  relay-profile: release
-  Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
