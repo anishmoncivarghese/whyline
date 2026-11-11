@@ -54,7 +54,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   A failure here is a warning, never a failed release.
   Tests: a clean other checkout fast-forwarded, a dirty one left alone with the message, none found, and a failing merge reported as a warning.
 
-- [ ] RFB-4: Bring in main in the console and the CLI
+- [x] RFB-4: Bring in main in the console and the CLI
   Edit `src/whyline/console/release_screens.py`, `src/whyline/release/cli.py` and their tests only.
   1. The Release screen shows `Source.line()` above the steps, and `Moves to plans/done: …` when there are finished plans. The ask-mode confirmation for the step uses the same text.
   2. Release settings get **Bring in main before releasing** (default on), saved through `config.save`.
