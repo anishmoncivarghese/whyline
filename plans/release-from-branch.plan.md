@@ -61,7 +61,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. `whyline release` prints the same line before the steps, and `--no-bring-in` turns the step off for that run.
   Tests: the line on a branch and on main, the settings checkbox round trip, the CLI line, and `--no-bring-in`.
 
-- [ ] RFB-5: Target status in Release → Set up
+- [x] RFB-5: Target status in Release → Set up
   Edit `src/whyline/console/release_screens.py`, `src/whyline/release/state.py` and their tests only.
   1. Each target row's status comes from the last time its ready items ran (in Check or Set up): `✓ Ready · checked <date>` or `✗ <first failing item>`, saved per repository with the time. A target never checked says `Not checked yet`; an unticked target says nothing.
   2. Opening Set up starts a background check of the ticked targets (the same `ready_items` Release → Check uses) and updates the rows as results arrive.
