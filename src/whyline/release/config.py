@@ -59,6 +59,7 @@ class ReleaseConfig:
     mode: str = "ask"
     branch: str = "main"
     start_after_plan: bool = False
+    bring_in_main: bool = True
     checks: tuple[str, ...] = ()
     ci_ignore: tuple[str, ...] = ()
     notes: str = "docs/releases/v{version}.md"
@@ -142,6 +143,7 @@ def parse(data: dict) -> ReleaseConfig:
         mode=mode,
         branch=_str(release, "branch", base.branch, "release.branch"),
         start_after_plan=_bool(release, "start_after_plan", False, "release.start_after_plan"),
+        bring_in_main=_bool(release, "bring_in_main", True, "release.bring_in_main"),
         checks=_strs(release, "checks", base.checks, "release.checks"),
         ci_ignore=_strs(release, "ci_ignore", base.ci_ignore, "release.ci_ignore"),
         notes=_str(release, "notes", base.notes, "release.notes"),
@@ -213,6 +215,7 @@ def render(cfg: ReleaseConfig) -> str:
         f"mode = {_quote(cfg.mode)}",
         f"branch = {_quote(cfg.branch)}",
         f"start_after_plan = {_flag(cfg.start_after_plan)}",
+        f"bring_in_main = {_flag(cfg.bring_in_main)}",
         f"checks = {_list(cfg.checks)}",
         f"ci_ignore = {_list(cfg.ci_ignore)}",
         f"notes = {_quote(cfg.notes)}",

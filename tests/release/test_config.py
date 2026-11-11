@@ -41,6 +41,7 @@ def full() -> ReleaseConfig:
         mode="auto",
         branch="trunk",
         start_after_plan=True,
+        bring_in_main=False,
         checks=("uv run pytest -q", 'echo "quoted" \\ back'),
         ci_ignore=("test (windows-latest, 3.13)",),
         notes="notes/v{version}.md",
@@ -76,6 +77,7 @@ def test_defaults_when_file_missing(tmp_path):
     assert cfg.mode == "ask"
     assert cfg.branch == "main"
     assert cfg.start_after_plan is False
+    assert cfg.bring_in_main is True
     assert cfg.checks == ()
     assert cfg.notes == "docs/releases/v{version}.md"
     assert cfg.targets.github is True
@@ -260,3 +262,13 @@ def test_pending_ignores_a_corrupt_file(tmp_path):
     path.parent.mkdir(parents=True)
     path.write_text("not json")
     assert config.pending(tmp_path) == []
+
+
+def test_bring_in_main_key(tmp_path):
+    write_toml(tmp_path, "[release]\nbring_in_main = false\n")
+    assert config.load(tmp_path).bring_in_main is False
+    config.save(tmp_path, ReleaseConfig(bring_in_main=False))
+    assert "bring_in_main = false" in (tmp_path / ".whyline" / "release.toml").read_text()
+    write_toml(tmp_path, '[release]\nbring_in_main = "no"\n')
+    with pytest.raises(config.ConfigError, match="release.bring_in_main"):
+        config.load(tmp_path)

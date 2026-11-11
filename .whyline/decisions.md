@@ -41853,3 +41853,58 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c27e56fe7ee947d0ac5c5c2bd29cc9db -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-11T03:19:26.962Z"} -->
+
+## 2026-11-11 — release source counts ahead/behind against origin/<branch> and raises RuntimeError on git failure
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-1
+
+**Because:** a silent 0/0 would hide an unfetched or missing main from the Release screen
+
+**Rejected:**
+
+- fall back to 0 behind — would let a release skip bringing in main unnoticed
+
+**Files:** src/whyline/release/source.py
+
+<!-- whyline-event: 2dd4c3370a414e859117de6a190c1b68 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T05:34:30.443Z"} -->
+
+## 2026-11-11 — RFB-1 passes round-2 testing
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-1
+
+**Because:** source() reads HEAD, fetches, then counts ahead/behind against origin/<branch>; finished_plans keeps only completed plans in plans/; line() matches the spec; bring_in_main defaults true, parses as release.bring_in_main, and round-trips through config.save. Task tests 34 passed; tests/release 257 passed; full pytest 4635 passed, 1 skipped; extra checks confirmed git failure raises RuntimeError and fetch runs before rev-list.
+
+**Rejected:**
+
+- Fail for tests/console/test_tui_relay_run.py — :test_resume_in_setup_saves_and_then_resumes: RelaySetupScreen flake, does not import whyline.release.source, passed on rerun
+
+**Test:** uv run pytest -q tests/release/test_source.py tests/release/test_config.py: 34 passed
+**Test:** uv run pytest -q tests/release: 257 passed
+**Test:** uv run pytest -q: 4635 passed, 1 skipped, 1 flake (test_resume_in_setup_saves_and_then_resumes) passed on rerun
+
+**Files:** src/whyline/release/source.py, src/whyline/release/config.py, tests/release/test_source.py, tests/release/test_config.py
+
+<!-- whyline-event: 101611ce5a6249bd95b4257a9a65bc09 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T05:56:23.928Z"} -->
+
+## 2026-11-11 — Approve RFB-1 release source and config implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-1
+
+**Because:** source() fetches and compares HEAD with origin/<release branch>, reports the specified line, filters completed top-level plans, and bring_in_main defaults, validates, saves, and round-trips as required; uv run pytest -q passed
+
+**Rejected:**
+
+- Request changes — the implementation and temporary-repository tests cover every RFB-1 acceptance point with no unsafe or clearly wrong behavior
+
+**Files:** src/whyline/release/source.py, src/whyline/release/config.py, tests/release/test_source.py, tests/release/test_config.py
+
+<!-- whyline-event: 4a8345f43a3640a7987ce799b30b7243 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T06:15:02.835Z"} -->
