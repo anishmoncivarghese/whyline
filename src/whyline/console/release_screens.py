@@ -118,6 +118,7 @@ class ReleaseScreen(ModalScreen):
         current_version: str | None = None,
         ready_check: Callable[[str], list[release_ready.ReadyItem]] | None = None,
         steps: Callable[[str], list[tuple[str, bool]]] | None = None,
+        source_text: Callable[[], str] | None = None,
         gh_run: setup_github.Run | None = None,
         gh_run_streaming: setup_github.RunStreaming | None = None,
         chat_turn: Callable[..., object] | None = None,
@@ -165,6 +166,7 @@ class ReleaseScreen(ModalScreen):
         self._current = current_version
         self._ready_check = ready_check
         self._steps = steps
+        self._source_text = source_text
         self._items: list[release_ready.ReadyItem] | None = None
         self._checked_version = ""
         self._load_error = ""
@@ -226,6 +228,7 @@ class ReleaseScreen(ModalScreen):
                                      allow_blank=False, id="release-mode")
                         yield Static("", id="release-check-result")
                         yield Button("Open Security…", id="release-fix-security", classes="-hidden")
+                        yield Static("", id="release-source", markup=False)
                         yield Static("", id="release-steps")
                 with TabPane("Set up", id="setup-tab"):
                     yield from self._compose_setup()
@@ -250,6 +253,24 @@ class ReleaseScreen(ModalScreen):
     def on_mount(self) -> None:
         self._show_steps()
         self._saved_form = self._collect()
+        self.run_worker(self._source_in_thread, thread=True, exclusive=True,
+                        group="release-source", name="release-source")
+
+    def _default_source_text(self) -> str:
+        cfg = self._config()
+        if not cfg.bring_in_main:
+            return ""
+        return release_plan.bring_confirmation(self.root, cfg)
+
+    def _source_in_thread(self) -> None:
+        try:
+            text = (self._source_text or self._default_source_text)()
+        except Exception:  # noqa: BLE001 - not a git checkout or no network: show no line
+            text = ""
+        self.app.call_from_thread(self._show_source, text)
+
+    def _show_source(self, text: str) -> None:
+        self.query_one("#release-source", Static).update(text)
 
     # -- events -------------------------------------------------------------
 
@@ -397,6 +418,8 @@ class ReleaseScreen(ModalScreen):
             yield Input(cfg.branch, id="rs-branch")
             yield Checkbox("Release when a plan completes", cfg.start_after_plan,
                            id="rs-after-plan")
+            yield Checkbox("Bring in main before releasing", cfg.bring_in_main,
+                           id="rs-bring-in")
             yield Label("Checks (one per line)")
             yield TextArea("\n".join(cfg.checks), id="rs-checks")
             yield Label("CI jobs to ignore (one per line): a job name as GitHub shows it, such as test (windows-latest, 3.13), or a whole workflow name")
@@ -519,6 +542,7 @@ class ReleaseScreen(ModalScreen):
             mode=str(mode) if mode in release_config.MODES else base.mode,
             branch=self.query_one("#rs-branch", Input).value.strip() or base.branch,
             start_after_plan=self.query_one("#rs-after-plan", Checkbox).value,
+            bring_in_main=self.query_one("#rs-bring-in", Checkbox).value,
             checks=_lines(self.query_one("#rs-checks", TextArea).text),
             ci_ignore=_lines(self.query_one("#rs-ci-ignore", TextArea).text),
             notes=self.query_one("#rs-notes", Input).value.strip() or base.notes,
@@ -1274,16 +1298,19 @@ class ConfirmStepScreen(ModalScreen):
     ConfirmStepScreen Button { margin-right: 2; }
     """
 
-    def __init__(self, title: str, irreversible: bool) -> None:
+    def __init__(self, title: str, irreversible: bool, detail: str = "") -> None:
         super().__init__()
         self._title = title
         self._irreversible = irreversible
+        self._detail = detail
 
     def compose(self) -> ComposeResult:
         what = ("This cannot be undone once it runs." if self._irreversible
                 else "This changes your project.")
         with Vertical():
             yield Label(f"Next step: {self._title}", id="release-confirm-title")
+            if self._detail:
+                yield Static(self._detail, id="release-confirm-detail", markup=False)
             yield Label(what, id="release-confirm-what")
             with Horizontal():
                 yield Button(GO, id="release-go", variant="warning")

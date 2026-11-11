@@ -794,3 +794,44 @@ async def test_close_and_start_stay_on_screen_on_the_set_up_tab(tmp_path, size):
             assert screen.contains_region(region), (button_id, region, screen)
         box = _q(app, "#release-box", Vertical).region
         assert box.contains_region(_q(app, "#release-close", Button).region)
+
+
+# -- Bring in main --------------------------------------------------------------
+
+
+async def test_source_line_on_a_branch_and_on_main(tmp_path):
+    from pathlib import Path
+
+    from whyline.release.source import Source, confirmation
+
+    branch = Source("feat", False, 3, 2, (Path("plans/a.plan.md"),))
+    for src, expected in ((branch, ["Releasing feat · 3 commits",
+                                    "main has 2 commits this branch doesn't",
+                                    "Moves to plans/done: a.plan.md"]),
+                          (Source("main", True, 0, 0), ["Releasing main"])):
+        screen = ReleaseScreen(tmp_path, start_release=lambda c: None, config=ReleaseConfig(),
+                               current_version="0.3.64", steps=lambda v: STEPS,
+                               source_text=lambda src=src: confirmation(src, tmp_path))
+        app = Host(screen)
+        async with app.run_test() as pilot:
+            for _ in range(20):
+                await pilot.pause()
+            text = _text(app, "#release-source")
+            assert all(part in text for part in expected)
+
+
+async def test_bring_in_checkbox_round_trips(tmp_path):
+    app = Host(_setup_screen(tmp_path))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        box = _q(app, "#rs-bring-in", Checkbox)
+        assert box.value is True
+        box.value = False
+        await pilot.pause()
+        _q(app, "#rs-save", Button).press()
+        await pilot.pause()
+    assert release_config.load(tmp_path).bring_in_main is False
+    app = Host(_setup_screen(tmp_path))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _q(app, "#rs-bring-in", Checkbox).value is False

@@ -6469,8 +6469,15 @@ class WhylineConsoleApp(App):
             self._release_say(f"release · {title}: {text}")
 
         def confirm(step: Any) -> bool:
+            detail = ""
+            if step.id == "bring-in-main":
+                try:
+                    detail = release_plan.bring_confirmation(
+                        root, replace(release_config.load(root), mode=choice.mode))
+                except Exception:  # noqa: BLE001 - no checkout or no network: title only
+                    detail = ""
             return bool(self._release_ask(
-                ConfirmStepScreen(step.title, step.irreversible), False))
+                ConfirmStepScreen(step.title, step.irreversible, detail), False))
 
         def confirm_notes(path: Any) -> bool:
             try:

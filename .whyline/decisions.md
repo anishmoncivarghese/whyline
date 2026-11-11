@@ -42067,3 +42067,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cc2cec60f5214e24a1b74a15397cf655 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-11T09:37:13.537Z"} -->
+
+## 2026-11-11 — Console Release screen loads the Bring in main line in a worker; ConfirmStepScreen gets an optional detail, tui wiring left out of scope
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-4
+
+**Because:** fetch can block, so it must not run on the UI thread; RFB-4 limits edits to release_screens.py and cli.py
+
+**Rejected:**
+
+- Compute the line in compose — blocks the popup on a network fetch
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: a6a871b1d8694d7aa2b7800f29b02cc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T09:39:19.171Z"} -->
+
+## 2026-11-11 — Fail RFB-4: exclusive source worker blocks auto-check
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-4
+
+**Because:** ReleaseScreen.on_mount starts run_worker(exclusive=True) on Textual's default group; _run_check uses the same group, so PlanReleaseScreen auto-check never runs _check_in_thread. A unique group or exclusive=False restores it; an empty exclusive default-group worker still blocks it.
+
+**Rejected:**
+
+- Pass because RFB-4 tests passed — the full suite is required and auto-check is existing behavior
+
+**Test:** uv run pytest -q: 4 failed, 1 skipped; 3 are auto-check regressions in test_tui_relay_run.py
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 40fa07a4d6e541ec8c0e65c4d7fd4db9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T10:06:43.789Z"} -->
+
+## 2026-11-11 — Give the Release screen source worker its own group 'release-source'
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-4
+
+**Because:** the default group is shared with _run_check's exclusive worker, which cancelled the auto-check
+
+**Rejected:**
+
+- exclusive=False — a re-mount could stack source fetches
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 66eb156118914ebbb3387bade1b4a796 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T10:18:24.418Z"} -->
+
+## 2026-11-11 — Pass RFB-4: exclusive source worker no longer blocks auto-check; full suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-4
+
+**Because:** The source worker now uses group=release-source, so PlanReleaseScreen auto-check is not cancelled. uv run pytest -q exited 0 with 1 skipped. RFB-4 tests cover the source line on a branch and on main, the settings checkbox round trip, the CLI line, --no-bring-in, and CLI ask-mode confirmation.
+
+**Rejected:**
+
+- Fail for unwired ConfirmStepScreen detail in tui.py — RFB-4 limits edits to release_screens.py and cli.py; CLI ask-mode is covered
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: b9d37725387648a1b466e58cf376be70 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T10:43:27.721Z"} -->
+
+## 2026-11-11 — Reject RFB-4: console ask-mode confirmation does not show the source text
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-4
+
+**Because:** ConfirmStepScreen supports detail, but the production console call constructs it without detail, so the required Bring in main confirmation still shows only the step title; the added ask-mode test covers CLI only. The full suite passed with one skipped test.
+
+**Rejected:**
+
+- Approve based on the green suite — the required console behavior has no effective production wiring or coverage
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 4f3465da056c4df6ba15ea3d5a04928d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T11:01:58.248Z"} -->
+
+## 2026-11-11 — Console Bring in main confirm gets its detail in tui.py confirm(), computed in the release thread
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-4
+
+**Because:** the reviewer rejected RFB-4 because production never passed detail; the fetch may block so it runs in the worker thread, not the UI
+
+**Rejected:**
+
+- Leave tui.py out of scope — the required console behavior had no production wiring
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 04787d9bd11b46d99e2d278ed6e4169a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T11:03:31.954Z"} -->
+
+## 2026-11-11 — Pass RFB-4: console ask-mode confirmation shows the source text; full suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-4
+
+**Because:** tui.py confirm() now passes bring_confirmation as ConfirmStepScreen detail. uv run pytest -q exited 0 with 1 skipped. Named RFB-4 tests all passed: source line on a branch and on main, settings checkbox round trip, CLI line, --no-bring-in, CLI and console ask-mode confirmation (7/7).
+
+**Rejected:**
+
+- Fail for editing tui.py outside the listed files — tester judges behavior; production now shows the source text on the confirmation
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 0f0d02020a3647c2b4918e6181b3d7c4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T11:23:23.315Z"} -->
+
+## 2026-11-11 — Approve RFB-4: source context, setting, CLI override, and live ask confirmation are implemented
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-4
+
+**Because:** The working-tree diff satisfies every named acceptance point; all seven RFB-4 tests pass together. The plain full suite had one unrelated relay-setup UI timing failure, and that exact test passed immediately in isolation.
+
+**Rejected:**
+
+- Reject for the full-suite failure — it is outside the changed paths and was non-reproducible in an isolated rerun
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/console/tui.py, src/whyline/release/cli.py
+
+<!-- whyline-event: f92fe504d14b46d68c11e73689d9002d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T11:42:07.217Z"} -->

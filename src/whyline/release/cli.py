@@ -31,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--version", help="release exactly this version")
     run.add_argument("--mode", choices=release_config.MODES)
     run.add_argument("--yes", action="store_true", help="do not ask")
+    run.add_argument("--no-bring-in", action="store_true",
+                     help="do not merge main into this branch first")
     sub.add_parser("status", help="The release in progress, if any")
     setup = sub.add_parser("setup", help="Set up what releases need")
     setup_sub = setup.add_subparsers(dest="setup_target", required=True)
@@ -77,9 +79,13 @@ def _may_ask(args, mode: str) -> bool:
     return args.yes or mode == "auto" or _interactive()
 
 
-def _confirmers(args):
+def _confirmers(args, bring_text: str = ""):
     def confirm(step) -> bool:
-        return True if args.yes else _ask(f"{step.title}?")
+        if args.yes:
+            return True
+        if step.id == "bring-in-main" and bring_text:
+            print(bring_text)
+        return _ask(f"{step.title}?")
 
     def confirm_notes(path: Path) -> bool:
         return True if args.yes else _ask("Notes written. Continue?")
@@ -123,8 +129,18 @@ def _run(args, root: Path, cfg) -> int:
         return EXIT_ERROR
     version = _next_version(root, cfg, args)
     cfg = release_config.ReleaseConfig(**{**cfg.__dict__, "mode": mode})
+    if args.no_bring_in:
+        cfg = release_config.ReleaseConfig(**{**cfg.__dict__, "bring_in_main": False})
+    bring_text = ""
+    if cfg.bring_in_main:
+        try:
+            bring_text = release_plan.bring_confirmation(root, cfg)
+        except Exception:  # noqa: BLE001 - not a git checkout or no network: no line
+            pass
+        if bring_text:
+            print(bring_text)
     plan = _plan(root, cfg, version, args)
-    confirm, _ = _confirmers(args)
+    confirm, _ = _confirmers(args, bring_text)
     result = engine.run(root, plan, mode=mode, confirm=confirm,
                         on_progress=_progress_printer())
     return _finish(result)

@@ -192,3 +192,49 @@ def test_plan_step_order(root):
     assert [s.id for s in plan.steps] == [
         "ready", "version", "notes", "commit", "checks", "push", "ci", "tag",
         "github_release", "after"]
+
+
+def test_run_prints_the_source_line_before_the_steps(root, monkeypatch, capsys):
+    calls = fake_run(monkeypatch)
+    monkeypatch.setattr(release_plan, "bring_confirmation",
+                        lambda r, cfg, **k: "Releasing feat · 3 commits\nMoves to plans/done: a.plan.md")
+    assert release_cli.main(["run", "--yes"]) == 0
+    out = capsys.readouterr().out
+    assert out.index("Releasing feat · 3 commits") < out.index("[1/2]")
+    assert "Moves to plans/done: a.plan.md" in out
+    assert calls["plan"].version == "1.2.4"
+
+
+def test_run_on_main_prints_the_short_line(root, monkeypatch, capsys):
+    fake_run(monkeypatch)
+    monkeypatch.setattr(release_plan, "bring_confirmation", lambda r, cfg, **k: "Releasing main")
+    release_cli.main(["run", "--yes"])
+    assert "Releasing main" in capsys.readouterr().out
+
+
+def test_no_bring_in_turns_the_step_and_line_off(root, monkeypatch, capsys):
+    seen = []
+    fake_run(monkeypatch)
+    monkeypatch.setattr(release_plan, "bring_confirmation",
+                        lambda r, cfg, **k: seen.append(cfg.bring_in_main) or "Releasing feat")
+    real_build = release_plan.build
+    built = []
+    monkeypatch.setattr(release_plan, "build",
+                        lambda r, cfg, v, **k: built.append(cfg.bring_in_main) or real_build(r, cfg, v, **k))
+    assert release_cli.main(["run", "--yes", "--no-bring-in"]) == 0
+    assert seen == [] and built == [False]
+    assert "Releasing feat" not in capsys.readouterr().out
+    release_cli.main(["run", "--yes"])
+    assert seen == [True] and built == [False, True]
+
+
+def test_ask_mode_confirmation_shows_the_source_text(root, monkeypatch, capsys):
+    tty(monkeypatch, True)
+    calls = fake_run(monkeypatch)
+    monkeypatch.setattr(release_plan, "bring_confirmation", lambda r, cfg, **k: "Releasing feat")
+    release_cli.main(["run"])
+    capsys.readouterr()
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    step = engine.Step("bring-in-main", "Bring in main", True, lambda: False, lambda c: None)
+    assert calls["confirm"](step) is True
+    assert "Releasing feat" in capsys.readouterr().out
