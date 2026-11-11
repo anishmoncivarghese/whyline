@@ -76,10 +76,11 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   Tests: an untagged current version chosen by default in the screen and the CLI, a tagged one keeping `patch`, and a tag only on origin counting as released.
 
 - [ ] RFB-7: Test fixtures and fake secrets in the security scan
-  Edit `src/whyline/security/deps.py`, `src/whyline/security/settings.py`, `src/whyline/console/security_screens.py` and their tests only.
+  Edit `src/whyline/security/deps.py`, `src/whyline/security/settings.py`, `src/whyline/console/security_screens.py` and their tests only (and read `release_config.add_pending`).
   1. A `[security]` setting `skip_paths` (a list of glob patterns, default `["tests/**/fixtures/**"]`) that the dependency scan skips when it looks for lockfiles. It is shown and edited in the Security settings. The secrets and contents scans do not use it: a real secret in a test still blocks.
   2. A secret finding whose path is under `tests/` (or inside a built package, under `<name>-<version>/tests/`) adds one line: `This is in a test. If it is a fake value, Allow it with the reason "Fake value in a test".` **Allow…** opens with that reason filled in, still editable and still required.
-  Tests: a vulnerable lockfile under `tests/security/fixtures/` skipped and one elsewhere still reported, the setting round trip, a secret in a test still blocking with the extra line, the prefilled reason, and a secret outside `tests/` with no extra line.
+  3. `settings.allow` marks `.whyline/security-allow.toml` with `release_config.add_pending`, so Release's clean-tree check accepts it and the release commit includes it, instead of failing with `Uncommitted changes: .whyline/security-allow.toml`.
+  Tests: a vulnerable lockfile under `tests/security/fixtures/` skipped and one elsewhere still reported, the setting round trip, a secret in a test still blocking with the extra line, the prefilled reason, a secret outside `tests/` with no extra line, and Release's clean check passing right after an Allow.
 
 - [ ] RFB-8: Docs
   Edit `README.md` where it describes the Release button, and `docs/` pages on releasing.
