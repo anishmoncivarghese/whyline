@@ -10,6 +10,9 @@ What the user gets:
 - Finished plans move to `plans/done/` as part of the release.
 - A separate checkout of `main` is fast-forwarded after the push when it has no changes.
 - **Bring in main before releasing** can be turned off in Release settings.
+- Release → Set up shows each target's last check result instead of a fixed "Not checked", with no blank rows (RFB-5).
+- When the current version has never been released, Release offers it first, so a version a plan already set isn't skipped (RFB-6).
+- The security scan stops warning about its own test fixtures, and a secret found in a test file says how to allow a fake value (RFB-7).
 
 There is no publish task. When the relay finishes, press **Release**: it sets the version, writes the notes, runs the checks, pushes, waits for CI, tags and publishes. (This repository's relay has no `release` profile, so a `relay-profile: release` task would only bump the version.)
 
@@ -58,7 +61,27 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. `whyline release` prints the same line before the steps, and `--no-bring-in` turns the step off for that run.
   Tests: the line on a branch and on main, the settings checkbox round trip, the CLI line, and `--no-bring-in`.
 
-- [ ] RFB-5: Docs
+- [ ] RFB-5: Target status in Release → Set up
+  Edit `src/whyline/console/release_screens.py`, `src/whyline/release/state.py` and their tests only.
+  1. Each target row's status comes from the last time its ready items ran (in Check or Set up): `✓ Ready · checked <date>` or `✗ <first failing item>`, saved per repository with the time. A target never checked says `Not checked yet`; an unticked target says nothing.
+  2. Opening Set up starts a background check of the ticked targets (the same `ready_items` Release → Check uses) and updates the rows as results arrive.
+  3. Rows are one line high when there is no status, so unticked targets leave no blank space. The tab bar at the top of Release and Security sits directly above the content, with no empty band.
+  Tests: a saved result shown after reopening, `Not checked yet`, the background check updating a row, an unticked target with no status, and the row height with no status.
+
+- [ ] RFB-6: Offer an unreleased current version first
+  Edit `src/whyline/console/release_screens.py`, `src/whyline/release/cli.py`, `src/whyline/release/version.py` and their tests only.
+  1. `version.released(root, version, *, run) -> bool` is true when tag `v<version>` exists locally or on origin (`git ls-remote --tags origin v<version>`).
+  2. When the current version is not released, the version select defaults to `current → <version> (not released yet)`, listed first, and the screen's first line reads `Current version: 0.3.69 (not released yet)`. When it is released, the default stays `patch`.
+  3. `whyline release run` with no `--bump` or `--version` uses the unreleased current version, and prints which it chose.
+  Tests: an untagged current version chosen by default in the screen and the CLI, a tagged one keeping `patch`, and a tag only on origin counting as released.
+
+- [ ] RFB-7: Test fixtures and fake secrets in the security scan
+  Edit `src/whyline/security/deps.py`, `src/whyline/security/settings.py`, `src/whyline/console/security_screens.py` and their tests only.
+  1. A `[security]` setting `skip_paths` (a list of glob patterns, default `["tests/**/fixtures/**"]`) that the dependency scan skips when it looks for lockfiles. It is shown and edited in the Security settings. The secrets and contents scans do not use it: a real secret in a test still blocks.
+  2. A secret finding whose path is under `tests/` (or inside a built package, under `<name>-<version>/tests/`) adds one line: `This is in a test. If it is a fake value, Allow it with the reason "Fake value in a test".` **Allow…** opens with that reason filled in, still editable and still required.
+  Tests: a vulnerable lockfile under `tests/security/fixtures/` skipped and one elsewhere still reported, the setting round trip, a secret in a test still blocking with the extra line, the prefilled reason, and a secret outside `tests/` with no extra line.
+
+- [ ] RFB-8: Docs
   Edit `README.md` where it describes the Release button, and `docs/` pages on releasing.
-  Cover: releasing right after a relay, what Bring in main does and when it stops, conflicts, plans moved to `plans/done/`, the other main checkout, and the setting.
+  Cover: releasing right after a relay, what Bring in main does and when it stops, conflicts, plans moved to `plans/done/`, the other main checkout, the setting, target status in Set up, an unreleased current version, and `skip_paths` and allowing fake test secrets.
   Verify with `uv run pytest -q`.
