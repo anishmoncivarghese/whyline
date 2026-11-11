@@ -368,3 +368,52 @@ def test_github_release_generates_notes_when_none(repo):
     gh = FakeGh()
     steps(repo, gh)["github_release"].run(EVENT)
     assert gh.calls[-1][-1] == "--generate-notes"
+
+
+def _push_with_other(repo, tmp_path, monkeypatch, other_path, dirty=False):
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True)
+    if dirty:
+        (other / "a.txt").write_text("changed")
+    (repo / "b.txt").write_text("2")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "second")
+    monkeypatch.setattr(github.worktrees, "default_branch_worktree",
+                        lambda root: other if other_path is None else other_path(other))
+    seen = []
+    steps(repo, FakeGh(), on_progress=seen.append)["push"].run(EVENT)
+    return other, seen
+
+
+def test_push_fast_forwards_clean_other_checkout(repo, tmp_path, monkeypatch):
+    other, seen = _push_with_other(repo, tmp_path, monkeypatch, None)
+    assert (other / "b.txt").exists()
+    assert seen == [f"Updated {other} to v1.2.3"]
+
+
+def test_push_leaves_dirty_other_checkout_alone(repo, tmp_path, monkeypatch):
+    other, seen = _push_with_other(repo, tmp_path, monkeypatch, None, dirty=True)
+    assert not (other / "b.txt").exists()
+    assert seen == [f"Your main checkout at {other} has changes; update it with git pull"]
+
+
+def test_push_without_other_checkout(repo, tmp_path, monkeypatch):
+    other, seen = _push_with_other(repo, tmp_path, monkeypatch, lambda o: None)
+    assert seen == [] and not (other / "b.txt").exists()
+
+
+def test_push_other_checkout_merge_failure_is_a_warning(repo, tmp_path, monkeypatch):
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True)
+    git(other, "config", "user.email", "t@example.com")
+    git(other, "config", "user.name", "T")
+    (other / "c.txt").write_text("x")
+    git(other, "add", ".")
+    git(other, "commit", "-m", "diverged")
+    (repo / "b.txt").write_text("2")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "second")
+    monkeypatch.setattr(github.worktrees, "default_branch_worktree", lambda root: other)
+    seen = []
+    steps(repo, FakeGh(), on_progress=seen.append)["push"].run(EVENT)
+    assert len(seen) == 1 and seen[0].startswith(f"Could not update {other}")

@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from whyline import worktrees
 from whyline.release import config as release_config
 from whyline.release.config import ReleaseConfig
 from whyline.release.engine import Step
@@ -194,6 +195,28 @@ def build_steps(
                     f"{branch} is protected; open a pull request instead", open_pr=True
                 )
             raise StepError(f"git push failed: {_fail_text(proc)}")
+        try:
+            update_other_checkout()
+        except Exception as exc:  # a warning, never a failed release
+            detail(f"Could not update the other {branch} checkout: {exc}")
+
+    def update_other_checkout() -> None:
+        other = worktrees.default_branch_worktree(root)
+        if other is None or other.resolve() == root.resolve():
+            return
+        status = _git(other, run, "status", "--porcelain")
+        if not _ok(status):
+            detail(f"Could not read the {branch} checkout at {other}: {_fail_text(status)}")
+            return
+        if _out(status):
+            detail(f"Your {branch} checkout at {other} has changes; update it with git pull")
+            return
+        fetched = _git(other, run, "fetch", "origin", branch, timeout=NETWORK_TIMEOUT)
+        merged = _git(other, run, "merge", "--ff-only", f"origin/{branch}")
+        if not _ok(fetched) or not _ok(merged):
+            detail(f"Could not update {other}: {_fail_text(merged if _ok(fetched) else fetched)}")
+            return
+        detail(f"Updated {other} to {tag}")
 
     def pushed() -> bool:
         proc = _git(root, run, "ls-remote", "origin", f"refs/heads/{branch}",

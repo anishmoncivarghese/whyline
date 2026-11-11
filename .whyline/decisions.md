@@ -42016,3 +42016,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 03d81f4366c14129809d8740e86e3b48 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-11T08:56:42.777Z"} -->
+
+## 2026-11-11 — Other main checkout update lives inside the push step and only reports via on_progress
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-3
+
+**Because:** A failure there must never fail the release, so exceptions are caught and shown as a progress line
+
+**Rejected:**
+
+- separate Step — would show as a failing/resumable step
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: 878d94958c00444abc6691c4dd676c78 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T08:57:40.350Z"} -->
+
+## 2026-11-11 — Pass RFB-3: other checkout update after push matches spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-3
+
+**Because:** Clean other checkout is fetched then merge --ff-only origin/<branch> and reports Updated <path> to v<version>; dirty reports the git pull message and is left alone; none found is a no-op; merge failure is a progress warning, the push still succeeds, and the other tree stays clean. uv run pytest -q tests/release/test_github.py passed 28 tests; uv run pytest -q exited 0.
+
+**Rejected:**
+
+- fail the task — all four required cases pass and a merge failure never fails the release
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: d711bd6301624be386cbead97368084d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T09:18:58.471Z"} -->
+
+## 2026-11-11 — Approve RFB-3 other-checkout update after successful push
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-3
+
+**Because:** The implementation fast-forwards a clean separate default-branch worktree after fetch, leaves a dirty worktree untouched with actionable guidance, no-ops when none is found, and reports merge failures without failing the release; uv run pytest -q completed at 100% with exit 0 and one skipped test.
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found, and all four required scenarios are genuinely exercised with real Git repositories.
+
+**Files:** src/whyline/release/github.py, tests/release/test_github.py
+
+<!-- whyline-event: cc2cec60f5214e24a1b74a15397cf655 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-11T09:37:13.537Z"} -->
