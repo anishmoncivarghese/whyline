@@ -38,6 +38,9 @@ dependencies = [
     "whyline-relay>=0.2.41,<0.3",
     "prompt_toolkit>=3.0,<4.0",
     "textual>=2.1.2,<3.0",
+    # Textual 2.x reads rich style metadata with marshal; rich 14.2+ writes it
+    # with pickle, which crashed the console on any link (mouse over Docs).
+    "rich>=13.3.3,<14.2",
     "markdown>=3.5,<4",
     "pypdf>=5,<7",
 ]

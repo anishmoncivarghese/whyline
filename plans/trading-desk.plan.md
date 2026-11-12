@@ -5,6 +5,8 @@ Runs after `plans/workflows-2-to-4.plan.md`, at the end of the current queue. It
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
+There is no publish task (removed 2026-11-11). When the relay finishes, press **Release**: it sets the version, writes the notes, runs the checks and the security scan, pushes, waits for CI, tags and publishes. This repository's relay has no `release` profile, so a publish task would only bump the version.
+
 What the user gets:
 - A **Trading desk** screen in the console, next to Job search, and `whyline trading …` on the command line.
 - A watchlist of up to 10 NSE stocks. Each stock is studied by 8 agent roles, each with an agent and backups:
@@ -295,7 +297,3 @@ Rules every task keeps:
   Tests: the Help mentions the Trading desk and `whyline trading`; the doc contains the footer text and the CSV header.
 
 ## Publish
-
-- [ ] TRD-16: Publish whyline with TRD-1..15
-  relay-profile: release
-  Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.

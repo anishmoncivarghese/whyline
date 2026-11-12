@@ -1,9 +1,12 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-01T12:00:00+05:30 -->
 # Job search, part 5: saved searches, a setup check, run results with tailored CVs, and an apply pack
 
-Merged on 2026-11-01 from `job-search-5-tailored-cv` (CVT-1..7, unchanged) and the user's new job search requests. Runs after `plans/sdlc-pipeline.plan.md`, before `plans/self-improvement.plan.md`, then `personal-assistant`. JSR-1 publishes at the end.
+Merged on 2026-11-01 from `job-search-5-tailored-cv` (CVT-1..7, unchanged) and the user's new job search requests. Runs after `plans/sdlc-pipeline.plan.md`, before `plans/self-improvement.plan.md`, then `personal-assistant`. Press Release when it finishes.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules. Read the intro of the part a task is in before starting it.
+
+There is no publish task (removed 2026-11-11). When the relay finishes, press **Release**: it sets the version, writes the notes, runs the checks and the security scan, pushes, waits for CI, tags and publishes. This repository's relay has no `release` profile, so a publish task would only bump the version.
+Its release notes must mention the one-time move of job files into "My job search" and its backup folder. Check them in the Release window before confirming.
 
 What the user gets, end to end:
 1. **Jobs opens on a list of saved searches**, such as "Anish Job search" and "Anish_Data_job". You can create, open, edit, duplicate, rename or delete a search. Each search has its own CV, Word template, preferences, companies, schedule and delivery.
@@ -597,18 +600,6 @@ The user wants whyline to help fill application forms in the browser. This part 
     - that whyline never submits applications
   - Keep the CVT docs from CVT-7.
   Verify with `uv run pytest -q`. Change nothing else.
-
-- [ ] JSR-1: Publish whyline with job search part 5
-  relay-profile: release
-  1. Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version.
-  2. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms.
-  3. Mention:
-     - the one-time move of job files into "My job search"
-     - its backup folder
-  4. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11.
-  5. Push, and wait for green CI on Linux and macOS.
-  6. Tag `v<version>`, push the tag and let the release workflow publish to PyPI.
-  7. Run `uv tool upgrade whyline` and confirm `whyline --version`.
 
 ## Later, not in this plan
 

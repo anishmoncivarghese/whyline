@@ -1,11 +1,13 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-01T02:00:00+05:30 -->
 # Workflows 2 to 4: connections, tools and Telegram
 
-Merged on 2026-11-01 from three plans, in run order: workflows-2-connections (WF-14..20), workflows-4-tools (WF-27..34) and workflows-3-telegram (WF-21..26). Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md`. Part 1 must come before Part 2; Part 3 could run either side of Part 2. WFR-1 publishes at the end.
+Merged on 2026-11-01 from three plans, in run order: workflows-2-connections (WF-14..20), workflows-4-tools (WF-27..34) and workflows-3-telegram (WF-21..26). Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md`. Part 1 must come before Part 2; Part 3 could run either side of Part 2. Press Release when it finishes.
 
 Runs after `plans/agent-tools.plan.md`. Changed 2026-11-10: the credential store (WF-14), the MCP registry and import (most of WF-27) and the MCP client (WF-28) moved there as TLS-1, TLS-3 and TLS-4, in `whyline.credentials` and `whyline.tools`, shared with Agents. This plan keeps the Workflows side: workflows as users of credentials and servers, the `mcp` step, the picker and the docs.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules; read the intro of the part a task is in before starting it.
+
+There is no publish task (removed 2026-11-11). When the relay finishes, press **Release**: it sets the version, writes the notes, runs the checks and the security scan, pushes, waits for CI, tags and publishes. This repository's relay has no `release` profile, so a publish task would only bump the version.
 
 ## Part 1: credentials, HTTP, untrusted data and write approvals
 
@@ -349,7 +351,3 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   Tests:
   - Telegram `help` lists `flows` and `flow`
   Run `git diff --check` and `uv run pytest -q`. Change nothing else.
-
-- [ ] WFR-1: Publish whyline with workflows parts 2 to 4 (WF-15..34, without WF-28)
-  relay-profile: release
-  Bump the version in `pyproject.toml`, `src/whyline/__init__.py` and `uv.lock` to the next patch version. Write `docs/releases/v<version>.md` from every task since the previous release (`git log v<previous>..HEAD`), in user terms. Run `uv run pytest -q` with the agent CLIs off PATH and `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`, and again on Python 3.11. Push, wait for green CI on Linux and macOS, then tag `v<version>`, push the tag and let the release workflow publish to PyPI. Afterwards run `uv tool upgrade whyline` and confirm `whyline --version`.
