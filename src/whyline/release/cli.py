@@ -17,6 +17,8 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 
+NOTES_PREVIEW_LINES = 40
+
 VERBS = ("check", "run", "status", "resume", "setup")
 
 
@@ -60,15 +62,45 @@ def _ask(question: str) -> bool:
     return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
+def _edit(path: Path) -> None:
+    """Open the file in the user's editor and wait for it to close."""
+    import os
+    import shlex
+    import subprocess
+
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    try:
+        subprocess.run([*shlex.split(editor), str(path)], check=False)
+    except OSError as error:
+        print(f"Could not open the editor: {error}", file=sys.stderr)
+
+
+def _ask_current_instead(root: Path, cfg, current: str, args) -> bool:
+    """A bump was chosen but the current version has notes and no tag: offer it instead."""
+    if args.yes or not _interactive():
+        return False
+    path = release_plan.notes_file(root, cfg, current)
+    if path is None or not path.is_file():
+        return False
+    if release_version.released(root, current, run=release_ready.default_run):
+        return False
+    answer = input(f"v{current} has notes and was never released. "
+                   f"Release v{current} instead? [Y/n] ").strip().lower()
+    return answer not in ("n", "no")
+
+
 def _next_version(root: Path, cfg, args) -> str:
     if getattr(args, "version", None):
         return release_version.validate(args.version)
     current = release_version.current(root, cfg)
     kind = getattr(args, "bump", None)
-    if kind is None and getattr(args, "release_command", "") == "run":
+    is_run = getattr(args, "release_command", "") == "run"
+    if kind is None and is_run:
         if not release_version.released(root, current, run=release_ready.default_run):
             print(f"Using the current version {current}: it is not released yet.")
             return current
+    elif kind is not None and is_run and _ask_current_instead(root, cfg, current, args):
+        return current
     return release_version.bump(current, kind or "patch")
 
 
@@ -95,7 +127,22 @@ def _confirmers(args, bring_text: str = ""):
         return _ask(f"{step.title}?")
 
     def confirm_notes(path: Path) -> bool:
-        return True if args.yes else _ask("Notes written. Continue?")
+        if args.yes:
+            return True
+        while True:
+            try:
+                lines = Path(path).read_text(encoding="utf-8").splitlines()
+            except OSError:
+                lines = []
+            print("\n".join(lines[:NOTES_PREVIEW_LINES]))
+            if len(lines) > NOTES_PREVIEW_LINES:
+                print(f"... {len(lines) - NOTES_PREVIEW_LINES} more lines in {path}")
+            answer = input("Use these notes? [y/N/e] ").strip().lower()
+            if answer in ("y", "yes"):
+                return True
+            if answer not in ("e", "edit"):
+                return False
+            _edit(Path(path))
 
     return confirm, confirm_notes
 

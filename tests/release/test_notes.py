@@ -46,7 +46,7 @@ def test_prompt_includes_commits_and_style_example(tmp_path):
 
     def ask(prompt):
         seen.append(prompt)
-        return "# v1.3.0\n\n- Shiny\n"
+        return "<notes>\n# v1.3.0\n\n- Shiny\n</notes>"
 
     out = notes.draft(tmp_path, ReleaseConfig(), "1.3.0", ask_agent=ask, run=make_run("v1.2.0"))
     assert out == "# v1.3.0\n\n- Shiny\n"
@@ -59,7 +59,7 @@ def test_prompt_includes_commits_and_style_example(tmp_path):
 def test_prompt_without_previous_notes_has_no_example(tmp_path):
     seen = []
     notes.draft(tmp_path, ReleaseConfig(), "1.3.0",
-                ask_agent=lambda p: seen.append(p) or "x", run=make_run("v1.2.0"))
+                ask_agent=lambda p: seen.append(p) or "<notes>\nx\n</notes>", run=make_run("v1.2.0"))
     assert "previous release notes" not in seen[0]
 
 
@@ -75,6 +75,32 @@ def test_fallback_when_agent_returns_nothing(tmp_path):
     out = notes.draft(tmp_path, ReleaseConfig(), "1.3.0", ask_agent=lambda p: "  ",
                       run=make_run(None))
     assert out == notes.fallback("1.3.0", ["feat: a", "fix: b"])
+
+
+def test_prompt_ends_with_the_marker_instruction():
+    prompt = notes.build_prompt("1.3.0", ["feat: a"], "")
+    assert prompt.rstrip().endswith(
+        "Put the notes between a line <notes> and a line </notes>. Write nothing else.")
+
+
+def test_notes_keep_only_the_marked_part(tmp_path):
+    raw = ("Sure! Here you go:\n<notes>\nold\n</notes>\n"
+           "<notes>\n\n# v1.3.0\n- Shiny\n\n</notes>\nHope it helps")
+    assert notes.extract(raw) == "# v1.3.0\n- Shiny"
+    out = notes.draft(tmp_path, ReleaseConfig(), "1.3.0", ask_agent=lambda p: raw,
+                      run=make_run("v1.2.0"))
+    assert out == "# v1.3.0\n- Shiny\n"
+
+
+def test_missing_or_empty_pair_falls_back_and_says_so(tmp_path):
+    assert notes.extract("no markers") is None
+    assert notes.extract("<notes>\n  \n</notes>") is None
+    for raw in ("# v1.3.0\n- chatter", "<notes>\n \n</notes>"):
+        said = []
+        out = notes.draft(tmp_path, ReleaseConfig(), "1.3.0", ask_agent=lambda p, r=raw: r,
+                          run=make_run("v1.2.0"), say=said.append)
+        assert out == notes.fallback("1.3.0", ["feat: a", "fix: b"])
+        assert said == ["The agent's notes were not usable; using the commit list"]
 
 
 def test_write_to_notes_path(tmp_path):

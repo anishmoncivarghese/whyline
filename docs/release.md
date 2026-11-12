@@ -198,6 +198,29 @@ failure there is only a warning, never a failed release.
 - **step**: asks before every step.
 - **auto**: asks nothing. Only use it after Check is all ✓.
 
+### Release notes
+
+The notes step asks an agent to draft `docs/releases/v<version>.md` (the
+**Notes path** setting) from the commit subjects since the last tag, matching
+the style of the previous release's notes. The agent runs once, read-only, in an
+empty temporary folder, so it cannot edit your files or make a commit. It is
+told to put the notes between a line `<notes>` and a line `</notes>`, and only
+that part is kept (the last pair, if there are several). If the agent fails,
+or its answer has no usable pair, the notes are the plain commit list and the
+release log says `The agent's notes were not usable; using the commit list`.
+
+In ask mode you check the notes before they are used. In the console the
+notes appear in a scrollable box with **Use these notes**, **Edit** (opens the
+file in your editor, then shows it again) and **Stop**. On the command line
+`whyline release run` prints the first 40 lines and asks
+`Use these notes? [y/N/e]`; `e` opens `$VISUAL` or `$EDITOR`, then asks again.
+`--yes` skips the question.
+
+If you choose a bump while `docs/releases/v<current>.md` exists and
+`v<current>` was never released, Release asks `v<current> has notes and was
+never released. Release v<current> instead?` before it starts; the default is
+Yes.
+
 ### Security checks
 
 Before anything is pushed, Ready gains a **Security** item: it scans the
@@ -213,8 +236,9 @@ in [docs/security.md](security.md).
 A failed or stopped release keeps its place in `.git/whyline-release/`.
 When a step fails, the popup offers **Resume release** (continue after you fix
 the cause) and, when a pull request is the way forward, **Open PR**. Resume
-skips every step already done. Choosing **Edit** on the notes stops the
-release; Resume continues with the edited file.
+skips every step already done. Choosing **Stop** on the notes stops the
+release; Resume continues with the notes file as it is on disk (including any
+edits you made with **Edit**).
 
 ## From a plan
 
@@ -242,7 +266,7 @@ is never made twice.
   another.
 - **Check failed: `<command>`** One of your Checks exited non-zero; the last
   lines of its output follow. Fix it and resume.
-- **You stopped to edit the release notes** Edit the file, then resume.
+- **You stopped at the release notes** Edit the file if you like, then resume.
 - **A release is already running.** Another run holds the lock. Wait for it, or
   if its process is gone, resume.
 - **The stopped release is for X, not Y.** Resume the version it was started

@@ -1042,3 +1042,69 @@ async def test_check_result_with_brackets_is_shown_as_plain_text():
         await pilot.click("#release-check")
         await _wait_check(pilot)
         assert "['gh', 'run', 'list'" in _text(app, "#release-check-result")
+
+
+def _notes_screen(tmp_path, started, with_notes=True, released=False):
+    if with_notes:
+        (tmp_path / "docs/releases").mkdir(parents=True)
+        (tmp_path / "docs/releases/v0.3.64.md").write_text("# v0.3.64\n")
+    return ReleaseScreen(
+        tmp_path, start_release=started.append, config=ReleaseConfig(),
+        current_version="0.3.64", ready_check=lambda version: GOOD,
+        steps=lambda version: STEPS, released=lambda version: released,
+    )
+
+
+async def _start_minor(pilot):
+    app = pilot.app
+    app.screen.query_one("#release-kind", Select).value = "minor"
+    await pilot.pause()
+    app.screen.query_one("#release-check", Button).press()
+    await _wait_check(pilot)
+    app.screen.query_one("#release-start", Button).press()
+    await pilot.pause()
+
+
+async def test_a_bump_with_unreleased_notes_asks_and_yes_uses_the_current_version(tmp_path):
+    from whyline.console.release_screens import UnreleasedVersionScreen
+
+    started = []
+    app = Host(_notes_screen(tmp_path, started))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _start_minor(pilot)
+        assert isinstance(app.screen, UnreleasedVersionScreen)
+        text = str(app.screen.query_one("#release-unreleased-ask").renderable)
+        assert text == ("v0.3.64 has notes and was never released. "
+                        "Release v0.3.64 instead?")
+        assert app.screen.focused.id == "release-unreleased-yes"
+        app.screen.query_one("#release-unreleased-yes", Button).press()
+        await pilot.pause()
+        assert started == [ReleaseChoice("0.3.64", "ask")]
+
+
+async def test_answering_no_keeps_the_bump(tmp_path):
+    started = []
+    app = Host(_notes_screen(tmp_path, started))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _start_minor(pilot)
+        app.screen.query_one("#release-unreleased-no", Button).press()
+        await pilot.pause()
+        assert started == [ReleaseChoice("0.4.0", "ask")]
+
+
+async def test_no_question_without_notes_or_when_released(tmp_path):
+    for kwargs in ({"with_notes": False}, {"released": True}):
+        started = []
+        app = Host(_notes_screen(_fresh(tmp_path, kwargs), started, **kwargs))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await _start_minor(pilot)
+            assert started == [ReleaseChoice("0.4.0", "ask")]
+
+
+def _fresh(tmp_path, kwargs):
+    folder = tmp_path / "-".join(kwargs)
+    folder.mkdir()
+    return folder

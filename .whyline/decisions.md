@@ -42749,3 +42749,88 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 43b437b5c3a4402ead132e30f06c04ac -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T11:35:27.890Z"} -->
+
+## 2026-11-12 — Notes agent runs read-only in an empty temp folder; only the <notes> block is kept
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-8
+
+**Because:** chat.run_turn could edit files and commit the tree; a temp cwd with read_only_command makes drafting unable to touch the repo, and the marker drops agent chatter
+
+**Rejected:**
+
+- Keep chat.run_turn and revert after — still commits and races the index
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: 795c739832764c67b4552bfbfc83a67e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T12:53:15.865Z"} -->
+
+## 2026-11-12 — Fail RFB-8: Claude --settings is relative so the temp cwd cannot start the agent
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-8
+
+**Because:** relay_ask.command keeps --settings .whyline/relay/claude-settings.json when that file exists in the repo; default_ask_agent then runs with cwd=empty temp, where the file is missing, so Claude never starts and notes always fall back. test_notes_agent_cannot_commit mocks command so it cannot see this. uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- Pass because the suite is green — the specified Claude command is unusable from the required temp folder
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: c7af78500f7c40ada8ac5756e55be7e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T13:18:41.819Z"} -->
+
+## 2026-11-12 — Notes agent --settings made absolute under the repo root
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-8
+
+**Because:** relative --settings is missing from the temp cwd so Claude refuses to start; absolute path keeps the settings file usable
+
+**Rejected:**
+
+- Drop the flag — loses repo settings
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: 37bde4518ec94345aef10026cf86ee69 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T13:22:13.917Z"} -->
+
+## 2026-11-12 — Pass RFB-8: notes agent --settings is absolute and the five requirements hold
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-8
+
+**Because:** relay_ask.command still passes relative --settings; absolute_settings rewrites it under the repo root. From an empty temp cwd, claude with the relative path exits 1 (Settings file not found) and with the rewritten absolute path exits 0. default_ask_agent uses relay_ask.command plus agents.run in a temp folder; extract keeps the last marked pair and falls back with the stated log line; ask-mode confirmation and the unreleased-version question exist in the console and CLI; docs describe how notes are written and checked. RFB-8 test files exited 0.
+
+**Rejected:**
+
+- Fail on full-suite flake in test_resume_in_setup_saves_and_then_resumes — that test is relay setup, tui.py only changed confirm_notes, and it passed in isolation and when re-running the file
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: 2f58588b9f5d4d599521faba5175462a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T13:46:25.911Z"} -->
+
+## 2026-11-12 — Approve RFB-8 safe release notes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-8
+
+**Because:** The agent runs once through the verified read-only command in a fresh temporary folder without changing HEAD or status; marked extraction and fallback, console and CLI review controls, the unreleased-current-version question, and release documentation satisfy the task, and uv run pytest -q exited 0
+
+**Rejected:**
+
+- Request changes for the console editor reopening immediately — the modal is deliberately shown again after handing the file to the configured macOS editor, matching the specified review loop and covered behavior
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: ba93b2a93d774d11983f9ddff7d9196e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T14:05:55.432Z"} -->

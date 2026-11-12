@@ -39,22 +39,60 @@ def assistant_telegram() -> tuple[str, int] | None:
     return (token, chats[0]) if chats else None
 
 
+def absolute_settings(argv: list[str], root: Path) -> list[str]:
+    """Point a relative --settings file at the repository, since the agent runs elsewhere."""
+    out = list(argv)
+    for i, token in enumerate(out):
+        if token == "--settings" and i + 1 < len(out):
+            out[i + 1] = str(root / Path(out[i + 1]).expanduser())
+        elif token.startswith("--settings="):
+            out[i] = "--settings=" + str(root / Path(token.split("=", 1)[1]).expanduser())
+    return out
+
+
 def default_ask_agent(root: Path) -> Callable[[str], str]:
-    """Ask the agent chat would use; any failure makes notes fall back to the commit list."""
+    """Run the agent chat would use once, read-only, in an empty temporary folder.
+
+    Nothing it does can touch the repository, so drafting notes never edits files or
+    commits. Any failure raises, and notes fall back to the commit list.
+    """
 
     def ask(prompt: str) -> str:
+        import tempfile
+        from types import SimpleNamespace
+
         from whyline.relaychat import agent_choice
-        from whyline_relay import chat
-        from whyline_relay import config as relay_config
+        from whyline.relaychat import ask as relay_ask
+        from whyline_relay import agents
 
         agent = agent_choice.pick(root, None).agent
         if agent is None:
             raise RuntimeError("no agent is available")
-        record = chat.run_turn(
-            root, agent=agent, prompt=prompt, settings=relay_config.load(root),
-            attachments=[], timeout_seconds=300,
-        )
-        return str(record["response"])
+        argv = relay_ask.command(root, agent)
+        if argv is None:
+            raise RuntimeError(f"{agent} has no verified read-only mode")
+        argv = absolute_settings(argv, root)
+        with tempfile.TemporaryDirectory(prefix="whyline-notes-") as tmp:
+            folder = Path(tmp)
+            answer_file = None
+            try:
+                from whyline.agents import runner as agent_runner
+
+                adapter = agent_runner._adapter(SimpleNamespace(root=root), agent)
+                if adapter is not None and adapter.uses_output_file:
+                    answer_file = folder / "answer.txt"
+                    argv = [*argv, "-o", str(answer_file)]
+            except Exception:  # noqa: BLE001 - no adapter: read the output as it is
+                answer_file = None
+            result = agents.run(
+                argv, prompt, cwd=folder, log_path=folder / "output.log",
+                timeout_seconds=300, capture=True, echo=False, agent_name=agent,
+                env={"GIT_OPTIONAL_LOCKS": "0"},
+            )
+            out = result.output or ""
+            if result.exit_code != 0 or not out.strip():
+                raise RuntimeError(f"{agent} gave no notes")
+            return relay_ask.extract(root, agent, out, answer_file)
 
     return ask
 
@@ -127,7 +165,7 @@ def build(
 
     def write_notes(cancel: threading.Event) -> None:
         text = notes.draft(root, cfg, version,
-                           ask_agent=ask_agent or default_ask_agent(root), run=run)
+                           ask_agent=ask_agent or default_ask_agent(root), run=run, say=say)
         written = notes.write(root, cfg, version, text)
         if written is not None and cfg.mode == "ask":
             say(f"Release notes written to {written}")

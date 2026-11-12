@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,6 +13,9 @@ Run = Callable[..., object]
 AskAgent = Callable[[str], str]
 
 NO_TAG_LIMIT = 50
+END_INSTRUCTION = "Put the notes between a line <notes> and a line </notes>. Write nothing else."
+UNUSABLE = "The agent's notes were not usable; using the commit list"
+_MARKED = re.compile(r"^[ \t]*<notes>[ \t]*\r?\n(.*?)^[ \t]*</notes>[ \t]*$", re.S | re.M)
 
 
 def _ok(proc: object) -> bool:
@@ -73,14 +77,25 @@ def build_prompt(version: str, commits: list[str], example: str) -> str:
         f"Write release notes in markdown for version v{version}, for the people who use this software.",
         "Group the notes by what changed (for example New, Improved, Fixed).",
         "Only describe changes that appear in the commit subjects below. Do not invent features, "
-        "fixes or details that are not in them. Reply with the notes only.",
+        "fixes or details that are not in them.",
         "",
         "Commit subjects:",
     ]
     parts += [f"- {subject}" for subject in commits] or ["(none)"]
     if example:
         parts += ["", "Match the style and tone of the previous release notes:", "", example]
+    parts += ["", END_INSTRUCTION]
     return "\n".join(parts) + "\n"
+
+
+def extract(text: str) -> str | None:
+    """What sits between the last `<notes>` line and its `</notes>` line, stripped."""
+    found = None
+    for match in _MARKED.finditer(text or ""):
+        found = match.group(1)
+    if found is None or not found.strip():
+        return None
+    return found.strip()
 
 
 def draft(
@@ -90,15 +105,23 @@ def draft(
     *,
     ask_agent: AskAgent,
     run: Run = default_run,
+    say: Callable[[str], None] | None = None,
 ) -> str:
-    """Ask the agent for notes; a failed or empty answer gives the plain list."""
+    """Ask the agent for notes; a failed, empty or unmarked answer gives the plain list."""
     commits = commits_since_last_tag(root, run=run)
     prompt = build_prompt(version, commits, _style_example(root, cfg, run=run))
     try:
         text = (ask_agent(prompt) or "").strip()
     except Exception:  # every agent failed: a release never blocks on notes
         text = ""
-    return text + "\n" if text else fallback(version, commits)
+    if not text:
+        return fallback(version, commits)
+    marked = extract(text)
+    if marked is None:
+        if say is not None:
+            say(UNUSABLE)
+        return fallback(version, commits)
+    return marked + "\n"
 
 
 def write(root: Path, cfg: ReleaseConfig, version: str, text: str) -> Path | None:

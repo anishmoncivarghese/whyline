@@ -208,7 +208,7 @@ def build(env, cfg):
     fakes = env.fakes
     return plan.build(
         env.root, cfg, VERSION, run=fakes.run, run_shell=fakes.run_shell,
-        ask_agent=lambda prompt: f"# {TAG}\n- everything\n",
+        ask_agent=lambda prompt: f"<notes>\n# {TAG}\n- everything\n</notes>",
         ready_check=lambda: release_ready.check(env.root, cfg, VERSION, run=fakes.run,
                                                 fetch=lambda root, branch: None),
         fetch=lambda root, branch: None, telegram_target=lambda: None,

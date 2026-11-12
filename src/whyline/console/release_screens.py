@@ -1380,7 +1380,27 @@ class ReleaseScreen(ModalScreen):
         version = self.chosen_version()
         if not (self._items and release_ready.ok(self._items)) or version != self._checked_version:
             return
-        choice = ReleaseChoice(version, self.chosen_mode())
+        mode = self.chosen_mode()
+        options = self._version_options()
+        current = options.get(CURRENT, "")
+        kind = self.query_one("#release-kind", Select).value
+        if kind in release_version.BUMPS and current and self._current_has_notes(current) \
+                and self._unreleased(options):
+            def answered(use_current: bool | None) -> None:
+                self._go(ReleaseChoice(current if use_current is not False else version, mode))
+
+            self.app.push_screen(UnreleasedVersionScreen(current), answered)
+            return
+        self._go(ReleaseChoice(version, mode))
+
+    def _current_has_notes(self, current: str) -> bool:
+        try:
+            path = release_plan.notes_file(self.root, self._config(), current)
+        except Exception:  # noqa: BLE001 - no readable config: no question
+            return False
+        return path is not None and path.is_file()
+
+    def _go(self, choice: ReleaseChoice) -> None:
         self.dismiss(None)
         self._start_release(choice)
 
@@ -1434,8 +1454,44 @@ class ConfirmStepScreen(ModalScreen):
         self.dismiss(False)
 
 
+class UnreleasedVersionScreen(ModalScreen):
+    """Asks whether to release the current version, which has notes but no tag.
+    Closes with True on Yes, False on No."""
+
+    BINDINGS = [("escape", "no", "No")]
+    DEFAULT_CSS = """
+    UnreleasedVersionScreen { align: center middle; }
+    UnreleasedVersionScreen > Vertical { width: 70; height: auto; padding: 1 2;
+        border: thick $warning; background: $surface; }
+    UnreleasedVersionScreen Horizontal { height: auto; margin-top: 1; }
+    UnreleasedVersionScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, current: str) -> None:
+        super().__init__()
+        self._current = current
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(f"v{self._current} has notes and was never released. "
+                        f"Release v{self._current} instead?", id="release-unreleased-ask")
+            with Horizontal():
+                yield Button("Yes", id="release-unreleased-yes", variant="primary")
+                yield Button("No", id="release-unreleased-no")
+
+    def on_mount(self) -> None:
+        self.query_one("#release-unreleased-yes", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(event.button.id == "release-unreleased-yes")
+
+    def action_no(self) -> None:
+        self.dismiss(False)
+
+
 class NotesReviewScreen(ModalScreen):
-    """Shows the drafted notes read-only. Closes with EDIT, USE or STOP."""
+    """Shows the drafted notes read-only and scrollable. Closes with EDIT, USE or STOP."""
 
     BINDINGS = [("escape", "stop", "Stop")]
     DEFAULT_CSS = """
@@ -1457,8 +1513,8 @@ class NotesReviewScreen(ModalScreen):
             yield Label(f"Release notes drafted in {self._path}", id="release-notes-title")
             yield TextArea(self._text, read_only=True, id="release-notes-text")
             with Horizontal():
+                yield Button("Use these notes", id="release-notes-use", variant="primary")
                 yield Button("Edit", id="release-notes-edit")
-                yield Button("Use these", id="release-notes-use", variant="primary")
                 yield Button("Stop", id="release-notes-stop")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

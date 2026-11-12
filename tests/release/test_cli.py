@@ -1,4 +1,5 @@
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -255,3 +256,61 @@ def test_run_keeps_patch_when_the_current_version_is_tagged(root, monkeypatch):
     monkeypatch.setattr(release_cli.release_version, "released", lambda *a, **k: True)
     assert release_cli.main(["run", "--yes"]) == 0
     assert calls["plan"].version == "1.2.4"
+
+
+def _notes(root, text="# v1.2.3\n- a\n"):
+    (root / "docs/releases").mkdir(parents=True, exist_ok=True)
+    path = root / "docs/releases/v1.2.3.md"
+    path.write_text(text)
+    return path
+
+
+def test_notes_prompt_shows_forty_lines_and_asks(root, monkeypatch, capsys):
+    path = _notes(root, "\n".join(f"line {i}" for i in range(60)) + "\n")
+    prompts = []
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "y")
+    confirm_notes = release_cli._confirmers(SimpleNamespace(yes=False))[1]
+    assert confirm_notes(path) is True
+    out = capsys.readouterr().out
+    assert "line 39" in out and "line 40" not in out
+    assert prompts == ["Use these notes? [y/N/e] "]
+
+
+def test_notes_prompt_edit_shows_again_and_no_stops(root, monkeypatch, capsys):
+    path = _notes(root)
+    edited = []
+    monkeypatch.setattr(release_cli, "_edit", lambda p: edited.append(p))
+    answers = iter(["e", "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    confirm_notes = release_cli._confirmers(SimpleNamespace(yes=False))[1]
+    assert confirm_notes(path) is False
+    assert edited == [path] and capsys.readouterr().out.count("# v1.2.3") == 2
+
+
+def test_yes_skips_the_notes_question(root, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: 1 / 0)
+    assert release_cli._confirmers(SimpleNamespace(yes=True))[1](_notes(root)) is True
+
+
+def test_bump_with_unreleased_notes_asks_and_defaults_to_yes(root, monkeypatch):
+    tty(monkeypatch, True)
+    calls = fake_run(monkeypatch)
+    _notes(root)
+    monkeypatch.setattr(release_cli.release_version, "released", lambda *a, **k: False)
+    asked = []
+    monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or "")
+    assert release_cli.main(["run", "--bump", "minor"]) == 0
+    assert asked == ["v1.2.3 has notes and was never released. Release v1.2.3 instead? [Y/n] "]
+    assert calls["plan"].version == "1.2.3"
+
+
+def test_bump_keeps_the_bump_when_answered_no_or_no_notes(root, monkeypatch):
+    tty(monkeypatch, True)
+    calls = fake_run(monkeypatch)
+    monkeypatch.setattr(release_cli.release_version, "released", lambda *a, **k: False)
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    assert release_cli.main(["run", "--bump", "minor"]) == 0  # no notes file: no question
+    assert calls["plan"].version == "1.3.0"
+    _notes(root)
+    assert release_cli.main(["run", "--bump", "minor", "--mode", "auto"]) == 0
+    assert calls["plan"].version == "1.3.0"

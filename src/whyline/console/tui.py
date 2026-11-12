@@ -6480,21 +6480,22 @@ class WhylineConsoleApp(App):
                 ConfirmStepScreen(step.title, step.irreversible, detail), False))
 
         def confirm_notes(path: Any) -> bool:
-            try:
-                text = Path(path).read_text(encoding="utf-8")
-            except OSError:
-                text = ""
-            answer = self._release_ask(NotesReviewScreen(path, text), "stop")
-            if answer == USE:
-                return True
-            if answer == EDIT:
+            while True:
+                try:
+                    text = Path(path).read_text(encoding="utf-8")
+                except OSError:
+                    text = ""
+                answer = self._release_ask(NotesReviewScreen(path, text), "stop")
+                if answer == USE:
+                    return True
+                if answer != EDIT:
+                    break
                 opener = getattr(self, "_release_open_file", None)
                 if opener is None:
                     from whyline.console.ideas_screen import _open_with_macos as opener
                 message = opener(Path(path))
                 if message:
                     self._release_say(f"Could not open the notes: {message}")
-                return False  # the step stops; Resume release continues with the edited file
             self._release_stopped = True
             cancel.set()
             return False
