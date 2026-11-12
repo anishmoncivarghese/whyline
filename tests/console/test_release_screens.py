@@ -1021,3 +1021,24 @@ async def test_released_current_version_keeps_patch():
         await pilot.pause()
         assert app.screen.query_one("#release-kind", Select).value == "patch"
         assert app.screen.chosen_version() == "0.3.70"
+
+
+GH_TIMEOUT = ("Command '['gh', 'run', 'list', '--workflow', 'release.yml', '--branch', "
+              "'v0.3.71', '--json', 'status,conclusion,url,databaseId']' timed out after 30.0 seconds")
+
+
+async def test_failed_reason_with_brackets_is_shown_as_plain_text():
+    from whyline.console.release_screens import ReleaseFailedScreen
+    app = Host(ReleaseFailedScreen(GH_TIMEOUT))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert "['gh', 'run', 'list'" in _text(app, "#release-failed-reason")
+
+
+async def test_check_result_with_brackets_is_shown_as_plain_text():
+    items = [ReadyItem("check", False, f"could not check: {GH_TIMEOUT}")]
+    app = Host(_screen(items=items))
+    async with app.run_test() as pilot:
+        await pilot.click("#release-check")
+        await _wait_check(pilot)
+        assert "['gh', 'run', 'list'" in _text(app, "#release-check-result")

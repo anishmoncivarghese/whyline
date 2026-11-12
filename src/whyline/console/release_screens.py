@@ -258,15 +258,16 @@ class ReleaseScreen(ModalScreen):
             with TabbedContent(initial="release-tab"):
                 with TabPane("Release", id="release-tab"):
                     with VerticalScroll(id="release-body"):
-                        yield Static(self._versions_text(options), id="release-versions")
+                        yield Static(self._versions_text(options), id="release-versions",
+                                     markup=False)
                         yield Select(kinds, value=first, allow_blank=False, id="release-kind")
                         yield Input(placeholder="X.Y.Z", id="release-custom")
                         yield Select([(m, m) for m in release_config.MODES], value=mode,
                                      allow_blank=False, id="release-mode")
-                        yield Static("", id="release-check-result")
+                        yield Static("", id="release-check-result", markup=False)
                         yield Button("Open Security…", id="release-fix-security", classes="-hidden")
                         yield Static("", id="release-source", markup=False)
-                        yield Static("", id="release-steps")
+                        yield Static("", id="release-steps", markup=False)
                 with TabPane("Set up", id="setup-tab"):
                     yield from self._compose_setup()
             with Horizontal(id="rs-confirm", classes="-hidden"):
@@ -1489,7 +1490,7 @@ class ReleaseFailedScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label("The release stopped", id="release-failed-title")
-            yield Static(self._reason, id="release-failed-reason")
+            yield Static(self._reason, id="release-failed-reason", markup=False)
             with Horizontal():
                 yield Button("Resume release", id="release-resume", variant="primary")
                 if self._open_pr:

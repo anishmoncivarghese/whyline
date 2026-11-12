@@ -42732,3 +42732,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b5c8e2309a90438999ddff700a49f8ba -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.815Z"} -->
+
+## 2026-11-12 — Show Release screen messages as plain text (markup=False)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** release-markup
+
+**Because:** a gh timeout message containing ['gh', ...] was parsed as Textual markup and crashed the console mid-release
+
+**Rejected:**
+
+- escape the text at each call site — easy to miss one, and no field uses markup on purpose
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 43b437b5c3a4402ead132e30f06c04ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T11:35:27.890Z"} -->
