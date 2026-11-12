@@ -42,7 +42,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   5. `State` gains `failure` (the `Failure` as a dict, empty by default), saved when a step fails with one and cleared on success. Old state files without it still load.
   Tests: `test_never_started_job_is_no_runner` (the 2026-11-12 annotations), a timeout, `test_failed_tests_are_named`, a publish step, other, a `gh` error giving `other`, the text for each cause, both call sites raising with `failure`, and the state round trip including an old file.
 
-- [ ] RCR-2: Don't stop on a slow gh reply
+- [x] RCR-2: Don't stop on a slow gh reply
   Edit `src/whyline/release/github.py`, `src/whyline/release/workflows.py` and their tests only.
   1. While polling in `ci()` and `wait_for_tag_run`, a `subprocess.TimeoutExpired`, an `OSError` or a failing `gh run list` is retried at the normal poll interval. After 5 in a row the step stops with `GitHub didn't answer 5 times in a row; check your connection and resume`. A good reply resets the count.
   2. The detail line says `GitHub is slow to answer (2 of 5)` while retrying.
