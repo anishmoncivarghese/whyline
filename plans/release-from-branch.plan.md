@@ -68,7 +68,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. Rows are one line high when there is no status, so unticked targets leave no blank space. The tab bar at the top of Release and Security sits directly above the content, with no empty band.
   Tests: a saved result shown after reopening, `Not checked yet`, the background check updating a row, an unticked target with no status, and the row height with no status.
 
-- [ ] RFB-6: Offer an unreleased current version first
+- [x] RFB-6: Offer an unreleased current version first
   Edit `src/whyline/console/release_screens.py`, `src/whyline/release/cli.py`, `src/whyline/release/version.py` and their tests only.
   1. `version.released(root, version, *, run) -> bool` is true when tag `v<version>` exists locally or on origin (`git ls-remote --tags origin v<version>`).
   2. When the current version is not released, the version select defaults to `current → <version> (not released yet)`, listed first, and the screen's first line reads `Current version: 0.3.69 (not released yet)`. When it is released, the default stays `patch`.
