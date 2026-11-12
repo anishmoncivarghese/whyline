@@ -27,6 +27,7 @@ POLL_SECONDS = 15
 NO_CI_SECONDS = 2 * 60
 CI_TIMEOUT_SECONDS = 60 * 60
 NETWORK_TIMEOUT = 300.0
+GH_RETRIES = 5
 _FAILED = {"failure", "cancelled", "timed_out", "startup_failure", "action_required", "stale"}
 
 
@@ -79,6 +80,37 @@ def gh_json(root: Path, run: Run, args: list[str]) -> object:
         return json.loads(_out(proc) or "[]")
     except ValueError as exc:
         raise StepError(f"gh {name} gave unreadable output: {exc}") from exc
+
+
+class SlowGh:
+    """Counts gh polls in a row that got no answer; a good reply resets the count."""
+
+    def __init__(self, detail: OnProgress, limit: int = GH_RETRIES) -> None:
+        self.detail = detail
+        self.limit = limit
+        self.misses = 0
+
+    def poll(self, root: Path, run: Run, args: list[str]) -> object | None:
+        """gh_json, but a timeout, OSError or failing gh gives None until `limit` in a row."""
+        try:
+            proc = run(["gh", *args], cwd=root)
+            if not _ok(proc):
+                raise OSError(_fail_text(proc))
+        except (subprocess.TimeoutExpired, OSError):
+            self.misses += 1
+            if self.misses >= self.limit:
+                raise StepError(
+                    f"GitHub didn't answer {self.limit} times in a row; "
+                    "check your connection and resume"
+                ) from None
+            self.detail(f"GitHub is slow to answer ({self.misses} of {self.limit})")
+            return None
+        self.misses = 0
+        name = " ".join(args[:2])
+        try:
+            return json.loads(_out(proc) or "[]")
+        except ValueError as exc:
+            raise StepError(f"gh {name} gave unreadable output: {exc}") from exc
 
 
 _PASSED_RUN = {"success", "skipped", "neutral"}
@@ -243,11 +275,18 @@ def build_steps(
         sha = _head(root, run)
         ignored = set(cfg.ci_ignore)
         started = now()
+        slow = SlowGh(detail)
         while True:
             if cancel.is_set():
                 return False
-            runs = gh_json(root, run, ["run", "list", "--commit", sha, "--json",
-                                       "databaseId,name,status,conclusion,url"])
+            runs = slow.poll(root, run, ["run", "list", "--commit", sha, "--json",
+                                         "databaseId,name,status,conclusion,url"])
+            if runs is None:
+                if now() - started >= CI_TIMEOUT_SECONDS:
+                    raise StepError(
+                        "CI is still running after 60 minutes; resume to keep waiting")
+                sleep(POLL_SECONDS)
+                continue
             # A name in ci_ignore is a whole workflow or one job inside one.
             runs = [r for r in runs if r.get("name") not in ignored]
             finished = 0

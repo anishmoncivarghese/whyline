@@ -417,3 +417,65 @@ def test_push_other_checkout_merge_failure_is_a_warning(repo, tmp_path, monkeypa
     seen = []
     steps(repo, FakeGh(), on_progress=seen.append)["push"].run(EVENT)
     assert len(seen) == 1 and seen[0].startswith(f"Could not update {other}")
+
+
+def flaky_ci(repo, replies, after_sleep=None):
+    """A ci step whose `gh run list` answers come from `replies`: an exception is raised,
+    a list is returned as the runs, "fail" is a non-zero gh."""
+    gh = FakeGh([])
+    clock = Clock()
+    seen = []
+    items = iter(replies)
+
+    def run(args, cwd=None, **kw):
+        if args[:3] == ["gh", "run", "list"]:
+            reply = next(items)
+            if isinstance(reply, Exception):
+                raise reply
+            if reply == "fail":
+                return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 502")
+            return SimpleNamespace(returncode=0, stdout=json.dumps(reply), stderr="")
+        return gh(args, cwd=cwd, **kw)
+
+    def sleep(n):
+        clock.sleep(n)
+        if after_sleep:
+            after_sleep(len(clock.sleeps))
+
+    s = steps(repo, run, sleep=sleep, now=clock.now, on_progress=seen.append)
+    return s["ci"], clock, seen
+
+
+TIMEOUT = subprocess.TimeoutExpired(["gh"], 30)
+
+
+def test_gh_timeout_is_retried(repo):
+    step, clock, seen = flaky_ci(repo, [TIMEOUT, [item("a")]])
+    assert step.run(EVENT) is None
+    assert clock.sleeps == [15]
+    assert "GitHub is slow to answer (1 of 5)" in seen
+
+
+def test_gh_five_misses_in_a_row_stop(repo):
+    step, clock, seen = flaky_ci(repo, [TIMEOUT, OSError("gone"), "fail", TIMEOUT, TIMEOUT])
+    with pytest.raises(StepError) as exc:
+        step.run(EVENT)
+    assert str(exc.value) == (
+        "GitHub didn't answer 5 times in a row; check your connection and resume")
+    assert "GitHub is slow to answer (2 of 5)" in seen
+    assert clock.sleeps == [15] * 4
+
+
+def test_gh_good_reply_resets_the_count(repo):
+    in_progress = [item("a", "in_progress", "")]
+    step, _, seen = flaky_ci(repo, [TIMEOUT] * 4 + [in_progress] + [TIMEOUT] * 4 + [[item("a")]])
+    assert step.run(EVENT) is None
+    assert seen.count("GitHub is slow to answer (4 of 5)") == 2
+
+
+def test_gh_cancel_during_retries(repo):
+    cancel = threading.Event()
+    step, clock, _ = flaky_ci(repo, [TIMEOUT, TIMEOUT, TIMEOUT],
+                              after_sleep=lambda n: cancel.set() if n == 2 else None)
+    assert step.run(cancel) is False
+    assert clock.sleeps == [15, 15]

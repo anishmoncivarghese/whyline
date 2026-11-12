@@ -89,12 +89,19 @@ def wait_for_tag_run(
     cancel = cancel_event or threading.Event()
     detail = on_detail or (lambda text: None)
     started = now()
+    slow = github.SlowGh(detail)
     while True:
         if cancel.is_set():
             return False
-        runs = github.gh_json(root, run, [
+        runs = slow.poll(root, run, [
             "run", "list", "--workflow", name, "--branch", tag, "--json",
             "status,conclusion,url,databaseId"])
+        if runs is None:
+            if now() - started >= TAG_RUN_TIMEOUT_SECONDS:
+                raise StepError(
+                    f"{name} is still running after 45 minutes; resume to keep waiting")
+            sleep(github.POLL_SECONDS)
+            continue
         latest = runs[0] if runs else None
         if latest is None:
             detail(f"Waiting for {name} to start")

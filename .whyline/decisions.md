@@ -42949,3 +42949,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: df6cac82ff2b4ece888e7c27bdbf7156 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T19:57:42.455Z"} -->
+
+## 2026-11-12 — Poll retries live in a SlowGh helper shared by ci() and wait_for_tag_run; gh_json unchanged
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-2
+
+**Because:** only the two poll loops should tolerate slow replies; run view/diagnose calls keep failing fast, and a good reply resets the count
+
+**Rejected:**
+
+- retry inside gh_json — would also retry non-poll calls and hide real failures
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: 246baee30b364c2ba85cea78c828c03d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T19:59:38.601Z"} -->
+
+## 2026-11-12 — Pass RCR-2: slow gh polls retry five times then stop with the connection message
+
+**Actor:** grok
+**Role:** tester
+**Task:** RCR-2
+
+**Because:** ci() and wait_for_tag_run share SlowGh: TimeoutExpired, OSError and a failing gh run list sleep 15s, show GitHub is slow to answer (N of 5), and a good reply resets the count; five misses raise GitHub didn't answer 5 times in a row; check your connection and resume. Cancel during retries returns False. gh_json and run view still fail fast. uv run pytest -q exited 0 with one skip; the five RCR-2 tests and tests/release also exited 0.
+
+**Rejected:**
+
+- fail the task — every specified case holds in ci() and wait_for_tag_run
+
+**Files:** src/whyline/release/github.py, src/whyline/release/workflows.py
+
+<!-- whyline-event: 1a6e5cb58e51479aa3ae11562ff6c4f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T20:20:28.355Z"} -->
+
+## 2026-11-12 — Approve RCR-2 slow GitHub poll recovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-2
+
+**Because:** Both ci() and wait_for_tag_run retry TimeoutExpired, OSError, and nonzero gh run list responses at the normal 15-second interval; the fifth consecutive miss raises the exact connection-and-resume message, successful replies reset the counter, retry detail includes the required count, cancellation is covered, and uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly incorrect behavior was found, and the tests genuinely cover the requested retry, reset, message, interval, and cancellation cases.
+
+**Files:** src/whyline/release/github.py, src/whyline/release/workflows.py, tests/release/test_github.py, tests/release/test_targets.py
+
+<!-- whyline-event: 199e639c49ca40c4bc41d8442adea5f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T20:39:08.094Z"} -->

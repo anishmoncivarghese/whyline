@@ -1,4 +1,5 @@
 import json
+import subprocess
 import threading
 from types import SimpleNamespace
 
@@ -216,3 +217,24 @@ def test_ready_check_includes_target_items(tmp_path, registry):
     with pytest.raises(StepError) as exc:
         plan.steps[0].run(EVENT)
     assert "no token. Add one" in str(exc.value)
+
+
+def test_wait_retries_a_slow_gh_then_stops_after_five(tmp_path):
+    done = [{"status": "completed", "conclusion": "success", "url": "u"}]
+    replies = iter([subprocess.TimeoutExpired(["gh"], 30), done])
+
+    def run(args, cwd=None, **kw):
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return SimpleNamespace(returncode=0, stdout=json.dumps(reply), stderr="")
+
+    result, clock, seen = wait(tmp_path, run)
+    assert result is None and clock.sleeps == [15]
+    assert "GitHub is slow to answer (1 of 5)" in seen
+
+    def offline(args, cwd=None, **kw):
+        raise OSError("offline")
+
+    with pytest.raises(StepError, match="didn't answer 5 times in a row"):
+        wait(tmp_path, offline)
