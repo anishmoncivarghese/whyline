@@ -30,6 +30,7 @@ from whyline.security.secrets import (
 )
 
 _WARN = "medium"
+_PACKAGE_NAME = re.compile(r"^(.+?)-\d")
 _BUILD_DIR = ".git/whyline-release/build"
 
 
@@ -53,20 +54,45 @@ def check(root: Path, *, run: Callable = subprocess.run, rules: RuleSet | None =
 # --- shared -------------------------------------------------------------------
 
 
+def package_name(artifact: str) -> str:
+    """`whyline-0.3.69.tar.gz` and `whyline-0.3.69-py3-none-any.whl` are both `whyline`."""
+    match = _PACKAGE_NAME.match(artifact)
+    return match.group(1) if match else artifact
+
+
 def _scan_member(
-    artifact: str, member: str, data: bytes, rules: RuleSet, inner: str | None = None
+    artifact: str,
+    member: str,
+    data: bytes,
+    rules: RuleSet,
+    inner: str | None = None,
+    versioned: bool = False,
 ) -> list[Finding]:
     """Findings for one packaged file, shown as `<artifact>:<member>`: the name
     check always, the text scan only for non-binary files under the size cap.
     Rules and fingerprints see `inner` (the path inside the project) when given,
-    so an Allow is not tied to one version's folder name."""
+    so an Allow is not tied to one version's folder name. With `versioned` (a built
+    package) the fingerprint also takes the package name without its version, so an
+    Allow made for one release still applies to the next."""
     scanned = inner if inner is not None else member
     binary = b"\0" in data[:_BINARY_PROBE]
     text = "" if binary or len(data) > MAX_FILE_BYTES else data.decode("utf-8", errors="replace")
     found = check_deny(scanned, text)
     if text:
         found.extend(scan_text(text, scanned, rules))
-    return [dataclasses.replace(f, path=f"{artifact}:{member}") for f in found]
+    shown = f"{artifact}:{member}"
+    if not versioned:
+        return [dataclasses.replace(f, path=shown) for f in found]
+    stable = f"{package_name(artifact)}:{scanned}"
+    return [
+        dataclasses.replace(
+            f,
+            path=shown,
+            fingerprint=make_fingerprint(f.kind, f.rule, stable, f.fingerprint),
+            legacy_fingerprint=f.fingerprint,
+        )
+        for f in found
+    ]
 
 
 def _build_failed(kind: str, detail: str) -> Finding:
@@ -144,7 +170,7 @@ def _scan_wheel(path: Path, rules: RuleSet) -> list[Finding]:
             if info.is_dir():
                 continue
             data = b"" if info.file_size > MAX_FILE_BYTES else archive.read(info)
-            found.extend(_scan_member(path.name, info.filename, data, rules))
+            found.extend(_scan_member(path.name, info.filename, data, rules, versioned=True))
     return found
 
 
@@ -159,7 +185,7 @@ def _scan_sdist(path: Path, rules: RuleSet) -> list[Finding]:
             # An sdist keeps everything under `<name>-<version>/`; drop that folder
             # for rules and fingerprints, keep it in the path shown.
             top, _, rest = member.name.partition("/")
-            found.extend(_scan_member(path.name, member.name, data, rules, rest or top))
+            found.extend(_scan_member(path.name, member.name, data, rules, rest or top, versioned=True))
     return found
 
 

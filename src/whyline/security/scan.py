@@ -127,7 +127,7 @@ def _secrets(root, scope, run, tool_path, tool, branch, on_progress, cancel_even
 
 
 def _deps(root, settings, run, fetch, tools, now, report):
-    lock = lockfiles.read_report(root)
+    lock = deps.without_skipped(lockfiles.read_report(root), settings.skip_paths)
     for item in lock.unpinned:
         report.notes.append(item.note)
     for dep in (d for d in lock.dependencies if not d.public):
@@ -146,11 +146,13 @@ def _deps(root, settings, run, fetch, tools, now, report):
 
 
 def _exempt(root: Path) -> Callable[[Finding], bool]:
-    allowed = {e.get("fingerprint") for e in st._read_allow(root)}
+    entries = st._read_allow(root)
     ignored = set(st._ignored(state_dir(root)))
 
     def is_exempt(finding: Finding) -> bool:
-        return bool(finding.fingerprint) and (finding.fingerprint in allowed or finding.fingerprint in ignored)
+        return bool(finding.fingerprint) and (
+            finding.fingerprint in ignored or any(st.matches_entry(e, finding) for e in entries)
+        )
 
     return is_exempt
 

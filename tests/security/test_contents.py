@@ -88,6 +88,8 @@ def test_sdist_fingerprint_ignores_the_versioned_top_folder(tmp_path, rules):
     not part of the fingerprint, which matches the same file in the tree."""
     root = python_root(tmp_path)
     first = check(root, run=uv_runner(sdist={"pkg-1.0/notes.txt": f"aws = {KEY}\n"}), rules=rules)
+    wheel = check(root, run=uv_runner(wheel={"notes.txt": f"aws = {KEY}\n"}), rules=rules)
+    assert wheel[0].fingerprint == first[0].fingerprint
 
     def later(args, **kwargs):
         out = Path(args[args.index("--out-dir") + 1])
@@ -99,9 +101,30 @@ def test_sdist_fingerprint_ignores_the_versioned_top_folder(tmp_path, rules):
         return done()
 
     second = check(root, run=later, rules=rules)
-    in_tree = scan_text(f"aws = {KEY}\n", "notes.txt", rules)
-    assert first[0].fingerprint == second[0].fingerprint == in_tree[0].fingerprint
+    assert first[0].fingerprint == second[0].fingerprint
     assert second[0].path == "pkg-1.1.tar.gz:pkg-1.1/notes.txt"
+
+
+def test_allow_for_one_sdist_version_applies_to_the_next(tmp_path, rules):
+    from whyline.security import settings as st
+
+    root = python_root(tmp_path)
+    old = check(root, run=uv_runner(sdist={"pkg-0.3.69/tests/x.py": f"aws = {KEY}\n"}), rules=rules)
+    assert old[0].path == "pkg-1.0.tar.gz:pkg-0.3.69/tests/x.py"
+    st.allow(root, old[0], "Fake value in a test")
+
+    def later(args, **kwargs):
+        out = Path(args[args.index("--out-dir") + 1])
+        with tarfile.open(out / "pkg-0.3.70.tar.gz", "w:gz") as archive:
+            data = f"aws = {KEY}\n".encode()
+            info = tarfile.TarInfo("pkg-0.3.70/tests/x.py")
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        return done()
+
+    new = check(root, run=later, rules=rules)
+    assert new[0].path == "pkg-0.3.70.tar.gz:pkg-0.3.70/tests/x.py"
+    assert st.is_allowed(root, new[0])
 
 
 def test_build_dir_is_cleaned_up(tmp_path, rules):

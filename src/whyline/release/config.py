@@ -255,6 +255,7 @@ def render(cfg: ReleaseConfig) -> str:
         f"history_scanned = {_quote(s.history_scanned)}",
         f"pre_commit = {_flag(s.pre_commit)}",
         f"audit = {_quote(s.audit)}",
+        "skip_paths = [" + ", ".join(_quote(p) for p in s.skip_paths) + "]",
     ]
     return "\n".join(lines) + "\n"
 

@@ -190,3 +190,18 @@ def test_network_error_on_vuln_fetch_returns_no_findings(tmp_path):
     report = run(tmp_path, [dep()], Flaky(hits={"requests": ["GHSA-1"]}))
     assert report.error == "could not reach OSV.dev"
     assert report.findings == []
+
+
+def test_skip_paths_drop_fixture_lockfiles_only(tmp_path):
+    from whyline.security import lockfiles
+    from whyline.security.settings import SecuritySettings
+
+    for rel in ("tests/security/fixtures/requirements.txt", "requirements.txt"):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("requests==2.0.0\n")
+    report = lockfiles.read_report(tmp_path)
+    assert len(report.dependencies) == 2
+    kept = deps.without_skipped(report, SecuritySettings().skip_paths)
+    assert [d.source_file for d in kept.dependencies] == ["requirements.txt"]
+    assert len(deps.without_skipped(report, ()).dependencies) == 2

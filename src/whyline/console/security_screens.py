@@ -4,6 +4,7 @@ lookup are injected, so nothing here needs git, the network or an installed tool
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -24,6 +25,8 @@ from whyline.security.settings import SecuritySettings
 BREW_COMMAND = "brew install gitleaks osv-scanner"
 BREW_HINT = f"Install the optional scanners with: {BREW_COMMAND}"
 ROTATE_HINT = "Rotate this key; deleting it doesn't remove it from history once pushed."
+TEST_REASON = "Fake value in a test"
+TEST_NOTE = f'This is in a test. If it is a fake value, Allow it with the reason "{TEST_REASON}".'
 REASON_NEEDED = "Allowing a finding needs a reason."
 BADGES = {"critical": "[CRIT]", "high": "[HIGH]", "medium": "[MED]", "low": "[LOW]",
           "unknown": "[?]"}
@@ -66,12 +69,22 @@ def hint(finding: Finding) -> str:
     return f"{finding.fix_hint} {ROTATE_HINT}".strip()
 
 
+def in_test(finding: Finding) -> bool:
+    """A secret under `tests/`, in the repository or inside a built package."""
+    if finding.kind != "secret":
+        return False
+    inner = finding.path.partition(":")[2] or finding.path
+    return bool(re.match(r"(?:[^/]+-\d[^/]*/)?tests/", inner))
+
+
 def finding_text(finding: Finding) -> str:
     head = f"{badge(finding)} {finding.title}"
     bits = [where(finding), finding.commit[:7] if finding.commit else "", finding.preview]
     lines = [head, "    " + "  ".join(b for b in bits if b)]
     if hint(finding):
         lines.append(f"    {hint(finding)}")
+    if in_test(finding):
+        lines.append(f"    {TEST_NOTE}")
     return "\n".join(lines)
 
 
@@ -484,7 +497,7 @@ class SecurityScreen(ModalScreen):
         panel = self.query_one("#sec-allow")
         panel.set_class(finding is None, "-hidden")
         reason = self.query_one("#sec-reason", Input)
-        reason.value = ""
+        reason.value = TEST_REASON if finding is not None and in_test(finding) else ""
         if finding is not None:
             self.query_one("#sec-allow-what", Static).update(
                 f"Allow {finding.title} in {where(finding) or finding.rule}? "
@@ -534,6 +547,8 @@ def compose_security_setup(settings: SecuritySettings,
     yield Checkbox("Check every commit", settings.pre_commit, id="rs-sec-pre-commit")
     yield Label("Deep audit")
     yield Select(AUDIT_LEVELS, value=settings.audit, allow_blank=False, id="rs-sec-audit")
+    yield Label("Skip lockfiles in (comma separated globs)")
+    yield Input(", ".join(settings.skip_paths), id="rs-sec-skip-paths")
     yield Static(text, id="rs-sec-tools", markup=False)
     yield Button("Copy", id="rs-sec-copy", classes="-hidden" if not missing else "")
     yield Static("", id="rs-sec-hook-line", markup=False, classes="-hidden")
@@ -554,6 +569,9 @@ def collect_security(screen, base: SecuritySettings) -> SecuritySettings:
         contents=pick("contents", BLOCK_LEVELS),
         audit=pick("audit", AUDIT_LEVELS),
         pre_commit=screen.query_one("#rs-sec-pre-commit", Checkbox).value,
+        skip_paths=tuple(
+            p.strip() for p in screen.query_one("#rs-sec-skip-paths", Input).value.split(",") if p.strip()
+        ),
     )
 
 

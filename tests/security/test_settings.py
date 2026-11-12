@@ -1,3 +1,4 @@
+import dataclasses
 import pytest
 
 from whyline.security import settings as st
@@ -104,3 +105,37 @@ def test_decide_exempt_findings_are_allowed():
     d = decide([sec], SecuritySettings(), is_exempt=lambda f: True)
     assert d.allowed == (sec,)
     assert not d.blocking and not d.warnings
+
+
+def test_skip_paths_default_and_round_trip(tmp_path):
+    from whyline.release import config as release_config
+
+    assert SecuritySettings().skip_paths == ("tests/**/fixtures/**",)
+    assert st.parse({"skip_paths": ["a/**", " b "]}).skip_paths == ("a/**", "b")
+    with pytest.raises(SettingsError):
+        st.parse({"skip_paths": "tests"})
+    cfg = release_config.ReleaseConfig(security=SecuritySettings(skip_paths=("x/**", "y")))
+    release_config.save(tmp_path, cfg)
+    assert release_config.load(tmp_path).security.skip_paths == ("x/**", "y")
+
+
+def test_allow_marks_the_file_pending(tmp_path):
+    from pathlib import Path
+
+    from whyline.release import config as release_config
+
+    st.allow(tmp_path, finding(path="a.py"), "why")
+    assert Path(".whyline/security-allow.toml") in release_config.pending(tmp_path)
+
+
+def test_old_versioned_entry_matches_only_that_path_and_value(tmp_path):
+    shown = "pkg-0.3.69.tar.gz:pkg-0.3.69/tests/x.py"
+    st.allow(tmp_path, finding(fp="old", path=shown), "why")
+    same = dataclasses.replace(finding(fp="new", path=shown), legacy_fingerprint="old")
+    assert st.is_allowed(tmp_path, same)
+    # A changed secret at the identical version and path stays blocking.
+    changed = dataclasses.replace(finding(fp="new2", path=shown), legacy_fingerprint="other")
+    assert not st.is_allowed(tmp_path, changed)
+    assert not st.is_allowed(tmp_path, finding(fp="new3", path=shown))
+    later = dataclasses.replace(finding(fp="new", path=shown.replace("69", "70")), legacy_fingerprint="old")
+    assert not st.is_allowed(tmp_path, later)

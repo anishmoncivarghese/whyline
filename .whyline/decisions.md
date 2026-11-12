@@ -42454,3 +42454,125 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e4947345676548c6b5b05133bff55400 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T03:41:02.799Z"} -->
+
+## 2026-11-12 — Package finding fingerprints hash the stable '<package>:<inner path>' with the old fingerprint; old versioned-path entries match by exact path+rule
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-7
+
+**Because:** An Allow for one version's sdist/wheel must apply to the next; hashing the old fingerprint keeps the value hash without needing the secret
+
+**Rejected:**
+
+- Prefixing the package into the scanned path — breaks rule path matching and allowlists
+
+**Files:** src/whyline/security/contents.py
+
+<!-- whyline-event: 0019b0efde8f4f1681631707e3f9ed79 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T03:55:35.887Z"} -->
+
+## 2026-11-12 — Pass RFB-7: skip_paths, test-secret Allow hint, stable package fingerprints, and pending allowlist all behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-7
+
+**Because:** uv run pytest -q exited 0 with one skip. Named RFB-7 tests cover fixture lockfiles skipped, setting round trip, the test-secret extra line and prefilled required reason, a non-test secret without that line, Release clean check after Allow, and an Allow on a 0.3.69 sdist still applying to 0.3.70. Independent checks confirmed 8 repo fixture lockfiles dropped while uv.lock is kept, and scan_text still reports a key under tests/.
+
+**Rejected:**
+
+- Fail because osv-scanner is not filtered by skip_paths — the spec skips lockfiles in the built-in dependency scan, which is what the named tests exercise
+
+**Test:** uv run pytest -q: passed, 1 skipped
+
+**Files:** src/whyline/security/settings.py, src/whyline/security/deps.py, src/whyline/security/contents.py, src/whyline/console/security_screens.py
+
+<!-- whyline-event: 52ab25f3fc624e24b1531f4cdf9221fe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T04:25:33.274Z"} -->
+
+## 2026-11-12 — Reject RFB-7: legacy package allows must remain value-sensitive
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-7
+
+**Because:** src/whyline/security/settings.py matches a legacy entry by versioned path and rule even when the finding fingerprint differs, so replacing an allowed fake test secret with a real credential at the same artifact path is silently exempted; uv run pytest -q passed with one skip but has no regression for the changed-value case
+
+**Rejected:**
+
+- Approve — the path-and-rule fallback broadens a value-specific security allow into a path-wide allow
+
+**Files:** src/whyline/security/settings.py
+
+<!-- whyline-event: a4ee467c4e044472b3d0704ad0a52f5d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T04:44:21.721Z"} -->
+
+## 2026-11-12 — Legacy versioned-path allows match via a legacy_fingerprint on Finding, not path+rule alone
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-7
+
+**Because:** The pre-version-stripping fingerprint hashes the value, so a changed secret at the same package path stays blocking
+
+**Rejected:**
+
+- Path+rule fallback — broadens a value-specific allow to the whole path
+
+**Files:** src/whyline/security/settings.py
+
+<!-- whyline-event: 8331311d13544d4a9cd4c9408995d5a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T04:58:06.657Z"} -->
+
+## 2026-11-12 — Fail RFB-7: Finding.legacy_fingerprint shifted positional fix_hint and broke test_grouping_and_badges
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-7
+
+**Because:** Inserting legacy_fingerprint before fix_hint on Finding binds SECRET's last positional arg to legacy_fingerprint, so finding_text no longer shows the fix hint. uv run pytest -q failed on tests/console/test_security_screens.py::test_grouping_and_badges. RFB-7 behavior itself (skip_paths, test-secret note, version-stable fingerprints, value-sensitive legacy allows, add_pending) checked out.
+
+**Rejected:**
+
+- Pass anyway — production Finding() calls use keywords so product paths are fine — the suite must pass; this is a field-order fix
+
+**Files:** src/whyline/security/findings.py
+
+<!-- whyline-event: eef980bb3e8247039a35de877e79dc4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T05:24:51.282Z"} -->
+
+## 2026-11-12 — Pass RFB-7: skip_paths, test-secret note, version-stable fingerprints, add_pending, and Finding field order
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-7
+
+**Because:** Finding.legacy_fingerprint sits after source, so positional SECRET still binds fix_hint (test_grouping_and_badges passes). skip_paths default drops tests/**/fixtures/** lockfiles only; secrets and contents ignore it; a test secret still blocks with the extra line and a prefilled required reason; packaged findings fingerprint as package:inner-path and legacy entries match that versioned path, rule, and value; allow() calls add_pending so the clean-tree check passes. uv run pytest -q (full suite) and the RFB-7 targeted files both exited 0.
+
+**Rejected:**
+
+- Fail because osv-scanner still walks fixture lockfiles — the spec skips lockfile discovery in the builtin pass; the optional overlay is separate
+- Fail because setup_security_round_trip does not edit skip_paths — the Input is composed and collected, and config save/load round-trips the setting
+
+**Files:** src/whyline/security/findings.py
+
+<!-- whyline-event: d9f09f93572442a99c57b121d1c8a11b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T06:37:13.064Z"} -->
+
+## 2026-11-12 — Approve RFB-7 security fixture and fake-secret handling
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-7
+
+**Because:** The diff implements dependency-only skip_paths with console/config round-trip, test-secret guidance and editable required prefill, version-stable package fingerprints with exact legacy compatibility, and release pending-file handling; uv run pytest -q exited 0 with one skip and git diff --check passed.
+
+**Rejected:**
+
+- Request changes for optional osv-scanner traversal — skip_paths governs the built-in lockfile discovery requested by the task, while the optional overlay remains separate and the specified behavior is covered.
+
+**Files:** src/whyline/security/settings.py, src/whyline/security/contents.py, src/whyline/security/deps.py, src/whyline/console/security_screens.py
+
+<!-- whyline-event: 43de6482f5354cf48fa63ab5f475bea6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T06:56:32.340Z"} -->

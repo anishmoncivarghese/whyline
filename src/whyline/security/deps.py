@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from whyline.security.findings import Finding, make_fingerprint
-from whyline.security.lockfiles import PYPI, Dependency, normalize_pypi
+from whyline.security.lockfiles import PYPI, Dependency, LockfileReport, normalize_pypi
 
 BATCH_URL = "https://api.osv.dev/v1/querybatch"
 VULN_URL = "https://api.osv.dev/v1/vulns/"
@@ -39,6 +39,24 @@ class DepReport:
     findings: list[Finding] = field(default_factory=list)
     not_checked: list[Dependency] = field(default_factory=list)
     error: str = ""
+
+
+def without_skipped(report: LockfileReport, skip_paths) -> LockfileReport:
+    """The report minus lockfiles under a `skip_paths` glob (test fixtures hold
+    deliberately old pins). Only the dependency scan uses this."""
+    from whyline.security.contents import _pattern_regex
+
+    patterns = [_pattern_regex(p.strip().lstrip("/")) for p in skip_paths if p.strip()]
+    if not patterns:
+        return report
+
+    def skipped(source: str) -> bool:
+        return any(p.match(source) for p in patterns)
+
+    return LockfileReport(
+        dependencies=[d for d in report.dependencies if not skipped(d.source_file)],
+        unpinned=[u for u in report.unpinned if not skipped(u.source_file)],
+    )
 
 
 def urllib_fetch(method: str, url: str, body: dict[str, Any] | None, timeout: float) -> Any:

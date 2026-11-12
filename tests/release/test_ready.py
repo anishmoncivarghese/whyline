@@ -127,6 +127,15 @@ def test_pending_paths_do_not_dirty_tree(repo):
     assert got["clean"].ok
 
 
+def test_clean_check_passes_right_after_an_allow(repo):
+    from whyline.security import settings as st
+    from whyline.security.findings import Finding
+
+    st.allow(repo, Finding("secret", "r", "t", fingerprint="fp", path="a.py"), "Fake value in a test")
+    got = by_key(run_check(repo))
+    assert got["clean"].ok
+
+
 def test_relay_paused_on_release_ok(repo):
     got = by_key(run_check(repo, relay=ready.RELAY_PAUSED_RELEASE))
     assert got["relay"].ok

@@ -1,4 +1,5 @@
 import tomllib
+from dataclasses import replace
 
 import pytest
 from textual.app import App
@@ -118,6 +119,41 @@ async def test_allow_needs_a_reason_and_writes_through_allow(tmp_path):
         assert entries[0]["fingerprint"] == "fp-secret"
         assert entries[0]["reason"] == "test fixture key"
         assert len(_texts(pilot.app)) == 2
+
+
+TEST_SECRET = Finding("secret", "aws-key", "AWS key", "high", "tests/test_x.py", 3, "", "AK****LE",
+                      "fp-test", "Move it to an env var.")
+PKG_TEST_SECRET = Finding("secret", "aws-key", "AWS key", "high",
+                          "pkg-0.3.69.tar.gz:pkg-0.3.69/tests/x.py", 3, "", "AK****LE", "fp-pkg", "")
+
+
+def test_secret_in_a_test_gets_one_extra_line():
+    assert ss.finding_text(TEST_SECRET).splitlines()[-1] == (
+        '    This is in a test. If it is a fake value, Allow it with the reason '
+        '"Fake value in a test".')
+    assert ss.TEST_NOTE in ss.finding_text(PKG_TEST_SECRET)
+    assert ss.TEST_NOTE in ss.finding_text(replace(PKG_TEST_SECRET, path="pkg-1.whl:tests/x.py"))
+    assert ss.TEST_NOTE not in ss.finding_text(SECRET)
+    assert ss.TEST_NOTE not in ss.finding_text(replace(TEST_SECRET, kind="contents"))
+
+
+async def test_allow_in_a_test_prefills_an_editable_required_reason(tmp_path):
+    report = _report(TEST_SECRET, SECRET)
+    async with Host(_screen(tmp_path, report)).run_test(size=(120, 50)) as pilot:
+        await _settle(pilot)
+        screen = pilot.app.screen
+        screen.query_one("#sec-allow-0", Button).press()
+        await _settle(pilot)
+        reason = screen.query_one("#sec-reason", Input)
+        assert reason.value == ss.TEST_REASON
+        reason.value = ""
+        screen.query_one("#sec-allow-ok", Button).press()
+        await _settle(pilot)
+        assert _status(pilot.app) == ss.REASON_NEEDED
+        screen.query_one("#sec-allow-cancel", Button).press()
+        screen.query_one("#sec-allow-1", Button).press()
+        await _settle(pilot)
+        assert screen.query_one("#sec-reason", Input).value == ""
 
 
 async def test_ignore_once_records_and_removes(tmp_path):

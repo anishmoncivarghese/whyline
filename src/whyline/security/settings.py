@@ -20,6 +20,7 @@ ALLOW_PATH = Path(".whyline") / "security-allow.toml"
 IGNORE_FILE = "security-ignore-once.json"
 
 _HIGH = ("critical", "high")
+DEFAULT_SKIP_PATHS = ("tests/**/fixtures/**",)
 
 
 class SettingsError(ValueError):
@@ -34,6 +35,7 @@ class SecuritySettings:
     history_scanned: str = ""
     pre_commit: bool = False
     audit: str = "off"
+    skip_paths: tuple[str, ...] = DEFAULT_SKIP_PATHS
 
 
 _CHOICES = {
@@ -53,6 +55,10 @@ def validate(settings: SecuritySettings) -> None:
         raise SettingsError("security.history_scanned must be a string")
     if not isinstance(settings.pre_commit, bool):
         raise SettingsError("security.pre_commit must be true or false")
+    if not isinstance(settings.skip_paths, tuple) or not all(
+        isinstance(p, str) for p in settings.skip_paths
+    ):
+        raise SettingsError("security.skip_paths must be a list of strings")
 
 
 def parse(table: object) -> SecuritySettings:
@@ -68,7 +74,12 @@ def parse(table: object) -> SecuritySettings:
     pre_commit = table.get("pre_commit", base.pre_commit)
     if not isinstance(pre_commit, bool):
         raise SettingsError("security.pre_commit must be true or false")
-    settings = SecuritySettings(pre_commit=pre_commit, **values)
+    skip = table.get("skip_paths", list(base.skip_paths))
+    if not isinstance(skip, list) or not all(isinstance(p, str) for p in skip):
+        raise SettingsError("security.skip_paths must be a list of strings")
+    settings = SecuritySettings(
+        pre_commit=pre_commit, skip_paths=tuple(p.strip() for p in skip if p.strip()), **values
+    )
     validate(settings)
     return settings
 
@@ -122,12 +133,31 @@ def allow(root: Path, finding: Finding, reason: str) -> None:
         }
     )
     _write_atomic(Path(root) / ALLOW_PATH, _render_allow(entries))
+    # The release commit must include the new entry, and the clean-tree check must accept it.
+    from whyline.release.config import add_pending
+
+    add_pending(Path(root), ALLOW_PATH)
+
+
+def matches_entry(entry: dict, finding: Finding) -> bool:
+    """An allowlist entry covers a finding by fingerprint. An older entry made
+    for a versioned package path (`pkg-0.3.69.tar.gz:pkg-0.3.69/x`) also covers
+    that exact path, rule and value."""
+    if not finding.fingerprint:
+        return False
+    if entry.get("fingerprint") == finding.fingerprint:
+        return True
+    # The older fingerprint hashed the value too, so a changed secret stays blocking.
+    return bool(
+        finding.legacy_fingerprint
+        and entry.get("fingerprint") == finding.legacy_fingerprint
+        and entry.get("path") == finding.path
+        and entry.get("rule") == finding.rule
+    )
 
 
 def is_allowed(root: Path, finding: Finding) -> bool:
-    if not finding.fingerprint:
-        return False
-    return any(e.get("fingerprint") == finding.fingerprint for e in _read_allow(root))
+    return any(matches_entry(e, finding) for e in _read_allow(root))
 
 
 # --- ignore once (this release run only) ---------------------------------------

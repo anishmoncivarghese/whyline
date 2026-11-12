@@ -41,6 +41,7 @@ class Finding:
     fingerprint: str = ""
     fix_hint: str = ""
     source: str = "builtin"
+    legacy_fingerprint: str = ""
 
     def __post_init__(self) -> None:
         for name, value, allowed in (

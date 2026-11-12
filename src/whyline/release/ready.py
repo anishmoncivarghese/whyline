@@ -152,7 +152,7 @@ def _is_pending(path: str, allowed: list[str]) -> bool:
 
 def _clean(root, cfg, version, run, **_):
     fix = "Commit or stash your changes, then check again"
-    res = _git(run, root, "status", "--porcelain")
+    res = _git(run, root, "status", "--porcelain", "--untracked-files=all")
     if res.returncode != 0:
         raise RuntimeError(_short(res.stderr) or "git status failed")
     allowed = [p.as_posix() for p in release_config.pending(root)]
