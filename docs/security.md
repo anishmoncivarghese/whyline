@@ -48,7 +48,13 @@ In **Release → Set up → Security**, or the `[security]` table of
 | `contents` | `block`, `warn`, `off` | `block` |
 | `pre_commit` | `true`, `false` | `false` (Check every commit) |
 | `audit` | `off`, `warn`, `block-confirmed` | `off` |
+| `skip_paths` | list of glob patterns | `["tests/**/fixtures/**"]` |
 | `history_scanned` | date, set by Scan history | empty |
+
+`skip_paths` only applies to the dependency scan: lockfiles under a matching
+path are not read, so a deliberately vulnerable fixture does not block a
+release. The secrets and package-contents scans ignore it, so a real secret in
+a test file still blocks. Edit it in Security settings.
 
 The Release **Ready** check gains a Security item: ✓ with "no findings" or
 "N warnings", or ✗ with the number of blocking findings by kind.
@@ -65,6 +71,20 @@ Each finding offers **Fix**, **Ignore once** and **Allow…**.
   in `.whyline/security-allow.toml`, which you commit. It is skipped from then
   on, for everyone. Use it for test fixtures and known false positives, not to
   silence a real key. CLI: `whyline security allow <fingerprint> --reason TEXT`.
+  The file is added to the release commit, so the clean-tree check passes right
+  after an Allow.
+
+### Fake secrets in tests
+
+A secret found under `tests/` (or under `<name>-<version>/tests/` inside a built
+package) says: "This is in a test. If it is a fake value, Allow it with the
+reason "Fake value in a test"." **Allow…** opens with that reason filled in; it
+stays editable and required. It is still a block until you allow it.
+
+A finding inside a built package is fingerprinted by its path without the
+version folder (`<package>:tests/x.py`), so an Allow made for one version still
+applies to the next. The shown path keeps the full name. Older entries with a
+versioned path still match that exact version.
 
 ## Scan history
 

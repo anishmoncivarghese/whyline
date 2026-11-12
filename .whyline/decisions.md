@@ -42576,3 +42576,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 43de6482f5354cf48fa63ab5f475bea6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T06:56:32.340Z"} -->
+
+## 2026-11-12 — Pass RFB-8 docs: required release topics match the implemented behaviour; suite green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-8
+
+**Because:** README.md, docs/release.md and docs/security.md cover releasing after a relay, Bring in main (stops, conflicts, plans/done/, the setting, the other main checkout), target status in Set up, an unreleased current version, skip_paths and fake test secrets. Quoted messages match source.py, plan.py, github.py, state.py, cli.py and security_screens.py. uv run pytest -q exited 0 at 100% with one skip; git diff --check is clean.
+
+**Rejected:**
+
+- Fail on README semicolon 'turn that off' reading as covering unreleased versions and the other checkout — docs/release.md says the setting turns only the Bring in main step off, matching cfg.bring_in_main
+
+**Files:** docs/release.md
+
+<!-- whyline-event: c681084349304877be7ba59385778438 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T07:38:03.699Z"} -->
+
+## 2026-11-12 — Approve RFB-8 release documentation in Round 3
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-8
+
+**Because:** README.md, docs/release.md, and docs/security.md cover every requested topic and match the implemented release, target-status, unreleased-version, and security behavior; uv run pytest -q exited 0 at 100% with one skip and git diff --check is clean.
+
+**Rejected:**
+
+- Request changes — no inaccurate, unsafe, or missing required documentation was found
+
+**Files:** README.md, docs/release.md, docs/security.md
+
+<!-- whyline-event: e6b0ed6c0ea345d49502284bc6a6c223 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T07:56:48.124Z"} -->

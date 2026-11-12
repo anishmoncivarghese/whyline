@@ -130,11 +130,66 @@ for an ignored job that is still running. Any other failed job stops the
 release and is named, as `CI failed: ci / test (ubuntu-latest, 3.13)`. With no file yet, Set up shows what detection suggests;
 it is only kept when you press **Save**.
 
+### Target status
+
+Each ticked target's row in Set up shows its last check: `✓ Ready · checked
+<date>` or `✗ <first failing item>`, saved per repository. A target never
+checked says `Not checked yet`; an unticked target shows no status and takes
+one line. Opening Set up re-checks the ticked targets in the background and
+updates the rows as results arrive.
+
 ## Running a release
 
 Open **Release**, pick the next version (patch, minor, major or custom), press
 **Check**, then **Start**. Check lists each item with ✓ or ✗ and what to do
 about a ✗; Start stays off until every item is ✓.
+
+### An unreleased current version
+
+When tag `v<version>` exists neither locally nor on origin, the current
+version has never been released (a plan may have set it). The screen then opens
+with `Current version: 0.3.69 (not released yet)` and defaults to
+`current → 0.3.69 (not released yet)`, listed first, so the version is not
+skipped. Once it is tagged the default is `patch`. `whyline release run` with
+no `--bump` or `--version` uses the unreleased current version and prints which
+it chose.
+
+### Releasing right after a relay
+
+A relay works on its own branch. Press **Release** there when it finishes: the
+screen shows `Releasing <branch> · <n> commits · main has <m> commits this
+branch doesn't`, then publishes to `main` as usual. `whyline release` prints the
+same line.
+
+The first step, **Bring in main**, makes sure checks run on what will land:
+
+1. It stops with `A relay is running here; release when it finishes` while a
+   relay is running in the checkout, and with `Commit or stash these first:
+   <files>` if the tree has changes. Nothing is changed in either case.
+2. It fetches, and when `main` is ahead merges it into the branch
+   (`merge: bring main into <branch> for v<version>`).
+3. It moves each finished plan (every task ticked) and its `.tests.md` into
+   `plans/done/` and commits `chore: move finished plans to plans/done`. A plan
+   with an unticked task stays where it is.
+
+In ask mode it asks first and shows the line above plus `Moves to plans/done:
+<names>`. The step is skipped on the release branch itself, when `main` has
+nothing new and no plan is finished, and on resume once done.
+
+**Conflicts.** If the merge conflicts, whyline runs `git merge --abort`, leaving
+a clean tree, and stops with `Merge main into <branch> yourself (or ask an
+agent), then resume the release. Conflicts: <files>`. Merge by hand, then
+**Resume release**.
+
+**The setting.** **Bring in main before releasing** in Release settings (default
+on; `bring_in_main` in `release.toml`) turns the step off. For one CLI run use
+`whyline release run --no-bring-in`.
+
+**The other main checkout.** After the push, if another checkout of `main`
+exists (a separate worktree) and has no changes, it is fast-forwarded and the
+release reports `Updated <path> to v<version>`. With changes it is left alone:
+`Your <branch> checkout at <path> has changes; update it with git pull`. A
+failure there is only a warning, never a failed release.
 
 ### Modes
 

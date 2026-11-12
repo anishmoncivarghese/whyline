@@ -95,13 +95,20 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   [docs/resolve.md](docs/resolve.md).
 - **Release** checks, versions, notes, tags and publishes for you to GitHub and,
   if you tick them, PyPI, npm, Docker, Homebrew or your own command, and can
-  run from a plan's release task or after a plan finishes. Per-target setup,
+  run from a plan's release task or after a plan finishes. Pressed on a
+  finished relay's branch, it first brings `main` in (stopping and aborting
+  cleanly on a conflict), moves finished plans to `plans/done/`, offers a
+  never-released current version first, and fast-forwards your other `main`
+  checkout afterwards; turn that off with **Bring in main before releasing**.
+  Set up shows each target's last check. Per-target setup,
   how to check each by hand and a troubleshooting list are in
   [docs/release.md](docs/release.md).
 - **Security checks** run in the Release gate with nothing to install: secrets
   in the commits about to be pushed, vulnerable dependencies (only public
   package names and versions go to OSV.dev) and the files each package would
-  publish. Optional pre-commit hook, GitHub protection and a deep audit. See
+  publish. Test fixtures are skipped by `skip_paths`, and a fake secret in a
+  test can be allowed with one reason. Optional pre-commit hook, GitHub
+  protection and a deep audit. See
   [docs/security.md](docs/security.md).
 - **Files** shows the agent's current output, the live plan, and the whole
   repository in a side pane.
