@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from whyline.console import relay_ops
+from whyline.release import config as release_config
+from whyline.release import ready as release_ready
 from whyline.release.config import ReleaseConfig
 from whyline.release.ready import _git, _short
 
@@ -80,7 +82,14 @@ def bring_in_main(
     root = Path(root)
     if relay_running(root):
         raise StepError("A relay is running here; release when it finishes")
-    dirty = [line[3:] for line in _out(root, run, "status", "--porcelain").splitlines() if line]
+    # Not _out: its strip() would cut the first path's leading status column.
+    res = _git(run, root, "status", "--porcelain")
+    if getattr(res, "returncode", 1) != 0:
+        raise StepError(_short(getattr(res, "stderr", "")) or "git status failed")
+    # Files Release itself commits later (an Allow's allowlist) don't block, as in Ready.
+    pending = [p.as_posix() for p in release_config.pending(root)]
+    dirty = [p for p in release_ready._dirty_paths(getattr(res, "stdout", "") or "")
+             if not release_ready._is_pending(p, pending)]
     if dirty:
         raise StepError("Commit or stash these first: " + ", ".join(dirty))
     src = source(root, cfg, run=run, fetch=fetch)

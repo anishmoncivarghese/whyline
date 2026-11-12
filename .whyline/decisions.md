@@ -42834,3 +42834,20 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ba93b2a93d774d11983f9ddff7d9196e -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T14:05:55.432Z"} -->
+
+## 2026-11-12 — Bring in main skips release-pending files and parses git status without strip
+
+**Actor:** claude
+**Role:** implementer
+**Task:** release-from-branch
+
+**Because:** an Allow's allowlist (pending, accepted by Ready) blocked Bring in main, and strip() cut the first path's dot
+
+**Rejected:**
+
+- commit the allowlist inside Allow — Release's own commit already includes pending files
+
+**Files:** src/whyline/release/source.py
+
+<!-- whyline-event: 1e9268317d3944c4bbb3fcb7af53f715 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T15:27:52.239Z"} -->

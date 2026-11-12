@@ -288,3 +288,28 @@ def test_probe_failure_cannot_remove_the_step(tmp_path):
     step = plan.steps[0]
     assert step.id == "bring-in-main"
     assert step.done_check() is False
+
+
+def test_dirty_tree_refusal_names_a_modified_dotfile_in_full(tmp_path):
+    root = make_repo(tmp_path)
+    git(root, "checkout", "-b", "relay/x")
+    (root / ".whyline").mkdir()
+    (root / ".whyline" / "security-allow.toml").write_text("a")
+    git(root, "add", "-A")
+    git(root, "commit", "-m", "allow")
+    (root / ".whyline" / "security-allow.toml").write_text("b")
+    with pytest.raises(StepError, match=r"Commit or stash these first: \.whyline/security-allow\.toml"):
+        bring(root)
+
+
+def test_pending_allowlist_from_allow_does_not_block(tmp_path):
+    root = make_repo(tmp_path)
+    git(root, "checkout", "-b", "relay/x")
+    (root / ".whyline").mkdir()
+    (root / ".whyline" / "security-allow.toml").write_text("a")
+    git(root, "add", "-A")
+    git(root, "commit", "-m", "allow")
+    (root / ".whyline" / "security-allow.toml").write_text("b")
+    config.add_pending(root, ".whyline/security-allow.toml")
+    bring(root)
+    assert (root / ".whyline" / "security-allow.toml").read_text() == "b"
