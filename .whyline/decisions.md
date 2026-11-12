@@ -42610,3 +42610,125 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e6b0ed6c0ea345d49502284bc6a6c223 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T07:56:48.124Z"} -->
+
+## 2026-11-12 — Pin rich below 14.2 instead of upgrading Textual
+
+**Actor:** claude
+**Role:** planner
+**Task:** rich-pin
+
+**Because:** rich 14.2+ stores style meta with pickle while Textual 2.x reads it with marshal, crashing the console on any link; Textual only handles it by 8.x
+
+**Rejected:**
+
+- upgrade textual to 8 — major jump across the whole console, not a crash fix
+- rich<15 — 14.2 already switched, test still failed
+- hotfix 0.3.71 alone — user chose to ship with the release-from-branch release
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: 52224e051c4c4a4099d4710fb7f2f5b3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.132Z"} -->
+
+## 2026-11-12 — Resolve the RFB plan merge by keeping Docs done as RFB-9 and leaving RFB-8 safe release notes open
+
+**Actor:** claude
+**Role:** planner
+**Task:** release-from-branch
+
+**Because:** the relay ran the plan from before RFB-8 was added; safe notes only take effect after this release anyway, so releasing now loses nothing
+
+**Rejected:**
+
+- run RFB-8 before releasing — this release still uses the installed 0.3.70 notes step
+
+**Files:** plans/release-from-branch.plan.md
+
+<!-- whyline-event: 484fcf6ce4454c87b004fdb7894a1d4b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.246Z"} -->
+
+## 2026-11-12 — Remove publish tasks from plans and release with the Release button
+
+**Actor:** claude
+**Role:** planner
+**Task:** release-from-branch
+
+**Because:** the relay config has no release profile, so relay-profile: release tasks silently ran full and only bumped the version (SDLC-30)
+
+**Rejected:**
+
+- add a release profile — duplicates the Release button with no human confirm
+
+**Files:** plans/release-from-branch.plan.md
+
+<!-- whyline-event: b50e54f21cc2465a9c179ee6b2fe7590 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.358Z"} -->
+
+## 2026-11-12 — Release notes agent runs read-only in a temp folder with <notes> extraction (RFB-8)
+
+**Actor:** claude
+**Role:** planner
+**Task:** release-from-branch
+
+**Because:** 0.3.70: the grok chat turn committed version files as 'chat: grok turn' and its narration landed in the notes
+
+**Rejected:**
+
+- keep chat.run_turn and strip text afterwards — still commits
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: cb3e2d98d1784be7903f82b65211aa28 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.474Z"} -->
+
+## 2026-11-12 — RAAID log as a repo-wide tab next to Chat, stored in .whyline/raaid.jsonl, closed only by the user
+
+**Actor:** claude
+**Role:** planner
+**Task:** raaid-log
+
+**Because:** pauses, leftovers, risks and assumptions were scattered across Issues, plans and relay state
+
+**Rejected:**
+
+- keep the Issues popup — per-plan only
+
+**Files:** plans/raaid-log.plan.md
+
+<!-- whyline-event: 037986bba6e44e4097fff837a2386fe3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.585Z"} -->
+
+## 2026-11-12 — Agent tools via one whyline MCP proxy; skills injected into the prompt for every CLI
+
+**Actor:** claude
+**Role:** planner
+**Task:** agent-tools
+
+**Because:** approvals, recording and grok/Antigravity support need one server, and a skill must work whichever CLI runs
+
+**Rejected:**
+
+- hand each CLI the real servers — no approvals, no grok
+- Claude-native skills — break on backup CLIs
+
+**Files:** plans/agent-tools.plan.md
+
+<!-- whyline-event: 256d88c8cc8d4130998c8b0e43336024 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.699Z"} -->
+
+## 2026-11-12 — Project home: new folder or this repo, 2-3 suggested names, GitHub private by default
+
+**Actor:** claude
+**Role:** planner
+**Task:** sdlc-pipeline
+
+**Because:** a new idea needs its own repo and the console must move there
+
+**Rejected:**
+
+- always create in the current repo — mixes projects
+
+**Files:** plans/done/sdlc-pipeline.plan.md
+
+<!-- whyline-event: b5c8e2309a90438999ddff700a49f8ba -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T08:10:21.815Z"} -->
