@@ -83,7 +83,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   4. `settings.allow` marks `.whyline/security-allow.toml` with `release_config.add_pending`, so Release's clean-tree check accepts it and the release commit includes it, instead of failing with `Uncommitted changes: .whyline/security-allow.toml`.
   Tests: a vulnerable lockfile under `tests/security/fixtures/` skipped and one elsewhere still reported, the setting round trip, a secret in a test still blocking with the extra line, the prefilled reason, a secret outside `tests/` with no extra line, Release's clean check passing right after an Allow, and an Allow made on a 0.3.69 sdist finding still applying to the 0.3.70 sdist.
 
-- [ ] RFB-8: Docs
+- [x] RFB-8: Docs
   Edit `README.md` where it describes the Release button, and `docs/` pages on releasing.
   Cover: releasing right after a relay, what Bring in main does and when it stops, conflicts, plans moved to `plans/done/`, the other main checkout, the setting, target status in Set up, an unreleased current version, and `skip_paths` and allowing fake test secrets.
   Verify with `uv run pytest -q`.
