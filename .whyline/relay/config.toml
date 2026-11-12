@@ -1,5 +1,5 @@
 # whyline-relay configuration. Every key is optional.
-plan = "plans/release-from-branch.plan.md"
+plan = "plans/release-ci-recovery.plan.md"
 max_rounds = 24
 timeout_minutes = 60
 branch_prefix = "relay/"
