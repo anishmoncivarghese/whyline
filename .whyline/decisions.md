@@ -42403,3 +42403,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e1c2b326232641ff9f9eaed399250b27 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-11T23:50:49.402Z"} -->
+
+## 2026-11-12 — version.released treats git errors as released, so the default falls back to patch
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RFB-6
+
+**Because:** an offline or non-git run must not silently offer to re-release the current version
+
+**Rejected:**
+
+- treat errors as unreleased — could republish an existing version
+
+**Files:** src/whyline/release/version.py
+
+<!-- whyline-event: 70910d810e1243cdac3bca4219f497ae -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T02:59:25.868Z"} -->
+
+## 2026-11-12 — Pass RFB-6: unreleased current version is offered first on the screen and CLI
+
+**Actor:** grok
+**Role:** tester
+**Task:** RFB-6
+
+**Because:** Untagged current is the screen default (current listed first as current → 0.3.69 (not released yet); first line Current version: 0.3.69 (not released yet)) and whyline release run with no --bump/--version uses it and prints the choice; tagged current keeps patch; origin-only tag counts as released (unit tests and a real git origin). uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- fail because ls-remote uses refs/tags/v<version> instead of v<version> — both forms return the same origin tag
+
+**Files:** src/whyline/release/version.py, src/whyline/release/cli.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: a4159a66aa9d4d7d9c8daa3e6aec8216 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T03:21:51.060Z"} -->
+
+## 2026-11-12 — Approve RFB-6: unreleased current version is offered first and used by default
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RFB-6
+
+**Because:** The screen labels, orders, and defaults an untagged current version; the CLI selects and reports it only when neither --bump nor --version is given; local and origin tags retain patch behavior; uv run pytest -q exited 0 with one skip.
+
+**Rejected:**
+
+- Request changes for using the full refs/tags/v<version> ls-remote pattern — it is an exact equivalent of the requested v<version> tag lookup.
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/release/cli.py, src/whyline/release/version.py
+
+<!-- whyline-event: e4947345676548c6b5b05133bff55400 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T03:41:02.799Z"} -->

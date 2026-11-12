@@ -995,3 +995,29 @@ def test_overlapping_target_saves_keep_every_entry(tmp_path):
     assert errors == []
     assert set(state.load_targets(tmp_path)) == set(keys)
     assert not list(state.targets_path(tmp_path).parent.glob("*.tmp"))
+
+
+def _unreleased_screen(released):
+    return ReleaseScreen(
+        "/tmp/none", start_release=[].append, config=ReleaseConfig(),
+        current_version="0.3.69", released=lambda v: released,
+        ready_check=lambda version: GOOD, steps=lambda version: STEPS)
+
+
+async def test_unreleased_current_version_is_the_default():
+    app = Host(_unreleased_screen(False))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        select = app.screen.query_one("#release-kind", Select)
+        assert select.value == "current"
+        assert _text(app, "#release-versions").startswith(
+            "Current version: 0.3.69 (not released yet)")
+        assert app.screen.chosen_version() == "0.3.69"
+
+
+async def test_released_current_version_keeps_patch():
+    app = Host(_unreleased_screen(True))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.screen.query_one("#release-kind", Select).value == "patch"
+        assert app.screen.chosen_version() == "0.3.70"

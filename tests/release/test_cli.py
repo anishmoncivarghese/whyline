@@ -238,3 +238,20 @@ def test_ask_mode_confirmation_shows_the_source_text(root, monkeypatch, capsys):
     step = engine.Step("bring-in-main", "Bring in main", True, lambda: False, lambda c: None)
     assert calls["confirm"](step) is True
     assert "Releasing feat" in capsys.readouterr().out
+
+
+def test_run_defaults_to_an_unreleased_current_version(root, monkeypatch, capsys):
+    tty(monkeypatch, True)
+    calls = fake_run(monkeypatch)
+    monkeypatch.setattr(release_cli.release_version, "released", lambda *a, **k: False)
+    assert release_cli.main(["run", "--yes"]) == 0
+    assert calls["plan"].version == "1.2.3"
+    assert "1.2.3" in capsys.readouterr().out.split("not released yet")[0]
+
+
+def test_run_keeps_patch_when_the_current_version_is_tagged(root, monkeypatch):
+    tty(monkeypatch, True)
+    calls = fake_run(monkeypatch)
+    monkeypatch.setattr(release_cli.release_version, "released", lambda *a, **k: True)
+    assert release_cli.main(["run", "--yes"]) == 0
+    assert calls["plan"].version == "1.2.4"

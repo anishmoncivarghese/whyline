@@ -115,3 +115,36 @@ def test_missing_old_version_leaves_everything_untouched(tmp_path):
     assert (tmp_path / "pyproject.toml").read_text() == PYPROJECT
     assert (tmp_path / "VERSION").read_text() == "0.0.1\n"
     assert run.calls == []
+
+
+class _Git:
+    def __init__(self, local=1, remote_out="", remote_rc=0):
+        self.local, self.remote_out, self.remote_rc, self.calls = local, remote_out, remote_rc, []
+
+    def __call__(self, args, **kwargs):
+        from types import SimpleNamespace
+
+        self.calls.append(args)
+        if "rev-parse" in args:
+            return SimpleNamespace(returncode=self.local, stdout="", stderr="")
+        return SimpleNamespace(returncode=self.remote_rc, stdout=self.remote_out, stderr="")
+
+
+def test_released_is_true_for_a_local_tag(tmp_path):
+    from whyline.release.version import released
+
+    assert released(tmp_path, "1.2.3", run=_Git(local=0)) is True
+
+
+def test_released_is_true_for_a_tag_only_on_origin(tmp_path):
+    from whyline.release.version import released
+
+    git = _Git(remote_out="abc\trefs/tags/v1.2.3\n")
+    assert released(tmp_path, "1.2.3", run=git) is True
+    assert ["git", "ls-remote", "--tags", "origin", "refs/tags/v1.2.3"] in git.calls
+
+
+def test_released_is_false_with_no_tag_anywhere(tmp_path):
+    from whyline.release.version import released
+
+    assert released(tmp_path, "1.2.3", run=_Git()) is False

@@ -60,6 +60,25 @@ def current(root: Path, cfg: ReleaseConfig) -> str:
     return version
 
 
+def released(root: Path, version: str, *, run: Run) -> bool:
+    """Whether tag v<version> exists locally or on origin.
+
+    When git cannot say (no repository, no network) the version counts as released,
+    so callers fall back to offering the next bump.
+    """
+    tag = f"refs/tags/v{version}"
+    try:
+        local = run(["git", "rev-parse", "-q", "--verify", tag], cwd=root)
+        if local.returncode == 0:
+            return True
+        remote = run(["git", "ls-remote", "--tags", "origin", tag], cwd=root)
+    except Exception:  # noqa: BLE001 - git missing or timed out: assume released
+        return True
+    if remote.returncode != 0:
+        return True
+    return bool(remote.stdout.strip())
+
+
 def validate(text: str) -> str:
     if not _VALID.match(text):
         raise VersionError(f"{text!r} is not a version; use X.Y.Z or X.Y.ZrcN")

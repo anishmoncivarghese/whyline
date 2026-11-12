@@ -129,6 +129,7 @@ class ReleaseScreen(ModalScreen):
         start_release: Callable[[ReleaseChoice], object],
         config: release_config.ReleaseConfig | None = None,
         current_version: str | None = None,
+        released: Callable[[str], bool] | None = None,
         ready_check: Callable[[str], list[release_ready.ReadyItem]] | None = None,
         steps: Callable[[str], list[tuple[str, bool]]] | None = None,
         source_text: Callable[[], str] | None = None,
@@ -181,6 +182,8 @@ class ReleaseScreen(ModalScreen):
         self._start_release = start_release
         self._cfg = config
         self._current = current_version
+        self._released = released
+        self._is_unreleased: bool | None = None
         self._ready_check = ready_check
         self._steps = steps
         self._source_text = source_text
@@ -207,6 +210,18 @@ class ReleaseScreen(ModalScreen):
             self._load_error = str(exc)
             return {}
 
+    def _unreleased(self, options: dict[str, str]) -> bool:
+        if CURRENT not in options:
+            return False
+        if self._is_unreleased is None:
+            check = self._released or (lambda v: release_version.released(
+                self.root, v, run=release_ready.default_run))
+            try:
+                self._is_unreleased = not check(options[CURRENT])
+            except Exception:  # noqa: BLE001 - unknown counts as released: keep patch
+                self._is_unreleased = False
+        return self._is_unreleased
+
     def chosen_version(self) -> str:
         """The version the form currently asks for; "" when it is not valid."""
         kind = self.query_one("#release-kind", Select).value
@@ -226,8 +241,14 @@ class ReleaseScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         options = self._version_options()
-        kinds = [(f"{kind} → {options[kind]}" if kind in options else kind, kind)
-                 for kind in VERSION_KINDS if kind == CUSTOM or kind in options]
+        unreleased = self._unreleased(options)
+        order = (CURRENT, *(k for k in VERSION_KINDS if k != CURRENT)) if unreleased \
+            else VERSION_KINDS
+        kinds = [(f"{kind} → {options[kind]}" + (" (not released yet)" if kind == CURRENT
+                                                  and unreleased else "")
+                  if kind in options else kind, kind)
+                 for kind in order if kind == CUSTOM or kind in options]
+        first = CURRENT if unreleased else "patch" if "patch" in options else CUSTOM
         try:
             mode = self._config().mode
         except Exception:  # noqa: BLE001 - the popup still opens; the versions line says why
@@ -238,8 +259,7 @@ class ReleaseScreen(ModalScreen):
                 with TabPane("Release", id="release-tab"):
                     with VerticalScroll(id="release-body"):
                         yield Static(self._versions_text(options), id="release-versions")
-                        yield Select(kinds, value="patch" if "patch" in options else CUSTOM,
-                                     allow_blank=False, id="release-kind")
+                        yield Select(kinds, value=first, allow_blank=False, id="release-kind")
                         yield Input(placeholder="X.Y.Z", id="release-custom")
                         yield Select([(m, m) for m in release_config.MODES], value=mode,
                                      allow_blank=False, id="release-mode")
@@ -264,6 +284,8 @@ class ReleaseScreen(ModalScreen):
         if not options:
             return f"Could not read the version: {self._load_error}" if self._load_error else ""
         text = f"Current version: {options[CURRENT]}"
+        if self._unreleased(options):
+            return f"{text} (not released yet)"
         nxt = options.get("patch")
         return f"{text} · next: {nxt}" if nxt else text
 

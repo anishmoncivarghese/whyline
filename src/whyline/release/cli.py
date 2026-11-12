@@ -27,7 +27,9 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--version", help="the version to check (default: next patch)")
     run = sub.add_parser("run", help="Run a release")
     group = run.add_mutually_exclusive_group()
-    group.add_argument("--bump", choices=release_version.BUMPS, default="patch")
+    group.add_argument("--bump", choices=release_version.BUMPS, default=None,
+                       help="patch, minor or major (default: the current version if it "
+                            "is not released yet, else patch)")
     group.add_argument("--version", help="release exactly this version")
     run.add_argument("--mode", choices=release_config.MODES)
     run.add_argument("--yes", action="store_true", help="do not ask")
@@ -61,8 +63,13 @@ def _ask(question: str) -> bool:
 def _next_version(root: Path, cfg, args) -> str:
     if getattr(args, "version", None):
         return release_version.validate(args.version)
-    return release_version.bump(release_version.current(root, cfg),
-                                getattr(args, "bump", None) or "patch")
+    current = release_version.current(root, cfg)
+    kind = getattr(args, "bump", None)
+    if kind is None and getattr(args, "release_command", "") == "run":
+        if not release_version.released(root, current, run=release_ready.default_run):
+            print(f"Using the current version {current}: it is not released yet.")
+            return current
+    return release_version.bump(current, kind or "patch")
 
 
 def _check(args, root: Path, cfg) -> int:
