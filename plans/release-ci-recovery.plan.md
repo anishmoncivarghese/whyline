@@ -27,7 +27,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 - Rerun on a tests cause asks first; on no-runner it doesn't. RCR-4, `test_rerun_asks_only_for_tests`.
 - `rerun once` reruns a no-runner failure once and never a tests failure. RCR-6, `test_auto_rerun_only_once_and_never_tests`.
 
-- [ ] RCR-1: Say why a CI run failed
+- [x] RCR-1: Say why a CI run failed
   Create `src/whyline/release/ci_failure.py` and `tests/release/test_ci_failure.py`. Edit `src/whyline/release/github.py`, `src/whyline/release/workflows.py`, `src/whyline/release/state.py` and their tests.
   1. `Failure(cause, run_id, workflow, attempt, job, step, url, tests, excerpt)` (a dataclass) where `cause` is one of `no-runner`, `timeout`, `tests`, `publish`, `other`, `tests` is a list of test ids, and `excerpt` is at most 20 lines.
   2. `diagnose(root, run_id, *, run) -> Failure` reads `gh run view <id> --json jobs,name,url,attempt` and, for the first failed or cancelled job, its annotations (`gh api repos/{owner}/{repo}/check-runs/<job id>/annotations`) and its log (`gh run view <id> --log-failed`, or `gh api …/actions/jobs/<id>/logs` when that is empty). Rules, first match wins:
