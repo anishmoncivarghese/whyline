@@ -71,18 +71,6 @@ def write_template(root: Path | str, name: str, text: str) -> Path:
     return path
 
 
-def _failed_job(root: Path, run_id: object, run: github.Run) -> str:
-    try:
-        data = github.gh_json(root, run, ["run", "view", str(run_id), "--json", "jobs"])
-    except StepError:
-        return ""
-    jobs = data.get("jobs", []) if isinstance(data, dict) else []
-    for job in jobs:
-        if job.get("conclusion") in github._FAILED:
-            return str(job.get("name", ""))
-    return ""
-
-
 def wait_for_tag_run(
     root: Path | str,
     tag: str,
@@ -112,10 +100,9 @@ def wait_for_tag_run(
             detail(f"Waiting for {name} to start")
         elif latest.get("status") == "completed":
             if latest.get("conclusion") in github._FAILED:
-                job = _failed_job(root, latest.get("databaseId"), run)
-                where = f" in job {job}" if job else ""
-                raise StepError(
-                    f"{name} failed{where} {latest.get('url', '')}".strip())
+                raise github.failed_error(
+                    root, run, latest.get("databaseId"), name=name,
+                    url=str(latest.get("url", "")))
             detail(f"{name} finished")
             return None
         else:

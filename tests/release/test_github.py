@@ -276,7 +276,7 @@ def test_ci_fails_on_a_job_that_is_not_ignored_and_names_it(repo):
         [[job(LINUX, conclusion="failure"), job(WIN, conclusion="failure")]], cfg)
     with pytest.raises(StepError) as exc:
         step.run(EVENT)
-    assert f"CI failed: ci / {LINUX}" in str(exc.value)
+    assert LINUX in str(exc.value)
     assert f"j/{LINUX}" in str(exc.value)
     assert WIN not in str(exc.value)
 
@@ -312,7 +312,7 @@ def test_ci_failed_run_with_no_jobs_still_fails(repo):
     step, _, _, _ = jobs_step(repo, [[wf(7, conclusion="startup_failure")]], [[]], cfg)
     with pytest.raises(StepError) as exc:
         step.run(EVENT)
-    assert "CI failed: ci" in str(exc.value)
+    assert "ci, attempt 1" in str(exc.value) and exc.value.failure.cause == "other"
 
 
 def test_ci_no_runs_counts_as_passed_after_two_minutes(repo):

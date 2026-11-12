@@ -163,9 +163,11 @@ def _drive(
     state.pid = os.getpid()
     state.failed_id = ""
     state.reason = ""
+    state.failure = {}
 
-    def stop(status: str, message: str, failed_id: str = "") -> Result:
+    def stop(status: str, message: str, failed_id: str = "", failure: object = None) -> Result:
         state.running = False
+        state.failure = failure.to_dict() if hasattr(failure, "to_dict") else {}
         state.failed_id = failed_id
         state.reason = message
         release_state.save(root, state)
@@ -201,7 +203,8 @@ def _drive(
         try:
             outcome = step.run(cancel)
         except Exception as exc:  # noqa: BLE001 - any step error stops the run
-            return stop(FAILED, f"{step.title} failed: {exc}", step.id)
+            return stop(FAILED, f"{step.title} failed: {exc}", step.id,
+                        getattr(exc, "failure", None))
         if outcome is False:
             return stop(FAILED, f"{step.title} did not finish.", step.id)
         state.done.append(step.id)

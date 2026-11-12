@@ -11,6 +11,7 @@ from pathlib import Path
 
 from whyline import worktrees
 from whyline.release import config as release_config
+from whyline.release.ci_failure import Failure, diagnose
 from whyline.release.config import ReleaseConfig
 from whyline.release.engine import Step
 from whyline.release.ready import default_run
@@ -32,9 +33,11 @@ _FAILED = {"failure", "cancelled", "timed_out", "startup_failure", "action_requi
 class StepError(RuntimeError):
     """A release step failed; the message is shown to the user."""
 
-    def __init__(self, message: str, *, open_pr: bool = False) -> None:
+    def __init__(self, message: str, *, open_pr: bool = False,
+                 failure: Failure | None = None) -> None:
         super().__init__(message)
         self.open_pr = open_pr
+        self.failure = failure
 
 
 def _out(proc: object, name: str = "stdout") -> str:
@@ -81,6 +84,15 @@ def gh_json(root: Path, run: Run, args: list[str]) -> object:
 _PASSED_RUN = {"success", "skipped", "neutral"}
 
 
+def failed_error(root: Path, run: Run, run_id: object, *, name: str = "",
+                 url: str = "") -> StepError:
+    """A StepError saying why run `run_id` failed; name and url fill what gh couldn't."""
+    failure = diagnose(root, run_id, run=run)
+    failure.workflow = failure.workflow or name
+    failure.url = failure.url or url
+    return StepError(failure.text(), failure=failure)
+
+
 def _run_outcome(root: Path, run: Run, item: dict, ignored: set[str]) -> int | StepError:
     """1 when the run has passed, 0 while it is still going, a StepError when it failed.
 
@@ -94,18 +106,20 @@ def _run_outcome(root: Path, run: Run, item: dict, ignored: set[str]) -> int | S
     failed = done and item.get("conclusion") in _FAILED
     if not ignored or (done and not failed):
         if failed:
-            return StepError(f"CI failed: {name} {item.get('url', '')}".strip())
+            return failed_error(root, run, item.get("databaseId", ""),
+                                name=name, url=str(item.get("url", "")))
         return 1 if done else 0
     data = gh_json(root, run, ["run", "view", str(item.get("databaseId", "")), "--json", "jobs"])
     jobs = data.get("jobs", []) if isinstance(data, dict) else []
     kept = [j for j in jobs if j.get("name") not in ignored]
     for job in kept:
         if job.get("status") == "completed" and job.get("conclusion") in _FAILED:
-            return StepError(
-                f"CI failed: {name} / {job.get('name')} {job.get('url', '')}".strip())
+            return failed_error(root, run, item.get("databaseId", ""),
+                                name=name, url=str(item.get("url", "")))
     if not jobs:
         if failed:
-            return StepError(f"CI failed: {name} {item.get('url', '')}".strip())
+            return failed_error(root, run, item.get("databaseId", ""),
+                                name=name, url=str(item.get("url", "")))
         return 1 if done else 0
     return 1 if all(j.get("status") == "completed" for j in kept) else 0
 

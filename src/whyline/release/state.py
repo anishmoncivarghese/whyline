@@ -21,6 +21,7 @@ class State:
     started: str = ""
     running: bool = False
     pid: int = 0
+    failure: dict = field(default_factory=dict)
 
 
 def path(root: Path) -> Path:
@@ -40,6 +41,7 @@ def load(root: Path) -> State | None:
             started=str(data.get("started", "")),
             running=bool(data.get("running", False)),
             pid=int(data.get("pid", 0) or 0),
+            failure=dict(data.get("failure") or {}),
         )
     except (OSError, ValueError, KeyError, TypeError):
         return None

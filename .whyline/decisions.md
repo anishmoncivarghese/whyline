@@ -42851,3 +42851,101 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1e9268317d3944c4bbb3fcb7af53f715 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-12T15:27:52.239Z"} -->
+
+## 2026-11-12 — Failure diagnosis lives in ci_failure.py; github.failed_error fills name/url from the run list when gh gives none
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-1
+
+**Because:** StepError carries failure so the engine can save it in State; diagnose never raises, so an unreadable gh yields cause other
+
+**Rejected:**
+
+- diagnose inside github.py — workflows.py and github.py would import each other
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: 2a5e1bdd01b84c00a69dfd26bf94ea31 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T18:16:21.753Z"} -->
+
+## 2026-11-12 — RCR-1 diagnosis, StepError.failure, and State.failure behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RCR-1
+
+**Because:** Required tests cover no-runner (2026-11-12 annotations), timeout, named FAILED tests, publish, other, gh error, text for each cause, both call sites, and state round-trip including an old file. uv run pytest -q exited 0 with one skip. A probe confirmed first-match order, upload->publish, log fallback, and the design no-runner sentence.
+
+**Rejected:**
+
+- fail for ci_ignore diagnosing an ignored job listed first — the spec diagnoses the run's first failed job; _run_outcome still ignores that job when it is the only failure; the existing ignore test still passes
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: 7a1a74504bfc42c2bb65944da7abd6c5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T18:39:36.787Z"} -->
+
+## 2026-11-12 — RCR-1 needs changes because partial gh failures can be misclassified
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-1
+
+**Because:** ci_failure._json and _text erase the distinction between failed calls and valid empty responses, so diagnose can return no-runner, tests, or publish after a required annotation or log gh call fails instead of returning known fields with cause other; uv run pytest -q passed but does not cover those later-call failures
+
+**Rejected:**
+
+- approve from the green suite — the normal-path tests miss the acceptance rule for failures of annotation and log calls
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: 88c0cb9ca5b14625a71ffec0587bd449 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T18:59:21.368Z"} -->
+
+## 2026-11-12 — Failed annotations/log gh calls return known fields with cause other
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-1
+
+**Because:** _json/_text now return a sentinel/None on failure so a failed call is distinct from a valid empty response
+
+**Rejected:**
+
+- treat failure as empty — misclassifies as no-runner/tests/publish
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: 2c75867f6c1f42ed9729c44ab9cfafea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T19:10:41.710Z"} -->
+
+## 2026-11-12 — RCR-1 diagnosis, later gh failures, StepError.failure, and State.failure behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RCR-1
+
+**Because:** Required tests cover no-runner (2026-11-12 annotations), timeout, named FAILED tests, publish, other, gh error, later annotation/log/job-log failures as other with known fields, text for each cause, both call sites, and state round-trip including an old file. uv run pytest -q exited 0 with one skip. A probe confirmed first-match order, upload->publish, log fallback, the design no-runner sentence, empty-vs-failed annotations, and that a failed job-log fallback stays other.
+
+**Rejected:**
+
+- fail timeout text for omitting the step name — the required tests ask only for time limit and the job is named
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: 623f672db62744089d73c8ef794dc4f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T19:37:58.604Z"} -->
+
+## 2026-11-12 — Approve RCR-1 CI failure diagnosis and persistence
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-1
+
+**Because:** The implementation follows the required first-match diagnosis rules, preserves known fields as cause other when any gh call fails, attaches Failure at both call sites, persists and clears State.failure compatibly, passes git diff --check, and the independently run plain uv run pytest -q suite exited 0 with one skip.
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: df6cac82ff2b4ece888e7c27bdbf7156 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-12T19:57:42.455Z"} -->

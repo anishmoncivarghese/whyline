@@ -148,7 +148,7 @@ def test_wait_failure_names_job_and_url(tmp_path):
     with pytest.raises(StepError) as exc:
         wait(tmp_path, run)
     assert "publish" in str(exc.value) and "u/1" in str(exc.value)
-    assert ["gh", "run", "view", "9", "--json", "jobs"] in run.calls
+    assert ["gh", "run", "view", "9", "--json", "jobs,name,url,attempt"] in run.calls
 
 
 def test_wait_times_out_resumably(tmp_path):

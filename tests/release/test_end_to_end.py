@@ -264,7 +264,7 @@ def test_a_run_failed_at_pypi_resumes_without_repeating_the_tag_or_release(env):
     fakes.fail_workflows.add("release-pypi.yml")
     first = go(env, cfg)
     assert first.status == engine.FAILED and first.failed_id == "pypi"
-    assert "release-pypi.yml failed in job publish" in first.message
+    assert "publish" in first.message and "release-pypi.yml" in first.message
     saved = release_state.load(env.root)
     assert "github_release" in saved.done and "pypi" not in saved.done
     assert fakes.count("gh", "release", "create") == 1
