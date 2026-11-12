@@ -1,6 +1,6 @@
 [[allow]]
-fingerprint = "5f09972b6466d468"
+fingerprint = "f9a0d043a05c0ef6"
 rule = "generic-api-key"
-path = "whyline-0.3.69.tar.gz:whyline-0.3.69/tests/console/test_recovery.py"
-reason = "false warning"
-added = "2026-11-11"
+path = "whyline-0.3.71.tar.gz:whyline-0.3.71/tests/console/test_recovery.py"
+reason = "Fake value in a test"
+added = "2026-11-12"
