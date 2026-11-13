@@ -55,7 +55,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. CLI: `whyline release why` prints `Failure.text()` of the stopped release (or `The release isn't stopped`); `whyline release rerun [--yes]` asks `Tests failed. Rerunning won't fix a real failure. Rerun anyway? [y/N]` for cause `tests` only, then calls `rerun_and_resume`.
   Tests: the rerun command, a gh error, resume reaching the next step with a fake run whose second attempt passes, nothing to rerun, `why` output, and the CLI question only for `tests`.
 
-- [ ] RCR-4: The failure screen
+- [x] RCR-4: The failure screen
   Edit `src/whyline/console/release_screens.py`, `src/whyline/console/tui.py` (where it pushes `ReleaseFailedScreen`) and their tests only.
   1. `ReleaseFailedScreen(reason, open_pr=False, failure=None)`. With a failure it shows `Failure.text()` (plain text, `markup=False`, scrollable) and the buttons **Rerun failed jobs**, **Ask an agent**, **Open run**, **Close**; **Rerun failed jobs** is the primary button for `no-runner` and `timeout`. Without one, the screen is as today (**Resume release**).
   2. **Rerun failed jobs** on cause `tests` first asks `Tests failed. Rerunning won't fix a real failure. Rerun anyway?` (Rerun / Cancel). Then it closes with a new result `RERUN`, and `tui.py` calls `ci_failure.rerun_and_resume` in a worker, showing progress in the release log as resume does today.
