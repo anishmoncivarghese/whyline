@@ -43320,3 +43320,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 23ac90db9c5640028add20beb8de9c9a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-13T11:01:58.052Z"} -->
+
+## 2026-11-13 — Waiting-on-you Telegram cards are sent only from the ideas worker tick, with buttons mapped to existing release/relay functions
+
+**Actor:** claude
+**Role:** planner
+
+**Because:** one sender avoids duplicate cards; buttons reuse console/CLI functions so phone and console never diverge
+
+**Rejected:**
+
+- relay and release message Telegram themselves — two senders, duplicate cards
+- Allow security findings from the phone — the file should be read where it lives
+- WhatsApp channel — Telegram already exists; Meta business setup and 24h window
+
+**Files:** docs/superpowers/specs/2026-11-14-waiting-on-you-design.md
+
+<!-- whyline-event: c29f0e324db642ffbdbc6328212f488f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T21:44:38.512Z"} -->
