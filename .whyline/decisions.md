@@ -43191,3 +43191,98 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 379df57ad48c4503acc6ed4c8d5a3ac3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-13T08:32:46.210Z"} -->
+
+## 2026-11-13 — Auto-rerun for no-runner lives in engine._drive, gated by Failure.attempt == 1
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-6
+
+**Because:** tui.py is out of scope and no new state is needed: a rerun bumps the attempt, so a second no-runner failure on the same run id stops on the screen
+
+**Rejected:**
+
+- persisted rerun-per-run-id list in State — needs state.py changes and a migration
+- wrapper called from tui — tui not editable in this task
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: 494bb36c47cc488ba530859809d53eed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T08:35:43.257Z"} -->
+
+## 2026-11-13 — Pass RCR-6 auto-rerun on no-runner and release settings
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCR-6
+
+**Because:** ReleaseConfig.on_no_runner config roundtrip, CLI settings, Set up modal select, Failure attempt gating for auto-rerun once, and screen primary button behavior all verified; 148 task tests and full test suite pass
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: e57febc8adb447eeb7b377d780805f0e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T08:58:18.663Z"} -->
+
+## 2026-11-13 — Request RCR-6 production retry logging
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-6
+
+**Because:** The config, retry gating, CLI settings, console selector, and full test suite pass, but engine._auto_rerun emits the required GitHub no-runner notice only when an optional say callback is injected; normal CLI and console engine.run/resume calls omit it, while the test passes said.append directly, so the requested message is silently absent in real use
+
+**Rejected:**
+
+- Approve — uv run pytest -q exits 0, but the integration path does not satisfy the explicit logging requirement
+
+**Files:** src/whyline/release/engine.py, src/whyline/release/cli.py
+
+<!-- whyline-event: 9948378ed60e47aaa9b3dbee5cc845b9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T09:17:38.007Z"} -->
+
+## 2026-11-13 — No-runner retry notice is always written to .git/whyline-release/release.log and also passed to say (CLI uses print)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-6
+
+**Because:** tui.py is out of scope and does not pass say, so a callback alone is silent in the console; a durable log works for every caller
+
+**Rejected:**
+
+- default say=print — would corrupt the Textual UI
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: b321df055b8f4081a2615c3bce8c9dc7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T09:21:26.493Z"} -->
+
+## 2026-11-13 — Pass RCR-6 durable retry logging and full test suite verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCR-6
+
+**Because:** engine._auto_rerun reliably logs to .git/whyline-release/release.log and outputs via say/print; unit tests for auto-rerun, config roundtrips, CLI settings, UI modal select, and full project test suite all pass
+
+**Files:** src/whyline/release/engine.py
+
+<!-- whyline-event: 369c569a61ba44e79b417e52955c5a1e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T09:42:05.373Z"} -->
+
+## 2026-11-13 — Approve RCR-6 no-runner rerun and release setting
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-6
+
+**Because:** The scoped diff satisfies config, console, CLI, automatic single-rerun, durable logging, and off-button behavior; all 148 scoped tests pass, and the sole full-suite failure was an unrelated timing test that passed on the base clone and a subsequent unchanged workspace rerun
+
+**Rejected:**
+
+- Request changes — no task-scoped defect remains after production logging was added
+
+**Files:** src/whyline/release/engine.py, src/whyline/release/config.py, src/whyline/release/cli.py, src/whyline/console/release_screens.py
+
+<!-- whyline-event: 2702d63bbddf4f20b5acd41a79592d08 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T10:03:40.962Z"} -->

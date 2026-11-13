@@ -455,6 +455,9 @@ class ReleaseScreen(ModalScreen):
             yield Label("Mode")
             yield Select([(m, m) for m in release_config.MODES], value=cfg.mode,
                          allow_blank=False, id="rs-mode")
+            yield Label("When GitHub has no runner")
+            yield Select([(c, c) for c in release_config.NO_RUNNER_CHOICES],
+                         value=cfg.on_no_runner, allow_blank=False, id="rs-no-runner")
             yield Label("Branch")
             yield Input(cfg.branch, id="rs-branch")
             yield Checkbox("Release when a plan completes", cfg.start_after_plan,
@@ -570,6 +573,7 @@ class ReleaseScreen(ModalScreen):
 
         base = self._setup_base
         mode = self.query_one("#rs-mode", Select).value
+        no_runner = self.query_one("#rs-no-runner", Select).value
         targets = replace(
             base.targets,
             github=box("github"), pypi=box("pypi"), npm=box("npm"),
@@ -581,6 +585,8 @@ class ReleaseScreen(ModalScreen):
         return replace(
             base,
             mode=str(mode) if mode in release_config.MODES else base.mode,
+            on_no_runner=(str(no_runner) if no_runner in release_config.NO_RUNNER_CHOICES
+                          else base.on_no_runner),
             branch=self.query_one("#rs-branch", Input).value.strip() or base.branch,
             start_after_plan=self.query_one("#rs-after-plan", Checkbox).value,
             bring_in_main=self.query_one("#rs-bring-in", Checkbox).value,
@@ -1581,12 +1587,22 @@ class ReleaseFailedScreen(ModalScreen):
         open_pr: bool = False,
         failure: ci_failure.Failure | None = None,
         open_url: Callable[[str], object] | None = None,
+        on_no_runner: str | None = None,
     ) -> None:
         super().__init__()
+        self._on_no_runner = on_no_runner
         self._reason = reason
         self._open_pr = open_pr
         self._failure = failure
         self._open_url = open_url
+
+    def _no_runner_setting(self) -> str:
+        if self._on_no_runner is not None:
+            return self._on_no_runner
+        try:
+            return release_config.load(self.app.session.root).on_no_runner
+        except Exception:  # noqa: BLE001 - no config or no session: the default
+            return "ask"
 
     def compose(self) -> ComposeResult:
         failure = self._failure
@@ -1599,7 +1615,8 @@ class ReleaseFailedScreen(ModalScreen):
                 if failure is None:
                     yield Button("Resume release", id="release-resume", variant="primary")
                 else:
-                    rerun_first = failure.cause in RERUN_FIRST
+                    rerun_first = (failure.cause in RERUN_FIRST
+                                   and self._no_runner_setting() != "off")
                     yield Button("Rerun failed jobs", id="release-rerun",
                                  variant="primary" if rerun_first else "default")
                     yield Button("Ask an agent", id="release-ask",

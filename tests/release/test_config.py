@@ -44,6 +44,7 @@ def full() -> ReleaseConfig:
         bring_in_main=False,
         checks=("uv run pytest -q", 'echo "quoted" \\ back'),
         ci_ignore=("test (windows-latest, 3.13)",),
+        on_no_runner="rerun once",
         notes="notes/v{version}.md",
         version_files=("VERSION", "docs/v.txt"),
         after=("uv tool upgrade whyline",),
@@ -272,3 +273,12 @@ def test_bring_in_main_key(tmp_path):
     write_toml(tmp_path, '[release]\nbring_in_main = "no"\n')
     with pytest.raises(config.ConfigError, match="release.bring_in_main"):
         config.load(tmp_path)
+
+
+def test_on_no_runner_defaults_to_ask_and_rejects_other_values(tmp_path):
+    assert config.load(tmp_path).on_no_runner == "ask"
+    write_toml(tmp_path, '[release]\non_no_runner = "sometimes"\n')
+    with pytest.raises(ConfigError, match="release.on_no_runner"):
+        config.load(tmp_path)
+    with pytest.raises(ConfigError, match="release.on_no_runner"):
+        config.save(tmp_path, ReleaseConfig(on_no_runner="sometimes"))

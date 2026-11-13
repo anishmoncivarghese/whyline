@@ -1200,3 +1200,24 @@ def _fresh(tmp_path, kwargs):
     folder = tmp_path / "-".join(kwargs)
     folder.mkdir()
     return folder
+
+
+async def test_rerun_is_not_primary_when_on_no_runner_is_off():
+    from whyline.console.release_screens import ReleaseFailedScreen
+    app = Host(ReleaseFailedScreen("boom", failure=_failure("no-runner"), on_no_runner="off"))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.screen.query_one("#release-rerun", Button).variant == "default"
+        assert app.screen.query_one("#release-ask", Button).variant == "primary"
+
+
+async def test_setup_shows_and_saves_when_github_has_no_runner(tmp_path):
+    app = Host(_setup_screen(tmp_path))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _q(app, "#rs-no-runner", Select).value == "ask"
+        _q(app, "#rs-no-runner", Select).value = "rerun once"
+        await pilot.pause()
+        _q(app, "#rs-save", Button).press()
+        await pilot.pause()
+    assert release_config.load(tmp_path).on_no_runner == "rerun once"

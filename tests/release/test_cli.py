@@ -387,3 +387,16 @@ def test_ask_prints_the_answer(root, monkeypatch, capsys):
 def test_ask_without_a_stopped_release(root, capsys):
     assert release_cli.main(["ask"]) == 1
     assert "isn't stopped" in capsys.readouterr().err
+
+
+def test_settings_prints_and_saves_on_no_runner(root, capsys):
+    from whyline.release import config as release_config
+
+    assert release_cli.main(["settings"]) == 0
+    assert "release.on_no_runner = ask" in capsys.readouterr().out
+    assert release_cli.main(["settings", "--on-no-runner", "rerun once"]) == 0
+    assert release_config.load(root).on_no_runner == "rerun once"
+    assert release_cli.main(["settings", "--on-no-runner", "off"]) == 0
+    assert release_config.load(root).on_no_runner == "off"
+    assert release_cli.main(["settings"]) == 0
+    assert "release.on_no_runner = off" in capsys.readouterr().out

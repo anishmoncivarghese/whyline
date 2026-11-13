@@ -238,3 +238,78 @@ def test_rerun_and_resume_with_nothing_to_rerun(root):
     engine.run(root, Plan("1.0", make([], "ab", fail="b")), mode="auto")  # no failure saved
     result = engine.rerun_and_resume(root, {}, run=run)
     assert result.status == engine.NOTHING and result.message == "Nothing to rerun"
+
+
+# --- auto rerun when GitHub had no runner ---------------------------------------
+
+
+def _auto_steps(root, cause, attempts, calls):
+    """Step b fails with `cause` on each attempt listed; later it passes."""
+    from whyline.release.ci_failure import Failure
+
+    queue = list(attempts)
+
+    def b(cancel):
+        calls.append("b")
+        if queue:
+            err = RuntimeError("ci failed")
+            err.failure = Failure(cause=cause, run_id="77", job="test", attempt=queue.pop(0))
+            raise err
+
+    return [Step("a", "A", False, lambda: False, lambda c: calls.append("a")),
+            Step("b", "B", False, lambda: False, b)]
+
+
+def _setting(root, value):
+    from whyline.release import config
+    from whyline.release.config import ReleaseConfig
+
+    config.save(root, ReleaseConfig(on_no_runner=value))
+
+
+def _fake_gh(log):
+    from types import SimpleNamespace
+
+    def run(args, cwd=None, **kw):
+        log.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    return run
+
+
+def test_auto_rerun_only_once_and_never_tests(root):
+    _setting(root, "rerun once")
+    # No runner on attempt 1 reruns once; attempt 2 fails again and stops.
+    gh, said, calls = [], [], []
+    steps = _auto_steps(root, "no-runner", [1, 2], calls)
+    result = engine.run(root, Plan("1.0", steps), mode="auto",
+                        auto_run=_fake_gh(gh), say=said.append)
+    assert result.status == engine.FAILED
+    assert gh == [["gh", "run", "rerun", "77", "--failed"]]
+    assert said == ["GitHub had no runner for test; rerunning once"]
+    assert calls == ["a", "b", "b"]
+    assert state.load(root).failure["attempt"] == 2
+
+    # A single no-runner failure is rerun and the release finishes.
+    gh.clear(); calls.clear()
+    steps = _auto_steps(root, "no-runner", [1], calls)
+    result = engine.run(root, Plan("1.0", steps), mode="auto", auto_run=_fake_gh(gh))
+    assert result.status == engine.DONE and len(gh) == 1
+    # Without a say callback the notice still lands in the durable release log.
+    assert "GitHub had no runner for test; rerunning once" in engine.log_path(root).read_text()
+
+    # Any other cause shows the failure screen without a rerun.
+    for cause in ("tests", "timeout", "publish", "other"):
+        gh.clear()
+        steps = _auto_steps(root, cause, [1], [])
+        result = engine.run(root, Plan("1.0", steps), mode="auto", auto_run=_fake_gh(gh))
+        assert result.status == engine.FAILED and gh == []
+
+
+@pytest.mark.parametrize("value", ["ask", "off"])
+def test_no_auto_rerun_unless_asked(root, value):
+    _setting(root, value)
+    gh = []
+    steps = _auto_steps(root, "no-runner", [1], [])
+    result = engine.run(root, Plan("1.0", steps), mode="auto", auto_run=_fake_gh(gh))
+    assert result.status == engine.FAILED and gh == []

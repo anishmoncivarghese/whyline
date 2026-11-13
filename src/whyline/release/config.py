@@ -12,6 +12,7 @@ from whyline.security import settings as security_settings
 from whyline.security.settings import SecuritySettings
 
 MODES = ("ask", "step", "auto")
+NO_RUNNER_CHOICES = ("ask", "rerun once", "off")
 CONFIG_PATH = Path(".whyline") / "release.toml"
 PENDING_PATH = Path(".git") / "whyline-release" / "pending.json"
 
@@ -62,6 +63,7 @@ class ReleaseConfig:
     bring_in_main: bool = True
     checks: tuple[str, ...] = ()
     ci_ignore: tuple[str, ...] = ()
+    on_no_runner: str = "ask"
     notes: str = "docs/releases/v{version}.md"
     version_files: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
@@ -126,6 +128,11 @@ def parse(data: dict) -> ReleaseConfig:
     mode = _str(release, "mode", base.mode, "release.mode")
     if mode not in MODES:
         raise ConfigError(f"release.mode must be one of {', '.join(MODES)}, not {mode!r}")
+    on_no_runner = _str(release, "on_no_runner", base.on_no_runner, "release.on_no_runner")
+    if on_no_runner not in NO_RUNNER_CHOICES:
+        raise ConfigError(
+            f"release.on_no_runner must be one of {', '.join(NO_RUNNER_CHOICES)}, "
+            f"not {on_no_runner!r}")
     targets = _table(data, "targets", "targets")
     docker = _table(data, "docker", "docker")
     homebrew = _table(data, "homebrew", "homebrew")
@@ -146,6 +153,7 @@ def parse(data: dict) -> ReleaseConfig:
         bring_in_main=_bool(release, "bring_in_main", True, "release.bring_in_main"),
         checks=_strs(release, "checks", base.checks, "release.checks"),
         ci_ignore=_strs(release, "ci_ignore", base.ci_ignore, "release.ci_ignore"),
+        on_no_runner=on_no_runner,
         notes=_str(release, "notes", base.notes, "release.notes"),
         version_files=_strs(release, "version_files", base.version_files, "release.version_files"),
         after=_strs(release, "after", base.after, "release.after"),
@@ -218,6 +226,7 @@ def render(cfg: ReleaseConfig) -> str:
         f"bring_in_main = {_flag(cfg.bring_in_main)}",
         f"checks = {_list(cfg.checks)}",
         f"ci_ignore = {_list(cfg.ci_ignore)}",
+        f"on_no_runner = {_quote(cfg.on_no_runner)}",
         f"notes = {_quote(cfg.notes)}",
         f"version_files = {_list(cfg.version_files)}",
         f"after = {_list(cfg.after)}",
@@ -273,6 +282,10 @@ def _write_atomic(path: Path, text: str) -> None:
 def save(root: Path, cfg: ReleaseConfig) -> None:
     if cfg.mode not in MODES:
         raise ConfigError(f"release.mode must be one of {', '.join(MODES)}, not {cfg.mode!r}")
+    if cfg.on_no_runner not in NO_RUNNER_CHOICES:
+        raise ConfigError(
+            f"release.on_no_runner must be one of {', '.join(NO_RUNNER_CHOICES)}, "
+            f"not {cfg.on_no_runner!r}")
     try:
         security_settings.validate(cfg.security)
     except security_settings.SettingsError as exc:

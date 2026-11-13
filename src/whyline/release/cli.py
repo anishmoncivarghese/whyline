@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from whyline.release import ci_failure
@@ -20,7 +21,7 @@ EXIT_USAGE = 2
 
 NOTES_PREVIEW_LINES = 40
 
-VERBS = ("check", "run", "status", "resume", "why", "rerun", "ask", "setup")
+VERBS = ("check", "run", "status", "resume", "why", "rerun", "ask", "setup", "settings")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("why", help="Why the stopped release failed")
     rerun = sub.add_parser("rerun", help="Rerun the failed CI jobs and continue the release")
     rerun.add_argument("--yes", action="store_true", help="do not ask")
+    settings = sub.add_parser("settings", help="Show or change Release settings")
+    settings.add_argument("--on-no-runner", choices=release_config.NO_RUNNER_CHOICES,
+                          help="what to do when GitHub had no runner for a job")
     sub.add_parser("ask", help="Ask an agent why the stopped release failed")
     return parser
 
@@ -201,7 +205,7 @@ def _run(args, root: Path, cfg) -> int:
     plan = _plan(root, cfg, version, args)
     confirm, _ = _confirmers(args, bring_text)
     result = engine.run(root, plan, mode=mode, confirm=confirm,
-                        on_progress=_progress_printer())
+                        on_progress=_progress_printer(), say=print)
     return _finish(result)
 
 
@@ -234,7 +238,7 @@ def _resume(args, root: Path, cfg) -> int:
     plan = _plan(root, cfg, saved.version, args)
     confirm, _ = _confirmers(args)
     result = engine.resume(root, {s.id: s for s in plan.steps}, version=saved.version,
-                           confirm=confirm, on_progress=_progress_printer())
+                           confirm=confirm, on_progress=_progress_printer(), say=print)
     return _finish(result)
 
 
@@ -295,6 +299,14 @@ def _ask_agent(args, root: Path, cfg) -> int:
     return EXIT_OK
 
 
+def _settings(args, root: Path, cfg) -> int:
+    if args.on_no_runner is not None:
+        cfg = replace(cfg, on_no_runner=args.on_no_runner)
+        release_config.save(root, cfg)
+    print(f"release.on_no_runner = {cfg.on_no_runner}")
+    return EXIT_OK
+
+
 def _setup(args, root: Path, cfg) -> int:
     current = setup_github.status(root)
     print(f"GitHub CLI: {'installed' if current.gh_installed else 'not installed'}")
@@ -331,7 +343,7 @@ def _setup(args, root: Path, cfg) -> int:
 
 _HANDLERS = {"check": _check, "run": _run, "status": _status, "resume": _resume,
              "why": _why, "rerun": _rerun, "ask": _ask_agent,
-             "setup": _setup}
+             "setup": _setup, "settings": _settings}
 
 
 def run(args: argparse.Namespace) -> int:
