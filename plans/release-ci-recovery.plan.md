@@ -75,7 +75,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   2. With `rerun once`, a failure with cause `no-runner` reruns automatically once per run id, logging `GitHub had no runner for <job>; rerunning once`. A second `no-runner` failure on the same run, and every other cause, show the failure screen. With `off`, the screen doesn't make Rerun the primary button.
   Tests: `test_auto_rerun_only_once_and_never_tests`, the setting round trip in the file, the screen and the CLI, and `off`.
 
-- [ ] RCR-7: Docs
+- [x] RCR-7: Docs
   Edit `README.md` where it describes the Release button, and the `docs/` pages on releasing.
   Cover: what each cause means, Rerun failed jobs, Ask an agent and Fix with an agent, the **When GitHub has no runner** setting, slow GitHub replies, and `whyline release why`, `rerun` and `ask`.
   Verify with `uv run pytest -q`.
