@@ -48,7 +48,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   2. The detail line says `GitHub is slow to answer (2 of 5)` while retrying.
   Tests: `test_gh_timeout_is_retried` (one timeout then success keeps waiting; five stop with the message), the count resetting, and cancel during retries.
 
-- [ ] RCR-3: Rerun failed jobs and carry on
+- [x] RCR-3: Rerun failed jobs and carry on
   Edit `src/whyline/release/ci_failure.py`, `src/whyline/release/engine.py`, `src/whyline/release/cli.py` and their tests.
   1. `rerun(root, failure, *, run) -> None` runs `gh run rerun <run_id> --failed` and raises `StepError` with gh's message on failure.
   2. `rerun_and_resume(root, *, run, …)` reruns the saved `State.failure` and resumes the release at the failed step. The CI and tag-workflow waits then pick up the new attempt of the same run (its status is `queued` again), so no step changes. A rerun when the state has no failure, or no release is stopped, says `Nothing to rerun`.
