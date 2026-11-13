@@ -69,7 +69,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. CLI `whyline release ask` prints the answer.
   Tests: the prompt contents and size cap, `<answer>` extraction, the flag, the read-only agent used (no commit, `git status` unchanged), the Fix button only with `needs_fix`, the Fix session receiving the context, and the CLI.
 
-- [ ] RCR-6: Rerun once when GitHub had no runner
+- [x] RCR-6: Rerun once when GitHub had no runner
   Edit `src/whyline/release/config.py`, `src/whyline/release/engine.py`, `src/whyline/console/release_screens.py`, `src/whyline/release/cli.py` and their tests only.
   1. `ReleaseConfig.on_no_runner: str = "ask"` (key `release.on_no_runner`, one of `ask`, `rerun once`, `off`), shown in Release → Set up as **When GitHub has no runner** and set with a new `whyline release settings [--on-no-runner <value>]` (no option prints the current Release settings), both saving through the same function.
   2. With `rerun once`, a failure with cause `no-runner` reruns automatically once per run id, logging `GitHub had no runner for <job>; rerunning once`. A second `no-runner` failure on the same run, and every other cause, show the failure screen. With `off`, the screen doesn't make Rerun the primary button.
