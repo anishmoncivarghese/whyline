@@ -314,3 +314,55 @@ def test_bump_keeps_the_bump_when_answered_no_or_no_notes(root, monkeypatch):
     _notes(root)
     assert release_cli.main(["run", "--bump", "minor", "--mode", "auto"]) == 0
     assert calls["plan"].version == "1.3.0"
+
+
+# --- why and rerun -------------------------------------------------------------
+
+
+def _stopped(root, cause="no-runner"):
+    from whyline.release.ci_failure import Failure
+
+    failure = Failure(cause=cause, run_id="77", job="test (macos)", workflow="ci", attempt=1)
+    release_state.save(root, release_state.State(
+        version="1.2.4", step_ids=["ready"], mode="auto", failed_id="ready",
+        failure=failure.to_dict()))
+    return failure
+
+
+def test_why_prints_the_failure_text(root, capsys):
+    failure = _stopped(root)
+    assert release_cli.main(["why"]) == 0
+    assert capsys.readouterr().out.strip() == failure.text()
+
+
+def test_why_without_a_stopped_release(root, capsys):
+    assert release_cli.main(["why"]) == 0
+    assert "The release isn't stopped" in capsys.readouterr().out
+
+
+def test_rerun_without_a_failure(root, capsys):
+    assert release_cli.main(["rerun", "--yes"]) == 1
+    assert "Nothing to rerun" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("cause,asked", [("tests", True), ("no-runner", False)])
+def test_rerun_asks_only_for_tests(root, monkeypatch, cause, asked):
+    _stopped(root, cause)
+    tty(monkeypatch, True)
+    questions = []
+    monkeypatch.setattr("builtins.input", lambda q="": questions.append(q) or "y")
+    monkeypatch.setattr(engine, "rerun_and_resume",
+                        lambda r, steps, **kw: engine.Result(engine.DONE, "The release finished."))
+    assert release_cli.main(["rerun"]) == 0
+    assert bool(questions) is asked
+    if asked:
+        assert "Rerunning won't fix a real failure" in questions[0]
+
+
+def test_rerun_declined_does_nothing(root, monkeypatch):
+    _stopped(root, "tests")
+    tty(monkeypatch, True)
+    monkeypatch.setattr("builtins.input", lambda q="": "n")
+    monkeypatch.setattr(engine, "rerun_and_resume",
+                        lambda *a, **k: pytest.fail("must not rerun"))
+    assert release_cli.main(["rerun"]) == 1

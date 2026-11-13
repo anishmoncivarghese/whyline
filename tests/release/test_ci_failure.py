@@ -226,3 +226,32 @@ def test_old_state_file_without_failure_loads(tmp_path):
     del data["failure"]
     state.path(tmp_path).write_text(json.dumps(data))
     assert state.load(tmp_path).failure == {}
+
+
+# --- rerun ---------------------------------------------------------------------
+
+
+def _failed_run(returncode=0, stderr=""):
+    calls = []
+
+    def run(args, cwd=None, **kw):
+        calls.append(args)
+        return SimpleNamespace(returncode=returncode, stdout="", stderr=stderr)
+
+    run.calls = calls
+    return run
+
+
+def test_rerun_runs_gh_rerun_failed(tmp_path):
+    from whyline.release.ci_failure import rerun
+
+    run = _failed_run()
+    rerun(tmp_path, Failure(run_id="77"), run=run)
+    assert run.calls == [["gh", "run", "rerun", "77", "--failed"]]
+
+
+def test_rerun_raises_with_gh_message(tmp_path):
+    from whyline.release.ci_failure import rerun
+
+    with pytest.raises(StepError, match="run is still in progress"):
+        rerun(tmp_path, Failure(run_id="77"), run=_failed_run(1, "run is still in progress"))

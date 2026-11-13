@@ -1,4 +1,4 @@
-"""`whyline release check|run|status|resume`: a thin command line over the release engine."""
+"""`whyline release check|run|status|resume|why|rerun`: a thin command line over the release engine."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import argparse
 import sys
 from pathlib import Path
 
+from whyline.release import ci_failure
 from whyline.release import config as release_config
-from whyline.release import engine, plan as release_plan
+from whyline.release import engine, github, plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import state as release_state
@@ -19,7 +20,7 @@ EXIT_USAGE = 2
 
 NOTES_PREVIEW_LINES = 40
 
-VERBS = ("check", "run", "status", "resume", "setup")
+VERBS = ("check", "run", "status", "resume", "why", "rerun", "setup")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     github.add_argument("--public", action="store_true", help="make the new repository public")
     resume = sub.add_parser("resume", help="Continue a stopped release")
     resume.add_argument("--yes", action="store_true", help="do not ask")
+    sub.add_parser("why", help="Why the stopped release failed")
+    rerun = sub.add_parser("rerun", help="Rerun the failed CI jobs and continue the release")
+    rerun.add_argument("--yes", action="store_true", help="do not ask")
     return parser
 
 
@@ -233,6 +237,44 @@ def _resume(args, root: Path, cfg) -> int:
     return _finish(result)
 
 
+def _why(args, root: Path, cfg) -> int:
+    saved = release_state.load(root)
+    failure = ci_failure.Failure.from_dict(saved.failure) if saved is not None else None
+    if saved is None or saved.running or failure is None:
+        print("The release isn't stopped")
+        return EXIT_OK
+    print(failure.text())
+    return EXIT_OK
+
+
+def _rerun(args, root: Path, cfg) -> int:
+    saved = release_state.load(root)
+    failure = ci_failure.Failure.from_dict(saved.failure) if saved is not None else None
+    if saved is None or saved.running or failure is None or not failure.run_id:
+        print("Nothing to rerun", file=sys.stderr)
+        return EXIT_ERROR
+    if failure.cause == ci_failure.TESTS and not args.yes:
+        if not _interactive():
+            print("No terminal to ask on. Run again with --yes.", file=sys.stderr)
+            return EXIT_ERROR
+        if not _ask("Tests failed. Rerunning won't fix a real failure. Rerun anyway?"):
+            return EXIT_ERROR
+    cfg = release_config.ReleaseConfig(**{**cfg.__dict__, "mode": saved.mode})
+    plan = _plan(root, cfg, saved.version, args)
+    confirm, _ = _confirmers(args)
+    try:
+        result = engine.rerun_and_resume(
+            root, {s.id: s for s in plan.steps}, run=release_ready.default_run,
+            confirm=confirm, on_progress=_progress_printer())
+    except github.StepError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    if result.status == engine.NOTHING:
+        print(result.message, file=sys.stderr)
+        return EXIT_ERROR
+    return _finish(result)
+
+
 def _setup(args, root: Path, cfg) -> int:
     current = setup_github.status(root)
     print(f"GitHub CLI: {'installed' if current.gh_installed else 'not installed'}")
@@ -268,7 +310,7 @@ def _setup(args, root: Path, cfg) -> int:
 
 
 _HANDLERS = {"check": _check, "run": _run, "status": _status, "resume": _resume,
-             "setup": _setup}
+             "why": _why, "rerun": _rerun, "setup": _setup}
 
 
 def run(args: argparse.Namespace) -> int:

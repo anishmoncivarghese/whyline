@@ -183,3 +183,13 @@ def diagnose(root: Path | str, run_id: object, *, run: Callable[..., object]) ->
     elif "publish" in step or "upload" in step:
         failure.cause = PUBLISH
     return failure
+
+
+def rerun(root: Path | str, failure: Failure, *, run: Callable[..., object]) -> None:
+    """Ask GitHub to rerun only the failed jobs of the run in `failure`."""
+    from whyline.release.github import StepError
+
+    proc = run(["gh", "run", "rerun", failure.run_id, "--failed"], cwd=Path(root))
+    if not _ok(proc):
+        text = (getattr(proc, "stderr", "") or "").strip() or _stdout(proc) or "no output"
+        raise StepError(f"gh run rerun failed: {text}")

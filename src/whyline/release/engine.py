@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from whyline.release import ci_failure
 from whyline.release import state as release_state
 from whyline.release.state import State
 
@@ -18,6 +19,7 @@ DONE = "done"
 PAUSED = "paused"
 FAILED = "failed"
 CANCELLED = "cancelled"
+NOTHING = "nothing"
 
 
 class AlreadyReleasing(RuntimeError):
@@ -138,6 +140,26 @@ def resume(
         saved.mode = mode
     steps = [steps_by_id[i] for i in saved.step_ids]
     return _drive(root, steps, saved, confirm, on_progress, cancel_event, now)
+
+
+def rerun_and_resume(
+    root: Path,
+    steps_by_id: Mapping[str, Step],
+    *,
+    run: Callable[..., object],
+    **resume_args: object,
+) -> Result:
+    """Rerun the failed jobs of the saved failure, then resume at the failed step.
+
+    The CI and tag waits find the new attempt of the same run, so no step changes.
+    """
+    saved = release_state.load(root)
+    failure = ci_failure.Failure.from_dict(saved.failure) if saved is not None else None
+    if saved is None or saved.running or failure is None or not failure.run_id:
+        return Result(NOTHING, "Nothing to rerun")
+    _guard(root, resume_args.get("pid_alive", _pid_alive))  # type: ignore[arg-type]
+    ci_failure.rerun(root, failure, run=run)
+    return resume(root, steps_by_id, version=saved.version, **resume_args)  # type: ignore[arg-type]
 
 
 def _guard(root: Path, pid_alive: Callable[[int], bool]) -> None:

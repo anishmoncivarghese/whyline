@@ -148,3 +148,93 @@ def test_dead_pid_does_not_block(root):
         root, Plan("1.0", make([], "a")), mode="auto", pid_alive=lambda pid: False
     )
     assert result.status == engine.DONE
+
+
+# --- rerun_and_resume ----------------------------------------------------------
+
+
+def _stop_with_failure(root, cause="no-runner"):
+    from whyline.release.ci_failure import Failure
+
+    class Boom(RuntimeError):
+        failure = Failure(cause=cause, run_id="77")
+
+    def bad(cancel):
+        raise Boom("ci failed")
+
+    steps = make([], "abc")
+    steps[1] = Step("b", "Title b", False, lambda: False, bad)
+    engine.run(root, Plan("1.0", steps), mode="auto")
+
+
+def test_rerun_and_resume_waits_on_the_new_attempt_then_reaches_the_next_step(root):
+    import json
+    import subprocess
+    from types import SimpleNamespace
+
+    from whyline.release import github
+    from whyline.release.config import ReleaseConfig
+
+    for args in (["init", "-b", "main"], ["config", "user.email", "t@e.com"],
+                 ["config", "user.name", "T"], ["commit", "--allow-empty", "-m", "first"]):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+    # The same run 77 is queued once the rerun starts, then succeeds.
+    attempts = iter([
+        {"databaseId": 77, "name": "CI", "status": "queued", "conclusion": ""},
+        {"databaseId": 77, "name": "CI", "status": "in_progress", "conclusion": ""},
+        {"databaseId": 77, "name": "CI", "status": "completed", "conclusion": "success"},
+    ])
+    gh, polls, order = [], [], []
+
+    def run(args, cwd=None, **kw):
+        if args[0] != "gh":
+            p = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+            return SimpleNamespace(returncode=p.returncode, stdout=p.stdout, stderr=p.stderr)
+        gh.append(args)
+        if args[1:3] == ["run", "rerun"]:
+            order.append("rerun")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if args[1:3] == ["run", "list"]:
+            order.append("poll")
+            polls.append(args)
+            return SimpleNamespace(returncode=0, stdout=json.dumps([next(attempts)]), stderr="")
+        pytest.fail(f"unexpected gh call {args}")
+
+    sleeps = []
+    ci = {s.id: s for s in github.build_steps(root, ReleaseConfig(), "1.0", run=run,
+                                              sleep=sleeps.append)}["ci"]
+    calls = []
+    steps = {s.id: s for s in make(calls, "abc")}
+    steps["b"] = ci  # the real CI wait stands in for the failed step
+    _stop_with_failure(root)
+    steps["c"] = Step("c", "Title c", False, lambda: False, lambda cancel: calls.append("c"))
+
+    result = engine.rerun_and_resume(root, steps, run=run)
+
+    assert order == ["rerun", "poll", "poll", "poll"]
+    assert gh[0] == ["gh", "run", "rerun", "77", "--failed"]
+    assert len(polls) == 3 and len(sleeps) == 2  # queued, in progress, then passed
+    assert result.status == engine.DONE
+    assert calls == ["c"]
+    assert state.load(root) is None
+
+
+def test_rerun_and_resume_gh_error_keeps_the_stop(root):
+    from types import SimpleNamespace
+
+    from whyline.release.github import StepError
+
+    _stop_with_failure(root)
+    run = lambda args, cwd=None, **kw: SimpleNamespace(returncode=1, stdout="", stderr="nope")
+    with pytest.raises(StepError, match="nope"):
+        engine.rerun_and_resume(root, {s.id: s for s in make([], "abc")}, run=run)
+    assert state.load(root).failure["run_id"] == "77"
+
+
+def test_rerun_and_resume_with_nothing_to_rerun(root):
+    run = lambda *a, **k: pytest.fail("gh must not run")
+    assert engine.rerun_and_resume(root, {}, run=run).message == "Nothing to rerun"
+    engine.run(root, Plan("1.0", make([], "ab", fail="b")), mode="auto")  # no failure saved
+    result = engine.rerun_and_resume(root, {}, run=run)
+    assert result.status == engine.NOTHING and result.message == "Nothing to rerun"
