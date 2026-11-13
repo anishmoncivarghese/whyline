@@ -20,7 +20,7 @@ EXIT_USAGE = 2
 
 NOTES_PREVIEW_LINES = 40
 
-VERBS = ("check", "run", "status", "resume", "why", "rerun", "setup")
+VERBS = ("check", "run", "status", "resume", "why", "rerun", "ask", "setup")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("why", help="Why the stopped release failed")
     rerun = sub.add_parser("rerun", help="Rerun the failed CI jobs and continue the release")
     rerun.add_argument("--yes", action="store_true", help="do not ask")
+    sub.add_parser("ask", help="Ask an agent why the stopped release failed")
     return parser
 
 
@@ -275,6 +276,25 @@ def _rerun(args, root: Path, cfg) -> int:
     return _finish(result)
 
 
+def _ask_agent(args, root: Path, cfg) -> int:
+    saved = release_state.load(root)
+    failure = ci_failure.Failure.from_dict(saved.failure) if saved is not None else None
+    if saved is None or saved.running or failure is None:
+        print("The release isn't stopped", file=sys.stderr)
+        return EXIT_ERROR
+    print("Asking the agent…", file=sys.stderr)
+    try:
+        answer = ci_failure.ask(root, failure, ask_agent=release_plan.default_ask_agent(root),
+                                run=release_ready.default_run)
+    except Exception as error:  # noqa: BLE001 - no agent or it failed: say so, don't crash
+        print(f"The agent could not answer: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    print(answer.text)
+    if answer.needs_fix:
+        print("The code needs a fix. Start a Fix session in the console: whyline console")
+    return EXIT_OK
+
+
 def _setup(args, root: Path, cfg) -> int:
     current = setup_github.status(root)
     print(f"GitHub CLI: {'installed' if current.gh_installed else 'not installed'}")
@@ -310,7 +330,8 @@ def _setup(args, root: Path, cfg) -> int:
 
 
 _HANDLERS = {"check": _check, "run": _run, "status": _status, "resume": _resume,
-             "why": _why, "rerun": _rerun, "setup": _setup}
+             "why": _why, "rerun": _rerun, "ask": _ask_agent,
+             "setup": _setup}
 
 
 def run(args: argparse.Namespace) -> int:

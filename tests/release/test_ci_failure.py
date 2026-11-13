@@ -255,3 +255,98 @@ def test_rerun_raises_with_gh_message(tmp_path):
 
     with pytest.raises(StepError, match="run is still in progress"):
         rerun(tmp_path, Failure(run_id="77"), run=_failed_run(1, "run is still in progress"))
+
+
+# -- RCR-5: ask an agent ------------------------------------------------------
+
+import subprocess
+
+from whyline.release import ci_failure
+
+
+def _git_repo(path):
+    def git(*args):
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (path / "a.txt").write_text("1\n")
+    git("add", ".")
+    git("commit", "-qm", "first")
+    git("tag", "v1.0.0")
+    (path / "a.txt").write_text("2\n")
+    git("commit", "-qam", "change a thing")
+
+
+def _real_run(args, cwd=None, **kw):
+    if args[0] == "gh":
+        log = "\n".join(f"line {i}" for i in range(500))
+        return SimpleNamespace(returncode=0, stdout=log, stderr="")
+    proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    return SimpleNamespace(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+
+
+def _failure():
+    return Failure(cause="tests", run_id="7", job="test", tests=["tests/a.py::t"])
+
+
+def test_ask_prompt_has_failure_log_commits_and_stat_with_caps(tmp_path):
+    _git_repo(tmp_path)
+    seen = []
+    ci_failure.ask(tmp_path, _failure(), ask_agent=lambda p: seen.append(p) or "<answer>x</answer>",
+                   run=_real_run)
+    prompt = seen[0]
+    assert "tests/a.py::t" in prompt
+    assert "change a thing" in prompt and "first" not in prompt.split("Commits since")[1]
+    assert "a.txt" in prompt and "git diff --stat v1.0.0..HEAD" in prompt
+    assert "line 499" in prompt and "line 299" not in prompt
+    assert sum(1 for line in prompt.splitlines() if line.startswith("line ")) == 200
+    assert "<answer>" in prompt and "NEEDS_CODE_FIX: yes" in prompt
+
+
+def test_parse_answer_extracts_answer_and_flag():
+    got = ci_failure.parse_answer("hi\n<answer>\nFix the test.\n</answer>\nNEEDS_CODE_FIX: yes")
+    assert got.text == "Fix the test." and got.needs_fix is True
+    got = ci_failure.parse_answer("<answer>Rerun it.</answer>\nNEEDS_CODE_FIX: no")
+    assert got.text == "Rerun it." and got.needs_fix is False
+
+
+def test_unmarked_reply_uses_whole_reply_and_missing_flag_is_no():
+    got = ci_failure.parse_answer("Just rerun it.")
+    assert got.text == "Just rerun it." and got.needs_fix is False
+    got = ci_failure.parse_answer("Change the code.\nNEEDS_CODE_FIX: yes")
+    assert got.text == "Change the code." and got.needs_fix is True
+
+
+def test_ask_logs_the_answer_and_leaves_the_repo_alone(tmp_path):
+    _git_repo(tmp_path)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True,
+                          text=True).stdout
+    before = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True,
+                            text=True).stdout
+    ci_failure.ask(tmp_path, _failure(), ask_agent=lambda p: "<answer>Bad test</answer>",
+                   run=_real_run)
+    after = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True,
+                           text=True).stdout
+    assert after == before
+    assert subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True,
+                          text=True).stdout == head
+    assert "Bad test" in ci_failure.log_path(tmp_path).read_text()
+
+
+def test_default_ask_agent_is_read_only_in_a_temp_folder(tmp_path, monkeypatch):
+    from whyline.relaychat import agent_choice, ask as relay_ask
+    from whyline.release import plan as release_plan
+    import whyline_relay.agents as agents
+
+    cwds = []
+    monkeypatch.setattr(agent_choice, "pick", lambda root, a: SimpleNamespace(agent="claude"))
+    monkeypatch.setattr(relay_ask, "command", lambda root, agent: ["claude", "-p"])
+    monkeypatch.setattr(relay_ask, "extract", lambda root, agent, out, f: out)
+    monkeypatch.setattr(agents, "run", lambda argv, prompt, cwd, **kw: (
+        cwds.append(cwd) or SimpleNamespace(exit_code=0, output="<answer>ok</answer>")))
+    got = ci_failure.ask(tmp_path, _failure(), ask_agent=release_plan.default_ask_agent(tmp_path),
+                         run=_real_run)
+    assert got.text == "ok"
+    assert cwds and cwds[0] != tmp_path and tmp_path not in cwds[0].parents

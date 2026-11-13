@@ -1249,3 +1249,72 @@ async def test_auto_release_after_a_plan_only_starts_on_an_all_ready_check(
                 app.screen.query_one("#release-check-result").render()))
             await pilot.pause(0.1)
             assert not ran and _screen_is(app, ReleaseScreen)
+
+
+# -- RCR-5: Ask an agent, then Fix with an agent ------------------------------
+
+
+async def _failed_with_answer(app, pilot, monkeypatch, reply):
+    from types import SimpleNamespace
+
+    from whyline.release import ci_failure
+
+    def boom(cancel):
+        raise release_github.StepError("CI failed")
+
+    _fake_plan(monkeypatch, [_step("ci", "CI", False, boom)])
+    monkeypatch.setattr(
+        app, "_saved_failure",
+        lambda: ci_failure.Failure(cause="tests", run_id="9", job="test"))
+    app._release_ask_agent = lambda prompt: reply
+    app._release_run = lambda args, cwd=None, **kw: SimpleNamespace(
+        returncode=1, stdout="", stderr="")
+    await _begin(app, pilot, "auto")
+    await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+    app.screen.query_one("#release-ask", tui.Button).press()
+
+
+async def test_ask_an_agent_shows_the_answer_without_fix_when_not_needed(tmp_path, monkeypatch):
+    from whyline.console.release_screens import ReleaseAnswerScreen
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _failed_with_answer(
+            app, pilot, monkeypatch, "<answer>Just rerun.</answer>\nNEEDS_CODE_FIX: no")
+        await _until(pilot, lambda: _screen_is(app, ReleaseAnswerScreen))
+        assert "Asking" in _output(app)
+        assert "Just rerun." in str(app.screen.query_one("#release-answer-text").render())
+        assert not app.screen.query("#release-fix")
+
+
+async def test_fix_with_an_agent_gets_the_failure_and_answer(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from whyline.console import fixmode
+    from whyline.console.release_screens import ReleaseAnswerScreen, ReleaseFixResultScreen
+
+    seen = []
+
+    def fake_fix(root, session, **kw):
+        seen.append(([t.text for t in session.turns], kw["agent_chain"]))
+        return SimpleNamespace(status="proposal", agent="claude", diagnosis="done", changes=[],
+                               snapshot=None, violations=[])
+
+    monkeypatch.setattr(fixmode, "run_fix", fake_fix)
+    monkeypatch.setattr(fixmode, "fix_level", lambda root: fixmode.LEVEL_APPROVAL)
+    monkeypatch.setattr(fixmode, "open_session",
+                        lambda root, pid, agent="": fixmode.Session(pause_id=pid, agent="claude"))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _failed_with_answer(
+            app, pilot, monkeypatch, "<answer>Fix the test.</answer>\nNEEDS_CODE_FIX: yes")
+        await _until(pilot, lambda: _screen_is(app, ReleaseAnswerScreen))
+        app.screen.query_one("#release-fix", tui.Button).press()
+        await _until(pilot, lambda: _screen_is(app, ReleaseFixResultScreen))
+        texts, chain = seen[0]
+        assert "CI failed" in texts[0] or "test" in texts[0]
+        assert texts[1] == "Fix the test."
+        app.screen.query_one("#release-fix-keep", tui.Button).press()
+        await _until(pilot, lambda: "Start a new release when the fix is in; v1.2.3 is already tagged."
+                     in _output(app))
+        assert "Nothing was pushed" in _output(app)

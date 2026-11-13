@@ -366,3 +366,24 @@ def test_rerun_declined_does_nothing(root, monkeypatch):
     monkeypatch.setattr(engine, "rerun_and_resume",
                         lambda *a, **k: pytest.fail("must not rerun"))
     assert release_cli.main(["rerun"]) == 1
+
+
+def test_ask_prints_the_answer(root, monkeypatch, capsys):
+    from whyline.release import ci_failure
+
+    failure = ci_failure.Failure(cause="tests", run_id="7", job="test")
+    release_state.save(root, release_state.State(
+        version="1.2.3", step_ids=["a"], failed_id="a", failure=failure.to_dict()))
+    seen = []
+    monkeypatch.setattr(release_plan, "default_ask_agent", lambda r: lambda p: seen.append(p) or
+                        "<answer>Fix it.</answer>\nNEEDS_CODE_FIX: yes")
+    monkeypatch.setattr(release_ready, "default_run",
+                        lambda args, cwd=None, **kw: SimpleNamespace(returncode=1, stdout="", stderr=""))
+    assert release_cli.main(["ask"]) == 0
+    assert "Fix it." in capsys.readouterr().out
+    assert seen
+
+
+def test_ask_without_a_stopped_release(root, capsys):
+    assert release_cli.main(["ask"]) == 1
+    assert "isn't stopped" in capsys.readouterr().err

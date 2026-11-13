@@ -193,3 +193,90 @@ def rerun(root: Path | str, failure: Failure, *, run: Callable[..., object]) -> 
     if not _ok(proc):
         text = (getattr(proc, "stderr", "") or "").strip() or _stdout(proc) or "no output"
         raise StepError(f"gh run rerun failed: {text}")
+
+
+ASK_LOG_LINES = 200
+ASK_LINE_CHARS = 400
+ASK_COMMITS = 100
+ASK_STAT_LINES = 100
+_ANSWER = re.compile(r"<answer>(.*?)</answer>", re.DOTALL | re.IGNORECASE)
+_NEEDS_FIX = re.compile(r"^\s*NEEDS_CODE_FIX:\s*(yes|no)\b", re.IGNORECASE | re.MULTILINE)
+
+
+@dataclass
+class Answer:
+    text: str
+    needs_fix: bool = False
+
+
+def _cap(text: str, lines: int) -> str:
+    kept = [line[:ASK_LINE_CHARS] for line in text.splitlines() if line.strip()]
+    return "\n".join(kept[-lines:])
+
+
+def _git_text(root: Path, run: Callable[..., object], args: list[str]) -> str:
+    try:
+        proc = run(["git", *args], cwd=root)
+        return _stdout(proc) if _ok(proc) else ""
+    except Exception:  # noqa: BLE001 - the prompt just goes without it
+        return ""
+
+
+def log_path(root: Path | str) -> Path:
+    return Path(root) / ".git" / "whyline-release" / "release.log"
+
+
+def append_log(root: Path | str, text: str) -> None:
+    try:
+        path = log_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(text.rstrip() + "\n\n")
+    except OSError:
+        pass
+
+
+def build_ask_prompt(root: Path | str, failure: Failure, *, run: Callable[..., object]) -> str:
+    from whyline.release import notes
+
+    root = Path(root)
+    log = _text(root, run, ["run", "view", failure.run_id, "--log-failed"]) if failure.run_id else None
+    excerpt = _cap(log, ASK_LOG_LINES) if log else _cap(failure.excerpt, ASK_LOG_LINES)
+    tag = notes.last_tag(root, run=run)
+    if tag:
+        commits = _git_text(root, run, ["log", "--format=%s", f"{tag}..HEAD"])
+        stat = _git_text(root, run, ["diff", "--stat", f"{tag}..HEAD"])
+    else:
+        commits = _git_text(root, run, ["log", "--format=%s", f"-{ASK_COMMITS}"])
+        stat = ""
+    commits = "\n".join(commits.splitlines()[:ASK_COMMITS])
+    stat = "\n".join(stat.splitlines()[-ASK_STAT_LINES:])
+    return (
+        "A release's CI run failed. Work out what went wrong and what to do about it.\n"
+        "You may not change anything; only read and answer.\n\n"
+        f"The failure:\n{failure.text()}\n\n"
+        f"Log of the failed job (last {ASK_LOG_LINES} lines at most):\n{excerpt or '(no log)'}\n\n"
+        f"Commits since the last tag ({tag or 'none'}):\n{commits or '(none)'}\n\n"
+        f"git diff --stat {tag or ''}..HEAD:\n{stat or '(none)'}\n\n"
+        "Say what went wrong and what to do, in plain words, between <answer> and </answer>. "
+        "End your reply with one line, `NEEDS_CODE_FIX: yes` if the code must change, "
+        "or `NEEDS_CODE_FIX: no` if rerunning or changing settings is enough."
+    )
+
+
+def parse_answer(reply: str) -> Answer:
+    flags = _NEEDS_FIX.findall(reply)
+    needs_fix = bool(flags) and flags[-1].lower() == "yes"
+    found = _ANSWER.search(reply)
+    text = _NEEDS_FIX.sub("", found.group(1) if found else reply)
+    return Answer(text.strip(), needs_fix)
+
+
+def ask(root: Path | str, failure: Failure, *, ask_agent: Callable[[str], str],
+        run: Callable[..., object]) -> Answer:
+    """Ask a read-only agent why the run failed; the answer goes into the release log."""
+    prompt = build_ask_prompt(root, failure, run=run)
+    answer = parse_answer(ask_agent(prompt))
+    append_log(root, f"Asked an agent about run {failure.run_id or '?'}:\n{answer.text}\n"
+                     f"NEEDS_CODE_FIX: {'yes' if answer.needs_fix else 'no'}")
+    return answer

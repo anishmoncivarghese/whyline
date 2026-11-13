@@ -1640,3 +1640,94 @@ class ReleaseFailedScreen(ModalScreen):
 
     def action_close(self) -> None:
         self.dismiss(None)
+
+
+FIX = "fix"
+FIX_DONE_TEXT = "Start a new release when the fix is in; v{version} is already tagged."
+
+
+class ReleaseAnswerScreen(ModalScreen):
+    """Shows the agent's answer about the failed run. Closes with FIX or None."""
+
+    BINDINGS = [("escape", "close", "Close")]
+    DEFAULT_CSS = """
+    ReleaseAnswerScreen { align: center middle; }
+    ReleaseAnswerScreen > Vertical { width: 80; height: auto; max-height: 90%; padding: 1 2;
+        border: thick $accent; background: $surface; }
+    ReleaseAnswerScreen #release-answer-scroll { height: auto; max-height: 24; }
+    ReleaseAnswerScreen Horizontal { height: auto; margin-top: 1; }
+    ReleaseAnswerScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, text: str, needs_fix: bool, agent: str = "") -> None:
+        super().__init__()
+        self._text = text
+        self._needs_fix = needs_fix
+        self._agent = agent
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label((self._agent or "The agent") + " says", id="release-answer-title")
+            with VerticalScroll(id="release-answer-scroll"):
+                yield Static(self._text or "(no answer)", id="release-answer-text",
+                             markup=False)
+            with Horizontal():
+                if self._needs_fix:
+                    yield Button("Fix with an agent", id="release-fix", variant="primary")
+                yield Button("Close", id="release-answer-close")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(FIX if event.button.id == "release-fix" else None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class ReleaseFixResultScreen(ModalScreen):
+    """A Fix turn's result for a failed release. Closes with keep, undo or stop."""
+
+    BINDINGS = [("escape", "stop", "Stop")]
+    DEFAULT_CSS = """
+    ReleaseFixResultScreen { align: center middle; }
+    ReleaseFixResultScreen > Vertical { width: 80; height: auto; max-height: 90%; padding: 1 2;
+        border: thick $accent; background: $surface; }
+    ReleaseFixResultScreen #release-fix-scroll { height: auto; max-height: 24; }
+    ReleaseFixResultScreen Horizontal { height: auto; margin-top: 1; }
+    ReleaseFixResultScreen Button { margin-right: 2; }
+    """
+
+    def __init__(self, result: object) -> None:
+        super().__init__()
+        self._result = result
+
+    def compose(self) -> ComposeResult:
+        res = self._result
+        violated = getattr(res, "status", "") == "violation"
+        agent = getattr(res, "agent", "") or "The agent"
+        if violated:
+            body = "Undone:\n" + "\n".join(
+                "- " + v.message for v in getattr(res, "violations", []))
+            title = agent + " broke the Fix rules. Its changes were undone."
+        else:
+            changes = "\n".join(
+                "- " + c.path for c in getattr(res, "changes", [])) or "(none)"
+            body = getattr(res, "diagnosis", "") + "\n\nChanged files:\n" + changes
+            title = agent + " made a fix"
+        with Vertical():
+            yield Label(title, id="release-fix-title")
+            with VerticalScroll(id="release-fix-scroll"):
+                yield Static(body, id="release-fix-body", markup=False)
+            with Horizontal():
+                if not violated:
+                    yield Button("Keep changes", id="release-fix-keep", variant="primary")
+                    yield Button("Undo fix", id="release-fix-undo")
+                yield Button("Stop", id="release-fix-stop")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        answers = {"release-fix-keep": "keep", "release-fix-undo": "undo"}
+        self.dismiss(answers.get(event.button.id or "", "stop"))
+
+    def action_stop(self) -> None:
+        self.dismiss("stop")

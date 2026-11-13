@@ -43141,3 +43141,53 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f48f2cee98024993b2d1eb467c90a440 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-13T07:45:36.419Z"} -->
+
+## 2026-11-13 — Release Fix session uses its own result screen and fixmode.run_fix directly, not the relay Fix flow
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-5
+
+**Because:** FixResultScreen disables Approve without proposed steps and _fix_decided applies relay steps/verify; a release failure has neither, and nothing may be pushed
+
+**Rejected:**
+
+- Reuse _begin_fix/FixResultScreen — tied to relay state and would resume a relay
+- Edit relay_screens.py — outside the task's file list
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 0b6473913d674f72ba17421c7409c491 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T07:54:19.245Z"} -->
+
+## 2026-11-13 — Pass RCR-5 ask agent and guarded fix workflow
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCR-5
+
+**Because:** ask() constructs capped prompt, parses answer/flag, and appends to release log; TUI shows answer and Fix session runs with context; CLI ask works; 4757 tests passed
+
+**Test:** uv run pytest: 4757 passed, 1 skipped, exit 0
+
+**Files:** src/whyline/release/ci_failure.py, src/whyline/console/release_screens.py, src/whyline/console/tui.py, src/whyline/release/cli.py
+
+<!-- whyline-event: 6112ea73334142bf9f440cea9e408fe0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T08:13:04.827Z"} -->
+
+## 2026-11-13 — Approve RCR-5 ask-agent and guarded Fix recovery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-5
+
+**Because:** The scoped diff builds the capped failure prompt, parses and logs answers, uses the read-only temporary-folder agent, exposes the conditional console Fix flow with guarded Keep/Undo approval and no release resume or push, and adds the CLI command; uv run pytest -q completed with exit 0
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly wrong behavior was found, and the required coverage exercises the real boundaries
+
+**Files:** src/whyline/release/ci_failure.py, src/whyline/release/cli.py, src/whyline/console/release_screens.py, src/whyline/console/tui.py
+
+<!-- whyline-event: 379df57ad48c4503acc6ed4c8d5a3ac3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T08:32:46.210Z"} -->
