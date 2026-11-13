@@ -62,7 +62,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. **Open run** opens the url with the system opener, as the docs links do.
   Tests: `test_rerun_asks_only_for_tests`, the buttons with and without a failure, the primary button per cause, RERUN reaching `rerun_and_resume` with a fake, and long text scrolling.
 
-- [ ] RCR-5: Ask an agent, then Fix with an agent
+- [x] RCR-5: Ask an agent, then Fix with an agent
   Edit `src/whyline/release/ci_failure.py`, `src/whyline/release/cli.py`, `src/whyline/console/release_screens.py`, `src/whyline/console/tui.py` and their tests only. Read `src/whyline/release/plan.py` (`default_ask_agent`) and `src/whyline/console/fixmode.py` first.
   1. `ask(root, failure, *, ask_agent, run) -> Answer(text, needs_fix)`: the prompt holds the failure text, the failed job's log excerpt (at most 200 lines), the commits since the last tag and `git diff --stat <last tag>..HEAD`, and asks for what went wrong and what to do, between `<answer>` and `</answer>`, ending with a line `NEEDS_CODE_FIX: yes` or `no`. The agent is `default_ask_agent(root)` (read-only, temporary folder). Unmarked replies use the whole reply; a missing flag counts as `no`. The answer is appended to the release log.
   2. **Ask an agent** shows `Asking <agent>…`, then the answer in the screen. With `needs_fix`, **Fix with an agent** appears: it starts a Fix session (`fixmode`) whose context is the failure text and the answer, at the user's Fix level, so each change waits for approval and nothing is pushed. When the session ends the screen says `Start a new release when the fix is in; v<version> is already tagged.`
