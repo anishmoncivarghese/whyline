@@ -100,7 +100,10 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   cleanly on a conflict), moves finished plans to `plans/done/`, offers a
   never-released current version first, and fast-forwards your other `main`
   checkout afterwards; turn that off with **Bring in main before releasing**.
-  Set up shows each target's last check. Per-target setup,
+  Set up shows each target's last check. When CI fails it says why (no runner,
+  timeout, tests, publish), with **Rerun failed jobs**, **Ask an agent** and
+  **Fix with an agent**, a **When GitHub has no runner** setting, and
+  `whyline release why`, `rerun` and `ask`. Per-target setup,
   how to check each by hand and a troubleshooting list are in
   [docs/release.md](docs/release.md).
 - **Security checks** run in the Release gate with nothing to install: secrets

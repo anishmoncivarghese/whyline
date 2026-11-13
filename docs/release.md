@@ -231,6 +231,70 @@ to Fix, Ignore once or Allow a finding. Settings, what leaves your Mac, Scan
 history, Check every commit, GitHub protection and the optional deep audit are
 in [docs/security.md](security.md).
 
+## When CI fails
+
+When CI (or a PyPI, npm or Docker publish run) fails, the failure screen says
+why in plain words, then the workflow and attempt, the failing test names or the
+last lines of the log, and a link to the run.
+
+| Cause | What it means | What to do |
+| --- | --- | --- |
+| `no-runner` | GitHub never started the job (no step ran, or the annotation says the job was not acquired by a runner or capacity ran out). Your code is fine. | Rerun failed jobs. |
+| `timeout` | The job ran past its time limit and was stopped. | Rerun; if it keeps happening, look at the slow step. |
+| `tests` | A test step failed. The test names (`FAILED …`) are listed. | Fix the code. Rerunning won't help a real failure. |
+| `publish` | A publish or upload step failed after the tests passed. | Check the publish settings, such as the trusted publisher. |
+| `other` | Anything else, or GitHub could not be asked for details. | Open the run, or Ask an agent. |
+
+### Rerun failed jobs
+
+**Rerun failed jobs** runs `gh run rerun <run> --failed` and resumes the
+release at the step that failed. The wait picks up the new attempt of the same
+run, so the release carries on to PyPI by itself. It is the primary button for
+`no-runner` and `timeout`. For `tests` it first asks `Tests failed. Rerunning
+won't fix a real failure. Rerun anyway?`. With nothing stopped, or no saved
+failure, it says `Nothing to rerun`. **Open run** opens the run in your browser.
+
+### Ask an agent and Fix with an agent
+
+**Ask an agent** has a read-only agent explain the failure: it gets the failure
+text, up to 200 lines of the failed job's log, the commits since the last tag
+and `git diff --stat`, and runs in an empty temporary folder, so it cannot edit
+files or commit. The answer is shown and added to the release log. When the
+agent says code must change, **Fix with an agent** appears. It opens a Fix
+session with the failure and the answer as context, at your Fix level, so each
+change waits for your approval and nothing is pushed. When it ends, the screen
+says `Start a new release when the fix is in; v<version> is already tagged.`
+
+### When GitHub has no runner
+
+**When GitHub has no runner** in Release → Set up (`release.on_no_runner`):
+
+- **ask** (default): show the failure screen.
+- **rerun once**: rerun automatically, once per run, and log `GitHub had no
+  runner for <job>; rerunning once`. A second `no-runner` failure on the same
+  run shows the screen. Tests and every other cause are never rerun
+  automatically.
+- **off**: show the screen and don't make Rerun the primary button.
+
+### Slow GitHub replies
+
+While waiting for CI or a tag workflow, a `gh` timeout, an OS error or a failed
+`gh run list` is retried at the normal poll interval, with `GitHub is slow to
+answer (2 of 5)` as the detail. A good reply resets the count; five in a row
+stop the step with `GitHub didn't answer 5 times in a row; check your
+connection and resume`.
+
+### From a terminal
+
+- `whyline release why` prints the failure of the stopped release (or `The
+  release isn't stopped`).
+- `whyline release rerun [--yes]` reruns the failed jobs and resumes. It asks
+  `Tests failed. Rerunning won't fix a real failure. Rerun anyway? [y/N]` for
+  cause `tests` only.
+- `whyline release ask` prints the agent's answer.
+- `whyline release settings [--on-no-runner ask|"rerun once"|off]` sets the
+  no-runner behaviour; with no option it prints the Release settings.
+
 ## Resume
 
 A failed or stopped release keeps its place in `.git/whyline-release/`.

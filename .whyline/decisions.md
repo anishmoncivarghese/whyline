@@ -43286,3 +43286,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2702d63bbddf4f20b5acd41a79592d08 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-13T10:03:40.962Z"} -->
+
+## 2026-11-13 — Pass RCR-7 docs: required CI recovery topics match the implemented behaviour; suite green
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCR-7
+
+**Because:** README.md and docs/release.md cover CI failure causes, Rerun failed jobs, Ask and Fix with an agent, When GitHub has no runner setting, slow gh replies, and CLI why/rerun/ask; uv run pytest -q exited 0 and git diff --check is clean.
+
+**Rejected:**
+
+- Fail — all required topics are covered and accurately describe the implemented behavior
+
+**Files:** docs/release.md
+
+<!-- whyline-event: 8938bab9db7a4582bdf4490cb43e924d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T10:42:47.355Z"} -->
+
+## 2026-11-13 — Approve RCR-7 CI recovery documentation in Round 3
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RCR-7
+
+**Because:** README.md and docs/release.md cover every required topic (causes, rerun, ask/fix, on_no_runner setting, slow replies, CLI commands) and match the implemented behavior; uv run pytest -q exited 0 and git diff --check is clean.
+
+**Rejected:**
+
+- Request changes — no missing, inaccurate, or unsafe documentation found
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 23ac90db9c5640028add20beb8de9c9a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T11:01:58.052Z"} -->
