@@ -6407,7 +6407,7 @@ class WhylineConsoleApp(App):
     def _release_running(self) -> bool:
         return bool(getattr(self, "_release_active", False))
 
-    def _run_release(self, *, resume: bool) -> None:
+    def _run_release(self, *, resume: bool, rerun: bool = False) -> None:
         import threading
 
         if self._release_running():
@@ -6422,7 +6422,8 @@ class WhylineConsoleApp(App):
         self._set_busy(True, f"release v{choice.version}")
         self._sync_relay_buttons()
         cancel = self._release_cancel
-        self.run_worker(lambda: self._release_thread(choice, resume, cancel), thread=True)
+        self.run_worker(
+            lambda: self._release_thread(choice, resume, cancel, rerun), thread=True)
 
     def _release_say(self, text: str) -> None:
         self.call_from_thread(self.render_event, SessionEvent(kind="output", text=text))
@@ -6444,7 +6445,9 @@ class WhylineConsoleApp(App):
                 return default
         return answer[0] if answer else default
 
-    def _release_thread(self, choice: Any, resume: bool, cancel: Any) -> None:
+    def _release_thread(
+        self, choice: Any, resume: bool, cancel: Any, rerun: bool = False,
+    ) -> None:
         from dataclasses import replace
 
         from whyline.console.release_screens import (
@@ -6453,6 +6456,7 @@ class WhylineConsoleApp(App):
         from whyline.release import config as release_config
         from whyline.release import engine as release_engine
         from whyline.release import plan as release_plan
+        from whyline.release import ready as release_ready
 
         root = self.session.root
         engine = getattr(self, "_release_engine", None) or release_engine
@@ -6519,7 +6523,14 @@ class WhylineConsoleApp(App):
                 confirm_notes=confirm_notes, on_progress=on_detail, say=self._release_say,
             )
             steps = [tracked(step) for step in built.steps]
-            if resume:
+            if rerun:
+                rerunner = getattr(self, "_release_rerun_fn", None) or engine.rerun_and_resume
+                result = rerunner(
+                    root, {step.id: step for step in steps},
+                    run=getattr(self, "_release_run", release_ready.default_run),
+                    mode=choice.mode, confirm=confirm, on_progress=on_progress,
+                    cancel_event=cancel)
+            elif resume:
                 result = engine.resume(
                     root, {step.id: step for step in steps}, version=choice.version,
                     mode=choice.mode, confirm=confirm, on_progress=on_progress,
@@ -6552,7 +6563,8 @@ class WhylineConsoleApp(App):
 
             self.render_event(SessionEvent(kind="error", text=result.message))
             self.push_screen(
-                ReleaseFailedScreen(result.message, self._release_pr_flag),
+                ReleaseFailedScreen(
+                    result.message, self._release_pr_flag, self._saved_failure()),
                 self._release_failure_done,
             )
         elif result.status == "error":
@@ -6560,9 +6572,21 @@ class WhylineConsoleApp(App):
         else:
             self.render_event(SessionEvent(kind="output", text=result.message))
 
+    def _saved_failure(self) -> Any:
+        from whyline.release import ci_failure
+        from whyline.release import state as release_state
+
+        try:
+            saved = release_state.load(self.session.root)
+            return ci_failure.Failure.from_dict(saved.failure) if saved else None
+        except Exception:
+            return None
+
     def _release_failure_done(self, choice: Any) -> None:
         if choice == "resume":
             self._run_release(resume=True)
+        elif choice == "rerun":
+            self._run_release(resume=True, rerun=True)
         elif choice == "open-pr":
             self._open_release_pr()
 

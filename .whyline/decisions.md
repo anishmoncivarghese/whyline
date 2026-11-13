@@ -43090,3 +43090,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1f0c6654c3e84ca59a3d4083f8a14344 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-13T06:53:43.422Z"} -->
+
+## 2026-11-13 — Failure screen asks only for tests-cause rerun; Open run uses injectable system opener; tui reads the saved Failure from release state
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RCR-4
+
+**Because:** Result carries no failure, and the saved state is the single source RCR-3 already writes
+
+**Rejected:**
+
+- Add failure to engine.Result — touches engine outside this task's files
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: fbd0e5890fde4bdebd8a596e610181da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T07:00:54.976Z"} -->
+
+## 2026-11-13 — Pass RCR-4: ReleaseFailedScreen shows scrollable plain text failure, proper button primaries, tests-only rerun confirmation, and dispatches RERUN to rerun_and_resume
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RCR-4
+
+**Because:** ReleaseFailedScreen renders Failure.text() with markup=False inside VerticalScroll, assigns primary variant to Rerun for no-runner/timeout and Ask otherwise, prompts confirmation dialog on cause tests before dismissing with RERUN, opens run URL with opener, and tui runs rerun_and_resume in worker; all unit and integration tests pass
+
+**Rejected:**
+
+- Fail — screen and integration behavior match all task requirements and tests pass
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/console/tui.py, tests/console/test_release_screens.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: 6790bd266d3d48668e41997a0f443e45 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T07:26:26.190Z"} -->
+
+## 2026-11-13 — Approve RCR-4 failure screen and rerun recovery flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RCR-4
+
+**Because:** The scoped diff shows Failure.text() as scrollable plain text, correct failure and legacy buttons with cause-based primary selection, tests-only confirmation, system URL opening, and worker dispatch to rerun_and_resume with normal release progress; uv run pytest -q passed at 100% with exit 0
+
+**Rejected:**
+
+- Request changes — no unsafe or clearly wrong behavior was found and the required coverage is genuine
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/console/tui.py, tests/console/test_release_screens.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: f48f2cee98024993b2d1eb467c90a440 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T07:45:36.419Z"} -->

@@ -1035,6 +1035,98 @@ async def test_failed_reason_with_brackets_is_shown_as_plain_text():
         assert "['gh', 'run', 'list'" in _text(app, "#release-failed-reason")
 
 
+def _failure(cause, **kw):
+    from whyline.release import ci_failure
+    return ci_failure.Failure(cause=cause, run_id="9", job="macos-test", url="https://gh/run/9",
+                              **kw)
+
+
+def _ids(app):
+    return [b.id for b in app.screen.query(Button)]
+
+
+async def test_failed_screen_without_failure_is_unchanged():
+    from whyline.console.release_screens import ReleaseFailedScreen
+    app = Host(ReleaseFailedScreen("boom", open_pr=True))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _ids(app) == ["release-resume", "release-open-pr", "release-failed-close"]
+
+
+async def test_failed_screen_with_failure_shows_text_and_buttons():
+    from whyline.console.release_screens import ReleaseFailedScreen
+    failure = _failure("other", excerpt="[red]x[/red]")
+    app = Host(ReleaseFailedScreen("boom", failure=failure))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert _ids(app) == ["release-rerun", "release-ask", "release-open-run",
+                             "release-failed-close"]
+        assert "[red]x[/red]" in _text(app, "#release-failed-reason")
+        assert app.screen.query_one("#release-ask", Button).variant == "primary"
+
+
+async def test_rerun_is_primary_for_no_runner_and_timeout():
+    from whyline.console.release_screens import ReleaseFailedScreen
+    for cause in ("no-runner", "timeout", "tests", "publish"):
+        app = Host(ReleaseFailedScreen("boom", failure=_failure(cause)))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            primary = app.screen.query_one("#release-rerun", Button).variant == "primary"
+            assert primary == (cause in ("no-runner", "timeout"))
+
+
+async def test_rerun_asks_only_for_tests():
+    from whyline.console.release_screens import RERUN, ReleaseFailedScreen, RerunTestsScreen
+    app = Host(ReleaseFailedScreen("boom", failure=_failure("no-runner")))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.query_one("#release-rerun").press()
+        await pilot.pause()
+        assert app.results == [RERUN]
+    app = Host(ReleaseFailedScreen("boom", failure=_failure("tests")))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.screen.query_one("#release-rerun").press()
+        await pilot.pause()
+        assert isinstance(app.screen, RerunTestsScreen)
+        assert "Rerunning won't fix a real failure. Rerun anyway?" in _text(
+            app, "#release-rerun-question")
+        app.screen.query_one("#release-rerun-no").press()
+        await pilot.pause()
+        assert isinstance(app.screen, ReleaseFailedScreen)
+        app.screen.query_one("#release-rerun").press()
+        await pilot.pause()
+        app.screen.query_one("#release-rerun-yes").press()
+        await pilot.pause()
+        assert app.results == [RERUN]
+
+
+async def test_open_run_uses_the_opener_and_stays_open():
+    from whyline.console.release_screens import ReleaseFailedScreen
+    opened = []
+    screen = ReleaseFailedScreen("boom", failure=_failure("other"), open_url=opened.append)
+    app = Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#release-open-run").press()
+        await pilot.pause()
+        assert opened == ["https://gh/run/9"]
+        assert app.screen is screen
+
+
+async def test_long_failure_text_scrolls():
+    from textual.containers import VerticalScroll
+
+    from whyline.console.release_screens import ReleaseFailedScreen
+    failure = _failure("other", excerpt="\n".join(f"line {i}" for i in range(80)))
+    app = Host(ReleaseFailedScreen("boom", failure=failure))
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        scroll = app.screen.query_one("#release-failed-scroll", VerticalScroll)
+        assert scroll.max_scroll_y > 0
+        assert app.screen.query_one("#release-failed-close").region.bottom <= 40
+
+
 async def test_check_result_with_brackets_is_shown_as_plain_text():
     items = [ReadyItem("check", False, f"could not check: {GH_TIMEOUT}")]
     app = Host(_screen(items=items))

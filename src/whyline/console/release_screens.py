@@ -20,6 +20,7 @@ from textual.widgets import (
 )
 
 from whyline.console import security_screens
+from whyline.release import ci_failure
 from whyline.release import config as release_config
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
@@ -1414,6 +1415,11 @@ USE = "use"
 STOP = "stop"
 RESUME = "resume"
 OPEN_PR = "open-pr"
+RERUN = "rerun"
+ASK = "ask"
+RERUN_FIRST = (ci_failure.NO_RUNNER, ci_failure.TIMEOUT)
+RERUN_TESTS_QUESTION = (
+    "Tests failed. Rerunning won't fix a real failure. Rerun anyway?")
 
 
 class ConfirmStepScreen(ModalScreen):
@@ -1526,37 +1532,111 @@ class NotesReviewScreen(ModalScreen):
         self.dismiss(STOP)
 
 
+class RerunTestsScreen(ModalScreen):
+    """Asks before rerunning jobs whose tests really failed. True on Rerun."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+    DEFAULT_CSS = """
+    RerunTestsScreen { align: center middle; }
+    RerunTestsScreen > Vertical { width: 70; height: auto; padding: 1 2;
+        border: thick $warning; background: $surface; }
+    RerunTestsScreen Horizontal { height: auto; margin-top: 1; }
+    RerunTestsScreen Button { margin-right: 2; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(RERUN_TESTS_QUESTION, id="release-rerun-question")
+            with Horizontal():
+                yield Button("Rerun", id="release-rerun-yes", variant="warning")
+                yield Button("Cancel", id="release-rerun-no")
+
+    def on_mount(self) -> None:
+        self.query_one("#release-rerun-no", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(event.button.id == "release-rerun-yes")
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class ReleaseFailedScreen(ModalScreen):
-    """Shows why the release stopped. Closes with RESUME, OPEN_PR or None."""
+    """Shows why the release stopped. Closes with RESUME, RERUN, ASK, OPEN_PR or None."""
 
     BINDINGS = [("escape", "close", "Close")]
     DEFAULT_CSS = """
     ReleaseFailedScreen { align: center middle; }
     ReleaseFailedScreen > Vertical { width: 80; height: auto; max-height: 90%; padding: 1 2;
         border: thick $error; background: $surface; }
+    ReleaseFailedScreen #release-failed-scroll { height: auto; max-height: 20; }
     ReleaseFailedScreen Horizontal { height: auto; margin-top: 1; }
     ReleaseFailedScreen Button { margin-right: 2; }
     """
 
-    def __init__(self, reason: str, open_pr: bool = False) -> None:
+    def __init__(
+        self,
+        reason: str,
+        open_pr: bool = False,
+        failure: ci_failure.Failure | None = None,
+        open_url: Callable[[str], object] | None = None,
+    ) -> None:
         super().__init__()
         self._reason = reason
         self._open_pr = open_pr
+        self._failure = failure
+        self._open_url = open_url
 
     def compose(self) -> ComposeResult:
+        failure = self._failure
         with Vertical():
             yield Label("The release stopped", id="release-failed-title")
-            yield Static(self._reason, id="release-failed-reason", markup=False)
+            with VerticalScroll(id="release-failed-scroll"):
+                yield Static(failure.text() if failure else self._reason,
+                             id="release-failed-reason", markup=False)
             with Horizontal():
-                yield Button("Resume release", id="release-resume", variant="primary")
+                if failure is None:
+                    yield Button("Resume release", id="release-resume", variant="primary")
+                else:
+                    rerun_first = failure.cause in RERUN_FIRST
+                    yield Button("Rerun failed jobs", id="release-rerun",
+                                 variant="primary" if rerun_first else "default")
+                    yield Button("Ask an agent", id="release-ask",
+                                 variant="default" if rerun_first else "primary")
+                    yield Button("Open run", id="release-open-run")
                 if self._open_pr:
                     yield Button("Open PR", id="release-open-pr")
                 yield Button("Close", id="release-failed-close")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
-        choices = {"release-resume": RESUME, "release-open-pr": OPEN_PR}
-        self.dismiss(choices.get(event.button.id or ""))
+        button = event.button.id or ""
+        if button == "release-rerun":
+            if self._failure is not None and self._failure.cause == ci_failure.TESTS:
+                self.app.push_screen(RerunTestsScreen(), self._rerun_answer)
+            else:
+                self.dismiss(RERUN)
+        elif button == "release-open-run":
+            self._open_run()
+        else:
+            choices = {"release-resume": RESUME, "release-ask": ASK,
+                       "release-open-pr": OPEN_PR}
+            self.dismiss(choices.get(button))
+
+    def _rerun_answer(self, rerun: bool | None) -> None:
+        if rerun:
+            self.dismiss(RERUN)
+
+    def _open_run(self) -> None:
+        url = self._failure.url if self._failure else ""
+        if not url:
+            return
+        opener = self._open_url or (lambda target: subprocess.run(["open", target], check=False))
+        try:
+            opener(url)
+        except OSError:
+            pass
 
     def action_close(self) -> None:
         self.dismiss(None)

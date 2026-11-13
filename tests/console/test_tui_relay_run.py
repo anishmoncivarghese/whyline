@@ -1056,6 +1056,33 @@ async def test_failure_resume_release_runs_it_again(tmp_path, monkeypatch):
         assert "Release v1.2.3 finished." in _output(app)
 
 
+async def test_failure_rerun_reaches_rerun_and_resume(tmp_path, monkeypatch):
+    from whyline.release import ci_failure
+
+    def boom(cancel):
+        raise release_github.StepError("CI failed")
+
+    _fake_plan(monkeypatch, [_step("ci", "CI", False, boom)])
+    calls = []
+
+    def fake_rerun(root, steps, **kwargs):
+        calls.append(sorted(steps))
+        return release_engine.Result("done", "ok")
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    app._release_rerun_fn = fake_rerun
+    monkeypatch.setattr(
+        app, "_saved_failure",
+        lambda: ci_failure.Failure(cause="no-runner", run_id="9", job="macos"))
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "auto")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        app.screen.query_one("#release-rerun", tui.Button).press()
+        await _until(pilot, lambda: bool(calls) and not app._release_running())
+        assert calls == [["ci"]]
+        assert "Release v1.2.3 finished." in _output(app)
+
+
 async def test_plain_failure_has_no_open_pr(tmp_path, monkeypatch):
     def boom(cancel):
         raise release_github.StepError("git push failed")
