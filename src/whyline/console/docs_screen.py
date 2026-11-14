@@ -1456,8 +1456,9 @@ class DocsTab(Vertical):
         yield VerticalScroll(Static("", id="file-docs-text", markup=False))
         yield Button("Open in Docs", id="file-docs-open")
 
-    def show_set(self, owner: tuple[Path, str] | None) -> None:
-        """Show the set at (docs checkout, slug), or the no-set message."""
+    def show_set(self, owner: tuple[Path, str] | None, design: tuple[str, Path] | None = None) -> None:
+        """Show the set at (docs checkout, slug); without one, the plan's linked
+        design (shown name, file) read-only, or the no-set message."""
         options = self.query_one("#file-docs-list", OptionList)
         options.clear_options()
         self.key = ""
@@ -1465,9 +1466,19 @@ class DocsTab(Vertical):
         status = self.query_one("#file-docs-status", Static)
         if owner is None:
             self.docs, self.slug = None, ""
-            status.update(self.NO_SET)
-            self._show_text("")
             opener.display = False
+            text = None
+            if design is not None:
+                try:
+                    text = design[1].read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    text = None
+            if text is None:
+                status.update(self.NO_SET)
+                self._show_text("")
+            else:
+                status.update(f"Design (from the plan): {design[0]}")
+                self._show_text(text)
             return
         self.docs, self.slug = owner
         rows = middle_rows(self.docs, SET_PREFIX + self.slug)

@@ -1353,7 +1353,7 @@ class WhylineConsoleApp(App):
                 widget.display = False
         self._set_chat_panel(False)
         from whyline.console.docs_screen import DocsTab
-        from whyline.console.file_pane import owning_set
+        from whyline.console.file_pane import linked_design, owning_set
 
         panel = self._main_widget("#file-docs-panel")
         if panel is None:
@@ -1363,8 +1363,14 @@ class WhylineConsoleApp(App):
             panel = DocsTab(id="file-docs-panel")
             pane.mount(panel)
         panel.display = True
-        owner = owning_set(self.session.root)
-        self.call_after_refresh(panel.show_set, owner)
+        root = self.session.root
+        owner = owning_set(root)
+        design = None
+        if owner is None:
+            linked = linked_design(root)
+            if linked is not None:
+                design = (linked.relative_to(root).as_posix(), linked)
+        self.call_after_refresh(panel.show_set, owner, design)
 
     def _show_chat_panel(self) -> None:
         for selector in ("#file-view", "#file-tree"):
