@@ -43762,3 +43762,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: da1926855deb4a129f8329acc7ee46d0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T11:22:54.430Z"} -->
+
+## 2026-11-14 — tools serve reads tools.json keys run/agent/tools[server,tool,permission,description,input_schema,read_only]; Ask first calls are denied when approvals (TLS-10) is absent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-9
+
+**Because:** TLS-11 writes tools.json later, so the shape is fixed here; failing closed keeps unapproved writes from running
+
+**Rejected:**
+
+- allow Ask first without approvals — would run writes unapproved
+
+**Files:** src/whyline/tools/serve.py
+
+<!-- whyline-event: 0e0cd696eb274a128aa68b8eefc25574 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T11:24:13.378Z"} -->
+
+## 2026-11-14 — Pass TLS-9: Whyline's MCP server for a run, stdio CLI serve, tool filtering and call logging
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-9
+
+**Because:** All requirements verified: whyline tools serve MCP server on stdio reads WHYLINE_TOOLS_RUN and handles missing var/file by returning initialize and empty tools; tools/list returns ticked tools as server__tool with readOnlyHint annotations; tools/call validates ticked tools, starts and caches mcp.Session per server, handles Ask first approvals, returns content/isError, appends redacted calls up to 2000 chars to tool-calls.jsonl with duration/decision/size/error, and closes all sessions on EOF. All 11 test_serve.py tests and 47 tests/tools pass; full test suite passes (with only test_new_agent.py deferred to TLS-14 per plan).
+
+**Files:** src/whyline/tools/serve.py, src/whyline/tools/cli.py, tests/tools/test_serve.py
+
+<!-- whyline-event: d928cbdbb0c34f37bf491d75fc0f9688 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T11:44:40.454Z"} -->
+
+## 2026-11-14 — Approve TLS-9 Whyline MCP server for a run, stdio CLI serve, tool filtering and call logging
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-9
+
+**Because:** All requirements verified: whyline tools serve MCP stdio server reads WHYLINE_TOOLS_RUN, returns initialize and empty tools when absent; tools/list returns ticked tools as server__tool with readOnlyHint; tools/call validates ticked tools, caches sessions, handles Ask first, records redacted calls up to 2000 chars with metadata in tool-calls.jsonl, and closes sessions on EOF; tests cover all required behaviors and pass
+
+**Rejected:**
+
+- Request changes — implementation satisfies all requirements cleanly, follows existing conventions, and all tests pass
+
+**Files:** src/whyline/tools/serve.py, src/whyline/tools/cli.py, tests/tools/test_serve.py
+
+<!-- whyline-event: bc37ba8dd31343de9fc8f8586274a189 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:05:42.665Z"} -->

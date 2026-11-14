@@ -33,6 +33,7 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     imp.add_argument("names", nargs="*")
     test = sub.add_parser("test", help="Start a server, list its tools and store them")
     test.add_argument("name")
+    tools_sub.add_parser("serve", help="Run whyline's MCP server for an agent run (stdio)")
     _add_skills_parser(tools_sub)
     _add_knowledge_parser(tools_sub)
 
@@ -240,6 +241,10 @@ def _import(args: argparse.Namespace) -> int:
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.tools_command == "serve":
+        from whyline.tools import serve
+
+        return serve.serve()
     if args.tools_command == "skills":
         return _skills(args)
     if args.tools_command == "knowledge":
