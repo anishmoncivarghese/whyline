@@ -1,0 +1,287 @@
+import json
+
+import pytest
+
+from whyline import credentials
+from whyline.agents import capabilities
+from whyline.console import tui
+from whyline.console.tools_screens import AddServerScreen, CredentialScreen, ImportServersScreen, ToolsScreen
+from whyline.tools import mcp_config, users
+
+pytestmark = [pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"), pytest.mark.asyncio]
+
+SECRET = "s3cr3t-value-123"
+
+
+@pytest.fixture
+def stored():
+    return {}
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch, stored):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+    def put(name, value, run, which, system):
+        stored[name] = value
+
+    monkeypatch.setattr(credentials, "_put", put)
+    monkeypatch.setattr(credentials, "remove", lambda name, **kw: _forget(stored, name))
+    monkeypatch.setattr(capabilities, "saved_ready", lambda cli: False)
+    monkeypatch.setattr("shutil.which", lambda binary: None)
+    return home
+
+
+def _forget(stored, name):
+    stored.pop(name, None)
+    creds = credentials._load()
+    creds.pop(name, None)
+    credentials._store(creds)
+
+
+@pytest.fixture(autouse=True)
+def _clean_users():
+    yield
+    users.unregister("test")
+
+
+async def open_tools(pilot, app, tab="tl-connectors", **kwargs):
+    screen = ToolsScreen(**kwargs)
+    app.push_screen(screen)
+    await pilot.pause()
+    assert isinstance(app.screen, ToolsScreen)
+    screen.query_one("#tl-tabs").active = tab
+    await pilot.pause()
+    return screen
+
+
+def text(screen, selector):
+    return str(screen.query_one(selector).render())
+
+
+async def test_tools_button_opens_the_screen(home, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.click("#mode-agents")
+        await pilot.pause()
+        await pilot.click("#agents-tools")
+        await pilot.pause()
+        assert isinstance(app.screen, ToolsScreen)
+
+
+async def test_other_tabs_say_coming(home, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await open_tools(pilot, app)
+        assert text(screen, "#tl-skills-text") == "Coming in the next update"
+        assert text(screen, "#tl-knowledge-text") == "Coming in the next update"
+
+
+async def test_add_server_uses_save_server(home, tmp_path):
+    credentials.save(credentials.Credential(name="gh", kind="env"), SECRET)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app)
+        await pilot.click("#tl-add")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, AddServerScreen)
+        form.query_one("#as-name").value = "github"
+        form.query_one("#as-command").value = "npx"
+        form.query_one("#as-args").value = "-y 'some server'"
+        form.query_one("#as-var").value = "GITHUB_TOKEN"
+        form.query_one("#as-cred").value = "gh"
+        await pilot.click("#as-add")
+        await pilot.pause()
+        assert app.screen is screen
+    server = mcp_config.load()["github"]
+    assert server.command == "npx"
+    assert server.args == ("-y", "some server")
+    assert server.env == {"GITHUB_TOKEN": "gh"}
+
+
+async def test_add_server_refuses_a_bad_name(home, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        await open_tools(pilot, app)
+        await pilot.click("#tl-add")
+        await pilot.pause()
+        form = app.screen
+        form.query_one("#as-name").value = "Bad Name"
+        form.query_one("#as-command").value = "npx"
+        await pilot.click("#as-add")
+        await pilot.pause()
+        assert isinstance(app.screen, AddServerScreen)
+        assert "server name" in text(form, "#as-status")
+    assert mcp_config.load() == {}
+
+
+async def test_import_adds_only_ticked_servers(home, tmp_path):
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {
+        "alpha": {"command": "alpha-cmd", "args": ["a"], "env": {"TOKEN": "x"}},
+        "beta": {"command": "beta-cmd"},
+        "remote": {"url": "https://example.com/mcp"},
+    }}))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app)
+        await pilot.click("#tl-import")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, ImportServersScreen)
+        names = [c.name for c in form._candidates]
+        labels = {c.name: str(form.query_one(f"#im-{i}").label) for i, c in enumerate(form._candidates)}
+        assert "needs a credential: TOKEN" in labels["alpha"]
+        assert "refused" in labels["remote"]
+        assert form.query_one(f"#im-{names.index('remote')}").disabled
+        form.query_one(f"#im-{names.index('alpha')}").value = True
+        await pilot.click("#im-go")
+        await pilot.pause()
+        assert app.screen is screen
+    assert list(mcp_config.load()) == ["alpha"]
+
+
+async def test_test_runs_in_a_worker_and_shows_tools(home, tmp_path):
+    mcp_config.save_server(mcp_config.Server(name="demo", command="demo-cmd"))
+    calls = []
+
+    def fake_test(name):
+        calls.append(name)
+        server = mcp_config.load()[name]
+        from dataclasses import replace
+
+        servers = {name: replace(server, tools=(
+            mcp_config.Tool("read_it", read_only=True), mcp_config.Tool("write_it")))}
+        mcp_config._write({**mcp_config.load(), **servers})
+        return "2 tools: read_it, write_it"
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app, test_fn=fake_test)
+        screen.query_one("#tl-tree").move_cursor(screen.query_one("#tl-tree").root.children[0])
+        await pilot.click("#tl-test")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert calls == ["demo"]
+        assert "2 tools: read_it, write_it" in text(screen, "#tl-status")
+        node = screen.query_one("#tl-tree").root.children[0]
+        assert "2 tools" in str(node.label)
+        node.expand()
+        assert [str(c.label) for c in node.children] == ["read_it  reads", "write_it  writes"]
+
+
+async def test_remove_server_and_refusal_names_users(home, tmp_path):
+    mcp_config.save_server(mcp_config.Server(name="used", command="x"))
+    mcp_config.save_server(mcp_config.Server(name="free", command="x"))
+    users.register("test", lambda: [users.Use("server", "used", "agent research-digest")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app)
+        tree = screen.query_one("#tl-tree")
+        by_name = {n.data: n for n in tree.root.children}
+        tree.move_cursor(by_name["used"])
+        await pilot.pause()
+        await pilot.click("#tl-remove")
+        await pilot.pause()
+        assert "agent research-digest" in text(screen, "#tl-status")
+        assert "used" in mcp_config.load()
+        tree.cursor_line = 1  # "free" sorts before "used"
+        await pilot.pause()
+        assert screen._selected() == "free"
+        screen.query_one("#tl-remove").press()
+        await pilot.pause()
+        assert "Removed MCP server free" in text(screen, "#tl-status")
+    assert list(mcp_config.load()) == ["used"]
+
+
+async def test_credentials_add_rotate_remove_with_masked_value(home, stored, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-credentials")
+        await pilot.click("#tl-cred-add")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, CredentialScreen)
+        assert form.query_one("#cr-value").password is True
+        form.query_one("#cr-name").value = "gh"
+        form.query_one("#cr-value").value = SECRET
+        await pilot.click("#cr-save")
+        await pilot.pause()
+        assert app.screen is screen
+        assert stored["gh"] == SECRET
+        assert [c.name for c in credentials.list_all()] == ["gh"]
+        assert SECRET not in screen.query_one("#tl-creds").get_row_at(0).__repr__()
+        assert SECRET not in text(screen, "#tl-cred-status")
+
+        screen.query_one("#tl-creds").move_cursor(row=0)
+        await pilot.click("#tl-cred-rotate")
+        await pilot.pause()
+        form = app.screen
+        assert form.query_one("#cr-value").password is True
+        form.query_one("#cr-value").value = "rotated-value-456"
+        await pilot.click("#cr-save")
+        await pilot.pause()
+        assert stored["gh"] == "rotated-value-456"
+        assert "rotated-value-456" not in text(screen, "#tl-cred-status")
+
+        await pilot.click("#tl-cred-remove")
+        await pilot.pause()
+        assert credentials.list_all() == []
+
+
+async def test_credential_removal_refused_names_users(home, tmp_path):
+    credentials.save(credentials.Credential(name="gh", kind="env"), SECRET)
+    users.register("test", lambda: [users.Use("credential", "gh", "server github")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-credentials")
+        screen.query_one("#tl-creds").move_cursor(row=0)
+        await pilot.click("#tl-cred-remove")
+        await pilot.pause()
+        assert "server github" in text(screen, "#tl-cred-status")
+    assert [c.name for c in credentials.list_all()] == ["gh"]
+
+
+async def test_setup_buttons_disabled_when_cli_missing(home, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app)
+        assert screen.query_one("#tl-setup-grok").disabled
+        assert screen.query_one("#tl-setup-antigravity").disabled
+        note = text(screen, "#tl-setup-note")
+        assert "grok is not installed" in note
+        assert "agy is not installed" in note
+        assert "Agents can't run on Antigravity yet" in note
+
+
+async def test_both_setup_buttons_ask_first(home, tmp_path, monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda binary: f"/bin/{binary}")
+    done = []
+    monkeypatch.setattr(capabilities, "saved_setup", lambda cli: done.append(cli) or f"saved {cli}")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = await open_tools(pilot, app)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "grok: whyline's tools are not saved yet" in text(screen, "#tl-setup-note")
+        for cli in ("grok", "antigravity"):
+            await pilot.click(f"#tl-setup-{cli}")
+            await pilot.pause()
+            assert isinstance(app.screen, tui.ConfirmScreen)
+            assert done == []
+            await pilot.click("#cancel")
+            await pilot.pause()
+            assert app.screen is screen
+        assert done == []
+        await pilot.click("#tl-setup-antigravity")
+        await pilot.pause()
+        await pilot.click("#confirm")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert done == ["antigravity"]
+        assert "saved antigravity" in text(screen, "#tl-status")

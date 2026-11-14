@@ -43895,3 +43895,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a4a6abcc5cbd40b0a5a8c83f36cfc322 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T13:31:07.736Z"} -->
+
+## 2026-11-14 — Tools screen is one ModalScreen with TabbedContent; Connectors use a Tree so servers expand to reads/writes tools; Tools button lives in tui.py's Agents bar, not agents_screens.py
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-12
+
+**Because:** the Agents button bar is composed in tui.py, so agents_screens.py needed no change
+
+**Rejected:**
+
+- DataTable plus detail pane — Tree gives the expandable per-server tool list directly
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: f9097f4910454bf6b466cfaba2156000 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T13:36:24.038Z"} -->
+
+## 2026-11-14 — Pass TLS-12: The Tools library: Connectors and Credentials
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-12
+
+**Because:** ToolsScreen implements Connectors and Credentials tabs with placeholders for Skills and Knowledge; Connectors provides server tree with reads/writes tools, Add modal with credential select, Import checklist filtering ticked servers, Test worker, Remove with in-use guards, and confirmed Set up for grok and Antigravity with saved_ready checks; Credentials provides list, Add/Rotate with masked password Input, and guarded Remove without leaking secret values; Tools button opens the screen from Agents bar; all 11 test_tools_screens.py tests and 4879 full-suite tests passed (legacy test_new_agent deferred to TLS-14 per plan).
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: ade4bccc5db74a17b57f9c0f944d1761 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T14:19:28.533Z"} -->
+
+## 2026-11-14 — Approve TLS-12: The Tools library: Connectors and Credentials
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-12
+
+**Because:** ToolsScreen provides Connectors and Credentials with working server tree, Add/Import/Test/Remove flows, grok and Antigravity setup with guards and confirmation, masked Credential Add/Rotate and in-use removal checks, and Tools button in Agents bar; all 11 test_tools_screens.py tests and 4879 full-suite tests pass (pre-existing test_new_agent deferred to TLS-14 per plan).
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: eeb03da011934d3781b3e79776a210ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T14:39:58.113Z"} -->
