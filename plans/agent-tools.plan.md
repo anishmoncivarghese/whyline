@@ -129,7 +129,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   4. CLI `whyline agents approvals`, `whyline agents approve <run> <n>` and `whyline agents deny <run> <n>`.
   Tests with a fake clock: approve, deny, `test_unanswered_call_is_denied`, pending across two runs, answering a finished request refused, and the CLI.
 
-- [ ] TLS-11: Pointing each CLI at whyline's server
+- [x] TLS-11: Pointing each CLI at whyline's server
   Edit `src/whyline/agents/runner.py`, `src/whyline/agents/capabilities.py`, `src/whyline/tools/cli.py` and their tests only.
   1. `capabilities.tools_support(cli) -> str`: `per-run` for claude and codex, `saved` for grok and antigravity (`agy`), `none` for any other.
   2. When the agent has tools, `prepare_run` writes `<run>/tools.json`, sets `WHYLINE_TOOLS_RUN` in the CLI's environment, and adds to the command:
