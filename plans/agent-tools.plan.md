@@ -152,7 +152,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. Credentials: the list, **Add** with a masked `Input(password=True)`, **Rotate** and **Remove**. A value never appears in the screen text afterwards.
   Tests: each action through the same functions as the CLI, the import checklist adding only ticked servers, a refused removal, the masked field, and both Set up buttons asking first.
 
-- [ ] TLS-13: The Tools library: Skills and Knowledge
+- [x] TLS-13: The Tools library: Skills and Knowledge
   Edit `src/whyline/console/tools_screens.py` and its tests only.
   1. Skills: every skill with its origin label (`whyline`, `whyline · repo`, `Claude`, `Claude · project`), description and size, broken ones with the reason. **New skill** (name, description, body, and personal or this repository), **Copy to whyline**, **Edit** (whyline skills, through the console's editor opening), **Remove**.
   2. Knowledge: packs with their items. **New pack**, **Add files**, **Add web page**, **Remove**.
