@@ -51,7 +51,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   - an `env` credential saves with no origins
   Verify with `uv run pytest -q tests/test_credentials.py tests/agents/test_telegram.py`. Change nothing else.
 
-- [ ] TLS-2: Credentials in the CLI, and who uses what
+- [x] TLS-2: Credentials in the CLI, and who uses what
   Create `src/whyline/credentials_cli.py`, `src/whyline/tools/__init__.py`, `src/whyline/tools/users.py` and their tests. Edit `src/whyline/cli.py` to register `whyline cred`.
   1. CLI `whyline cred add|list|rotate|remove`. `add` takes `--kind` (default `env`) and, for HTTP kinds, `--origin` and `--header`. `add` and `rotate` read the value with `getpass`, never from an argument.
   2. `users.register(kind: str, provider: Callable[[], list[Use]])`, with `Use(thing, name, user)` (for example `Use("credential", "notion-key", "agent research-digest")`), and `users.of(thing, name) -> list[str]`. Credentials, servers, skills and packs ask it before removal. Agents register in TLS-7, and Workflows will register later.
