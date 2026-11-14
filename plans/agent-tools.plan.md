@@ -176,7 +176,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 ## Part 5: Docs and release
 
-- [ ] TLS-16: Docs
+- [x] TLS-16: Docs
   Edit `README.md` where it describes Agents, the console Help text for Agents, and create `docs/agent-tools.md`.
   Cover: connectors and importing from Claude and codex, credentials and why values never leave the Keychain, skills (the four places, whyline versus Claude, why every CLI gets them), knowledge packs and web pages, Allowed versus Ask first, approvals and the 10-minute limit, which CLIs can use tools and the one-time grok and Antigravity setup, and the call log.
   Verify with `uv run pytest -q`.
