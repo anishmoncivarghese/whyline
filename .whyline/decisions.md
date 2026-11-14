@@ -43444,3 +43444,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d4d37035386543dbaa3e88fb0aba85a5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T06:28:29.843Z"} -->
+
+## 2026-11-14 — MCP registry stores tool input schemas as JSON strings; import never copies env values
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-3
+
+**Because:** TOML has no clean nested-schema form and a literal env value in another tool's config is a secret that must not land in mcp.toml
+
+**Rejected:**
+
+- native TOML tables for schemas — nulls and mixed types do not round-trip
+
+**Files:** src/whyline/tools/mcp_config.py
+
+<!-- whyline-event: 15e4d778fcd6434cbea54246c016a2b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T06:30:42.293Z"} -->
+
+## 2026-11-14 — Pass TLS-3 MCP server registry, import, and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-3
+
+**Because:** Full test suite (uv run pytest -q) passed; round-trip 0600 file permissions, remote server rejection, candidate import without env secret copying, and deletion guard via users.of verified
+
+**Files:** src/whyline/tools/mcp_config.py, src/whyline/tools/cli.py, src/whyline/cli.py, tests/tools/test_mcp_config.py
+
+<!-- whyline-event: c57d7c1fe9a44dffacb00e683e4ceb0e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T06:50:06.398Z"} -->
+
+## 2026-11-14 — Approve TLS-3 MCP server registry, import, and CLI
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-3
+
+**Because:** All task requirements and safety criteria met: 0600 permissions round-trip, users.of guard on deletion, candidate import without env secret copying, CLI subcommands functioning, and test suite passing
+
+**Rejected:**
+
+- Request changes — implementation and test coverage are complete and sound with no defects found
+
+**Files:** src/whyline/tools/mcp_config.py, src/whyline/tools/cli.py, src/whyline/cli.py, tests/tools/test_mcp_config.py
+
+<!-- whyline-event: 72464e777e394ed49cf12544005a8ec9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:09:03.293Z"} -->
