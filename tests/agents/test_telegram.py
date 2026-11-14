@@ -86,15 +86,21 @@ def test_the_token_is_redacted_from_errors():
 def test_keychain_token_on_mac():
     calls = []
 
+    stdin = []
+
     def run(argv, **kwargs):
         calls.append(argv)
+        stdin.append(kwargs.get("input"))
         class R:
             returncode = 0
             stdout = "123:secret\n"
         return R()
 
     tg.token_set(TOKEN, run=run, mac=True)
-    assert calls[0][:2] == ["security", "add-generic-password"] and "whyline-telegram" in calls[0]
+    assert calls[0] == ["security", "-i"]
+    assert all(TOKEN not in part for part in calls[0])
+    assert stdin[0].startswith("add-generic-password -U -s whyline-telegram")
+    assert TOKEN in stdin[0]
     assert tg.token_get(run=run, mac=True) == TOKEN
 
 

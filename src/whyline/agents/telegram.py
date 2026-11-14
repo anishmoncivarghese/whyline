@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 
 from whyline.agents import paths
+from whyline.credentials import security_quote
 
 API = "https://api.telegram.org"
 CAPTION_LIMIT = 1024
@@ -65,9 +66,13 @@ def token_get(*, run=subprocess.run, mac: bool | None = None) -> str | None:
 
 def token_set(token: str, *, run=subprocess.run, mac: bool | None = None) -> None:
     if _is_mac(mac):
+        try:
+            quoted = security_quote(token)
+        except ValueError:
+            raise TelegramError("the bot token can't contain a line break") from None
         result = run(
-            ["security", "add-generic-password", "-U", "-s", _SERVICE, "-a", _ACCOUNT,
-             "-w", token],
+            ["security", "-i"],
+            input=f"add-generic-password -U -s {_SERVICE} -a {_ACCOUNT} -w {quoted}\n",
             capture_output=True, text=True,
         )
         if result.returncode != 0:

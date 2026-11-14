@@ -43338,3 +43338,62 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c29f0e324db642ffbdbc6328212f488f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-13T21:44:38.512Z"} -->
+
+## 2026-11-13 — Secrets reach security -i on stdin with backslash-escaped double quotes; values with line breaks are refused
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-1
+
+**Because:** security -i reads one command per line, so a newline can't be quoted; argv would expose the secret in ps
+
+**Rejected:**
+
+- argv -w <value> — visible in process list
+
+**Files:** src/whyline/credentials.py
+
+<!-- whyline-event: ae1e7c4196c44028882f24508888db5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T21:47:34.390Z"} -->
+
+## 2026-11-13 — Waiting-on-you plan drops the security-finding card
+
+**Actor:** claude
+**Role:** planner
+
+**Because:** the security gate is a console screen before the release and leaves no saved state the worker can read
+
+**Rejected:**
+
+- save gate findings to disk for the worker — widens where finding details live; later design
+
+**Files:** plans/waiting-on-you.plan.md
+
+<!-- whyline-event: ca861aa15139426d8eb082f86363647e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T21:48:46.159Z"} -->
+
+## 2026-11-13 — Verify credential store and telegram token keychain storage implementation and tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-1
+
+**Because:** All 17 targeted tests in test_credentials.py and test_telegram.py pass, the full test suite passes cleanly, token handling never exposes secrets in argv, and metadata is stored securely at 0600
+
+**Files:** src/whyline/credentials.py
+
+<!-- whyline-event: 520fa241184c418ba2bd86af1f59f217 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-13T22:06:44.493Z"} -->
+
+## 2026-11-14 — Approve credential store and Telegram token keychain storage implementation
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-1
+
+**Because:** Credential store and telegram token keychain storage fully adhere to TLS-1 specification; secrets are never passed in argv; metadata permissions are strictly 0600; and all project tests pass without regressions
+
+**Files:** src/whyline/credentials.py
+
+<!-- whyline-event: 6960b687095f4c1782714aa2ce8efdeb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T05:47:53.006Z"} -->
