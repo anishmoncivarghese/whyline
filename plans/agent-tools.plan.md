@@ -145,7 +145,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 ## Part 4: Console
 
-- [ ] TLS-12: The Tools library: Connectors and Credentials
+- [x] TLS-12: The Tools library: Connectors and Credentials
   Create `src/whyline/console/tools_screens.py` and `tests/console/test_tools_screens.py`. Edit `src/whyline/console/agents_screens.py` and `src/whyline/console/tui.py` only to add the **Tools** button to the Agents bar and open the screen.
   1. `ToolsScreen` with tabs **Connectors**, **Skills**, **Knowledge** and **Credentials**. This task fills Connectors and Credentials; the other two say `Coming in the next update` until TLS-13.
   2. Connectors: the servers with their status and tool count, each expandable to its tools marked `reads` or `writes`. **Add** (name, command, arguments, environment variable → credential select), **Import…** (a checklist of `import_candidates`, with the needs-a-credential and refused notes), **Test** (in a thread worker), **Remove** (names users when refused), and **Set up grok** and **Set up Antigravity**, each showing `saved_ready(cli)` and disabled with a reason when that CLI isn't installed. Antigravity's button also says `Agents can't run on Antigravity yet` while `can_run` refuses it; the entry can still be saved ahead.
