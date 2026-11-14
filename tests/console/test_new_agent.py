@@ -85,7 +85,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
     text = saved.read_text()
     assert saved.exists() and 'backup = ["codex"]' in text
     assert backup_writes == []
-    assert 'sources = ["docs"]' in text
+    assert 'knowledge = ["docs"]' in text
     assert state.all_activations(state.connect())[0].status == "active"
 
 

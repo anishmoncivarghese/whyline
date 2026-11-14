@@ -43981,3 +43981,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6f260ac7a1e44ab0845aeae8d7e173fc -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T15:24:44.516Z"} -->
+
+## 2026-11-14 — New agent form: Knowledge/Skills/Tools sections, CLI lists narrowed through runner.usable_clis, Review summary line built in agents_screens
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-14
+
+**Because:** usable_clis and _tools_blockers already hold the rules for which CLIs can run tools; reusing them with a probe object keeps the form and the runner in agreement, and the summary lives in ReviewScreen so tui.py is untouched
+
+**Rejected:**
+
+- Put the summary in service.describe — outside this task's allowed files
+- Duplicate the blocker rules in the form — would drift from runner
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 7c72c1d70cd34fe3b43008ff30e5f724 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T15:29:05.694Z"} -->
+
+## 2026-11-14 — Pass TLS-14 round 2 testing for Knowledge, Skills, and Tools in New agent form
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-14
+
+**Because:** All requirements verified: Knowledge pickers (files, web page, pack), Skills checklist with origin/description/size limits, Tools picker with permission defaults and write warning, runner.usable_clis narrowing with left-out explanations, and Review summary; all targeted and component test suites passed
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: e113623c48f1443ea9390753c705d621 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T16:07:37.470Z"} -->
+
+## 2026-11-14 — Approve TLS-14 round 3 Knowledge, Skills, and Tools in New agent form
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-14
+
+**Because:** The implementation satisfies all five requirements in agents_screens.py, correctly bounds scope to the allowed files, provides dedicated test coverage in test_new_agent_tools.py, and passes the entire test suite cleanly.
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 2ad58969302940288dd03c7611a51b4c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T17:27:36.741Z"} -->

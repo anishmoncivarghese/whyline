@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import webbrowser
+from types import SimpleNamespace
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalGroup, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, Collapsible, DataTable, Input, Label, Select, Static, TextArea
 
 from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records, templates
 from whyline.agents.service import NO_AGENTS
@@ -922,6 +923,302 @@ class AgentTemplateScreen(ModalScreen):
             self.dismiss(None)
 
 
+class _TextPromptScreen(ModalScreen):
+    """One web address. Dismisses with the text, or None."""
+
+    DEFAULT_CSS = _CSS.format(name="_TextPromptScreen") + (
+        "_TextPromptScreen Static { height: auto; color: $error; }"
+    )
+
+    def __init__(self, title: str, placeholder: str = "") -> None:
+        super().__init__()
+        self._title = title
+        self._placeholder = placeholder
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(self._title),
+            Input("", id="tp-input", placeholder=self._placeholder),
+            Static("", id="tp-error", markup=False),
+            Horizontal(
+                Button("Add", id="tp-add", variant="primary"),
+                Button("Cancel", id="tp-cancel"),
+            ),
+        )
+
+    def on_input_submitted(self, event) -> None:
+        event.stop()
+        self._add()
+
+    def _add(self) -> None:
+        text = self.query_one("#tp-input", Input).value.strip()
+        if not re.match(r"https?://\S+$", text):
+            self.query_one("#tp-error", Static).update(
+                "Enter a web address starting with http:// or https://")
+            return
+        self.dismiss(text)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "tp-add":
+            self._add()
+        else:
+            self.dismiss(None)
+
+
+class PackPickScreen(ModalScreen):
+    """Checklist of knowledge packs. Dismisses with the chosen "pack:<name>" items."""
+
+    DEFAULT_CSS = _CSS.format(name="PackPickScreen") + (
+        "PackPickScreen VerticalScroll { height: auto; max-height: 20; }"
+        " PackPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
+    )
+
+    def __init__(self, chosen: list[str]) -> None:
+        super().__init__()
+        self._chosen = set(chosen)
+        self._names: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        from whyline.tools import knowledge
+
+        packs = knowledge.list_packs()
+        self._names = [pack.name for pack in packs]
+        boxes = [
+            Checkbox(
+                f"{pack.name} · {pack.description}" if pack.description else pack.name,
+                value=f"{knowledge.PACK_PREFIX}{pack.name}" in self._chosen,
+                id=f"pp-{i}",
+            )
+            for i, pack in enumerate(packs)
+        ]
+        yield Vertical(
+            Label("Add pack"),
+            VerticalScroll(*boxes) if boxes else Static("No packs yet. Make one in Tools.", id="pp-none"),
+            Horizontal(
+                Button("Done", id="pp-done", variant="primary"),
+                Button("Cancel", id="pp-cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        from whyline.tools import knowledge
+
+        event.stop()
+        if event.button.id != "pp-done":
+            self.dismiss(None)
+            return
+        self.dismiss([
+            f"{knowledge.PACK_PREFIX}{name}" for i, name in enumerate(self._names)
+            if self.query_one(f"#pp-{i}", Checkbox).value
+        ])
+
+
+class SkillPickScreen(ModalScreen):
+    """Checklist of skills with origin and description, and the total size against
+    the limit. Dismisses with the chosen "origin:name" refs, or None."""
+
+    DEFAULT_CSS = _CSS.format(name="SkillPickScreen") + (
+        "SkillPickScreen VerticalScroll { height: auto; max-height: 20; }"
+        " SkillPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
+        " SkillPickScreen #sp-size { height: auto; }"
+        " SkillPickScreen #sp-error { height: auto; color: $error; }"
+    )
+
+    def __init__(self, root, chosen: list[str]) -> None:
+        super().__init__()
+        self._root = Path(root)
+        self._chosen = set(chosen)
+        self._skills: list = []
+
+    def compose(self) -> ComposeResult:
+        from whyline.tools import skills
+
+        self._skills = skills.find(self._root)
+        boxes = []
+        for i, skill in enumerate(self._skills):
+            label = f"{skill.name} ({skill.origin})"
+            if skill.description:
+                label += f" · {skill.description}"
+            if skill.broken:
+                label += f" · broken: {skill.problem}"
+            boxes.append(Checkbox(
+                label, value=skill.ref in self._chosen and not skill.broken,
+                id=f"sk-{i}", disabled=skill.broken,
+            ))
+        initial = sum(s.size for s in self._skills if s.ref in self._chosen and not s.broken)
+        yield Vertical(
+            Label("Add skills"),
+            VerticalScroll(*boxes) if boxes else Static(
+                "No skills found. Make one in Tools.", id="sk-none"),
+            Static(self._size_text(initial), id="sp-size", markup=False),
+            Static("", id="sp-error", markup=False),
+            Horizontal(
+                Button("Done", id="sk-done", variant="primary"),
+                Button("Cancel", id="sk-cancel"),
+            ),
+        )
+
+    def _picked(self) -> list:
+        return [
+            skill for i, skill in enumerate(self._skills)
+            if self.query_one(f"#sk-{i}", Checkbox).value
+        ]
+
+    @staticmethod
+    def _size_text(total: int) -> str:
+        from whyline.tools import skills
+
+        return f"Total size {total} of {skills.AGENT_SKILLS_LIMIT} bytes"
+
+    def on_checkbox_changed(self, event) -> None:
+        event.stop()
+        self.query_one("#sp-size", Static).update(
+            self._size_text(sum(s.size for s in self._picked())))
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        from whyline.tools import skills
+
+        event.stop()
+        if event.button.id != "sk-done":
+            self.dismiss(None)
+            return
+        picked = self._picked()
+        if sum(s.size for s in picked) > skills.AGENT_SKILLS_LIMIT:
+            self.query_one("#sp-error", Static).update(
+                f"These skills are over the {skills.AGENT_SKILLS_LIMIT} byte limit. Untick one."
+            )
+            return
+        self.dismiss([s.ref for s in picked])
+
+
+_WRITE_WARNING = "This tool can change things without asking you."
+_PERMISSION_OPTIONS = [("Allowed", "allowed"), ("Ask first", "ask")]
+
+
+def default_permission(tool) -> str:
+    return "allowed" if tool.read_only else "ask"
+
+
+class ToolPickScreen(ModalScreen):
+    """The enabled, tested servers, each expandable to its tools with a checkbox and
+    a permission. Dismisses with {"<server>.<tool>": "allowed" | "ask"}, or None."""
+
+    DEFAULT_CSS = _CSS.format(name="ToolPickScreen") + (
+        "ToolPickScreen VerticalScroll { height: auto; max-height: 24; }"
+        " ToolPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
+        " ToolPickScreen HorizontalGroup { height: auto; }"
+        " ToolPickScreen .tp-warning { height: auto; color: $warning; }"
+    )
+
+    def __init__(self, chosen: dict[str, str]) -> None:
+        super().__init__()
+        self._chosen = dict(chosen)
+        self._keys: list[tuple[str, object]] = []  # index -> (key, Tool)
+
+    def compose(self) -> ComposeResult:
+        from whyline.tools import mcp_config
+
+        sections = []
+        for server in mcp_config.load().values():
+            if not server.enabled or not server.tools:
+                continue
+            rows = []
+            for tool in server.tools:
+                i = len(self._keys)
+                key = f"{server.name}.{tool.name}"
+                self._keys.append((key, tool))
+                permission = self._chosen.get(key, default_permission(tool))
+                warning = Static(
+                    _WRITE_WARNING, id=f"tl-w-{i}", classes="tp-warning", markup=False)
+                warning.display = permission == "allowed" and not tool.read_only
+                kind = "reads" if tool.read_only else "writes"
+                rows += [
+                    HorizontalGroup(
+                        Checkbox(f"{tool.name} · {kind}", value=key in self._chosen,
+                                 id=f"tl-c-{i}"),
+                        Select(_PERMISSION_OPTIONS, value=permission, allow_blank=False,
+                               id=f"tl-s-{i}"),
+                    ),
+                    warning,
+                ]
+            sections.append(Collapsible(*rows, title=server.name, collapsed=False))
+        body = VerticalScroll(*sections) if sections else Static(
+            "No tools yet. Enable and test a server in Tools.", id="tl-none")
+        yield Vertical(
+            Label("Add tools"),
+            body,
+            Horizontal(
+                Button("Done", id="tl-done", variant="primary"),
+                Button("Cancel", id="tl-cancel"),
+            ),
+        )
+
+    def on_select_changed(self, event: "Select.Changed") -> None:
+        select_id = event.select.id or ""
+        if not select_id.startswith("tl-s-"):
+            return
+        event.stop()
+        i = int(select_id.rsplit("-", 1)[1])
+        tool = self._keys[i][1]
+        self.query_one(f"#tl-w-{i}", Static).display = (
+            event.value == "allowed" and not tool.read_only
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id != "tl-done":
+            self.dismiss(None)
+            return
+        picked: dict[str, str] = {}
+        for i, (key, _tool) in enumerate(self._keys):
+            if self.query_one(f"#tl-c-{i}", Checkbox).value:
+                value = self.query_one(f"#tl-s-{i}", Select).value
+                picked[key] = value if value in ("allowed", "ask") else "ask"
+        self.dismiss(picked)
+
+
+def tools_summary(defn: d.AgentDef) -> str:
+    """One line: what the agent can read, what it can write and how, its skills
+    with origins, and its knowledge."""
+    parts: list[str] = []
+    if defn.tools:
+        from whyline.tools import mcp_config
+
+        servers = mcp_config.load()
+        reads: list[str] = []
+        writes: list[str] = []
+        for key, permission in sorted(defn.tools.items()):
+            server_name, _, tool_name = key.partition(".")
+            server = servers.get(server_name)
+            tool = next((t for t in server.tools if t.name == tool_name), None) if server else None
+            if tool is not None and tool.read_only:
+                reads.append(key)
+            else:
+                writes.append(f"{key} ({'ask first' if permission == 'ask' else 'allowed'})")
+        if reads:
+            parts.append("Can read: " + ", ".join(reads))
+        if writes:
+            parts.append("Can write: " + ", ".join(writes))
+    if defn.skills:
+        shown = [f"{ref.partition(':')[2]} ({ref.partition(':')[0]})" for ref in defn.skills]
+        parts.append("Skills: " + ", ".join(shown))
+    items = list(dict.fromkeys((*defn.knowledge, *defn.sources)))
+    packs = [i[len("pack:"):] for i in items if i.startswith("pack:")]
+    pages = [i for i in items if "://" in i]
+    local = [i for i in items if not i.startswith("pack:") and "://" not in i]
+    bits = []
+    if local:
+        bits.append(f"{len(local)} file{'' if len(local) == 1 else 's'} or folder"
+                    f"{'' if len(local) == 1 else 's'}")
+    if pages:
+        bits.append(f"{len(pages)} web page{'' if len(pages) == 1 else 's'}")
+    bits += [f'pack "{name}"' for name in packs]
+    if bits:
+        parts.append("Knowledge: " + ", ".join(bits))
+    return " · ".join(parts)
+
+
 class NewAgentScreen(ModalScreen):
     """Collects one agent. Dismisses with an AgentForm, "back", or None."""
 
@@ -940,7 +1237,9 @@ class NewAgentScreen(ModalScreen):
     NewAgentScreen #na-error { color: $error; height: auto; }
     NewAgentScreen #na-telegram { width: 1fr; }
     NewAgentScreen #na-test-result { height: auto; width: 1fr; }
-    NewAgentScreen #na-sources-list, NewAgentScreen #na-every-help {
+    NewAgentScreen #na-sources-list, NewAgentScreen #na-every-help,
+    NewAgentScreen #na-skills-list, NewAgentScreen #na-tools-list,
+    NewAgentScreen #na-left-out {
         height: auto; color: $text-muted;
     }
     NewAgentScreen #na-buttons { height: auto; margin-top: 1; }
@@ -972,7 +1271,11 @@ class NewAgentScreen(ModalScreen):
         # stays put. Callers that omit it keep the name read-only on an edit,
         # and editable when prefilling a new agent from a template.
         self._lock_name = self._is_edit if lock_name is None else lock_name
-        self._sources: list[str] = list(existing.sources) if existing else []
+        self._sources: list[str] = (
+            list(dict.fromkeys((*existing.knowledge, *existing.sources))) if existing else []
+        )
+        self._skills: list[str] = list(existing.skills) if existing else []
+        self._tools: dict[str, str] = dict(existing.tools) if existing else {}
         self._picking = False
 
     def _provider_enabled(self, cli: str) -> bool:
@@ -994,7 +1297,7 @@ class NewAgentScreen(ModalScreen):
             if capabilities.can_run(cli) and self._provider_usable(cli)
         ]
 
-    def _choice_clis(self) -> list[str]:
+    def _all_clis(self) -> list[str]:
         """Enabled usable CLIs, plus a saved disabled or unusable runner or backup."""
         names = list(self._runnable())
         existing = self._existing
@@ -1004,6 +1307,30 @@ class NewAgentScreen(ModalScreen):
             if cli and cli not in names:
                 names.append(cli)
         return names
+
+    def _left_out(self) -> dict[str, str]:
+        """Why each CLI can't run the chosen tools; empty with no tools."""
+        from whyline.agents import runner
+
+        names = self._all_clis()
+        if not self._tools or not names:
+            return {}
+        probe = SimpleNamespace(runner=names[0], backup=tuple(names[1:]), tools=self._tools)
+        return runner._tools_blockers(probe)
+
+    def _choice_clis(self) -> list[str]:
+        """The CLIs that can run this agent, tools included (runner.usable_clis)."""
+        names = self._all_clis()
+        if not self._tools or not names:
+            return names
+        from whyline.agents import runner
+
+        probe = SimpleNamespace(runner=names[0], backup=tuple(names[1:]), tools=self._tools)
+        return runner.usable_clis(probe)
+
+    def _left_out_text(self) -> str:
+        return "\n".join(
+            f"{cli} is left out: {why}" for cli, why in self._left_out().items())
 
     def _cli_label(self, cli: str) -> str:
         info = self._status.get(cli)
@@ -1040,18 +1367,20 @@ class NewAgentScreen(ModalScreen):
             runner = existing.runner
         else:
             runner = runnable[0] if runnable else None
+        if runner not in offered:
+            runner = offered[0] if offered else None
         backups = (
             {cli for cli in existing.backup if cli in offered}
             if existing else set()
         )
         boxes = []
-        for cli in offered:
+        for cli in self._all_clis():
             box = Checkbox(
                 self._cli_label(cli),
                 value=cli in backups and cli != runner,
                 id=f"na-backup-{cli}",
             )
-            box.display = cli != runner
+            box.display = cli != runner and cli in offered
             boxes.append(box)
         workdir = HorizontalGroup(
             Label("Runs in", classes="field-label"),
@@ -1127,16 +1456,31 @@ class NewAgentScreen(ModalScreen):
             ),
             Label("Backup CLIs"),
             *boxes,
+            Static(self._left_out_text(), id="na-left-out", markup=False),
             HorizontalGroup(
                 Label("Model", classes="field-label"),
                 Input(existing.model if existing else "", id="na-model", placeholder="optional"),
             ),
-            Label("Sources"),
+            Label("Knowledge"),
             HorizontalGroup(
-                Button("Add sources", id="na-add-sources"),
+                Button("Add files", id="na-add-sources"),
+                Button("Add web page", id="na-add-page"),
+                Button("Add pack", id="na-add-pack"),
                 Button("Clear", id="na-clear-sources"),
             ),
             Static(self._sources_text(), id="na-sources-list", markup=False),
+            Label("Skills"),
+            HorizontalGroup(
+                Button("Add skills…", id="na-add-skills"),
+                Button("Clear", id="na-clear-skills"),
+            ),
+            Static(self._skills_text(), id="na-skills-list", markup=False),
+            Label("Tools"),
+            HorizontalGroup(
+                Button("Add tools…", id="na-add-tools"),
+                Button("Clear", id="na-clear-tools"),
+            ),
+            Static(self._tools_text(), id="na-tools-list", markup=False),
             HorizontalGroup(
                 Label("When", classes="field-label"),
                 Select(_WHEN, value=when, allow_blank=False, id="na-when"),
@@ -1238,6 +1582,22 @@ class NewAgentScreen(ModalScreen):
         elif button_id == "na-clear-sources":
             self._sources.clear()
             self._refresh_sources()
+        elif button_id == "na-add-page":
+            self.app.push_screen(
+                _TextPromptScreen("Add web page", "https://example.com/page"), self._page_done)
+        elif button_id == "na-add-pack":
+            packs = [s for s in self._sources if s.startswith("pack:")]
+            self.app.push_screen(PackPickScreen(packs), self._packs_done)
+        elif button_id == "na-add-skills":
+            self.app.push_screen(SkillPickScreen(self._root, self._skills), self._skills_done)
+        elif button_id == "na-clear-skills":
+            self._skills.clear()
+            self._refresh_list("#na-skills-list", self._skills_text())
+        elif button_id == "na-add-tools":
+            self.app.push_screen(ToolPickScreen(self._tools), self._tools_done)
+        elif button_id == "na-clear-tools":
+            self._tools.clear()
+            self._tools_changed()
         elif button_id == "na-pick-folder":
             self._pick("folder")
 
@@ -1263,12 +1623,13 @@ class NewAgentScreen(ModalScreen):
             runner = self._choice("#na-runner")
         except NoMatches:
             return
-        for cli in self._choice_clis():
+        offered = self._choice_clis()
+        for cli in self._all_clis():
             try:
                 box = self.query_one(f"#na-backup-{cli}", Checkbox)
             except NoMatches:
                 return
-            show = cli != runner
+            show = cli != runner and cli in offered
             box.display = show
             if not show:
                 box.value = False
@@ -1276,11 +1637,63 @@ class NewAgentScreen(ModalScreen):
     def _sources_text(self) -> str:
         return "\n".join(self._sources) if self._sources else "(none)"
 
-    def _refresh_sources(self) -> None:
+    def _skills_text(self) -> str:
+        return "\n".join(self._skills) if self._skills else "(none)"
+
+    def _tools_text(self) -> str:
+        if not self._tools:
+            return "(none)"
+        words = {"allowed": "allowed", "ask": "ask first"}
+        return "\n".join(f"{key} · {words.get(p, p)}" for key, p in sorted(self._tools.items()))
+
+    def _refresh_list(self, widget_id: str, text: str) -> None:
         try:
-            self.query_one("#na-sources-list", Static).update(self._sources_text())
+            self.query_one(widget_id, Static).update(text)
         except NoMatches:
             return
+
+    def _refresh_sources(self) -> None:
+        self._refresh_list("#na-sources-list", self._sources_text())
+
+    def _page_done(self, url) -> None:
+        if isinstance(url, str) and url not in self._sources:
+            self._sources.append(url)
+            self._refresh_sources()
+
+    def _packs_done(self, packs) -> None:
+        if not isinstance(packs, list):
+            return
+        self._sources[:] = [s for s in self._sources if not s.startswith("pack:")] + packs
+        self._refresh_sources()
+
+    def _skills_done(self, refs) -> None:
+        if not isinstance(refs, list):
+            return
+        self._skills[:] = refs
+        self._refresh_list("#na-skills-list", self._skills_text())
+
+    def _tools_done(self, picked) -> None:
+        if not isinstance(picked, dict):
+            return
+        self._tools = dict(picked)
+        self._tools_changed()
+
+    def _tools_changed(self) -> None:
+        """Tools narrow the CLIs that can run the agent: redo both lists."""
+        self._refresh_list("#na-tools-list", self._tools_text())
+        try:
+            select = self.query_one("#na-runner", Select)
+        except NoMatches:
+            return
+        offered = self._choice_clis()
+        current = select.value
+        select.set_options([(self._cli_label(cli), cli) for cli in offered])
+        if current in offered:
+            select.value = current
+        elif offered:
+            select.value = offered[0]
+        self._refresh_list("#na-left-out", self._left_out_text())
+        self._sync_backups()
 
     def _show_error(self, message: str) -> None:
         try:
@@ -1378,7 +1791,9 @@ class NewAgentScreen(ModalScreen):
         model = self.query_one("#na-model", Input).value.strip()
         if model:
             lines.append(f"model = {_q(model)}")
-        lines.append("sources = [" + ", ".join(_q(source) for source in self._sources) + "]")
+        lines.append("knowledge = [" + ", ".join(_q(source) for source in self._sources) + "]")
+        if self._skills:
+            lines.append("skills = [" + ", ".join(_q(ref) for ref in self._skills) + "]")
         if kind == "personal":
             workdir = self.query_one("#na-workdir", Input).value.strip() or "~"
             lines.append(f"workdir = {_q(workdir)}")
@@ -1399,6 +1814,9 @@ class NewAgentScreen(ModalScreen):
             lines.append(f"folder = {_q(folder)}")
         gap = self._existing.trigger.min_gap_minutes if self._existing else 10
         lines.append(f"min_gap_minutes = {gap}")
+        if self._tools:
+            lines += ["", "[tools]"]
+            lines += [f"{_q(key)} = {_q(value)}" for key, value in sorted(self._tools.items())]
         # Edit writes back to the file that was opened. A new agent, or an
         # edit that changed kind, uses <name>.toml in that kind's directory.
         same = (
@@ -1523,6 +1941,9 @@ class ReviewScreen(ModalScreen):
         text = self._text
         if self._defn.trigger.kind != "manual" and not self._scheduler_on:
             text = text.rstrip() + "\nTurn the scheduler on to run it automatically."
+        summary = tools_summary(self._defn)
+        if summary:
+            text = text.rstrip() + "\n" + summary
         return text
 
     def compose(self) -> ComposeResult:
