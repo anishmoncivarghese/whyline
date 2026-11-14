@@ -65,7 +65,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. CLI: `whyline tools mcp list|add|remove|import`. `add` takes `--command`, repeated `--arg` and repeated `--env VAR=<credential>`. `import` lists the candidates and adds those named.
   Tests: save and load round-trip and 0600, a remote entry refused with the message, import from each of the three fixture configs with a literal env value not copied, and remove refused while used.
 
-- [ ] TLS-4: The MCP client, and Test
+- [x] TLS-4: The MCP client, and Test
   This is WF-28 moved to `whyline.tools`. Create `src/whyline/tools/mcp.py`, `tests/tools/test_mcp_client.py` and `tests/tools/fixtures/fake_mcp_server.py`. Edit `src/whyline/tools/mcp_config.py` and `src/whyline/tools/cli.py` and their tests.
   1. `mcp.Session(server, *, timeout_s=60, popen=subprocess.Popen)` is a context manager. It starts the server with `start_new_session=True` and the environment from the rules, sends `initialize` (protocol version `2025-06-18`, client name `whyline`), waits for the result, then sends `notifications/initialized`.
   2. `list_tools() -> list[Tool(name, description, input_schema, read_only: bool | None)]`, following `nextCursor`. `read_only` comes from `annotations.readOnlyHint`, or None when absent. `call(tool, arguments) -> ToolResult(text, is_error, structured, content)`: `text` joins the `text` content items, other content types are noted as `[image]` or `[resource <uri>]`, `structured` is `structuredContent` when present, and `content` is the raw content list (TLS-9 forwards it).
