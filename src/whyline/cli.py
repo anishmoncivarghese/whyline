@@ -489,6 +489,11 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     new.add_argument("--name", default=None, metavar="N")
     new.add_argument("--workdir", default=None, metavar="DIR")
     sub.add_parser("tick", help="Run due agents (called by the scheduler)")
+    sub.add_parser("approvals", help="Tool calls waiting for your yes or no")
+    for word in ("approve", "deny"):
+        answer = sub.add_parser(word, help=f"{word.capitalize()} a waiting tool call")
+        answer.add_argument("run")
+        answer.add_argument("n", type=int)
     run = sub.add_parser("run", help="Run an agent now")
     run.add_argument("name", nargs="?")
     run.add_argument("--occurrence", type=int)
@@ -1890,6 +1895,28 @@ def cmd_security(args: argparse.Namespace) -> int:
     return run(args)
 
 
+def _cmd_agents_approvals(args: argparse.Namespace) -> int:
+    from whyline.tools import approvals
+
+    if args.agents_command == "approvals":
+        found = approvals.pending()
+        if not found:
+            print("No calls are waiting for you.")
+            return EXIT_OK
+        for p in found:
+            print(f"{p.run_id} {p.n}  {p.tool}  {p.arguments[:120]}")
+            print(f"  whyline agents approve {p.run_id} {p.n}   |   whyline agents deny {p.run_id} {p.n}")
+        return EXIT_OK
+    approve = args.agents_command == "approve"
+    try:
+        approvals.answer(args.run, args.n, approve)
+    except approvals.ApprovalError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"{'Approved' if approve else 'Denied'} call {args.n} of run {args.run}.")
+    return EXIT_OK
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1899,6 +1926,8 @@ def cmd_agents(args: argparse.Namespace) -> int:
         return _cmd_agents_mail_script(args)
     if args.agents_command == "telegram":
         return _cmd_agents_telegram(args)
+    if args.agents_command in ("approvals", "approve", "deny"):
+        return _cmd_agents_approvals(args)
     root = _repo_root_or_none()
     try:
         if args.agents_command == "list":

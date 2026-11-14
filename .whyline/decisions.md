@@ -43809,3 +43809,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bc37ba8dd31343de9fc8f8586274a189 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:05:42.665Z"} -->
+
+## 2026-11-14 — Ask first approvals are files under <run>/approvals/<n>.json, polled each second
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-10
+
+**Because:** the MCP server and the CLI/console are separate processes, so a file is the simplest shared state and survives either restarting
+
+**Rejected:**
+
+- a socket or sqlite row — needs a running listener or schema for a 10-minute wait
+
+**Files:** src/whyline/tools/approvals.py
+
+<!-- whyline-event: 3fb396194bcc464bbd2134daf524ddf5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:06:49.225Z"} -->
+
+## 2026-11-14 — Verify Ask first approvals request, pending, answer, serve integration, and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-10
+
+**Because:** All TLS-10 requirements pass: file-based approval requests with timeout, pending queries across runs, atomic answer updates, serve error handling for denied/timed-out calls, and CLI commands for approvals/approve/deny verified by tests
+
+**Files:** src/whyline/tools/approvals.py
+
+<!-- whyline-event: 5dc7c19bb4e042e28f9c5eeac2ae162c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:27:06.619Z"} -->
+
+## 2026-11-14 — Approve TLS-10 Ask first approvals: file requests, polling timeout, pending query, atomic answer, serve integration, and CLI
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-10
+
+**Because:** All task requirements verified: file-backed approval requests with polling and timeout, pending queries across runs, atomic answer updates, serve error handling for denied/timed-out calls, and CLI commands for approvals/approve/deny; 57 unit tests pass
+
+**Files:** src/whyline/tools/approvals.py
+
+<!-- whyline-event: a20b72670b7d49d0bc9a02fbe9c3416f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:48:36.285Z"} -->

@@ -26,19 +26,9 @@ DENIED_TEXT = "The user denied this call."
 TIMED_OUT_TEXT = "Not approved in time."
 
 
-def _ask_first(run_folder: Path, tool: str, arguments: dict) -> str:
-    """TLS-10's approvals. Without them an Ask first call is denied."""
-    try:
-        from whyline.tools import approvals
-    except ImportError:
-        return "denied"
-    decision = approvals.request(run_folder, tool, arguments)
-    return str(getattr(decision, "status", decision))
-
-
 class Server:
     def __init__(self, tools_file: Path | None, *, servers=None, session_factory=None,
-                 redaction_values=credentials.redaction_values, ask=_ask_first,
+                 redaction_values=credentials.redaction_values, ask=None,
                  clock=time.monotonic):
         self.folder = tools_file.parent if tools_file else None
         self.run_id = ""
@@ -47,7 +37,7 @@ class Server:
         self._servers = servers
         self._session_factory = session_factory or (lambda server: mcp.Session(server))
         self._redaction_values = redaction_values
-        self._ask = ask
+        self._ask = ask or self._ask_first
         self._clock = clock
         self._sessions: dict[str, mcp.Session] = {}
         if tools_file is not None:
@@ -126,6 +116,13 @@ class Server:
             session.__enter__()
             self._sessions[server_name] = session
         return session
+
+    def _ask_first(self, run_folder: Path, tool: str, arguments: dict) -> str:
+        if run_folder is None:
+            return "denied"
+        from whyline.tools import approvals
+
+        return approvals.request(run_folder, tool, arguments, redact=self._redact).status
 
     @staticmethod
     def _text_result(text: str) -> dict:
