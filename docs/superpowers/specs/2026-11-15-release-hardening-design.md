@@ -18,7 +18,7 @@ Status: draft for review, 2026-11-15. Builds on Release (`whyline.release`, REL,
 5. **The pipeline trusts moving targets.** Actions are pinned by tag, test jobs have the default token permissions, nothing updates the actions, and the published files carry no proof of where they were built.
 6. **Small gaps:** only tests gate a release (no lint or type check), dependency licences are not checked, and there is no `SECURITY.md` or `CHANGELOG.md`.
 
-## Part 1: Release notes that are checked (plan `release-notes-review`)
+## Part 1: Release notes that are checked (Part 2 of plan `quick-fixes`)
 
 - **A fixed check first, no model.** `notes.lint(text, commits) -> list[Problem]` flags a line that:
   - talks about the notes or to the reader of a chat: "here are", "I have", "I've", "let me know", "please review", "as requested", "hope this helps", "below are", a question, a sign-off

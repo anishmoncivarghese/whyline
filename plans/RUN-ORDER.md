@@ -4,13 +4,12 @@ Set on 2026-11-15. Run one plan at a time, top to bottom. Press **Release** at t
 
 Finished plans are in `plans/done/`.
 
+`quick-fixes.plan.md` joins four small plans (console-restart, release-notes-review, relay-live-models, assistant-scheduled-access) so they run in one relay and ship in one release. Their task ids are unchanged.
+
 | # | Group | Plan | Tasks | Needs |
 |---|---|---|---|---|
 | 0 | Running | `agent-tools.plan.md` | TLS-1..16 | |
-| 1 | Quick fixes | `console-restart.plan.md` | CRS-1..4 | |
-| 1 | | `release-notes-review.plan.md` | NOTE-1..6 | |
-| 1 | | `relay-live-models.plan.md` | LMD-1..2 | whyline-relay 0.2.43 (on PyPI) |
-| 1 | | `assistant-scheduled-access.plan.md` | ASST-24..27 | |
+| 1 | Quick fixes | `quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27 (16) | whyline-relay 0.2.43 (on PyPI) |
 | 2 | Telegram daily use | `waiting-on-you.plan.md` | WAIT-1..7 | |
 | 2 | | `assistant-feedback.plan.md` | FB-1..7 | |
 | 2 | | `assistant-router.plan.md` | RT-1..7 | assistant-feedback |
@@ -20,7 +19,7 @@ Finished plans are in `plans/done/`.
 | 3 | | `sdlc-evidence.plan.md` | EVD-1..5 | sdlc-product-owner |
 | 3 | | `sdlc-done.plan.md` | DONE-1..6 | sdlc-evidence |
 | 3b | Release hardening | `security-earlier.plan.md` | SEA-1..6 | |
-| 3b | | `release-safety.plan.md` | SAF-1..6 | release-notes-review (the record's notes line) |
+| 3b | | `release-safety.plan.md` | SAF-1..6 | quick-fixes (NOTE-4, the record's notes line) |
 | 3b | | `release-supply-chain.plan.md` | SUP-1..6 | |
 | 4 | Agents | `agent-profile.plan.md` | PRF-1..5 | agent-tools released |
 | 4 | | `agent-draft.plan.md` | DRF-1..6 | agent-profile |

@@ -446,4 +446,4 @@ Rules every task keeps:
   `docs/assistant.md` covers every verb with an example, the approval rules, the email provider check and Mail rule steps, memory, reminders, the morning brief, and the limits: Mac asleep, Telegram's 24-hour retention, provider terms, personal data sent to the provider and Telegram, and no sending to other people or calendar edits. Console steps come first and the CLI comes second.
   Run `git diff --check` and `uv run pytest -q`. If a failure needs an application-code change outside this task's files, leave the task unapproved with the exact failing test and request a new task.
 
-ASST-24..27 (scheduled access) moved on 2026-11-15 to `plans/assistant-scheduled-access.plan.md`.
+ASST-24..27 (scheduled access) moved on 2026-11-15, now Part 4 of `plans/quick-fixes.plan.md`.
