@@ -43633,3 +43633,85 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6d5d34117ef3488885338a2cdc2efd06 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T09:13:44.422Z"} -->
+
+## 2026-11-14 — Agent definition: knowledge replaces sources on save; definition_hash folds in tools_hash of used servers
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-7
+
+**Because:** state._hash and records both call definition_hash(text), so adding the server hashes there makes changed tools need review without touching state.py; hash is unchanged for agents with no tools
+
+**Rejected:**
+
+- hash in state.py — outside the task's file list
+- keep writing sources — spec says save writes knowledge only
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 2f4b370158c04687b61d0b76a26f6d73 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T09:44:56.634Z"} -->
+
+## 2026-11-14 — Fail TLS-7: skills removal guard fails because agent registers bare name instead of full skill ref
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-7
+
+**Because:** In definitions.py uses(), skills are registered as Use('skill', ref.partition(':')[2], who) instead of ref ('whyline:notes'). skills.remove(ref) queries users.of('skill', ref), so skills in active use by agents are deleted without error. test_definitions_tools.py also asserted users.of('skill', 'notes') instead of 'whyline:notes' and did not test skills.remove refusal.
+
+**Rejected:**
+
+- Pass TLS-7 — active skills would be silently deleted by skills.remove() while used by agents
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions_tools.py
+
+<!-- whyline-event: bd1c89d4ddc84c61998d919b869b20c5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T09:50:52.347Z"} -->
+
+## 2026-11-14 — Register skill users under the full origin:name ref
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-7
+
+**Because:** skills.remove(ref) queries users.of('skill', ref), so the bare name let in-use skills be deleted
+
+**Rejected:**
+
+- make skills.remove strip the origin — outside the task's file list and would conflate origins
+
+**Files:** src/whyline/agents/definitions.py, tests/agents/test_definitions_tools.py
+
+<!-- whyline-event: 269178b843f2448dbc90e8d19d6bbd49 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T09:51:31.060Z"} -->
+
+## 2026-11-14 — Pass TLS-7: agent definition skills, knowledge, tools, review hash, and users provider behave correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-7
+
+**Because:** All task requirements verified: AgentDef has skills/knowledge/tools with sources loading into knowledge and saving to knowledge only; validation marks unknown/broken items and size limits broken; definition_hash folds server tools_hash into agent hash triggering needs_review; users.register maps agent skills (full ref), packs, servers, and credentials; 300 agent tests and all 12 TLS-7 tests pass. test_new_agent.py expecting legacy sources is deferred to console task TLS-14.
+
+**Rejected:**
+
+- Fail for test_new_agent.py assertion — test_new_agent checks legacy sources string in saved TOML, but TLS-7 explicitly specifies saving writes knowledge never sources; New agent screen and its tests are updated in TLS-14 per plan
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 58ccdc9ea96c481a8d5ee48a84c94492 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T10:16:01.170Z"} -->
+
+## 2026-11-14 — Approve TLS-7: agent definition skills, knowledge, tools, review hash, and users provider fully verified
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-7
+
+**Because:** All task requirements are met: AgentDef includes skills, knowledge, and tools; legacy sources loads into knowledge and save writes knowledge only; definition validation checks broken/unknown skills, packs, servers, tools, permissions, and size limits; definition_hash folds in server tools_hash triggering needs_review; users.register registers agent dependencies with full skill refs; all 300 agent tests and all 12 TLS-7 tests pass, and legacy test_new_agent assertion is deferred to TLS-14 per plan.
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 5ff0c89c8f6548ab884a4ca50b987d9c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T10:36:26.514Z"} -->

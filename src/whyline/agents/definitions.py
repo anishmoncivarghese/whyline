@@ -15,6 +15,7 @@ from whyline.agents import before as before_steps, paths
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 CLIS = ("claude", "codex", "grok", "antigravity")
 TRIGGER_KINDS = ("manual", "daily", "weekdays", "every", "folder")
+TOOL_PERMISSIONS = ("allowed", "ask")
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -41,7 +42,11 @@ class AgentDef:
     runner: str
     backup: tuple[str, ...] = ()
     model: str = ""
-    sources: tuple[str, ...] = ()
+    # Old files only; loaded into knowledge too, so it is not part of equality.
+    sources: tuple[str, ...] = field(default=(), compare=False)
+    skills: tuple[str, ...] = ()  # "origin:name"
+    knowledge: tuple[str, ...] = ()  # paths, URLs and "pack:<name>"
+    tools: dict[str, str] = field(default_factory=dict)  # "<server>.<tool>" -> allowed | ask
     workdir: str = ""
     report_folder: str = ""
     timeout_minutes: int = 15
@@ -148,19 +153,71 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
     if before not in before_steps.names():
         allowed = ", ".join(f'"{n}"' for n in before_steps.names())
         raise DefinitionError(f"before must be one of {allowed}")
+    sources = _strs(raw, "sources")
+    knowledge = tuple(dict.fromkeys((*_strs(raw, "knowledge"), *sources)))
     defn = AgentDef(
         name=name, kind=kind, path=path, root=root, instructions=instructions,
-        runner=runner, backup=backup, model=_str(raw, "model"), sources=_strs(raw, "sources"),
+        runner=runner, backup=backup, model=_str(raw, "model"), sources=sources,
+        skills=_strs(raw, "skills"), knowledge=knowledge, tools=_tools(raw.get("tools", {})),
         workdir=workdir, report_folder=_str(raw, "report_folder"),
         timeout_minutes=timeout, before=before, trigger=_trigger(raw.get("trigger", {})),
     )
     resolve_sources(defn)  # validates repo containment
+    _check_tools(defn)
     return defn
 
 
+def _tools(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict) or not all(isinstance(v, str) for v in raw.values()):
+        raise DefinitionError("tools must be a table of allowed or ask")
+    return dict(raw)
+
+
+def _check_tools(defn: AgentDef) -> None:
+    from whyline.tools import knowledge, mcp_config, skills
+
+    repo = defn.root if defn.kind == "repo" else None
+    total = 0
+    for ref in defn.skills:
+        try:
+            skill = skills.get(ref, repo)
+        except ValueError as error:
+            raise DefinitionError(str(error)) from error
+        except KeyError:
+            raise DefinitionError(f"unknown skill {ref}") from None
+        if skill.broken:
+            raise DefinitionError(f"skill {ref} is broken: {skill.problem}")
+        total += skill.size
+    if total > skills.AGENT_SKILLS_LIMIT:
+        raise DefinitionError(
+            f"skills are {total} bytes; an agent may have at most {skills.AGENT_SKILLS_LIMIT}")
+    for item in defn.knowledge:
+        if item.startswith(knowledge.PACK_PREFIX):
+            pack = item[len(knowledge.PACK_PREFIX):]
+            try:
+                knowledge.get_pack(pack)
+            except KeyError:
+                raise DefinitionError(f"unknown knowledge pack {pack}") from None
+    if not defn.tools:
+        return
+    servers = mcp_config.load()
+    for key, permission in defn.tools.items():
+        server_name, _, tool_name = key.partition(".")
+        server = servers.get(server_name)
+        if server is None:
+            raise DefinitionError(f"unknown server {server_name} in tool {key}")
+        if tool_name not in {t.name for t in server.tools}:
+            raise DefinitionError(f"unknown tool {tool_name} on server {server_name}")
+        if permission not in TOOL_PERMISSIONS:
+            raise DefinitionError(
+                f"tool {key} must be {' or '.join(TOOL_PERMISSIONS)}, not {permission!r}")
+
+
 def resolve_sources(defn: AgentDef) -> list[Path]:
+    # Old files list sources; new ones list the same things under knowledge.
+    plain = [k for k in defn.knowledge if not k.startswith("pack:") and "://" not in k]
     resolved = []
-    for source in defn.sources:
+    for source in dict.fromkeys((*defn.sources, *plain)):
         path = _expand(source, defn.root)
         if defn.kind == "repo":
             real = path.resolve()
@@ -184,7 +241,11 @@ def render(defn: AgentDef) -> str:
     lines.append("backup = [" + ", ".join(_q(b) for b in defn.backup) + "]")
     if defn.model:
         lines.append(f"model = {_q(defn.model)}")
-    lines.append("sources = [" + ", ".join(_q(s) for s in defn.sources) + "]")
+    # knowledge already holds what an old file called sources
+    knowledge = dict.fromkeys((*defn.knowledge, *defn.sources))
+    lines.append("knowledge = [" + ", ".join(_q(k) for k in knowledge) + "]")
+    if defn.skills:
+        lines.append("skills = [" + ", ".join(_q(s) for s in defn.skills) + "]")
     if defn.workdir:
         lines.append(f"workdir = {_q(defn.workdir)}")
     if defn.report_folder:
@@ -192,6 +253,8 @@ def render(defn: AgentDef) -> str:
     lines.append(f"timeout_minutes = {defn.timeout_minutes}")
     if defn.before:
         lines.append(f"before = {_q(defn.before)}")
+    if defn.tools:
+        lines += ["", "[tools]"] + [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.tools.items())]
     t = defn.trigger
     lines += ["", "[trigger]", f"kind = {_q(t.kind)}"]
     if t.at:
@@ -211,8 +274,50 @@ def save(defn: AgentDef) -> Path:
 
 
 def definition_hash(text: str) -> str:
-    canonical = json.dumps(tomllib.loads(text), sort_keys=True, ensure_ascii=False)
+    raw = tomllib.loads(text)
+    tools = raw.get("tools")
+    if isinstance(tools, dict) and tools:
+        # A server whose tools changed is a different agent until accepted again.
+        from whyline.tools import mcp_config
+
+        servers = mcp_config.load()
+        used = sorted({key.partition(".")[0] for key in tools})
+        raw = {**raw, "_tools_hash": {
+            name: servers[name].tools_hash if name in servers else "" for name in used}}
+    canonical = json.dumps(raw, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def uses(repo_root: Path | None = None) -> list:
+    """What each agent uses, for the removal guard."""
+    from whyline.tools import mcp_config, users
+
+    servers = mcp_config.load()
+    found = []
+    for item in discover(repo_root):
+        if isinstance(item, Broken):
+            continue
+        who = f"agent {item.name}"
+        for ref in item.skills:
+            found.append(users.Use("skill", ref, who))
+        for entry in item.knowledge:
+            if entry.startswith("pack:"):
+                found.append(users.Use("pack", entry[len("pack:"):], who))
+        for server_name in sorted({key.partition(".")[0] for key in item.tools}):
+            found.append(users.Use("server", server_name, who))
+            server = servers.get(server_name)
+            for credential in sorted(server.env.values()) if server else ():
+                found.append(users.Use("credential", credential, who))
+    return found
+
+
+def register_users() -> None:
+    from whyline.tools import users
+
+    users.register("agents", lambda: uses(Path.cwd()))
+
+
+register_users()
 
 
 def _scan(folder: Path, kind: str, repo_root: Path | None) -> list[AgentDef | Broken]:
