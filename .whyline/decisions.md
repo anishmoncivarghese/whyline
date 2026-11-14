@@ -43397,3 +43397,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6960b687095f4c1782714aa2ce8efdeb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T05:47:53.006Z"} -->
+
+## 2026-11-14 — --header sets the header name for kind header and the parameter name for kind query
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-2
+
+**Because:** the task names only --origin and --header for HTTP kinds; one flag avoids a second option for query credentials
+
+**Rejected:**
+
+- separate --param flag — not in the task spec
+
+**Files:** src/whyline/credentials_cli.py
+
+<!-- whyline-event: 8d0088288f0243f69a9519c811262f79 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T05:49:18.725Z"} -->
+
+## 2026-11-14 — Pass whyline cred CLI and users registry: all subcommands, secret entry via getpass only, removal guarded by users.of
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-2
+
+**Because:** Full test suite (uv run pytest -q) passed; all subcommands verified with fake store/getpass, no secret arguments in CLI or help, and removal correctly refused when users.of is non-empty
+
+**Files:** src/whyline/credentials_cli.py, src/whyline/tools/users.py, src/whyline/cli.py, tests/test_credentials_cli.py
+
+<!-- whyline-event: b314936be0ce49ec9ea2e876be29a1d8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T06:08:46.233Z"} -->
+
+## 2026-11-14 — Approve TLS-2 whyline cred CLI and users registry
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-2
+
+**Because:** whyline cred subcommands correctly manage credentials without secret exposure in argv or help, removal is prevented when in use via users.of, and the full test suite (uv run pytest -q) passed
+
+**Rejected:**
+
+- Request changes — no defects found and all task requirements and test coverage criteria are met
+
+**Files:** src/whyline/cli.py, src/whyline/credentials_cli.py, src/whyline/tools/__init__.py, src/whyline/tools/users.py, tests/test_credentials_cli.py
+
+<!-- whyline-event: d4d37035386543dbaa3e88fb0aba85a5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T06:28:29.843Z"} -->
