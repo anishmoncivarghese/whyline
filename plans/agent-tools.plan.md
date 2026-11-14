@@ -158,7 +158,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   2. Knowledge: packs with their items. **New pack**, **Add files**, **Add web page**, **Remove**.
   Tests: origins shown, Claude skills offering only Copy, new and copy, a pack edited, and refused removals.
 
-- [ ] TLS-14: Knowledge, Skills and Tools in New agent
+- [x] TLS-14: Knowledge, Skills and Tools in New agent
   Edit `src/whyline/console/agents_screens.py` and its tests only.
   1. **Sources** becomes **Knowledge**: **Add files** (as today), **Add web page**, **Add pack**, and the list.
   2. **Skills**: **Add skills…** opens a checklist from `skills.find(root)` with origin and description, and the total size against the limit.
