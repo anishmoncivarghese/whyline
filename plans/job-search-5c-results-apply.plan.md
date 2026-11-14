@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-01T12:00:00+05:30 -->
 # Job search, part 5: saved searches, a setup check, run results with tailored CVs, and an apply pack — c: run results, the apply pack and docs
 
-Runs after `plans/job-search-5b-saved-searches.plan.md`, and before `plans/self-improvement-1-checks.plan.md`. Split on 2026-11-15 from `job-search-5.plan.md` (27 tasks) into three plans, so each relay is short and ends with a release. This file builds: Parts 5 to 8 (JRUN-1..5, PACK-1..2, ASF-1, JSD-1). Press Release when it finishes.
+Runs after `plans/job-search-5b-saved-searches.plan.md`, and before `plans/job-search-5d-after-apply.plan.md`. Split on 2026-11-15 from `job-search-5.plan.md` (27 tasks) into three plans, so each relay is short and ends with a release. This file builds: Parts 5 to 8 (JRUN-1..5, PACK-1..2, ASF-1, JSD-1). Press Release when it finishes.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules. Read the intro of the part a task is in before starting it.
 
