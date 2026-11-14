@@ -43586,3 +43586,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 19d1c9afd6b94c749a0b5ed122bd0413 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T08:50:30.038Z"} -->
+
+## 2026-11-14 — Knowledge CLI lives under whyline tools knowledge, not top-level
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-6
+
+**Because:** top-level wiring is in src/whyline/cli.py, outside this task's file list; same as skills in TLS-5
+
+**Rejected:**
+
+- top-level knowledge parser — needs edits outside listed files
+
+**Files:** src/whyline/tools/cli.py
+
+<!-- whyline-event: a60bfd44dc774988a63e7c8e3a3f4c74 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T08:51:41.035Z"} -->
+
+## 2026-11-14 — Pass TLS-6 knowledge packs, resolution, web fetching, and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-6
+
+**Because:** All task requirements verified: pack storage in ~/.whyline/knowledge/<name>.toml with CRUD operations and removal guard, resolution expanding pack:<name>, ~ and relative paths while keeping URLs, fetch_pages saving text with HTML parser stripping, 2 MB size and 30 s timeouts, failed page recording, and CLI commands under whyline tools knowledge; full test suite (4885 passed) and tests/tools (36 passed) all pass
+
+**Files:** src/whyline/tools/knowledge.py, src/whyline/tools/cli.py, tests/tools/test_knowledge.py
+
+<!-- whyline-event: 264e5cb013894624ac98ad2531086f61 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T09:11:35.265Z"} -->
+
+## 2026-11-14 — Approve TLS-6 knowledge packs, resolution, web fetching, and CLI
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-6
+
+**Because:** All task requirements verified: pack storage in ~/.whyline/knowledge/<name>.toml with CRUD and removal guard, resolve expansion (~, relative, pack:), fetch_pages HTML stripping, size/timeout limits, failed page recording, and CLI commands under whyline tools knowledge; test coverage is complete and all tests pass (4885 passed)
+
+**Rejected:**
+
+- Request changes — implementation meets all specifications, handles edge cases cleanly, and full test suite passes
+
+**Files:** src/whyline/tools/knowledge.py, src/whyline/tools/cli.py, tests/tools/test_knowledge.py
+
+<!-- whyline-event: 6d5d34117ef3488885338a2cdc2efd06 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T09:13:44.422Z"} -->

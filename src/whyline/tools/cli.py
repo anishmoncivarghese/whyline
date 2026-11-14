@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from whyline.tools import mcp_config, skills
+from whyline.tools import knowledge, mcp_config, skills
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -34,6 +34,50 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     test = sub.add_parser("test", help="Start a server, list its tools and store them")
     test.add_argument("name")
     _add_skills_parser(tools_sub)
+    _add_knowledge_parser(tools_sub)
+
+
+def _add_knowledge_parser(tools_sub: "argparse._SubParsersAction") -> None:
+    parser = tools_sub.add_parser("knowledge", help="Knowledge packs: files and web pages for agents")
+    sub = parser.add_subparsers(dest="knowledge_command", required=True)
+    sub.add_parser("list", help="Packs")
+    show = sub.add_parser("show", help="Show a pack and what its items resolve to")
+    show.add_argument("name")
+    add = sub.add_parser("add", help="Create or replace a pack")
+    add.add_argument("name")
+    add.add_argument("--description", default="")
+    add.add_argument("--item", action="append", default=[], dest="items", metavar="ITEM",
+                     help="path, http(s) URL or pack:<name> (repeatable)")
+    remove = sub.add_parser("remove", help="Delete a pack nothing uses")
+    remove.add_argument("name")
+
+
+def _knowledge(args: argparse.Namespace) -> int:
+    command = args.knowledge_command
+    try:
+        if command == "list":
+            packs = knowledge.list_packs()
+            if not packs:
+                print("No knowledge packs.")
+            for p in packs:
+                print(f"{p.name}  {len(p.items)} items  {p.description}")
+        elif command == "show":
+            pack = knowledge.get_pack(args.name)
+            print(f"{pack.name}  {pack.description}")
+            for item in knowledge.resolve(pack.items, Path.cwd()):
+                print(f"  {'url' if item.is_url else 'path'}  {item.value}")
+        elif command == "add":
+            knowledge.save_pack(knowledge.Pack(args.name, args.description, tuple(args.items)))
+            print(f"Saved knowledge pack {args.name}.")
+        else:
+            knowledge.remove_pack(args.name)
+            print(f"Removed knowledge pack {args.name}.")
+        return EXIT_OK
+    except KeyError:
+        print(f"No knowledge pack named {args.name}.", file=sys.stderr)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+    return EXIT_ERROR
 
 
 def _add_skills_parser(tools_sub: "argparse._SubParsersAction") -> None:
@@ -198,6 +242,8 @@ def _import(args: argparse.Namespace) -> int:
 def run(args: argparse.Namespace) -> int:
     if args.tools_command == "skills":
         return _skills(args)
+    if args.tools_command == "knowledge":
+        return _knowledge(args)
     if args.tools_command != "mcp":
         return EXIT_USAGE
     command = args.mcp_command
