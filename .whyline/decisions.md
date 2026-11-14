@@ -43715,3 +43715,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5ff0c89c8f6548ab884a4ca50b987d9c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T10:36:26.514Z"} -->
+
+## 2026-11-14 — prepare_run resolves knowledge packs itself and merges pack paths into sources; build_prompt takes optional extras
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-8
+
+**Because:** build_prompt keeps its 3-arg callers (jobs tests) working, and resolve_sources skips pack: entries so pack paths would be lost
+
+**Rejected:**
+
+- change resolve_sources to expand packs — outside the runner.py-only scope
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 15300d8b79b844238c55199261e3cc27 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T10:38:21.707Z"} -->
+
+## 2026-11-14 — Pass TLS-8: skills and knowledge in runner prepare_run, prompt building, and CLI invocation behave correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-8
+
+**Because:** All requirements verified: prepare_run copies skill directories and fetches web pages into the run folder; build_prompt formats skill blocks with front matter stripped and lists auxiliary files, plus sources and fetched/failed pages; _command appends --add-dir for claude and codex; every CLI gets the identical prompt; tests/agents (307 passed), tests/jobs (255 passed), tests/tools (36 passed) and the full test suite pass (with only test_new_agent.py deferred to TLS-14 per plan).
+
+**Rejected:**
+
+- Fail TLS-8 — no defects or regressions observed in runner behavior or tests
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: e001ebe4555f408d94adb1219891fae0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T11:02:05.114Z"} -->
+
+## 2026-11-14 — Approve TLS-8: runner prepares skills and knowledge in run folder, builds structured prompt, and passes add-dir to supported CLIs
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-8
+
+**Because:** All task requirements verified: prepare_run copies skill directories and fetches web pages; build_prompt formats stripped skill bodies, auxiliary files, and fetched/failed pages; _command appends --add-dir for claude and codex; all CLIs receive identical prompts; test suite passes cleanly with only test_new_agent deferred to TLS-14 per plan.
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_runner.py
+
+<!-- whyline-event: da1926855deb4a129f8329acc7ee46d0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T11:22:54.430Z"} -->
