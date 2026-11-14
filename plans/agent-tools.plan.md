@@ -85,7 +85,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   5. CLI `whyline skills list|show|new|copy|edit|remove`.
   Tests: discovery from all four places with temporary home and repository, front matter parsing, a broken skill, create and copy, edit and remove refused on Claude skills, and removal refused while used.
 
-- [ ] TLS-6: Knowledge packs and web pages
+- [x] TLS-6: Knowledge packs and web pages
   Create `src/whyline/tools/knowledge.py` and its tests. Edit `src/whyline/tools/cli.py` and its tests.
   1. A pack is `~/.whyline/knowledge/<name>.toml` with `name`, `description` and `items` (paths and `http(s)` URLs). `list_packs()`, `get_pack(name)`, `save_pack(pack)`, `remove_pack(name)` (refused while used).
   2. `resolve(items, base: Path) -> list[Item]` expands `pack:<name>` entries, expands `~` and relative paths against `base`, and keeps URLs.
