@@ -5,8 +5,10 @@ import pytest
 from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console import tui
-from whyline.console.tools_screens import AddServerScreen, CredentialScreen, ImportServersScreen, ToolsScreen
-from whyline.tools import mcp_config, users
+from whyline.console.tools_screens import (
+    AddServerScreen, CredentialScreen, ImportServersScreen, PackItemScreen, PackScreen, SkillScreen, ToolsScreen,
+)
+from whyline.tools import knowledge, mcp_config, skills, users
 
 pytestmark = [pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"), pytest.mark.asyncio]
 
@@ -72,12 +74,218 @@ async def test_tools_button_opens_the_screen(home, tmp_path):
         assert isinstance(app.screen, ToolsScreen)
 
 
-async def test_other_tabs_say_coming(home, tmp_path):
+def make_skill(folder, name, description="Does a thing"):
+    folder = folder / name
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {description}\n---\n\nBody of {name}.\n")
+
+
+def skill_rows(screen):
+    table = screen.query_one("#tl-skill-table")
+    return {row.key.value: table.get_row(row.key) for row in table.ordered_rows}
+
+
+def pick_skill(screen, ref):
+    table = screen.query_one("#tl-skill-table")
+    table.move_cursor(row=table.get_row_index(ref))
+
+
+async def test_skills_show_origin_description_size_and_problems(home, tmp_path):
+    make_skill(home / ".whyline" / "skills", "mine", "Mine")
+    make_skill(tmp_path / ".whyline" / "skills", "shared", "Shared")
+    make_skill(home / ".claude" / "skills", "personal", "From Claude")
+    make_skill(tmp_path / ".claude" / "skills", "local", "In project")
+    (home / ".whyline" / "skills" / "broken").mkdir()
     app = tui.WhylineConsoleApp(root=tmp_path)
-    async with app.run_test(size=(120, 40)) as pilot:
-        screen = await open_tools(pilot, app)
-        assert text(screen, "#tl-skills-text") == "Coming in the next update"
-        assert text(screen, "#tl-knowledge-text") == "Coming in the next update"
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        rows = skill_rows(screen)
+        assert [rows[r][0] for r in ("whyline:mine", "whyline-repo:shared", "claude:personal",
+                                     "claude-project:local")] == [
+            "whyline", "whyline · repo", "Claude", "Claude · project"]
+        assert rows["whyline:mine"][3] == "Mine"
+        assert rows["whyline:mine"][2].endswith(" B")
+        assert "no SKILL.md" in rows["whyline:broken"][3]
+
+
+async def test_claude_skill_offers_only_copy_and_copy_works(home, tmp_path):
+    make_skill(home / ".claude" / "skills", "notes")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        pick_skill(screen, "claude:notes")
+        await pilot.pause()
+        assert not screen.query_one("#tl-skill-copy").disabled
+        assert screen.query_one("#tl-skill-edit").disabled
+        assert screen.query_one("#tl-skill-remove").disabled
+        screen._skill_edit()
+        assert "Copy to whyline" in text(screen, "#tl-skill-status")
+        screen._skill_remove()
+        assert "Not removed" in text(screen, "#tl-skill-status")
+        assert (home / ".claude" / "skills" / "notes").is_dir()
+        await pilot.click("#tl-skill-copy")
+        await pilot.pause()
+        assert "Copied to whyline:notes" in text(screen, "#tl-skill-status")
+        assert (home / ".whyline" / "skills" / "notes" / "SKILL.md").is_file()
+        pick_skill(screen, "whyline:notes")
+        await pilot.pause()
+        assert screen.query_one("#tl-skill-copy").disabled
+        assert not screen.query_one("#tl-skill-edit").disabled
+
+
+async def test_new_skill_personal_and_repository(home, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        for name, where in (("alpha", "personal"), ("beta", "repo")):
+            await pilot.click("#tl-skill-new")
+            await pilot.pause()
+            form = app.screen
+            assert isinstance(form, SkillScreen)
+            form.query_one("#sk-name").value = name
+            form.query_one("#sk-where").value = where
+            form.query_one("#sk-description").value = f"About {name}"
+            form.query_one("#sk-body").text = f"Steps for {name}"
+            await pilot.click("#sk-save")
+            await pilot.pause()
+            assert app.screen is screen
+        rows = skill_rows(screen)
+        assert rows["whyline:alpha"][0] == "whyline"
+        assert rows["whyline-repo:beta"][0] == "whyline · repo"
+    assert "Steps for alpha" in (home / ".whyline" / "skills" / "alpha" / "SKILL.md").read_text()
+    assert (tmp_path / ".whyline" / "skills" / "beta" / "SKILL.md").is_file()
+
+
+async def test_new_skill_refuses_a_bad_name(home, tmp_path):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-new")
+        await pilot.pause()
+        form = app.screen
+        form.query_one("#sk-name").value = "Bad Name"
+        form.query_one("#sk-description").value = "x"
+        await pilot.click("#sk-save")
+        await pilot.pause()
+        assert isinstance(app.screen, SkillScreen)
+        assert "lowercase" in text(form, "#sk-status")
+    assert skills.find(tmp_path) == []
+
+
+async def test_edit_whyline_skill_in_the_form(home, tmp_path):
+    make_skill(home / ".whyline" / "skills", "mine", "Old")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        pick_skill(screen, "whyline:mine")
+        await pilot.pause()
+        await pilot.click("#tl-skill-edit")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, SkillScreen)
+        assert form.query_one("#sk-description").value == "Old"
+        assert form.query_one("#sk-body").text == "Body of mine."
+        form.query_one("#sk-description").value = "New words"
+        form.query_one("#sk-body").text = "New body"
+        await pilot.click("#sk-save")
+        await pilot.pause()
+        assert app.screen is screen
+        assert skill_rows(screen)["whyline:mine"][3] == "New words"
+    saved = (home / ".whyline" / "skills" / "mine" / "SKILL.md").read_text()
+    assert "New body" in saved and "description: New words" in saved
+
+
+async def test_skill_removal_refused_names_users_then_allowed(home, tmp_path):
+    make_skill(home / ".whyline" / "skills", "used")
+    make_skill(home / ".whyline" / "skills", "free")
+    users.register("test", lambda: [users.Use("skill", "whyline:used", "agent digest")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        pick_skill(screen, "whyline:used")
+        await pilot.pause()
+        await pilot.click("#tl-skill-remove")
+        await pilot.pause()
+        assert "agent digest" in text(screen, "#tl-skill-status")
+        assert (home / ".whyline" / "skills" / "used").is_dir()
+        pick_skill(screen, "whyline:free")
+        await pilot.pause()
+        screen.query_one("#tl-skill-remove").press()
+        await pilot.pause()
+        assert "Removed whyline:free" in text(screen, "#tl-skill-status")
+    assert not (home / ".whyline" / "skills" / "free").exists()
+
+
+async def test_knowledge_pack_new_add_files_page_and_edit(home, tmp_path):
+    notes = tmp_path / "notes.md"
+    notes.write_text("hi")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-knowledge")
+        await pilot.click("#tl-pack-new")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, PackScreen)
+        form.query_one("#pk-name").value = "docs"
+        form.query_one("#pk-description").value = "API docs"
+        await pilot.click("#pk-save")
+        await pilot.pause()
+        assert app.screen is screen
+        assert screen._pack_selected() == "docs"
+
+        await pilot.click("#tl-pack-files")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, PackItemScreen)
+        form.query_one("#pi-value").value = f"{notes} {tmp_path / 'missing.md'}"
+        await pilot.click("#pi-add")
+        await pilot.pause()
+        assert isinstance(app.screen, PackItemScreen)
+        assert "Not found" in text(form, "#pi-status")
+        form.query_one("#pi-value").value = str(notes)
+        form.query_one("#pi-add").press()
+        await pilot.pause()
+        assert app.screen is screen
+
+        await pilot.click("#tl-pack-page")
+        await pilot.pause()
+        form = app.screen
+        form.query_one("#pi-value").value = "ftp://example.com"
+        await pilot.click("#pi-add")
+        await pilot.pause()
+        assert "http" in text(form, "#pi-status")
+        form.query_one("#pi-value").value = "https://example.com/guide"
+        form.query_one("#pi-add").press()
+        await pilot.pause()
+        assert app.screen is screen
+        node = screen.query_one("#tl-pack-tree").root.children[0]
+        assert [str(c.label) for c in node.children] == [str(notes.resolve()), "https://example.com/guide"]
+    assert knowledge.get_pack("docs").items == (str(notes.resolve()), "https://example.com/guide")
+    assert knowledge.get_pack("docs").description == "API docs"
+
+
+async def test_knowledge_pack_removal_refused_then_allowed(home, tmp_path):
+    knowledge.save_pack(knowledge.Pack("used"))
+    knowledge.save_pack(knowledge.Pack("free"))
+    users.register("test", lambda: [users.Use("pack", "used", "agent digest")])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-knowledge")
+        tree = screen.query_one("#tl-pack-tree")
+        tree.cursor_line = 2  # "free" sorts before "used"
+        await pilot.pause()
+        assert screen._pack_selected() == "used"
+        await pilot.click("#tl-pack-remove")
+        await pilot.pause()
+        assert "agent digest" in text(screen, "#tl-pack-status")
+        assert [p.name for p in knowledge.list_packs()] == ["free", "used"]
+        tree.cursor_line = 1
+        await pilot.pause()
+        assert screen._pack_selected() == "free"
+        screen.query_one("#tl-pack-remove").press()
+        await pilot.pause()
+        assert "Removed knowledge pack free" in text(screen, "#tl-pack-status")
+    assert [p.name for p in knowledge.list_packs()] == ["used"]
 
 
 async def test_add_server_uses_save_server(home, tmp_path):

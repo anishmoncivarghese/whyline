@@ -1,24 +1,31 @@
-"""The Tools library: Connectors (MCP servers) and Credentials, with Skills and
-Knowledge to follow. Every action calls the same function the
-`whyline tools` and `whyline cred` commands call."""
+"""The Tools library: Connectors (MCP servers), Skills, Knowledge and Credentials.
+Every action calls the same function the `whyline tools` and `whyline cred`
+commands call."""
 from __future__ import annotations
 
 import shlex
 import shutil
+from pathlib import Path
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TabbedContent, TabPane, Tree
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TabbedContent, TabPane, TextArea, Tree
 
 from whyline import credentials
 from whyline.agents import capabilities
-from whyline.tools import mcp, mcp_config, users
+from whyline.tools import knowledge, mcp, mcp_config, skills, users
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
 _NO_CRED = "(none)"
-_COMING = "Coming in the next update"
+_ORIGIN_LABEL = {
+    "whyline": "whyline",
+    "whyline-repo": "whyline · repo",
+    "claude": "Claude",
+    "claude-project": "Claude · project",
+}
+_PERSONAL, _REPO = "personal", "repo"
 _NO_AGENTS_ON = {"antigravity": "Agents can't run on Antigravity yet"}
 
 _CSS = """
@@ -34,6 +41,10 @@ def _server_state(server: mcp_config.Server) -> str:
     if not server.enabled:
         return "off"
     return "ready" if server.tools else "not tested"
+
+
+def _size(count: int) -> str:
+    return f"{count} B" if count < 1024 else f"{count / 1024:.1f} KB"
 
 
 def _confirm(app, message: str, label: str, then) -> None:
@@ -177,6 +188,143 @@ class CredentialScreen(ModalScreen):
         self.dismiss(name)
 
 
+class SkillScreen(ModalScreen):
+    """Write a new whyline skill, or change the description and text of one."""
+
+    DEFAULT_CSS = _CSS.format(name="SkillScreen") + "SkillScreen TextArea { height: 12; }"
+
+    def __init__(self, edit: str | None = None, root: Path | None = None) -> None:
+        super().__init__()
+        self._edit = edit
+        self._root = root
+        self._skill = skills.get(edit, root) if edit else None
+
+    def compose(self) -> ComposeResult:
+        body: list = [Label(f"Edit {self._edit}" if self._edit else "New skill")]
+        description, text = "", ""
+        if self._skill is not None:
+            description = self._skill.description
+            try:
+                text = skills.body_of((self._skill.path / "SKILL.md").read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                text = ""
+        else:
+            body.append(Input(placeholder="name, for example release-notes", id="sk-name"))
+            where = [("Personal (all repositories)", _PERSONAL)]
+            if self._root is not None:
+                where.append(("This repository", _REPO))
+            body.append(Select(where, value=_PERSONAL, allow_blank=False, id="sk-where"))
+        body.append(Input(value=description, placeholder="description, one line", id="sk-description"))
+        body.append(TextArea(text, id="sk-body"))
+        body.append(Static("", id="sk-status", markup=False))
+        body.append(Horizontal(Button("Save", id="sk-save", variant="primary"), Button("Cancel", id="sk-cancel")))
+        yield Vertical(*body)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "sk-cancel":
+            self.dismiss(None)
+            return
+        description = self.query_one("#sk-description", Input).value
+        text = self.query_one("#sk-body", TextArea).text
+        try:
+            if self._edit:
+                skill = skills.edit(self._edit, self._root, description=description, body=text)
+            else:
+                repo = self._root if self.query_one("#sk-where", Select).value == _REPO else None
+                skill = skills.create(self.query_one("#sk-name", Input).value.strip(), description,
+                                      text, repo_root=repo)
+        except (ValueError, KeyError, OSError) as error:
+            self.query_one("#sk-status", Static).update(str(error))
+            return
+        self.dismiss(skill.ref)
+
+
+class PackScreen(ModalScreen):
+    """A new knowledge pack: a name and what it is for."""
+
+    DEFAULT_CSS = _CSS.format(name="PackScreen")
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("New knowledge pack"),
+            Input(placeholder="name, for example api-docs", id="pk-name"),
+            Input(placeholder="description (optional)", id="pk-description"),
+            Static("", id="pk-status", markup=False),
+            Horizontal(Button("Create", id="pk-save", variant="primary"), Button("Cancel", id="pk-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "pk-cancel":
+            self.dismiss(None)
+            return
+        name = self.query_one("#pk-name", Input).value.strip()
+        try:
+            if knowledge.valid_name(name):
+                try:
+                    knowledge.get_pack(name)
+                except KeyError:
+                    pass
+                else:
+                    raise ValueError(f"A knowledge pack named {name} already exists.")
+            knowledge.save_pack(knowledge.Pack(name, self.query_one("#pk-description", Input).value.strip()))
+        except ValueError as error:
+            self.query_one("#pk-status", Static).update(str(error))
+            return
+        self.dismiss(name)
+
+
+class PackItemScreen(ModalScreen):
+    """Add files or folders (paths, space separated) or one web page address to a pack."""
+
+    DEFAULT_CSS = _CSS.format(name="PackItemScreen")
+
+    def __init__(self, pack: str, page: bool) -> None:
+        super().__init__()
+        self._pack = pack
+        self._page = page
+
+    def compose(self) -> ComposeResult:
+        label = f"Add a web page to {self._pack}" if self._page else f"Add files to {self._pack}"
+        hint = "address, starting http:// or https://" if self._page else "file or folder paths, space separated"
+        yield Vertical(
+            Label(label),
+            Input(placeholder=hint, id="pi-value"),
+            Static("", id="pi-status", markup=False),
+            Horizontal(Button("Add", id="pi-add", variant="primary"), Button("Cancel", id="pi-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "pi-cancel":
+            self.dismiss(None)
+            return
+        raw = self.query_one("#pi-value", Input).value.strip()
+        try:
+            if self._page:
+                if not raw.lower().startswith(("http://", "https://")):
+                    raise ValueError("A web page address starts with http:// or https://.")
+                added = [raw]
+            else:
+                added = [str(Path(p).expanduser().resolve()) for p in shlex.split(raw)]
+                if not added:
+                    raise ValueError("Give at least one file or folder.")
+                missing = [p for p in added if not Path(p).exists()]
+                if missing:
+                    raise ValueError(f"Not found: {', '.join(missing)}")
+            pack = knowledge.get_pack(self._pack)
+            items = pack.items + tuple(i for i in added if i not in pack.items)
+            knowledge.save_pack(knowledge.Pack(pack.name, pack.description, items))
+        except KeyError:
+            self.query_one("#pi-status", Static).update(f"No knowledge pack named {self._pack}.")
+            return
+        except ValueError as error:
+            self.query_one("#pi-status", Static).update(str(error))
+            return
+        self.dismiss(added)
+
+
 class ToolsScreen(ModalScreen):
     """Connectors, Skills, Knowledge and Credentials in one place."""
 
@@ -220,9 +368,25 @@ class ToolsScreen(ModalScreen):
                     yield Static("", id="tl-setup-note", markup=False, classes="tl-status")
                     yield Static("", id="tl-status", markup=False, classes="tl-status")
                 with TabPane("Skills", id="tl-skills"):
-                    yield Static(_COMING, id="tl-skills-text")
+                    yield DataTable(id="tl-skill-table", cursor_type="row")
+                    yield Horizontal(
+                        Button("New skill", id="tl-skill-new"),
+                        Button("Copy to whyline", id="tl-skill-copy"),
+                        Button("Edit", id="tl-skill-edit"),
+                        Button("Remove", id="tl-skill-remove", variant="error"),
+                        classes="tl-row",
+                    )
+                    yield Static("", id="tl-skill-status", markup=False, classes="tl-status")
                 with TabPane("Knowledge", id="tl-knowledge"):
-                    yield Static(_COMING, id="tl-knowledge-text")
+                    yield Tree("Knowledge", id="tl-pack-tree")
+                    yield Horizontal(
+                        Button("New pack", id="tl-pack-new"),
+                        Button("Add files", id="tl-pack-files"),
+                        Button("Add web page", id="tl-pack-page"),
+                        Button("Remove", id="tl-pack-remove", variant="error"),
+                        classes="tl-row",
+                    )
+                    yield Static("", id="tl-pack-status", markup=False, classes="tl-status")
                 with TabPane("Credentials", id="tl-credentials"):
                     yield DataTable(id="tl-creds", cursor_type="row")
                     yield Horizontal(
@@ -236,7 +400,10 @@ class ToolsScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#tl-creds", DataTable).add_columns("Name", "Kind", "Last used")
+        self.query_one("#tl-skill-table", DataTable).add_columns("Origin", "Name", "Size", "Description")
         self._reload()
+        self._reload_skills()
+        self._reload_packs()
         self._reload_creds()
         self._setup_buttons()
 
@@ -398,6 +565,161 @@ class ToolsScreen(ModalScreen):
         self._say(message)
         self._check_ready(cli)
 
+    # Skills -------------------------------------------------------------
+
+    def _root(self) -> Path | None:
+        root = getattr(getattr(self.app, "session", None), "root", None)
+        return Path(root) if root is not None else None
+
+    def _skill_say(self, text: str) -> None:
+        self.query_one("#tl-skill-status", Static).update(text)
+
+    def _reload_skills(self, select: str | None = None) -> None:
+        table = self.query_one("#tl-skill-table", DataTable)
+        table.clear()
+        found = skills.find(self._root())
+        for s in found:
+            detail = f"broken: {s.problem}" if s.broken else s.description
+            table.add_row(_ORIGIN_LABEL.get(s.origin, s.origin), s.name, _size(s.size), detail, key=s.ref)
+        if select:
+            for index, s in enumerate(found):
+                if s.ref == select:
+                    table.move_cursor(row=index)
+        if not found:
+            self._skill_say("No skills yet. Write one, or copy one from Claude.")
+        self._skill_buttons()
+
+    def _skill_selected(self) -> str | None:
+        table = self.query_one("#tl-skill-table", DataTable)
+        if table.row_count == 0 or not table.is_valid_coordinate((table.cursor_row, 0)):
+            return None
+        return table.coordinate_to_cell_key((table.cursor_row, 0)).row_key.value
+
+    def _skill_buttons(self) -> None:
+        ref = self._skill_selected()
+        claude = ref is not None and ref.startswith("claude")
+        mine = ref is not None and not claude
+        self.query_one("#tl-skill-copy", Button).disabled = not claude
+        self.query_one("#tl-skill-edit", Button).disabled = not mine
+        self.query_one("#tl-skill-remove", Button).disabled = not mine
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id == "tl-skill-table":
+            self._skill_buttons()
+
+    def _skill_form(self, edit: str | None) -> None:
+        def saved(ref: str | None) -> None:
+            if ref:
+                self._reload_skills(ref)
+                self._skill_say(f"{'Updated' if edit else 'Created'} {ref}.")
+
+        try:
+            form = SkillScreen(edit, self._root())
+        except (KeyError, ValueError):
+            self._skill_say(f"No skill {edit}.")
+            return
+        self.app.push_screen(form, saved)
+
+    def _skill_copy(self) -> None:
+        ref = self._skill_selected()
+        if ref is None:
+            self._skill_say("Pick a skill first.")
+            return
+        try:
+            skill = skills.copy_to_whyline(ref, self._root())
+        except (KeyError, ValueError, OSError) as error:
+            self._skill_say(f"Not copied: {error}")
+            return
+        self._reload_skills(skill.ref)
+        self._skill_say(f"Copied to {skill.ref}.")
+
+    def _skill_edit(self) -> None:
+        ref = self._skill_selected()
+        if ref is None:
+            self._skill_say("Pick a skill first.")
+        elif ref.startswith("claude"):
+            self._skill_say(skills.CLAUDE_REFUSAL)
+        else:
+            self._skill_form(ref)
+
+    def _skill_remove(self) -> None:
+        ref = self._skill_selected()
+        if ref is None:
+            self._skill_say("Pick a skill first.")
+            return
+        try:
+            skills.remove(ref, self._root())
+        except (KeyError, ValueError, OSError) as error:
+            self._skill_say(f"Not removed: {error}")
+            return
+        self._reload_skills()
+        self._skill_say(f"Removed {ref}.")
+
+    # Knowledge ----------------------------------------------------------
+
+    def _pack_say(self, text: str) -> None:
+        self.query_one("#tl-pack-status", Static).update(text)
+
+    def _reload_packs(self, select: str | None = None) -> None:
+        tree = self.query_one("#tl-pack-tree", Tree)
+        tree.clear()
+        found = knowledge.list_packs()
+        for pack in found:
+            node = tree.root.add(f"{pack.name}  {len(pack.items)} items"
+                                 + (f"  {pack.description}" if pack.description else ""), data=pack.name)
+            for item in pack.items:
+                node.add_leaf(item, data=pack.name)
+        tree.root.expand()
+        if not found:
+            self._pack_say("No knowledge packs yet. Create one, then add files or web pages.")
+        if select:
+            for node in tree.root.children:
+                if node.data == select:
+                    node.expand()
+                    self.call_after_refresh(tree.move_cursor, node)
+
+    def _pack_selected(self) -> str | None:
+        node = self.query_one("#tl-pack-tree", Tree).cursor_node
+        if node is None or node.data is None:
+            return None
+        return str(node.data)
+
+    def _pack_new(self) -> None:
+        def made(name: str | None) -> None:
+            if name:
+                self._reload_packs(name)
+                self._pack_say(f"Created knowledge pack {name}.")
+
+        self.app.push_screen(PackScreen(), made)
+
+    def _pack_add(self, page: bool) -> None:
+        name = self._pack_selected()
+        if name is None:
+            self._pack_say("Pick a pack first.")
+            return
+
+        def added(items: list[str] | None) -> None:
+            if items:
+                self._reload_packs(name)
+                self._pack_say(f"Added {', '.join(items)} to {name}.")
+
+        self.app.push_screen(PackItemScreen(name, page), added)
+
+    def _pack_remove(self) -> None:
+        name = self._pack_selected()
+        if name is None:
+            self._pack_say("Pick a pack first.")
+            return
+        try:
+            knowledge.remove_pack(name)
+        except KeyError:
+            self._pack_say(f"No knowledge pack named {name}.")
+        except ValueError as error:
+            self._pack_say(f"Not removed: {error}.")
+        else:
+            self._reload_packs()
+            self._pack_say(f"Removed knowledge pack {name}.")
+
     # Credentials --------------------------------------------------------
 
     def _cred_say(self, text: str) -> None:
@@ -454,6 +776,22 @@ class ToolsScreen(ModalScreen):
             self._remove()
         elif button_id.startswith("tl-setup-"):
             self._setup(button_id.removeprefix("tl-setup-"))
+        elif button_id == "tl-skill-new":
+            self._skill_form(None)
+        elif button_id == "tl-skill-copy":
+            self._skill_copy()
+        elif button_id == "tl-skill-edit":
+            self._skill_edit()
+        elif button_id == "tl-skill-remove":
+            self._skill_remove()
+        elif button_id == "tl-pack-new":
+            self._pack_new()
+        elif button_id == "tl-pack-files":
+            self._pack_add(False)
+        elif button_id == "tl-pack-page":
+            self._pack_add(True)
+        elif button_id == "tl-pack-remove":
+            self._pack_remove()
         elif button_id == "tl-cred-add":
             self._cred_form(None)
         elif button_id == "tl-cred-rotate":

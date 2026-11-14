@@ -43938,3 +43938,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: eeb03da011934d3781b3e79776a210ec -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T14:39:58.113Z"} -->
+
+## 2026-11-14 — Skills Edit uses an in-console SkillScreen (description Input + body TextArea), not an external editor
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-13
+
+**Because:** The console has no file-editor opening; a modal saving through skills.edit matches console-first and works without a terminal
+
+**Rejected:**
+
+- suspend and launch $EDITOR — needs a terminal and bypasses skills.edit validation
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 84bce471bd68484a8f8320bf07aa0c3b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T14:43:40.267Z"} -->
+
+## 2026-11-14 — Pass TLS-13: The Tools library: Skills and Knowledge
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-13
+
+**Because:** ToolsScreen Skills tab displays origin labels, name, formatted size, and descriptions or broken reasons, with New skill (personal/repo), Copy to whyline, in-console SkillScreen Edit, and in-use guarded Remove; Knowledge tab displays pack tree with items, New pack, Add files/page with validation, and in-use guarded Remove; all 18 test_tools_screens.py tests and 4886 full-suite tests passed (pre-existing test_new_agent deferred to TLS-14 per plan).
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 419f94ed0afb49bc90b80330734a4e6f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T15:04:37.062Z"} -->
+
+## 2026-11-14 — Approve TLS-13: The Tools library: Skills and Knowledge
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-13
+
+**Because:** ToolsScreen Skills tab displays origins, size, description/problem, with New skill, Copy to whyline, in-console SkillScreen edit, and guarded removal; Knowledge tab displays pack tree, New pack, Add files/page, and guarded removal; 18 test_tools_screens.py tests and 4886 full-suite tests pass
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 6f260ac7a1e44ab0845aeae8d7e173fc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T15:24:44.516Z"} -->
