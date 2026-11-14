@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-10T10:00:00+05:30 -->
 # Tools, skills and knowledge for agents
 
-Runs before `plans/workflows-2-to-4.plan.md`, which now keeps only the Workflows side of credentials and MCP. Design: `docs/superpowers/specs/2026-11-10-agent-tools-design.md`. Read it before any task. TLS-1 is WF-14 moved here unchanged. TLS-3 and TLS-4 are WF-27 and WF-28 moved to `whyline.tools`.
+Runs before `plans/quick-fixes.plan.md`. `plans/workflows-2-to-4.plan.md` now keeps only the Workflows side of credentials and MCP. Design: `docs/superpowers/specs/2026-11-10-agent-tools-design.md`. Read it before any task. TLS-1 is WF-14 moved here unchanged. TLS-3 and TLS-4 are WF-27 and WF-28 moved to `whyline.tools`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

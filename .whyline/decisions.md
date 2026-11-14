@@ -44111,3 +44111,72 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b9ab01e70b5046629d0c85beb8e334f3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:22:23.841Z"} -->
+
+## 2026-11-14 — Join the four quick-fix plans into plans/quick-fixes.plan.md (CRS, NOTE, LMD, ASST-24..27; 16 tasks)
+
+**Actor:** claude
+**Role:** planner
+**Task:** quick-fixes
+
+**Because:** One relay and one release instead of four; each part keeps its own rules and bounded review focus
+
+**Rejected:**
+
+- Keep four plans — four releases and four manual restarts for small fixes
+
+**Files:** plans/quick-fixes.plan.md, plans/RUN-ORDER.md
+
+<!-- whyline-event: a48399d6e52a4aa1899c9e5ebd4bccc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:38:48.559Z"} -->
+
+## 2026-11-14 — Join waiting-on-you, plan-queue, assistant-feedback and assistant-router into plans/telegram-daily-use.plan.md (32 tasks)
+
+**Actor:** claude
+**Role:** planner
+**Task:** telegram-daily-use
+
+**Because:** Same reason as quick-fixes: one relay and one release for the Telegram daily-use group
+
+**Rejected:**
+
+- Keep plan-queue separate — would ship sooner but adds a release; can still be split out if wanted
+
+**Files:** plans/telegram-daily-use.plan.md, plans/RUN-ORDER.md
+
+<!-- whyline-event: b87a6e64cde14ec3bc26dcd5f0475d67 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:38:48.668Z"} -->
+
+## 2026-11-14 — Plan queue: run ticked plans in a row, with Publish by itself or Ask me before publishing (one Telegram go-ahead pinned to version and commit)
+
+**Actor:** claude
+**Role:** planner
+**Task:** plan-queue
+
+**Because:** User wants both fully unattended and one-tap modes; a hold never skips ahead, each stage is a fresh process, and a new install check runs because Verify only waits for the version to appear on PyPI
+
+**Rejected:**
+
+- Unattended only — no human check before an irreversible publish
+- Reuse Verify as the install proof — it never installs the package
+
+**Files:** docs/superpowers/specs/2026-11-14-plan-queue-design.md, plans/telegram-daily-use.plan.md
+
+<!-- whyline-event: 014e1c58e0794b6b9f67731ef13fed12 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:38:48.778Z"} -->
+
+## 2026-11-14 — Merged main into relay/agent-tools.plan by hand before releasing 0.3.74, keeping main's copy of the waiting-on-you spec
+
+**Actor:** claude
+**Role:** release
+**Task:** agent-tools
+
+**Because:** The Ready check fails on 'HEAD is behind origin/main' and disables Start even though Bring in main would fix it, and that step would have aborted on the add/add conflict
+
+**Rejected:**
+
+- Keep the branch's copy — it points at the removed console-restart plan
+
+**Files:** docs/superpowers/specs/2026-11-14-waiting-on-you-design.md, plans/agent-tools.plan.md
+
+<!-- whyline-event: 6894129bbe1c4d249b944debc5393bcb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:38:48.903Z","commit":"0c6c5b515f941916d4d1d86140990635e6e1e8ab"} -->
