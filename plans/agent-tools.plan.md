@@ -76,7 +76,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 ## Part 2: Skills and knowledge
 
-- [ ] TLS-5: The skills library
+- [x] TLS-5: The skills library
   Create `src/whyline/tools/skills.py` and its tests. Edit `src/whyline/tools/cli.py` and its tests.
   1. `Skill(origin, name, description, path, size, files)`, origin `whyline`, `whyline-repo`, `claude` or `claude-project`. `SKILL.md` front matter (between `---` lines) gives `name` and `description`, parsed as simple `key: value` lines. A skill with no description, or a name that doesn't match its folder, is listed as broken with the reason.
   2. `find(root: Path | None) -> list[Skill]` reads `~/.whyline/skills/`, `<root>/.whyline/skills/`, `~/.claude/skills/` and `<root>/.claude/skills/`, in that order. `get(ref, root)` takes `origin:name`.
