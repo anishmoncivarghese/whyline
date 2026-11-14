@@ -2,6 +2,7 @@
 (no history, no commits) and not `whyline run` (no terminal hand-off)."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -40,6 +41,33 @@ class RunExtras:
     skills: list = field(default_factory=list)  # (Skill, copied folder)
     pages: list = field(default_factory=list)  # knowledge.Fetched
     paths: list = field(default_factory=list)  # local items from knowledge packs
+    tools_file: Path | None = None  # <run>/tools.json, when the agent has tools
+
+
+def _write_tools(defn, run_folder: Path) -> Path | None:
+    """tools.json (what `whyline tools serve` offers) and mcp.json (claude's
+    pointer at that server) for an agent that ticked tools."""
+    from whyline.tools import mcp_config, serve
+
+    servers = mcp_config.load()
+    items = []
+    for key, permission in sorted(defn.tools.items()):
+        server_name, _, tool_name = key.partition(".")
+        server = servers.get(server_name)
+        tool = next((t for t in server.tools if t.name == tool_name), None) if server else None
+        if tool is None:
+            continue
+        items.append({"server": server_name, "tool": tool_name, "permission": permission,
+                      "description": tool.description, "input_schema": tool.input_schema,
+                      "read_only": tool.read_only})
+    tools_file = run_folder / "tools.json"
+    tools_file.write_text(json.dumps({"run": run_folder.name, "agent": defn.name, "tools": items}),
+                          encoding="utf-8")
+    entry = {"command": capabilities.whyline_executable(), "args": ["tools", "serve"],
+             "env": {serve.ENV_VAR: str(tools_file)}}
+    (run_folder / "mcp.json").write_text(json.dumps({"mcpServers": {"whyline": entry}}),
+                                         encoding="utf-8")
+    return tools_file
 
 
 def prepare_run(defn, run_folder: Path) -> RunExtras:
@@ -58,7 +86,47 @@ def prepare_run(defn, run_folder: Path) -> RunExtras:
     urls = [i.value for i in items if i.is_url]
     if urls:
         extras.pages = knowledge.fetch_pages(urls, run_folder / "knowledge")
+    if defn.tools:
+        extras.tools_file = _write_tools(defn, run_folder)
     return extras
+
+
+def _tools_blockers(defn) -> dict[str, str]:
+    """Why each of this agent's CLIs can't use its tools; usable ones are absent."""
+    blocked: dict[str, str] = {}
+    for cli in dict.fromkeys([defn.runner, *defn.backup]):
+        support = capabilities.tools_support(cli)
+        if support == "none":
+            blocked[cli] = "cannot use tools"
+        elif support == "saved" and not capabilities.saved_ready(cli):
+            blocked[cli] = f"needs whyline set up in it (whyline tools setup-{cli})"
+        elif not capabilities.can_run(cli):
+            blocked[cli] = "no verified read-only setting"
+    return blocked
+
+
+def usable_clis(defn) -> list[str]:
+    """The main CLI then the backups, minus any that can't run this agent's tools."""
+    order = list(dict.fromkeys([defn.runner, *defn.backup]))
+    if not defn.tools:
+        return order
+    blocked = _tools_blockers(defn)
+    return [cli for cli in order if cli not in blocked]
+
+
+def _tools_args(cli: str, run_folder: Path) -> list[str]:
+    from whyline.tools import serve
+
+    exe = capabilities.whyline_executable()
+    if cli == "claude":
+        return ["--mcp-config", str(run_folder / "mcp.json"), "--strict-mcp-config",
+                "--allowedTools", "mcp__whyline__*"]
+    if cli == "codex":
+        env = {serve.ENV_VAR: str(run_folder / "tools.json")}
+        return ["-c", f"mcp_servers.whyline.command={json.dumps(exe)}",
+                "-c", 'mcp_servers.whyline.args=["tools","serve"]',
+                "-c", f"mcp_servers.whyline.env={json.dumps(env)}"]
+    return []
 
 
 def _skill_block(extras: RunExtras) -> str:
@@ -187,6 +255,14 @@ def _command(defn, cli: str, run_folder: Path | None = None) -> list[str] | None
     command = _without_missing_settings(command, defn.root)
     if run_folder is not None and cli in ("claude", "codex"):
         command = [*command, "--add-dir", str(run_folder)]
+    if run_folder is not None and defn.tools:
+        extra = _tools_args(cli, run_folder)
+        if cli == "claude":
+            # --allowedTools and --mcp-config take many values; keep them before
+            # the other flags so nothing after them is swallowed.
+            command[1:1] = extra
+        else:
+            command = [*command, *extra]
     return command
 
 
@@ -263,9 +339,21 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
         record.ended = datetime.now().isoformat()
         return records.finish(record, folder, final_text="", defn=defn)
 
+    blocked = _tools_blockers(defn) if defn.tools else {}
+    if blocked and not usable_clis(defn):
+        record.outcome = "all_unavailable"
+        record.reason = ("No CLI can use this agent's tools: "
+                         + "; ".join(f"{cli}: {why}" for cli, why in blocked.items()))
+        record.ended = datetime.now().isoformat()
+        return records.finish(record, folder, final_text="", defn=defn)
+
     env_note = {"GIT_TERMINAL_PROMPT": "0"}
     final, unavailable = "", []
     for cli in order:
+        if cli in blocked:
+            record.attempts.append({"cli": cli, "outcome": "skipped",
+                                    "reason": f"cannot use this agent's tools: {blocked[cli]}"})
+            continue
         if not _cli_permitted(cli):
             record.attempts.append({"cli": cli, "outcome": "skipped",
                                     "reason": _enable_hint(cli)})
@@ -286,8 +374,11 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
             answer_file = folder / "answer.txt"
             argv = [*argv, "-o", str(answer_file)]
         progress(f"{cli} is working")
-        old_env = {k: os.environ.get(k) for k in ("GIT_TERMINAL_PROMPT", "SSH_AUTH_SOCK")}
-        os.environ.update(env_note)
+        cli_env = dict(env_note)
+        if extras.tools_file is not None and capabilities.tools_support(cli) != "none":
+            cli_env["WHYLINE_TOOLS_RUN"] = str(extras.tools_file)
+        old_env = {k: os.environ.get(k) for k in (*cli_env, "SSH_AUTH_SOCK")}
+        os.environ.update(cli_env)
         os.environ.pop("SSH_AUTH_SOCK", None)
         error, code, raw = None, None, ""
         try:

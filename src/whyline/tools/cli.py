@@ -34,8 +34,39 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     test = sub.add_parser("test", help="Start a server, list its tools and store them")
     test.add_argument("name")
     tools_sub.add_parser("serve", help="Run whyline's MCP server for an agent run (stdio)")
+    for cli in _SAVED_SETUP:
+        setup = tools_sub.add_parser(f"setup-{cli}", help=f"Add whyline's tools to {cli} (once)")
+        setup.add_argument("--yes", action="store_true", help="do not ask first")
     _add_skills_parser(tools_sub)
     _add_knowledge_parser(tools_sub)
+
+
+_SAVED_SETUP = ("grok", "antigravity")
+
+
+def _setup(cli: str, yes: bool) -> int:
+    import shutil
+
+    from whyline.agents import capabilities
+
+    binary = capabilities._SAVED_BINARY[cli]
+    if shutil.which(binary) is None:
+        print(f"{binary} is not installed, so there is nothing to set up.", file=sys.stderr)
+        return EXIT_ERROR
+    if capabilities.saved_ready(cli):
+        print(f"whyline is already set up in {binary}.")
+        return EXIT_OK
+    if not yes:
+        answer = input(f"Add whyline's tools to {binary}'s saved MCP servers? [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Not changed.")
+            return EXIT_ERROR
+    try:
+        print(capabilities.saved_setup(cli))
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
 
 
 def _add_knowledge_parser(tools_sub: "argparse._SubParsersAction") -> None:
@@ -245,6 +276,8 @@ def run(args: argparse.Namespace) -> int:
         from whyline.tools import serve
 
         return serve.serve()
+    if args.tools_command.startswith("setup-"):
+        return _setup(args.tools_command.removeprefix("setup-"), args.yes)
     if args.tools_command == "skills":
         return _skills(args)
     if args.tools_command == "knowledge":

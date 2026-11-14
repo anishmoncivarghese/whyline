@@ -289,3 +289,67 @@ def can_run(cli: str) -> bool:
 
 def can_run_unattended(cli: str) -> bool:
     return cli in UNATTENDED_OK and can_run(cli)
+
+
+# How each CLI reaches whyline's MCP server (`whyline tools serve`): per run on
+# the command line, or from one entry the user saves once in the CLI itself.
+_SAVED_BINARY = {"grok": "grok", "antigravity": "agy", "agy": "agy"}
+_PER_RUN = ("claude", "codex")
+
+
+def tools_support(cli: str) -> str:
+    if cli in _PER_RUN:
+        return "per-run"
+    if cli in _SAVED_BINARY:
+        return "saved"
+    return "none"
+
+
+def whyline_executable() -> str:
+    import shutil
+
+    return shutil.which("whyline") or "whyline"
+
+
+def _saved_binary(cli: str) -> str:
+    binary = _SAVED_BINARY.get(cli)
+    if binary is None:
+        raise ValueError(f"{cli} keeps no saved whyline entry.")
+    return binary
+
+
+def saved_ready(cli: str) -> bool:
+    """True when the CLI's own MCP list already has the whyline entry."""
+    import re
+    import shutil
+    import subprocess
+
+    binary = _SAVED_BINARY.get(cli)
+    if binary is None or shutil.which(binary) is None:
+        return False
+    try:
+        done = subprocess.run([binary, "mcp", "list"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and bool(
+        re.search(r"(?<![\w-])whyline(?![\w-])", done.stdout or ""))
+
+
+def saved_setup(cli: str) -> str:
+    """Add the one whyline entry to the CLI's saved MCP servers. Call it after
+    the user confirms. Raises ValueError with a plain message when it can't."""
+    import shutil
+    import subprocess
+
+    binary = _saved_binary(cli)
+    if shutil.which(binary) is None:
+        raise ValueError(f"{binary} is not installed, so there is nothing to set up.")
+    command = [binary, "mcp", "add", "whyline", "--", whyline_executable(), "tools", "serve"]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(f"Could not run {binary}: {error}") from error
+    if done.returncode != 0:
+        detail = (done.stderr or done.stdout or "").strip()
+        raise ValueError(f"{binary} could not add whyline: {detail or 'exit ' + str(done.returncode)}")
+    return f"Added whyline to {binary}'s MCP servers."

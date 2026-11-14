@@ -43852,3 +43852,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a20b72670b7d49d0bc9a02fbe9c3416f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:48:36.285Z"} -->
+
+## 2026-11-14 — Saved-entry CLIs (grok, antigravity) are gated by saved_ready; per-run CLIs get claude mcp.json carrying WHYLINE_TOOLS_RUN and codex -c env table
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-11
+
+**Because:** claude and codex start MCP servers with a filtered environment, so the run's tools.json path is also passed in the server's own env, not only the CLI's
+
+**Rejected:**
+
+- rely on inherited os.environ only — filtered env could hide WHYLINE_TOOLS_RUN from tools serve
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: de978f54547e40b69580a47c0ae055b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T12:50:52.950Z"} -->
+
+## 2026-11-14 — Pass TLS-11: Pointing each CLI at whyline MCP server, runner CLI arguments, saved CLI setup commands, and usable_clis filtering
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-11
+
+**Because:** All requirements verified: capabilities.tools_support correctly maps CLIs to per-run/saved/none; prepare_run writes tools.json and mcp.json and sets WHYLINE_TOOLS_RUN; command args configured for claude (--mcp-config, --strict-mcp-config, --allowedTools) and codex (-c command/args/env) and clean for grok/antigravity; saved_setup and saved_ready handle grok and agy MCP list/add; tools setup-grok and setup-antigravity reject uninstalled CLIs and prompt confirmation; usable_clis filters CLIs without support, unconfigured saved CLIs, and read-only refusals; all 16 test_runner_tools.py tests and 323 tests/agents tests pass, full suite passes 4868 tests (only pre-existing test_new_agent deferred to TLS-14 per plan).
+
+**Files:** src/whyline/agents/runner.py, src/whyline/agents/capabilities.py, src/whyline/tools/cli.py
+
+<!-- whyline-event: fa5b199e56384bff9161d9d2e37cf80a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T13:10:04.861Z"} -->
+
+## 2026-11-14 — Approve TLS-11: Pointing each CLI at whyline's MCP server and usable_clis filtering
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-11
+
+**Because:** Runner properly generates tools.json and mcp.json, sets WHYLINE_TOOLS_RUN, adds CLI arguments for claude and codex, gates saved CLIs via saved_ready and setup subcommands, and filters unusable CLIs via usable_clis with full test coverage.
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: a4a6abcc5cbd40b0a5a8c83f36cfc322 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T13:31:07.736Z"} -->
