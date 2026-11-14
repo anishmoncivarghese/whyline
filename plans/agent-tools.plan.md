@@ -121,7 +121,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   5. On end of input, it closes every session it started.
   Tests with the fake server: an empty list without the variable, the ticked tools listed and nothing else, a forwarded call, `test_unticked_tool_is_refused`, a server error returned as `isError`, the call log with a sentinel credential redacted, and sessions closed at the end.
 
-- [ ] TLS-10: Ask first approvals
+- [x] TLS-10: Ask first approvals
   Create `src/whyline/tools/approvals.py` and its tests. Edit `src/whyline/tools/serve.py`, `src/whyline/cli.py` (the `whyline agents` parser and `cmd_agents`) and their tests only.
   1. `request(run_folder, tool, arguments) -> Decision` writes `<run>/approvals/<n>.json` (tool, redacted arguments, asked at, status `waiting`) and waits for its status to change, checking every second, for at most `APPROVAL_TIMEOUT = 600` seconds. Then it writes `timed out`.
   2. `pending(run_id=None) -> list[Pending]` lists waiting requests across runs. `answer(run_id, n, approve: bool, by="you")` sets `approved` or `denied` with the time.
