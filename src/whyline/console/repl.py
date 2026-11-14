@@ -112,6 +112,11 @@ def _help_text() -> str:
         "           doctor, status, start, resume\n"
         "           manual  confirm a release's manual checks",
         "  Agents   list, run/edit/delete/history <name>, pause/resume/accept <name>",
+        "  Tools    in Agents: Connectors (local MCP servers, imported from Claude and codex),\n"
+        "           Skills, Knowledge packs and Credentials (kept in the Keychain). An agent\n"
+        "           uses each tool as Allowed or Ask first; Ask first waits up to 10 minutes\n"
+        "           for Approve or Deny (Agents → Approvals, or whyline agents approve|deny).\n"
+        "           grok and Antigravity need a one-time Set up. See docs/agent-tools.md",
         "  Resolve  explain a Set up or Resume problem and fix it with one click",
         "  Continue with <agent>  on a usage-limit or login pause, switch that role to a\n"
         "           ready agent and resume; tick \"Also use as backup next time\" to add it\n"

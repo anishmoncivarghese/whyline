@@ -152,6 +152,14 @@ main CLI, backups and timeout:
   it runs unattended, and editing it requires a fresh acceptance. It pauses
   itself after repeated failures, or when a CLI is logged out.
 
+- **Tools, skills and knowledge:** the **Tools** library in Agents holds
+  **Connectors** (local MCP servers, importable from Claude and codex),
+  **Skills**, **Knowledge** packs (files, folders and web pages) and
+  **Credentials** (kept in the macOS Keychain; a value is never written to a
+  file, log or prompt). Each tool an agent may use is **Allowed** or **Ask
+  first**; Ask first calls wait up to 10 minutes for **Approve** or **Deny**,
+  and every call is logged. See [Tools for agents](docs/agent-tools.md).
+
 Examples: a weekday dependency and security watch, a nightly summary of what
 changed in a repository, or a weekly review of open issues.
 

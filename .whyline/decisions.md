@@ -44068,3 +44068,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 314eeeb9cf8a432f8ee6a2ee5b0f0cf5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T18:11:02.274Z"} -->
+
+## 2026-11-14 — Agents help line in repl._help_text points to docs/agent-tools.md instead of repeating the details
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-16
+
+**Because:** Help text is a terse list; the full tool, approval and CLI setup guide lives in one doc
+
+**Rejected:**
+
+- Long help block — duplicates the doc and drifts
+
+**Files:** src/whyline/console/repl.py
+
+<!-- whyline-event: 85405c8b8255424db17ee10d4d696b02 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T18:41:18.995Z"} -->
+
+## 2026-11-14 — Pass TLS-16 agent tools documentation in test stage
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-16
+
+**Because:** README.md, docs/agent-tools.md, and console Help text in repl.py cover all required topics (connectors, importing from Claude/codex, Keychain credentials, skills 4-place resolution, knowledge packs/web pages, Allowed vs Ask first, approvals & 10-min timeout, CLI tool support with grok/Antigravity setup, call log); uv run pytest -q exited 0 and git diff --check is clean.
+
+**Files:** README.md, docs/agent-tools.md, src/whyline/console/repl.py
+
+<!-- whyline-event: d3a1ae80b0cc43c78dc55d7b196f2253 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:03:36.244Z"} -->
+
+## 2026-11-14 — Approve TLS-16 agent tools docs
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** TLS-16
+
+**Because:** README.md, docs/agent-tools.md and console Help cover all required topics accurately; uv run pytest -q exited 0
+
+**Files:** docs/agent-tools.md
+
+<!-- whyline-event: b9ab01e70b5046629d0c85beb8e334f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:22:23.841Z"} -->
