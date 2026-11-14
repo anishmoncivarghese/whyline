@@ -7,7 +7,7 @@ from textual.widgets import Button, OptionList, Static
 
 from whyline.console import tui
 from whyline.console.docs_screen import DocsScreen
-from whyline.console.file_pane import owning_set
+from whyline.console.file_pane import linked_design, owning_set
 from whyline.sdlc import docset
 
 pytestmark = [
@@ -18,13 +18,13 @@ pytestmark = [
 ROLES = {"implementer": "claude"}
 
 
-def _plan(root, name):
+def _plan(root, name, text="# plan\n"):
     config = root / ".whyline" / "relay" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("plan = " + json.dumps("plans/" + name) + "\n", encoding="utf-8")
     plan = root / "plans" / name
     plan.parent.mkdir(parents=True, exist_ok=True)
-    plan.write_text("# plan\n", encoding="utf-8")
+    plan.write_text(text, encoding="utf-8")
 
 
 def _set(root):
@@ -85,6 +85,60 @@ async def test_docs_tab_without_a_set(tmp_path):
             "This plan has no document set."
         )
         assert app.query_one("#file-docs-open", Button).display is False
+
+
+def _spec(root, text="# Design\n\nThe design text.\n"):
+    spec = root / "docs" / "superpowers" / "specs" / "d.md"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(text, encoding="utf-8")
+    return spec
+
+
+def test_linked_design_from_header_spec_field(tmp_path):
+    spec = _spec(tmp_path)
+    _plan(tmp_path, "x.plan.md",
+          "<!-- whyline-plan v1 | source: hand | spec: docs/superpowers/specs/d.md | created: t -->\n# x\n")
+    assert linked_design(tmp_path) == spec
+
+
+def test_linked_design_from_design_line(tmp_path):
+    spec = _spec(tmp_path)
+    _plan(tmp_path, "x.plan.md",
+          "<!-- whyline-plan v1 -->\n# x\n\nRuns first. Design: `docs/superpowers/specs/d.md`. Read it.\n")
+    assert linked_design(tmp_path) == spec
+
+
+def test_linked_design_from_spec_line(tmp_path):
+    spec = _spec(tmp_path)
+    _plan(tmp_path, "x.plan.md", "# x\n\nSpec: `docs/superpowers/specs/d.md`.\n")
+    assert linked_design(tmp_path) == spec
+
+
+def test_linked_design_ignores_missing_outside_and_late_links(tmp_path):
+    _plan(tmp_path, "a.plan.md", "# x\n\nDesign: `docs/missing.md`.\n")
+    assert linked_design(tmp_path) is None
+    outside = tmp_path.parent / "outside-design.md"
+    outside.write_text("secret", encoding="utf-8")
+    _plan(tmp_path, "b.plan.md", "# x\n\nDesign: `../outside-design.md`.\n")
+    assert linked_design(tmp_path) is None
+    _spec(tmp_path)
+    late = "# x\n" + "line\n" * 40 + "Design: `docs/superpowers/specs/d.md`\n"
+    _plan(tmp_path, "c.plan.md", late)
+    assert linked_design(tmp_path) is None
+
+
+async def test_docs_tab_without_a_set_shows_the_linked_design(tmp_path):
+    _spec(tmp_path)
+    _plan(tmp_path, "other.plan.md", "# x\n\nDesign: `docs/superpowers/specs/d.md`.\n")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await _open_docs_tab(pilot)
+        status = str(app.query_one("#file-docs-status", Static).renderable)
+        assert status == "Design (from the plan): docs/superpowers/specs/d.md"
+        panel = app.query_one("#file-docs-panel")
+        assert "The design text." in panel.shown_text
+        assert app.query_one("#file-docs-open", Button).display is False
+        assert app.query_one("#file-docs-list", OptionList).option_count == 0
 
 
 async def test_leaving_the_docs_tab_restores_the_file_view(tmp_path):

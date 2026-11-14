@@ -1,6 +1,6 @@
 # Waiting on you: relay and release stops reach Telegram, with buttons
 
-Status: draft for review, 2026-11-14. Builds on the personal assistant (ASST-1..23, done) and release CI recovery (RCR-1..7, done). Runs after `plans/console-restart.plan.md`.
+Status: draft for review, 2026-11-14. Builds on the personal assistant (ASST-1..23, done) and release CI recovery (RCR-1..7, done). Runs after `plans/quick-fixes.plan.md`.
 
 ## Problem
 

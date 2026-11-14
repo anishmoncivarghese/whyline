@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -61,6 +62,33 @@ def owning_set(root: Path, docs: Path | None = None) -> tuple[Path, str] | None:
         except docset.DocSetError:
             continue
         return candidate, slug
+    return None
+
+
+# Only the top of a plan names its design: the header comment's `spec:` field,
+# or a "Spec:"/"Design:" line before the tasks.
+_LINK_LINES = 30
+_HEADER_SPEC = re.compile(r"\|\s*spec:\s*([^|\s][^|]*?)\s*(?:\||-->)")
+_LINE_SPEC = re.compile(r"\b(?:Spec|Design):\s*`([^`]+\.md)`")
+
+
+def linked_design(root: Path) -> Path | None:
+    """The design document the active plan names, when it is a file in the repository."""
+    plan = active_plan_file(root)
+    if plan is None:
+        return None
+    try:
+        with plan.open(encoding="utf-8") as handle:
+            head = [line for _, line in zip(range(_LINK_LINES), handle)]
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in head:
+        found = _HEADER_SPEC.search(line) if line.lstrip().startswith("<!--") else None
+        found = found or _LINE_SPEC.search(line)
+        if found:
+            linked = _repo_file(root, found.group(1).strip())
+            if linked is not None:
+                return linked
     return None
 
 
