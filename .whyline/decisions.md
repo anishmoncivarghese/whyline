@@ -43539,3 +43539,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 0bdeae9626c9449c8b54ffca7df36504 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:48:36.654Z"} -->
+
+## 2026-11-14 — Skills CLI lives under whyline tools skills, not a top-level whyline skills
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-5
+
+**Because:** top-level wiring is in src/whyline/cli.py, outside this task's file list; tools/cli.py already owns the tools parser
+
+**Rejected:**
+
+- top-level skills parser — needs edits outside listed files
+
+**Files:** src/whyline/tools/cli.py
+
+<!-- whyline-event: 1e7b6e33cae5440b91be2f7b8b84126f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:50:03.724Z"} -->
+
+## 2026-11-14 — Pass TLS-5 skills library and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-5
+
+**Because:** Full test suite (4806 passed) and tests/tools (26 passed) passed; verified discovery order across 4 locations, front matter parsing, broken skill reporting, create/copy, refusal of edits/removals on Claude skills, users.of removal guard, and CLI subcommands under whyline tools skills
+
+**Files:** src/whyline/tools/skills.py, src/whyline/tools/cli.py, tests/tools/test_skills.py
+
+<!-- whyline-event: 52079bb106994781b94e1b26a0d804e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T08:11:29.906Z"} -->
+
+## 2026-11-14 — Approve TLS-5 skills library and CLI
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-5
+
+**Because:** All task requirements verified: discovery order across 4 locations, front matter parsing, broken skill detection, creation, copying, refusal of edits/removals on Claude skills, users.of removal guard, and CLI subcommands under whyline tools skills; full test suite and tools tests pass
+
+**Rejected:**
+
+- Request changes — implementation meets all specifications and full test suite passes cleanly
+
+**Files:** src/whyline/tools/skills.py, src/whyline/tools/cli.py, tests/tools/test_skills.py
+
+<!-- whyline-event: 19d1c9afd6b94c749a0b5ed122bd0413 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T08:50:30.038Z"} -->

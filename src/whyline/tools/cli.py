@@ -1,11 +1,13 @@
-"""`whyline tools mcp list|add|remove|import`. Exit codes: 0 ok, 1 refused or
-failed, 2 bad usage."""
+"""`whyline tools mcp list|add|remove|import|test` and
+`whyline tools skills list|show|new|copy|edit|remove`. Exit codes: 0 ok,
+1 refused or failed, 2 bad usage."""
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from whyline.tools import mcp_config
+from whyline.tools import mcp_config, skills
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -31,6 +33,76 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     imp.add_argument("names", nargs="*")
     test = sub.add_parser("test", help="Start a server, list its tools and store them")
     test.add_argument("name")
+    _add_skills_parser(tools_sub)
+
+
+def _add_skills_parser(tools_sub: "argparse._SubParsersAction") -> None:
+    parser = tools_sub.add_parser("skills", help="Skills agents may be given")
+    sub = parser.add_subparsers(dest="skills_command", required=True)
+    sub.add_parser("list", help="Skills from whyline and Claude folders")
+    show = sub.add_parser("show", help="Show one skill")
+    show.add_argument("ref", help="origin:name")
+    new = sub.add_parser("new", help="Create a whyline skill")
+    new.add_argument("name")
+    new.add_argument("--description", required=True)
+    new.add_argument("--body", default="", help="text of the skill, or - to read stdin")
+    new.add_argument("--repo", action="store_true", help="create it in this repository")
+    copy = sub.add_parser("copy", help="Copy a Claude skill to whyline")
+    copy.add_argument("ref", help="claude:name or claude-project:name")
+    edit = sub.add_parser("edit", help="Change a whyline skill")
+    edit.add_argument("ref")
+    edit.add_argument("--description")
+    edit.add_argument("--body", help="new text, or - to read stdin")
+    remove = sub.add_parser("remove", help="Delete a whyline skill nothing uses")
+    remove.add_argument("ref")
+
+
+def _text(value: str | None) -> str | None:
+    return sys.stdin.read() if value == "-" else value
+
+
+def _skills(args: argparse.Namespace) -> int:
+    command = args.skills_command
+    root = Path.cwd()
+    try:
+        if command == "list":
+            found = skills.find(root)
+            if not found:
+                print("No skills found.")
+            for s in found:
+                note = f"BROKEN: {s.problem}" if s.broken else s.description
+                print(f"{s.ref}  {s.size} bytes  {note}")
+            return EXIT_OK
+        if command == "show":
+            skill = skills.get(args.ref, root)
+            print(f"{skill.ref}  {skill.path}")
+            if skill.broken:
+                print(f"Broken: {skill.problem}")
+            print(f"Files: {', '.join(skill.files) or '(none)'}")
+            manifest = skill.path / "SKILL.md"
+            if manifest.is_file():
+                print()
+                print(manifest.read_text(encoding="utf-8"))
+            return EXIT_OK
+        if command == "new":
+            skill = skills.create(args.name, args.description, _text(args.body) or "",
+                                  repo_root=root if args.repo else None)
+            print(f"Created {skill.ref}.")
+        elif command == "copy":
+            skill = skills.copy_to_whyline(args.ref, root)
+            print(f"Copied to {skill.ref}.")
+        elif command == "edit":
+            skill = skills.edit(args.ref, root, description=args.description, body=_text(args.body))
+            print(f"Updated {skill.ref}.")
+        else:
+            skills.remove(args.ref, root)
+            print(f"Removed {args.ref}.")
+        return EXIT_OK
+    except KeyError:
+        print(f"No skill {getattr(args, 'ref', '')}.", file=sys.stderr)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+    return EXIT_ERROR
 
 
 def _test(args: argparse.Namespace) -> int:
@@ -124,6 +196,8 @@ def _import(args: argparse.Namespace) -> int:
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.tools_command == "skills":
+        return _skills(args)
     if args.tools_command != "mcp":
         return EXIT_USAGE
     command = args.mcp_command
