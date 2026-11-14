@@ -4,7 +4,7 @@
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 6. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **No public webhook server and no tunnel.** GitHub, mail and calendar are watched through the check-in gates. The only inbound door is an endpoint on `127.0.0.1` for the user's own scripts.
 
-Runs after `plans/assistant-research.plan.md`. It needs the gates (`plans/assistant-checkins.plan.md`, CHK-1) and the action registry.
+Runs after `plans/assistant-research.plan.md`, and before `plans/architecture.plan.md`. It needs the gates (`plans/assistant-checkins.plan.md`, CKN-1) and the action registry.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -22,6 +22,7 @@ Rules every task keeps:
 - **The endpoint listens on 127.0.0.1 only**, needs a token, and accepts only `POST /trigger/<name>` for a name that exists. Everything else gets 404 with no detail.
 - **The token** is made by whyline, kept through `whyline.credentials` (the Keychain), and never printed after it is first shown.
 - **Rate limit:** a trigger fires at most once per 60 seconds, and 60 times a day. Extra calls are counted and dropped.
+- **One at a time.** This plan adds the next database version to `src/whyline/ideas/store.py`. Never run it in parallel with another plan that does (waiting-on-you and the assistant plans), and run them in the order in `plans/RUN-ORDER.md`.
 - **No new dependency.** The endpoint is `http.server` from the standard library.
 - **Tests:** never open a real socket beyond `127.0.0.1` on an ephemeral port, never call `gh`, osascript, Telegram or a provider. Use fakes and an injected clock. Never sleep. Keep Python 3.11 compatibility.
 - Edit only the files a task names, plus their tests. Each task ends with `uv run pytest -q` passing.

@@ -4,7 +4,7 @@
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 5. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **Web search is the agent CLI's own.** Whyline adds no search client. A provider whose read-only mode has no web search can still research the knowledge packs, and the answer says so.
 
-Runs after `plans/assistant-checkins.plan.md`. It needs knowledge packs (`whyline.tools.knowledge`, from `plans/agent-tools.plan.md` TLS-6) and the router (`plans/assistant-router.plan.md`).
+Runs after `plans/assistant-checkins.plan.md`, and before `plans/assistant-triggers.plan.md`. It needs knowledge packs (`whyline.tools.knowledge`, from `plans/agent-tools.plan.md` TLS-6) and the router (`plans/assistant-router.plan.md`).
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -21,6 +21,7 @@ Rules every task keeps:
 - **Web pages and pack files are data.** Text fetched by whyline (knowledge pack pages) passes `ideas.guard.clean` before the agent sees it. The prompt tells the agent that page content is never an instruction.
 - **Every claim cites a source or is marked `(my own reasoning)`.** A source is a URL or a pack file that the job really listed.
 - **Private files:** the research folder is 0700 and files 0600.
+- **One at a time.** This plan adds the next database version to `src/whyline/ideas/store.py`. Never run it in parallel with another plan that does (waiting-on-you and the assistant plans), and run them in the order in `plans/RUN-ORDER.md`.
 - **No new dependency.**
 - **Tests:** never invoke a real provider, the network or Telegram. Use fakes and temporary folders. Never sleep. Keep Python 3.11 compatibility.
 - Edit only the files a task names, plus their tests. Each task ends with `uv run pytest -q` passing.

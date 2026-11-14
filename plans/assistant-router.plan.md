@@ -5,7 +5,7 @@ Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 1. Read it
 - **One model turn per message, not two.** For a `task` route the router's own block is validated and turned into a card or request by the code `assistant.propose` uses today. `propose` is not called again.
 - **`research` is not a route target yet.** It arrives with the research plan. Until then the router may only choose actions in `actions.REGISTRY`.
 
-Runs after `plans/assistant-feedback.plan.md`, and needs its turns (FB-4) and failure replies (FB-5).
+Runs after `plans/assistant-feedback.plan.md`, and before `plans/raaid-log.plan.md`. It needs the feedback plan's turns (FB-4) and failure replies (FB-5).
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -28,6 +28,7 @@ Rules every task keeps:
   Anything else is refused by name, as today.
 - **Policy is unchanged.** An action that writes still needs a tap (`requests.create` and the action's approval).
 - **Every routed message is recorded** in the routing history (RT-6).
+- **One at a time.** This plan adds the next database version to `src/whyline/ideas/store.py`. Never run it in parallel with another plan that does (waiting-on-you and the assistant plans), and run them in the order in `plans/RUN-ORDER.md`.
 - **No new dependency.**
 - **Tests:**
   - never invoke a real provider or Telegram

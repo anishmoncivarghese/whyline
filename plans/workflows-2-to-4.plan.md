@@ -3,7 +3,7 @@
 
 Merged on 2026-11-01 from three plans, in run order: workflows-2-connections (WF-14..20), workflows-4-tools (WF-27..34) and workflows-3-telegram (WF-21..26). Spec: `docs/superpowers/specs/2026-10-29-workflows-design.md`. Part 1 must come before Part 2; Part 3 could run either side of Part 2. Press Release when it finishes.
 
-Runs after `plans/agent-tools.plan.md`. Changed 2026-11-10: the credential store (WF-14), the MCP registry and import (most of WF-27) and the MCP client (WF-28) moved there as TLS-1, TLS-3 and TLS-4, in `whyline.credentials` and `whyline.tools`, shared with Agents. This plan keeps the Workflows side: workflows as users of credentials and servers, the `mcp` step, the picker and the docs.
+Runs after `plans/architecture.plan.md`, and before `plans/job-search-5a-companies-cv.plan.md`. It needs agent-tools released. Changed 2026-11-10: the credential store (WF-14), the MCP registry and import (most of WF-27) and the MCP client (WF-28) moved there as TLS-1, TLS-3 and TLS-4, in `whyline.credentials` and `whyline.tools`, shared with Agents. This plan keeps the Workflows side: workflows as users of credentials and servers, the `mcp` step, the picker and the docs.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task. Each part keeps its own intro and rules; read the intro of the part a task is in before starting it.
 
@@ -319,6 +319,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   Verify with `uv run pytest -q tests/workflows/test_notify.py tests/ideas/test_bot.py`. Change nothing else.
 
 - [ ] WF-24: Telegram trigger and run progress
+  Changed 2026-11-15: the one progress message per run uses the working message from `plans/assistant-feedback.plan.md` (`whyline.ideas.feedback` and `telegram.edit_message_text`, FB-5): send once, then edit. Do not build a second mechanism. `flow` and `flows` stay commands in `ideas/intent.py`, so they never go through the router.
   Edit `src/whyline/workflows/notify.py`, `src/whyline/workflows/engine.py`, `src/whyline/workflows/definitions.py`, `src/whyline/workflows/steps/__init__.py`, `src/whyline/ideas/bot.py`, `tests/workflows/test_notify.py` and `tests/ideas/test_bot.py` only.
   - Trigger kind `telegram`: `flow <name> <free text>` starts a run with `trigger.text` (tainted). Validation refuses `[[input]]` on a `telegram` workflow.
   - A run whose source is `telegram` keeps one progress message per run: `Started <name>.`, then `<n>/<total> <step>…` as steps start, `Waiting for your approval.`, `Waiting until HH:MM.`, then `Done.` or `Failed at <step>: <reason>.`. The message id is stored on the run and edited in place; a failed edit sends a new message once and stores its id.

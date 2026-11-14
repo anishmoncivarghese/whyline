@@ -3,7 +3,7 @@
 
 Spec: `docs/superpowers/specs/2026-11-14-agent-builder-design.md`, Part 1. Read it before every task. Where this plan and the spec differ, this plan wins.
 
-Runs after `plans/agent-tools.plan.md` is released (it needs TLS-7's fields, TLS-9's server and TLS-10's approvals), and before `plans/agent-draft.plan.md`.
+Runs after `plans/sdlc-done.plan.md`, and before `plans/agent-draft.plan.md`. It needs agent-tools released (TLS-7's fields, TLS-9's server and TLS-10's approvals).
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-07T18:45:00+05:30 -->
 # Relay live models: change an agent's model from "Agents for this run" while the relay runs
 
-Needs whyline-relay with RLY-18 (`roles model`, `.whyline/relay/model-overrides.json`) published first. That is RLY-16 in `~/whyline-relay/plans/relay-followups.plan.md`, expected as 0.2.43. Run this plan after that release, at any point in the agentdock run order.
+Runs after `plans/console-restart.plan.md`, and before `plans/assistant-scheduled-access.plan.md`. It needs whyline-relay 0.2.43 or later (RLY-18: `roles model`, `.whyline/relay/model-overrides.json`), which is on PyPI since 2026-11-12.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

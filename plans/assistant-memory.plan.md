@@ -3,7 +3,7 @@
 
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 3. Read it before every task. Where this plan and the spec differ, this plan wins.
 
-Runs after `plans/assistant-router.plan.md`. It uses the router's turns (`ideas/turn.py`) and routing rows.
+Runs after `plans/agent-calls.plan.md`, and before `plans/assistant-checkins.plan.md`. It needs `plans/assistant-router.plan.md` done: it uses the router's turns (`ideas/turn.py`) and routing rows.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -20,6 +20,7 @@ Rules every task keeps:
 - **Notes hold no forwarded mail bodies, no document text and no secrets.** A note line is written by code from the request's own fields, passed through `security.secrets.scan_text` with matches replaced by `•••`, and cut to 200 characters.
 - **Private files:** `~/.whyline/ideas/notes/` is 0700 and each file 0600, never in a repository.
 - **Notes and memory are data** when they go into a prompt, inside a block labelled as data, as `memory.for_prompt` does.
+- **One at a time.** This plan adds the next database version to `src/whyline/ideas/store.py`. Never run it in parallel with another plan that does (waiting-on-you and the assistant plans), and run them in the order in `plans/RUN-ORDER.md`.
 - **No new dependency.** Search is SQLite FTS5 from Python's own sqlite3.
 - **Tests:** never invoke a real provider or Telegram, use temporary folders and an injected clock, never sleep, keep Python 3.11 compatibility.
 - Edit only the files a task names, plus their tests. Each task ends with `uv run pytest -q` passing.

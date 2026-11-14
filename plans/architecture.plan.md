@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-03T16:30:00+05:30 -->
 # Architecture: a Files tab that shows how the repo is built, refreshed by hand or after every release
 
-Runs after `plans/safe-pause.plan.md` and before `plans/sdlc-pipeline.plan.md`. Needs the Chat tab from `plans/relay-chat.plan.md` (RCH-7). Design: `docs/superpowers/specs/2026-11-03-architecture-tab-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
+Runs after `plans/assistant-triggers.plan.md`, and before `plans/workflows-2-to-4.plan.md`. Needs the Chat tab from `plans/relay-chat.plan.md` (RCH-7). Design: `docs/superpowers/specs/2026-11-03-architecture-tab-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -304,5 +304,3 @@ Rules every task keeps:
      - that diagrams stay local in `~/.whyline/architecture/`
      - `whyline architecture`
   Tests: the Settings round trip; the Help mentions the Architecture tab and `whyline architecture`.
-
-## Publish

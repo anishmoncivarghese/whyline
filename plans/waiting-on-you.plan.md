@@ -5,7 +5,7 @@ Spec: `docs/superpowers/specs/2026-11-14-waiting-on-you-design.md`. Read it befo
 - **The security-finding card (spec card 5) is not built.** The security gate is a console screen before the release starts and leaves no saved state the worker can read. It is a later design.
 - **Card text:** each task gives the exact text. Use it as written.
 
-Runs after `plans/console-restart.plan.md`.
+Runs after `plans/assistant-scheduled-access.plan.md`, and before `plans/assistant-feedback.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -17,6 +17,7 @@ Rules every task keeps:
 - **No secret, diff or whole log in a message.**
   - All card and answer text goes through `waiting.safe_text`, from WAIT-2.
   - Excerpts are at most 20 lines.
+- **One at a time.** This plan adds the next database version to `src/whyline/ideas/store.py`. Never run it in parallel with another plan that does (waiting-on-you and the assistant plans), and run them in the order in `plans/RUN-ORDER.md`.
 - **No new dependency.**
 - **Tests:**
   - never call Telegram, `gh`, git remotes, a provider, or a real relay or release process

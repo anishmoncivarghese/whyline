@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-03T20:00:00+05:30 -->
 # Trading desk: a team of read-only agents researches a watchlist and writes a morning brief
 
-Runs after `plans/workflows-2-to-4.plan.md`, at the end of the current queue. It depends on nothing that is still unshipped, so it can move earlier. Design: `docs/superpowers/specs/2026-11-03-trading-desk-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
+Runs after `plans/self-improvement-3-report-console.plan.md`, at the end of the queue. It depends on nothing that is still unshipped, so it can move earlier. Design: `docs/superpowers/specs/2026-11-03-trading-desk-design.md`. Read it before any task. Where this plan and the design differ, this plan wins. Where a name in the repository has moved, follow the repository and keep the design's behaviour.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -295,5 +295,3 @@ Rules every task keeps:
   - the schedule
   - `whyline trading`
   Tests: the Help mentions the Trading desk and `whyline trading`; the doc contains the footer text and the CSV header.
-
-## Publish

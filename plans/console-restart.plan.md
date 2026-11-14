@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-13T18:10:00+05:30 -->
 # Console restart notice, crash log and a patient Ready check
 
-Runs after `plans/done/release-ci-recovery.plan.md` and before `plans/raaid-log.plan.md`. No separate design: the problem and the decisions are below.
+Runs after `plans/agent-tools.plan.md`, and before `plans/relay-live-models.plan.md`. No separate design: the problem and the decisions are below.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

@@ -21,6 +21,7 @@ Rules every task keeps:
 - **Feedback never breaks the work.** A failed reaction, chat action or edit is logged and ignored. It never fails a poll, a turn or a send.
 - **Only allowed chats** (`telegram_in.allowed_chats`) get a reaction or a message.
 - **Messages are data.** Nothing here reads message text to choose a command.
+- **One at a time.** This plan adds the next database version to `src/whyline/ideas/store.py`. Never run it in parallel with another plan that does (waiting-on-you and the assistant plans), and run them in the order in `plans/RUN-ORDER.md`.
 - **No new dependency.** The bot token never appears in a log, an argv or an error (`telegram.redact`).
 - **Tests:**
   - never call Telegram, launchctl, a provider or a real child process

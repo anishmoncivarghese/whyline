@@ -1,10 +1,10 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | spec: docs/superpowers/specs/2026-11-14-assistant-2-design.md | created: 2026-11-14T17:00:00+05:30 -->
 # Assistant check-ins: gates, active hours and staying silent
 
-Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 4. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
+Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 4. Task ids are CKN (CHK is used by the job search plans). Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **A gate is a `before` step.** `agents/before.py` already has `Step(run, skip_when_empty=True)`: a step that returns 0 skips the agent. Gates are new steps of that kind that take arguments.
 
-Runs after `plans/assistant-memory.plan.md`.
+Runs after `plans/assistant-memory.plan.md`, and before `plans/assistant-research.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -26,13 +26,13 @@ Rules every task keeps:
 - **Release scope:** no version bump, tag, push or publish.
 
 **Review focus.** Each item is pinned by the test named in its task. This list, plus each task's own tests, is the complete bar for approval. A reviewer who finds a gap outside it records `whyline handoff <task> --issue "follow-up: <gap>"` and approves, and never rejects for it.
-- A gate that finds nothing starts no agent and sends nothing. CHK-2, `test_empty_gate_skips_the_agent`.
-- The same item never fires a gate twice. CHK-1, `test_gate_reports_an_item_once`.
-- Outside active hours nothing is delivered, and it arrives as one message when the hours begin. CHK-3, `test_held_until_active_hours`.
-- An agent answering `NOTHING` delivers nothing and the run is still recorded. CHK-3, `test_nothing_answer_is_silent`.
-- At most one check-in message per chat per hour. CHK-3, `test_one_checkin_message_per_hour`.
+- A gate that finds nothing starts no agent and sends nothing. CKN-2, `test_empty_gate_skips_the_agent`.
+- The same item never fires a gate twice. CKN-1, `test_gate_reports_an_item_once`.
+- Outside active hours nothing is delivered, and it arrives as one message when the hours begin. CKN-3, `test_held_until_active_hours`.
+- An agent answering `NOTHING` delivers nothing and the run is still recorded. CKN-3, `test_nothing_answer_is_silent`.
+- At most one check-in message per chat per hour. CKN-3, `test_one_checkin_message_per_hour`.
 
-- [ ] CHK-1: Gates
+- [ ] CKN-1: Gates
   Create `src/whyline/agents/gates.py` and `tests/agents/test_gates.py` only.
   1. `@dataclass(frozen=True) class Gate`: `name`, `label`, `args: tuple[Arg, ...]`, `run`. `Arg` has `key`, `label`, `kind` (`text`, `minutes`, `repo`, `path`) and `default`.
   2. `GATES`, with these five:
@@ -46,7 +46,7 @@ Rules every task keeps:
   5. `write(found, run_dir: Path) -> int` writes `found.md` (one line per item, each cut to 300 characters) and returns the item count.
   Tests: `test_gate_reports_an_item_once`, each gate with fake readers, the `gh` argv, the 200-file cap, a path outside home refused, an unknown gate and a bad argument refused, and `write`'s file.
 
-- [ ] CHK-2: Check-in fields on a saved agent, and running the gate
+- [ ] CKN-2: Check-in fields on a saved agent, and running the gate
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/before.py`, `src/whyline/agents/runner.py`, `src/whyline/agents/state.py` and their tests.
   1. `AgentDef` gets `gate: str = ""`, `gate_args: dict[str, str]`, `active_hours: str = ""` (`HH:MM-HH:MM` with optional days such as `mon-fri`), `silent: bool = False`. `parse` and `render` read and write them under a `[checkin]` table. An agent file without that table loads as before. `parse` validates the gate through `gates.validate` and the hours format.
   2. `before.py`: a step `gate` with `skip_when_empty=True`. It loads the agent's gate state (`state.py`, per agent), calls `gates.check`, saves the new state, and returns `gates.write(...)`. `found.md` is shown to the agent.
@@ -54,7 +54,7 @@ Rules every task keeps:
   4. `Trigger` gets `every_minutes: int = 0` (5 to 720), handled by `schedule.py` beside `every_hours`.
   Tests: `test_empty_gate_skips_the_agent` (the run is recorded as skipped and no provider is called), a gate with items runs the agent with `found.md` present, round trip of the new fields, an old agent file loads unchanged, the hours format refused when wrong, and `every_minutes` due times.
 
-- [ ] CHK-3: Active hours, staying silent and the hourly limit
+- [ ] CKN-3: Active hours, staying silent and the hourly limit
   Create `src/whyline/agents/quiet.py` and `tests/agents/test_quiet.py`. Edit `src/whyline/agents/deliver.py`, `src/whyline/agents/tick.py` and their tests.
   1. `quiet.active(hours: str, now: datetime) -> bool` and `quiet.next_start(hours, now) -> datetime`. Empty hours are always active. A range may cross midnight.
   2. `quiet.is_nothing(text) -> bool`: the agent's whole answer, trimmed, is `NOTHING` (any case, an optional full stop).
@@ -66,7 +66,7 @@ Rules every task keeps:
   5. A failure alert (`on_failure = "alert"`) follows the same hours and limit.
   Tests: `test_held_until_active_hours`, `test_nothing_answer_is_silent`, `test_one_checkin_message_per_hour`, a range across midnight, weekday limits, the 20-item cap, and an agent with no gate delivers exactly as before.
 
-- [ ] CHK-4: Check-ins in the console and CLI
+- [ ] CKN-4: Check-ins in the console and CLI
   Edit `src/whyline/agents/cli.py`, the console's New agent and Agents screens (`src/whyline/console/agents_screens.py` or the file that holds them), and their tests.
   1. One function `service.save_checkin(name, *, gate, gate_args, every_minutes, active_hours, silent)` validates and saves. Both the CLI and the console call it.
   2. CLI:
@@ -77,7 +77,7 @@ Rules every task keeps:
   3. Console: a **Check-in** section in New agent and Edit agent with a gate select, the gate's argument inputs, **Every (minutes)**, **Active hours**, **Stay silent when there's nothing**, and **Test gate now** showing the result. The Agents list shows `check-in: <gate>, last: <n found | nothing | held until HH:MM>`.
   Tests: CLI and console call `save_checkin`, `test` leaves the seen state unchanged, a bad argument shows the gate's reason, and `off` restores a plain agent.
 
-- [ ] CHK-5: Docs
+- [ ] CKN-5: Docs
   Edit `docs/agents.md` (or the page that documents saved agents), `docs/assistant.md` and `README.md` only.
   Cover: what a check-in is, the five gates and their arguments, active hours and the held message, `NOTHING`, the hourly limit, and **Test gate now**.
   Verify with `uv run pytest -q`.

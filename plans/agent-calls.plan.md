@@ -4,7 +4,7 @@
 Spec: `docs/superpowers/specs/2026-11-14-agent-builder-design.md`, Part 3. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **An agent with a Can call list but no other tools still gets whyline's MCP server** for its run, so the called agents can be reached. On a CLI whose tool support is `none`, Can call is not offered.
 
-Runs after `plans/agent-draft.plan.md`.
+Runs after `plans/agent-draft.plan.md`, and before `plans/assistant-memory.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
