@@ -95,7 +95,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 ## Part 3: Agents use them
 
-- [ ] TLS-7: The agent definition gets skills, knowledge and tools
+- [x] TLS-7: The agent definition gets skills, knowledge and tools
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/records.py` and their tests only.
   1. `AgentDef` gets `skills: tuple[str, ...]` (`origin:name`), `knowledge: tuple[str, ...]` and `tools: dict[str, str]` (`"<server>.<tool>"` to `allowed` or `ask`). `sources` still loads and is added to `knowledge`. Saving writes `knowledge`, never `sources`.
   2. Validation: an unknown skill, pack, server or tool, an unknown permission, or skills over `AGENT_SKILLS_LIMIT` make the agent broken with the reason, as other definition errors do today.
