@@ -44,6 +44,9 @@ Rules every task keeps:
 - No secret appears in a report, digest, log, PR body or alert. Redact through `improve.report.redact` (IMP-17).
 
 
+**Added 2026-11-15 (IMP-38..46):** model levels (Best for review and planning, Standard for the fix), catch-up after a missed run and keeping the Mac awake, a dismissed list, a rotating review focus, a second opinion on serious findings, suggestions for findings that are too big, and the run's cost. This file has IMP-40 to IMP-43. IMP-18 (one repo, start to end) runs them in this order: review with its focus (IMP-11, IMP-40), second opinion (IMP-41), choose with the dismissed list (IMP-12, IMP-42), plan and fix at their model levels (IMP-13, IMP-14, IMP-43). IMP-37's documentation covers all of them.
+
+
 **Reuse what exists now (decided 2026-11-15; this wins over the task text below).** This plan was written on 2026-11-02, before these existed:
 - **IMP-17, secrets:** use `whyline.security.secrets.scan_text` and its rule set for both the guard's added-lines check and `report.redact`. Do not keep a separate built-in pattern list. Add a rule to the shared rule set if one is missing.
 - **IMP-21 and IMP-22, pull requests:** open or update the pull request with `whyline.release.pullrequest.ensure`, read its checks with `pullrequest.checks`, and merge with the same `gh pr merge --merge` call the release's `merge` step uses (`plans/sdlc-git-flow.plan.md`, GIT-4). The approval rule is unchanged: nothing is pushed, opened or merged without an approval naming the exact sha.
@@ -81,6 +84,22 @@ Rules every task keeps:
   - the prompt has the data-not-instructions line
   - the read-only flag passed
 
+- [ ] IMP-40: A review focus that rotates
+  Edit `src/whyline/improve/review.py`, `src/whyline/improve/settings.py` and their tests only.
+  1. `FOCUS = ("security", "test gaps", "error handling", "dead code", "docs drift")`, each with a fixed two-line brief saying what to look for and what counts as evidence (a file and line). `Settings` gains `focus: str = "rotate"`: `rotate`, `off`, or one focus name.
+  2. `review.next_focus(repo_name, settings, *, state) -> str | None`: with `rotate`, the focus after the one this repo's last finished run used, stored per repo in `home()/state.sqlite`. With `off`, None.
+  3. The review prompt gains, after the check results and vulnerabilities: `Also look closely at one area this run: <focus>. <brief>` and `Report at most 5 findings for this area, each with a file and line as evidence.` Findings from the focus carry `"focus": "<name>"`. Check failures and vulnerabilities are reviewed on every run as before.
+  4. The focus used is recorded on the run and shown in the report (`Focus this run: test gaps`).
+  Tests: the rotation order per repo and its wrap-around, one fixed focus, off, the prompt text, more than 5 focus findings cut to 5, and a failed run not advancing the rotation.
+
+- [ ] IMP-41: A second opinion on serious findings
+  Edit `src/whyline/improve/review.py`, `src/whyline/improve/settings.py` and their tests only.
+  1. `Settings` gains `second_opinion: str = "off"`: `off`, `high` (high and critical findings) or `all`.
+  2. `review.second_opinion(clone, repo, findings, *, execute, first_agent) -> list[Finding]`: one read-only turn on a **different** enabled agent from `first_agent`, at its `best` model (IMP-38), given only the chosen findings (title, evidence, proposed fix) and the clone. It answers per finding `agree`, `disagree` or `unsure`, with a reason of at most 200 characters.
+  3. A finding is marked `confirmed` on agree. On disagree or unsure it is marked `disputed` with both views. Vulnerabilities from OSV and failing checks are facts and are never sent for a second opinion or disputed.
+  4. With no second enabled agent, or when the turn fails, findings are marked `unconfirmed (no second agent)` or `unconfirmed (<reason>)`, and the run goes on.
+  Tests: only the configured severities are sent, a different agent is used, agree and disagree outcomes, vulnerabilities and failing checks never sent, and both fallbacks.
+
 - [ ] IMP-12: Choosing what to fix
   Edit `src/whyline/improve/review.py` and its tests only.
   `choose(findings, repo) -> (take, report_only)`:
@@ -88,6 +107,13 @@ Rules every task keeps:
   - **report_only:** everything else, with the reason "below Fix from", "too big" or "over Max fixes"
   - At level `report`, take is always empty.
   Tests: each reason, security-first ordering, and the report level.
+
+- [ ] IMP-42: Dismissed and disputed findings are not fixed
+  Edit `src/whyline/improve/review.py` and its tests only.
+  1. `choose` moves a finding for which `dismissed.is_dismissed` is true to a third list, `dismissed`, with the entry's reason. It is not taken, not counted against `max_fixes`, and not in `report_only`.
+  2. `choose` moves a `disputed` finding (IMP-41) to `report_only` with the reason `the second reviewer disagreed: <reason>`.
+  3. The report gets one line, `<n> dismissed findings not shown`, and lists them only with `--show-dismissed` (CLI) or **Show dismissed** (console).
+  Tests: a dismissed finding not taken and not counted, an expired dismissal taken again, a disputed finding reported with both views, and the report line.
 
 - [ ] IMP-13: Write the fix plan
   Create `src/whyline/improve/fix.py` and its tests.
@@ -107,6 +133,19 @@ Rules every task keeps:
   4. **Agent budget:** it counts agent starts from lines in the relay log that start an agent. When `agent_budget` is used up, it stops the relay the same way, with reason "agent limit".
   5. **Held fix:** `paused` and `stopped` call `workspace.hold`.
   Tests: each exit code, the time limit with a fake clock (stop then kill), the agent limit, and hold called.
+
+- [ ] IMP-43: The right model for each step
+  Edit `src/whyline/improve/review.py`, `src/whyline/improve/fix.py` and their tests only.
+  1. **Review (IMP-11):** the `AgentDef` gets `model = modellevels.model(agent, settings.models["review"])`. The run record stores the agent and the model used.
+  2. **Plan (IMP-13):** the SDLC set is started with the writer at the `plan` level and the reviewer at the `plan_review` level, and the reviewer is a different enabled agent from the writer when there is one. Pass the models the way the SDLC roles already take a model for an agent; when they can't, add an optional `models: dict[role, model]` to the SDLC start call in this task and its tests.
+  3. **Fix (IMP-14):** before the relay starts in the clone, write the clone's `.whyline/relay/model-overrides.json` through the relay's own model-override command (whyline-relay 0.2.43, RLY-18), per agent:
+     - the implementer's agent at the `fix` level
+     - the tester's agent at the `test` level
+     - the reviewer's agent at the `fix_review` level
+     - when two roles use the same agent with different levels, the higher level is used for that agent, and the report says so: `<agent> runs at Best for every role, because it holds more than one`
+  4. The relay roles in the clone put a different agent on reviewer than on implementer when two are enabled. With one enabled agent the run goes on and the report says `<agent> reviewed its own fix (only one agent is enabled)`.
+  5. An empty model name means the CLI's own default, and nothing is passed.
+  Tests: each step's model from the levels, the override file's content, the same-agent rule and its report line, the single-agent line, and an empty model passing no flag.
 
 - [ ] IMP-15: Build record
   Edit `src/whyline/improve/fix.py` and its tests only.

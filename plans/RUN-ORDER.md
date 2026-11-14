@@ -30,9 +30,9 @@ Finished plans are in `plans/done/`.
 | 8 | Job search | `job-search-5a-companies-cv.plan.md` | CMP-1..2, CVT-1..7 | |
 | 8 | | `job-search-5b-saved-searches.plan.md` | SRCH-1..6, CHK-1..3 | 5a |
 | 8 | | `job-search-5c-results-apply.plan.md` | JRUN-1..5, PACK-1..2, ASF-1, JSD-1 | 5b |
-| 9 | Self-improvement | `self-improvement-1-checks.plan.md` | IMP-1..10 | |
-| 9 | | `self-improvement-2-fix.plan.md` | IMP-11..23 | part 1, sdlc-git-flow |
-| 9 | | `self-improvement-3-report-console.plan.md` | IMP-24..37 | part 2, waiting-on-you, assistant-checkins, sdlc-done |
+| 9 | Self-improvement | `self-improvement-1-checks.plan.md` | IMP-1..10, IMP-38..39 | |
+| 9 | | `self-improvement-2-fix.plan.md` | IMP-11..23, IMP-40..43 | part 1, sdlc-git-flow, whyline-relay 0.2.43 (model overrides) |
+| 9 | | `self-improvement-3-report-console.plan.md` | IMP-24..37, IMP-44..46 | part 2, waiting-on-you, assistant-checkins, sdlc-done, sdlc-product-owner and raaid-log (suggestions) |
 | 10 | Trading desk | `trading-desk.plan.md` | TRD-1..15 | |
 | Any time | | `windows-release-gate.plan.md` | WIN-1 | |
 

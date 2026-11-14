@@ -44,6 +44,9 @@ Rules every task keeps:
 - No secret appears in a report, digest, log, PR body or alert. Redact through `improve.report.redact` (IMP-17).
 
 
+**Added 2026-11-15 (IMP-38..46):** model levels (Best for review and planning, Standard for the fix), catch-up after a missed run and keeping the Mac awake, a dismissed list, a rotating review focus, a second opinion on serious findings, suggestions for findings that are too big, and the run's cost. This file has IMP-38 and IMP-39. IMP-37's documentation covers all of them.
+
+
 **Reuse what exists now (decided 2026-11-15; this wins over the task text below).** This plan was written on 2026-11-02, before these existed:
 - **IMP-6, CI status:** when the latest run failed, get the reason from `whyline.release.ci_failure.diagnose` (cause and plain sentence) and put that in the tail, instead of only the URL. Keep `ci_status`'s own signature.
 - **IMP-8 and IMP-9, dependencies and vulnerabilities:** `whyline.security.deps` already reads lock files and queries OSV with a cache (`check`, `severity_of`). Build `improve/deps.py` and `improve/vulns.py` as thin layers over it, adding only what it lacks (the `fixed` versions, `direct`, Dependabot alerts, and "what's new since the last run"). Do not write a second OSV client or a second severity mapping.
@@ -211,3 +214,19 @@ Rules every task keeps:
   - prepare refuses while a fix is held
   - each skip reason and each fix-blocked reason, in order
 
+- [ ] IMP-38: Model levels: Best and Standard for each agent
+  Create `src/whyline/modellevels.py` and `tests/test_modellevels.py`. Edit `src/whyline/improve/settings.py`, `src/whyline/console/settings_screen.py`, `src/whyline/cli.py` (a `whyline models` command) and their tests.
+  1. `LEVELS = ("best", "standard")`. `modellevels.load() -> dict[str, dict[str, str]]` (agent → level → model name) from `~/.whyline/models.toml` (0600), filled with defaults for agents the file doesn't name: claude `best = "opus"`, `standard = "sonnet"`; every other agent `""` for both, meaning "the CLI's own default".
+  2. `modellevels.model(agent, level) -> str` and `modellevels.save(agent, level, model)`. A model name is one line of at most 80 characters matching `^[A-Za-z0-9._:/-]*$`; anything else is refused.
+  3. `improve.settings.Settings` gains `models: dict[str, str]`, one level per step: `review`, `plan`, `plan_review`, `fix`, `test`, `fix_review`. Defaults: `best` for review, plan, plan_review and fix_review; `standard` for fix and test. An unknown step or level is refused. These are not part of `capability_hash`: changing a model level doesn't need a new acceptance.
+  4. CLI: `whyline models` prints the table. `whyline models set <agent> <best|standard> <model>` saves.
+  5. Console: the Settings screen's providers area gets a **Models** table, one row per enabled agent with **Best** and **Standard** inputs, saving through `modellevels.save`. An empty input shows `CLI default`.
+  Tests: defaults, round trip, file mode, a bad model name refused, the six step defaults, an unknown level refused, a level change keeping the repo accepted, and CLI and console saving through one function.
+
+- [ ] IMP-39: The dismissed list
+  Create `src/whyline/improve/dismissed.py` and `tests/improve/test_dismissed.py` only.
+  1. A finding's `key(repo_name, finding) -> str`: a hash of the repo name, the finding's kind, the vulnerability id when it has one, else its title lower-cased with digits and whitespace runs collapsed, and the first file path in its evidence. The same problem reported with a different line number or wording of the evidence gives the same key.
+  2. `home()/dismissed.json` (0600): `key`, `repo`, `title`, `kind`, `reason`, `by`, `at`, and `until` (empty for always). `add(repo_name, finding, *, reason, by, days: int | None = None)`, `remove(key)`, `listing(repo_name=None)`, and `is_dismissed(repo_name, finding, *, now) -> bool` (an entry past its `until` no longer counts and is removed).
+  3. A dismissed **vulnerability** comes back when its severity rises or a fixed version appears that wasn't there when it was dismissed: the entry stores the severity and the fixed versions, and `is_dismissed` compares them.
+  4. At most 500 entries; the oldest are dropped.
+  Tests: the same key across line-number and wording changes, different keys for different files, add, remove, expiry, the vulnerability coming back on a higher severity and on a new fixed version, and the cap.

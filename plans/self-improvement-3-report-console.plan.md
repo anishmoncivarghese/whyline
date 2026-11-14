@@ -44,6 +44,9 @@ Rules every task keeps:
 - No secret appears in a report, digest, log, PR body or alert. Redact through `improve.report.redact` (IMP-17).
 
 
+**Added 2026-11-15 (IMP-38..46):** model levels (Best for review and planning, Standard for the fix), catch-up after a missed run and keeping the Mac awake, a dismissed list, a rotating review focus, a second opinion on serious findings, suggestions for findings that are too big, and the run's cost. This file has IMP-44 to IMP-46. IMP-37's documentation covers all of them.
+
+
 **Reuse what exists now (decided 2026-11-15; this wins over the task text below).** This plan was written on 2026-11-02, before these existed:
 - **IMP-25 and IMP-26, when messages go out:** digests, alerts and missed-run notices honour the active hours and the one-message-per-hour limit in `whyline.agents.quiet` (`plans/assistant-checkins.plan.md`, CKN-3). A held message goes out when the hours begin. Alerts for a new high or critical vulnerability are not held.
 - **IMP-27, approval cards:** send the cards through the waiting-on-you card mechanism (`whyline.ideas.waiting`: one card per item, edited to done, `confirm.issue` codes), so an approval card that was handled in the console is marked done in Telegram. Keep the `improve_change` action and its always-tap policy as written.
@@ -89,6 +92,14 @@ Rules every task keeps:
   5. Send errors are recorded in `run.json` and never raised.
   Tests: combined with a patch attached, per-repo, the heartbeat on all-pass, alert on/off, no delivery, and a send error recorded.
 
+- [ ] IMP-46: Suggestions for findings that are too big, and the run's cost
+  Create `src/whyline/improve/suggestions.py` and its tests. Edit `src/whyline/improve/report.py`, `src/whyline/improve/notify.py` and their tests.
+  1. A finding left in `report_only` with the reason `too big` becomes a suggestion in `home()/suggestions.json` (0600): `key` (the dismissed-list key), `repo`, `title`, `kind`, `severity`, `evidence`, `fix`, `first_seen`, `last_seen`, `seen` (count), `state` (`open`, `added`, `dismissed`). The same finding on a later run updates `last_seen` and `seen`, and never makes a second row.
+  2. `suggestions.to_backlog(key, *, root)` and `suggestions.to_raaid(key, *, root)` add it to that repository's backlog (`whyline.sdlc.backlog.add`, source `self-improvement`) or RAAID log (`whyline raaid add`, kind action). Each is available only when its module is importable, writes to the user's checkout, and is called **only from the user's button or command** (IMP-45). Self-improvement itself still never writes to the user's checkout.
+  3. The report and the digest get a `Bigger things to plan` section listing open suggestions for the repo, newest first, at most 5, with `seen <n> times`.
+  4. **Cost:** the report and the digest get one line per repo and a total: agent turns, agent minutes, and tokens where a run record or relay log already holds them (else `—`). No new parsing of provider output is added.
+  Tests: one row per finding across runs, the count, both adders called only through their functions and never from the runner (search the package), the report section capped at 5, and the cost lines with and without tokens.
+
 - [ ] IMP-26: Schedule through the heartbeat, and missed runs
   Edit `src/whyline/agents/tick.py`, create `src/whyline/improve/tick.py`, and their tests only.
   1. `agents/tick.run_tick` calls `_run_improve(now)` beside `_run_workflows`. A failure there is logged and never stops the tick.
@@ -99,6 +110,18 @@ Rules every task keeps:
   3. A due time older than `schedule.freshness` is recorded as missed, and `notify.alert` sends "Self-improvement missed its <time> run (this Mac was asleep or off). Next run: <time>." once per missed time.
   4. `enabled=False` or paused → nothing is spawned and nothing is counted as missed. Turning the loop on doesn't count past due times as missed.
   Tests: due → spawned once across two ticks, missed → one alert, off, paused, turned on just after a due time (no missed alert), weekly and monthly due times, and a tick failure contained.
+
+- [ ] IMP-44: Catch up after a missed run, and stay awake during one
+  Edit `src/whyline/improve/tick.py`, `src/whyline/improve/settings.py`, `src/whyline/improve/runner.py` and their tests only.
+  1. `Settings` gains `catch_up_hours: int = 12` (0 turns it off, at most 48) and `keep_awake: bool = True`.
+  2. **Catch up.** A due time found older than `schedule.freshness` is no longer only recorded as missed:
+     - when it is within `catch_up_hours` and no later due time has been claimed, the run starts now, once, as a catch-up, and the digest's first line says `This run was due at <time>; the Mac was asleep or off, so it ran at <now>.`
+     - when it is older than that, it is recorded as missed and alerted as IMP-26 says
+     - several missed due times give one catch-up run, for the latest
+     - a catch-up never starts while a run is already going, or within 30 minutes of the next due time (that run is close enough)
+  3. **Stay awake.** With `keep_awake`, a run starts `whyline.console.awake.start()` when nothing is already keeping the Mac awake, and stops it at the end, on a failure and on a time limit. It never stops an Awake the user started. On battery below the relay safety limit (`whyline.relaysafety.load().battery_percent`) the run doesn't start: it is skipped with `on battery at <n>%`, and tried at the next tick while still inside the catch-up window.
+  4. The missed-run alert adds one line: `To have the Mac wake for it, set a wake time in System Settings → Battery → Schedule.` Whyline never changes the Mac's wake schedule.
+  Tests: a due time 3 hours old runs once as a catch-up with the digest line, one 13 hours old is missed, several missed give one run, no catch-up near the next due time, awake started and stopped on success, failure and time limit, the user's own Awake left running, and the battery skip then retry.
 
 - [ ] IMP-27: Approval cards by Telegram and email
   Edit `src/whyline/ideas/actions.py`, `src/whyline/ideas/worker.py`, `src/whyline/improve/notify.py` and their tests only.
@@ -242,6 +265,19 @@ Rules every task keeps:
      - **Open log** per repo
      - **Resend**
   Tests: run now args, the pause toggle, the delivery editor opened with id `improve`, history rows, and resend.
+
+- [ ] IMP-45: Models, focus, second opinion, dismissed and suggestions in the console and CLI
+  Edit `src/whyline/improve/service.py`, `src/whyline/improve/cli.py`, the Self-improvement tab in `src/whyline/console/settings_screen.py` (or the file IMP-31 created for it), and their tests only.
+  1. Service functions, each called by both the CLI and the console: `set_model_level(step, level)`, `set_focus(value)`, `set_second_opinion(value)`, `set_catch_up(hours)`, `set_keep_awake(on)`, `dismiss(repo, finding_key, *, reason, days=None)`, `undismiss(key)`, `dismissed(repo=None)`, `suggestions(repo=None)`, `suggestion_to_backlog(key)`, `suggestion_to_raaid(key)`, `suggestion_dismiss(key)`.
+  2. The tab gets:
+     - **Models:** the six steps, each with a **Best** / **Standard** select, and a link `Change which models these are` to Settings → Models (IMP-38). Under it, the agent and model each step would use now.
+     - **Review:** **Focus** (Rotate, Off, or one area) and **Second opinion** (Off, Serious findings, All findings), with the line `Uses a second agent at its best model; costs about one more review per run.`
+     - **Schedule:** **If a run is missed, catch up within (hours)** and **Keep the Mac awake during a run**.
+     - **Dismissed:** the list with repo, title, reason and until, and **Bring back**.
+     - **Bigger things to plan:** open suggestions with **Add to backlog**, **Add to RAAID** (each shown only when available) and **Dismiss**.
+  3. On a finding in **Review change** (IMP-33) and in a run's detail: **Don't raise this again…** with a reason and **Always** or **For 30 days**.
+  4. CLI: `whyline improve models [set <step> <best|standard>]`, `whyline improve focus <rotate|off|area>`, `whyline improve second-opinion <off|high|all>`, `whyline improve dismissed [--repo NAME]`, `whyline improve dismiss <repo> <finding-key> --reason "<text>" [--days N]`, `whyline improve undismiss <key>`, `whyline improve suggestions [--repo NAME]`, `whyline improve suggest <key> backlog|raaid|dismiss`.
+  Tests: every console action calling the service function its command calls, the selects' defaults, a dismiss needing a reason, Bring back, the suggestion buttons hidden when their module isn't importable, and each CLI command.
 
 - [ ] IMP-35: The Self-improvement line in Relay → Set up
   Edit the Relay Set up screen in `src/whyline/console/relay_screens.py` (or where `relay-setup` opens it) and its tests only.
