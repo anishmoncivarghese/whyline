@@ -33,7 +33,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 
 ## Part 1: Credentials and connectors
 
-- [ ] TLS-1: Credential store, and the Telegram token off the command line
+- [x] TLS-1: Credential store, and the Telegram token off the command line
   This is WF-14, moved from `plans/workflows-2-to-4.plan.md` unchanged.
   Create `src/whyline/credentials.py` and `tests/test_credentials.py`; edit `src/whyline/agents/telegram.py` and `tests/agents/test_telegram.py` only.
   - `Credential(name, kind, header_name="", query_param="", origins: tuple[str, ...] = (), created="", last_used="", last_tested="")`, kinds `bearer`, `header`, `basic`, `query`, and `env` (a plain secret given to an MCP server as an environment variable; it has no origins). Names match `^[a-z][a-z0-9-]{0,39}$`. Origins are `https://host[:port]` with no path.
