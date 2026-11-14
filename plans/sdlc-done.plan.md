@@ -5,7 +5,7 @@ Spec: `docs/superpowers/specs/2026-11-14-sdlc-upgrade-design.md`, Part 4. Read i
 - **Tokens are recorded only where a relay log already holds them.** No new parsing of provider output is added; a task without them shows `—`.
 - **Role separation warns in the form and the Stages line.** It does not refuse a start, because a user with one enabled agent could not run anything.
 
-Runs after `plans/sdlc-evidence.plan.md`, and before `plans/agent-profile.plan.md`.
+Runs after `plans/sdlc-evidence.plan.md`, and before `plans/security-earlier.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

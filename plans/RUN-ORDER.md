@@ -8,6 +8,7 @@ Finished plans are in `plans/done/`.
 |---|---|---|---|---|
 | 0 | Running | `agent-tools.plan.md` | TLS-1..16 | |
 | 1 | Quick fixes | `console-restart.plan.md` | CRS-1..4 | |
+| 1 | | `release-notes-review.plan.md` | NOTE-1..6 | |
 | 1 | | `relay-live-models.plan.md` | LMD-1..2 | whyline-relay 0.2.43 (on PyPI) |
 | 1 | | `assistant-scheduled-access.plan.md` | ASST-24..27 | |
 | 2 | Telegram daily use | `waiting-on-you.plan.md` | WAIT-1..7 | |
@@ -18,6 +19,9 @@ Finished plans are in `plans/done/`.
 | 3 | | `sdlc-product-owner.plan.md` | PO-1..6 | |
 | 3 | | `sdlc-evidence.plan.md` | EVD-1..5 | sdlc-product-owner |
 | 3 | | `sdlc-done.plan.md` | DONE-1..6 | sdlc-evidence |
+| 3b | Release hardening | `security-earlier.plan.md` | SEA-1..6 | |
+| 3b | | `release-safety.plan.md` | SAF-1..6 | release-notes-review (the record's notes line) |
+| 3b | | `release-supply-chain.plan.md` | SUP-1..6 | |
 | 4 | Agents | `agent-profile.plan.md` | PRF-1..5 | agent-tools released |
 | 4 | | `agent-draft.plan.md` | DRF-1..6 | agent-profile |
 | 4 | | `agent-calls.plan.md` | CAL-1..5 | agent-draft |
