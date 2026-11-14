@@ -58,7 +58,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. `remove` is refused while `users.of("credential", name)` is not empty, naming the users.
   Tests: each subcommand with a fake getpass and a fake store, `whyline cred add --help` having no value argument, and a removal refused by a registered user.
 
-- [ ] TLS-3: MCP server registry and import
+- [x] TLS-3: MCP server registry and import
   This is WF-27 moved to `whyline.tools`. Create `src/whyline/tools/mcp_config.py`, `src/whyline/tools/cli.py` and their tests. Edit `src/whyline/cli.py` to register `whyline tools`.
   1. `~/.whyline/mcp.toml` (0600): one `[servers.<name>]` table per server with `command` (str), `args` (list[str]), `cwd` (str, optional), `env` (a table of variable name to credential name, never a value), `enabled` (bool), `tools_hash` and `tools` (the last tested list: name, description, input schema, read_only). Names match `^[a-z][a-z0-9-]{0,39}$`.
   2. `load()`, `save_server(server)`, `remove_server(name)` (refused while `users.of("server", name)` is not empty, naming them), and `import_candidates() -> list[Candidate]`. The last reads, without changing them, the `mcpServers` of `~/.claude.json`, `~/Library/Application Support/Claude/claude_desktop_config.json` and `~/.codex/config.toml` (`[mcp_servers.*]`). It returns each local server with its command and args. A literal `env` value found there is never copied; it is listed as `needs a credential: <VAR>`. Remote entries are listed as refused, with the reason.
