@@ -161,6 +161,33 @@ def remove_server(name: str) -> None:
     _write(servers)
 
 
+def test_server(name: str, *, session=None) -> str:
+    """Start a server, list its tools and store them with their hash. Returns
+    ``<n> tools: <first 10 names>``. Raises KeyError for an unknown name and
+    ``mcp.McpError`` when the server fails."""
+    from dataclasses import replace
+
+    from whyline.tools import mcp
+
+    servers = load()
+    if name not in servers:
+        raise KeyError(name)
+    server = servers[name]
+    with (session or mcp.Session)(server) as live:
+        found = live.list_tools()
+    servers[name] = replace(
+        server,
+        tools_hash=mcp.tools_hash(found),
+        tools=tuple(Tool(t.name, t.description, t.input_schema, bool(t.read_only)) for t in found),
+    )
+    _write(servers)
+    names = ", ".join(t.name for t in found[:10])
+    return f"{len(found)} tools: {names}" if found else "0 tools"
+
+
+test_server.__test__ = False  # not a pytest test, despite the name
+
+
 def _sources() -> list[tuple[str, Path]]:
     home = Path.home()
     return [

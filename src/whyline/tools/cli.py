@@ -29,6 +29,22 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     remove.add_argument("name")
     imp = sub.add_parser("import", help="List servers from Claude and Codex configs; add those named")
     imp.add_argument("names", nargs="*")
+    test = sub.add_parser("test", help="Start a server, list its tools and store them")
+    test.add_argument("name")
+
+
+def _test(args: argparse.Namespace) -> int:
+    from whyline.tools import mcp
+
+    try:
+        print(mcp_config.test_server(args.name))
+    except KeyError:
+        print(f"No MCP server named {args.name}.", file=sys.stderr)
+        return EXIT_ERROR
+    except mcp.McpError as error:
+        print(f"Test failed: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
 
 
 def _list() -> int:
@@ -117,4 +133,6 @@ def run(args: argparse.Namespace) -> int:
         return _add(args)
     if command == "remove":
         return _remove(args)
+    if command == "test":
+        return _test(args)
     return _import(args)

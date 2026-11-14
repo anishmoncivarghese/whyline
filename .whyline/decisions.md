@@ -43491,3 +43491,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 72464e777e394ed49cf12544005a8ec9 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:09:03.293Z"} -->
+
+## 2026-11-14 — MCP client reads stdout on a thread with a queue deadline; child env is a small allowlist plus credential values
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-4
+
+**Because:** a blocking readline can't honour a deadline, and inheriting the full environment would leak unrelated secrets to third-party servers
+
+**Rejected:**
+
+- select on the pipe — not portable to Windows
+- inherit os.environ — leaks other secrets
+
+**Files:** src/whyline/tools/mcp.py
+
+<!-- whyline-event: 8086bc1fbdb34d7491a7c56729e76f33 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:10:30.702Z"} -->
+
+## 2026-11-14 — Pass TLS-4 MCP client, test subcommand, and fixtures
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-4
+
+**Because:** Full test suite (4798 passed) and all tools tests passed; verified Session lifecycle with protocol 2025-06-18, tool listing and pagination, tool calls and content rendering, error handling with redacted stderr, timeout process group killing, 1 MB limit, and tool hashing with registry storage
+
+**Files:** src/whyline/tools/mcp.py
+
+<!-- whyline-event: b7cc9ba7b132441fb45440d1512e9cee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:29:01.073Z"} -->
+
+## 2026-11-14 — Approve TLS-4 MCP client, test subcommand, and fixtures
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** TLS-4
+
+**Because:** All requirements met: Session lifecycle with 2025-06-18 protocol and process group kill, 1 MB limit and read deadlines, stderr redaction, tool listing pagination, call result formatting, tools hashing and test_server storage, and full test suite passing
+
+**Rejected:**
+
+- Request changes — implementation is clean, safe, and fully tested
+
+**Files:** src/whyline/tools/mcp.py
+
+<!-- whyline-event: 0bdeae9626c9449c8b54ffca7df36504 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T07:48:36.654Z"} -->
