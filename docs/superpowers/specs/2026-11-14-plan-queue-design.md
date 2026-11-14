@@ -1,6 +1,6 @@
 # Plan queue: run several plans one after another, releasing as it goes
 
-Status: draft for review, 2026-11-14. Builds on the relay, the Release button (REL, RFB, RCR) and Auto run. Runs after `plans/waiting-on-you.plan.md`. It uses Rehearse and the release record from `plans/release-safety.plan.md` when they are installed, and works without them.
+Status: draft for review, 2026-11-14. Builds on the relay, the Release button (REL, RFB, RCR) and Auto run. Runs after `plans/telegram-daily-use.plan.md`. It uses Rehearse and the release record from `plans/release-safety.plan.md` when they are installed, and works without them.
 
 ## Problem
 

@@ -64,7 +64,7 @@ Agent tools adds, per agent: **Skills**, **Knowledge** (files, web pages, packs)
   - A called agent must be accepted and not paused. Otherwise the tool returns `That agent isn't ready: <reason>`.
   - A called agent's **Ask first** tools still ask, and the approval card names both: `summariser (called by daily-brief) wants gmail__send_email`.
 - **Changes need review.** The caller's definition hash includes the hash of each agent it may call. When a called agent's instructions or tools change, the caller shows `needs review` and doesn't run until accepted. This is the rule TLS-7 sets for a connector whose tools changed.
-- **Router.** The Telegram router (`plans/assistant-router.plan.md`) may choose `run <agent>` for a plain message, using the descriptions. This plan only gives it the descriptions; the router's rules don't change.
+- **Router.** The Telegram router (`plans/telegram-daily-use.plan.md`) may choose `run <agent>` for a plain message, using the descriptions. This plan only gives it the descriptions; the router's rules don't change.
 
 ## Goals
 

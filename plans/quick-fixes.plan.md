@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-14T23:30:00+05:30 -->
 # Quick fixes: console restart, release notes review, live models and scheduled access
 
-Runs after `plans/agent-tools.plan.md`, and before `plans/waiting-on-you.plan.md`.
+Runs after `plans/agent-tools.plan.md`, and before `plans/telegram-daily-use.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -47,7 +47,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
 ## Part 2: Release notes review: a fixed check, a second agent, and a readable fallback (NOTE-1..6)
 
 Spec: `docs/superpowers/specs/2026-11-15-release-hardening-design.md`, Part 1. Read it before every NOTE task. Where this plan and the spec differ, this plan wins. In particular:
-- **The Telegram go-ahead's notes summary** is added by `plans/waiting-on-you.plan.md` (WAIT-5), which runs later. This part only makes the summary line available as `notes.Checked.summary`.
+- **The Telegram go-ahead's notes summary** is added by `plans/telegram-daily-use.plan.md` (WAIT-5), which runs later. This part only makes the summary line available as `notes.Checked.summary`.
 
 Why: the release notes for 0.3.70, 0.3.71 and 0.3.72 each carried the writing agent's own chatter ("here are the release notes I created, please review") and were cleaned by hand. The `<notes>` markers cut text outside them, but nothing checks the text inside. When an answer is unusable the fallback is the raw commit list, which is how v0.3.73's notes came to list `chore: tick RCR-6 in the plan`.
 

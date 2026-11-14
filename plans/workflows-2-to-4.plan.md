@@ -319,7 +319,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   Verify with `uv run pytest -q tests/workflows/test_notify.py tests/ideas/test_bot.py`. Change nothing else.
 
 - [ ] WF-24: Telegram trigger and run progress
-  Changed 2026-11-15: the one progress message per run uses the working message from `plans/assistant-feedback.plan.md` (`whyline.ideas.feedback` and `telegram.edit_message_text`, FB-5): send once, then edit. Do not build a second mechanism. `flow` and `flows` stay commands in `ideas/intent.py`, so they never go through the router.
+  Changed 2026-11-15: the one progress message per run uses the working message from `plans/telegram-daily-use.plan.md` (`whyline.ideas.feedback` and `telegram.edit_message_text`, FB-5): send once, then edit. Do not build a second mechanism. `flow` and `flows` stay commands in `ideas/intent.py`, so they never go through the router.
   Edit `src/whyline/workflows/notify.py`, `src/whyline/workflows/engine.py`, `src/whyline/workflows/definitions.py`, `src/whyline/workflows/steps/__init__.py`, `src/whyline/ideas/bot.py`, `tests/workflows/test_notify.py` and `tests/ideas/test_bot.py` only.
   - Trigger kind `telegram`: `flow <name> <free text>` starts a run with `trigger.text` (tainted). Validation refuses `[[input]]` on a `telegram` workflow.
   - A run whose source is `telegram` keeps one progress message per run: `Started <name>.`, then `<n>/<total> <step>…` as steps start, `Waiting for your approval.`, `Waiting until HH:MM.`, then `Done.` or `Failed at <step>: <reason>.`. The message id is stored on the run and edited in place; a failed edit sends a new message once and stores its id.

@@ -79,7 +79,7 @@ Rules every task keeps:
      - `open_pr`: `ensure`. Done when an open pull request's head is HEAD.
   5. `ci` waits on `checks` until passing. A failure raises `StepError` with a `ci_failure` diagnosis of the failed check's run, so RCR's Why, Rerun and Ask an agent work.
   6. A new step `merge` before `tag`, irreversible: it refuses unless checks are `passing`. With `require_approval` it also needs an approving review, else `Waiting for your approval on GitHub: <url>`. It runs `gh pr merge <number> --merge --delete-branch`, then fetches and checks that `origin/<base>` contains HEAD. Done when the pull request is merged.
-  7. The Telegram go-ahead (`whyline.ideas.goahead`, from `plans/waiting-on-you.plan.md` WAIT-5) gets the short verbs for the new steps: `push the branch` for `push_branch`, `open the pull request` for `open_pr` and `merge` for `merge`. Edit `src/whyline/ideas/goahead.py` and its tests for this.
+  7. The Telegram go-ahead (`whyline.ideas.goahead`, from `plans/telegram-daily-use.plan.md` WAIT-5) gets the short verbs for the new steps: `push the branch` for `push_branch`, `open the pull request` for `open_pr` and `merge` for `merge`. Edit `src/whyline/ideas/goahead.py` and its tests for this.
   8. `tag` and later steps then act on `origin/<base>`'s merge commit: the release checks out nothing, and tags that commit by its sha.
   Tests: `test_merge_needs_green_checks_and_confirm`, the step ids and order for `flow="pr"`, `ensure` creating and editing, `checks` for each state, a failing check giving a `StepError` with a `failure`, a resumed release skipping finished steps, the tag made on the merge commit, and `require_approval` waiting.
 

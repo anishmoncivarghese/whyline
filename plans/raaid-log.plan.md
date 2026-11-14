@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-09T10:00:00+05:30 -->
 # RAAID log: risks, assumptions, actions, issues and dependencies for a repository
 
-Runs after `plans/assistant-router.plan.md`, and before `plans/sdlc-git-flow.plan.md`. Design: `docs/superpowers/specs/2026-11-09-raaid-log-design.md`. Read it before any task. This plan needs the SDLC pipeline's modules (`whyline.sdlc.docset`, `templates`, `goldfish`, `record`, `close`, `product`, `export`, `library`) and the Chat tab in the Files pane.
+Runs after `plans/telegram-daily-use.plan.md`, and before `plans/sdlc-git-flow.plan.md`. Design: `docs/superpowers/specs/2026-11-09-raaid-log-design.md`. Read it before any task. This plan needs the SDLC pipeline's modules (`whyline.sdlc.docset`, `templates`, `goldfish`, `record`, `close`, `product`, `export`, `library`) and the Chat tab in the Files pane.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

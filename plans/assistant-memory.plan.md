@@ -3,7 +3,7 @@
 
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 3. Read it before every task. Where this plan and the spec differ, this plan wins.
 
-Runs after `plans/agent-calls.plan.md`, and before `plans/assistant-checkins.plan.md`. It needs `plans/assistant-router.plan.md` done: it uses the router's turns (`ideas/turn.py`) and routing rows.
+Runs after `plans/agent-calls.plan.md`, and before `plans/assistant-checkins.plan.md`. It needs `plans/telegram-daily-use.plan.md` done: it uses the router's turns (`ideas/turn.py`) and routing rows.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
