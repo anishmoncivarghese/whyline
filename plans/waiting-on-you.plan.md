@@ -5,7 +5,7 @@ Spec: `docs/superpowers/specs/2026-11-14-waiting-on-you-design.md`. Read it befo
 - **The security-finding card (spec card 5) is not built.** The security gate is a console screen before the release starts and leaves no saved state the worker can read. It is a later design.
 - **Card text:** each task gives the exact text. Use it as written.
 
-Runs after `plans/quick-fixes.plan.md`, and before `plans/assistant-feedback.plan.md`.
+Runs after `plans/quick-fixes.plan.md`, and before `plans/plan-queue.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

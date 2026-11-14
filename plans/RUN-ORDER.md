@@ -11,6 +11,7 @@ Finished plans are in `plans/done/`.
 | 0 | Running | `agent-tools.plan.md` | TLS-1..16 | |
 | 1 | Quick fixes | `quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27 (16) | whyline-relay 0.2.43 (on PyPI) |
 | 2 | Telegram daily use | `waiting-on-you.plan.md` | WAIT-1..7 | |
+| 2 | | `plan-queue.plan.md` | QUE-1..11 | waiting-on-you (Telegram cards) |
 | 2 | | `assistant-feedback.plan.md` | FB-1..7 | |
 | 2 | | `assistant-router.plan.md` | RT-1..7 | assistant-feedback |
 | 3 | Process | `raaid-log.plan.md` | RAAID-1..14 | |

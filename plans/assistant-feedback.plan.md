@@ -5,7 +5,7 @@ Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 2. Read it
 - **Reactions are 👀 (received), 👍 (done) and 😢 (failed).** Telegram bots may only set reactions from a fixed list, and ✅ and ❌ are not on it.
 - **The listener is the existing worker loop kept running**, not a second poller. It holds the poll lock, so the 120-second tick still returns without polling, as it does today when the lock is taken.
 
-Runs after `plans/waiting-on-you.plan.md` and before `plans/assistant-router.plan.md`.
+Runs after `plans/plan-queue.plan.md` and before `plans/assistant-router.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
