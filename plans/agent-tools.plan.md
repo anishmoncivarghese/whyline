@@ -167,7 +167,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   5. **Review** shows the design's summary line: what it can read, what it can write and how, the skills with origins, and the knowledge.
   Tests: each section saving through `definitions`, the permission defaults, the warning, the CLI lists narrowing for an agent with tools, and the Review line.
 
-- [ ] TLS-15: Approvals and tool calls in Runs
+- [x] TLS-15: Approvals and tool calls in Runs
   Edit `src/whyline/console/agents_screens.py`, `src/whyline/console/tui.py` and their tests only.
   1. While anything waits (`approvals.pending()`), the Agents bar shows `Approvals 1` and the scheduler line says `waiting for you: <agent> wants <tool>`. Checked every 2 seconds while the console is open.
   2. **Approvals** lists each waiting call with the agent, tool, redacted arguments and time left, and **Approve** and **Deny** calling `approvals.answer`.
