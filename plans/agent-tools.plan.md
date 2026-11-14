@@ -112,7 +112,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   3. The run folder gets read access with `--add-dir <run>` for claude and codex, added after `capabilities.read_only_command`.
   Tests: the prompt's skill block for each origin, files listed, knowledge and a failed page, `--add-dir` for claude and codex and not for grok, and the same prompt for every CLI.
 
-- [ ] TLS-9: Whyline's MCP server for a run
+- [x] TLS-9: Whyline's MCP server for a run
   Create `src/whyline/tools/serve.py` and its tests. Edit `src/whyline/tools/cli.py` to add `whyline tools serve`.
   1. `whyline tools serve` is an MCP server on stdio. It reads `WHYLINE_TOOLS_RUN`, the path of `<run>/tools.json` (written by TLS-11: run id, agent, and the ticked tools with their permission, server and schema). With no such variable or file, it answers `initialize` and lists no tools.
   2. `tools/list` returns the ticked tools as `<server>__<tool>`, with the real description and input schema. A tool that reads is annotated `readOnlyHint: true`.
