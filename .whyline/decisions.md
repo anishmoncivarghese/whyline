@@ -44025,3 +44025,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2ad58969302940288dd03c7611a51b4c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T17:27:36.741Z"} -->
+
+## 2026-11-14 — Approvals button lives in the agents bar (hidden until something waits), polled every 2s; tool calls appended to the run's detail text
+
+**Actor:** claude
+**Role:** implementer
+**Task:** TLS-15
+
+**Because:** keeps the 80-column mode button row unchanged and reuses approvals.pending/answer
+
+**Rejected:**
+
+- Always-visible Approvals mode button — overflows the 80-column Agents row
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: bcf3bf105c354f20b7fe14eecb0fa280 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T17:29:58.700Z"} -->
+
+## 2026-11-14 — Pass TLS-15 round 2 testing for Approvals and tool calls in Runs
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** TLS-15
+
+**Because:** Verified all requirements: Approvals button count and waiting status line polled every 2s, Approvals modal listing with agent/tool/arguments/time left and Approve/Deny calling approvals.answer, and Runs tool-calls.jsonl lines; full test suite (4897 passed) and test_agents_approvals.py (5 passed) both pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 50454bf5470941e1a5bc4299ee6f794c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T17:50:23.470Z"} -->
+
+## 2026-11-14 — Approve TLS-15 Approvals button, waiting line, Approvals screen, tool calls in Runs
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** TLS-15
+
+**Because:** Diff meets all three requirements; approve/deny go through approvals.answer (spied in test); tool-call line format matches serve.py's log record; full uv run pytest passed
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 314eeeb9cf8a432f8ee6a2ee5b0f0cf5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-14T18:11:02.274Z"} -->

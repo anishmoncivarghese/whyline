@@ -1129,6 +1129,7 @@ class WhylineConsoleApp(App):
     #thinking { height: 1; padding: 0 1; color: $accent; display: none; }
     /* Scheduler status. Inbox is an Agents-mode button on #controls. */
     #agents-bar { height: auto; display: none; }
+    #agents-approvals { display: none; }
     #agents-status { height: auto; width: 1fr; padding: 0 1; color: $text-muted; }
     #slash-hint { height: 1; padding: 0 1; color: $text-muted; display: none; }
     Input#prompt { width: 1fr; }
@@ -2009,6 +2010,7 @@ class WhylineConsoleApp(App):
         self.set_interval(0.1, self._tick)
         self.set_interval(1.0, self._watch_external_relay)
         self.set_interval(1.0, self._pause_tick)
+        self.set_interval(2.0, self._approvals_tick)
         self._main("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
@@ -2720,10 +2722,38 @@ class WhylineConsoleApp(App):
                 text = f"Scheduler: on · next: {nxt}" if nxt else "Scheduler: on"
         else:
             text = "Scheduler: off — turn it on to run agents on a schedule"
+        from whyline.console import agents_screens
+
+        waiting = self._pending_approvals()
+        if waiting:
+            text = agents_screens.waiting_text(waiting)
+        try:
+            button = self._main("#agents-approvals", Button)
+            button.display = bool(waiting)
+            button.label = f"Approvals {len(waiting)}"
+        except (NoMatches, IndexError):
+            pass
         try:
             self._main("#agents-status", Static).update(text)
         except (NoMatches, IndexError):
             return
+
+    def _pending_approvals(self) -> list:
+        from whyline.tools import approvals
+
+        try:
+            return approvals.pending()
+        except Exception:
+            return []
+
+    def _approvals_tick(self) -> None:
+        if self.session.mode == "agents":
+            self._refresh_agents_status()
+
+    def _open_approvals(self) -> None:
+        from whyline.console import agents_screens
+
+        self.push_screen(agents_screens.ApprovalsScreen(), lambda _: self._refresh_agents_status())
 
     def _open_inbox(self) -> None:
         from whyline.console.inbox_screen import IdeaInboxScreen
@@ -4101,6 +4131,7 @@ class WhylineConsoleApp(App):
             # that Textual would otherwise parse as markup and crash on.
             Static("", id="thinking", markup=False),
             Horizontal(
+                Button("Approvals", id="agents-approvals", variant="warning"),
                 Static("", id="agents-status"),
                 id="agents-bar",
             ),
@@ -4338,6 +4369,8 @@ class WhylineConsoleApp(App):
             self._open_jobs()
         elif button_id == "agents-tools":
             self._open_tools()
+        elif button_id == "agents-approvals":
+            self._open_approvals()
         elif button_id == "assistant-inbox":
             self._open_inbox()
         elif button_id == "assistant-ideas":

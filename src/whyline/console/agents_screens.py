@@ -219,6 +219,145 @@ class AgentDetailScreen(ModalScreen):
         self.dismiss(None if action == "close" else action)
 
 
+def time_left(asked_at: str, now=None, timeout: int | None = None) -> str:
+    """How long an approval still waits before it times out: ``8m 12s left``."""
+    from datetime import datetime, timezone
+
+    from whyline.tools import approvals
+
+    timeout = approvals.APPROVAL_TIMEOUT if timeout is None else timeout
+    try:
+        asked = datetime.fromisoformat(asked_at)
+    except ValueError:
+        return "time left unknown"
+    if asked.tzinfo is None:
+        asked = asked.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    left = int(timeout - (now - asked).total_seconds())
+    if left <= 0:
+        return "timing out"
+    return f"{left // 60}m {left % 60:02d}s left"
+
+
+def waiting_text(pending) -> str:
+    """The scheduler line while something waits: ``waiting for you: <agent> wants <tool>``."""
+    first = pending[0]
+    try:
+        record = records.load(first.run_id)
+    except Exception:
+        record = None
+    agent = record.agent_name if record is not None else first.run_id
+    more = f" (+{len(pending) - 1} more)" if len(pending) > 1 else ""
+    return f"waiting for you: {agent} wants {first.tool}{more}"
+
+
+def tool_call_lines(run_id: str) -> list[str]:
+    """One line per call in the run's ``tool-calls.jsonl``:
+    ``12:04 gmail__send_email · approved · 1.2s``."""
+    from datetime import datetime
+
+    try:
+        text = (records.run_folder(run_id) / "tool-calls.jsonl").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    lines = []
+    for raw in text.splitlines():
+        try:
+            item = json.loads(raw)
+            when = datetime.fromisoformat(str(item.get("time", ""))).astimezone().strftime("%H:%M")
+        except (ValueError, TypeError, AttributeError):
+            continue
+        seconds = item.get("duration_s")
+        took = f"{seconds:.1f}s" if isinstance(seconds, (int, float)) else "?"
+        lines.append(f"{when} {item.get('tool', '?')} · {item.get('decision') or 'ok'} · {took}")
+    return lines
+
+
+class ApprovalsScreen(ModalScreen):
+    """Calls an agent is waiting to make, each with Approve and Deny. Both call
+    ``approvals.answer``, the function ``whyline approvals`` calls."""
+
+    DEFAULT_CSS = _CSS.format(name="ApprovalsScreen") + "ApprovalsScreen VerticalScroll { height: 8; }"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._items: list = []
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Approvals: calls waiting for your yes"),
+            DataTable(id="ap-table", cursor_type="row"),
+            VerticalScroll(Static("", id="ap-text", markup=False)),
+            Horizontal(
+                Button("Approve", id="ap-approve", variant="success"),
+                Button("Deny", id="ap-deny", variant="warning"),
+                Button("Close", id="ap-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        table = self.query_one("#ap-table", DataTable)
+        table.add_columns("Agent", "Tool", "Arguments", "Time left")
+        self._reload()
+        self.set_interval(2.0, self._reload)
+
+    def _reload(self, say: bool = True) -> None:
+        from whyline.tools import approvals
+
+        table = self.query_one("#ap-table", DataTable)
+        key = _row_key(table)
+        try:
+            self._items = approvals.pending()
+        except Exception:
+            self._items = []
+        table.clear()
+        for item in self._items:
+            try:
+                record = records.load(item.run_id)
+            except Exception:
+                record = None
+            agent = record.agent_name if record is not None else item.run_id
+            table.add_row(agent, item.tool, item.arguments[:40], time_left(item.asked_at),
+                          key=f"{item.run_id}/{item.n}")
+        if key is not None:
+            try:
+                table.move_cursor(row=table.get_row_index(key))
+            except Exception:
+                pass
+        if say:
+            self._say("" if self._items else "Nothing is waiting.")
+
+    def _say(self, text: str) -> None:
+        try:
+            self.query_one("#ap-text", Static).update(text)
+        except NoMatches:
+            return
+
+    def _answer(self, approve: bool) -> None:
+        from whyline.tools import approvals
+
+        key = _row_key(self.query_one("#ap-table", DataTable))
+        if not key:
+            return
+        run_id, _, n = key.rpartition("/")
+        try:
+            approvals.answer(run_id, int(n), approve)
+        except approvals.ApprovalError as error:
+            self._say(str(error))
+        else:
+            self._say("Approved." if approve else "Denied.")
+        self._reload(say=False)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "ap-approve":
+            self._answer(True)
+        elif event.button.id == "ap-deny":
+            self._answer(False)
+        else:
+            self.dismiss(None)
+
+
 class RunsScreen(ModalScreen):
     DEFAULT_CSS = _CSS.format(name="RunsScreen") + "RunsScreen VerticalScroll { height: 20; }"
 
@@ -274,6 +413,9 @@ class RunsScreen(ModalScreen):
             text = records.read_final(run_id) or "(no answer)"
         except OSError:
             text = "(no answer)"
+        calls = tool_call_lines(run_id)
+        if calls:
+            text += "\n\nTool calls:\n" + "\n".join(calls)
         self._show(text)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
