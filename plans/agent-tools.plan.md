@@ -103,7 +103,7 @@ Review focus, each one pinned by the test named in its task. This list, plus eac
   4. Agents register with `users.register` for credentials (through their servers), servers, skills and packs.
   Tests: old `sources` loading, round trip, each validation error, the size limit, `test_changed_tools_need_review`, and the users provider.
 
-- [ ] TLS-8: Skills and knowledge in every run
+- [x] TLS-8: Skills and knowledge in every run
   Edit `src/whyline/agents/runner.py` and its tests only.
   1. Before the CLI starts, `prepare_run(defn, run_folder) -> RunExtras` copies each skill's folder to `<run>/skills/<name>/`, and fetches web pages to `<run>/knowledge/` with `knowledge.fetch_pages`.
   2. `build_prompt` adds, after the instructions:
