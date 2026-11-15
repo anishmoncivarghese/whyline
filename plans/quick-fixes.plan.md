@@ -160,7 +160,7 @@ Rules every task keeps:
   3. `whyline doctor` adds a line `Last console crash: <time> · <type> (~/.whyline/crash.log)` when there is one in the last 7 days. The console **Help** shows the same line, with **Copy** copying that entry.
   Tests: `test_crash_log_written_and_trimmed`, `test_crash_log_has_no_locals` (a local named `token = "secret-value"` in the failing frame is not in the file), both Textual paths with a fake app, nothing written on Ctrl-C, file mode 0600, the doctor line, and the Help line.
 
-- [ ] CRS-3: Ready check tries a slow reply once more
+- [x] CRS-3: Ready check tries a slow reply once more
   Edit `src/whyline/release/ready.py` and its tests only.
   1. An item whose check raised `subprocess.TimeoutExpired`, or that hit the overall time limit (`not checked (time limit)`), is run once more, alone, with the same 30-second command timeout, before it is reported. A second timeout reports `<item>: GitHub didn't answer in time; press Check again` for `gh` items and `git didn't answer in time; press Check again` for git items.
   2. The retry happens inside `check`, so the console **Check**, the release's Check ready step and `whyline release check` all get it.
