@@ -1,16 +1,16 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-14T23:30:00+05:30 -->
-# Quick fixes: console restart, release notes review, live models and scheduled access
+# Quick fixes: console restart, release notes review, live models, scheduled access and release day fixes
 
 Runs after `plans/agent-tools.plan.md`, and before `plans/telegram-daily-use.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
-This plan joins four small plans so they run in one relay and ship in one release. They were `console-restart`, `release-notes-review`, `relay-live-models` and `assistant-scheduled-access`. The tasks and their ids are unchanged. The four parts don't depend on each other; they run in the order below.
+This plan joins four small plans so they run in one relay and ship in one release. They were `console-restart`, `release-notes-review`, `relay-live-models` and `assistant-scheduled-access`. The tasks and their ids are unchanged. Part 5 was added on 2026-11-15 from three problems met while releasing 0.3.74. The five parts don't depend on each other; they run in the order below.
 
-There is no publish task. When the relay finishes, press **Release** once for all four parts.
+There is no publish task. When the relay finishes, press **Release** once for all five parts.
 
 How to read this plan:
-- **A task belongs to the part its id names:** CRS to Part 1, NOTE to Part 2, LMD to Part 3, ASST to Part 4.
+- **A task belongs to the part its id names:** CRS to Part 1, NOTE to Part 2, LMD to Part 3, ASST to Part 4, RDF to Part 5.
 - **A task keeps the rules of its own part, plus the rules for every part below.** Another part's rules and review focus do not apply to it.
 - **A reviewer's bar is the task's own tests plus its own part's review focus list.** Parts 3 and 4 have no review focus list: their bar is the task's own tests. A gap outside the bar is recorded with `whyline handoff <task> --issue "follow-up: <gap>"` and the task is approved, never rejected for it.
 
@@ -115,6 +115,31 @@ Rules every task keeps:
 - **Release scope:** no version bump, tag, push, GitHub release, or PyPI publication. Release stays `human`.
 
 Why: on 2026-10-30 the first scheduled brief failed with Calendar denied. The console check had said access was fine, because it checked the terminal, while the scheduler runs whyline's own `python3.11` under launchd, which macOS treats as a separate app. The alert went out, but it blamed "the terminal app" and pointed at the wrong fix.
+
+## Part 5: Release day fixes: Ready on a branch behind main, the right failed job, and steadier console tests (RDF-1..3)
+
+No separate design: the problem and the decisions are below.
+
+Why: releasing 0.3.74 on 2026-11-15 from `relay/agent-tools.plan` met three problems.
+- The branch was 19 commits behind `main`. The Ready check said `HEAD is behind origin/main`, which kept **Start** disabled, although the release's first step, **Bring in main**, exists to fix exactly that. The merge also had a conflict that nothing showed until it was tried by hand.
+- CI failed, and the console said `test (windows-latest, 3.13) failed … for a reason that isn't clear`. Windows is `continue-on-error` and fails on every run. The jobs that stopped the release were two Ubuntu jobs, each with one failed test.
+- Those two tests, and a third on the tag's run, pass locally every time. Each presses a button and checks the screen after a fixed pause, which is too short on a slow CI machine.
+
+What the user gets:
+- On a branch that is behind `main`, Ready passes with `19 commits behind origin/main; Release brings them in first`, and **Start** works. When bringing `main` in would conflict, Ready says so and names the files before anything is started.
+- A CI failure names the jobs that stopped the release, and leaves out jobs that also failed in the last run that passed.
+- Three console tests that no longer fail on a slow machine.
+
+Rules every task keeps:
+- **Ready never changes the checkout.** The trial merge writes no ref, no index and no working file.
+- **Nothing is hidden:** a job left out of the failure is still listed in one line, as `also failed, as in the last passing run`.
+- Edit only the files a task names, plus their tests. Each task ends with `uv run pytest -q` passing.
+
+**Review focus.** Each item is pinned by the test named in its task. This list, plus each task's own tests, is the complete bar for approval. A reviewer who finds a gap outside it records `whyline handoff <task> --issue "follow-up: <gap>"` and approves, and never rejects for it.
+- Behind `main` on another branch with Bring in main on: Ready passes. On the release branch itself, or with Bring in main off: it fails as today. RDF-1, `test_behind_passes_only_when_bring_in_will_run`.
+- A merge that would conflict fails Ready and names the files, and `git status --porcelain` and `git for-each-ref` are unchanged afterwards. RDF-1, `test_trial_merge_reports_conflicts_and_changes_nothing`.
+- A job that also failed in the last passing run is never the job the failure names while another failed job exists. RDF-2, `test_known_failing_job_is_not_blamed`.
+- When the last passing run can't be read, every failed job is named and none is left out. RDF-2, `test_no_baseline_names_every_failed_job`.
 
 ## Tasks
 
@@ -289,3 +314,31 @@ Why: on 2026-10-30 the first scheduled brief failed with Calendar denied. The co
   Edit `docs/assistant.md` only.
   Add a "Scheduled runs need their own permission" section: why the terminal and scheduled runs are different apps to macOS, the console's `Grant access for scheduled runs` first and `whyline idea brief access --scheduled --grant` second, what the failure alert looks like, and that missed runs now alert.
   Run `git diff --check` and `uv run pytest -q`. If a failure needs an application-code change, leave the task unapproved with the exact failing test and request a new task.
+
+- [ ] RDF-1: Ready on a branch that is behind main
+  Edit `src/whyline/release/ready.py`, `src/whyline/release/source.py` and their tests only.
+  1. `source.trial_merge(root, branch, *, run) -> list[str] | None`: the files that would conflict when `origin/<branch>` is merged into HEAD, from `git merge-tree --write-tree --name-only --no-messages HEAD origin/<branch>` (exit 0: `[]`; exit 1: the file names after the tree line). None when git can't do it (a git older than 2.38, or any other exit code). It writes no ref, no index and no working file.
+  2. `ready._synced`, when `origin/<branch>` is not an ancestor of HEAD:
+     - with `cfg.bring_in_main` on and HEAD on a branch other than `cfg.branch`, it runs `trial_merge`. No conflicts, or None: the item is ready, with the text `<n> commits behind origin/<branch>; Release brings them in first` (`<n>` from `git rev-list --count HEAD..origin/<branch>`). Conflicts: not ready, `Bringing in <branch> would conflict: <file>, <file> and <k> more` (two names at most), with the fix `Merge origin/<branch> into this branch, resolve the conflicts, then check again`.
+     - otherwise (on `cfg.branch` itself, a detached HEAD, or Bring in main off) it reports `HEAD is behind origin/<branch>` as today.
+  3. The release's own **Check ready** step runs after **Bring in main**, so it sees HEAD up to date and is unchanged. The console **Check**, `whyline release check` and the queue get the new result through `ready.check`, with no change of their own.
+  Tests: `test_behind_passes_only_when_bring_in_will_run` (another branch with the setting on, the release branch, a detached HEAD, the setting off), `test_trial_merge_reports_conflicts_and_changes_nothing` (a temporary repository with an add/add conflict; compare `git status --porcelain` and `git for-each-ref` before and after), the clean trial merge, the None case treated as ready, the commit count in the text, and the `and <k> more` form.
+
+- [ ] RDF-2: Name the job that stopped the release
+  Edit `src/whyline/release/ci_failure.py` and its tests only.
+  1. `ci_failure.known_failing(root, workflow, branch, *, run) -> set[str] | None`: the names of jobs whose conclusion was a failure in the latest run of that workflow on that branch whose overall conclusion was `success` (`gh run list --workflow <workflow> --branch <branch> --status success --limit 1 --json databaseId`, then `gh run view <id> --json jobs`). None when there is no such run or either call fails.
+  2. `diagnose` reads `headBranch` with the run's other fields, collects every failed job, and takes the known-failing names out when at least one other failed job is left. The first job left is diagnosed as today. With no baseline (None), or when every failed job is known-failing, nothing is taken out.
+  3. `Failure` gains `other_jobs: list[str]` (failed jobs after the first that also stopped the run) and `known_jobs: list[str]` (the ones taken out). Both round trip through `to_dict` and `from_dict`; a saved failure without them loads with empty lists.
+  4. `Failure.text()` adds, after the sentence: `Also failed: <job>, <job>` when `other_jobs` is not empty (three names at most, then `and <k> more`), and `Also failed, as in the last passing run: <job>, <job>` when `known_jobs` is not empty. The Ask an agent prompt gets the same lines through `text()`.
+  5. Rerun, Ask an agent and the stop dialog are unchanged: they already show `Failure.text()`.
+  Tests: `test_known_failing_job_is_not_blamed` (jobs in the order Windows, Ubuntu; Windows failed in the last passing run; the failure names the Ubuntu job and lists Windows in `known_jobs`), `test_no_baseline_names_every_failed_job`, every failed job known-failing so the first is named, the two extra lines and their caps, the round trip, and an old saved failure loading.
+
+- [ ] RDF-3: Three console tests wait for the screen
+  Edit `tests/console/test_workflows_builder.py`, `tests/console/test_relay_screens.py` and `tests/console/test_new_agent_deliveries.py` only. No source file changes.
+  1. Each of these tests failed once on CI on 2026-11-14 or 2026-11-15 and passes locally:
+     - `test_workflows_builder.py::test_routing_select_offers_only_later_steps` (`assert Select.BLANK == 'no'`)
+     - `test_relay_screens.py::test_set_up_opens_run_agents_while_running_and_setup_when_idle` (the second `#relay-setup` click, `assert isinstance(app.screen, RelaySetupScreen)`)
+     - `test_new_agent_deliveries.py::test_review_back_reopens_the_form_with_the_delivery` (`NoMatches` after `#rv-back`)
+  2. In each, replace the fixed `pilot.pause()` or `pilot.pause(0.3)` before the failing assertion with a wait for the condition itself, using the `_until(pilot, condition, what)` helper as written in `tests/console/test_new_agent_deliveries.py` (copy it into a file that lacks it). Wait for the screen type, the widget existing, or the Select's value, then assert as before. Do the same for the other waits in the same three tests that follow a button press or a dismiss.
+  3. Assertions are not weakened or removed, and no test is marked skip, xfail or flaky.
+  Verify by running the three tests 20 times in a row (`for i in $(seq 20); do uv run pytest -q <the three ids> || break; done`) with all passing, then `uv run pytest -q`.
