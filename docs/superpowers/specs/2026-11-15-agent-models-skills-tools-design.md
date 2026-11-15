@@ -4,6 +4,7 @@ Status: draft for review, 2026-11-15. Builds on agent tools (`plans/done/agent-t
 
 ## Where whyline stands (checked in the code, 2026-11-15)
 
+- **Folder.** A personal agent's **Runs in** is a typed path that starts at `~`. There is no folder picker anywhere in the console and no setting for the starting folder.
 - **Model.** New agent has one free-text Model box. The definition stores `model`, and **no run ever uses it**: `runner._command` builds the command from the relay config and never adds the model. Backups have no model at all. Model lists exist only for the relay, as a fixed list in `console/relay_ops.py` (`AGENT_MODELS`, `cached_model_options`).
 - **Skills.** `tools/skills.py` finds skills in `~/.whyline/skills`, the repository's `.whyline/skills`, `~/.claude/skills` and the repository's `.claude/skills`. It can create, edit, remove and copy a Claude skill. It does not look at `~/.agents/skills` or `~/.codex/skills`, and nothing brings a skill in from outside this Mac. Whyline puts a skill's text into the prompt for every CLI, so any skill whyline holds already works with Claude, Codex, Antigravity and Grok.
 - **Tools.** Tools → Connectors adds a local MCP server by its command, imports the ones Claude and Codex already have, tests it and stores its credentials in the Keychain. Remote (HTTP) servers are refused. There is no list to pick a connector from and no way to describe what you need.
@@ -34,6 +35,13 @@ Status: draft for review, 2026-11-15. Builds on agent tools (`plans/done/agent-t
   A **Refresh** button asks again. The list loads in the background and never holds up the form.
 - **A model the CLI refuses.** The run retries once on the CLI's default, and the run record says `sonnet-9 was refused; ran on the default`. Review warns about a model not on the list and does not block.
 - CLI: `whyline agents models <cli> [--refresh]`.
+
+### Folders: Browse, and a default folder for new agents (same plan)
+
+- **Browse…** sits beside **Runs in**. It opens a folder picker that starts at the current value, shows folders only, has **Up**, **Home**, **New folder** and a path box for pasting, and returns the chosen folder. Today the path has to be typed. The same picker, showing files too, replaces typing in Knowledge → **Add files**.
+- **A default folder for new agents.** Settings gets an **Agents** section with `Default folder for new agents` and its own **Browse…**. A new personal agent starts with **Runs in** set to it, where it starts at `~` today. Changing the setting changes nothing for agents that already exist.
+- **Where it is saved.** In the console's personal settings, not in any repository, so it is the same whichever repository is open.
+- CLI: `whyline agents settings default-folder [PATH]`.
 
 ## Part 2: A skills catalogue (plan `skills-catalogue`)
 
@@ -132,6 +140,7 @@ Status: draft for review, 2026-11-15. Builds on agent tools (`plans/done/agent-t
 
 ## Questions for you
 
-1. Which payment provider do you want first? It decides what the first `pays` entry and its test mode look like.
-2. Sign-in connectors (Part 5) are the largest piece. Should hosted Gmail and Calendar wait for it, or should the catalogue ship first with the local-command Gmail and Calendar servers that use an API key or an app password?
-3. Should `Find a tool` also search for skills, so one box answers "what should the agent be able to do"?
+1. By "default folder where all agents are stored" I took you to mean the folder a new agent **runs in**. The agents' own definition files stay in `~/.whyline/agents/`. Say if you also want that location to be movable.
+2. Which payment provider do you want first? It decides what the first `pays` entry and its test mode look like.
+3. Sign-in connectors (Part 5) are the largest piece. Should hosted Gmail and Calendar wait for it, or should the catalogue ship first with the local-command Gmail and Calendar servers that use an API key or an app password?
+4. Should `Find a tool` also search for skills, so one box answers "what should the agent be able to do"?
