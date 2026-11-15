@@ -142,6 +142,11 @@ def _help_text() -> str:
     ]
     for name, help_text in whyline_subcommands().items():
         lines.append(f"  /{name}  {help_text}")
+    from whyline.console import crashlog
+
+    crash = crashlog.report()
+    if crash:
+        lines.append(crash)
     return "\n".join(lines)
 
 

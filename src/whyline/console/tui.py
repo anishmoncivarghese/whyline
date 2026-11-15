@@ -46,6 +46,7 @@ from whyline.console import (
     adapters,
     attachments as att,
     awake,
+    crashlog,
     file_follow,
     mac_input,
     plan_job,
@@ -481,10 +482,11 @@ class CopyScreen(ModalScreen):
         ("super+c", "copy_selection", "Copy selection"),
     ]
 
-    def __init__(self, events) -> None:
+    def __init__(self, events, crash: tuple[str, str] | None = None) -> None:
         super().__init__()
         self._events = list(events)  # a snapshot: later lines do not move the view
         self._full = _transcript_text(self._events)
+        self._crash = crash
 
     def _shown_text(self) -> str:
         lines = self._full.split("\n")
@@ -493,15 +495,18 @@ class CopyScreen(ModalScreen):
         return "\n".join([_COPY_VIEW_LEFT_OUT, *lines[-_COPY_VIEW_MAX_LINES:]])
 
     def compose(self) -> ComposeResult:
+        buttons = [
+            Button("Copy selection", id="copy-selection", variant="primary", disabled=True),
+            Button("Copy all", id="copy-all"),
+            Button("Copy last block", id="copy-last"),
+        ]
+        if self._crash:
+            buttons.append(Button("Copy crash log", id="copy-crash"))
+        buttons.append(Button("Close", id="copy-close"))
         yield Vertical(
             Label("Select text with the mouse or Shift+arrows, then Copy selection."),
             _CopyArea(self._shown_text(), id="copy-text", read_only=True, soft_wrap=True),
-            Horizontal(
-                Button("Copy selection", id="copy-selection", variant="primary", disabled=True),
-                Button("Copy all", id="copy-all"),
-                Button("Copy last block", id="copy-last"),
-                Button("Close", id="copy-close"),
-            ),
+            Horizontal(*buttons),
         )
 
     def on_mount(self) -> None:
@@ -536,6 +541,10 @@ class CopyScreen(ModalScreen):
         elif button == "copy-last":
             text = _last_block_text(self._events)
             self._finish(text, f"Copied {len(text.splitlines())} lines to clipboard.")
+        elif button == "copy-crash" and self._crash:
+            header, body = self._crash
+            text = header if not body else f"{header}\n{body}"
+            self._finish(text, "Crash log copied to clipboard.")
         else:
             self.dismiss(None)
 
@@ -4773,7 +4782,9 @@ class WhylineConsoleApp(App):
         if not self.session.transcript:
             self.render_event(SessionEvent(kind="output", text="(nothing to copy yet)"))
             return
-        self.push_screen(CopyScreen(list(self.session.transcript)), self._after_copy_view)
+        entry = crashlog.last()
+        crash = entry if entry and crashlog.within_days(entry[0]) else None
+        self.push_screen(CopyScreen(list(self.session.transcript), crash=crash), self._after_copy_view)
 
     def _after_copy_view(self, result) -> None:
         if result:
@@ -8990,7 +9001,33 @@ def launch(root: Path, *, exec_fn=None, ask=None, print_fn=print,
             return
         raise TuiUnavailable(_TEXTUAL_MISSING)
     app = WhylineConsoleApp(root=root)
-    app.run()
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        return
+    except Exception as error:
+        import traceback as _traceback
+
+        _traceback.print_exception(error)
+        _report_crash(error, print_fn)
+        return
+    stored = getattr(app, "_exception", None)
+    if stored is not None and getattr(app, "return_code", None):
+        if not isinstance(stored, KeyboardInterrupt):
+            _report_crash(stored, print_fn)
+        return
     if app._exec_after is not None:
         binary, argv = app._exec_after
         exec_fn(binary, argv)
+
+
+def _report_crash(error: BaseException, print_fn) -> None:
+    """Write the crash log and the short terminal line. Textual's traceback
+    is already on the terminal when it stores the error instead of raising."""
+    from whyline import __version__
+
+    try:
+        crashlog.record(error, version=__version__)
+    except OSError:
+        pass
+    print_fn(crashlog.terminal_message(error))

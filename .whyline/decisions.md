@@ -44262,3 +44262,113 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d734a902a8914ed1b23b4bcf31435859 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T05:57:52.231Z"} -->
+
+## 2026-11-15 — Doctor and Help share crashlog.report() for the crash line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-2
+
+**Because:** the same sentence must appear in whyline doctor and console Help; one formatter keeps them from drifting
+
+**Rejected:**
+
+- duplicate formatters in doctor.py and repl.py — the time and type would diverge
+
+**Files:** src/whyline/console/crashlog.py
+
+<!-- whyline-event: ab83fcb5ff74442dba2c57abc846aa8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T06:31:40.623Z"} -->
+
+## 2026-11-15 — Copy crash log is a CopyScreen button that copies last() header and traceback
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-2
+
+**Because:** Help only shows the summary line; reporting a crash needs the entry itself, and mixing 200 traceback lines into Help would bury the commands
+
+**Rejected:**
+
+- append the traceback to Help text — Help would become a dump
+- change Copy all to always include the crash — existing Copy tests and the transcript copy would mix in a crash the user did not ask for
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 216dbf74c4a043f49e7171ac6e7bc234 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T06:31:53.079Z"} -->
+
+## 2026-11-15 — Doctor crash check is ok and is shown even when the repo is uninitialised
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-2
+
+**Because:** the log is global under ~/.whyline, not checkout-local, and a recovered crash is information not a doctor failure
+
+**Rejected:**
+
+- WARN — would flag a healthy repo after a crash the user already restarted from
+- only after init — whyline doctor in a new folder would hide the log the user needs
+
+**Files:** src/whyline/doctor.py
+
+<!-- whyline-event: 5db2b63cf70d447a94300afd758846e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T06:32:00.924Z"} -->
+
+## 2026-11-15 — launch swallows KeyboardInterrupt and records only Exception, using global_whyline_dir for the log path
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-2
+
+**Because:** Ctrl-C is a normal quit; textual 2.1.2 stores app._exception with a nonzero return_code instead of raising, so both paths must record; the existing console test fixture already isolates global_whyline_dir
+
+**Rejected:**
+
+- re-raise KeyboardInterrupt — prints a traceback on a quit
+- Path.home() directly — console tests would write the developer's ~/.whyline/crash.log
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 11f9ace507a547feb6169e6c5acd975a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T06:32:07.072Z"} -->
+
+## 2026-11-15 — CRS-2 crash log behaves to spec: record/last, both launch paths, doctor/Help line, Copy crash log
+
+**Actor:** grok
+**Role:** tester
+**Task:** CRS-2
+
+**Because:** uv run pytest -q exited 0. record writes the ISO header plus traceback.format_exception (no locals, 200 lines) to ~/.whyline/crash.log at 0600 keeping the last 5; last() returns that header and text. launch records a raised Exception and a stored app._exception with nonzero return_code, prints the specified terminal line, and still shows Textual's traceback; KeyboardInterrupt and a normal exit write nothing. doctor and Help show Last console crash: <time> · <type> (~/.whyline/crash.log) within 7 days. CopyScreen Copy crash log copies that entry.
+
+**Rejected:**
+
+- fail because Copy is a dedicated button — the spec's Copy copies the crash entry, and Copy all staying transcript-only keeps the existing copy tests and the user's transcript copy
+- fail because doctor status is ok — the spec requires the line, and a recovered crash is information after a successful restart
+
+**Test:** uv run pytest -q tests/console/test_crashlog.py: passed (exit 0)
+**Test:** uv run pytest -q: passed (exit 0)
+
+**Files:** src/whyline/console/crashlog.py, src/whyline/console/tui.py, src/whyline/console/repl.py, src/whyline/doctor.py, tests/console/test_crashlog.py
+
+<!-- whyline-event: 68f7c029c9614be290c71fec63ff5a9a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T06:54:52.493Z"} -->
+
+## 2026-11-15 — Approve CRS-2 crash log: record/last, both launch paths, doctor/Help line, Copy crash log
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CRS-2
+
+**Because:** uv run pytest -q exited 0. record writes the ISO header plus traceback.format_exception (no locals, 200 lines) to ~/.whyline/crash.log at 0600 keeping the last 5; last() returns that header and text. launch records a raised Exception and textual 2.1.2's stored app._exception with nonzero return_code, prints the specified terminal line below Textual's traceback, and writes nothing on KeyboardInterrupt or a normal exit. doctor and Help show Last console crash: <time> · <type> (~/.whyline/crash.log) within 7 days. CopyScreen Copy crash log copies that entry.
+
+**Rejected:**
+
+- fail because Copy is a dedicated button — the spec's Copy copies the crash entry, and Copy all staying transcript-only keeps existing copy tests
+- fail because doctor status is ok — the spec requires the line, and a recovered crash is information after a successful restart
+
+**Files:** src/whyline/console/crashlog.py, src/whyline/console/tui.py, src/whyline/console/repl.py, src/whyline/doctor.py, tests/console/test_crashlog.py
+
+<!-- whyline-event: 28c112d0b4d343cba1ffe7ba796154d5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T07:18:29.520Z"} -->

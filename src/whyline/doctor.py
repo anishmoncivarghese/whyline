@@ -184,11 +184,25 @@ def _relay() -> dict:
     return _check("relay", OK, "whyline-relay is installed")
 
 
+def _console_crash() -> dict | None:
+    from whyline.console import crashlog
+
+    line = crashlog.report()
+    if not line:
+        return None
+    _name, _, detail = line.partition(": ")
+    return _check("Last console crash", OK, detail)
+
+
 def run(root: Path) -> list[dict]:
     from whyline import paths
 
+    crash = _console_crash()
     if not paths.is_initialised(root):
-        return [_check("initialised", FAIL, "whyline is not set up in this repository", "whyline init")]
+        checks = [_check("initialised", FAIL, "whyline is not set up in this repository", "whyline init")]
+        if crash:
+            checks.append(crash)
+        return checks
     checks = [_check("initialised", OK, str(root)), _instructions(root)]
     checks += _hooks(root)
     trust = _antigravity_trust(root)
@@ -198,6 +212,8 @@ def run(root: Path) -> list[dict]:
     checks += _ledger(root)
     checks.append(_decisions_md(root))
     checks.append(_relay())
+    if crash:
+        checks.append(crash)
     return checks
 
 
