@@ -173,7 +173,7 @@ Rules every task keeps:
   Cover: restarting after an upgrade and the notice, `~/.whyline/crash.log` and what to send when reporting a crash, `whyline doctor`'s crash line, and Ready retrying a slow reply.
   Verify with `uv run pytest -q`.
 
-- [ ] NOTE-1: The fixed check
+- [x] NOTE-1: The fixed check
   Edit `src/whyline/release/notes.py` and `tests/release/test_notes.py` only.
   1. `@dataclass(frozen=True) class Problem`: `line: int`, `text: str` (cut to 120 characters, a secret replaced by its rule name), `reason: str`, `removable: bool`.
   2. `lint(text: str, *, version: str, allowed_emails: frozenset[str] = frozenset()) -> list[Problem]`. A line is flagged, with these reasons:
