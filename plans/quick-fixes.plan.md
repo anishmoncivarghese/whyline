@@ -168,7 +168,7 @@ Rules every task keeps:
   2. The retry happens inside `check`, so the console **Check**, the release's Check ready step and `whyline release check` all get it.
   Tests: `test_ready_retries_a_timeout_once`, a non-timeout failure not retried, the time-limit case, and the message for a git item.
 
-- [ ] CRS-4: Docs
+- [x] CRS-4: Docs
   Edit `README.md` and the `docs/` pages on the console and releasing.
   Cover: restarting after an upgrade and the notice, `~/.whyline/crash.log` and what to send when reporting a crash, `whyline doctor`'s crash line, and Ready retrying a slow reply.
   Verify with `uv run pytest -q`.
