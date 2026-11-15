@@ -146,7 +146,7 @@ Rules every task keeps:
 
 ## Tasks
 
-- [ ] CRS-1: Notice when a newer whyline is installed
+- [x] CRS-1: Notice when a newer whyline is installed
   Edit `src/whyline/console/update.py`, `src/whyline/console/tui.py` and their tests only.
   1. `update.installed_version() -> str | None`: the `whyline` version installed on disk now, read fresh each call (`importlib.invalidate_caches()`, then `importlib.metadata.version("whyline")`); None on any error.
   2. The console compares it with `whyline.__version__` (the running code) at start, every 5 minutes, and when a release step `after` finishes in a repository whose `pyproject.toml` project name is `whyline`. When the installed one is newer (`update._newer`), it sets the title to `whyline <installed> is installed · restart to use it`, shows the existing `#update-restart` button and writes one log line `whyline <installed> is installed; this console is <running>. Press Restart to use it.` once per version. It hides **Update…** for that version or older.
