@@ -243,7 +243,7 @@ Rules every task keeps:
   Cover: the three steps, what the fixed check flags, that the reviewer can only remove and reword, the summary line and its four forms, the fallback groups, the two settings, and `whyline release notes --check`.
   Verify with `uv run pytest -q`.
 
-- [ ] LMD-1: Console functions for a live model switch
+- [x] LMD-1: Console functions for a live model switch
   Edit `src/whyline/console/relay_ops.py` and `pyproject.toml` (and `uv.lock`), with tests in `tests/console/test_relay_ops_live_models.py`.
   1. Raise the `whyline-relay` floor in both places in `pyproject.toml` to the release with RLY-18 (`>=0.2.43,<0.3` if that is its version) and refresh `uv.lock`.
   2. Add `switch_model_live(root: Path, agent: str, model: str, *, keep: bool) -> str`, calling `whyline_relay.roles.switch_model` with the run's settings, the way `switch_live` calls `roles.switch`. It returns the relay's message, and lets `RoleSetError` through.
