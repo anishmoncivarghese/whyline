@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 from collections.abc import Callable
@@ -131,7 +132,8 @@ def build(
     run: Callable[..., object] = release_ready.default_run,
     run_shell: github.RunShell = github.shell_runner,
     ask_agent: Callable[[str], str] | None = None,
-    confirm_notes: Callable[[Path], bool] = lambda path: True,
+    ask_reviewer: Callable[[str], str] | None = None,
+    confirm_notes: Callable[..., bool] = lambda path, checked: True,
     ready_check: Callable[[], list[release_ready.ReadyItem]] | None = None,
     fetch: release_ready.Fetch = release_ready.default_fetch,
     relay_running: Callable[[Path], bool] = source_mod._relay_running,
@@ -168,12 +170,41 @@ def build(
         return path is not None and path.is_file()
 
     def write_notes(cancel: threading.Event) -> None:
-        text = notes.draft(root, cfg, version,
-                           ask_agent=ask_agent or default_ask_agent(root), run=run, say=say)
-        written = notes.write(root, cfg, version, text)
+        writer = ask_agent or default_ask_agent(root)
+        reviewer = ask_reviewer
+        if cfg.notes_review and reviewer is None:
+            from whyline.relaychat import agent_choice
+
+            writer_name = getattr(writer, "agent", None)
+            reviewer_name = cfg.notes_reviewer or (
+                agent_choice.pick_other(root, writer_name) if writer_name else None
+            )
+            if reviewer_name:
+                reviewer = default_ask_agent(root, agent=reviewer_name)
+        result = notes.checked(
+            root,
+            cfg,
+            version,
+            ask_agent=writer,
+            ask_reviewer=reviewer,
+            run=run,
+            say=say,
+        )
+        written = notes.write(root, cfg, version, result.text)
         if written is not None and cfg.mode == "ask":
             say(f"Release notes written to {written}")
-            if not confirm_notes(written):
+            try:
+                parameters = inspect.signature(confirm_notes).parameters.values()
+                takes_checked = any(p.kind == p.VAR_POSITIONAL for p in parameters) or sum(
+                    p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                    for p in parameters
+                ) >= 2
+            except (TypeError, ValueError):
+                takes_checked = True
+            approved = (
+                confirm_notes(written, result) if takes_checked else confirm_notes(written)
+            )
+            if not approved:
                 raise StepError("You stopped to edit the release notes; resume when ready")
 
     def verify(cancel: threading.Event) -> None:

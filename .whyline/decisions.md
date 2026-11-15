@@ -44723,3 +44723,118 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9892dbb52a7743e5ad1d5d4455320e5a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T13:04:56.888Z"} -->
+
+## 2026-11-15 — Design: one model per CLI on an agent, a skills catalogue from public sources, a connector catalogue, made tools, and risk levels with pays always Ask first
+
+**Actor:** claude
+**Role:** designer
+**Task:** agent-models-skills-tools
+
+**Because:** the saved model is never applied, skills are limited to this Mac, and connectors need a command line; payment tools need limits before they exist
+
+**Rejected:**
+
+- one model for all CLIs — backups are different CLIs with different model names
+- scrape the link-list repositories — their links carry many licences
+- allow pays tools to be Allowed — money must never move without the user seeing it
+
+**Files:** docs/superpowers/specs/2026-11-15-agent-models-skills-tools-design.md
+
+<!-- whyline-event: 8ed72e7aa9ed4696a6254829b967329f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T14:04:57.685Z"} -->
+
+## 2026-11-15 — Add RDF-6..9 to quick-fixes: picker checkbox focus, tests off the real home, not-stated tools, Add tools opens Tools
+
+**Actor:** claude
+**Role:** planner
+**Task:** RDF-6
+
+**Because:** all four are small console defects found on 2026-11-15 and need none of the open design answers
+
+**Rejected:**
+
+- wait for the agent-models plan — these block everyday use of New agent now
+
+**Files:** plans/quick-fixes.plan.md
+
+<!-- whyline-event: a29ddd7824c24439abb52fee10a39b75 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T14:07:52.374Z"} -->
+
+## 2026-11-15 — One combined plan, agent-setup (28 tasks), runs right after quick-fixes; the four picker fixes moved into it instead of quick-fixes
+
+**Actor:** claude
+**Role:** planner
+**Task:** agent-setup
+
+**Because:** the user asked for everything from this discussion in a single plan to run, and the quick-fixes relay is already running
+
+**Rejected:**
+
+- five small plans — the user wants one relay and one release
+- include sign-in connectors and paying entries — they wait on the user's answers about provider and sign-in
+
+**Files:** plans/agent-setup.plan.md
+
+<!-- whyline-event: 8c8eb86cee194da8b212b9fb66cf92cf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T14:12:01.410Z"} -->
+
+## 2026-11-15 — Live timeout, round cap and backup order need a whyline-relay change first (LRS-1..4), then console tasks LRV-1..3 in agent-setup
+
+**Actor:** claude
+**Role:** planner
+**Task:** LRV-1
+
+**Because:** the relay loads these three values once at start, so the console can't change them live without a run-settings file the loop re-reads each turn
+
+**Rejected:**
+
+- console-only change — writing config.toml has no effect until the relay restarts
+- a separate agentdock plan — the user wants one plan to run
+
+**Files:** plans/agent-setup.plan.md
+
+<!-- whyline-event: fc46339a82b24d038390120caff5f431 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T14:52:09.415Z"} -->
+
+## 2026-11-15 — Pass Checked to capable notes confirmers while preserving current one-argument callers
+
+**Actor:** codex
+**Role:** implementer
+**Task:** NOTE-4
+
+**Because:** NOTE-4 must expose the checked result to the next confirmation UI, but NOTE-5 owns the CLI and console signature changes and the current full suite must remain compatible
+
+**Rejected:**
+
+- require two confirmer arguments immediately — release/cli.py and console/tui.py are outside NOTE-4's allowed files and are updated by NOTE-5
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: f832156a21c94d9c8b8515b61af472b3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T14:53:18.789Z"} -->
+
+## 2026-11-15 — Approve NOTE-4 checked release-notes drafting and review pipeline
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** NOTE-4
+
+**Because:** All requirements verified: ReleaseConfig gains notes_review and notes_reviewer with round-trip persistence, Checked dataclass matches specification, notes.checked runs draft/lint/clean/review/lint/clean with resilient fallback and accurate removed-line tracking for all four summary cases, and release/plan.py passes Checked to confirm_notes while logging summary via say. Full test suite passed (4967 passed, 1 skipped) and release suite passed (387 passed).
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: a50585cfc97f4e7cafb3528f7311a335 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T15:13:42.186Z"} -->
+
+## 2026-11-15 — Approve NOTE-4 checked release-notes pipeline
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-4
+
+**Because:** The implementation satisfies config persistence, draft/lint/clean/review/lint/clean sequencing, fallback resilience, exact summaries, removed-line tracking, Checked confirmation handoff, and release logging; the independent full and focused test runs passed.
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 4d5704e89a064c629e1bf63fbf36b5ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T15:34:04.078Z"} -->

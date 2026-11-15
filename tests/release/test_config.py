@@ -46,6 +46,8 @@ def full() -> ReleaseConfig:
         ci_ignore=("test (windows-latest, 3.13)",),
         on_no_runner="rerun once",
         notes="notes/v{version}.md",
+        notes_review=False,
+        notes_reviewer="grok",
         version_files=("VERSION", "docs/v.txt"),
         after=("uv tool upgrade whyline",),
         security=SecuritySettings(
@@ -81,6 +83,8 @@ def test_defaults_when_file_missing(tmp_path):
     assert cfg.bring_in_main is True
     assert cfg.checks == ()
     assert cfg.notes == "docs/releases/v{version}.md"
+    assert cfg.notes_review is True
+    assert cfg.notes_reviewer == ""
     assert cfg.targets.github is True
     assert not (cfg.targets.pypi or cfg.targets.npm or cfg.targets.docker or cfg.targets.homebrew)
     assert cfg.targets.docker_options.registries == ("ghcr",)
@@ -90,6 +94,15 @@ def test_defaults_when_file_missing(tmp_path):
 def test_round_trip_every_field(tmp_path):
     cfg = full()
     config.save(tmp_path, cfg)
+    assert config.load(tmp_path) == cfg
+
+
+def test_round_trip_notes_review_settings(tmp_path):
+    cfg = replace(ReleaseConfig(), notes_review=False, notes_reviewer="grok")
+    config.save(tmp_path, cfg)
+    text = (tmp_path / ".whyline" / "release.toml").read_text()
+    assert "notes_review = false" in text
+    assert 'notes_reviewer = "grok"' in text
     assert config.load(tmp_path) == cfg
 
 

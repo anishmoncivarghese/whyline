@@ -1,4 +1,5 @@
 import threading
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -193,6 +194,33 @@ def test_plan_step_order(root):
     assert [s.id for s in plan.steps] == [
         "ready", "version", "notes", "commit", "checks", "push", "ci", "tag",
         "github_release", "after"]
+
+
+def test_notes_step_writes_checked_text_logs_summary_and_confirms_result(root):
+    seen = []
+    said = []
+
+    def writer(prompt):
+        return "<notes>\n# v1.2.4\n\n- Users can pause a run\n</notes>"
+
+    writer.agent = "claude"
+    cfg = replace(ReleaseConfig(), notes_review=False)
+    built = release_plan.build(
+        root,
+        cfg,
+        "1.2.4",
+        ask_agent=writer,
+        confirm_notes=lambda path, result: seen.append((path, result)) or True,
+        say=said.append,
+    )
+
+    next(step for step in built.steps if step.id == "notes").run(threading.Event())
+
+    path, result = seen[0]
+    assert path.read_text() == result.text
+    assert isinstance(result, release_plan.notes.Checked)
+    assert result.summary == "Written by claude, checked by fixed rules only."
+    assert result.summary in said
 
 
 def test_run_prints_the_source_line_before_the_steps(root, monkeypatch, capsys):

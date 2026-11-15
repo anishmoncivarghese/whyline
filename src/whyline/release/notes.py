@@ -64,6 +64,17 @@ class Reviewed:
     added: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class Checked:
+    text: str
+    writer: str
+    reviewer: str
+    removed: tuple[str, ...]
+    before: str
+    used_fallback: bool
+    summary: str
+
+
 def _ok(proc: object) -> bool:
     return getattr(proc, "returncode", 1) == 0
 
@@ -455,6 +466,137 @@ def usable(text: str) -> bool:
             continue
         return True
     return False
+
+
+def _agent_name(ask_agent: AskAgent | None) -> str:
+    name = getattr(ask_agent, "agent", "")
+    return str(name or "agent")
+
+
+def _removed_between(before: str, after: str) -> list[str]:
+    """Non-empty lines present before a step but absent after it, in source order."""
+    remaining: dict[str, int] = {}
+    for line in (after or "").splitlines():
+        if line.strip():
+            remaining[line] = remaining.get(line, 0) + 1
+    removed: list[str] = []
+    for line in (before or "").splitlines():
+        if not line.strip():
+            continue
+        count = remaining.get(line, 0)
+        if count:
+            remaining[line] = count - 1
+        else:
+            removed.append(line)
+    return removed
+
+
+def checked(
+    root: Path,
+    cfg: ReleaseConfig,
+    version: str,
+    *,
+    ask_agent: AskAgent,
+    ask_reviewer: AskAgent | None = None,
+    run: Run,
+    say: Callable[[str], None] | None = None,
+) -> Checked:
+    """Draft, clean, optionally review, and clean notes again without blocking release."""
+    commits: list[str] = []
+    writer = _agent_name(ask_agent)
+    reviewer = (
+        _agent_name(ask_reviewer)
+        if cfg.notes_review and ask_reviewer is not None
+        else ""
+    )
+    before = ""
+    removed: list[str] = []
+
+    def finish(result: Checked) -> Checked:
+        if say is not None:
+            try:
+                say(result.summary)
+            except Exception:
+                pass  # a display or log callback must not block a release
+        return result
+
+    def use_fallback() -> Checked:
+        return Checked(
+            fallback(version, commits),
+            writer,
+            reviewer,
+            tuple(removed),
+            before,
+            True,
+            "The agent's notes couldn't be used; this is the commit list.",
+        )
+
+    try:
+        commits = commits_since_last_tag(root, run=run)
+        prompt = build_prompt(version, commits, _style_example(root, cfg, run=run))
+        answer = (ask_agent(prompt) or "").strip()
+        marked = extract(answer)
+        if marked is None:
+            return finish(use_fallback())
+        before = marked + "\n"
+
+        first_problems = lint(before, version=version)
+        text = clean(before, first_problems)
+        removed.extend(_removed_between(before, text))
+
+        if cfg.notes_review and ask_reviewer is not None:
+            review_failed = False
+
+            def ask_review(prompt: str) -> str:
+                nonlocal review_failed
+                try:
+                    return ask_reviewer(prompt)
+                except Exception:
+                    review_failed = True
+                    raise
+
+            reviewed = review(
+                version,
+                commits,
+                text,
+                first_problems,
+                ask_agent=ask_review,
+            )
+            if review_failed:
+                return finish(use_fallback())
+            removed.extend(_removed_between(text, reviewed.text))
+            removed.extend(reviewed.added)
+            text = reviewed.text
+            second_problems = lint(text, version=version)
+            cleaned = clean(text, second_problems)
+            removed.extend(_removed_between(text, cleaned))
+            text = cleaned
+            summary = (
+                f"Written by {writer}, checked by {reviewer}. "
+                f"{len(removed)} lines removed."
+            )
+        elif cfg.notes_review:
+            reviewer = writer
+            summary = (
+                f"Written and checked by {writer} (only one agent is enabled). "
+                f"{len(removed)} lines removed."
+            )
+        else:
+            summary = f"Written by {writer}, checked by fixed rules only."
+
+        if not usable(text):
+            return finish(use_fallback())
+        return finish(Checked(
+            text,
+            writer,
+            reviewer,
+            tuple(removed),
+            before,
+            False,
+            summary,
+        ))
+    except Exception:
+        return finish(use_fallback())
 
 
 def draft(

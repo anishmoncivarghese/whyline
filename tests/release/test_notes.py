@@ -476,3 +476,140 @@ def test_failed_turn_returns_the_draft():
     assert result.text == DRAFT
     assert result.added == ()
 
+
+def named_agent(name, answer=None, error=None):
+    def ask(prompt):
+        if error is not None:
+            raise error
+        return answer
+
+    ask.agent = name
+    return ask
+
+
+def test_checked_uses_two_agents_and_reports_every_removed_line(tmp_path):
+    before = (
+        "# v1.3.0\n\nHere are the notes.\n"
+        "- Users can pause a running relay\n"
+    )
+    writer = named_agent("claude", f"<notes>\n{before}</notes>")
+    reviewer = named_agent(
+        "grok",
+        "<notes>\n# v1.3.0\n\nPlease review the notes.\n"
+        "- Pause a running relay from the console\n</notes>",
+    )
+    said = []
+
+    result = notes.checked(
+        tmp_path,
+        ReleaseConfig(),
+        "1.3.0",
+        ask_agent=writer,
+        ask_reviewer=reviewer,
+        run=make_run("v1.2.0", "feat: users can pause a running relay\n"),
+        say=said.append,
+    )
+
+    assert result.before == before
+    assert result.text == "# v1.3.0\n\n- Pause a running relay from the console\n"
+    assert result.writer == "claude" and result.reviewer == "grok"
+    assert result.removed == (
+        "Here are the notes.",
+        "- Users can pause a running relay",
+        "Please review the notes.",
+    )
+    assert result.used_fallback is False
+    assert result.summary == "Written by claude, checked by grok. 3 lines removed."
+    assert said == [result.summary]
+
+
+def test_checked_review_off_uses_fixed_rules_only(tmp_path):
+    reviewer = named_agent("grok", error=AssertionError("review should be off"))
+    result = notes.checked(
+        tmp_path,
+        replace(ReleaseConfig(), notes_review=False),
+        "1.3.0",
+        ask_agent=named_agent(
+            "claude",
+            "<notes>\n# v1.3.0\n\nHere are the notes.\n- Users can pause a run\n</notes>",
+        ),
+        ask_reviewer=reviewer,
+        run=make_run(None),
+    )
+    assert "Here are" not in result.text
+    assert result.reviewer == ""
+    assert result.removed == ("Here are the notes.",)
+    assert result.summary == "Written by claude, checked by fixed rules only."
+
+
+def test_checked_with_one_agent_reports_writer_as_checker(tmp_path):
+    result = notes.checked(
+        tmp_path,
+        ReleaseConfig(),
+        "1.3.0",
+        ask_agent=named_agent(
+            "claude",
+            "<notes>\n# v1.3.0\n\nHere are the notes.\n- Users can pause a run\n</notes>",
+        ),
+        run=make_run(None),
+    )
+    assert result.reviewer == "claude"
+    assert result.summary == (
+        "Written and checked by claude (only one agent is enabled). 1 lines removed."
+    )
+
+
+def test_checked_falls_back_when_cleaning_leaves_nothing_usable(tmp_path):
+    said = []
+    result = notes.checked(
+        tmp_path,
+        ReleaseConfig(),
+        "1.3.0",
+        ask_agent=named_agent("claude", "<notes>\n# v1.3.0\n\nHere are the notes.\n</notes>"),
+        run=make_run(None),
+        say=said.append,
+    )
+    assert result.text == notes.fallback("1.3.0", ["feat: a", "fix: b"])
+    assert result.used_fallback is True
+    assert result.before == "# v1.3.0\n\nHere are the notes.\n"
+    assert result.summary == "The agent's notes couldn't be used; this is the commit list."
+    assert said == [result.summary]
+
+
+def test_notes_never_block_a_release(tmp_path, monkeypatch):
+    fallback = notes.fallback("1.3.0", ["feat: a", "fix: b"])
+
+    writer_failure = notes.checked(
+        tmp_path,
+        ReleaseConfig(),
+        "1.3.0",
+        ask_agent=named_agent("claude", error=RuntimeError("writer down")),
+        run=make_run(None),
+    )
+    reviewer_failure = notes.checked(
+        tmp_path,
+        ReleaseConfig(),
+        "1.3.0",
+        ask_agent=named_agent("claude", f"<notes>\n{DRAFT}</notes>"),
+        ask_reviewer=named_agent("grok", error=RuntimeError("reviewer down")),
+        run=make_run(None),
+    )
+
+    monkeypatch.setattr(
+        notes,
+        "load_rules",
+        lambda: (_ for _ in ()).throw(RuntimeError("bad rule")),
+    )
+    lint_failure = notes.checked(
+        tmp_path,
+        ReleaseConfig(),
+        "1.3.0",
+        ask_agent=named_agent("claude", f"<notes>\n{DRAFT}</notes>"),
+        run=make_run(None),
+    )
+
+    for result in (writer_failure, reviewer_failure, lint_failure):
+        assert result.text == fallback
+        assert result.used_fallback is True
+        assert result.summary == "The agent's notes couldn't be used; this is the commit list."
+

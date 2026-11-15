@@ -65,6 +65,8 @@ class ReleaseConfig:
     ci_ignore: tuple[str, ...] = ()
     on_no_runner: str = "ask"
     notes: str = "docs/releases/v{version}.md"
+    notes_review: bool = True
+    notes_reviewer: str = ""
     version_files: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
     targets: Targets = field(default_factory=Targets)
@@ -155,6 +157,10 @@ def parse(data: dict) -> ReleaseConfig:
         ci_ignore=_strs(release, "ci_ignore", base.ci_ignore, "release.ci_ignore"),
         on_no_runner=on_no_runner,
         notes=_str(release, "notes", base.notes, "release.notes"),
+        notes_review=_bool(release, "notes_review", base.notes_review, "release.notes_review"),
+        notes_reviewer=_str(
+            release, "notes_reviewer", base.notes_reviewer, "release.notes_reviewer"
+        ),
         version_files=_strs(release, "version_files", base.version_files, "release.version_files"),
         after=_strs(release, "after", base.after, "release.after"),
         targets=Targets(
@@ -228,6 +234,8 @@ def render(cfg: ReleaseConfig) -> str:
         f"ci_ignore = {_list(cfg.ci_ignore)}",
         f"on_no_runner = {_quote(cfg.on_no_runner)}",
         f"notes = {_quote(cfg.notes)}",
+        f"notes_review = {_flag(cfg.notes_review)}",
+        f"notes_reviewer = {_quote(cfg.notes_reviewer)}",
         f"version_files = {_list(cfg.version_files)}",
         f"after = {_list(cfg.after)}",
         "",
