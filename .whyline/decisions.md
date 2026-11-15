@@ -44372,3 +44372,58 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 28c112d0b4d343cba1ffe7ba796154d5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T07:18:29.520Z"} -->
+
+## 2026-11-15 — Retry a timed-out Ready item once inside check()
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-3
+
+**Because:** console Check, the release step and whyline release check all call check(); a TimeoutExpired or a budget skip is one miss, and the solo rerun is the retry
+
+**Rejected:**
+
+- retry in default_run — would retry every subprocess inside one item and would miss items the budget never started
+- keep not checked (time limit) after a second miss — the spec names the GitHub/git didn't-answer wording
+
+**Files:** src/whyline/release/ready.py
+
+<!-- whyline-event: 23e63f032f4d4d0fb917a73798b5ab44 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T07:41:51.269Z"} -->
+
+## 2026-11-15 — Pass CRS-3 Ready retry of a timed-out or budget-skipped item
+
+**Actor:** grok
+**Role:** tester
+**Task:** CRS-3
+
+**Because:** TimeoutExpired and a time-limit skip are retried once inside check(), which console Check, the release Check ready step, and whyline release check all call. A second timeout uses the GitHub/git wording; a non-timeout failure is not retried. tests/release/test_ready.py passed (25). Full pytest had one unrelated TUI flake that passed on rerun.
+
+**Rejected:**
+
+- fail CRS-3 for the TUI resume flake — that test does not call ready.check and passed on a fresh run
+
+**Test:** uv run pytest -q tests/release/test_ready.py: passed (25 tests, exit 0)
+**Test:** uv run pytest -q: 1 failed (tests/console/test_tui_relay_run.py:: test_resume_in_setup_saves_and_then_resumes); rerun of that test passed
+
+**Files:** src/whyline/release/ready.py, tests/release/test_ready.py
+
+<!-- whyline-event: fd0058b0b2fd49b1b563fce7b6891d3f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T08:03:28.780Z"} -->
+
+## 2026-11-15 — Approve CRS-3 Ready timeout retry inside check()
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CRS-3
+
+**Because:** TimeoutExpired and a budget skip are retried once inside check(), which console Check, the release Check ready step, and whyline release check all call. A second timeout uses the GitHub/git wording; a non-timeout failure is not retried. tests/release/test_ready.py covers retry-once, no-retry-on-other-error, time-limit skip, and the git message. uv run pytest -q exited 0.
+
+**Rejected:**
+
+- request changes for git wording on non-gh target keys — the spec only names gh vs git items
+
+**Files:** src/whyline/release/ready.py, tests/release/test_ready.py
+
+<!-- whyline-event: fe824fb1ba8f4db88355fac3568cdefd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T08:25:53.524Z"} -->

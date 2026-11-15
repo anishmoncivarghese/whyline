@@ -211,6 +211,27 @@ _BASE = (
     ("tag", _tag_free),
 )
 
+_GH_KEYS = frozenset({"gh", "gh-auth"})
+_TIMEOUT = object()  # job raised subprocess.TimeoutExpired
+
+
+def _timeout_item(key: str) -> ReadyItem:
+    if key in _GH_KEYS:
+        text = f"{key}: GitHub didn't answer in time; press Check again"
+    else:
+        text = "git didn't answer in time; press Check again"
+    return ReadyItem(key, False, text)
+
+
+def _run_item(key: str, job: Callable[[], ReadyItem | None]):
+    try:
+        return job()
+    except subprocess.TimeoutExpired:
+        return _TIMEOUT
+    except Exception as exc:  # noqa: BLE001 - one broken item must not stop the rest
+        reason = _short(str(exc)) or type(exc).__name__
+        return ReadyItem(key, False, f"could not check: {reason}")
+
 
 def check(root: Path | str, cfg: ReleaseConfig, version: str, *,
           run: Run = default_run, fetch: Fetch = default_fetch,
@@ -227,19 +248,25 @@ def check(root: Path | str, cfg: ReleaseConfig, version: str, *,
             jobs.append((target, lambda fn=fn: fn(root, cfg, version, run)))
 
     start = clock()
-    items: list[ReadyItem] = []
-    for key, job in jobs:
+    out: list[ReadyItem | None] = [None] * len(jobs)
+    retry: list[int] = []
+    for i, (key, job) in enumerate(jobs):
         if clock() - start >= budget:
-            items.append(ReadyItem(key, False, "not checked (time limit)"))
+            retry.append(i)
             continue
-        try:
-            item = job()
-            if item is not None:
-                items.append(item)
-        except Exception as exc:  # noqa: BLE001 - one broken item must not stop the rest
-            reason = _short(str(exc)) or type(exc).__name__
-            items.append(ReadyItem(key, False, f"could not check: {reason}"))
-    return items
+        item = _run_item(key, job)
+        if item is _TIMEOUT:
+            retry.append(i)
+        else:
+            out[i] = item
+
+    # Timed-out items and items the budget skipped are each tried once more,
+    # alone, with the same 30-second command timeout (default_run's default).
+    for i in retry:
+        key, job = jobs[i]
+        item = _run_item(key, job)
+        out[i] = _timeout_item(key) if item is _TIMEOUT else item
+    return [item for item in out if item is not None]
 
 
 _SECURITY_FIX = "Open Security to review"

@@ -73,7 +73,8 @@ def run_check(repo, cfg=None, version="1.2.3", relay="idle", **kw):
               ("gh_installed", "gh_auth", "git_installed", "origin_url")}
     return ready.check(
         repo, cfg or ReleaseConfig(), version,
-        run=make_run(repo, **run_kw), fetch=kw.pop("fetch", real_fetch(repo)),
+        run=kw.pop("run", make_run(repo, **run_kw)),
+        fetch=kw.pop("fetch", real_fetch(repo)),
         relay_state=lambda: relay, **kw,
     )
 
@@ -208,9 +209,83 @@ def test_time_budget(repo):
     items = run_check(repo, clock=lambda: next(ticks))
     assert [i.key for i in items] == KEYS
     assert items[0].ok and items[1].ok
-    for i in items[2:]:
-        assert not i.ok
-        assert i.text == "not checked (time limit)"
+    # items the budget skipped are retried alone and can still pass
+    assert all(i.ok for i in items[2:])
+
+
+def test_ready_retries_a_timeout_once(repo):
+    inner = make_run(repo)
+    n = {"auth": 0}
+
+    def once(args, cwd=None, env=None, **_):
+        if args[:2] == ["gh", "auth"]:
+            n["auth"] += 1
+            if n["auth"] == 1:
+                raise subprocess.TimeoutExpired(args, 30)
+        return inner(args, cwd=cwd, env=env)
+
+    got = by_key(run_check(repo, run=once))["gh-auth"]
+    assert got.ok
+    assert n["auth"] == 2
+
+    n["auth"] = 0
+
+    def twice(args, cwd=None, env=None, **_):
+        if args[:2] == ["gh", "auth"]:
+            n["auth"] += 1
+            raise subprocess.TimeoutExpired(args, 30)
+        return inner(args, cwd=cwd, env=env)
+
+    got = by_key(run_check(repo, run=twice))["gh-auth"]
+    assert not got.ok
+    assert got.text == "gh-auth: GitHub didn't answer in time; press Check again"
+    assert n["auth"] == 2
+
+
+def test_ready_does_not_retry_a_non_timeout_failure(repo):
+    inner = make_run(repo)
+    n = {"auth": 0}
+
+    def boom(args, cwd=None, env=None, **_):
+        if args[:2] == ["gh", "auth"]:
+            n["auth"] += 1
+            raise RuntimeError("network down")
+        return inner(args, cwd=cwd, env=env)
+
+    got = by_key(run_check(repo, run=boom))["gh-auth"]
+    assert not got.ok
+    assert got.text == "could not check: network down"
+    assert n["auth"] == 1
+
+
+def test_ready_retries_an_item_skipped_for_time_limit(repo):
+    inner = make_run(repo)
+    n = {"auth": 0}
+
+    def hang(args, cwd=None, env=None, **_):
+        if args[:2] == ["gh", "auth"]:
+            n["auth"] += 1
+            raise subprocess.TimeoutExpired(args, 30)
+        return inner(args, cwd=cwd, env=env)
+
+    ticks = iter([0.0, 0.0, 1.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0])
+    got = by_key(run_check(repo, run=hang, clock=lambda: next(ticks)))["gh-auth"]
+    assert not got.ok
+    assert got.text == "gh-auth: GitHub didn't answer in time; press Check again"
+    assert n["auth"] == 1  # skipped in the batch, then one solo attempt
+
+
+def test_ready_timeout_message_for_a_git_item(repo):
+    inner = make_run(repo)
+
+    def hang(args, cwd=None, env=None, **_):
+        if args[:4] == ["git", "remote", "get-url", "origin"]:
+            raise subprocess.TimeoutExpired(args, 30)
+        return inner(args, cwd=cwd, env=env)
+
+    got = by_key(run_check(repo, run=hang))["origin"]
+    assert not got.ok
+    assert got.text == "git didn't answer in time; press Check again"
 
 
 # --- security ---------------------------------------------------------------------
