@@ -217,16 +217,63 @@ The notes step asks an agent to draft `docs/releases/v<version>.md` (the
 the style of the previous release's notes. The agent runs once, read-only, in an
 empty temporary folder, so it cannot edit your files or make a commit. It is
 told to put the notes between a line `<notes>` and a line `</notes>`, and only
-that part is kept (the last pair, if there are several). If the agent fails,
-or its answer has no usable pair, the notes are the plain commit list and the
-release log says `The agent's notes were not usable; using the commit list`.
+that part is kept (the last pair, if there are several).
 
-In ask mode you check the notes before they are used. In the console the
-notes appear in a scrollable box with **Use these notes**, **Edit** (opens the
-file in your editor, then shows it again) and **Stop**. On the command line
-`whyline release run` prints the first 40 lines and asks
-`Use these notes? [y/N/e]`; `e` opens `$VISUAL` or `$EDITOR`, then asks again.
-`--yes` skips the question.
+After the draft, whyline checks it in three steps:
+
+1. A fixed check, with no model, flags and removes unsafe or unhelpful lines.
+2. When second-agent review is on and another enabled agent is available, that
+   reviewer gets the commit subjects, the cleaned draft and the problems found.
+   The reviewer can only remove lines or reword what is already supported by
+   the draft or commits. A new bullet with no wording in common with either
+   source is removed. If only the writer is enabled, this review is skipped.
+3. After a review, the fixed check runs again and removes anything still
+   flagged. With only the writer enabled, this second pass is also skipped. If
+   no usable note remains, whyline uses the commit-list fallback.
+
+The fixed check flags chat or agent narration (including questions, familiar
+"here are" and "please review" phrases, and first-person wording), release
+process lines such as `chore: tick`, `setup:`, `merge:` and `plan:`, a repeated
+`# v<version>` title, and code fences wrapped around the whole document. It
+also flags secrets, home-directory paths and email addresses. This same check
+is applied when you approve notes edited by hand.
+
+Above the checked notes, whyline shows one of four summary lines:
+
+- `Written by <writer>, checked by <reviewer>. <n> lines removed.`
+- `Written and checked by <writer> (only one agent is enabled). <n> lines removed.`
+- `Written by <writer>, checked by fixed rules only.`
+- `The agent's notes couldn't be used; this is the commit list.`
+
+The last form is used if drafting, review or checking fails, the answer has no
+usable marked notes, or cleaning leaves nothing useful. The fallback drops
+release-process commits, removes the commit-type prefix and a trailing task
+ID, and groups the rest under **New** (`feat:`), **Fixed** (`fix:`), **Docs**
+(`docs:`) and **Other**. If only process commits remain, it says `Maintenance
+release.`
+
+In ask mode you check the notes before they are used. The console shows the
+summary and notes, with **See what was removed** (the first draft and final
+text side by side), **Use the commit list instead**, **Edit**, **Approve** and
+**Stop**. Approving edited notes with problems offers **Approve anyway** or
+**Remove these lines**. On the command line, `whyline release run` prints the
+summary and first 40 lines and offers `[a]pprove`, `[e]dit`, `[c]ommit list` or
+`[s]top`; Edit opens `$VISUAL` or `$EDITOR`, then asks again. `--yes` skips the
+question. In auto mode the summary is written to the release log.
+
+The two settings are in **Release → Set up** and `.whyline/release.toml`:
+
+- **Check release notes with a second agent** (`release.notes_review`, on by
+  default). From a terminal, use `whyline release settings notes-review on`
+  or `whyline release settings notes-review off`.
+- **Reviewer** (`release.notes_reviewer`). Its default, **Any other agent**,
+  chooses an enabled agent other than the writer when one is available. Use
+  `whyline release settings notes-reviewer <agent>` to choose one or
+  `whyline release settings notes-reviewer any` to restore the default.
+
+For notes written by hand or in a script, run
+`whyline release notes --check <file>`. It prints each problem as
+`line <n>: <reason>` and exits 1 when it finds any; clean notes exit 0.
 
 If you choose a bump while `docs/releases/v<current>.md` exists and
 `v<current>` was never released, Release asks `v<current> has notes and was

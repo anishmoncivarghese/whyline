@@ -104,8 +104,17 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   reply once before it counts as not ready. When CI fails it says why (no
   runner, timeout, tests, publish), with **Rerun failed jobs**, **Ask an
   agent** and **Fix with an agent**, a **When GitHub has no runner** setting,
-  and `whyline release why`, `rerun` and `ask`. Per-target setup, how to
-  check each by hand and a troubleshooting list are in
+  and `whyline release why`, `rerun` and `ask`. Release notes go through a
+  fixed check, then—when another enabled agent is available—a reviewer that
+  can only remove or reword and a second fixed check. The check catches agent
+  chatter, first-person and process lines, duplicate titles, whole-note code
+  fences, secrets, home paths and email addresses. The confirmation says who
+  wrote and checked the notes, or that only fixed rules or the grouped
+  commit-list fallback was used. Choose
+  whether to use a second agent and which reviewer in **Release → Set up**;
+  check a hand-written file with `whyline release notes --check <file>`.
+  Per-target setup, all four notes-summary forms, fallback groups, how to
+  check each target by hand and a troubleshooting list are in
   [docs/release.md](docs/release.md).
 - **Security checks** run in the Release gate with nothing to install: secrets
   in the commits about to be pushed, vulnerable dependencies (only public

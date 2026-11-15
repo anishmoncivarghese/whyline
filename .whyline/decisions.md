@@ -44932,3 +44932,139 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: bcd4a3ea01ed4f919fa333bf65c1b305 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T17:32:08.892Z"} -->
+
+## 2026-11-15 — Document checked release notes as check-review-check with exact user-visible outcomes
+
+**Actor:** codex
+**Role:** implementer
+**Task:** NOTE-6
+
+**Because:** Readers need to understand both the safety boundary on the reviewer and what each confirmation summary, fallback group, setting, and lint result means
+
+**Rejected:**
+
+- Describe only agent drafting — it would hide the fixed checks, constrained review, and fallback behavior users rely on
+
+**Files:** docs/release.md, README.md
+
+<!-- whyline-event: 2402664d6d504256a544e4735be131a7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T17:54:15.830Z"} -->
+
+## 2026-11-15 — Pass NOTE-6: README.md and docs/release.md accurately cover the release notes check pipeline and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** NOTE-6
+
+**Because:** README.md and docs/release.md cover the three steps, fixed check rules, reviewer remove-or-reword constraints, four summary forms, fallback groups, both settings, and whyline release notes --check; uv run pytest -q exited 0; git diff --check is clean; only docs/release.md and README.md were edited
+
+**Rejected:**
+
+- fail — all required documentation topics are present and match implementation
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: dafa03cd90b64cd9a7767835b9b9bfbc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T18:17:43.021Z"} -->
+
+## 2026-11-15 — Reject NOTE-6: one-agent review behavior is documented incorrectly and the required suite failed
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-6
+
+**Because:** docs/release.md lines 229-232 say the sole enabled agent reviews in a fresh turn and that the fixed check then runs again, but release/plan.py leaves ask_reviewer unset when pick_other finds no other agent and notes.checked performs only the initial fixed check on that path; uv run pytest -q also exited 1 because test_paused_owned_changes_show_ok_and_resume_allows_dirty timed out waiting for the resume launch
+
+**Rejected:**
+
+- Approve — the documentation must match the implemented one-agent path and the required full test command did not pass
+
+**Files:** docs/release.md
+
+<!-- whyline-event: 4e5544ae75a342f0a67385f214d4e1cd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T18:38:20.383Z"} -->
+
+## 2026-11-15 — Document the one-agent notes path as skipping model review and the second fixed pass
+
+**Actor:** codex
+**Role:** implementer
+**Task:** NOTE-6
+
+**Because:** release/plan.py supplies no reviewer when no other enabled agent exists, and notes.checked then keeps the initial fixed-cleaned draft without a fresh agent turn or second lint pass
+
+**Rejected:**
+
+- Say the writer reviews in a fresh turn — that behavior is not implemented
+
+**Files:** docs/release.md, README.md
+
+<!-- whyline-event: 5fd5b5d7b3e7429a8dd663364f354c63 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T19:00:36.990Z"} -->
+
+## 2026-11-15 — Pass NOTE-6: README.md and docs/release.md accurately cover the release notes check pipeline and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** NOTE-6
+
+**Because:** README.md and docs/release.md cover the three steps (including skipping review and second pass when only one agent is enabled), fixed check rules, reviewer remove-or-reword constraints, four summary forms, fallback groups, both settings, and whyline release notes --check; full test suite passed (uv run pytest -q exited 0); only docs/release.md and README.md were edited
+
+**Rejected:**
+
+- fail — all required documentation topics are present and accurately reflect the implementation
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 412758d131024900b013d28b788c4ac4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T19:24:04.609Z"} -->
+
+## 2026-11-15 — Reject NOTE-6 because the required full test suite failed
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-6
+
+**Because:** README.md and docs/release.md accurately document the requested release-notes behavior, but uv run pytest -q exited 1: test_resolve_closes_setup_with_resolve_tuple timed out waiting for the popup to close and test_paused_clean_tree_is_unchanged timed out waiting for the resume launch
+
+**Rejected:**
+
+- Approve — the task explicitly requires the full plain pytest suite to pass
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 55da721ec92248599bb14e3bd5d031f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T19:44:42.172Z"} -->
+
+## 2026-11-15 — Pass NOTE-6: README.md and docs/release.md accurately cover the release notes check pipeline and full test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** NOTE-6
+
+**Because:** docs/release.md and README.md document the three check steps, one-agent skip behavior, fixed check rules, reviewer remove/reword constraints, four summary forms, fallback groups, settings, and whyline release notes --check CLI command; uv run pytest -q passed completely with exit code 0
+
+**Rejected:**
+
+- fail — all required documentation topics are present and accurate, and full pytest suite passes
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 2fcd68fcb18b498396ca16ce76205198 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T20:34:54.163Z"} -->
+
+## 2026-11-15 — Approve NOTE-6: release-notes documentation is complete and accurate
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-6
+
+**Because:** README.md and docs/release.md cover the three-stage check flow, fixed-rule flags, reviewer remove-or-reword constraint, all four summary forms, fallback groups, both settings, and whyline release notes --check; uv run pytest -q completed with exit code 0
+
+**Rejected:**
+
+- Request changes — no missing, unsafe, or inaccurate requirement was found
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 350f81900ef944b686e8cceb3a26c034 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T20:54:42.993Z"} -->
