@@ -5,7 +5,7 @@ Runs after `plans/agent-tools.plan.md`, and before `plans/telegram-daily-use.pla
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
-This plan joins four small plans so they run in one relay and ship in one release. They were `console-restart`, `release-notes-review`, `relay-live-models` and `assistant-scheduled-access`. The tasks and their ids are unchanged. Part 5 was added on 2026-11-15 from three problems met while releasing 0.3.74, plus one about new agents. The five parts don't depend on each other; they run in the order below.
+This plan joins four small plans so they run in one relay and ship in one release. They were `console-restart`, `release-notes-review`, `relay-live-models` and `assistant-scheduled-access`. The tasks and their ids are unchanged. Part 5 was added on 2026-11-15 from three problems met while releasing 0.3.74, plus one about new agents and one about Antigravity's inline settings. The five parts don't depend on each other; they run in the order below.
 
 There is no publish task. When the relay finishes, press **Release** once for all five parts.
 
@@ -116,7 +116,7 @@ Rules every task keeps:
 
 Why: on 2026-10-30 the first scheduled brief failed with Calendar denied. The console check had said access was fine, because it checked the terminal, while the scheduler runs whyline's own `python3.11` under launchd, which macOS treats as a separate app. The alert went out, but it blamed "the terminal app" and pointed at the wrong fix.
 
-## Part 5: Release day fixes: Ready on a branch behind main, the right failed job, steadier console tests, and agents that don't depend on the repository (RDF-1..4)
+## Part 5: Release day fixes: Ready on a branch behind main, the right failed job, steadier console tests, agents that don't depend on the repository, and inline agent settings (RDF-1..5)
 
 No separate design: the problem and the decisions are below.
 
@@ -130,6 +130,7 @@ What the user gets:
 - A CI failure names the jobs that stopped the release, and leaves out jobs that also failed in the last run that passed.
 - Three console tests that no longer fail on a slow machine.
 - A new agent is personal unless you choose otherwise: it is saved in `~/.whyline/agents/` and shows whichever repository is selected. A personal agent is only offered skills that are also on this Mac for every repository.
+- Antigravity keeps its allow list when whyline runs it for an agent, an idea or release notes, and whyline can no longer be installed beside a whyline-relay whose doctor crashes on it.
 
 Rules every task keeps:
 - **Ready never changes the checkout.** The trial merge writes no ref, no index and no working file.
@@ -143,6 +144,7 @@ Rules every task keeps:
 - When the last passing run can't be read, every failed job is named and none is left out. RDF-2, `test_no_baseline_names_every_failed_job`.
 - A new agent starts as Personal, and an agent being edited keeps the scope it has. RDF-4, `test_new_agent_starts_personal`.
 - A personal agent is never saved with a skill that lives in a repository. RDF-4, `test_personal_agent_gets_no_repo_skill`.
+- Inline JSON after `--settings` reaches the agent unchanged from all three places that rewrite a command. RDF-5, `test_inline_settings_pass_through_unchanged`.
 
 ## Tasks
 
@@ -356,3 +358,15 @@ Rules every task keeps:
   5. In the Agents list, a repository agent's row says `this repository only` after its name. Personal agents show nothing extra.
   6. No stored agent is moved or rewritten, and the repository scope stays available.
   Tests: `test_new_agent_starts_personal` (a new form, the save fallback, and an existing repository agent opened for editing), `test_personal_agent_gets_no_repo_skill` (the picker's list for each scope, the scope change removing ticked repository skills with the line, and Save refusing), the order and labels of the scope choices, and the list row for each scope.
+
+- [ ] RDF-5: Inline agent settings, and whyline-relay 0.2.44 or newer
+  Needs whyline-relay 0.2.44 on PyPI (whyline-relay's `plans/preflight-settings.plan.md`, PFS-3). When `uv lock` can't find it, stop and say so with `whyline handoff RDF-5 --issue "whyline-relay 0.2.44 is not on PyPI yet"`; do not lower the minimum to make the lock pass.
+  Create `src/whyline/cliargs.py` and `tests/test_cliargs.py`. Edit `src/whyline/agents/runner.py`, `src/whyline/ideas/analyse.py`, `src/whyline/release/plan.py`, `pyproject.toml`, `uv.lock` and their tests only.
+  Why: since whyline-relay 0.2.42 the built-in Antigravity command passes its allow list as inline JSON after `--settings`, 741 characters long. whyline-relay 0.2.42 and 0.2.43 crash on it in `doctor`, `start` and `resume` (`File name too long`); 0.2.44 fixes that. whyline has the same assumption in three places, each treating the value as a file path:
+  - `agents.runner._without_missing_settings` and its twin in `ideas/analyse.py` call `is_file()` on it, which raises the same `OSError`, and would drop the value if it didn't
+  - `release.plan.absolute_settings` turns it into `<repository>/{"permissions": …}`
+  1. `cliargs.settings_file(value: str) -> Path | None`: None when the value is inline JSON (after `lstrip()` it starts with `{`), otherwise `Path(value).expanduser()`. It never touches the disk. `cliargs.is_file(path: Path) -> bool`: `path.is_file()`, with `OSError` counted as False.
+  2. `_without_missing_settings` (both copies) keeps a `--settings` whose value is inline JSON, in both forms (`--settings <value>` and `--settings=<value>`), and uses `cliargs.is_file` for paths, so a missing or unusable path is dropped as today and nothing raises. The copy in `ideas/analyse.py` calls the one in `agents/runner.py` (or both call one function in `cliargs`), so there is one implementation.
+  3. `absolute_settings` leaves inline JSON as it is and makes only real paths absolute.
+  4. `pyproject.toml`: both `whyline-relay>=0.2.41,<0.3` lines become `whyline-relay>=0.2.44,<0.3`, and `uv.lock` is refreshed with `uv lock`.
+  Tests: `test_inline_settings_pass_through_unchanged` (the built-in Antigravity command from `whyline_relay.recipes.RECIPES` through `_without_missing_settings`, the analyse copy and `absolute_settings`: the output equals the input), a 300-character non-JSON value dropped without an error, a real settings file kept and made absolute as today, a missing file dropped as today, the `--settings=` form for each, and a test that reads `pyproject.toml` and finds no `whyline-relay` requirement below 0.2.44.
