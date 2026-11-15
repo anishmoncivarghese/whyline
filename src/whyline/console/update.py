@@ -23,6 +23,7 @@ PYPI_URL = "https://pypi.org/pypi/whyline/json"
 TIMEOUT_SECONDS = 5
 CHECK_EVERY_SECONDS = 24 * 60 * 60
 RELAY_RUNNING = "Stop or finish the relay first"
+NOTICE_EVERY_SECONDS = 5 * 60
 
 _STABLE = re.compile(r"^\d+(\.\d+)*$")
 _GITHUB = re.compile(r"https?://github\.com/([^/\s]+)/([^/\s#?]+)")
@@ -49,6 +50,31 @@ def _newer(candidate: str | None, current: str) -> bool:
     if not candidate or not _STABLE.match(candidate) or not _STABLE.match(current):
         return False
     return _key(candidate) > _key(current)
+
+
+def installed_version() -> str | None:
+    """The whyline version on disk now, which a release or `uv tool upgrade`
+    may have changed under a running console. Read fresh each call; None on
+    any error."""
+    try:
+        import importlib
+        import importlib.metadata
+
+        importlib.invalidate_caches()
+        return importlib.metadata.version("whyline")
+    except Exception:
+        return None
+
+
+def is_whyline_project(root: Path) -> bool:
+    """True when `root/pyproject.toml` names the project `whyline`."""
+    try:
+        import tomllib
+
+        data = tomllib.loads((Path(root) / "pyproject.toml").read_text(encoding="utf-8"))
+        return (data.get("project") or {}).get("name") == "whyline"
+    except Exception:
+        return False
 
 
 def _fetch(url: str, timeout: float) -> bytes:

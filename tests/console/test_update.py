@@ -407,3 +407,156 @@ def test_repl_failed_reinstall_keeps_the_console(monkeypatch, tmp_path):
              install_fn=FakeInstall(code=1), problem_fn=lambda: None)
     assert execs == []
     assert any("update failed" in line for line in printed)
+
+
+# Notice when a newer whyline is installed
+
+
+def test_installed_version_reads_fresh_and_none_on_error(monkeypatch):
+    import importlib.metadata
+
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "9.9.9")
+    assert update.installed_version() == "9.9.9"
+
+    def boom(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", boom)
+    assert update.installed_version() is None
+
+
+def test_is_whyline_project(tmp_path):
+    assert not update.is_whyline_project(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "other"\n')
+    assert not update.is_whyline_project(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "whyline"\n')
+    assert update.is_whyline_project(tmp_path)
+
+
+def _notice_app(console, monkeypatch, versions):
+    app = console(info=None)
+    seen = list(versions)
+    app._installed_version = lambda: seen.pop(0) if len(seen) > 1 else seen[0]
+    return app
+
+
+@tui_only
+@pytest.mark.asyncio
+@pytest.mark.parametrize("installed,shown", [
+    ("99.0.0", True), (__version__, False), ("0.0.1", False), (None, False)])
+async def test_notice_only_when_installed_is_newer(console, monkeypatch, installed, shown):
+    app = _notice_app(console, monkeypatch, [installed])
+    async with app.run_test(size=(140, 40)) as pilot:
+        for _ in range(5):
+            await pilot.pause()
+        assert app.query_one("#update-restart").display is shown
+        assert ("is installed · restart to use it" in app.title) is shown
+        if shown:
+            assert app.title == "whyline 99.0.0 is installed · restart to use it"
+
+
+@tui_only
+@pytest.mark.asyncio
+async def test_notice_logs_once_per_version_and_hides_update(console, monkeypatch):
+    app = _notice_app(console, monkeypatch, ["99.0.0"])
+    async with app.run_test(size=(140, 40)) as pilot:
+        for _ in range(5):
+            await pilot.pause()
+        app._check_installed()
+        app._check_installed()
+        line = f"whyline 99.0.0 is installed; this console is {__version__}. Press Restart to use it."
+        assert _transcript(app).count(line) == 1
+        app._offer_update("99.0.0", None, reinstall=False)
+        assert not app.query_one("#update").display
+        app._installed_version = lambda: "99.0.1"
+        app._check_installed()
+        assert "whyline 99.0.1 is installed;" in _transcript(app)
+
+
+@tui_only
+@pytest.mark.asyncio
+async def test_notice_timer_runs_every_five_minutes(console, monkeypatch):
+    intervals = []
+    real = tui.WhylineConsoleApp.set_interval
+
+    def record(self, interval, callback, *a, **kw):
+        intervals.append((interval, callback))
+        return real(self, interval, callback, *a, **kw)
+
+    monkeypatch.setattr(tui.WhylineConsoleApp, "set_interval", record)
+    app = console(info=None)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+    assert (300, app._check_installed) in intervals
+
+
+@tui_only
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name,expected", [("other", 0), ("whyline", 1)])
+async def test_release_after_step_triggers_check_only_for_whyline(
+        console, monkeypatch, tmp_path, name, expected):
+    import asyncio
+    import threading
+    from types import SimpleNamespace
+
+    from whyline.release import plan as release_plan
+
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nname = "{name}"\n')
+    from dataclasses import dataclass
+    from typing import Any
+
+    @dataclass(frozen=True)
+    class FakeStep:
+        id: str
+        run: Any
+
+    steps = [FakeStep("before", lambda cancel: None), FakeStep("after", lambda cancel: None)]
+    monkeypatch.setattr(
+        release_plan, "build", lambda *a, **k: SimpleNamespace(version="1.0.0", steps=steps))
+
+    class Engine:
+        def run(self, root, plan, **kw):
+            for step in plan.steps:
+                step.run(None)
+            return SimpleNamespace(status="done", message="")
+
+    app = console(info=None)
+    calls = []
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        app._check_installed = lambda: calls.append(1)
+        app._release_engine = Engine()
+        app._release_choice = SimpleNamespace(version="1.0.0", mode="local")
+        await asyncio.to_thread(app._release_thread, app._release_choice, False, threading.Event(), False)
+        await pilot.pause()
+    assert len(calls) == expected
+
+
+@tui_only
+@pytest.mark.asyncio
+async def test_restart_leaves_relay_running(console, monkeypatch):
+    app = console(info=None)
+    app._installed_version = lambda: "99.0.0"
+
+    class Relay:
+        interrupted = False
+        followed = True
+
+        def running(self):
+            return True
+
+        def interrupt(self):
+            self.interrupted = True
+
+        def stop_following(self):
+            self.followed = False
+
+    relay = Relay()
+    async with app.run_test(size=(140, 40)) as pilot:
+        for _ in range(5):
+            await pilot.pause()
+        app._relay = relay
+        await pilot.click("#update-restart")
+        await pilot.pause()
+    assert not relay.interrupted
+    assert app._exec_after == ("whyline", ["whyline", "console", "--ui"])

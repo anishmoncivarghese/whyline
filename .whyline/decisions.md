@@ -44180,3 +44180,85 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 6894129bbe1c4d249b944debc5393bcb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-14T19:38:48.903Z","commit":"0c6c5b515f941916d4d1d86140990635e6e1e8ab"} -->
+
+## 2026-11-15 — Restart skips action_quit and only calls relay.stop_following(); installed-version notice hides Update… for versions <= installed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CRS-1
+
+**Because:** Restart already exits via _restart_console, so the quit safeguard is never hit; stop_following mirrors the 'Leave it running' path so the relay keeps running
+
+**Rejected:**
+
+- routing Restart through action_quit — would prompt/pause the relay
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 84adfb83f1ab4056bd6f58bf87c9a295 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T04:59:41.751Z"} -->
+
+## 2026-11-15 — Add RDF-1..3 to quick-fixes: Ready passes on a branch behind main when Bring in main will run, CI failure names the job that stopped the release, three console tests wait for the screen
+
+**Actor:** claude
+**Role:** planner
+**Task:** quick-fixes
+
+**Because:** All three were met releasing 0.3.74 and would recur on every release from a relay branch; added to the running relay's plan (plan-only commit) to avoid a merge conflict and a second release
+
+**Rejected:**
+
+- Parse the workflow for continue-on-error — needs a YAML reader; the last passing run's failed jobs give the same answer from gh
+- Mark the flaky tests as retry — hides real failures
+
+**Files:** plans/quick-fixes.plan.md
+
+<!-- whyline-event: 26256eee7b3c4777bdf45fae8442bcc0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T05:13:49.351Z","commit":"f552f91991a5d48f0041a4556dfde06200724c36"} -->
+
+## 2026-11-15 — New agents are personal by default, and a personal agent is never offered a repository skill (RDF-4)
+
+**Actor:** claude
+**Role:** planner
+**Task:** quick-fixes
+
+**Because:** Agents and workflows must not depend on the selected repository; the form defaulted to the repository scope and a personal agent saved with a repository skill fails to load with unknown skill
+
+**Rejected:**
+
+- Remove the repository scope — existing repository agents would need moving, and the user only asked for global by default
+
+**Files:** plans/quick-fixes.plan.md
+
+<!-- whyline-event: 93cc5848e12445aeaecc4f07390e63c6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T05:16:29.289Z","commit":"34c13b3cbd601477579aa2c071173355a944c7d5"} -->
+
+## 2026-11-15 — Pass CRS-1 installed-version notice and Restart keeping relay running
+
+**Actor:** claude
+**Role:** tester
+**Task:** CRS-1
+
+**Because:** Full uv run pytest exit 0; test_update.py covers newer/equal/older/None, 5-minute timer, release after trigger only for whyline, Update… hidden, restart leaves relay running; diff matches spec
+
+**Files:** src/whyline/console/update.py, src/whyline/console/tui.py
+
+<!-- whyline-event: f62d28e3235f48579a3e794418a57905 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T05:28:00.809Z"} -->
+
+## 2026-11-15 — Approve CRS-1 installed-version notice and Restart leaving the relay running
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CRS-1
+
+**Because:** installed_version and is_whyline_project, start/5-min/after-step notice, one log line per version, Update hidden, Restart calls stop_following and skips the quit safeguard; named tests cover the review bar; uv run pytest -q exited 0
+
+**Rejected:**
+
+- request changes for _update_found overwriting the notice title at start — outside the plan bar; the 5-minute and after-step paths run after the PyPI check
+
+**Files:** src/whyline/console/update.py, src/whyline/console/tui.py, tests/console/test_update.py
+
+<!-- whyline-event: d734a902a8914ed1b23b4bcf31435859 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T05:57:52.231Z"} -->

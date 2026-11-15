@@ -1201,6 +1201,8 @@ class WhylineConsoleApp(App):
         self._update_installed = False
         self._update_problem_text: Any = _UNSET
         self._update_timer: Any = None
+        self._installed_version = update.installed_version
+        self._noticed_version: str | None = None
         self._login_fn = _run_login
         self._busy_text = ""
         self._busy_since = 0.0
@@ -2017,6 +2019,8 @@ class WhylineConsoleApp(App):
         self.set_interval(1.0, self._watch_external_relay)
         self.set_interval(1.0, self._pause_tick)
         self.set_interval(2.0, self._approvals_tick)
+        self.set_interval(update.NOTICE_EVERY_SECONDS, self._check_installed)
+        self._check_installed()
         self._main("#prompt", Input).focus()
         self.render_event(
             SessionEvent(
@@ -2044,6 +2048,33 @@ class WhylineConsoleApp(App):
             self._install_problem()
             self.call_from_thread(self._update_found, info)
 
+    def _check_installed(self) -> None:
+        """A newer whyline on disk than this console is running: say so and
+        offer Restart. Logged once per version."""
+        from whyline import __version__
+
+        try:
+            installed = self._installed_version()
+        except Exception:
+            installed = None
+        if not installed or not update._newer(installed, __version__):
+            return
+        if self._noticed_version is not None and not update._newer(installed, self._noticed_version):
+            return
+        self._noticed_version = installed
+        self.title = f"whyline {installed} is installed · restart to use it"
+        self._update_offer = None
+        try:
+            self._main("#update", Button).display = False
+            self._main("#update-restart", Button).display = True
+        except (NoMatches, IndexError):
+            pass
+        self.render_event(SessionEvent(
+            kind="output",
+            text=f"whyline {installed} is installed; this console is {__version__}. "
+                 "Press Restart to use it.",
+        ))
+
     def _install_problem(self) -> str | None:
         """How whyline was installed when the console can't update it; None
         when it can. Asked once: the answer can't change while it runs."""
@@ -2065,6 +2096,8 @@ class WhylineConsoleApp(App):
         Help says how whyline was installed, and nothing is offered."""
         if self._update_running or self._update_installed:
             return
+        if self._noticed_version is not None and not update._newer(version, self._noticed_version):
+            return  # already installed on disk: Restart is the way to use it
         if self._update_offer is not None and not self._update_offer[2]:
             return  # a newer release already on offer also restores what's missing
         problem = self._install_problem()
@@ -2153,6 +2186,10 @@ class WhylineConsoleApp(App):
     def _restart_console(self) -> None:
         binary, argv = update.RESTART
         self._exec_after = (binary, list(argv))
+        # Not action_quit: a running relay is left running, as after a quit
+        # with "Leave it running", and the restarted console finds it.
+        if self._relay is not None:
+            self._relay.stop_following()
         self.exit()
 
     def _restore_release_task(self) -> bool:
@@ -6555,11 +6592,14 @@ class WhylineConsoleApp(App):
         def tracked(step: Any) -> Any:
             def run_step(cancel_event: Any) -> Any:
                 try:
-                    return step.run(cancel_event)
+                    outcome = step.run(cancel_event)
                 except Exception as exc:
                     if getattr(exc, "open_pr", False):
                         self._release_pr_flag = True
                     raise
+                if step.id == "after" and update.is_whyline_project(root):
+                    self.call_from_thread(self._check_installed)
+                return outcome
 
             return replace(step, run=run_step)
 
