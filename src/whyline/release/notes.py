@@ -44,6 +44,9 @@ _PROCESS_PREFIXES = (
     "merge:",
     "plan:",
 )
+_COMMIT_PREFIX = re.compile(r"(?i)^[a-z]+(?:\([^)]*\))?!?:\s*")
+_TASK_ID = re.compile(r"\s*\([A-Z][A-Z0-9]*-\d+\)\s*$")
+_GROUPS = ("New", "Fixed", "Docs", "Other")
 
 
 @dataclass(frozen=True)
@@ -102,9 +105,48 @@ def _style_example(root: Path, cfg: ReleaseConfig, *, run: Run) -> str:
         return ""
 
 
+def _bullet(subject: str) -> str:
+    text = _COMMIT_PREFIX.sub("", subject.strip(), count=1).strip()
+    text = _TASK_ID.sub("", text).strip()
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
+
+
+def _group_of(subject: str) -> str:
+    low = subject.strip().lower()
+    if low.startswith("feat:") or low.startswith("feat("):
+        return "New"
+    if low.startswith("fix:"):
+        return "Fixed"
+    if low.startswith("docs:"):
+        return "Docs"
+    return "Other"
+
+
 def fallback(version: str, commits: list[str]) -> str:
+    groups: dict[str, list[str]] = {name: [] for name in _GROUPS}
+    for subject in commits:
+        if _process_noise(subject):
+            continue
+        bullet = _bullet(subject)
+        if not bullet:
+            continue
+        groups[_group_of(subject)].append(bullet)
     lines = [f"# v{version}", ""]
-    lines += [f"- {subject}" for subject in commits]
+    filled = False
+    for name in _GROUPS:
+        items = groups[name]
+        if not items:
+            continue
+        if filled:
+            lines.append("")
+        lines.append(f"## {name}")
+        lines.append("")
+        lines += [f"- {item}" for item in items]
+        filled = True
+    if not filled:
+        lines.append("Maintenance release.")
     return "\n".join(lines) + "\n"
 
 

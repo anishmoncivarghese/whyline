@@ -68,7 +68,7 @@ def test_fallback_when_agent_fails(tmp_path):
         raise RuntimeError("all agents failed")
 
     out = notes.draft(tmp_path, ReleaseConfig(), "1.3.0", ask_agent=boom, run=make_run("v1.2.0"))
-    assert out == "# v1.3.0\n\n- feat: a\n- fix: b\n"
+    assert out == notes.fallback("1.3.0", ["feat: a", "fix: b"])
 
 
 def test_fallback_when_agent_returns_nothing(tmp_path):
@@ -305,4 +305,94 @@ def test_usable():
             version="1.2.0",
         ),
     ))
+
+
+def test_only_process_commits():
+    commits = (
+        "chore: tick RCR-6 in the plan",
+        "chore: release v1.2.0",
+        "chore: record decisions",
+        "chore: move finished plans to plans/done",
+        "setup: assign implementer/tester/reviewer roles",
+        "merge: origin/main into the release branch",
+        "plan: console restart notice (CRS-1..4)",
+    )
+    assert notes.fallback("1.2.0", list(commits)) == "# v1.2.0\n\nMaintenance release.\n"
+    assert notes.fallback("1.2.0", []) == "# v1.2.0\n\nMaintenance release.\n"
+
+
+def test_feat_group():
+    assert notes.fallback("1.2.0", ["feat: add a notes check"]) == (
+        "# v1.2.0\n\n## New\n\n- Add a notes check\n"
+    )
+
+
+def test_fix_group():
+    assert notes.fallback("1.2.0", ["fix: handle empty tags"]) == (
+        "# v1.2.0\n\n## Fixed\n\n- Handle empty tags\n"
+    )
+
+
+def test_docs_group():
+    assert notes.fallback("1.2.0", ["docs: drop the agent's narration"]) == (
+        "# v1.2.0\n\n## Docs\n\n- Drop the agent's narration\n"
+    )
+
+
+def test_other_group():
+    assert notes.fallback("1.2.0", ["chore: something else"]) == (
+        "# v1.2.0\n\n## Other\n\n- Something else\n"
+    )
+
+
+def test_prefix_and_task_id_stripped():
+    out = notes.fallback("1.2.0", ["feat: add a notes check (RCR-6)"])
+    assert out == "# v1.2.0\n\n## New\n\n- Add a notes check\n"
+    assert "feat:" not in out
+    assert "(RCR-6)" not in out
+
+
+def test_feat_scope_goes_to_new():
+    assert notes.fallback("1.2.0", ["feat(notes): add a grouped fallback"]) == (
+        "# v1.2.0\n\n## New\n\n- Add a grouped fallback\n"
+    )
+
+
+def test_fallback_passes_lint_for_every_kind():
+    commits = [
+        "feat: add a notes check (RCR-6)",
+        "feat(notes): group the fallback",
+        "fix: handle empty tags",
+        "docs: drop the agent's narration",
+        "chore: something else",
+        "chore: tick RCR-6 in the plan",
+        "chore: release v1.2.0",
+        "chore: record decisions",
+        "chore: move finished plans to plans/done",
+        "setup: assign implementer/tester/reviewer roles",
+        "merge: origin/main into the release branch",
+        "plan: console restart notice (CRS-1..4)",
+    ]
+    out = notes.fallback("1.2.0", commits)
+    assert notes.lint(out, version="1.2.0") == []
+    assert out == (
+        "# v1.2.0\n"
+        "\n"
+        "## New\n"
+        "\n"
+        "- Add a notes check\n"
+        "- Group the fallback\n"
+        "\n"
+        "## Fixed\n"
+        "\n"
+        "- Handle empty tags\n"
+        "\n"
+        "## Docs\n"
+        "\n"
+        "- Drop the agent's narration\n"
+        "\n"
+        "## Other\n"
+        "\n"
+        "- Something else\n"
+    )
 

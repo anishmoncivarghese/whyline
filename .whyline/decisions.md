@@ -44585,3 +44585,57 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2fc3091b375541b5a6708749681efd6c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T10:50:52.733Z"} -->
+
+## 2026-11-15 — Group fallback by conventional prefix; strip type and trailing task id
+
+**Actor:** grok
+**Role:** implementer
+**Task:** NOTE-2
+
+**Because:** the spec names New for feat:/feat(, Fixed for fix:, Docs for docs:, Other for the rest, and bullets without the prefix or a trailing (RCR-6)
+
+**Rejected:**
+
+- treat fix( and docs( like feat( — spec only names feat( for New
+- pipe fallback through lint+clean — construction already drops process noise, and lint+clean would remove a real bullet that happens to trip first-person
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 8da43120421d49b68e7b8e43bca38d3e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T11:14:13.813Z"} -->
+
+## 2026-11-15 — Pass NOTE-2: grouped fallback matches the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** NOTE-2
+
+**Because:** Named tests cover process-only commits, each group, prefix and task-id strip, feat(scope), and lint on a mixed list; an independent probe of empty groups, mixed order, noise drop, capitalisation, case folding, empty bullets and lint on Maintenance release also passed; uv run pytest -q tests/release/test_notes.py exited 0 with 32 passed; uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- fail because fix( and docs( go to Other — spec only names feat( for New
+- fail because construction does not pipe through lint+clean — the required mixed list and the empty body pass lint, and process noise is already dropped
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 6ccd9015f2444a44aa35695e23ddb2a3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T11:35:51.489Z"} -->
+
+## 2026-11-15 — Approve NOTE-2: grouped fallback matches the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** NOTE-2
+
+**Because:** fallback groups feat:/feat( as New, fix: as Fixed, docs: as Docs, and the rest as Other; process-noise subjects are dropped; bullets lose the conventional prefix and a trailing (TASK-n); empty groups are omitted; process-only and empty lists yield Maintenance release.; named tests cover each required case and lint on a mixed list; uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- reject because fix( and docs( go to Other — spec only names feat( for New
+- reject because construction does not pipe through lint+clean — the required mixed list passes lint, and piping would drop a real bullet that trips first-person
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 4d11b2424a9a44bbb7a9a77af860e85c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T11:56:52.101Z"} -->
