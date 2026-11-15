@@ -1,5 +1,5 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | spec: docs/superpowers/specs/2026-11-15-agent-models-skills-tools-design.md | created: 2026-11-15T21:30:00+05:30 -->
-# Agent setup: picker fixes, a model per CLI, folders, a skills catalogue, a connector catalogue, made tools and tool risk
+# Agent setup: picker fixes, a model per CLI, folders, a skills catalogue, a connector catalogue, made tools, tool risk and live relay settings
 
 Runs after `plans/quick-fixes.plan.md`, and before `plans/telegram-daily-use.plan.md`. Spec: `docs/superpowers/specs/2026-11-15-agent-models-skills-tools-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **Not in this plan:** connectors that need a browser sign-in (remote MCP servers), any catalogue entry that pays, and script tools. Risk levels and limits for paying tools are built here so those can follow safely.
@@ -8,7 +8,7 @@ Runs after `plans/quick-fixes.plan.md`, and before `plans/telegram-daily-use.pla
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
-This is one plan on purpose, so it runs in one relay and ships in one release. It has seven parts. A task belongs to the part its id names: PKR to Part 1, AMD to Part 2, FLD to Part 3, SKC to Part 4, CON to Part 5, MKT to Part 6, RSK to Part 7. DOC-1 is last. There is no publish task: press **Release** when the relay finishes.
+This is one plan on purpose, so it runs in one relay and ships in one release. It has eight parts. A task belongs to the part its id names: PKR to Part 1, AMD to Part 2, FLD to Part 3, SKC to Part 4, CON to Part 5, MKT to Part 6, RSK to Part 7, LRV to Part 8. DOC-1 is last. There is no publish task: press **Release** when the relay finishes.
 
 Why: New agent has a Model box no run ever uses, a folder that must be typed, a skills picker limited to what is on this Mac, and a tools picker that lists connectors without saying where they come from. Adding a connector means knowing its command line. A focused row in the pickers turns into an empty box, and a test left a fake `files` connector in the real `~/.whyline`.
 
@@ -20,6 +20,7 @@ What the user gets:
 - **Add from catalogue…** for connectors, a search of the public registry, and `What should the agent be able to do?`
 - **Make a tool**: a saved web request, drafted from a description, tested and accepted before use.
 - Four risk levels on tools. A tool that pays can never be set to Allowed and needs limits.
+- While a relay runs, **Agents for this run** also changes the timeout, the round cap, the backup order and each backup's model, with **Refresh models** and **Other…** on every model dropdown. Relay **Set up** gets the same model list.
 
 Rules every task keeps:
 - **Console first.** Every command has a console counterpart saving through the same function.
@@ -47,6 +48,7 @@ Rules every task keeps:
 - A made tool can't call `http`, a private, local or link-local address, or a host that resolves to one. MKT-1, `test_made_tool_refuses_private_addresses`.
 - An edited made tool can't run until it is accepted again. MKT-1, `test_edited_tool_needs_accepting`.
 - A `pays` tool can't be saved as Allowed by the form, the file or the CLI. RSK-2, `test_pays_is_never_allowed`.
+- Saving **Agents for this run** changes only what the user changed, and one refused change does not stop the others. LRV-2, `test_save_applies_only_what_changed`.
 - A `pays` call over the per-call or the per-day limit is refused without asking, and a `pays` tool with no limits can't be called. RSK-2, `test_pays_limits_are_enforced`.
 
 - [ ] PKR-1: A focused checkbox keeps its label in the three pickers
@@ -285,7 +287,36 @@ Rules every task keeps:
   6. CLI: `whyline tools risk <server>.<tool> [LEVEL]`, and `whyline agents limit <agent> <server>.<tool> --per-call N --per-day N --currency C`.
   Tests: the level shown, the single choice and the limit boxes for `pays`, Done refused without limits, the `sends` line, Risk offering no lower level, the approval lines, and the CLI.
 
+- [ ] LRV-1: Console functions for live run settings
+  Needs whyline-relay 0.2.45 on PyPI (whyline-relay's `plans/live-run-settings.plan.md`, LRS-4). When `uv lock` can't find it, stop and say so with `whyline handoff LRV-1 --issue "whyline-relay 0.2.45 is not on PyPI yet"`; do not lower the floor to make the lock pass.
+  Edit `src/whyline/console/relay_ops.py` and `pyproject.toml` (and `uv.lock`), with tests in `tests/console/test_relay_ops_live_settings.py`.
+  1. Both `whyline-relay>=…,<0.3` lines in `pyproject.toml` become `whyline-relay>=0.2.45,<0.3`, and `uv.lock` is refreshed.
+  2. `RunSetting` (`name`, `current`, `configured`, `changed: bool`) and `run_settings(root) -> dict[str, RunSetting]` for `timeout`, `rounds` and `backup`, from `whyline_relay.run_settings.effective`.
+  3. `set_run_timeout(root, minutes, *, keep)`, `set_run_rounds(root, rounds, *, keep)` and `set_run_backup(root, chain, *, keep)` call the relay's functions with the run's settings and return its message. `set_run_rounds` passes the running task's round. `RunSettingsError` becomes `ValueError` with the relay's message, as `switch_live` does for roles.
+  4. `model_options_for_agent` and `cached_model_options` read `whyline.models` (AMD-1), so the relay screens, Chat and New agent show one list.
+  Tests: each setter writing `run-settings.json` and returning the relay's message, `keep` reaching `config.toml`, the round-cap refusal as a `ValueError`, `run_settings` after a change, and the model options coming from `whyline.models`.
+
+- [ ] LRV-2: Timeout, round cap, backups and their models in "Agents for this run"
+  Edit `src/whyline/console/relay_screens.py` (`RunAgentsScreen`), with tests in `tests/console/test_relay_screens.py`.
+  1. The window becomes 110 columns wide (`max-width: 100%`) and scrolls when it is taller than the screen. Each role row is one line: the role, the agent dropdown, the model dropdown (LMD-2) and its reason line underneath.
+  2. Under the roles, a **Backups** block: the backup order as the console's `OrderedChain` (tick to use, **Up** and **Down** to order), and a model dropdown beside each ticked backup. A backup that also holds a role shows that role's model and `same as its role`.
+  3. Under that, **Timeout** (minutes, `0` for no limit) and **Round cap** (1 to 99), each showing `was 30` after it when it differs from the configured value.
+  4. Every model dropdown holds `Default`, the agent's models from `whyline.models.cached`, and `Other…`, which takes a typed id, adds it with `models.add` and selects it. One **Refresh models** button refreshes the lists of every agent shown, in a worker, keeping each selection.
+  5. **Save** applies, in this order and only for what changed: role switches, model switches (roles and backups, once per agent), the backup order, the timeout, the round cap. Each uses the **Keep for future runs** checkbox. An error from one goes to `#ra-error` with the relay's message and the rest still apply.
+  6. The summary lists what will change and when: `Timeout 45m from the next turn · Round cap 5 from the next check · Backups codex, grok from the next time one is needed`.
+  7. The `READ_ONLY` text becomes `The plan stays as it is while the relay runs.`
+  8. With no relay running the screen is not offered, as today; Set up is used instead.
+  Tests: `test_save_applies_only_what_changed` (change only the timeout: one call, to `set_run_timeout`; then make the round cap refuse and check the timeout and a model switch still applied), the backup order and a backup's model saved, `same as its role`, Other… adding and selecting, Refresh keeping selections, the summary line, Keep unticked passing `keep=False` everywhere, and the screen usable at 80x24 by scrolling.
+
+- [ ] LRV-3: The same model list in relay Set up
+  Edit `src/whyline/console/relay_screens.py` (`RelaySetupScreen`) and its tests only.
+  1. Set up's model pickers (`rs-model-<agent>`) read `whyline.models.cached`, with `Default`, `Other…` and a **Refresh models** button, as in LRV-2. The separate typed-model input (`rs-model-input-<agent>`) is replaced by `Other…`.
+  2. The backup agents listed in Set up each get a model picker too, saved with `set_agent_model_in_toml`.
+  3. The window is widened to 110 columns when the model column would not fit, and still scrolls at 80x24.
+  4. A saved model that is not on the list is shown and kept.
+  Tests: the options and Other…, Refresh keeping the selection, a backup's model saved to `config.toml`, an unlisted saved model kept, and the screen at 80x24.
+
 - [ ] DOC-1: Docs
-  Edit `docs/agent-tools.md`, `docs/agents-capabilities.md` and `README.md` only.
-  Cover: choosing a model per CLI and what Default means; Browse and the default folder; skill sources, what the preview's warnings mean, licences, and that nothing from a skill is run; the connector catalogue and what `not checked by whyline yet` means; Find; made tools, their limits and that a Test really sends; the four risk levels, limits for paying tools, and that browser sign-in connectors and paying catalogue entries are not in this release.
+  Edit `docs/agent-tools.md`, `docs/agents-capabilities.md`, the page that documents the relay screens and `README.md` only.
+  Cover: choosing a model per CLI and what Default means; Browse and the default folder; skill sources, what the preview's warnings mean, licences, and that nothing from a skill is run; the connector catalogue and what `not checked by whyline yet` means; Find; made tools, their limits and that a Test really sends; the four risk levels, limits for paying tools, and that browser sign-in connectors and paying catalogue entries are not in this release. In `docs/relay-chat.md` or the relay page: changing agents, models, backups, the timeout and the round cap while a relay runs, and when each change applies.
   Verify with `uv run pytest -q`.

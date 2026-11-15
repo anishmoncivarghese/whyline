@@ -10,7 +10,7 @@ Finished plans are in `plans/done/`.
 |---|---|---|---|---|
 | 0 | Done | `done/agent-tools.plan.md` | TLS-1..16 | released as whyline 0.3.74 on 2026-11-15 |
 | 1 | Quick fixes | `quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27, RDF-1..5 (21) | whyline-relay 0.2.44 for RDF-5 (whyline-relay's `plans/preflight-settings.plan.md`, PFS-1..3) |
-| 1b | Agent setup | `agent-setup.plan.md` | PKR-1..4, AMD-1..4, FLD-1..3, SKC-1..6, CON-1..4, MKT-1..3, RSK-1..3, DOC-1 (28) | quick-fixes (RDF-4, personal agents and the skill picker's scope) |
+| 1b | Agent setup | `agent-setup.plan.md` | PKR-1..4, AMD-1..4, FLD-1..3, SKC-1..6, CON-1..4, MKT-1..3, RSK-1..3, LRV-1..3, DOC-1 (31) | quick-fixes (RDF-4, personal agents and the skill picker's scope; LMD-2, the model dropdowns), whyline-relay 0.2.45 for LRV-1 (whyline-relay's `plans/live-run-settings.plan.md`, LRS-1..4) |
 | 2 | Telegram daily use | `telegram-daily-use.plan.md` | WAIT-1..7, QUE-1..11, FB-1..7, RT-1..7 (32) | |
 | 3 | Process | `raaid-log.plan.md` | RAAID-1..14 | |
 | 3 | | `sdlc-git-flow.plan.md` | GIT-1..6 | telegram-daily-use (WAIT-5, for GIT-4's go-ahead verbs) |
