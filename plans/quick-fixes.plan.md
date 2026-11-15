@@ -212,7 +212,7 @@ Rules every task keeps:
   4. `notes.review(version, commits, draft, problems, *, ask_agent) -> Reviewed` (`text`, `added: tuple[str, ...]`). After `extract`, each bullet of the result is kept only when it shares at least two words of four or more letters with some draft line or commit subject. A bullet that doesn't is removed and listed in `added`. A failed turn or an answer without markers returns the draft unchanged.
   Tests: `test_reviewer_cannot_add`, a reworded bullet kept, a removed line staying removed, an unmarked answer returning the draft, `pick_other` with one and with two agents, and `default_ask_agent` using the named agent.
 
-- [ ] NOTE-4: Draft, check, review, check again
+- [x] NOTE-4: Draft, check, review, check again
   Edit `src/whyline/release/notes.py`, `src/whyline/release/config.py`, `src/whyline/release/plan.py` and their tests only.
   1. `ReleaseConfig` gains `notes_review: bool = True` and `notes_reviewer: str = ""` (empty means any agent other than the writer), read and written like the other fields.
   2. `@dataclass(frozen=True) class Checked`: `text`, `writer`, `reviewer`, `removed: tuple[str, ...]`, `before: str`, `used_fallback: bool`, `summary: str`.
