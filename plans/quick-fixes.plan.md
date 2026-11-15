@@ -153,7 +153,7 @@ Rules every task keeps:
   3. **Restart** keeps its current behaviour (`_restart_console`, `update.RESTART`). While a relay runs in this checkout the quit safeguard is skipped for this exit: the relay keeps running and the restarted console finds it, as it does today after a quit with **Leave it running**.
   Tests: `test_notice_only_when_installed_is_newer` (newer, equal, older, None), the 5-minute timer and the release trigger with fakes, one log line per version, **Update…** hidden, and `test_restart_leaves_relay_running`.
 
-- [ ] CRS-2: Crash log
+- [x] CRS-2: Crash log
   Create `src/whyline/console/crashlog.py` and `tests/console/test_crashlog.py`. Edit `src/whyline/console/tui.py` (`launch`), `src/whyline/doctor.py`, the console Help text and their tests.
   1. `crashlog.record(error: BaseException, *, version: str, path: Path | None = None) -> Path` appends `--- <ISO time> · whyline <version> · <type>: <message>` and the plain traceback (`traceback.format_exception`, no locals, at most 200 lines) to `~/.whyline/crash.log` (0600), keeping the last 5 entries. `crashlog.last(path=None) -> tuple[str, str] | None` returns the last entry's header and text.
   2. `launch` records a crash whether Textual raises it out of `app.run()` or returns with the error stored (in textual 2.1.2, `app._exception` with a nonzero `app.return_code`), then prints `The console crashed: <type>: <first line of message>. Details are saved in ~/.whyline/crash.log. Start it again with: whyline console`. Textual's own traceback is still printed above it. `KeyboardInterrupt` and a normal exit write nothing.
