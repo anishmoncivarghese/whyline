@@ -44838,3 +44838,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4d5704e89a064c629e1bf63fbf36b5ce -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T15:34:04.078Z"} -->
+
+## 2026-11-15 — Keep the notes review screen compatible with raw text while accepting Checked metadata
+
+**Actor:** codex
+**Role:** implementer
+**Task:** NOTE-5
+
+**Because:** The richer confirmation needs summary, first-draft and removed-line data, while existing callers still construct the screen with written text
+
+**Rejected:**
+
+- Require Checked unconditionally — it would break existing console callers outside NOTE-5's permitted file scope
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: b4bcabbe60e34e118af7c3f38522f919 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T15:43:43.643Z"} -->
+
+## 2026-11-15 — Pass NOTE-5 checked notes confirmation UI, setup settings and CLI linting
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** NOTE-5
+
+**Because:** All requirements are satisfied: confirmation UI shows summary, diff with marked removals, commit list fallback, and linting choices; setup tab and CLI configure notes review/reviewer saving via release_config.save; --check exits 1 on lint failures; and all 107 scoped tests plus the full suite pass.
+
+**Rejected:**
+
+- Fail — all requirements behave correctly and test suites pass
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/release/cli.py
+
+<!-- whyline-event: 0d0e55bf1d8a401fa0859d8b12f22f13 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T16:07:13.196Z"} -->
+
+## 2026-11-15 — Reject NOTE-5 because the live console drops checked-note metadata
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-5
+
+**Because:** The console callback in src/whyline/console/tui.py still accepts only path and constructs NotesReviewScreen from raw text, so release.plan does not pass Checked and real users see an empty summary and no marked removals; uv run pytest -q passes because tests cover the widget in isolation but not this metadata handoff
+
+**Rejected:**
+
+- Approve — the full suite passes, but it does not exercise the required live-console summary and before/after behavior
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: d570cf62c20c4ee686f4b12913227454 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T16:27:43.828Z"} -->
+
+## 2026-11-15 — Carry Checked metadata through the live console notes confirmation
+
+**Actor:** codex
+**Role:** implementer
+**Task:** NOTE-5
+
+**Because:** release.plan already supplies the checked summary, first draft, and removed lines; the console must preserve those fields while refreshing only the final text after an external edit
+
+**Rejected:**
+
+- Re-read raw text into NotesReviewScreen — this drops the summary and removal comparison that users need to approve checked notes
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 4ac5708a94dc4137b0a2c66c7e7fb891 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T16:49:44.031Z"} -->
+
+## 2026-11-15 — Pass NOTE-5: verified notes confirmation screen, review settings, CLI lint check, and full test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** NOTE-5
+
+**Because:** All task requirements verified: summary above notes, side-by-side removal comparison, commit list fallback, linter on approve with both problem choices, plain text without markup, config saving through release_config.save, CLI notes check exit codes, and metadata persistence through live console confirm_notes callback. The full test suite passes cleanly.
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 59d524f4012949aaaee621657e9d4200 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T17:11:08.277Z"} -->
+
+## 2026-11-15 — Approve NOTE-5 confirm window, settings, CLI checks, and live metadata handoff
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-5
+
+**Because:** The implementation satisfies the requested summary, removal comparison, commit-list fallback, lint choices, plain-text rendering, setup and CLI settings, terminal confirmation, and notes check behavior; the live console now preserves Checked metadata across edits, git diff --check is clean, and uv run pytest -q passed with one skip and warnings only
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: bcd4a3ea01ed4f919fa333bf65c1b305 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T17:32:08.892Z"} -->

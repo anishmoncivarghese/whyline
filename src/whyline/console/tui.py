@@ -6579,13 +6579,14 @@ class WhylineConsoleApp(App):
             return bool(self._release_ask(
                 ConfirmStepScreen(step.title, step.irreversible, detail), False))
 
-        def confirm_notes(path: Any) -> bool:
+        def confirm_notes(path: Any, checked: Any = None) -> bool:
             while True:
                 try:
                     text = Path(path).read_text(encoding="utf-8")
                 except OSError:
                     text = ""
-                answer = self._release_ask(NotesReviewScreen(path, text), "stop")
+                current = replace(checked, text=text) if checked is not None else text
+                answer = self._release_ask(NotesReviewScreen(path, current), "stop")
                 if answer == USE:
                     return True
                 if answer != EDIT:

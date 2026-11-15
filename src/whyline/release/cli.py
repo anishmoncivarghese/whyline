@@ -10,6 +10,7 @@ from pathlib import Path
 from whyline.release import ci_failure
 from whyline.release import config as release_config
 from whyline.release import engine, github, plan as release_plan
+from whyline.release import notes as release_notes
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
 from whyline.release import state as release_state
@@ -21,7 +22,8 @@ EXIT_USAGE = 2
 
 NOTES_PREVIEW_LINES = 40
 
-VERBS = ("check", "run", "status", "resume", "why", "rerun", "ask", "setup", "settings")
+VERBS = ("check", "run", "status", "resume", "why", "rerun", "ask", "setup", "settings",
+         "notes")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     settings = sub.add_parser("settings", help="Show or change Release settings")
     settings.add_argument("--on-no-runner", choices=release_config.NO_RUNNER_CHOICES,
                           help="what to do when GitHub had no runner for a job")
+    settings.add_argument("setting", nargs="?", choices=("notes-review", "notes-reviewer"))
+    settings.add_argument("value", nargs="?")
+    notes = sub.add_parser("notes", help="Check release notes")
+    notes.add_argument("--check", type=Path, required=True, metavar="FILE",
+                       help="lint a release-notes file")
     sub.add_parser("ask", help="Ask an agent why the stopped release failed")
     return parser
 
@@ -127,6 +134,20 @@ def _may_ask(args, mode: str) -> bool:
     return args.yes or mode == "auto" or _interactive()
 
 
+def _notes_version(path: Path) -> str:
+    """Best-effort version for linting a notes file named vX.Y.Z.md."""
+    name = Path(path).stem
+    return name[1:] if name.startswith("v") else name
+
+
+def _fallback_notes(path: Path) -> str:
+    from whyline import paths
+
+    root = paths.find_repo_root(Path(path).parent)
+    commits = release_notes.commits_since_last_tag(root) if root is not None else []
+    return release_notes.fallback(_notes_version(path), commits)
+
+
 def _confirmers(args, bring_text: str = ""):
     def confirm(step) -> bool:
         if args.yes:
@@ -135,9 +156,11 @@ def _confirmers(args, bring_text: str = ""):
             print(bring_text)
         return _ask(f"{step.title}?")
 
-    def confirm_notes(path: Path) -> bool:
+    def confirm_notes(path: Path, checked=None) -> bool:
         if args.yes:
             return True
+        if checked is not None and getattr(checked, "summary", ""):
+            print(checked.summary)
         while True:
             try:
                 lines = Path(path).read_text(encoding="utf-8").splitlines()
@@ -146,12 +169,32 @@ def _confirmers(args, bring_text: str = ""):
             print("\n".join(lines[:NOTES_PREVIEW_LINES]))
             if len(lines) > NOTES_PREVIEW_LINES:
                 print(f"... {len(lines) - NOTES_PREVIEW_LINES} more lines in {path}")
-            answer = input("Use these notes? [y/N/e] ").strip().lower()
-            if answer in ("y", "yes"):
-                return True
-            if answer not in ("e", "edit"):
+            answer = input("[a]pprove, [e]dit, [c]ommit list, [s]top: ").strip().lower()
+            if answer in ("a", "approve"):
+                text = "\n".join(lines) + ("\n" if lines else "")
+                problems = release_notes.lint(text, version=_notes_version(Path(path)))
+                if not problems:
+                    return True
+                for problem in problems:
+                    print(f"line {problem.line}: {problem.reason}")
+                choice = input(
+                    "[a]pprove anyway, [r]emove these lines, [e]dit, [s]top: "
+                ).strip().lower()
+                if choice in ("a", "approve", "approve anyway"):
+                    return True
+                if choice in ("r", "remove", "remove these lines"):
+                    Path(path).write_text(release_notes.clean(text, problems), encoding="utf-8")
+                    return True
+                if choice in ("e", "edit"):
+                    _edit(Path(path))
+                    continue
                 return False
-            _edit(Path(path))
+            if answer in ("e", "edit"):
+                _edit(Path(path))
+            elif answer in ("c", "commit", "commit list"):
+                Path(path).write_text(_fallback_notes(Path(path)), encoding="utf-8")
+            else:
+                return False
 
     return confirm, confirm_notes
 
@@ -300,11 +343,32 @@ def _ask_agent(args, root: Path, cfg) -> int:
 
 
 def _settings(args, root: Path, cfg) -> int:
+    if args.setting == "notes-review":
+        if args.value not in ("on", "off"):
+            print("notes-review needs on or off", file=sys.stderr)
+            return EXIT_USAGE
+        cfg = replace(cfg, notes_review=args.value == "on")
+    elif args.setting == "notes-reviewer":
+        if not args.value:
+            print("notes-reviewer needs an agent name or any", file=sys.stderr)
+            return EXIT_USAGE
+        cfg = replace(cfg, notes_reviewer="" if args.value == "any" else args.value)
     if args.on_no_runner is not None:
         cfg = replace(cfg, on_no_runner=args.on_no_runner)
+    if args.setting is not None or args.on_no_runner is not None:
         release_config.save(root, cfg)
     print(f"release.on_no_runner = {cfg.on_no_runner}")
+    print(f"release.notes_review = {'on' if cfg.notes_review else 'off'}")
+    print(f"release.notes_reviewer = {cfg.notes_reviewer or 'any'}")
     return EXIT_OK
+
+
+def _notes(args, root: Path, cfg) -> int:
+    text = args.check.read_text(encoding="utf-8")
+    problems = release_notes.lint(text, version=_notes_version(args.check))
+    for problem in problems:
+        print(f"line {problem.line}: {problem.reason}")
+    return EXIT_ERROR if problems else EXIT_OK
 
 
 def _setup(args, root: Path, cfg) -> int:
@@ -343,7 +407,7 @@ def _setup(args, root: Path, cfg) -> int:
 
 _HANDLERS = {"check": _check, "run": _run, "status": _status, "resume": _resume,
              "why": _why, "rerun": _rerun, "ask": _ask_agent,
-             "setup": _setup, "settings": _settings}
+             "setup": _setup, "settings": _settings, "notes": _notes}
 
 
 def run(args: argparse.Namespace) -> int:

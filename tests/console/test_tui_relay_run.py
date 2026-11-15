@@ -950,13 +950,23 @@ async def test_notes_review_in_ask_mode(tmp_path, monkeypatch):
     opened = []
     app = tui.WhylineConsoleApp(root=tmp_path)
     app._release_engine = _Engine(fake_run)
-    app._release_ask_agent = lambda prompt: "<notes>\n## New\n- a thing\n</notes>"
+    app._release_ask_agent = lambda prompt: (
+        "<notes>\n## New\n- I fixed this\n- Users can do a thing\n</notes>"
+    )
     app._release_open_file = lambda path: opened.append(path) or ""
     async with app.run_test() as pilot:
         await _begin(app, pilot, "ask")
         await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
         area = app.screen.query_one("#release-notes-text", tui.TextArea)
-        assert area.read_only and "a thing" in area.text
+        assert area.read_only and "Users can do a thing" in area.text
+        summary = app.screen.query_one("#release-notes-summary", tui.Static)
+        assert "1 lines removed" in str(summary.renderable)
+        app.screen.query_one("#release-notes-removed", tui.Button).press()
+        await pilot.pause()
+        before = app.screen.query_one("#release-notes-before", tui.TextArea).text
+        after = app.screen.query_one("#release-notes-after", tui.TextArea).text
+        assert "✗ - I fixed this" in before
+        assert "I fixed this" not in after
         app.screen.query_one("#release-notes-use", tui.Button).press()
         await _until(pilot, lambda: not app._release_running())
         assert results == ["used"]

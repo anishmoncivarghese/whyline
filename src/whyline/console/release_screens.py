@@ -19,9 +19,11 @@ from textual.widgets import (
     Button, Checkbox, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
 )
 
+from whyline import account
 from whyline.console import security_screens
 from whyline.release import ci_failure
 from whyline.release import config as release_config
+from whyline.release import notes as release_notes
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
 from whyline.release import setup_github
@@ -148,6 +150,7 @@ class ReleaseScreen(ModalScreen):
         open_url: Callable[[str], object] | None = None,
         target_check: Callable[[str, release_config.ReleaseConfig, str],
                                list[release_ready.ReadyItem]] | None = None,
+        enabled_agents: tuple[str, ...] | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
@@ -191,6 +194,8 @@ class ReleaseScreen(ModalScreen):
         self._items: list[release_ready.ReadyItem] | None = None
         self._checked_version = ""
         self._load_error = ""
+        enabled = account.enabled_agents() if enabled_agents is None else set(enabled_agents)
+        self._enabled_agents = tuple(name for name in account.AGENT_ORDER if name in enabled)
 
     # -- inputs -------------------------------------------------------------
 
@@ -464,6 +469,13 @@ class ReleaseScreen(ModalScreen):
                            id="rs-after-plan")
             yield Checkbox("Bring in main before releasing", cfg.bring_in_main,
                            id="rs-bring-in")
+            yield Checkbox("Check release notes with a second agent", cfg.notes_review,
+                           id="rs-notes-review")
+            yield Label("Reviewer")
+            reviewers = [(name, name) for name in self._enabled_agents]
+            reviewers.append(("Any other agent", ""))
+            reviewer = cfg.notes_reviewer if cfg.notes_reviewer in self._enabled_agents else ""
+            yield Select(reviewers, value=reviewer, allow_blank=False, id="rs-notes-reviewer")
             yield Label("Checks (one per line)")
             yield TextArea("\n".join(cfg.checks), id="rs-checks")
             yield Label("CI jobs to ignore (one per line): a job name as GitHub shows it, such as test (windows-latest, 3.13), or a whole workflow name")
@@ -590,6 +602,8 @@ class ReleaseScreen(ModalScreen):
             branch=self.query_one("#rs-branch", Input).value.strip() or base.branch,
             start_after_plan=self.query_one("#rs-after-plan", Checkbox).value,
             bring_in_main=self.query_one("#rs-bring-in", Checkbox).value,
+            notes_review=self.query_one("#rs-notes-review", Checkbox).value,
+            notes_reviewer=str(self.query_one("#rs-notes-reviewer", Select).value or ""),
             checks=_lines(self.query_one("#rs-checks", TextArea).text),
             ci_ignore=_lines(self.query_one("#rs-ci-ignore", TextArea).text),
             notes=self.query_one("#rs-notes", Input).value.strip() or base.notes,
@@ -1503,36 +1517,143 @@ class UnreleasedVersionScreen(ModalScreen):
 
 
 class NotesReviewScreen(ModalScreen):
-    """Shows the drafted notes read-only and scrollable. Closes with EDIT, USE or STOP."""
+    """Confirm checked notes, with the first draft and safe cleanup choices."""
 
     BINDINGS = [("escape", "stop", "Stop")]
     DEFAULT_CSS = """
     NotesReviewScreen { align: center middle; }
-    NotesReviewScreen > Vertical { width: 90%; max-width: 100; height: 90%; padding: 1 2;
+    NotesReviewScreen > Vertical { width: 95%; max-width: 120; height: 90%; padding: 1 2;
         border: round $accent; background: $surface; }
     NotesReviewScreen TextArea { height: 1fr; }
     NotesReviewScreen Horizontal { height: auto; margin-top: 1; }
+    NotesReviewScreen #release-notes-comparison { height: 1fr; }
+    NotesReviewScreen #release-notes-comparison Vertical { width: 1fr; }
+    NotesReviewScreen #release-notes-actions { height: auto; }
+    NotesReviewScreen #release-notes-actions Horizontal { margin-top: 0; }
     NotesReviewScreen Button { margin-right: 2; }
+    NotesReviewScreen .-hidden { display: none; }
     """
 
-    def __init__(self, path: Path | str, text: str) -> None:
+    def __init__(
+        self,
+        path: Path | str,
+        checked: str | release_notes.Checked,
+        *,
+        fallback_text: str | None = None,
+    ) -> None:
         super().__init__()
         self._path = Path(path)
-        self._text = text
+        if isinstance(checked, release_notes.Checked):
+            self._text = checked.text
+            self._summary = checked.summary
+            self._before = checked.before
+            self._removed = checked.removed
+        else:  # compatibility with callers that only have the written text
+            self._text = checked
+            self._summary = ""
+            self._before = checked
+            self._removed = ()
+        self._fallback_text = fallback_text
+        self._problems: list[release_notes.Problem] = []
+
+    def _version(self) -> str:
+        name = self._path.stem
+        return name[1:] if name.startswith("v") else name
+
+    def _fallback(self) -> str:
+        if self._fallback_text is not None:
+            return self._fallback_text
+        from whyline import paths
+
+        root = paths.find_repo_root(self._path.parent)
+        commits = release_notes.commits_since_last_tag(root) if root is not None else []
+        return release_notes.fallback(self._version(), commits)
+
+    def _marked_before(self) -> str:
+        removed = list(self._removed)
+        shown = []
+        for line in self._before.splitlines():
+            if line in removed:
+                shown.append(f"✗ {line}")
+                removed.remove(line)
+            else:
+                shown.append(f"  {line}")
+        return "\n".join(shown)
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label(f"Release notes drafted in {self._path}", id="release-notes-title")
+            yield Static(f"Release notes drafted in {self._path}",
+                         id="release-notes-title", markup=False)
+            yield Static(self._summary, id="release-notes-summary", markup=False)
             yield TextArea(self._text, read_only=True, id="release-notes-text")
-            with Horizontal():
-                yield Button("Use these notes", id="release-notes-use", variant="primary")
-                yield Button("Edit", id="release-notes-edit")
-                yield Button("Stop", id="release-notes-stop")
+            with Horizontal(id="release-notes-comparison", classes="-hidden"):
+                with Vertical():
+                    yield Static("First draft (✗ means removed)", markup=False)
+                    yield TextArea(self._marked_before(), read_only=True,
+                                   id="release-notes-before")
+                with Vertical():
+                    yield Static("Final text", markup=False)
+                    yield TextArea(self._text, read_only=True, id="release-notes-after")
+            yield Static("", id="release-notes-problems", markup=False, classes="-hidden")
+            with Vertical(id="release-notes-actions"):
+                with Horizontal():
+                    yield Button("See what was removed", id="release-notes-removed")
+                    yield Button("Use the commit list instead", id="release-notes-commits")
+                with Horizontal():
+                    yield Button("Edit", id="release-notes-edit")
+                    yield Button("Approve", id="release-notes-use", variant="primary")
+                    yield Button("Stop", id="release-notes-stop")
+            with Horizontal(id="release-notes-problem-actions", classes="-hidden"):
+                yield Button("Approve anyway", id="release-notes-approve-anyway",
+                             variant="warning")
+                yield Button("Remove these lines", id="release-notes-remove")
+                yield Button("Edit", id="release-notes-edit-problems")
+                yield Button("Stop", id="release-notes-stop-problems")
+
+    def _persist(self, text: str) -> None:
+        self._text = text
+        self._path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+        self.query_one("#release-notes-text", TextArea).load_text(text)
+        self.query_one("#release-notes-after", TextArea).load_text(text)
+
+    def _show_problems(self) -> None:
+        message = "\n".join(
+            f"line {problem.line}: {problem.reason}" for problem in self._problems
+        )
+        self.query_one("#release-notes-problems", Static).update(message)
+        self.query_one("#release-notes-problems").remove_class("-hidden")
+        self.query_one("#release-notes-actions").add_class("-hidden")
+        self.query_one("#release-notes-problem-actions").remove_class("-hidden")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
-        choices = {"release-notes-edit": EDIT, "release-notes-use": USE}
-        self.dismiss(choices.get(event.button.id or "", STOP))
+        button_id = event.button.id or ""
+        if button_id == "release-notes-removed":
+            comparison = self.query_one("#release-notes-comparison")
+            comparison.toggle_class("-hidden")
+            self.query_one("#release-notes-text").toggle_class("-hidden")
+            return
+        if button_id == "release-notes-commits":
+            self._persist(self._fallback())
+            return
+        if button_id == "release-notes-use":
+            self._problems = release_notes.lint(self._text, version=self._version())
+            if self._problems:
+                self._show_problems()
+            else:
+                self.dismiss(USE)
+            return
+        if button_id == "release-notes-approve-anyway":
+            self.dismiss(USE)
+            return
+        if button_id == "release-notes-remove":
+            self._persist(release_notes.clean(self._text, self._problems))
+            self.dismiss(USE)
+            return
+        if button_id in ("release-notes-edit", "release-notes-edit-problems"):
+            self.dismiss(EDIT)
+            return
+        self.dismiss(STOP)
 
     def action_stop(self) -> None:
         self.dismiss(STOP)

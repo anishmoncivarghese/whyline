@@ -6,6 +6,7 @@ import pytest
 
 from whyline.release import cli as release_cli
 from whyline.release import engine, plan as release_plan
+from whyline.release import notes as release_notes
 from whyline.release import ready as release_ready
 from whyline.release import state as release_state
 from whyline.release.config import ReleaseConfig
@@ -293,26 +294,55 @@ def _notes(root, text="# v1.2.3\n- a\n"):
     return path
 
 
-def test_notes_prompt_shows_forty_lines_and_asks(root, monkeypatch, capsys):
+def test_notes_prompt_shows_summary_forty_lines_and_choices(root, monkeypatch, capsys):
     path = _notes(root, "\n".join(f"line {i}" for i in range(60)) + "\n")
     prompts = []
-    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "y")
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "a")
     confirm_notes = release_cli._confirmers(SimpleNamespace(yes=False))[1]
-    assert confirm_notes(path) is True
+    checked = release_notes.Checked(path.read_text(), "claude", "codex", (), path.read_text(),
+                                    False, "Written by claude, checked by codex.")
+    assert confirm_notes(path, checked) is True
     out = capsys.readouterr().out
+    assert "Written by claude, checked by codex." in out
     assert "line 39" in out and "line 40" not in out
-    assert prompts == ["Use these notes? [y/N/e] "]
+    assert prompts == ["[a]pprove, [e]dit, [c]ommit list, [s]top: "]
 
 
 def test_notes_prompt_edit_shows_again_and_no_stops(root, monkeypatch, capsys):
     path = _notes(root)
     edited = []
     monkeypatch.setattr(release_cli, "_edit", lambda p: edited.append(p))
-    answers = iter(["e", "n"])
+    answers = iter(["e", "s"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     confirm_notes = release_cli._confirmers(SimpleNamespace(yes=False))[1]
     assert confirm_notes(path) is False
     assert edited == [path] and capsys.readouterr().out.count("# v1.2.3") == 2
+
+
+def test_notes_prompt_can_replace_text_with_commit_list(root, monkeypatch):
+    path = _notes(root, "agent text\n")
+    monkeypatch.setattr(release_cli, "_fallback_notes", lambda p: "# v1.2.3\n\n- commit\n")
+    answers = iter(["c", "a"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    assert release_cli._confirmers(SimpleNamespace(yes=False))[1](path) is True
+    assert path.read_text() == "# v1.2.3\n\n- commit\n"
+
+
+def test_edited_notes_with_problem_offer_both_choices(root, monkeypatch, capsys):
+    path = _notes(root, "# v1.2.3\n\n- Fixed it\n")
+    prompts = []
+
+    def edit(p):
+        p.write_text("# v1.2.3\n\n- I fixed it\n")
+
+    answers = iter(["e", "a", "r"])
+    monkeypatch.setattr(release_cli, "_edit", edit)
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or next(answers))
+    assert release_cli._confirmers(SimpleNamespace(yes=False))[1](path) is True
+    assert "I fixed it" not in path.read_text()
+    assert "line 3: first person" in capsys.readouterr().out
+    assert any("[a]pprove anyway" in prompt and "[r]emove these lines" in prompt
+               for prompt in prompts)
 
 
 def test_yes_skips_the_notes_question(root, monkeypatch):
@@ -428,3 +458,23 @@ def test_settings_prints_and_saves_on_no_runner(root, capsys):
     assert release_config.load(root).on_no_runner == "off"
     assert release_cli.main(["settings"]) == 0
     assert "release.on_no_runner = off" in capsys.readouterr().out
+
+
+def test_notes_review_settings_save_through_config_save(root, monkeypatch):
+    saved = []
+    real_save = release_cli.release_config.save
+    monkeypatch.setattr(release_cli.release_config, "save",
+                        lambda r, cfg: saved.append(cfg) or real_save(r, cfg))
+    assert release_cli.main(["settings", "notes-review", "off"]) == 0
+    assert release_cli.main(["settings", "notes-reviewer", "codex"]) == 0
+    assert release_cli.main(["settings", "notes-reviewer", "any"]) == 0
+    assert [cfg.notes_review for cfg in saved] == [False, False, False]
+    assert [cfg.notes_reviewer for cfg in saved] == ["", "codex", ""]
+
+
+def test_notes_check_exit_codes_and_prints_problems(root, capsys):
+    clean = _notes(root, "# v1.2.3\n\n- Fixed a bug\n")
+    assert release_cli.main(["notes", "--check", str(clean)]) == 0
+    clean.write_text("# v1.2.3\n\n- I fixed a bug\n")
+    assert release_cli.main(["notes", "--check", str(clean)]) == 1
+    assert "line 3: first person" in capsys.readouterr().out

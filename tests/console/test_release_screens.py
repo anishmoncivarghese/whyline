@@ -9,8 +9,14 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Input, Select, Static, TabbedContent, TextArea
 
 from whyline.console import tui
-from whyline.console.release_screens import ReleaseChoice, ReleaseScreen, next_versions
+from whyline.console.release_screens import (
+    NotesReviewScreen,
+    ReleaseChoice,
+    ReleaseScreen,
+    next_versions,
+)
 from whyline.release import config as release_config
+from whyline.release import notes as release_notes
 from whyline.release.config import ReleaseConfig
 from whyline.release.ready import ReadyItem
 
@@ -372,6 +378,26 @@ async def test_save_round_trips_through_config_save(tmp_path):
         checks=("make test", "make lint"), ci_ignore=("docs",),
         notes="notes/{version}.md", after=("echo done",))
     assert tomllib.loads((tmp_path / ".whyline" / "release.toml").read_text())
+
+
+async def test_notes_review_setup_uses_enabled_agents_and_saves_once(tmp_path, monkeypatch):
+    saves = []
+    real_save = release_config.save
+    monkeypatch.setattr(release_config, "save",
+                        lambda root, cfg: saves.append(cfg) or real_save(root, cfg))
+    app = Host(_setup_screen(tmp_path, enabled_agents=("claude", "codex")))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        reviewer = _q(app, "#rs-notes-reviewer", Select)
+        assert [str(label) for label, _ in reviewer._options] == [
+            "claude", "codex", "Any other agent"]
+        _q(app, "#rs-notes-review", Checkbox).value = False
+        reviewer.value = "codex"
+        await pilot.pause()
+        _q(app, "#rs-save", Button).press()
+        await pilot.pause()
+    assert len(saves) == 1
+    assert saves[0].notes_review is False and saves[0].notes_reviewer == "codex"
 
 
 async def test_ticking_a_target_ticks_github_and_says_why(tmp_path):
@@ -1021,6 +1047,71 @@ async def test_released_current_version_keeps_patch():
         await pilot.pause()
         assert app.screen.query_one("#release-kind", Select).value == "patch"
         assert app.screen.chosen_version() == "0.3.70"
+
+
+# -- Release notes confirmation -----------------------------------------------
+
+
+def _checked_notes(text, *, before=None, removed=(), summary="Written [by] claude."):
+    return release_notes.Checked(
+        text, "claude", "codex", tuple(removed), before if before is not None else text,
+        False, summary,
+    )
+
+
+async def test_notes_window_shows_summary_before_notes_and_before_after_plain(tmp_path):
+    path = tmp_path / "v1.2.3.md"
+    path.write_text("# v1.2.3\n\n- Kept [literal]\n")
+    checked = _checked_notes(
+        path.read_text(),
+        before="# v1.2.3\n\n- Please [review] this\n- Kept [literal]\n",
+        removed=("- Please [review] this",),
+    )
+    app = Host(NotesReviewScreen(path, checked))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        summary = app.screen.query_one("#release-notes-summary", Static)
+        assert str(summary.renderable) == "Written [by] claude."
+        assert summary.region.y < app.screen.query_one("#release-notes-text").region.y
+        assert all(static._render_markup is False for static in app.screen.query(Static))
+        _q(app, "#release-notes-removed", Button).press()
+        await pilot.pause()
+        before = _q(app, "#release-notes-before", TextArea).text
+        after = _q(app, "#release-notes-after", TextArea).text
+        assert "✗ - Please [review] this" in before
+        assert "- Kept [literal]" in before and "- Kept [literal]" in after
+
+
+async def test_notes_window_commit_list_button_replaces_text(tmp_path):
+    path = tmp_path / "v1.2.3.md"
+    path.write_text("agent draft\n")
+    fallback = "# v1.2.3\n\n- Commit [list]\n"
+    app = Host(NotesReviewScreen(path, _checked_notes("agent draft\n"),
+                                 fallback_text=fallback))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#release-notes-commits", Button).press()
+        await pilot.pause()
+        assert _q(app, "#release-notes-text", TextArea).text == fallback
+    assert path.read_text() == fallback
+
+
+async def test_notes_window_lints_edited_text_and_offers_both_problem_choices(tmp_path):
+    path = tmp_path / "v1.2.3.md"
+    bad = "# v1.2.3\n\n- I fixed [the thing]\n"
+    path.write_text(bad)
+    app = Host(NotesReviewScreen(path, _checked_notes(bad)))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        _q(app, "#release-notes-use", Button).press()
+        await pilot.pause()
+        assert "line 3: first person" in _text(app, "#release-notes-problems")
+        assert _shown(app, "#release-notes-approve-anyway")
+        assert _shown(app, "#release-notes-remove")
+        _q(app, "#release-notes-remove", Button).press()
+        await pilot.pause()
+    assert app.results == ["use"]
+    assert "I fixed" not in path.read_text()
 
 
 GH_TIMEOUT = ("Command '['gh', 'run', 'list', '--workflow', 'release.yml', '--branch', "
