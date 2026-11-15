@@ -29,6 +29,14 @@ def choices(repo: Path | str) -> list[str]:
     return [name for name in installed if capabilities.can_run(name)]
 
 
+def pick_other(root: Path | str, not_agent: str | None) -> str | None:
+    """An enabled agent with a verified read-only mode other than not_agent."""
+    for name in choices(root):
+        if name != not_agent:
+            return name
+    return None
+
+
 def _working_agent(repo: Path, roles: dict) -> str | None:
     """The agent of the live turn, or None when no relay is running.
 

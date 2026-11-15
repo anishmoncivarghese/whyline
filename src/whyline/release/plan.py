@@ -50,27 +50,30 @@ def absolute_settings(argv: list[str], root: Path) -> list[str]:
     return out
 
 
-def default_ask_agent(root: Path) -> Callable[[str], str]:
+def default_ask_agent(root: Path, *, agent: str | None = None) -> Callable[[str], str]:
     """Run the agent chat would use once, read-only, in an empty temporary folder.
 
     Nothing it does can touch the repository, so drafting notes never edits files or
     commits. Any failure raises, and notes fall back to the commit list.
+    Pass agent to use that CLI; with None, pick as today. The returned function
+    exposes the chosen name as .agent.
     """
+    from whyline.relaychat import agent_choice
+
+    chosen = agent if agent is not None else agent_choice.pick(root, None).agent
 
     def ask(prompt: str) -> str:
         import tempfile
         from types import SimpleNamespace
 
-        from whyline.relaychat import agent_choice
         from whyline.relaychat import ask as relay_ask
         from whyline_relay import agents
 
-        agent = agent_choice.pick(root, None).agent
-        if agent is None:
+        if chosen is None:
             raise RuntimeError("no agent is available")
-        argv = relay_ask.command(root, agent)
+        argv = relay_ask.command(root, chosen)
         if argv is None:
-            raise RuntimeError(f"{agent} has no verified read-only mode")
+            raise RuntimeError(f"{chosen} has no verified read-only mode")
         argv = absolute_settings(argv, root)
         with tempfile.TemporaryDirectory(prefix="whyline-notes-") as tmp:
             folder = Path(tmp)
@@ -78,7 +81,7 @@ def default_ask_agent(root: Path) -> Callable[[str], str]:
             try:
                 from whyline.agents import runner as agent_runner
 
-                adapter = agent_runner._adapter(SimpleNamespace(root=root), agent)
+                adapter = agent_runner._adapter(SimpleNamespace(root=root), chosen)
                 if adapter is not None and adapter.uses_output_file:
                     answer_file = folder / "answer.txt"
                     argv = [*argv, "-o", str(answer_file)]
@@ -86,14 +89,15 @@ def default_ask_agent(root: Path) -> Callable[[str], str]:
                 answer_file = None
             result = agents.run(
                 argv, prompt, cwd=folder, log_path=folder / "output.log",
-                timeout_seconds=300, capture=True, echo=False, agent_name=agent,
+                timeout_seconds=300, capture=True, echo=False, agent_name=chosen,
                 env={"GIT_OPTIONAL_LOCKS": "0"},
             )
             out = result.output or ""
             if result.exit_code != 0 or not out.strip():
-                raise RuntimeError(f"{agent} gave no notes")
-            return relay_ask.extract(root, agent, out, answer_file)
+                raise RuntimeError(f"{chosen} gave no notes")
+            return relay_ask.extract(root, chosen, out, answer_file)
 
+    ask.agent = chosen
     return ask
 
 

@@ -77,3 +77,40 @@ def test_notes_agent_settings_path_exists_from_temp_cwd(tmp_path, monkeypatch):
 
     value = seen["argv"][seen["argv"].index("--settings") + 1]
     assert (seen["cwd"] / value).is_file() and Path(value).is_absolute()
+
+
+def test_default_ask_agent_uses_the_named_agent(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path)
+    seen = {}
+
+    def fake_pick(r, a=None):
+        raise AssertionError("pick should not run when an agent is named")
+
+    monkeypatch.setattr(agent_choice, "pick", fake_pick)
+    monkeypatch.setattr(relay_ask, "command", lambda r, cli: [cli, "--read-only", "-p"])
+
+    def fake_run(argv, text, **kwargs):
+        seen.update(argv=argv, agent_name=kwargs.get("agent_name"))
+        return SimpleNamespace(exit_code=0, output="<notes>\n- hi\n</notes>")
+
+    monkeypatch.setattr("whyline_relay.agents.run", fake_run)
+    monkeypatch.setattr(relay_ask, "extract", lambda r, cli, raw, f: raw)
+
+    ask = release_plan.default_ask_agent(repo, agent="grok")
+    assert ask.agent == "grok"
+    assert ask("the prompt") == "<notes>\n- hi\n</notes>"
+    assert seen["argv"][:2] == ["grok", "--read-only"]
+    assert seen["agent_name"] == "grok"
+
+
+def test_default_ask_agent_none_exposes_picked_agent(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path)
+    monkeypatch.setattr(agent_choice, "pick", lambda r, a=None: SimpleNamespace(agent="claude"))
+    monkeypatch.setattr(relay_ask, "command", lambda r, cli: ["claude", "--read-only", "-p"])
+    monkeypatch.setattr(
+        "whyline_relay.agents.run",
+        lambda argv, text, **kwargs: SimpleNamespace(exit_code=0, output="ok"),
+    )
+    monkeypatch.setattr(relay_ask, "extract", lambda r, cli, raw, f: raw)
+    ask = release_plan.default_ask_agent(repo)
+    assert ask.agent == "claude"

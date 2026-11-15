@@ -116,3 +116,15 @@ def test_reviewer_without_read_only_mode_gives_none(setup):
     repo = setup(["claude", "codex"], readonly=["claude"],
                  roles={"implementer": "claude", "tester": "claude", "reviewer": "codex", "backup": []})
     assert agent_choice.pick(repo).agent is None
+
+
+def test_pick_other_with_one_agent(setup):
+    repo = setup(["claude"])
+    assert agent_choice.pick_other(repo, "claude") is None
+    assert agent_choice.pick_other(repo, "grok") == "claude"
+
+
+def test_pick_other_with_two_agents(setup):
+    repo = setup(["claude", "grok"])
+    assert agent_choice.pick_other(repo, "claude") == "grok"
+    assert agent_choice.pick_other(repo, "grok") == "claude"

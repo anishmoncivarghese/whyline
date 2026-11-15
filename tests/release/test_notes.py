@@ -396,3 +396,83 @@ def test_fallback_passes_lint_for_every_kind():
         "- Something else\n"
     )
 
+
+DRAFT = "# v1.2.0\n\n- Users can pause a running relay\n"
+COMMITS = ["feat: users can pause a running relay"]
+INVENTED = "- Teleports the user to the moon instantly"
+REWORDED = "- Pause a running relay from the console"
+
+
+def test_build_review_prompt_puts_data_in_labelled_blocks():
+    problems = [notes.Problem(3, "Here are the notes.", "talks to the reader", True)]
+    draft = "# v1.2.0\n\nHere are the notes.\n- Users can pause a running relay\n"
+    prompt = notes.build_review_prompt("1.2.0", COMMITS, draft, problems)
+    assert "<commits>\nfeat: users can pause a running relay\n</commits>" in prompt
+    assert "<draft>\n" + draft + "</draft>" in prompt or (
+        "<draft>\n" + draft.rstrip("\n") + "\n</draft>" in prompt
+    )
+    assert "line 3: talks to the reader" in prompt
+    assert "talk to the reader" in prompt.lower() or "talks to the reader" in prompt.lower()
+    assert "first person" in prompt.lower()
+    assert "process noise" in prompt.lower()
+    assert "tighten" in prompt.lower()
+    assert "keep every real change" in prompt.lower()
+    assert "add nothing" in prompt.lower()
+    assert prompt.rstrip().endswith(
+        "Put the notes between a line <notes> and a line </notes>. Write nothing else.")
+
+
+def test_reviewer_cannot_add():
+    def ask(prompt):
+        return (
+            "<notes>\n"
+            "# v1.2.0\n"
+            "\n"
+            "- Users can pause a running relay\n"
+            f"{INVENTED}\n"
+            "</notes>"
+        )
+
+    result = notes.review("1.2.0", COMMITS, DRAFT, [], ask_agent=ask)
+    assert "Teleports" not in result.text
+    assert "Users can pause a running relay" in result.text
+    assert any("Teleports" in item for item in result.added)
+
+
+def test_reworded_bullet_is_kept():
+    def ask(prompt):
+        return f"<notes>\n# v1.2.0\n\n{REWORDED}\n</notes>"
+
+    result = notes.review("1.2.0", COMMITS, DRAFT, [], ask_agent=ask)
+    assert "Pause a running relay from the console" in result.text
+    assert result.added == ()
+
+
+def test_removed_line_stays_removed():
+    draft = "# v1.2.0\n\nHere are the notes.\n- Users can pause a running relay\n"
+    problems = notes.lint(draft, version="1.2.0")
+
+    def ask(prompt):
+        assert "line 3: talks to the reader" in prompt
+        return "<notes>\n# v1.2.0\n\n- Users can pause a running relay\n</notes>"
+
+    result = notes.review("1.2.0", COMMITS, draft, problems, ask_agent=ask)
+    assert "Here are the notes" not in result.text
+    assert "Users can pause a running relay" in result.text
+
+
+def test_unmarked_answer_returns_the_draft():
+    result = notes.review(
+        "1.2.0", COMMITS, DRAFT, [], ask_agent=lambda p: "looks good to me")
+    assert result.text == DRAFT
+    assert result.added == ()
+
+
+def test_failed_turn_returns_the_draft():
+    def ask(prompt):
+        raise RuntimeError("agent down")
+
+    result = notes.review("1.2.0", COMMITS, DRAFT, [], ask_agent=ask)
+    assert result.text == DRAFT
+    assert result.added == ()
+

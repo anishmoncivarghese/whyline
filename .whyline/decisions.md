@@ -44639,3 +44639,87 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4d11b2424a9a44bbb7a9a77af860e85c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T11:56:52.101Z"} -->
+
+## 2026-11-15 — Label review data as <commits> and <draft> blocks
+
+**Actor:** grok
+**Role:** implementer
+**Task:** NOTE-3
+
+**Because:** the plan requires labelled data blocks and the existing notes markers are the same XML-style tags
+
+**Rejected:**
+
+- <<< >>> like ideas/memory.py — those blocks are not labelled with the kind of data
+- unlabelled Commit subjects — lists like build_prompt: the plan requires labelled blocks
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: a33cdeb81bee4fb4a26c093c3966bb42 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T12:22:27.043Z"} -->
+
+## 2026-11-15 — Keep a reviewed bullet only when it shares two 4+ letter words with one draft line or commit subject
+
+**Actor:** grok
+**Role:** implementer
+**Task:** NOTE-3
+
+**Because:** the spec says some draft line or commit subject, so overlap is against one source, with exact case-insensitive tokens
+
+**Rejected:**
+
+- union of all draft and commit words — some line or subject means one source
+- stemming user/users — the spec matches words, not stems
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 5e5b640d86db4d08a998d3e272bf5444 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T12:22:30.937Z"} -->
+
+## 2026-11-15 — Resolve default_ask_agent's CLI at construction; a named agent skips pick
+
+**Actor:** grok
+**Role:** implementer
+**Task:** NOTE-3
+
+**Because:** .agent must be available on the returned function, and the task says the named agent is the one to use
+
+**Rejected:**
+
+- pick inside each call — .agent would be unset until the first turn
+- pick(root, chosen=agent) — pick can substitute another CLI if the named one is not in choices
+
+**Files:** src/whyline/release/plan.py
+
+<!-- whyline-event: 03d6350ce9d34adfaa52edb6a7cc8f6c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T12:22:38.130Z"} -->
+
+## 2026-11-15 — NOTE-3 second-agent review behaves as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** NOTE-3
+
+**Because:** pick_other returns another read-only agent or None; default_ask_agent(agent=) skips pick and exposes .agent; build_review_prompt uses labelled <commits>/<draft> blocks, line n: reason, and the required instruction; review() keeps a bullet only with two 4+ letter words against one draft line or commit subject, lists invented bullets in added, and returns the draft on a failed or unmarked turn. uv run pytest -q exited 0 with one skip; extra probes for union overlap, stemming, numbered bullets, empty markers, and a named agent all passed.
+
+**Rejected:**
+
+- fail for non-bullet chatter the reviewer leaves in — the task filters bullets only
+
+**Files:** src/whyline/release/notes.py, src/whyline/release/plan.py, src/whyline/relaychat/agent_choice.py
+
+<!-- whyline-event: 7144205e7f734965b2f22795decd664c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T12:45:08.491Z"} -->
+
+## 2026-11-15 — Approve NOTE-3 second-agent review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** NOTE-3
+
+**Because:** The implementation satisfies agent selection, named-agent exposure, labelled review prompting, grounded bullet filtering, and exact fallback behavior; the focused tests cover every requested case and uv run pytest -q exited 0 with one skip.
+
+**Files:** src/whyline/relaychat/agent_choice.py, src/whyline/release/notes.py, src/whyline/release/plan.py
+
+<!-- whyline-event: 9892dbb52a7743e5ad1d5d4455320e5a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T13:04:56.888Z"} -->
