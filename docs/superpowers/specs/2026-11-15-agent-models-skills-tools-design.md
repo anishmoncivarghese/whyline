@@ -19,7 +19,7 @@ Status: draft for review, 2026-11-15. Builds on agent tools (`plans/done/agent-t
 
 ## Part 0: Three fixes (add to `plans/quick-fixes.plan.md`)
 
-- **The focused checkbox hides its label.** Ten screens set `Checkbox { border: none; height: 1 }`. Textual's own `Checkbox:focus` rule puts the border back, and in a one-line widget the border covers the text. Add `border: none` for `:focus` in each, and one test that a focused checkbox still shows its label and its tick.
+- **The focused checkbox hides its label.** The three pickers (Add packs, Add skills, Add tools) set `Checkbox { border: none; height: 1 }`. Textual's own `Checkbox:focus` rule puts the border back, and in a one-line widget the border covers the text. Eight other screens already carry `Checkbox:focus { border: none; }`; add it to these three, with a test that no screen can miss it again. (RDF-6)
 - **A test wrote into the real `~/.whyline`.** The `files` connector in Add tools (command `cmd`, hash `h1`) is fixture data from `tests/agents/test_definitions_tools.py`, written on 2026-11-14 during the agent-tools relay, with empty `skills` and `knowledge` folders beside it. Add a suite-wide guard that fails any test touching the real home, and fix the test that leaked. The leaked `files` connector is removed by hand in Tools → Connectors; whyline does not delete it for the user.
 - **`read · writes`.** A tool whose server does not say whether it only reads is shown as `writes`. Show `not stated` and keep treating it as a writing tool.
 
