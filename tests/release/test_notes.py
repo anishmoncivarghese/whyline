@@ -113,3 +113,196 @@ def test_write_without_notes_path(tmp_path):
     cfg = replace(ReleaseConfig(), notes="")
     assert notes.write(tmp_path, cfg, "1.3.0", "text") is None
     assert not (tmp_path / "docs").exists()
+
+
+# Real opening lines from the 0.3.70, 0.3.71 and 0.3.72 drafts, before the
+# agent's narration was dropped by hand.
+KNOWN_CHATTER = (
+    "I'll check the project handoff and the existing release-note style, then write v0.3.70 notes only from those commit subjects.",
+    "The 0.3.69 notes and version bump are already in the tree. I'll read those plus the notes template so 0.3.70 matches the same voice.",
+    "I'll start with the project handoff, then read the existing notes and the RFB commits so the 0.3.71 write-up stays faithful to those subjects.",
+    "No active handoff. I'll read the previous notes and the RFB commit subjects so the 0.3.71 write-up stays in the same voice and only covers what those commits actually say.",
+    "I'll start with the project handoff, then read the full commit messages so the 0.3.72 notes stay inside what those subjects actually shipped.",
+    "No active handoff. I'll pull the full RFB-8 and related commit messages so the notes stay inside what those subjects actually shipped.",
+)
+
+TALK_PHRASES = (
+    "Here are the notes.",
+    "Here is the summary.",
+    "Here's what changed.",
+    "Below are the highlights.",
+    "Below is the list.",
+    "I have drafted the notes.",
+    "I've grouped the commits.",
+    "I created these notes.",
+    "I wrote a short summary.",
+    "As requested, the notes follow.",
+    "Let me know if this looks right.",
+    "Please review the notes.",
+    "Please let me know of gaps.",
+    "Hope this helps with the release.",
+    "Feel free to edit.",
+    "Happy to tighten the wording.",
+    "Does this cover the release?",
+)
+
+
+def test_known_chatter_is_flagged():
+    text = "\n".join(KNOWN_CHATTER)
+    problems = notes.lint(text, version="0.3.70")
+    assert len(problems) == len(KNOWN_CHATTER)
+    assert {p.line for p in problems} == set(range(1, len(KNOWN_CHATTER) + 1))
+    assert all(p.removable for p in problems)
+
+
+def test_ordinary_lines_pass():
+    text = "\n".join((
+        "Review rounds now show who approved each change.",
+        "Fixed I/O errors when the disk is full.",
+        "Published `my-package` to PyPI.",
+        'Improved the "I have a plan already" form',
+    ))
+    assert notes.lint(text, version="1.2.0") == []
+
+
+def test_talks_to_the_reader():
+    for line in TALK_PHRASES:
+        problems = notes.lint(line, version="1.2.0")
+        assert len(problems) == 1, line
+        assert problems[0].reason == "talks to the reader", line
+        assert problems[0].removable
+    problems = notes.lint("- Here are the notes I drafted.", version="1.2.0")
+    assert problems[0].reason == "talks to the reader"
+
+
+def test_first_person():
+    for line in (
+        "The installer saved my settings.",
+        "The tool told me when a check failed.",
+        "The notes I drafted stay in the file.",
+        "I'm grouping the commits by kind.",
+        "I'll list every user-facing change.",
+    ):
+        problems = notes.lint(line, version="1.2.0")
+        assert len(problems) == 1, line
+        assert problems[0].reason == "first person", line
+        assert problems[0].removable
+
+
+def test_process_noise():
+    for line in (
+        "chore: tick RCR-6 in the plan",
+        "- chore: release v1.2.0",
+        "1. chore: record decisions",
+        "chore: move finished plans to plans/done",
+        "- setup: assign implementer/tester/reviewer roles",
+        "merge: origin/main into the release branch",
+        "plan: console restart notice (CRS-1..4)",
+    ):
+        problems = notes.lint(line, version="1.2.0")
+        assert len(problems) == 1, line
+        assert problems[0].reason == "process noise", line
+        assert problems[0].removable
+    assert notes.lint("- feat: add a notes check", version="1.2.0") == []
+    assert notes.lint("chore: something else", version="1.2.0") == []
+
+
+def test_repeats_the_title():
+    text = "# v1.2.0\n\n- Users can pause a run\n\n# v1.2.0\n"
+    problems = notes.lint(text, version="1.2.0")
+    assert [(p.line, p.reason, p.removable) for p in problems] == [
+        (5, "repeats the title", True),
+    ]
+
+
+def test_code_fence_around_everything():
+    text = "```markdown\n# v1.2.0\n\n- Users can pause a run\n```\n"
+    problems = notes.lint(text, version="1.2.0")
+    assert [(p.line, p.reason, p.removable) for p in problems] == [
+        (1, "code fence around everything", True),
+        (5, "code fence around everything", True),
+    ]
+
+
+def test_secret_shown_as_rule_name():
+    key = "AKIA" + "QYLPMN5HHQKB3XZT"
+    text = f"- token {key} was shipped"
+    problems = notes.lint(text, version="1.2.0")
+    assert len(problems) == 1
+    problem = problems[0]
+    assert problem.reason == "secret"
+    assert problem.removable is True
+    assert "aws-access-token" in problem.text
+    assert key not in problem.text
+    assert key not in problem.text.lower()
+    cleaned = notes.clean(text, problems)
+    assert key not in cleaned
+    assert "token" not in cleaned
+
+
+def test_home_path():
+    for line in (
+        "Logs were written to /Users/anish/whyline.",
+        "The unit file lives in /home/anish/.config.",
+        r"The installer used C:\Users\anish\AppData.",
+    ):
+        problems = notes.lint(line, version="1.2.0")
+        assert len(problems) == 1, line
+        assert problems[0].reason == "home path", line
+        assert problems[0].removable
+    assert notes.lint("Installed to /usr/local/bin.", version="1.2.0") == []
+
+
+def test_email_address():
+    text = "- Contact jane@example.com for the beta."
+    problems = notes.lint(text, version="1.2.0")
+    assert len(problems) == 1
+    assert problems[0].reason == "email address"
+    assert problems[0].removable
+    allowed = frozenset({"jane@example.com"})
+    assert notes.lint(text, version="1.2.0", allowed_emails=allowed) == []
+
+
+def test_empty_heading_removed():
+    text = (
+        "# v1.2.0\n"
+        "\n"
+        "## Other\n"
+        "\n"
+        "- chore: tick RCR-6 in the plan\n"
+        "\n"
+        "## New\n"
+        "\n"
+        "- Users can pause a run\n"
+    )
+    problems = notes.lint(text, version="1.2.0")
+    assert any(p.reason == "process noise" for p in problems)
+    out = notes.clean(text, problems)
+    assert "## Other" not in out
+    assert "chore: tick" not in out
+    assert "## New" in out
+    assert "Users can pause a run" in out
+    assert "\n\n\n" not in out
+
+
+def test_problem_text_is_cut_to_120():
+    line = "Here are " + ("x" * 200)
+    problems = notes.lint(line, version="1.2.0")
+    assert len(problems) == 1
+    assert len(problems[0].text) == 120
+
+
+def test_usable():
+    assert notes.usable("# v1.2.0\n\n- Users can pause a run\n")
+    assert notes.usable("# v1.2.0\n\nUsers can pause a run.\n")
+    assert not notes.usable("# v1.2.0\n\n## New\n")
+    assert not notes.usable("")
+    assert not notes.usable("```\n```\n")
+    assert notes.usable(notes.clean(
+        "# v1.2.0\n\n- Users can pause a run\n- chore: tick RCR-6\n",
+        notes.lint(
+            "# v1.2.0\n\n- Users can pause a run\n- chore: tick RCR-6\n",
+            version="1.2.0",
+        ),
+    ))
+

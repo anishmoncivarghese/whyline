@@ -44513,3 +44513,75 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1c88b0889fc041b4967aa1256f998397 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T09:35:17.027Z"} -->
+
+## 2026-11-15 — Skip first-person matches inside double quotes
+
+**Actor:** grok
+**Role:** implementer
+**Task:** NOTE-1
+
+**Because:** the ordinary-line case Improved the "I have a plan already" form is quoted UI copy and must pass, while 0.3.70-0.3.72 narration still flags I'll mid-line
+
+**Rejected:**
+
+- match I anywhere outside code — flags the quoted form
+- first-person only at line start — misses narration that puts I'll mid-sentence
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: cd901f1577244e3faecfab2de7c31b40 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T10:05:02.570Z"} -->
+
+## 2026-11-15 — Show a secret as its rule name and remove the whole line
+
+**Actor:** grok
+**Role:** implementer
+**Task:** NOTE-1
+
+**Because:** a problem list and log must never carry the value, and the match cannot be stripped in place
+
+**Rejected:**
+
+- removable=False for secrets — NOTE-4 would leave the line in the notes
+- redact the token and keep the line — the spec removes the whole line
+
+**Files:** src/whyline/release/notes.py
+
+<!-- whyline-event: 1aa6d5b3d5fa4dcab2867d2d70fa8a2a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T10:05:06.027Z"} -->
+
+## 2026-11-15 — Pass NOTE-1: lint, clean and usable match the spec
+
+**Actor:** grok
+**Role:** tester
+**Task:** NOTE-1
+
+**Because:** The named tests cover chatter, ordinary lines, every reason, secret-as-rule-name, empty-heading removal and usable; an independent probe of list markers, fences, secrets, empty headings and the six 0.3.70-0.3.72 lines also passed; uv run pytest -q exited 0
+
+**Rejected:**
+
+- fail because test_known_chatter_is_flagged omits reasons — those six lines are first person and the task only requires they are flagged
+- fail the earlier TUI flake as a NOTE-1 defect — notes.py is unused by that test and it passed on this run
+
+**Files:** src/whyline/release/notes.py, tests/release/test_notes.py
+
+<!-- whyline-event: 15912ecb9c8e4380af37bb3986b6d51f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T10:27:55.394Z"} -->
+
+## 2026-11-15 — Approve NOTE-1: the fixed notes check matches the spec
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** NOTE-1
+
+**Because:** Frozen Problem with 120-char text and secrets shown as the rule name; lint flags each required reason; clean drops flagged lines, empty headings and extra blanks; usable keeps a bullet or sentence; named tests cover chatter, ordinary lines, each reason, empty headings and usable; uv run pytest -q exited 0 with one skip
+
+**Rejected:**
+
+- request changes because test_known_chatter_is_flagged omits reasons — those six lines are first person and the task only requires they are flagged
+- reject quote-skipping as extra — the ordinary-line case with quoted I must pass
+
+**Files:** src/whyline/release/notes.py, tests/release/test_notes.py
+
+<!-- whyline-event: 2fc3091b375541b5a6708749681efd6c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T10:50:52.733Z"} -->
