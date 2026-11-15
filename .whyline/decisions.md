@@ -45068,3 +45068,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 350f81900ef944b686e8cceb3a26c034 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T20:54:42.993Z"} -->
+
+## 2026-11-15 — Raised whyline-relay floor to >=0.2.43 (first release with roles.switch_model)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LMD-1
+
+**Because:** verified 0.2.43 has switch_model and 0.2.42 does not; lock resolved to 0.2.45
+
+**Rejected:**
+
+- >=0.2.44 — higher than needed, 0.2.43 already has RLY-18
+
+**Files:** pyproject.toml
+
+<!-- whyline-event: b1062588ec6d4229a4a5ec710a7e9b58 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T20:56:39.389Z"} -->
+
+## 2026-11-15 — Approve LMD-1 live model switch implementation: tests pass and full test suite clean
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** LMD-1
+
+**Because:** Verified switch_model_live, RunModel, and run_models fulfill all task requirements; tests/console/test_relay_ops_live_models.py (6 passed) and full pytest suite (4981 passed, 1 skipped) succeeded
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops_live_models.py
+
+<!-- whyline-event: 8d45d6014eab4f22a89bf49a5eccd1b0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T21:16:18.712Z"} -->
+
+## 2026-11-15 — Approve LMD-1 live model switch console functions
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LMD-1
+
+**Because:** The relay API is called with run settings, RoleSetError passes through, model state and pending detection match the specification, dependency bounds and lock are correct, tests cover every acceptance case, and uv run pytest -q exited 0
+
+**Files:** src/whyline/console/relay_ops.py, tests/console/test_relay_ops_live_models.py
+
+<!-- whyline-event: f9e3254e3a1443f68644b862e0745a50 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T21:36:09.328Z"} -->

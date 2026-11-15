@@ -807,6 +807,54 @@ def switch_live(root: Path, role: str, agent: str, *, keep: bool) -> str:
         raise ValueError(str(error)) from None
 
 
+def switch_model_live(root: Path, agent: str, model: str, *, keep: bool) -> str:
+    """Run `agent` on `model` from its next turn. With `keep`, also save it as
+    the agent's configured model. RoleSetError passes through with the relay's
+    message."""
+    from whyline_relay import roles
+
+    return roles.switch_model(root, _settings(root), agent, model, keep=keep)
+
+
+@dataclass(frozen=True)
+class RunModel:
+    """One agent's model in the running relay: the configured one, the one it
+    uses now, and whether the live turn is still on another (`current` starts
+    next turn)."""
+
+    agent: str
+    current: str
+    configured: str
+    pending: bool
+
+
+def run_models(root: Path) -> dict[str, RunModel]:
+    from whyline_relay import roles, running
+
+    settings = _settings(root)
+    try:
+        overrides = roles.read_model_overrides(root)
+    except roles.UnreadableModelOverrides:
+        overrides = {}
+    marker = running.live(root)
+    models = {}
+    for agent in sorted(settings.model_flags):
+        if agent not in settings.agents:
+            continue
+        configured = settings.models.get(agent, "")
+        override = overrides.get(agent)
+        current = configured if override is None else override.model
+        models[agent] = RunModel(
+            agent=agent,
+            current=current,
+            configured=configured,
+            pending=marker is not None
+            and marker.agent == agent
+            and marker.model != current,
+        )
+    return models
+
+
 def save_release(root: Path, value: str) -> None:
     from whyline_relay import setup
 
