@@ -5,7 +5,7 @@ Runs after `plans/agent-tools.plan.md`, and before `plans/telegram-daily-use.pla
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
-This plan joins four small plans so they run in one relay and ship in one release. They were `console-restart`, `release-notes-review`, `relay-live-models` and `assistant-scheduled-access`. The tasks and their ids are unchanged. Part 5 was added on 2026-11-15 from three problems met while releasing 0.3.74. The five parts don't depend on each other; they run in the order below.
+This plan joins four small plans so they run in one relay and ship in one release. They were `console-restart`, `release-notes-review`, `relay-live-models` and `assistant-scheduled-access`. The tasks and their ids are unchanged. Part 5 was added on 2026-11-15 from three problems met while releasing 0.3.74, plus one about new agents. The five parts don't depend on each other; they run in the order below.
 
 There is no publish task. When the relay finishes, press **Release** once for all five parts.
 
@@ -116,7 +116,7 @@ Rules every task keeps:
 
 Why: on 2026-10-30 the first scheduled brief failed with Calendar denied. The console check had said access was fine, because it checked the terminal, while the scheduler runs whyline's own `python3.11` under launchd, which macOS treats as a separate app. The alert went out, but it blamed "the terminal app" and pointed at the wrong fix.
 
-## Part 5: Release day fixes: Ready on a branch behind main, the right failed job, and steadier console tests (RDF-1..3)
+## Part 5: Release day fixes: Ready on a branch behind main, the right failed job, steadier console tests, and agents that don't depend on the repository (RDF-1..4)
 
 No separate design: the problem and the decisions are below.
 
@@ -129,6 +129,7 @@ What the user gets:
 - On a branch that is behind `main`, Ready passes with `19 commits behind origin/main; Release brings them in first`, and **Start** works. When bringing `main` in would conflict, Ready says so and names the files before anything is started.
 - A CI failure names the jobs that stopped the release, and leaves out jobs that also failed in the last run that passed.
 - Three console tests that no longer fail on a slow machine.
+- A new agent is personal unless you choose otherwise: it is saved in `~/.whyline/agents/` and shows whichever repository is selected. A personal agent is only offered skills that are also on this Mac for every repository.
 
 Rules every task keeps:
 - **Ready never changes the checkout.** The trial merge writes no ref, no index and no working file.
@@ -140,6 +141,8 @@ Rules every task keeps:
 - A merge that would conflict fails Ready and names the files, and `git status --porcelain` and `git for-each-ref` are unchanged afterwards. RDF-1, `test_trial_merge_reports_conflicts_and_changes_nothing`.
 - A job that also failed in the last passing run is never the job the failure names while another failed job exists. RDF-2, `test_known_failing_job_is_not_blamed`.
 - When the last passing run can't be read, every failed job is named and none is left out. RDF-2, `test_no_baseline_names_every_failed_job`.
+- A new agent starts as Personal, and an agent being edited keeps the scope it has. RDF-4, `test_new_agent_starts_personal`.
+- A personal agent is never saved with a skill that lives in a repository. RDF-4, `test_personal_agent_gets_no_repo_skill`.
 
 ## Tasks
 
@@ -342,3 +345,14 @@ Rules every task keeps:
   2. In each, replace the fixed `pilot.pause()` or `pilot.pause(0.3)` before the failing assertion with a wait for the condition itself, using the `_until(pilot, condition, what)` helper as written in `tests/console/test_new_agent_deliveries.py` (copy it into a file that lacks it). Wait for the screen type, the widget existing, or the Select's value, then assert as before. Do the same for the other waits in the same three tests that follow a button press or a dismiss.
   3. Assertions are not weakened or removed, and no test is marked skip, xfail or flaky.
   Verify by running the three tests 20 times in a row (`for i in $(seq 20); do uv run pytest -q <the three ids> || break; done`) with all passing, then `uv run pytest -q`.
+
+- [ ] RDF-4: New agents are personal by default
+  Edit `src/whyline/console/agents_screens.py` and its tests only.
+  Why: agents and workflows are meant to be the same whichever repository is selected. New workflow already starts as `Personal (this Mac)` and `whyline agents new` only makes personal agents, but the console's New agent form starts as `In this repository`, which saves the agent in that checkout's `.whyline/agents/` and hides it everywhere else. The skill picker also offers the selected repository's skills (`whyline-repo` and `claude-project`) to a personal agent, and a personal agent saved with one fails to load with `unknown skill`, because a personal agent's skills are looked up without a repository (`definitions._check_tools`, `runner.prepare_run`).
+  1. `_KIND` lists `Personal (this Mac, every repository)` first and `Only in this repository` second. A new agent starts as `personal` (the form's default and the fallback in the save path). An agent opened for editing keeps its own scope.
+  2. `SkillPickScreen` takes the agent's scope. For a personal agent it lists `skills.find(None)`; for a repository agent it lists `skills.find(root)` as today.
+  3. When the scope is changed to Personal while repository skills are ticked, they are unticked and the form says `Removed <n> skills that are only in this repository: <names>. A personal agent can use skills from ~/.whyline/skills and ~/.claude/skills.` Changing back does not tick them again.
+  4. Save refuses a personal agent that still names a repository skill, with the same sentence, and writes nothing.
+  5. In the Agents list, a repository agent's row says `this repository only` after its name. Personal agents show nothing extra.
+  6. No stored agent is moved or rewritten, and the repository scope stays available.
+  Tests: `test_new_agent_starts_personal` (a new form, the save fallback, and an existing repository agent opened for editing), `test_personal_agent_gets_no_repo_skill` (the picker's list for each scope, the scope change removing ticked repository skills with the line, and Save refusing), the order and labels of the scope choices, and the list row for each scope.
