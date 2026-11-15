@@ -227,7 +227,7 @@ Rules every task keeps:
   4. The release's notes step (`release/plan.py`) uses `checked`, writes `text`, and passes the `Checked` to the confirm function. `say` gets the summary, so it is in the release log in every mode.
   Tests: `test_notes_never_block_a_release` (the writer raising, the reviewer raising, lint raising through a patched rule), each summary, review off, one agent, the fallback when nothing usable is left, and round trip of the two settings.
 
-- [ ] NOTE-5: The confirm window, settings and CLI
+- [x] NOTE-5: The confirm window, settings and CLI
   Edit `src/whyline/console/release_screens.py`, `src/whyline/release/cli.py` and their tests only.
   1. The notes confirm window shows the summary line above the notes, and adds:
      - **See what was removed**: the first draft and the final text side by side, with the removed lines marked
