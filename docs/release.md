@@ -144,6 +144,18 @@ Open **Release**, pick the next version (patch, minor, major or custom), press
 **Check**, then **Start**. Check lists each item with ✓ or ✗ and what to do
 about a ✗; Start stays off until every item is ✓.
 
+### Ready retries a slow reply
+
+Each Ready item is given 30 seconds. If `gh` or git times out, or the overall
+Check budget skips the item, that item is tried once more on its own. Console
+**Check**, the release's Check ready step and `whyline release check` all do
+this.
+
+A second timeout reports `gh-auth: GitHub didn't answer in time; press Check
+again` for GitHub items (`gh`, `gh-auth`) and `git didn't answer in time;
+press Check again` for git items. Press **Check** again when the network is
+responding.
+
 ### An unreleased current version
 
 When tag `v<version>` exists neither locally nor on origin, the current
@@ -328,6 +340,9 @@ is never made twice.
 - **Not ready: …** Each item names its fix. The tag item, `Tag vX.Y.Z exists
   locally` or `on origin`, means that version was already released: pick
   another.
+- **GitHub didn't answer in time; press Check again** / **git didn't answer
+  in time; press Check again** Ready already retried that item once. Press
+  **Check** again when GitHub or git is answering.
 - **Check failed: `<command>`** One of your Checks exited non-zero; the last
   lines of its output follow. Fix it and resume.
 - **You stopped at the release notes** Edit the file if you like, then resume.

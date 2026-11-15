@@ -100,11 +100,12 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   cleanly on a conflict), moves finished plans to `plans/done/`, offers a
   never-released current version first, and fast-forwards your other `main`
   checkout afterwards; turn that off with **Bring in main before releasing**.
-  Set up shows each target's last check. When CI fails it says why (no runner,
-  timeout, tests, publish), with **Rerun failed jobs**, **Ask an agent** and
-  **Fix with an agent**, a **When GitHub has no runner** setting, and
-  `whyline release why`, `rerun` and `ask`. Per-target setup,
-  how to check each by hand and a troubleshooting list are in
+  Set up shows each target's last check. Check retries a slow `gh` or git
+  reply once before it counts as not ready. When CI fails it says why (no
+  runner, timeout, tests, publish), with **Rerun failed jobs**, **Ask an
+  agent** and **Fix with an agent**, a **When GitHub has no runner** setting,
+  and `whyline release why`, `rerun` and `ask`. Per-target setup, how to
+  check each by hand and a troubleshooting list are in
   [docs/release.md](docs/release.md).
 - **Security checks** run in the Release gate with nothing to install: secrets
   in the commits about to be pushed, vulnerable dependencies (only public
@@ -254,6 +255,10 @@ Then:
 5. Open **Agents → New agent** to schedule your first read-only job.
 
 Whyline checks PyPI once a day and offers **Update** inside the console.
+When a newer whyline is already on disk, the title says
+`whyline <version> is installed · restart to use it` and **Restart**
+appears. A relay running in this checkout is left running. See
+[the console](docs/console.md).
 
 ## The console
 
@@ -269,6 +274,13 @@ relay from a read-only agent, and never stops or steers it. See
 
 Everything you set up or run is available in the console without a terminal.
 The CLI (`whyline --help`) exposes the same functions for scripts.
+
+**Help** explains the rest. If the console crashed in the last seven days,
+Help and `whyline doctor` show
+`Last console crash: … (~/.whyline/crash.log)`. Send that file, or **Copy**
+then **Copy crash log**, when you report a crash. After an upgrade, press
+**Restart** when the title asks you to. See
+[the console](docs/console.md).
 
 ## Saved Agents in a file
 
@@ -364,11 +376,17 @@ day, so the Inbox catches up when the Mac wakes.
 **Does it change my code without asking?** Only Relay writes, only after you
 start it, and it commits only work that passed review. Releases stay with you.
 
+**The console crashed. What should I send?** Attach `~/.whyline/crash.log`.
+**Help** then **Copy** then **Copy crash log** copies the last crash.
+`whyline doctor` prints a line for a crash in the last seven days. See
+[the console](docs/console.md).
+
 ## Learn more
 
 - `whyline --help`, `whyline relay --help`, `whyline agents --help`,
   `whyline idea --help`
-- [Idea Inbox setup](docs/idea-inbox.md) ·
+- [The console](docs/console.md) ·
+  [Idea Inbox setup](docs/idea-inbox.md) ·
   [Job search](docs/job-search.md) ·
   [Attachments](docs/attachments-capabilities.md) ·
   [Security](docs/security.md) ·

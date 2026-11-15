@@ -44427,3 +44427,89 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fe824fb1ba8f4db88355fac3568cdefd -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T08:25:53.524Z"} -->
+
+## 2026-11-15 — Put console restart, crash log and doctor on a new docs/console.md page
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-4
+
+**Because:** the task names docs/ pages on the console; README stays the short version with links
+
+**Rejected:**
+
+- README only — the task asks for docs/ pages on the console
+- docs/recording.md — that page is decision memory, not running the console
+
+**Files:** docs/console.md
+
+<!-- whyline-event: ceef645091594f7691a04c4b298db8fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T08:49:33.588Z"} -->
+
+## 2026-11-15 — Document Ready's one retry under Running a release, separate from CI wait retries
+
+**Actor:** grok
+**Role:** implementer
+**Task:** CRS-4
+
+**Because:** Check retries a timed-out gh or git item once; the existing Slow GitHub replies section is five retries while waiting for CI
+
+**Rejected:**
+
+- fold into Slow GitHub replies — those are different retries (once vs five, Check vs wait)
+
+**Files:** docs/release.md
+
+<!-- whyline-event: 852916dafc984f72a7db3db258194a5b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T08:49:37.466Z"} -->
+
+## 2026-11-15 — Pass CRS-4: README, docs/console.md and docs/release.md cover restart, crash.log, doctor and Ready retry, matching the code
+
+**Actor:** grok
+**Role:** tester
+**Task:** CRS-4
+
+**Because:** Each required topic is present; title, log, terminal message, Help Copy crash log, doctor ok-line, 7-day window and Ready one-retry messages match crashlog.py, tui.py, doctor.py and ready.py; uv run pytest -q exited 0 with 1 skipped; git diff --check is clean
+
+**Rejected:**
+
+- fail — no missing or inaccurate coverage of the four required topics
+
+**Files:** README.md, docs/console.md, docs/release.md
+
+<!-- whyline-event: 66b0455079e34497be368f8d6664c844 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T09:13:19.953Z"} -->
+
+## 2026-11-15 — Add RDF-5 to quick-fixes: inline --settings handled in whyline's three command rewriters, and whyline-relay>=0.2.44
+
+**Actor:** claude
+**Role:** planner
+**Task:** quick-fixes
+
+**Because:** Antigravity's inline JSON settings crash or are dropped in agents/runner.py, ideas/analyse.py and release/plan.py, and raising the minimum stops an upgrade keeping a relay whose doctor crashes
+
+**Rejected:**
+
+- Import the helper from whyline_relay — ties the fix to the relay's release order more than the version bump already does
+
+**Files:** plans/quick-fixes.plan.md
+
+<!-- whyline-event: 80767e7ea4d04fa9a73e124747afbbf4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T09:28:35.251Z","commit":"ff58455b8476aec8055bf81a8c56439d4cd401e7"} -->
+
+## 2026-11-15 — Approve CRS-4: README, docs/console.md and docs/release.md cover restart, crash.log, doctor and Ready retry
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** CRS-4
+
+**Because:** Each required topic is present and matches crashlog.py, tui.py, doctor.py and ready.py: title and log, ~/.whyline/crash.log what to send, doctor ok-line and 7-day window, Ready one retry vs CI wait retries; uv run pytest -q exited 0 with 1 skipped; docs-only so the no-code no-tests exemption applies
+
+**Rejected:**
+
+- request changes — no missing or inaccurate coverage of the four required topics
+
+**Files:** README.md, docs/console.md, docs/release.md
+
+<!-- whyline-event: 1c88b0889fc041b4967aa1256f998397 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T09:35:17.027Z"} -->
