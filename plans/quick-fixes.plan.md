@@ -190,7 +190,7 @@ Rules every task keeps:
   4. `usable(text) -> bool`: at least one bullet or sentence remains besides headings.
   Tests: `test_known_chatter_is_flagged` (six real lines from the 0.3.70 to 0.3.72 drafts, written into the test), `test_ordinary_lines_pass` (`Review rounds now show…`, `Fixed I/O errors…`, `my-package` in code, `Improved the "I have a plan already" form`), each reason, a secret shown as its rule name, the empty-heading removal, and `usable`.
 
-- [ ] NOTE-2: A readable fallback
+- [x] NOTE-2: A readable fallback
   Edit `src/whyline/release/notes.py` and its tests only.
   1. `fallback(version, commits)` becomes grouped:
      - `## New` for subjects starting `feat:` or `feat(`
