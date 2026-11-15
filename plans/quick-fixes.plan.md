@@ -238,7 +238,7 @@ Rules every task keeps:
   4. CLI: `whyline release notes --check <file>` prints `lint`'s problems as `line <n>: <reason>` and exits 1 when there are any. The terminal confirm (`_confirmers`) prints the summary line and offers `[a]pprove, [e]dit, [c]ommit list, [s]top`.
   Tests: the summary shown, the before and after, the commit list button, an edited text with a problem offering both choices, text with square brackets shown as plain text, settings saved through one function, and `--check` exit codes.
 
-- [ ] NOTE-6: Docs
+- [x] NOTE-6: Docs
   Edit `docs/release.md` and `README.md` only.
   Cover: the three steps, what the fixed check flags, that the reviewer can only remove and reword, the summary line and its four forms, the fallback groups, the two settings, and `whyline release notes --check`.
   Verify with `uv run pytest -q`.
