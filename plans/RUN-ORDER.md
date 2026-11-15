@@ -10,6 +10,7 @@ Finished plans are in `plans/done/`.
 |---|---|---|---|---|
 | 0 | Done | `done/agent-tools.plan.md` | TLS-1..16 | released as whyline 0.3.74 on 2026-11-15 |
 | 1 | Quick fixes | `quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27, RDF-1..5 (21) | whyline-relay 0.2.44 for RDF-5 (whyline-relay's `plans/preflight-settings.plan.md`, PFS-1..3) |
+| 1b | Agent setup | `agent-setup.plan.md` | PKR-1..4, AMD-1..4, FLD-1..3, SKC-1..6, CON-1..4, MKT-1..3, RSK-1..3, DOC-1 (28) | quick-fixes (RDF-4, personal agents and the skill picker's scope) |
 | 2 | Telegram daily use | `telegram-daily-use.plan.md` | WAIT-1..7, QUE-1..11, FB-1..7, RT-1..7 (32) | |
 | 3 | Process | `raaid-log.plan.md` | RAAID-1..14 | |
 | 3 | | `sdlc-git-flow.plan.md` | GIT-1..6 | telegram-daily-use (WAIT-5, for GIT-4's go-ahead verbs) |
@@ -19,7 +20,7 @@ Finished plans are in `plans/done/`.
 | 3b | Release hardening | `security-earlier.plan.md` | SEA-1..6 | |
 | 3b | | `release-safety.plan.md` | SAF-1..6 | quick-fixes (NOTE-4, the record's notes line) |
 | 3b | | `release-supply-chain.plan.md` | SUP-1..6 | |
-| 4 | Agents | `agent-profile.plan.md` | PRF-1..5 | agent-tools released |
+| 4 | Agents | `agent-profile.plan.md` | PRF-1..5 | agent-tools released, agent-setup (the same New agent form) |
 | 4 | | `agent-draft.plan.md` | DRF-1..6 | agent-profile |
 | 4 | | `agent-calls.plan.md` | CAL-1..5 | agent-draft |
 | 5 | Assistant extras | `assistant-memory.plan.md` | MEM-1..6 | telegram-daily-use (the router) |

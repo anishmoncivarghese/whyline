@@ -1,6 +1,6 @@
 # Agents: pick a model per CLI, a skills catalogue, and tools you can find, add or make
 
-Status: draft for review, 2026-11-15. Builds on agent tools (`plans/done/agent-tools.plan.md`, TLS-1..16, released in 0.3.74) and sits beside agent builder (`2026-11-14-agent-builder-design.md`). Five parts, each its own small plan, in the order below. Everything here is personal (`~/.whyline/`) and works in every repository.
+Status: draft for review, 2026-11-15. Builds on agent tools (`plans/done/agent-tools.plan.md`, TLS-1..16, released in 0.3.74) and sits beside agent builder (`2026-11-14-agent-builder-design.md`). Parts 0 to 4 and the risk levels of Part 5 are one plan, `plans/agent-setup.plan.md`, at the user's request. Sign-in connectors, paying catalogue entries and script tools are left for a later plan. Everything here is personal (`~/.whyline/`) and works in every repository.
 
 ## Where whyline stands (checked in the code, 2026-11-15)
 

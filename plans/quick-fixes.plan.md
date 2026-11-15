@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-14T23:30:00+05:30 -->
 # Quick fixes: console restart, release notes review, live models, scheduled access and release day fixes
 
-Runs after `plans/agent-tools.plan.md`, and before `plans/telegram-daily-use.plan.md`.
+Runs after `plans/agent-tools.plan.md`, and before `plans/agent-setup.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
