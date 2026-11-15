@@ -4,12 +4,12 @@ Set on 2026-11-15. Run one plan at a time, top to bottom. Press **Release** at t
 
 Finished plans are in `plans/done/`.
 
-`quick-fixes.plan.md` joins four small plans (console-restart, release-notes-review, relay-live-models, assistant-scheduled-access) so they run in one relay and ship in one release. Their task ids are unchanged. It also carries RDF-1..3, three fixes from releasing 0.3.74. `telegram-daily-use.plan.md` does the same for waiting-on-you, plan-queue, assistant-feedback and assistant-router.
+`quick-fixes.plan.md` joins four small plans (console-restart, release-notes-review, relay-live-models, assistant-scheduled-access) so they run in one relay and ship in one release. Their task ids are unchanged. It also carries RDF-1..4: three fixes from releasing 0.3.74, and new agents personal by default. `telegram-daily-use.plan.md` does the same for waiting-on-you, plan-queue, assistant-feedback and assistant-router.
 
 | # | Group | Plan | Tasks | Needs |
 |---|---|---|---|---|
 | 0 | Done | `done/agent-tools.plan.md` | TLS-1..16 | released as whyline 0.3.74 on 2026-11-15 |
-| 1 | Quick fixes | `quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27, RDF-1..3 (19) | whyline-relay 0.2.43 (on PyPI) |
+| 1 | Quick fixes | `quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27, RDF-1..4 (20) | whyline-relay 0.2.43 (on PyPI) |
 | 2 | Telegram daily use | `telegram-daily-use.plan.md` | WAIT-1..7, QUE-1..11, FB-1..7, RT-1..7 (32) | |
 | 3 | Process | `raaid-log.plan.md` | RAAID-1..14 | |
 | 3 | | `sdlc-git-flow.plan.md` | GIT-1..6 | telegram-daily-use (WAIT-5, for GIT-4's go-ahead verbs) |
