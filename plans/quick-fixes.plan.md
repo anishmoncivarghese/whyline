@@ -204,7 +204,7 @@ Rules every task keeps:
   3. The result always passes `lint`.
   Tests: `test_only_process_commits`, each group, the prefix and task id stripped, a `feat(scope):` subject, and the fallback passing `lint` for a list holding every kind of subject.
 
-- [ ] NOTE-3: The second-agent review
+- [x] NOTE-3: The second-agent review
   Edit `src/whyline/release/notes.py`, `src/whyline/release/plan.py`, `src/whyline/relaychat/agent_choice.py` and their tests only.
   1. `agent_choice.pick_other(root, not_agent) -> str | None`: an enabled agent with a verified read-only mode other than `not_agent`, else None.
   2. `plan.default_ask_agent(root, *, agent: str | None = None)` takes the agent to use. With None it behaves as today. The function it returns exposes the agent's name as `.agent`.
