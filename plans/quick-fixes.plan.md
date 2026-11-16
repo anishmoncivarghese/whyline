@@ -359,7 +359,7 @@ Rules every task keeps:
   6. No stored agent is moved or rewritten, and the repository scope stays available.
   Tests: `test_new_agent_starts_personal` (a new form, the save fallback, and an existing repository agent opened for editing), `test_personal_agent_gets_no_repo_skill` (the picker's list for each scope, the scope change removing ticked repository skills with the line, and Save refusing), the order and labels of the scope choices, and the list row for each scope.
 
-- [ ] RDF-5: Inline agent settings, and whyline-relay 0.2.44 or newer
+- [x] RDF-5: Inline agent settings, and whyline-relay 0.2.44 or newer
   Needs whyline-relay 0.2.44 on PyPI (whyline-relay's `plans/preflight-settings.plan.md`, PFS-3). When `uv lock` can't find it, stop and say so with `whyline handoff RDF-5 --issue "whyline-relay 0.2.44 is not on PyPI yet"`; do not lower the minimum to make the lock pass.
   Create `src/whyline/cliargs.py` and `tests/test_cliargs.py`. Edit `src/whyline/agents/runner.py`, `src/whyline/ideas/analyse.py`, `src/whyline/release/plan.py`, `pyproject.toml`, `uv.lock` and their tests only.
   Why: since whyline-relay 0.2.42 the built-in Antigravity command passes its allow list as inline JSON after `--settings`, 741 characters long. whyline-relay 0.2.42 and 0.2.43 crash on it in `doctor`, `start` and `resume` (`File name too long`); 0.2.44 fixes that. whyline has the same assumption in three places, each treating the value as a file path:
