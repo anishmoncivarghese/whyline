@@ -255,7 +255,7 @@ Rules every task keeps:
   - `run_models` shows `current="opus"`, `configured="sonnet"` after a switch, and `pending` while `running.json` says claude runs `sonnet`
   - an agent without `model_flag` raises with the relay's message
 
-- [ ] LMD-2: Model dropdowns in "Agents for this run"
+- [x] LMD-2: Model dropdowns in "Agents for this run"
   Edit `src/whyline/console/relay_screens.py` (`RunAgentsScreen`), with tests in `tests/console/test_relay_screens.py`.
   1. Each role row gets a Model `Select` (`id="ra-model-<role>"`, width 26) after the agent `Select`, holding the options for the row's selected agent from `cached_model_options`, else `model_options_for_agent` in a worker, else the current model alone. "Default" means the CLI's own default (an empty model). Changing the agent dropdown refills the model dropdown for the new agent with that agent's current model selected.
   2. The model dropdown starts at `run_models(root)[agent].current`. Two rows with the same agent show the same model, and changing one updates the other.
