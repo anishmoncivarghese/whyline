@@ -273,7 +273,7 @@ Rules every task keeps:
   - the pending line appears while `pending` is true and goes on the refresh after it turns false
   - the screen fits 80x24 with three rows of two dropdowns
 
-- [ ] ASST-24: Check and grant access as scheduled runs see it
+- [x] ASST-24: Check and grant access as scheduled runs see it
   Edit `src/whyline/ideas/brief.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py`, `tests/ideas/test_brief.py`, `tests/ideas/test_cli.py`, and `tests/console/test_assistant_screen.py` only.
   - Add `brief.background_access(*, grant=False, run=subprocess.run, launchctl=…)`. It runs a small probe as a one-off launchd job (`launchctl submit` with a unique label), using the same Python program the agents scheduler plist runs, so macOS answers for scheduled runs, not for the console's terminal.
     - The probe reports Calendar and Reminders through `access_status.js`, and Mail as allowed, denied, or not running. With `grant=True` it requests Calendar and Reminders access and asks Mail, so macOS shows its prompt naming the scheduler's app while the user is at the Mac.
