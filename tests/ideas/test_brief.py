@@ -495,6 +495,14 @@ def _check_runner(*, mail="ok\x1e", calendar_denied=False):
     return run
 
 
+def _scheduled(monkeypatch, **states):
+    found = {"Calendar": "granted", "Reminders": "granted", "Mail": "allowed", **states}
+    monkeypatch.setattr(
+        brief, "background_access",
+        lambda **k: brief.BackgroundAccess("/opt/py/python3.11", "python3.11", found),
+    )
+
+
 def _agent():
     from whyline.agents import definitions as d
 
@@ -520,6 +528,7 @@ def test_check_reports_access_agent_last_run_next_run_and_wake_hint(monkeypatch)
         defn=agent, status="active", last_outcome="failed", last_run="2026-10-27 07:00"
     )
     monkeypatch.setattr(service, "rows", lambda root: [row])
+    _scheduled(monkeypatch)
     results = {
         c.name: c for c in brief.check(run=_check_runner(), now=datetime(2026, 10, 28, 12, 0))
     }
@@ -539,6 +548,7 @@ def test_check_reports_denied_calendar_and_mail_not_running(monkeypatch):
 
     monkeypatch.setattr(brief, "current", lambda: _agent())
     monkeypatch.setattr(service, "rows", lambda root: [])
+    _scheduled(monkeypatch)
     results = {
         c.name: c
         for c in brief.check(run=_check_runner(mail="not-running", calendar_denied=True))
@@ -633,3 +643,109 @@ def test_open_settings_opens_the_page():
     assert seen == [["/usr/bin/open", brief.SETTINGS_URLS["automation"]]]
     with pytest.raises(brief.CalendarError):
         brief.open_settings("camera", run=lambda cmd, **k: SimpleNamespace(returncode=0))
+
+
+def _launchctl(monkeypatch, tmp_path, answer, seen, *, submit_rc=0, write=True):
+    monkeypatch.setenv("WHYLINE_IDEAS_HOME", str(tmp_path / "ideas"))
+    monkeypatch.setattr(brief.sys, "platform", "darwin")
+    monkeypatch.setattr(brief, "scheduler_python", lambda: "/opt/py/python3.11")
+
+    def run(command, **kwargs):
+        seen.append(command)
+        if command[1] == "submit" and write and submit_rc == 0:
+            Path(command[command.index("-c") + 2]).write_text(json.dumps(answer))
+        return SimpleNamespace(returncode=submit_rc if command[1] == "submit" else 0,
+                               stdout="", stderr="no")
+
+    return run
+
+
+from pathlib import Path  # noqa: E402
+
+_ANSWER = {"calendar": 3, "reminders": 2, "mail": "allowed"}
+
+
+def test_background_access_submits_the_schedulers_program_with_a_unique_label(monkeypatch, tmp_path):
+    seen = []
+    run = _launchctl(monkeypatch, tmp_path, _ANSWER, seen)
+    one = brief.background_access(run=run)
+    brief.background_access(run=run)
+    submits = [c for c in seen if c[1] == "submit"]
+    assert len(submits) == 2
+    assert submits[0][submits[0].index("--") + 1] == "/opt/py/python3.11"
+    assert submits[0][3] != submits[1][3]
+    assert submits[0][:5] == ["launchctl", "submit", "-l", submits[0][3], "--"]
+    assert submits[0][submits[0].index("-c") + 2].endswith("answer.json")
+    assert one.app == "python3.11" and one.program == "/opt/py/python3.11"
+    assert one.states == {"Calendar": "granted", "Reminders": "denied", "Mail": "allowed"}
+
+
+def test_background_access_removes_the_job_after_success(monkeypatch, tmp_path):
+    seen = []
+    brief.background_access(run=_launchctl(monkeypatch, tmp_path, _ANSWER, seen))
+    assert [c[1] for c in seen] == ["submit", "remove"]
+    assert seen[1][2] == seen[0][3]
+
+
+def test_background_access_removes_the_job_after_timeout(monkeypatch, tmp_path):
+    seen = []
+    run = _launchctl(monkeypatch, tmp_path, _ANSWER, seen, write=False)
+    with pytest.raises(brief.CalendarError, match="did not answer"):
+        brief.background_access(run=run, timeout=0, poll=0)
+    assert [c[1] for c in seen] == ["submit", "remove"]
+
+
+def test_background_access_removes_the_job_after_error(monkeypatch, tmp_path):
+    seen = []
+    run = _launchctl(monkeypatch, tmp_path, _ANSWER, seen, submit_rc=1)
+    with pytest.raises(brief.CalendarError, match="submit failed"):
+        brief.background_access(run=run)
+    assert [c[1] for c in seen] == ["submit", "remove"]
+
+
+def test_background_access_grant_passes_the_request_flag(monkeypatch, tmp_path):
+    seen = []
+    run = _launchctl(monkeypatch, tmp_path, _ANSWER, seen)
+    brief.background_access(grant=True, run=run)
+    brief.background_access(run=run)
+    flags = [c[c.index("-c") + 3] for c in seen if c[1] == "submit"]
+    assert flags == ["1", "0"]
+
+
+def test_background_access_off_macos_submits_nothing(monkeypatch):
+    monkeypatch.setattr(brief.sys, "platform", "linux")
+
+    def boom(*a, **k):
+        raise AssertionError("launchctl off macOS")
+
+    found = brief.background_access(run=boom)
+    assert set(found.states.values()) == {"macOS only"}
+
+
+def test_access_rows_differ_when_the_answers_differ():
+    here = {"Calendar": "granted", "Reminders": "granted", "Mail": "allowed"}
+    found = brief.BackgroundAccess(
+        "/opt/py/python3.11", "python3.11",
+        {"Calendar": "denied", "Reminders": "granted", "Mail": "denied"},
+    )
+    rows = brief.access_rows(here, found)
+    assert rows[0].startswith("When you run it here:")
+    assert rows[1].startswith("Scheduled runs (python3.11):")
+    text = "\n".join(rows)
+    assert "Privacy & Security > Calendars, and turn on python3.11" in text
+    assert "Automation, open python3.11, and turn on Mail" in text
+    assert "Reminders differs" not in text
+
+
+def test_check_shows_both_access_rows(monkeypatch):
+    from whyline.agents import service
+
+    monkeypatch.setattr(brief, "current", lambda: _agent())
+    monkeypatch.setattr(service, "rows", lambda root: [])
+    _scheduled(monkeypatch, Calendar="denied")
+    results = {c.name: c for c in brief.check(run=_check_runner())}
+    row = results["brief scheduled access"]
+    assert not row.ok
+    assert "When you run it here" in row.detail
+    assert "Scheduled runs (python3.11)" in row.detail
+    assert "turn on python3.11" in row.detail

@@ -217,9 +217,13 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     )
     open_p.add_argument("pane", choices=sorted(brief.SETTINGS_URLS),
                         help="calendars (Calendar), reminders (Reminders) or automation (Mail)")
-    brief_sub.add_parser(
+    access_p = brief_sub.add_parser(
         "access", help="Show whether Calendar and Reminders access is granted (never prompts)"
     )
+    access_p.add_argument("--scheduled", action="store_true",
+                          help="Also check as scheduled runs see it (a one-off launchd job)")
+    access_p.add_argument("--grant", action="store_true",
+                          help="Ask macOS for access for scheduled runs (shows its prompts)")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1661,6 +1665,17 @@ def cmd_brief(args: argparse.Namespace) -> int:
             return EXIT_ERROR
         return EXIT_OK
     if which == "access":
+        if args.scheduled or args.grant:
+            try:
+                found = brief.background_access(grant=args.grant)
+            except brief.CalendarError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_ERROR
+            here = brief.access_status()
+            here["Mail"] = "not checked here"
+            for row in brief.access_rows(here, found):
+                print(row)
+            return EXIT_OK
         for name, state in brief.access_status().items():
             print(f"{name}: {state}")
         print("Mail: checked when it is read; run whyline idea brief mail --preview")

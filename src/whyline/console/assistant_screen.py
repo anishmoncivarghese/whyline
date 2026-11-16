@@ -93,6 +93,8 @@ class AssistantScreen(ModalScreen):
     AssistantScreen #as-brief-calendars.-empty { display: none; }
     AssistantScreen #as-brief-access { height: auto; margin-top: 1; }
     AssistantScreen #as-brief-grant { width: auto; margin-top: 1; }
+    AssistantScreen #as-brief-scheduled { height: auto; margin-top: 1; }
+    AssistantScreen #as-brief-grant-scheduled { width: auto; margin-top: 1; }
     AssistantScreen #as-brief-result { height: auto; max-height: 20; }
     AssistantScreen #as-brief-result.-empty { display: none; }
     AssistantScreen #as-brief-mailboxes { height: auto; max-height: 8; margin-top: 1; }
@@ -326,6 +328,8 @@ class AssistantScreen(ModalScreen):
                 Static("", id="as-worktree-error", markup=False, classes="-empty"),
                 Label("Morning brief", classes="as-section", id="as-brief-title"),
                 Static("", id="as-brief-access", markup=False),
+                Static("", id="as-brief-scheduled", markup=False),
+                Button("Grant access for scheduled runs", id="as-brief-grant-scheduled"),
                 SelectionList[str](
                     *self._calendar_options(self._brief_calendars),
                     id="as-brief-calendars",
@@ -455,6 +459,9 @@ class AssistantScreen(ModalScreen):
         elif button_id == "as-brief-grant-mail":
             event.stop()
             self._mail_preview()
+        elif button_id == "as-brief-grant-scheduled":
+            event.stop()
+            self._show_scheduled(grant=True)
         elif button_id.startswith("as-worktree-open-"):
             event.stop()
             self._open_worktree(int(button_id.rsplit("-", 1)[1]))
@@ -623,6 +630,36 @@ class AssistantScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self._show_access()
+        self._show_scheduled()
+
+    def _show_scheduled(self, *, grant: bool = False) -> None:
+        """The scheduled-runs rows: the function `whyline idea brief access --scheduled` calls."""
+        line = self.query_one("#as-brief-scheduled", Static)
+        line.update("Scheduled runs: checking..." if not grant else "Scheduled runs: asking macOS...")
+        here = brief.access_status()
+        here["Mail"] = self._mail_access
+
+        def work() -> str:
+            try:
+                found = brief.background_access(grant=grant)
+            except brief.CalendarError as exc:
+                return "\n".join(brief.access_rows(here, None, str(exc)))
+            return "\n".join(brief.access_rows(here, found))
+
+        def done(text: str) -> None:
+            try:
+                line.update(text)
+            except Exception:  # the screen closed while the check ran
+                pass
+
+        def thread() -> None:
+            text = work()
+            try:
+                self.app.call_from_thread(done, text)
+            except Exception:
+                pass
+
+        self.run_worker(thread, thread=True, exclusive=False)
 
     def _show_access(self) -> None:
         """The Access line: the function `whyline idea brief access` prints."""

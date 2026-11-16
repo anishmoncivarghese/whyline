@@ -1579,3 +1579,38 @@ def test_doctor_warns_about_a_missing_worktree_folder_and_old_ones(
     assert check.level == "warn"
     assert f"{gone} folder is gone" in check.detail
     assert f"{old} is 20 days old" in check.detail
+
+
+def test_brief_access_scheduled_and_grant_share_background_access(ideas_home, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    calls = []
+
+    def fake(**k):
+        calls.append(k)
+        return brief.BackgroundAccess(
+            "/opt/py/python3.11", "python3.11",
+            {"Calendar": "denied", "Reminders": "granted", "Mail": "allowed"},
+        )
+
+    monkeypatch.setattr(brief, "background_access", fake)
+    monkeypatch.setattr(
+        brief, "access_status", lambda **k: {"Calendar": "granted", "Reminders": "granted"}
+    )
+    code, out, _ = invoke(["idea", "brief", "access", "--scheduled"], capsys)
+    assert code == 0
+    assert "Scheduled runs (python3.11)" in out and "turn on python3.11" in out
+    code, _, _ = invoke(["idea", "brief", "access", "--grant"], capsys)
+    assert code == 0
+    assert calls == [{"grant": False}, {"grant": True}]
+
+
+def test_brief_access_scheduled_reports_a_failed_probe(ideas_home, capsys, monkeypatch):
+    from whyline.ideas import brief
+
+    def fail(**k):
+        raise brief.CalendarError("launchctl submit failed: no")
+
+    monkeypatch.setattr(brief, "background_access", fail)
+    code, _, err = invoke(["idea", "brief", "access", "--scheduled"], capsys)
+    assert code != 0 and "launchctl submit failed" in err

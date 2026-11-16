@@ -31,6 +31,17 @@ def assistant_home(monkeypatch, tmp_path):
     monkeypatch.setattr(
         brief, "access_status", lambda **k: {"Calendar": "granted", "Reminders": "denied"}
     )
+    calls = []
+
+    def background(**k):
+        calls.append(k)
+        return brief.BackgroundAccess(
+            "/opt/py/python3.11", "python3.11",
+            {"Calendar": "denied", "Reminders": "granted", "Mail": "allowed"},
+        )
+
+    monkeypatch.setattr(brief, "background_access", background)
+    monkeypatch.setattr(brief, "_test_background_calls", calls, raising=False)
     return home
 
 
@@ -1019,3 +1030,20 @@ async def test_remove_refuses_a_dirty_worktree_and_shows_why(wt_repo):
         await pilot.pause()
         assert not clean.exists()
         assert len(screen._worktrees) == 1
+
+
+async def test_scheduled_rows_and_grant_button_share_background_access(assistant_home):
+    from whyline.ideas import brief
+
+    app = _Host()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open(app)
+        await pilot.pause(0.3)
+        text = _plain(screen.query_one("#as-brief-scheduled", tui.Static).render())
+        assert "Scheduled runs (python3.11)" in text
+        assert "turn on python3.11" in text
+        button = screen.query_one("#as-brief-grant-scheduled", tui.Button)
+        assert str(button.label) == "Grant access for scheduled runs"
+        button.press()
+        await pilot.pause(0.3)
+        assert brief._test_background_calls == [{"grant": False}, {"grant": True}]

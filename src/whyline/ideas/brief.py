@@ -428,6 +428,170 @@ def access_status(run=subprocess.run) -> dict[str, str]:
     return found
 
 
+PROBE_SECONDS = 60
+_PROBE = r'''
+import json, os, subprocess, sys, time
+out, grant, osa, access_js, calendar_js, reminders_js, mail_source = sys.argv[1:8]
+
+def osascript(*args):
+    try:
+        return subprocess.run([osa, *args], capture_output=True, text=True, timeout=45)
+    except Exception as exc:
+        return subprocess.CompletedProcess(args, 1, "", str(exc))
+
+if grant == "1":
+    osascript("-l", "JavaScript", calendar_js, "[]")
+    osascript("-l", "JavaScript", reminders_js)
+answer = {}
+try:
+    answer.update(json.loads(osascript("-l", "JavaScript", access_js).stdout))
+except ValueError:
+    pass
+mail = osascript("-e", mail_source)
+text = (mail.stdout or "").strip()
+if mail.returncode != 0:
+    stderr = (mail.stderr or "").lower()
+    answer["mail"] = "denied" if "-1743" in stderr or "not authorized" in stderr else "error"
+else:
+    answer["mail"] = "not running" if text == "not-running" else "allowed"
+tmp = out + ".tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as handle:
+    json.dump(answer, handle)
+os.replace(tmp, out)
+while True:  # launchctl submit restarts a job that exits, so idle until removed
+    time.sleep(3600)
+'''
+_PROBE_MAIL = (
+    'if application "Mail" is not running then return "not-running"\n'
+    'tell application "Mail" to get count of mailboxes\nreturn "ok"'
+)
+
+
+@dataclass(frozen=True)
+class BackgroundAccess:
+    program: str  # the Python program scheduled runs use
+    app: str  # its short name, as System Settings lists it
+    states: dict
+
+
+def scheduler_python() -> str:
+    """The Python program the agents scheduler's `whyline` command runs under."""
+    fallback = str(Path(sys.executable).resolve())
+    try:
+        from whyline.agents import launchd
+
+        with open(launchd._whyline_path(), "rb") as handle:
+            first = handle.readline().decode("utf-8", "replace").strip()
+    except (OSError, RuntimeError):
+        return fallback
+    if first.startswith("#!"):
+        parts = first[2:].split()
+        if parts and Path(parts[0]).name == "env" and len(parts) > 1:
+            import shutil
+
+            found = shutil.which(parts[1])
+            parts = [found] if found else []
+        if parts:
+            return str(Path(parts[0]).resolve())
+    return fallback
+
+
+def background_access(
+    *, grant: bool = False, run=subprocess.run, launchctl: str = "launchctl",
+    timeout: float = PROBE_SECONDS, poll: float = 0.25,
+) -> BackgroundAccess:
+    """Access as scheduled runs see it, from a one-off launchd job.
+
+    ``grant`` also asks for Calendar, Reminders and Mail access, so macOS shows
+    its prompt for the scheduler's app. Raises ``CalendarError`` when the job
+    cannot be started or does not answer in time. The job is always removed.
+    """
+    import shutil
+    import tempfile
+    import time as _time
+    import uuid
+
+    if sys.platform != "darwin":
+        return BackgroundAccess("", "", {k: "macOS only" for k in ("Calendar", "Reminders", "Mail")})
+    program = scheduler_python()
+    app = Path(program).name
+    root = paths.home()
+    root.mkdir(parents=True, exist_ok=True)
+    folder = Path(tempfile.mkdtemp(prefix="access-", dir=root))  # 0700
+    answer = folder / "answer.json"
+    label = f"com.whyline.brief-access.{uuid.uuid4().hex}"
+    command = [
+        launchctl, "submit", "-l", label, "--", program, "-c", _PROBE, str(answer),
+        "1" if grant else "0", OSASCRIPT, str(ACCESS_JS), str(SCRIPT), str(REMINDERS_JS),
+        _PROBE_MAIL,
+    ]
+    data = None
+    try:
+        try:
+            done = run(command, capture_output=True, text=True)
+        except OSError as exc:
+            raise CalendarError(f"Could not run launchctl: {exc}") from exc
+        if done.returncode != 0:
+            detail = " ".join((done.stderr or "").split())[:300]
+            raise CalendarError(f"launchctl submit failed: {detail or 'no output'}")
+        deadline = _time.monotonic() + timeout
+        while True:
+            try:
+                data = json.loads(answer.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = None
+            if isinstance(data, dict):
+                break
+            if _time.monotonic() >= deadline:
+                raise CalendarError(
+                    f"The scheduled-run check did not answer within {int(timeout)} seconds. "
+                    "If a permission prompt is waiting, answer it and try again."
+                )
+            _time.sleep(poll)
+    finally:
+        try:
+            run([launchctl, "remove", label], capture_output=True, text=True)
+        except OSError:
+            pass
+        shutil.rmtree(folder, ignore_errors=True)
+    states = {}
+    for name, key in (("Calendar", "calendar"), ("Reminders", "reminders")):
+        code = data.get(key)
+        states[name] = _ACCESS_WORDS.get(code, f"unknown ({code})") if isinstance(code, int) else "unknown"
+    states["Mail"] = str(data.get("mail", "unknown"))
+    return BackgroundAccess(program, app, states)
+
+
+_PANES = {"Calendar": "Calendars", "Reminders": "Reminders", "Mail": "Automation"}
+_GOOD = {"granted", "allowed", "not running"}
+
+
+def access_rows(here: dict, scheduled: BackgroundAccess | None, error: str = "") -> list[str]:
+    """The two access rows, plus a hint for each permission that differs."""
+
+    def words(states: dict) -> str:
+        return ", ".join(f"{name} {state}" for name, state in states.items())
+
+    rows = [f"When you run it here: {words(here)}"]
+    if scheduled is None:
+        rows.append(f"Scheduled runs: unknown ({error})")
+        return rows
+    if not scheduled.app:
+        rows.append(f"Scheduled runs: {words(scheduled.states)}")
+        return rows
+    rows.append(f"Scheduled runs ({scheduled.app}): {words(scheduled.states)}")
+    for name, state in scheduled.states.items():
+        if state in _GOOD or here.get(name) == state or name not in _PANES:
+            continue
+        if name == "Mail":
+            place = f"Privacy & Security > Automation, open {scheduled.app}, and turn on Mail"
+        else:
+            place = f"Privacy & Security > {_PANES[name]}, and turn on {scheduled.app}"
+        rows.append(f"{name} differs for scheduled runs: open System Settings > {place}.")
+    return rows
+
+
 def mailboxes_selected(conn: sqlite3.Connection) -> list[str]:
     """Chosen mailbox names. Empty means none: no mail is read."""
     row = conn.execute("SELECT value FROM kv WHERE key = ?", (MAILBOXES_KEY,)).fetchone()
@@ -826,13 +990,17 @@ def check(*, run=subprocess.run, now: datetime | None = None) -> list:
     except CalendarError as exc:
         results.append(Check("brief calendar", False, str(exc)))
 
+    mail_here = "unknown"
     try:
         answer = _osascript("Mail", "Automation > Mail", MAIL_SCRIPT, ["1", "1"], run)
         if answer.strip() == "not-running":
+            mail_here = "not running"
             results.append(Check("brief mail", True, "Mail is not running, so no mail is read", level="warn"))
         else:
+            mail_here = "allowed"
             results.append(Check("brief mail", True, "Mail is running and access is allowed"))
     except CalendarError as exc:
+        mail_here = "denied" if isinstance(exc, AccessDenied) else "unknown"
         results.append(Check("brief mail", False, str(exc)))
 
     try:
@@ -840,6 +1008,16 @@ def check(*, run=subprocess.run, now: datetime | None = None) -> list:
         results.append(Check("brief reminders", True, "Reminders access allowed"))
     except CalendarError as exc:
         results.append(Check("brief reminders", False, str(exc)))
+
+    here = access_status(run=run)
+    here["Mail"] = mail_here
+    try:
+        scheduled = background_access()
+        rows = access_rows(here, scheduled)
+        scheduled_ok = all(s in _GOOD or s == "macOS only" for s in scheduled.states.values())
+    except CalendarError as exc:
+        rows, scheduled_ok = access_rows(here, None, str(exc)), False
+    results.append(Check("brief scheduled access", scheduled_ok, "\n".join(rows)))
 
     row = None
     try:

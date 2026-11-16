@@ -45256,3 +45256,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ab33986797904b0ab1bfdad044b2a9f3 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T05:01:15.015Z"} -->
+
+## 2026-11-16 — Scheduled-run access probe: one-off launchctl submit job under the whyline script's own interpreter, answer via 0600 file in a 0700 folder, remove always
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-24
+
+**Because:** launchd runs the scheduler's python, which macOS treats as a separate app from the console terminal; the job idles after answering because submit restarts exited jobs
+
+**Rejected:**
+
+- run the probe in-process — answers for the console terminal, not scheduled runs
+- edit access_status.js to add a grant mode — outside the task's file list, so grant reuses calendar_today.js and reminders_today.js
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 4e36f5d64c474097aea1fb5e231c1f72 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T05:04:38.751Z"} -->
+
+## 2026-11-16 — ASST-24 passes round-2 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-24
+
+**Because:** The focused CLI, brief, and assistant console tests all passed (162 passed), covering launchd submission, job cleanup on success/timeout/error, grant flags, row differentiation, and non-macOS handling, and the full test suite passed with 0 failures
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 7d1d2823f32a4ceb99ec8ddcb0d1ed4e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T05:26:26.217Z"} -->
+
+## 2026-11-16 — Approve ASST-24 scheduled-run access checking and grant flow
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-24
+
+**Because:** The implementation uses the scheduler interpreter in a unique one-off launchd job, publishes the probe result with private permissions, removes the job on success timeout and submit error, exposes shared CLI and console flows with actionable differing-status guidance, and both focused and full project tests pass
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: ef5faccaf8a343859bb6cc55aed37505 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T05:47:49.340Z"} -->
