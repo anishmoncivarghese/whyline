@@ -45625,3 +45625,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d7b179d4571b494c90b8666f94c12875 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T11:58:30.034Z"} -->
+
+## 2026-11-16 — Pass RDF-3: console tests wait for screen state via _until instead of fixed pauses
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-3
+
+**Because:** The three targeted tests in test_workflows_builder.py, test_relay_screens.py, and test_new_agent_deliveries.py now poll screen and widget conditions with _until; 20/20 loop runs passed and full test suite (5036 tests) passed with 0 failures
+
+**Rejected:**
+
+- Fail RDF-3 — no flakes or regressions observed, assertions are fully preserved and no tests are skipped or weakened
+
+**Files:** tests/console/test_workflows_builder.py, tests/console/test_relay_screens.py, tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: 17654eb4acb74492a27e351d6dccbbcb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T12:43:08.973Z"} -->
+
+## 2026-11-16 — Approve RDF-3: replace flaky console timing sleeps with condition-based waits
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RDF-3
+
+**Because:** All three permitted tests now poll the relevant screen, widgets, selection, or Select state while preserving their assertions; the focused cases passed 20 consecutive runs and the plain full pytest suite exited successfully
+
+**Rejected:**
+
+- Request changes — the diff is correctly scoped, assertions are intact, and independent stress and full-suite verification found no defect
+
+**Files:** tests/console/test_workflows_builder.py, tests/console/test_relay_screens.py, tests/console/test_new_agent_deliveries.py
+
+<!-- whyline-event: a5badaf0cd124d3da3cf623de5130fe0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T13:05:01.989Z"} -->

@@ -197,7 +197,10 @@ async def test_review_back_reopens_the_form_with_the_delivery(tmp_path, monkeypa
         app.screen.query_one("#rv-back", tui.Button).press()
         await _until(
             pilot,
-            lambda: isinstance(app.screen, NewAgentScreen) and app.screen.query("#na-name"),
+            lambda: isinstance(app.screen, NewAgentScreen)
+            and app.screen.query("#na-name")
+            and app.screen.query("#na-email")
+            and app.screen.query("#na-subject"),
             "form reopened",
         )
         name = app.screen.query_one("#na-name", tui.Input)

@@ -9,6 +9,14 @@ pytestmark = [
     pytest.mark.asyncio,
 ]
 
+async def _until(pilot, condition, what):
+    for _ in range(400):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
+
+
 CHOICES = ["antigravity", "claude", "codex"]
 
 
@@ -380,16 +388,15 @@ async def test_set_up_opens_run_agents_while_running_and_setup_when_idle(
         await pilot.pause()
         assert not app.query_one("#relay-setup", tui.Button).disabled
         await pilot.click("#relay-setup")
-        await pilot.pause()
-        assert isinstance(app.screen, RunAgentsScreen)
+        await _until(pilot, lambda: isinstance(app.screen, RunAgentsScreen), "run agents open")
         titles = [str(w.renderable) for w in app.screen.query(tui.Label)]
         assert "Agents for this run · JOB-9" in titles
         app.screen.dismiss(None)
-        await pilot.pause()
+        await _until(pilot, lambda: not isinstance(app.screen, RunAgentsScreen), "run agents closed")
 
         live["value"] = None
         await pilot.click("#relay-setup")
-        await pilot.pause()
+        await _until(pilot, lambda: isinstance(app.screen, RelaySetupScreen), "setup open")
         assert isinstance(app.screen, RelaySetupScreen)
     assert interrupted == []
 

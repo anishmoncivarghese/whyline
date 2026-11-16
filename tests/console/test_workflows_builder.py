@@ -59,6 +59,14 @@ def on_disk():
     return service.load("daily", None)
 
 
+async def _until(pilot, condition, what):
+    for _ in range(400):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError(f"never happened: {what}")
+
+
 async def press(pilot, selector):
     await pilot.click(selector)
     await pilot.pause(0.3)
@@ -269,11 +277,21 @@ async def test_routing_select_offers_only_later_steps(tmp_path, work):
         app.push_screen(screen)
         await pilot.pause()
         select_step(screen, "pick")
-        await pilot.pause(0.3)
+        await _until(
+            pilot,
+            lambda: screen.query("#wf-then") and screen.query("#wf-else")
+            and offered(screen.query_one("#wf-then")) == ["yes", "no"]
+            and screen.query_one("#wf-else").value == "no",
+            "routing selects filled in for pick",
+        )
         assert offered(screen.query_one("#wf-then")) == ["yes", "no"]
         assert screen.query_one("#wf-else").value == "no"
         select_step(screen, "yes")
-        await pilot.pause(0.3)
+        await _until(
+            pilot,
+            lambda: screen._selected() == ids(screen).index("yes"),
+            "yes step selected",
+        )
         assert screen._later(ids(screen).index("yes")) == ["no"]
 
 
