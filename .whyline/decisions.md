@@ -45111,3 +45111,148 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f9e3254e3a1443f68644b862e0745a50 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-15T21:36:09.328Z"} -->
+
+## 2026-11-15 — Run-agents model dropdown shares one picked model per agent; refills use Select.prevent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LMD-2
+
+**Because:** same-agent rows must stay equal and refills must not echo spurious Changed events
+
+**Rejected:**
+
+- per-row model state — two rows of one agent could diverge and Save would send conflicting switches
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 957a308671854db3a2a6227e64a26175 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T21:41:10.649Z"} -->
+
+## 2026-11-15 — Pass LMD-2: model dropdown in RunAgentsScreen with live sync, pending line, error isolation, summary formatting, and 80x24 fit
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** LMD-2
+
+**Because:** All 7 task requirements and tests pass, including shared agent model state, worker refill, live model switching with keep option, pending refresh updates, switched model summary format, and full test suite passes completely
+
+**Rejected:**
+
+- Fail — no functional defects, regressions, or missing requirements found
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 6ef8befd8fed4f1885eb59f453957c4d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T22:10:47.260Z"} -->
+
+## 2026-11-15 — Reject LMD-2 because switched-role rows overflow at 80 columns
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LMD-2
+
+**Because:** At 80x24, a visible ra-back-implementer occupies x=69..85, beyond the 80-column viewport; the fit test uses only rows whose Back buttons are hidden and therefore does not cover the failing state
+
+**Rejected:**
+
+- Approve — requirement 6 is not met in a valid live-switch state despite the targeted tests passing
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: e96274d1a28b477dbedf896263007ac5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T22:31:51.159Z"} -->
+
+## 2026-11-15 — Run-agents Back button moved to the reason line, beside the reason text
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LMD-2
+
+**Because:** a visible Back button after two dropdowns ended at column 85, past an 80-column screen
+
+**Rejected:**
+
+- shorter Back label — the label names the configured agent and tests rely on it
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 3d67a3f108784199ac7a34702f8fc2e7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T22:32:45.342Z"} -->
+
+## 2026-11-15 — Pass LMD-2: 80x24 fit resolved with Back button on reason line, all model dropdown requirements and tests verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** LMD-2
+
+**Because:** The Back button now sits beside reason text on its own line avoiding horizontal overflow beyond col 80, 80x24 viewport assertions pass with switched roles, and all 18 targeted tests in test_relay_screens.py pass
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: 131d5d916b6541e081fe0763762334a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T22:41:08.725Z"} -->
+
+## 2026-11-15 — Reject LMD-2 because model dropdowns discard provider option labels
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LMD-2
+
+**Because:** RunAgentsScreen rebuilds cached and worker-returned (label, value) options as (value, value), so descriptive Antigravity labels are lost; the new tests use identical labels and values and do not cover the required option preservation
+
+**Rejected:**
+
+- Approve — the full suite passes, but it does not exercise an option whose label differs from its model ID
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: 91d6ddd489434af8ba8e951c64f75750 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T23:01:02.115Z"} -->
+
+## 2026-11-15 — Model dropdown options keep the provider's (label, value) tuples
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LMD-2
+
+**Because:** rebuilding them as (value, value) dropped descriptive labels such as Antigravity's; only a picked model missing from the options falls back to (id, id)
+
+**Rejected:**
+
+- Look labels up from the option list at render time — the list is already the source of truth
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 6c9fd9ddb59d4f178a729be3fb71cf34 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-15T23:43:04.600Z"} -->
+
+## 2026-11-16 — Pass LMD-2: model dropdown option labels preserved and full test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** LMD-2
+
+**Because:** Preserves (label, value) tuples for model choices so provider display names remain intact; verified with targeted tests in test_relay_screens.py (19 passed) and the full pytest suite (4990 passed, 0 failed)
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4467d2aca0b744a2ab32766bcbeafc34 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T04:40:13.785Z"} -->
+
+## 2026-11-16 — Approve LMD-2: run-agent model dropdowns preserve provider labels and meet live-switch requirements
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** LMD-2
+
+**Because:** The implementation keeps provider (label, value) options, synchronizes same-agent rows, applies model changes once per agent after role changes with isolated errors, refreshes pending state, formats the summary, fits 80x24, and both the 19 focused tests and full pytest suite pass
+
+**Rejected:**
+
+- Request changes — the previous label-loss defect is fixed and directly regression-tested
+
+**Files:** src/whyline/console/relay_screens.py, tests/console/test_relay_screens.py
+
+<!-- whyline-event: ab33986797904b0ab1bfdad044b2a9f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T05:01:15.015Z"} -->

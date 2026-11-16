@@ -156,6 +156,211 @@ async def test_refresh_shows_a_failover_and_stop(tmp_path):
         assert screen.query_one("#ra-save", tui.Button).disabled
 
 
+def _models(**over):
+    state = {
+        "claude": relay_ops.RunModel("claude", "sonnet", "sonnet", False),
+        "codex": relay_ops.RunModel("codex", "", "", False),
+        "antigravity": relay_ops.RunModel("antigravity", "flash", "flash", False),
+    }
+    state.update(over)
+    return state
+
+
+OPTIONS = {
+    "claude": [("opus", "opus"), ("sonnet", "sonnet")],
+    "codex": [("gpt", "gpt")],
+    "antigravity": [("flash", "flash")],
+}
+
+
+def _model_screen(tmp_path, model_calls, *, roles=None, models=None, fail=None):
+    state = {
+        "roles": roles
+        if roles is not None
+        else [
+            RunRole("implementer", "claude", "claude", "", "", False),
+            RunRole("tester", "antigravity", "antigravity", "", "", False),
+            RunRole("reviewer", "claude", "claude", "", "", False),
+        ],
+        "models": models if models is not None else _models(),
+        "running": "JOB-1",
+    }
+
+    def switch_model(agent, model, *, keep):
+        model_calls.append((agent, model, keep))
+        if fail and agent in fail:
+            raise ValueError(fail[agent])
+        return f"{agent} model → {model}"
+
+    screen = RunAgentsScreen(
+        tmp_path,
+        "JOB-1",
+        run_roles_fn=lambda: state["roles"],
+        switch_fn=lambda role, agent, *, keep: f"{role} → {agent}",
+        choices_fn=lambda: CHOICES,
+        running_fn=lambda: state["running"],
+        summary_fn=lambda: "Plan: p.md",
+        models_fn=lambda: state["models"],
+        cached_options_fn=lambda agent: OPTIONS.get(agent),
+        options_fn=lambda agent: OPTIONS.get(agent),
+        switch_model_fn=switch_model,
+    )
+    return screen, state
+
+
+async def _save(pilot):
+    await pilot.click("#ra-save")
+    await pilot.pause()
+    await pilot.pause()
+
+
+async def test_model_choice_saves_with_keep(tmp_path):
+    calls = []
+    screen, _ = _model_screen(tmp_path, calls)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-model-implementer", tui.Select).value = "opus"
+        await pilot.pause()
+        await _save(pilot)
+        assert calls == [("claude", "opus", True)]
+
+
+async def test_model_choice_saves_without_keep(tmp_path):
+    calls = []
+    screen, _ = _model_screen(tmp_path, calls)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-keep", tui.Checkbox).value = False
+        screen.query_one("#ra-model-implementer", tui.Select).value = "opus"
+        await pilot.pause()
+        await _save(pilot)
+        assert calls == [("claude", "opus", False)]
+
+
+async def test_same_agent_rows_share_the_model(tmp_path):
+    screen, _ = _model_screen(tmp_path, [])
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert screen.query_one("#ra-model-reviewer", tui.Select).value == "sonnet"
+        screen.query_one("#ra-model-implementer", tui.Select).value = "opus"
+        await pilot.pause()
+        assert screen.query_one("#ra-model-reviewer", tui.Select).value == "opus"
+
+
+async def test_changing_agent_fills_that_agents_models(tmp_path):
+    screen, _ = _model_screen(tmp_path, [])
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert screen.query_one("#ra-model-tester", tui.Select).value == "flash"
+        screen.query_one("#ra-tester", tui.Select).value = "claude"
+        await pilot.pause()
+        model = screen.query_one("#ra-model-tester", tui.Select)
+        assert model.value == "sonnet"
+        assert set(screen._model_choices("claude")) == {
+            ("Default", ""),
+            ("opus", "opus"),
+            ("sonnet", "sonnet"),
+        }
+
+
+async def test_model_choices_keep_provider_labels(tmp_path):
+    screen, _ = _model_screen(tmp_path, [])
+    labelled = [("Gemini Flash (fast)", "flash"), ("Gemini Pro (deep)", "pro")]
+    screen._cached_options_fn = lambda agent: labelled
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert screen._model_choices("antigravity") == [("Default", "")] + labelled
+        screen.query_one("#ra-tester", tui.Select).value = "codex"
+        await pilot.pause()
+        screen.query_one("#ra-tester", tui.Select).value = "antigravity"
+        await pilot.pause()
+        assert screen._model_choices("antigravity")[1] == ("Gemini Flash (fast)", "flash")
+
+
+async def test_agent_error_still_applies_the_other_model(tmp_path):
+    calls = []
+    screen, _ = _model_screen(tmp_path, calls, fail={"claude": "claude is busy"})
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-model-implementer", tui.Select).value = "opus"
+        screen.query_one("#ra-model-tester", tui.Select).value = "flash"
+        screen._models["antigravity"] = relay_ops.RunModel("antigravity", "x", "x", False)
+        await pilot.pause()
+        await _save(pilot)
+        assert ("claude", "opus", True) in calls
+        assert ("antigravity", "flash", True) in calls
+        assert "claude is busy" in str(screen.query_one("#ra-error", tui.Static).renderable)
+
+
+async def test_pending_model_line_follows_the_refresh(tmp_path):
+    screen, state = _model_screen(
+        tmp_path,
+        [],
+        models=_models(claude=relay_ops.RunModel("claude", "opus", "sonnet", True)),
+    )
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        text = str(screen.query_one("#ra-reason-implementer", tui.Static).renderable)
+        assert "model now opus · applies from its next turn" in text
+        state["models"] = _models(claude=relay_ops.RunModel("claude", "opus", "sonnet", False))
+        screen._refresh()
+        await pilot.pause(0.3)
+        text = str(screen.query_one("#ra-reason-implementer", tui.Static).renderable)
+        assert "applies from its next turn" not in text
+
+
+async def test_screen_fits_80x24(tmp_path):
+    roles = [
+        RunRole("implementer", "claude", "claude", "", "", False),
+        RunRole("tester", "antigravity", "claude", "usage limit", "00:14", True),
+        RunRole("reviewer", "antigravity", "claude", "usage limit", "00:14", False),
+    ]
+    screen, _ = _model_screen(tmp_path, [], roles=roles)
+    app = _Host(screen)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        for widget_id in (
+            "#ra-save",
+            "#ra-model-reviewer",
+            "#ra-tester",
+            "#ra-back-tester",
+            "#ra-back-reviewer",
+        ):
+            assert screen.query_one(widget_id).display, widget_id
+            region = screen.query_one(widget_id).region
+            assert region.right <= 80 and region.bottom <= 24, (widget_id, region)
+
+
+async def test_summary_shows_switched_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "claude",
+            "tester": "antigravity",
+            "reviewer": "claude",
+            "backup": [],
+        },
+    )
+    monkeypatch.setattr(
+        relay_ops, "read_agent_model", lambda root, agent: "sonnet" if agent == "claude" else ""
+    )
+    screen = RunAgentsScreen(
+        tmp_path,
+        "JOB-1",
+        models_fn=lambda: {"claude": relay_ops.RunModel("claude", "opus", "sonnet", False)},
+    )
+    summary = screen._read_summary()
+    assert "claude opus (was sonnet)" in summary
+
+
 async def test_set_up_opens_run_agents_while_running_and_setup_when_idle(
     tmp_path, monkeypatch, installed_agents
 ):

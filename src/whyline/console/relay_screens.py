@@ -2872,9 +2872,13 @@ class RunAgentsScreen(ModalScreen):
         border: thick $accent; background: $surface;
     }
     RunAgentsScreen Horizontal { height: auto; }
-    RunAgentsScreen .field-label { width: 16; padding: 1 1 0 0; }
-    RunAgentsScreen Select { width: 30; }
-    RunAgentsScreen .ra-reason { padding: 0 0 0 16; color: $text-muted; height: auto; }
+    RunAgentsScreen .field-label { width: 16; padding: 0 1 0 0; }
+    RunAgentsScreen Select { width: 22; height: 1; }
+    RunAgentsScreen Select > SelectCurrent { border: none; height: 1; padding: 0 1; }
+    RunAgentsScreen Select.-model { width: 26; margin-left: 1; }
+    RunAgentsScreen Checkbox { border: none; height: 1; padding: 0; }
+    RunAgentsScreen Button { border: none; height: 1; min-width: 8; }
+    RunAgentsScreen .ra-reason { padding: 0 0 0 16; color: $text-muted; height: auto; width: 1fr; }
     RunAgentsScreen .ra-reason.-empty { display: none; }
     RunAgentsScreen .ra-back { margin-left: 1; }
     RunAgentsScreen #ra-summary { color: $text-muted; padding: 1 0 0 0; height: auto; }
@@ -2891,7 +2895,7 @@ class RunAgentsScreen(ModalScreen):
     REFRESH_SECONDS = 2.0
     STOPPED = "The relay has stopped. Use Set up to change everything."
     READ_ONLY = (
-        "Plan and settings stay as they are while the relay runs. "
+        "The plan and other settings stay as they are while the relay runs. "
         "Stop the relay to change them."
     )
 
@@ -2905,6 +2909,10 @@ class RunAgentsScreen(ModalScreen):
         choices_fn=None,
         running_fn=None,
         summary_fn=None,
+        models_fn=None,
+        cached_options_fn=None,
+        options_fn=None,
+        switch_model_fn=None,
     ) -> None:
         super().__init__()
         self._root = root
@@ -2916,6 +2924,22 @@ class RunAgentsScreen(ModalScreen):
         self._choices_fn = choices_fn or (lambda: relay_ops.run_agent_choices(root))
         self._running_fn = running_fn or (lambda: relay_ops.live_run(root))
         self._summary_fn = summary_fn or self._read_summary
+        self._models_fn = models_fn or (lambda: relay_ops.run_models(root))
+        self._cached_options_fn = cached_options_fn or (
+            lambda agent: relay_ops.cached_model_options(agent)
+        )
+        self._options_fn = options_fn or (
+            lambda agent: relay_ops.model_options_for_agent(agent)
+        )
+        self._switch_model_fn = switch_model_fn or (
+            lambda agent, model, *, keep: relay_ops.switch_model_live(
+                root, agent, model, keep=keep
+            )
+        )
+        self._models: dict[str, object] = {}
+        self._picked: dict[str, str] = {}
+        self._options: dict[str, list[tuple[str, str]]] = {}
+        self._fetching: set[str] = set()
         self._rows: dict[str, object] = {}
         self._stopped = False
         self._busy = False
@@ -2942,7 +2966,16 @@ class RunAgentsScreen(ModalScreen):
             lines.append(f"Timeout: {relay_ops.relay_timeout(root)} min per turn")
             roles = relay_ops.current_roles(root)
             models = []
+            try:
+                run_models = self._models_fn()
+            except Exception:
+                run_models = {}
             for agent in sorted({roles[r] for r, _ in self.ROLES}):
+                state = run_models.get(agent)
+                if state is not None and state.current != state.configured:
+                    was = state.configured or "default"
+                    models.append(f"{agent} {state.current or 'default'} (was {was})")
+                    continue
                 model = relay_ops.read_agent_model(root, agent)
                 models.append(f"{agent} {model}" if model else agent)
             lines.append("Models: " + ", ".join(models))
@@ -2961,6 +2994,7 @@ class RunAgentsScreen(ModalScreen):
         except Exception:
             choices = []
         self._rows = {item.role: item for item in roles}
+        self._load_models()
         children: list = [Label(f"Agents for this run · {self._run_task}")]
         for item in roles:
             options = sorted({*choices, item.current, item.configured})
@@ -2973,6 +3007,18 @@ class RunAgentsScreen(ModalScreen):
                         allow_blank=False,
                         id=f"ra-{item.role}",
                     ),
+                    Select(
+                        self._model_choices(item.current),
+                        value=self._picked_for(item.current),
+                        allow_blank=False,
+                        id=f"ra-model-{item.role}",
+                        classes="-model",
+                    ),
+                )
+            )
+            children.append(
+                Horizontal(
+                    Static("", id=f"ra-reason-{item.role}", classes="ra-reason"),
                     Button(
                         f"Back to {item.configured}",
                         id=f"ra-back-{item.role}",
@@ -2980,7 +3026,6 @@ class RunAgentsScreen(ModalScreen):
                     ),
                 )
             )
-            children.append(Static("", id=f"ra-reason-{item.role}", classes="ra-reason"))
         children += [
             Checkbox("Keep for future runs", True, id="ra-keep"),
             Static("", id="ra-summary"),
@@ -2995,9 +3040,95 @@ class RunAgentsScreen(ModalScreen):
         ]
         yield Vertical(*children)
 
+    def _load_models(self) -> None:
+        try:
+            self._models = dict(self._models_fn())
+        except Exception:
+            self._models = {}
+        for agent, state in self._models.items():
+            self._picked.setdefault(agent, state.current)
+
+    def _picked_for(self, agent: str) -> str:
+        return self._picked.get(agent, "")
+
+    def _model_choices(self, agent: str) -> list[tuple[str, str]]:
+        if agent not in self._options:
+            try:
+                found = self._cached_options_fn(agent)
+            except Exception:
+                found = None
+            if found:
+                self._options[agent] = list(found)
+        found = [(label, m) for label, m in self._options.get(agent, []) if m]
+        picked = self._picked_for(agent)
+        if picked and all(m != picked for _label, m in found):
+            found.append((picked, picked))
+        return [("Default", "")] + found
+
+    def _fill_model(self, role: str, agent: str) -> None:
+        """Refill a row's model dropdown for `agent`; with no options known yet,
+        fetch them in a worker and refill when they arrive."""
+        select = self.query_one(f"#ra-model-{role}", Select)
+        with select.prevent(Select.Changed):
+            select.set_options(self._model_choices(agent))
+            select.value = self._picked_for(agent)
+        if agent in self._options or agent in self._fetching:
+            return
+        self._fetching.add(agent)
+
+        def in_thread() -> None:
+            try:
+                found = self._options_fn(agent)
+            except Exception:
+                found = None
+            self.app.call_from_thread(self._options_ready, agent, found)
+
+        self.run_worker(in_thread, thread=True)
+
+    def _options_ready(self, agent: str, found) -> None:
+        self._fetching.discard(agent)
+        if not self.is_attached or not found:
+            return
+        self._options[agent] = list(found)
+        try:
+            for role, _label in self.ROLES:
+                if role in self._rows and self.query_one(f"#ra-{role}", Select).value == agent:
+                    self._fill_model(role, agent)
+        except NoMatches:
+            return
+
+    def on_select_changed(self, event: "Select.Changed") -> None:
+        select_id = event.select.id or ""
+        if not select_id.startswith("ra-") or not isinstance(event.value, str):
+            return
+        event.stop()
+        if select_id.startswith("ra-model-"):
+            role = select_id[len("ra-model-"):]
+            agent = self.query_one(f"#ra-{role}", Select).value
+            if isinstance(agent, str):
+                self._picked[agent] = event.value
+                self._sync_models(agent, role)
+        else:
+            role = select_id[len("ra-"):]
+            if role in self._rows:
+                self._fill_model(role, event.value)
+
+    def _sync_models(self, agent: str, source: str) -> None:
+        for role, _label in self.ROLES:
+            if role == source or role not in self._rows:
+                continue
+            if self.query_one(f"#ra-{role}", Select).value != agent:
+                continue
+            other = self.query_one(f"#ra-model-{role}", Select)
+            if other.value != self._picked_for(agent):
+                with other.prevent(Select.Changed):
+                    other.value = self._picked_for(agent)
+
     def on_mount(self) -> None:
         for item in self._rows.values():
             self._show_row(item)
+            if item.current not in self._options:
+                self._fill_model(item.role, item.current)
         try:
             summary = self._summary_fn()
         except Exception:
@@ -3007,12 +3138,21 @@ class RunAgentsScreen(ModalScreen):
 
     def _show_row(self, item) -> None:
         reason = self.query_one(f"#ra-reason-{item.role}", Static)
-        if item.reason:
-            since = f", since {item.since}" if item.since else ""
-            text = f"now {item.current} ({item.reason}{since})"
-            if item.pending:
-                text += " · applies from its next turn"
-            reason.update(text)
+        state = self._models.get(item.current)
+        model_text = ""
+        if state is not None and state.pending:
+            model_text = f"model now {state.current or 'default'} · applies from its next turn"
+        if item.reason or model_text:
+            parts = []
+            if item.reason:
+                since = f", since {item.since}" if item.since else ""
+                text = f"now {item.current} ({item.reason}{since})"
+                if item.pending:
+                    text += " · applies from its next turn"
+                parts.append(text)
+            if model_text:
+                parts.append(model_text)
+            reason.update("; ".join(parts))
             reason.remove_class("-empty")
         else:
             reason.update("")
@@ -3030,13 +3170,14 @@ class RunAgentsScreen(ModalScreen):
             try:
                 running = self._running_fn()
                 roles = list(self._run_roles_fn()) if running else []
+                models = dict(self._models_fn()) if running else None
             except Exception:
-                running, roles = True, None  # a failed read keeps what is shown
-            self.app.call_from_thread(self._refreshed, running, roles)
+                running, roles, models = True, None, None  # a failed read keeps what is shown
+            self.app.call_from_thread(self._refreshed, running, roles, models)
 
         self.run_worker(in_thread, thread=True)
 
-    def _refreshed(self, running, roles) -> None:
+    def _refreshed(self, running, roles, models=None) -> None:
         self._refreshing = False
         if not self.is_attached:
             return
@@ -3048,9 +3189,23 @@ class RunAgentsScreen(ModalScreen):
                 for item in self._rows.values():
                     self.query_one(f"#ra-back-{item.role}", Button).disabled = True
                 return
+            if models is not None:
+                changed = {a for a, m in models.items() if self._models.get(a) != m}
+                self._models = models
+                for agent in changed:
+                    self._picked[agent] = models[agent].current
+                    for role, _label in self.ROLES:
+                        if role in self._rows and (
+                            self.query_one(f"#ra-{role}", Select).value == agent
+                        ):
+                            self._fill_model(role, agent)
             for item in roles or []:
                 old = self._rows.get(item.role)
-                if old is None or old == item:
+                if old is None:
+                    continue
+                if old == item:
+                    if models is not None:
+                        self._show_row(item)
                     continue
                 self._rows[item.role] = item
                 select = self.query_one(f"#ra-{item.role}", Select)
@@ -3069,10 +3224,16 @@ class RunAgentsScreen(ModalScreen):
         for item in self._rows.values():
             self.query_one(f"#ra-back-{item.role}", Button).disabled = busy or self._stopped
 
-    def _apply(self, calls: list[tuple[str, str]], keep: bool) -> None:
+    def _apply(
+        self,
+        calls: list[tuple[str, str]],
+        keep: bool,
+        model_calls: list[tuple[str, str]] | None = None,
+    ) -> None:
+        model_calls = model_calls or []
         if self._busy or self._stopped:
             return
-        if not calls:
+        if not calls and not model_calls:
             self.query_one("#ra-result", Static).update("Nothing changed.")
             return
         self._set_busy(True)
@@ -3081,14 +3242,19 @@ class RunAgentsScreen(ModalScreen):
 
         def in_thread() -> None:
             lines: list[str] = []
-            error = ""
+            errors: list[str] = []
             for role, agent in calls:
                 try:
                     lines.append(str(self._switch_fn(role, agent, keep=keep)))
                 except Exception as exc:
-                    error = str(exc) or exc.__class__.__name__
+                    errors.append(str(exc) or exc.__class__.__name__)
                     break
-            self.app.call_from_thread(self._applied, lines, error)
+            for agent, model in model_calls:
+                try:
+                    lines.append(str(self._switch_model_fn(agent, model, keep=keep)))
+                except Exception as exc:
+                    errors.append(str(exc) or exc.__class__.__name__)
+            self.app.call_from_thread(self._applied, lines, "\n".join(errors))
 
         self.run_worker(in_thread, thread=True)
 
@@ -3121,7 +3287,19 @@ class RunAgentsScreen(ModalScreen):
                 value = self.query_one(f"#ra-{role}", Select).value
                 if isinstance(value, str) and value != item.current:
                     calls.append((role, value))
-            self._apply(calls, self.query_one("#ra-keep", Checkbox).value)
+            model_calls: list[tuple[str, str]] = []
+            for role, _label in self.ROLES:
+                if role not in self._rows:
+                    continue
+                agent = self.query_one(f"#ra-{role}", Select).value
+                model = self.query_one(f"#ra-model-{role}", Select).value
+                if not isinstance(agent, str) or not isinstance(model, str):
+                    continue
+                state = self._models.get(agent)
+                was = state.current if state is not None else ""
+                if model != was and all(a != agent for a, _ in model_calls):
+                    model_calls.append((agent, model))
+            self._apply(calls, self.query_one("#ra-keep", Checkbox).value, model_calls)
         elif button_id.startswith("ra-back-"):
             item = self._rows.get(button_id[len("ra-back-"):])
             if item is not None:
