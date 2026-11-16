@@ -320,7 +320,7 @@ Rules every task keeps:
   Add a "Scheduled runs need their own permission" section: why the terminal and scheduled runs are different apps to macOS, the console's `Grant access for scheduled runs` first and `whyline idea brief access --scheduled --grant` second, what the failure alert looks like, and that missed runs now alert.
   Run `git diff --check` and `uv run pytest -q`. If a failure needs an application-code change, leave the task unapproved with the exact failing test and request a new task.
 
-- [ ] RDF-1: Ready on a branch that is behind main
+- [x] RDF-1: Ready on a branch that is behind main
   Edit `src/whyline/release/ready.py`, `src/whyline/release/source.py` and their tests only.
   1. `source.trial_merge(root, branch, *, run) -> list[str] | None`: the files that would conflict when `origin/<branch>` is merged into HEAD, from `git merge-tree --write-tree --name-only --no-messages HEAD origin/<branch>` (exit 0: `[]`; exit 1: the file names after the tree line). None when git can't do it (a git older than 2.38, or any other exit code). It writes no ref, no index and no working file.
   2. `ready._synced`, when `origin/<branch>` is not an ancestor of HEAD:
