@@ -14,6 +14,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
+from whyline import cliargs
 from whyline.agents import capabilities
 from whyline.ideas import paths, report, store
 
@@ -223,22 +224,7 @@ def _without_missing_settings(command: list[str], root: Path) -> list[str]:
     Claude exits when that file is missing. Plan mode already makes the
     turn read-only, so the relay settings file is not required here.
     """
-    out: list[str] = []
-    index = 0
-    while index < len(command):
-        token = command[index]
-        if token == "--settings" and index + 1 < len(command):
-            value, width = command[index + 1], 2
-        elif token.startswith("--settings="):
-            value, width = token.split("=", 1)[1], 1
-        else:
-            out.append(token)
-            index += 1
-            continue
-        if (root / Path(value).expanduser()).is_file():
-            out.extend(command[index : index + width])
-        index += width
-    return out
+    return cliargs.without_missing_settings(command, root)
 
 
 def _collect(result, answer_file: Path | None, log_path: Path) -> tuple[int | None, str]:

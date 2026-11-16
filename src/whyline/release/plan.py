@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from whyline import cliargs
 from whyline.release import github, notes, targets
 from whyline.release import source as source_mod
 from whyline.release import ready as release_ready
@@ -45,9 +46,13 @@ def absolute_settings(argv: list[str], root: Path) -> list[str]:
     out = list(argv)
     for i, token in enumerate(out):
         if token == "--settings" and i + 1 < len(out):
-            out[i + 1] = str(root / Path(out[i + 1]).expanduser())
+            path = cliargs.settings_file(out[i + 1])
+            if path is not None:
+                out[i + 1] = str(root / path)
         elif token.startswith("--settings="):
-            out[i] = "--settings=" + str(root / Path(token.split("=", 1)[1]).expanduser())
+            path = cliargs.settings_file(token.split("=", 1)[1])
+            if path is not None:
+                out[i] = "--settings=" + str(root / path)
     return out
 
 

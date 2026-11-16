@@ -45728,3 +45728,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c51cf9e96e934691be8576c49061296a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T15:07:07.561Z"} -->
+
+## 2026-11-16 — One cliargs.without_missing_settings shared by runner and analyse; inline JSON detected by leading {
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RDF-5
+
+**Because:** two copies of the same logic; is_file on 741-char JSON raised OSError
+
+**Rejected:**
+
+- analyse imports runner's private function — couples ideas to agents internals
+
+**Files:** src/whyline/cliargs.py
+
+<!-- whyline-event: 158b15f6ed3546779cd14bd86b6ab47c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T15:09:38.738Z"} -->
+
+## 2026-11-16 — Approve RDF-5 tester verification of inline settings and whyline-relay 0.2.44 requirement
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-5
+
+**Because:** All 5052 tests in the full test suite pass including test_cliargs.py covering inline JSON, long non-JSON paths, real/missing files, and pyproject.toml minimum version; whyline-relay is locked to 0.2.45
+
+**Files:** src/whyline/cliargs.py
+
+<!-- whyline-event: 404f59b3ef0141cc825b657eae960c5c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T21:17:38.941Z"} -->
+
+## 2026-11-16 — Approve RDF-5 inline settings and relay floor implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RDF-5
+
+**Because:** The shared cliargs implementation preserves inline JSON, safely drops missing or unusable paths, absolute_settings only rewrites paths, dependency metadata requires >=0.2.44 and locks 0.2.45; all 11 focused tests pass, while the full suite's sole unrelated console timeout passed immediately when rerun in isolation
+
+**Files:** src/whyline/cliargs.py
+
+<!-- whyline-event: f3d6cd5b203b4474bb35ebf933ac2921 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T21:39:34.107Z"} -->

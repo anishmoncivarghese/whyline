@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from whyline import cliargs
 from whyline.agents import before as before_steps, capabilities, definitions, records, state
 
 _CANT_RUN = ("usage_limit", "login_needed", "missing")
@@ -223,23 +224,8 @@ def _without_missing_settings(command: list[str], root: Path) -> list[str]:
     relative to the folder it runs in. A personal agent's folder (or a repo
     the relay never set up) has none, and claude refuses to start with
     "Settings file not found". Read-only comes from --permission-mode plan,
-    not that file, so drop a --settings that points nowhere."""
-    out: list[str] = []
-    index = 0
-    while index < len(command):
-        token = command[index]
-        if token == "--settings" and index + 1 < len(command):
-            value, width = command[index + 1], 2
-        elif token.startswith("--settings="):
-            value, width = token.split("=", 1)[1], 1
-        else:
-            out.append(token)
-            index += 1
-            continue
-        if (root / Path(value).expanduser()).is_file():
-            out.extend(command[index:index + width])
-        index += width
-    return out
+    not that file, so drop a --settings that points nowhere. Inline JSON stays."""
+    return cliargs.without_missing_settings(command, root)
 
 
 def _command(defn, cli: str, run_folder: Path | None = None) -> list[str] | None:
